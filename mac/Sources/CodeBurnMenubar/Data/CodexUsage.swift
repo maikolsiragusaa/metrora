@@ -31,7 +31,12 @@ struct CodexUsage: Sendable, Equatable {
             case .k12: "K-12"
             case .enterprise: "Enterprise"
             case .edu: "Edu"
-            case let .unknown(raw): raw.isEmpty ? "Subscription" : raw.capitalized
+            case let .unknown(raw):
+                raw.isEmpty
+                    ? "Subscription"
+                    : raw.replacingOccurrences(of: "_", with: " ")
+                         .replacingOccurrences(of: "-", with: " ")
+                         .capitalized
             }
         }
     }
@@ -76,16 +81,55 @@ struct CodexUsage: Sendable, Equatable {
         let nextExpiresAt: Date?
     }
 
+    /// The monthly allowance an admin sets. Credit-metered workspaces report
+    /// `rate_limit: null`, so this is their only limit.
+    struct CreditLimit: Sendable, Equatable {
+        let used: Double
+        let limit: Double
+        let usedPercent: Double        // 0.0 ... 100.0
+        let resetsAt: Date?
+        /// Calendar month the allowance resets on, for pace projection. Not the
+        /// payload's `reset_after_seconds`, which is the time remaining.
+        let windowSeconds: Int?
+        /// Allowance already spent: a hard stop, not a near-limit warning.
+        let reached: Bool
+
+        /// `.halfUp` matches the desktop decoder's `Math.round`.
+        var displayLabel: String {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.maximumFractionDigits = 0
+            formatter.roundingMode = .halfUp
+            // `en_US`, not `en_US_POSIX`: the latter drops grouping entirely.
+            formatter.locale = Locale(identifier: "en_US")
+            func text(_ value: Double) -> String {
+                formatter.string(from: NSNumber(value: value)) ?? "\(Int(value.rounded()))"
+            }
+            let base = "Monthly usage limit · \(text(used)) / \(text(limit)) credits"
+            return reached ? "\(base) · limit reached" : base
+        }
+
+        var shortLabel: String {
+            reached ? "Monthly usage limit · limit reached" : "Monthly usage limit"
+        }
+    }
+
     let plan: PlanType
     let primary: Window?
     let secondary: Window?
     let additionalLimits: [AdditionalLimit]
     let creditsBalance: Double?
+    /// Account settles in credits, not dollars, which changes `creditsBalance`.
+    let hasCredits: Bool
+    /// Uncapped on purpose, as distinct from a limit we failed to read.
+    let creditsUnlimited: Bool
+    let creditLimit: CreditLimit?
     let resetCredits: ResetCredits?
     let fetchedAt: Date
 
     static func planType(from raw: String?) -> PlanType {
-        guard let raw = raw?.lowercased() else { return .unknown("") }
+        guard let original = raw?.lowercased() else { return .unknown("") }
+        let raw = normalizePlanType(original)
         switch raw {
         case "guest": return .guest
         case "free": return .free
@@ -101,7 +145,28 @@ struct CodexUsage: Sendable, Equatable {
         case "k12": return .k12
         case "enterprise": return .enterprise
         case "edu": return .edu
+        // Normalized, so an unknown composite reads "Some Future Tier".
         default: return .unknown(raw)
         }
+    }
+
+    /// Credit-based-pricing tiers arrive composite (`enterprise_cbp_usage_based`).
+    private static func normalizePlanType(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for suffix in ["_usage_based", "-usage-based", "_usage-based", "-usage_based"]
+        where value.hasSuffix(suffix) {
+            value.removeLast(suffix.count)
+        }
+        for prefix in ["self_serve_", "self-serve-", "self_serve-", "self-serve_"]
+        where value.hasPrefix(prefix) {
+            value.removeFirst(prefix.count)
+        }
+        for suffix in ["_cbp", "-cbp"] where value.hasSuffix(suffix) {
+            value.removeLast(suffix.count)
+        }
+        for infix in ["_cbp_", "-cbp-", "_cbp-", "-cbp_"] {
+            value = value.replacingOccurrences(of: infix, with: "_")
+        }
+        return value
     }
 }

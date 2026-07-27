@@ -1378,18 +1378,34 @@ final class AppStore {
                     details.append(.init(label: "\(extra.name) · \(s.windowLabel)", percent: s.usedPercent / 100, resetsAt: s.resetsAt))
                 }
             }
+            // No rate windows here, so the allowance feeds the bar and badge.
+            if let credits = usage.creditLimit {
+                let row = QuotaSummary.Window(
+                    label: credits.shortLabel,
+                    percent: credits.usedPercent / 100,
+                    resetsAt: credits.resetsAt
+                )
+                if primary == nil { primary = row }
+                details.append(row)
+            }
         }
         let plan = codexUsage?.plan.displayName
         var footerLines: [String] = []
         if let balance = codexUsage?.creditsBalance, balance > 0 {
-            // Format as plain dollars; ChatGPT settles in USD regardless of
-            // the user's display-currency preference.
+            // Credit-settled accounts denominate in credits, so no symbol.
+            let inCredits = codexUsage?.hasCredits == true
             let formatter = NumberFormatter()
-            formatter.numberStyle = .currency
-            formatter.currencyCode = "USD"
-            formatter.maximumFractionDigits = 2
-            let formatted = formatter.string(from: NSNumber(value: balance)) ?? "$\(balance)"
+            formatter.numberStyle = inCredits ? .decimal : .currency
+            formatter.maximumFractionDigits = inCredits ? 0 : 2
+            // `en_US`, not `en_US_POSIX`: the latter drops grouping entirely.
+            formatter.locale = Locale(identifier: "en_US")
+            if !inCredits { formatter.currencyCode = "USD" }
+            let fallback = inCredits ? "\(Int(balance.rounded()))" : "$\(balance)"
+            let formatted = formatter.string(from: NSNumber(value: balance)) ?? fallback
             footerLines.append("Credits remaining · \(formatted)")
+        }
+        if codexUsage?.creditLimit == nil, codexUsage?.creditsUnlimited == true {
+            footerLines.append("Credits · Unlimited")
         }
         return QuotaSummary(providerFilter: filter, connection: connection, primary: primary, details: details, planLabel: plan, footerLines: footerLines)
     }

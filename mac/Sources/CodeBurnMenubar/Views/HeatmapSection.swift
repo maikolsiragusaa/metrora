@@ -2067,7 +2067,7 @@ private struct CodexPlanInsight: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                 Spacer()
-                if let resetsAt = (usage.primary ?? usage.secondary)?.resetsAt {
+                if let resetsAt = (usage.primary ?? usage.secondary)?.resetsAt ?? usage.creditLimit?.resetsAt {
                     Text("Resets \(relativeReset(resetsAt))")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
@@ -2109,6 +2109,26 @@ private struct CodexPlanInsight: View {
                     )
                 }
             }
+            // No rate windows here, so without this row the card is empty.
+            if let credits = usage.creditLimit {
+                UtilizationRow(
+                    label: credits.displayLabel,
+                    percent: credits.usedPercent,
+                    resetsAt: credits.resetsAt,
+                    projection: pace(for: credits)
+                )
+            } else if usage.creditsUnlimited {
+                // Uncapped on purpose, not a failed fetch.
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Credits")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("Unlimited")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
             // Limit-reset credits the account is holding. Hidden at zero so
             // plans that never receive these grants see no extra row.
             if let resets = usage.resetCredits, resets.availableCount > 0 {
@@ -2144,6 +2164,25 @@ private struct CodexPlanInsight: View {
             source: .linear,
             deltaPercent: result.deltaPercent,
             compact: TimeInterval(window.limitWindowSeconds) <= QuotaPace.etaSuppressionMaxSeconds
+        )
+    }
+
+    /// Rate-window pace math over the spend control's calendar month.
+    private func pace(for credits: CodexUsage.CreditLimit) -> WindowProjection? {
+        guard let windowSeconds = credits.windowSeconds,
+              let result = QuotaPace.evaluate(
+                  usedPercent: credits.usedPercent,
+                  resetsAt: credits.resetsAt,
+                  windowSeconds: windowSeconds
+              )
+        else { return nil }
+        return WindowProjection(
+            percent: result.projectedPercent,
+            willOverflow: result.willOverflow,
+            hitsLimitAt: result.hitsLimitAt,
+            source: .linear,
+            deltaPercent: result.deltaPercent,
+            compact: TimeInterval(windowSeconds) <= QuotaPace.etaSuppressionMaxSeconds
         )
     }
 

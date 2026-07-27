@@ -133,10 +133,27 @@ function windowOf(value: unknown, override?: string): QuotaWindow | null {
   return { label: override ?? labelForSeconds(row.limit_window_seconds), percent, resetsAt: reset }
 }
 
+// chatgpt.com mixes encodings inside one payload. `Number('')` is 0, not NaN,
+// so blank is rejected or an absent `used` decodes as a confident zero.
+function num(value: unknown): number | null {
+  if (typeof value === 'string' && !value.trim()) return null
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+// Credit-based-pricing tiers arrive composite (`enterprise_cbp_usage_based`).
+function normalizePlanType(value: string): string {
+  return value
+    .replace(/[_-]usage[_-]based$/, '')
+    .replace(/^self[_-]serve[_-]/, '')
+    .replace(/[_-]cbp$/, '')
+    .replace(/[_-]cbp[_-]/g, '_')
+}
+
 function planLabel(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null
   const raw = value.trim()
-  const lower = raw.toLowerCase()
+  const lower = normalizePlanType(raw.toLowerCase())
   const known: Record<string, string> = {
     guest: 'Guest', free: 'Free', go: 'Go', plus: 'Plus', pro: 'Pro',
     prolite: 'Pro Lite', pro_lite: 'Pro Lite', 'pro-lite': 'Pro Lite',
@@ -144,6 +161,44 @@ function planLabel(value: unknown): string | null {
     education: 'Education', quorum: 'Quorum', k12: 'K-12', enterprise: 'Enterprise', edu: 'Edu',
   }
   return known[lower] ?? lower.replace(/(^|[_-])\w/g, match => match.replace(/[_-]/, ' ').toUpperCase())
+}
+
+// The admin-set monthly allowance, the only limit a credit-metered workspace
+// has. `spend_control` is the live position, the others forward-compat. `any`
+// because this walks six optional-chained hops, all validated by `num()`.
+function spendControlWindow(data: Record<string, any>): QuotaWindow | null {
+  // `find`/`num` per alias, not `??`: a non-null garbage value would stop `??`
+  // and mask a valid alias further down. Object-shaped garbage still wins the
+  // position, matching Swift, which likewise commits to the first that decodes.
+  const row = [
+    data.spend_control?.individual_limit,
+    data.spend_control?.individualLimit,
+    data.individual_limit,
+    data.individualLimit,
+    data.rate_limit?.individual_limit,
+    data.rate_limit?.individualLimit,
+  ].find(candidate => candidate && typeof candidate === 'object')
+  if (!row) return null
+  const limit = num(row.limit)
+  if (limit === null || limit <= 0) return null
+  const remainingPercent = num(row.remaining_percent) ?? num(row.remainingPercent)
+  const used = num(row.used)
+  const rawPercent = num(row.used_percent) ?? num(row.usedPercent)
+    ?? (remainingPercent === null ? null : 100 - remainingPercent)
+    ?? (used === null ? null : (used / limit) * 100)
+  if (rawPercent === null) return null
+  const percent = Math.min(1, Math.max(0, rawPercent / 100))
+  const resetRaw = num(row.reset_at) ?? num(row.resets_at) ?? num(row.resetsAt)
+  // Past 8.64e15 ms `toISOString()` throws RangeError.
+  const resetsAt = resetRaw !== null && resetRaw > 0 && resetRaw * 1000 <= 8.64e15
+    ? new Date(resetRaw * 1000).toISOString()
+    : null
+  // Unclamped percent, so a 120% draw still reports 12,000 of 10,000.
+  const spent = used ?? limit * Math.max(0, rawPercent) / 100
+  const round = (n: number) => Math.round(n).toLocaleString('en-US')
+  const reached = data.spend_control?.reached === true
+  const label = `Monthly usage limit · ${round(spent)} / ${round(limit)} credits`
+  return { label: reached ? `${label} · limit reached` : label, percent, resetsAt }
 }
 
 export function decodeCodexUsage(body: unknown): QuotaProvider {
@@ -165,12 +220,21 @@ export function decodeCodexUsage(body: unknown): QuotaProvider {
       }
     }
   }
-  const rawBalance = data.credits?.balance
-  const balance = typeof rawBalance === 'number' ? rawBalance : typeof rawBalance === 'string' ? Number(rawBalance) : NaN
+  const credits = spendControlWindow(data)
+  if (credits) details.push(credits)
+  const balance = num(data.credits?.balance)
+  // Credit-settled accounts denominate in credits, so no currency symbol.
+  const hasCredits = data.credits?.has_credits === true
+  const footerLines: string[] = []
+  if (balance !== null && balance > 0) {
+    footerLines.push(`Credits remaining · ${hasCredits ? Math.round(balance).toLocaleString('en-US') : `$${balance.toFixed(2)}`}`)
+  }
+  // Uncapped on purpose, so a bar-less card does not read as a failed fetch.
+  if (!credits && data.credits?.unlimited === true) footerLines.push('Credits · Unlimited')
   return {
-    provider: 'codex', connection: 'connected', primary, details,
+    provider: 'codex', connection: 'connected', primary: primary ?? credits, details,
     planLabel: planLabel(data.plan_type),
-    footerLines: Number.isFinite(balance) && balance > 0 ? [`Credits remaining · $${balance.toFixed(2)}`] : [],
+    footerLines,
   }
 }
 

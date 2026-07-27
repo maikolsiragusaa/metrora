@@ -487,7 +487,7 @@ private struct CodexSettingsTab: View {
                 CodexConnectionRow()
             }
             Section {
-                Text("Codex live-quota tracking reads `~/.codex/auth.json` once on Connect, then keeps a local copy under Application Support so subsequent quota fetches don't re-read the original. Only ChatGPT-mode auth (Plus / Pro / Team / Business) is supported — API-key users are billed per request and have a different reporting surface.")
+                Text("Codex live-quota tracking reads `~/.codex/auth.json` once on Connect, then keeps a local copy under Application Support so subsequent quota fetches don't re-read the original. Only ChatGPT-mode auth (Plus / Pro / Team / Business / Edu / Enterprise) is supported. API-key users are billed per request and have a different reporting surface. Credit-metered workspaces report no rate-limit windows, so their monthly credit allowance is shown instead.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             } header: {

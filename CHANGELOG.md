@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **Credit-metered ChatGPT workspaces (Business / Edu / Enterprise) now show their limit.** These plans report no rate-limit windows, so the admin-set monthly allowance from `spend_control.individual_limit` is shown as a "Monthly usage limit" bar in the desktop app and the menubar.
+
 ### Fixed
 - Claude Desktop and Cowork sessions are discovered for Windows Microsoft Store (MSIX) installs. (#611)
 
