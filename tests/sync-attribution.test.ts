@@ -18,6 +18,8 @@ import type { ProjectSummary, SessionSummary } from '../src/types.js'
 import {
   normalizeRemoteUrl,
   computeAttributionRecords,
+  sanitizePrLinks,
+  MAX_PR_LINKS_PER_SESSION,
   type SessionAttributionRecord,
 } from '../src/yield.js'
 import {
@@ -112,6 +114,25 @@ describe('normalizeRemoteUrl', () => {
     expect(normalizeRemoteUrl('../relative/repo')).toBeNull()
     expect(normalizeRemoteUrl('')).toBeNull()
   })
+
+  it('rejects Windows drive-letter paths (never a remote identity)', () => {
+    expect(normalizeRemoteUrl('C:/Users/alice/private/repo')).toBeNull()
+    expect(normalizeRemoteUrl('C:\\Users\\alice\\private\\repo')).toBeNull()
+    expect(normalizeRemoteUrl('c:/repo')).toBeNull()
+    expect(normalizeRemoteUrl('Z:\\work\\nda-client-repo')).toBeNull()
+    // Drive-relative (no slash after colon) — single-char host rejection
+    expect(normalizeRemoteUrl('C:repo')).toBeNull()
+    expect(normalizeRemoteUrl('c:relative\\path')).toBeNull()
+  })
+
+  it('rejects other adversarial forms without over-rejecting real remotes', () => {
+    // Single-character "host" is never a real remote host
+    expect(normalizeRemoteUrl('a:path/to/repo')).toBeNull()
+    expect(normalizeRemoteUrl('git@C:/foo')).toBeNull()
+    // Dotless intranet hosts remain valid (2+ chars)
+    expect(normalizeRemoteUrl('gitserver:team/repo.git')).toBe('gitserver/team/repo')
+    expect(normalizeRemoteUrl('git@gitbox:org/repo.git')).toBe('gitbox/org/repo')
+  })
 })
 
 // ── computeAttributionRecords ─────────────────────────────────────────
@@ -204,6 +225,87 @@ describe('computeAttributionRecords', () => {
     }
   })
 
+  it('never egresses the cwd repo for sessions whose project path did not resolve (fallback)', async () => {
+    // The reviewer's repro: push from inside a private repo while a session's
+    // project path no longer resolves. The fallback identity must NOT leak
+    // the cwd repo's remote or commits into that session's attribution.
+    const cwdRepo = await mkdtemp(join(tmpdir(), 'codeburn-attr-privatecwd-'))
+    try {
+      initRepo(cwdRepo)
+      git(cwdRepo, ['remote', 'add', 'origin', 'git@github.com:secret-org/nda-client-repo.git'])
+      await writeFile(join(cwdRepo, 'file.txt'), 'confidential\n')
+      commitAt(cwdRepo, 'feat: private work', '2026-01-01T10:30:00Z')
+
+      // Session A: project path is gone (deleted dir) — falls back to cwd
+      const orphanNoPr = makeSession({ sessionId: 'orphan-nopr', ...{ firstTimestamp: '2026-01-01T10:15:00.000Z', lastTimestamp: '2026-01-01T10:45:00.000Z' } })
+      // Session B: also fallback, but carries a PR link (session-native, safe)
+      const orphanWithPr = makeSession({
+        sessionId: 'orphan-pr',
+        prLinks: ['https://github.com/acme/widget/pull/9'],
+        firstTimestamp: '2026-01-01T12:00:00.000Z',
+        lastTimestamp: '2026-01-01T12:30:00.000Z',
+      })
+      // Session C: genuinely belongs to the cwd repo (own path resolves)
+      const genuine = makeSession({ sessionId: 'genuine-cwd', firstTimestamp: '2026-01-01T10:00:00.000Z', lastTimestamp: '2026-01-01T11:00:00.000Z' })
+
+      const projects = [
+        { project: 'ghost', projectPath: join(cwdRepo, 'no-such-dir-anymore-xyz'), sessions: [orphanNoPr] },
+        { project: 'ghost2', projectPath: '', sessions: [orphanWithPr] },
+        { project: 'real', projectPath: cwdRepo, sessions: [genuine] },
+      ] as ProjectSummary[]
+
+      const records = computeAttributionRecords(projects, range, cwdRepo)
+
+      // orphan-nopr: nothing joinable -> no record at all
+      expect(records.find(r => r.sessionId === 'orphan-nopr')).toBeUndefined()
+      // orphan-pr: PR link only — no repo, no commits
+      const pr = records.find(r => r.sessionId === 'orphan-pr')!
+      expect(pr.repo).toBeNull()
+      expect(pr.commits).toEqual([])
+      // genuine cwd session keeps full attribution
+      const own = records.find(r => r.sessionId === 'genuine-cwd')!
+      expect(own.repo).toBe('github.com/secret-org/nda-client-repo')
+      expect(own.commits).toHaveLength(1)
+      // The private repo identity appears ONLY on the genuine record
+      const leaked = records.filter(r => r.sessionId !== 'genuine-cwd' && JSON.stringify(r).includes('secret-org'))
+      expect(leaked).toEqual([])
+    } finally {
+      await rm(cwdRepo, { recursive: true, force: true })
+    }
+  })
+
+  it('fallback sessions cannot steal a commit from a genuine session', async () => {
+    const cwdRepo = await mkdtemp(join(tmpdir(), 'codeburn-attr-steal-'))
+    try {
+      initRepo(cwdRepo)
+      git(cwdRepo, ['remote', 'add', 'origin', 'git@github.com:acme/widget.git'])
+      await writeFile(join(cwdRepo, 'file.txt'), 'x\n')
+      commitAt(cwdRepo, 'feat: mine', '2026-01-01T10:30:00Z')
+
+      // Fallback session has the TIGHTER window (would win under old logic);
+      // genuine session has the broader window.
+      const fallbackTight = makeSession({
+        sessionId: 'fallback-tight',
+        prLinks: ['https://github.com/acme/widget/pull/2'],
+        firstTimestamp: '2026-01-01T10:25:00.000Z',
+        lastTimestamp: '2026-01-01T10:35:00.000Z',
+      })
+      const genuineBroad = makeSession({ sessionId: 'genuine-broad' })
+
+      const projects = [
+        { project: 'ghost', projectPath: '', sessions: [fallbackTight] },
+        { project: 'real', projectPath: cwdRepo, sessions: [genuineBroad] },
+      ] as ProjectSummary[]
+
+      const records = computeAttributionRecords(projects, range, cwdRepo)
+
+      expect(records.find(r => r.sessionId === 'fallback-tight')!.commits).toEqual([])
+      expect(records.find(r => r.sessionId === 'genuine-broad')!.commits).toHaveLength(1)
+    } finally {
+      await rm(cwdRepo, { recursive: true, force: true })
+    }
+  })
+
   it('awards each commit to a single session (tightest window)', async () => {
     const repoDir = await mkdtemp(join(tmpdir(), 'codeburn-attr-overlap-'))
     try {
@@ -279,6 +381,35 @@ describe('attribution dedup keys', () => {
       sessionAttributionKey(makeRecord()),
       commitAttributionKey('sess-1', 'a'.repeat(40), true, false),
     ])
+  })
+})
+
+// ── PR link sanitization ──────────────────────────────────────────────
+
+describe('sanitizePrLinks', () => {
+  it('keeps only https URLs shaped like org/repo/pull/N', () => {
+    expect(sanitizePrLinks([
+      'https://github.com/acme/widget/pull/12',
+      'https://ghe.corp.example.com/team/svc/pull/3',   // GHE hosts allowed
+      'http://github.com/acme/widget/pull/12',          // not https
+      'javascript:alert(1)',                            // not a URL shape we accept
+      'https://github.com/acme/widget/issues/12',       // not a PR path
+      'https://github.com/acme/widget/pull/12/files',   // extra path segment
+      'not a url at all',
+      '',
+      'https://github.com/acme/widget/pull/notanumber',
+    ])).toEqual([
+      'https://ghe.corp.example.com/team/svc/pull/3',
+      'https://github.com/acme/widget/pull/12',
+    ])
+  })
+
+  it('drops oversized strings and caps the count per session', () => {
+    const huge = `https://github.com/acme/widget/pull/1?x=${'a'.repeat(300)}`
+    expect(sanitizePrLinks([huge])).toEqual([])
+
+    const many = Array.from({ length: 30 }, (_, i) => `https://github.com/acme/widget/pull/${i + 1}`)
+    expect(sanitizePrLinks(many)).toHaveLength(MAX_PR_LINKS_PER_SESSION)
   })
 })
 

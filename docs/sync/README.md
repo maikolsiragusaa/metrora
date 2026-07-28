@@ -122,7 +122,11 @@ A pseudonymous `device_id` distinguishes your machines without revealing hostnam
 
 Attribution is **inferred** (timestamp-window correlation, the same heuristic as `codeburn yield`); the resource attribute `codeburn.attribution_methodology: timestamp-window` marks it as such. State transitions (a commit merging to main, or being reverted) are re-sent automatically on later pushes — receivers should upsert by `(git.repo, git.sha)`.
 
-With `--attribution`, normalized repo remote URLs, commit SHAs, commit timestamps, and PR URLs leave your machine. Commits in repos with no network remote are never sent (there is nothing to join them to). Without the flag, none of this is sent.
+With `--attribution`, normalized repo remote URLs, commit SHAs, commit timestamps (span start times), PR URLs, and the merged/reverted booleans leave your machine — plus the same pseudonymous `codeburn.device_id` resource attribute the usage spans carry. PR links are shape-checked client-side (https, `/org/repo/pull/N` path, bounded length, max 20 per session) before sending. Precisely what is and is not sent:
+
+- **Commits**: only from repos with a network `origin` remote, and only for sessions whose own project path resolved to that repo. Local-only repos, `file://` remotes, and Windows filesystem paths are never emitted as repo identities. A session whose project path no longer resolves never inherits the repo of the directory you happen to push from.
+- **PR links**: sent whenever a session captured them, even when the session's repo could not be identified — the PR URL itself names the repo, so this adds no information beyond the link the session already recorded.
+- Without the flag, none of this is sent.
 
 ### What is NOT sent
 

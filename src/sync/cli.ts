@@ -22,7 +22,7 @@ import {
 } from './auth.js'
 import { createCredentialStore } from './credentials.js'
 import { readSyncConfig, writeSyncConfig, deleteSyncConfig, updateLastSync } from './config.js'
-import { collectUnsentCalls, collectUnsentAttribution, sendBatches, sendAttributionBatches, batchCalls, MAX_PER_PUSH, type PushResult } from './push.js'
+import { collectUnsentCalls, collectUnsentAttribution, sendBatches, sendAttributionBatches, batchCalls, MAX_PER_PUSH, MAX_ATTRIBUTION_PER_PUSH, type PushResult } from './push.js'
 import { batchAttributionItems } from './otlp.js'
 
 export function registerSyncCommands(program: Command): void {
@@ -300,9 +300,13 @@ export function registerSyncCommands(program: Command): void {
             process.stderr.write(`[dry-run] ${unsent.length - MAX_PER_PUSH} more calls exceed the ${MAX_PER_PUSH} safety limit — a second push would be needed\n`)
           }
           if (opts.attribution) {
-            const commits = attributionUnsent.filter(i => i.kind === 'commit').length
-            const sessions = attributionUnsent.filter(i => i.kind === 'session').length
-            process.stderr.write(`[dry-run] Attribution: ${attributionTotal} facts total, would push ${attributionUnsent.length} (${sessions} sessions, ${commits} commits)\n`)
+            const toPushAttr = attributionUnsent.slice(0, MAX_ATTRIBUTION_PER_PUSH)
+            const commits = toPushAttr.filter(i => i.kind === 'commit').length
+            const sessions = toPushAttr.filter(i => i.kind === 'session').length
+            process.stderr.write(`[dry-run] Attribution: ${attributionTotal} facts total, would push ${toPushAttr.length} (${sessions} sessions, ${commits} commits)\n`)
+            if (attributionUnsent.length > MAX_ATTRIBUTION_PER_PUSH) {
+              process.stderr.write(`[dry-run] ${attributionUnsent.length - MAX_ATTRIBUTION_PER_PUSH} more attribution facts exceed the ${MAX_ATTRIBUTION_PER_PUSH} safety limit — a second push would be needed\n`)
+            }
           }
           return
         }
@@ -351,7 +355,12 @@ export function registerSyncCommands(program: Command): void {
         let attrResult: PushResult | null = null
         if (opts.attribution && attributionUnsent.length > 0) {
           if (result.outcome === 'complete') {
-            const attrBatches = batchAttributionItems(attributionUnsent, discoveryDoc.max_batch_size)
+            // Safety valve, mirroring the usage-call cap
+            const attrToPush = attributionUnsent.slice(0, MAX_ATTRIBUTION_PER_PUSH)
+            if (attributionUnsent.length > MAX_ATTRIBUTION_PER_PUSH) {
+              process.stderr.write(`${attributionUnsent.length} attribution facts exceed the ${MAX_ATTRIBUTION_PER_PUSH} safety limit. Pushing first ${MAX_ATTRIBUTION_PER_PUSH}; run again to continue.\n`)
+            }
+            const attrBatches = batchAttributionItems(attrToPush, discoveryDoc.max_batch_size)
             attrResult = await sendAttributionBatches({
               endpoint,
               accessToken: tokens.access_token,

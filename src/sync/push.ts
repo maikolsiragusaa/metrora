@@ -197,6 +197,13 @@ async function sendBatchesCore<T>(opts: SendBatchesCoreOptions<T>): Promise<Push
   return { outcome: 'complete', totalSent, totalRejected, totalCostSent, totalWaitMs }
 }
 
+/**
+ * Safety valve for attribution items, mirroring MAX_PER_PUSH: bounds a first
+ * `--since all --attribution` push over a long history. Remaining facts are
+ * sent on the next push (the ledger tracks progress).
+ */
+export const MAX_ATTRIBUTION_PER_PUSH = 10_000
+
 /** Flatten attribution records into items and filter out already-sent ones. */
 export function collectUnsentAttribution(records: SessionAttributionRecord[]): {
   allItems: AttributionItem[]

@@ -150,10 +150,21 @@ export function normalizeRemoteUrl(url: string): string | null {
   const trimmed = url.trim()
   if (!trimmed) return null
 
+  // Windows drive-letter paths (`C:\Users\...`, `C:/Users/...`) are local
+  // filesystem paths, not scp-like remotes — without this check the scp-like
+  // branch would parse `C:` as a host and emit the user's local path as a
+  // repo identity.
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) return null
+
   let host: string
   let path: string
 
-  const scpLike = /^(?:[^@/]+@)?([^:/]+):(?!\/\/)(.+)$/.exec(trimmed)
+  // scp-like syntax: [user@]host:path. Host must be at least 2 chars — a
+  // single-character "host" is a Windows drive-relative path (`C:repo`),
+  // never a real remote host. `@` is excluded from the host class so a
+  // rejected single-char host can't backtrack into `user@C` matching as
+  // host "user@C".
+  const scpLike = /^(?:[^@/]+@)?([^:/\\@]{2,}):(?!\/\/)(.+)$/.exec(trimmed)
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
     let parsed: URL
     try {
@@ -356,6 +367,10 @@ type RepoGroup = {
   commits: CommitInfo[]
   sessions: SessionSummary[]
   projectNames: string[]
+  /** Parallel to `sessions`: true when the session's identity came from its
+   * OWN project path; false when it inherited the cwd-fallback identity.
+   * The attribution (sync) path must never egress fallback-derived repos. */
+  ownIdentity: boolean[]
   /** A directory to run further git queries in (remote lookup); null when the group has no git identity. */
   gitDir: string | null
 }
@@ -399,6 +414,7 @@ function buildRepoGroups(
             : getCommitsInRange(identity.gitDir, range.start, range.end, getMainBranch(identity.gitDir)),
         sessions: [],
         projectNames: [],
+        ownIdentity: [],
         gitDir: identity?.gitDir ?? null,
       }
       repoGroups.set(groupKey, group)
@@ -406,6 +422,7 @@ function buildRepoGroups(
     for (const session of project.sessions) {
       group.sessions.push(session)
       group.projectNames.push(project.project)
+      group.ownIdentity.push(projectIdentity !== null)
     }
   }
 
@@ -567,6 +584,32 @@ export type SessionAttributionRecord = {
  * Takes already-parsed projects (sync push has them in hand) instead of
  * re-parsing like computeYield does.
  */
+/** Max PR links retained per session attribution record. */
+export const MAX_PR_LINKS_PER_SESSION = 20
+
+/**
+ * Shape-check PR links before they leave the machine. Upstream parsers only
+ * verify truthiness, so arbitrary strings can land in `session.prLinks`.
+ * Keep only https URLs shaped like a PR (`/org/repo/pull/N` — GitHub and
+ * GitHub Enterprise), bounded in length, capped per session, sorted.
+ */
+export function sanitizePrLinks(links: string[]): string[] {
+  const valid: string[] = []
+  for (const link of links) {
+    if (typeof link !== 'string' || link.length === 0 || link.length > 256) continue
+    let url: URL
+    try {
+      url = new URL(link)
+    } catch {
+      continue
+    }
+    if (url.protocol !== 'https:') continue
+    if (!/^\/[^/]+\/[^/]+\/pull\/\d+$/.test(url.pathname)) continue
+    valid.push(link)
+  }
+  return valid.sort().slice(0, MAX_PR_LINKS_PER_SESSION)
+}
+
 export function computeAttributionRecords(
   projects: ProjectSummary[],
   range: DateRange,
@@ -577,20 +620,42 @@ export function computeAttributionRecords(
 
   for (const group of repoGroups.values()) {
     const remote = group.gitDir ? getRepoRemote(group.gitDir) : null
-    const attributions = attributeCommits(group.sessions, group.commits)
+
+    // Privacy gate: only sessions whose identity came from their OWN project
+    // path participate in commit attribution. A session whose project path no
+    // longer resolves (deleted/renamed dir, non-repo session) inherits the
+    // cwd-fallback identity in buildRepoGroups — attributing it here would
+    // egress whatever repo the user happens to be pushing from, with commits
+    // that session never touched. Fallback sessions get no repo and no
+    // commits; they still emit a record when they carry PR links (which are
+    // session-native and safe). Excluding them from the competition also
+    // prevents a fallback window from stealing a commit that belongs to a
+    // genuine session.
+    const ownSessions = group.sessions.filter((_, i) => group.ownIdentity[i])
+    const attributions = attributeCommits(ownSessions, group.commits)
+    // Keyed by object reference: session objects are unique per group entry,
+    // whereas sessionId strings could collide across projects.
+    const attributionBySession = new Map<SessionSummary, CommitInfo[]>()
+    for (const [i, session] of ownSessions.entries()) {
+      attributionBySession.set(session, attributions[i]?.commits ?? [])
+    }
 
     for (const [index, session] of group.sessions.entries()) {
       if (!session.firstTimestamp) continue
 
-      const attributedCommits = remote ? (attributions[index]?.commits ?? []) : []
-      const prLinks = session.prLinks ?? []
+      const isOwn = group.ownIdentity[index] === true
+      const sessionRemote = isOwn ? remote : null
+      const attributedCommits = sessionRemote
+        ? (attributionBySession.get(session) ?? [])
+        : []
+      const prLinks = sanitizePrLinks(session.prLinks ?? [])
       if (attributedCommits.length === 0 && prLinks.length === 0) continue
 
       records.push({
         sessionId: session.sessionId,
         project: group.projectNames[index] ?? session.project,
-        repo: remote,
-        prLinks: [...prLinks].sort(),
+        repo: sessionRemote,
+        prLinks,
         commits: attributedCommits.map(c => ({
           sha: c.sha,
           timestamp: c.timestamp.toISOString(),
