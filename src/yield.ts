@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process'
 import { realpathSync } from 'fs'
 import { resolve } from 'path'
 import { parseAllSessions } from './parser.js'
-import type { DateRange, SessionSummary } from './types.js'
+import type { DateRange, ProjectSummary, SessionSummary } from './types.js'
 
 export type YieldCategory = 'productive' | 'reverted' | 'abandoned' | 'ambiguous'
 
@@ -133,7 +133,74 @@ function getMainBranch(cwd: string): string {
   return 'main'
 }
 
-type CommitInfo = {
+/**
+ * Normalize a git remote URL to a host-scoped repo identity (`host/org/repo`)
+ * usable as a server-side join key. Handles the three common transports:
+ *
+ *   git@github.com:org/repo.git         -> github.com/org/repo
+ *   ssh://git@github.com:22/org/repo.git -> github.com/org/repo
+ *   https://user:tok@github.com/org/repo.git -> github.com/org/repo
+ *
+ * Credentials and ports are stripped (a token embedded in an https remote must
+ * never leave the machine), the host is lowercased (path case is preserved),
+ * and a trailing `.git` / `/` is removed. Local paths and `file://` remotes
+ * return null — a repo with no network remote has no server-side identity.
+ */
+export function normalizeRemoteUrl(url: string): string | null {
+  const trimmed = url.trim()
+  if (!trimmed) return null
+
+  // Windows drive-letter paths (`C:\Users\...`, `C:/Users/...`) are local
+  // filesystem paths, not scp-like remotes — without this check the scp-like
+  // branch would parse `C:` as a host and emit the user's local path as a
+  // repo identity.
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) return null
+
+  let host: string
+  let path: string
+
+  // scp-like syntax: [user@]host:path. Host must be at least 2 chars — a
+  // single-character "host" is a Windows drive-relative path (`C:repo`),
+  // never a real remote host. `@` is excluded from the host class so a
+  // rejected single-char host can't backtrack into `user@C` matching as
+  // host "user@C".
+  const scpLike = /^(?:[^@/]+@)?([^:/\\@]{2,}):(?!\/\/)(.+)$/.exec(trimmed)
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    let parsed: URL
+    try {
+      parsed = new URL(trimmed)
+    } catch {
+      return null
+    }
+    if (parsed.protocol === 'file:') return null
+    if (!parsed.hostname) return null
+    host = parsed.hostname
+    path = parsed.pathname
+  } else if (scpLike) {
+    // scp-like syntax: [user@]host:path — not parseable by URL
+    host = scpLike[1]
+    path = scpLike[2]
+  } else {
+    // Bare local path (or something unrecognizable) — no remote identity.
+    return null
+  }
+
+  const cleanPath = path
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '')
+  if (!cleanPath) return null
+
+  return `${host.toLowerCase()}/${cleanPath}`
+}
+
+/** `git remote get-url origin`, normalized. Null when absent or local-only. */
+function getRepoRemote(gitDir: string): string | null {
+  const url = runGit(['remote', 'get-url', 'origin'], gitDir)
+  return url ? normalizeRemoteUrl(url) : null
+}
+
+export type CommitInfo = {
   sha: string
   timestamp: Date
   inMain: boolean
@@ -296,34 +363,39 @@ function categorizeSession(
   return { category: 'abandoned', commitCount: commits.length }
 }
 
-export async function computeYield(range: DateRange, cwd: string, provider: string = 'all'): Promise<YieldSummary> {
-  const projects = await parseAllSessions(range, provider)
+type RepoGroup = {
+  commits: CommitInfo[]
+  sessions: SessionSummary[]
+  projectNames: string[]
+  /** Parallel to `sessions`: true when the session's identity came from its
+   * OWN project path; false when it inherited the cwd-fallback identity.
+   * The attribution (sync) path must never egress fallback-derived repos. */
+  ownIdentity: boolean[]
+  /** A directory to run further git queries in (remote lookup); null when the group has no git identity. */
+  gitDir: string | null
+}
 
-  const summary: YieldSummary = {
-    productive: { cost: 0, sessions: 0 },
-    reverted: { cost: 0, sessions: 0 },
-    abandoned: { cost: 0, sessions: 0 },
-    ambiguous: { cost: 0, sessions: 0 },
-    total: { cost: 0, sessions: 0 },
-    details: [],
-  }
-
+/**
+ * Group sessions by canonical repository identity and load each group's
+ * commits for the range. Shared by `computeYield` (categorization) and
+ * `computeAttributionRecords` (sync). Grouping semantics are unchanged from
+ * the original computeYield implementation: each commit is awarded at most
+ * once across the whole repo; monorepo subdirectories and worktrees collapse
+ * to one group; a project whose path is missing or not a git repo falls back
+ * to the cwd repo (or an empty commit list when cwd is not a repo either).
+ */
+function buildRepoGroups(
+  projects: ProjectSummary[],
+  range: DateRange,
+  cwd: string,
+): Map<string, RepoGroup> {
   const repoIdentityCache = new Map<string, RepoIdentity | null>()
 
-  // Get all commits in the date range for correlation
   const cwdIdentity = resolveRepoIdentity(cwd, repoIdentityCache)
   const cwdCommits = cwdIdentity
     ? getCommitsInRange(cwd, range.start, range.end, getMainBranch(cwd))
     : []
 
-  // Group sessions by canonical repository identity before attributing so that
-  // each commit is awarded at most once across the whole repo. Two monorepo
-  // subdirectory sessions, or two worktrees of one repo, resolve to the same
-  // git-common-dir and share ONE group; keying on the raw path would double
-  // count. A project whose path is missing or not a git repo falls back to the
-  // cwd repo (or, when cwd is not a repo either, an empty commit list) exactly
-  // as before.
-  type RepoGroup = { commits: CommitInfo[]; sessions: SessionSummary[]; projectNames: string[] }
   const repoGroups = new Map<string, RepoGroup>()
   for (const project of projects) {
     const projectIdentity = project.projectPath
@@ -342,14 +414,34 @@ export async function computeYield(range: DateRange, cwd: string, provider: stri
             : getCommitsInRange(identity.gitDir, range.start, range.end, getMainBranch(identity.gitDir)),
         sessions: [],
         projectNames: [],
+        ownIdentity: [],
+        gitDir: identity?.gitDir ?? null,
       }
       repoGroups.set(groupKey, group)
     }
     for (const session of project.sessions) {
       group.sessions.push(session)
       group.projectNames.push(project.project)
+      group.ownIdentity.push(projectIdentity !== null)
     }
   }
+
+  return repoGroups
+}
+
+export async function computeYield(range: DateRange, cwd: string, provider: string = 'all'): Promise<YieldSummary> {
+  const projects = await parseAllSessions(range, provider)
+
+  const summary: YieldSummary = {
+    productive: { cost: 0, sessions: 0 },
+    reverted: { cost: 0, sessions: 0 },
+    abandoned: { cost: 0, sessions: 0 },
+    ambiguous: { cost: 0, sessions: 0 },
+    total: { cost: 0, sessions: 0 },
+    details: [],
+  }
+
+  const repoGroups = buildRepoGroups(projects, range, cwd)
 
   for (const group of repoGroups.values()) {
     const attributions = attributeCommits(group.sessions, group.commits)
@@ -445,4 +537,136 @@ export function buildYieldJsonReport(
       commitCount: detail.commitCount,
     })),
   }
+}
+
+// --- Sync attribution (codeburn sync push --attribution) ---
+
+export type CommitAttribution = {
+  sha: string
+  /** Commit author time, ISO 8601. */
+  timestamp: string
+  inMain: boolean
+  wasReverted: boolean
+}
+
+/**
+ * Per-session git attribution record — the sync-facing projection of the
+ * yield timestamp-window correlation. One record per session that produced
+ * server-joinable evidence: attributed commits (requires a normalized remote)
+ * and/or PR links.
+ */
+export type SessionAttributionRecord = {
+  sessionId: string
+  project: string
+  /** Normalized origin remote (`host/org/repo`), the server-side join key. Null when only prLinks are available. */
+  repo: string | null
+  /** GitHub PR URLs captured for the session (already normalized upstream). */
+  prLinks: string[]
+  /** Commits attributed to this session. Empty when repo is null (SHAs without a repo identity cannot be joined). */
+  commits: CommitAttribution[]
+  /** Session window, ISO 8601 — lets the receiver reason about attribution recency. */
+  firstTimestamp: string
+  lastTimestamp: string
+}
+
+/**
+ * Compute per-session attribution records for sync. Reuses the exact yield
+ * repo grouping + tightest-window commit attribution (`methodology:
+ * timestamp-window`), then joins in each repo group's normalized origin
+ * remote and the session's PR links.
+ *
+ * Inclusion rules:
+ * - Sessions with neither attributed commits nor PR links are omitted.
+ * - Commits are only included when the repo has a normalized remote; a SHA
+ *   without a repo identity has no server-side meaning. Such sessions still
+ *   emit a record when they carry PR links (the PR URL embeds the repo).
+ *
+ * Takes already-parsed projects (sync push has them in hand) instead of
+ * re-parsing like computeYield does.
+ */
+/** Max PR links retained per session attribution record. */
+export const MAX_PR_LINKS_PER_SESSION = 20
+
+/**
+ * Shape-check PR links before they leave the machine. Upstream parsers only
+ * verify truthiness, so arbitrary strings can land in `session.prLinks`.
+ * Keep only https URLs shaped like a PR (`/org/repo/pull/N` — GitHub and
+ * GitHub Enterprise), bounded in length, capped per session, sorted.
+ */
+export function sanitizePrLinks(links: string[]): string[] {
+  const valid: string[] = []
+  for (const link of links) {
+    if (typeof link !== 'string' || link.length === 0 || link.length > 256) continue
+    let url: URL
+    try {
+      url = new URL(link)
+    } catch {
+      continue
+    }
+    if (url.protocol !== 'https:') continue
+    if (!/^\/[^/]+\/[^/]+\/pull\/\d+$/.test(url.pathname)) continue
+    valid.push(link)
+  }
+  return valid.sort().slice(0, MAX_PR_LINKS_PER_SESSION)
+}
+
+export function computeAttributionRecords(
+  projects: ProjectSummary[],
+  range: DateRange,
+  cwd: string,
+): SessionAttributionRecord[] {
+  const repoGroups = buildRepoGroups(projects, range, cwd)
+  const records: SessionAttributionRecord[] = []
+
+  for (const group of repoGroups.values()) {
+    const remote = group.gitDir ? getRepoRemote(group.gitDir) : null
+
+    // Privacy gate: only sessions whose identity came from their OWN project
+    // path participate in commit attribution. A session whose project path no
+    // longer resolves (deleted/renamed dir, non-repo session) inherits the
+    // cwd-fallback identity in buildRepoGroups — attributing it here would
+    // egress whatever repo the user happens to be pushing from, with commits
+    // that session never touched. Fallback sessions get no repo and no
+    // commits; they still emit a record when they carry PR links (which are
+    // session-native and safe). Excluding them from the competition also
+    // prevents a fallback window from stealing a commit that belongs to a
+    // genuine session.
+    const ownSessions = group.sessions.filter((_, i) => group.ownIdentity[i])
+    const attributions = attributeCommits(ownSessions, group.commits)
+    // Keyed by object reference: session objects are unique per group entry,
+    // whereas sessionId strings could collide across projects.
+    const attributionBySession = new Map<SessionSummary, CommitInfo[]>()
+    for (const [i, session] of ownSessions.entries()) {
+      attributionBySession.set(session, attributions[i]?.commits ?? [])
+    }
+
+    for (const [index, session] of group.sessions.entries()) {
+      if (!session.firstTimestamp) continue
+
+      const isOwn = group.ownIdentity[index] === true
+      const sessionRemote = isOwn ? remote : null
+      const attributedCommits = sessionRemote
+        ? (attributionBySession.get(session) ?? [])
+        : []
+      const prLinks = sanitizePrLinks(session.prLinks ?? [])
+      if (attributedCommits.length === 0 && prLinks.length === 0) continue
+
+      records.push({
+        sessionId: session.sessionId,
+        project: group.projectNames[index] ?? session.project,
+        repo: sessionRemote,
+        prLinks,
+        commits: attributedCommits.map(c => ({
+          sha: c.sha,
+          timestamp: c.timestamp.toISOString(),
+          inMain: c.inMain,
+          wasReverted: c.wasReverted,
+        })),
+        firstTimestamp: session.firstTimestamp,
+        lastTimestamp: session.lastTimestamp ?? session.firstTimestamp,
+      })
+    }
+  }
+
+  return records
 }
