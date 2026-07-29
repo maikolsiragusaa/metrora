@@ -15,6 +15,16 @@ export function markEstimated(costStr: string, isEstimated: boolean): string {
   return isEstimated ? `~${costStr}` : costStr
 }
 
+/// Shared wording for the durable-cache carry-forward footnote: some of a
+/// period's total came from days whose session logs have since expired, but
+/// the figure is real (preserved in the durable daily cache). overview.ts and
+/// dashboard.tsx both show this so a headline that includes carried days
+/// doesn't read as inconsistent with detail views that can only see
+/// surviving session files.
+export function carriedCostNote(carriedCostUSD: number): string | null {
+  return carriedCostUSD > 0 ? `includes ${formatCost(carriedCostUSD)} preserved from expired session logs` : null
+}
+
 export function formatTokens(n: number): string {
   // Guard against Infinity / NaN / negatives that would otherwise leak into
   // the UI as "Infinity" or "NaN" strings when an upstream calculation glitches.

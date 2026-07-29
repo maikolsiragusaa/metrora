@@ -1857,7 +1857,7 @@ program
     await loadPricing()
     const { range, label } = getDateRange(opts.period)
     if (opts.format === 'json') {
-      const { aggregateModelStats, buildCompareJson, renderCompareJson, scanSelfCorrections } = await import('./compare-stats.js')
+      const { aggregateModelStats, buildCompareJson, findModelStat, renderCompareJson, scanSelfCorrections } = await import('./compare-stats.js')
       const projects = await parseAllSessions(range, opts.provider)
       const models = aggregateModelStats(projects)
 
@@ -1880,8 +1880,8 @@ program
         process.stderr.write('codeburn compare: --model-a and --model-b must be provided together.\n')
         process.exit(1)
       }
-      const modelA = models.find(model => model.model === opts.modelA)
-      const modelB = models.find(model => model.model === opts.modelB)
+      const modelA = findModelStat(models, opts.modelA)
+      const modelB = findModelStat(models, opts.modelB)
       if (!modelA) {
         process.stderr.write(`codeburn compare: model not found: "${opts.modelA}".\n`)
         process.exit(1)
@@ -1893,7 +1893,13 @@ program
       process.stdout.write(renderCompareJson(buildCompareJson(projects, modelA, modelB, label, opts.provider)) + '\n')
       return
     }
-    await renderCompare(range, opts.provider)
+    if (opts.modelA || opts.modelB) {
+      if (!opts.modelA || !opts.modelB) {
+        process.stderr.write('codeburn compare: --model-a and --model-b must be provided together.\n')
+        process.exit(1)
+      }
+    }
+    await renderCompare(range, opts.provider, opts.modelA, opts.modelB)
   })
 
 program

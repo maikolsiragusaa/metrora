@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useWindowSize } from 'ink'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
-import { formatCost, formatTokens, markEstimated } from './format.js'
+import { formatCost, formatTokens, markEstimated, carriedCostNote } from './format.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
 import { parseAllSessions, filterProjectsByDateRange, filterProjectsByName, setInteractiveScanUI } from './parser.js'
 import { findUnpricedModels, loadPricing } from './models.js'
@@ -35,6 +35,16 @@ export function pageHistoryCursor(cursor: number, direction: -1 | 1, pageSize: n
 export function scrollHistoryCursor(cursor: number, direction: -1 | 1, pageSize: number, rowCount: number): number {
   const maxCursor = Math.max(0, rowCount - pageSize)
   return Math.max(0, Math.min(cursor + direction, maxCursor))
+}
+
+// The Daily Activity panel's row count comes from a bounded live scan (see
+// getDashboardScanRange), which can undercount vs. the durable-cache-backed
+// Overview headline for the same period (expired session files aren't in the
+// live scan but are still in the durable cache). "days scanned" names that
+// population so the two counts read as different questions, not a
+// contradiction.
+export function dailyActivityFooter(cursor: number, days: number, rowCount: number): string {
+  return `Showing ${cursor + 1}–${Math.min(cursor + days, rowCount)} of ${rowCount} days scanned · newest first`
 }
 
 // Scrollable mode keeps the dashboard up when only the selected period is
@@ -143,6 +153,11 @@ export type DurableOverview = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  // Cost from days whose session logs have since expired, carried forward
+  // from the daily cache. Surfaced so the Overview headline can explain why
+  // its total may exceed what the (live-scan-bounded) Daily Activity panel
+  // below can show. See carriedCostNote in format.ts.
+  carriedCostUSD: number
 }
 
 async function computeDurableOverview(
@@ -154,7 +169,7 @@ async function computeDurableOverview(
   day: string | null,
 ): Promise<DurableOverview> {
   const range = day ? getDayRange(day) : customRange ?? getPeriodRange(period)
-  const { data } = await buildDurablePeriod(
+  const { data, carriedCostUSD } = await buildDurablePeriod(
     { range, label: PERIOD_LABELS[period] },
     { provider, project: projectFilter ?? [], exclude: excludeFilter ?? [] },
   )
@@ -167,6 +182,7 @@ async function computeDurableOverview(
     outputTokens: data.outputTokens,
     cacheReadTokens: data.cacheReadTokens,
     cacheWriteTokens: data.cacheWriteTokens,
+    carriedCostUSD,
   }
 }
 
@@ -315,6 +331,9 @@ function Overview({ projects, label, width, planUsages, durable }: { projects: P
           <Text dimColor> saved by local models</Text>
         </Text>
       )}
+      {durable && carriedCostNote(durable.carriedCostUSD) && (
+        <Text dimColor wrap="truncate-end">  {carriedCostNote(durable.carriedCostUSD)}</Text>
+      )}
       {activePlanUsages.length > 0 && (
         <>
           {activePlanUsages.map(planUsage => {
@@ -379,7 +398,7 @@ function DailyActivity({ projects, days = 14, pw, bw, scrollable = false, cursor
               </Text>
             ))}
             {scrollable && orderedRows.length > 0 && (
-              <Text dimColor wrap="truncate-end">Showing {cursor + 1}–{Math.min(cursor + days, orderedRows.length)} of {orderedRows.length} · newest first</Text>
+              <Text dimColor wrap="truncate-end">{dailyActivityFooter(cursor, days, orderedRows.length)}</Text>
             )}
           </>}
     </Panel>

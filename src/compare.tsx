@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useStdout } from 'ink'
 
 import type { ModelStats, ComparisonRow, CategoryComparison, WorkingStyleRow } from './compare-stats.js'
-import { aggregateModelStats, computeComparison, computeCategoryComparison, computeWorkingStyle, scanSelfCorrections } from './compare-stats.js'
+import { aggregateModelStats, computeComparison, computeCategoryComparison, computeWorkingStyle, findModelStat, scanSelfCorrections } from './compare-stats.js'
 import { formatCost } from './format.js'
 import { parseAllSessions, setInteractiveScanUI } from './parser.js'
 import { getAllProviders } from './providers/index.js'
@@ -333,9 +333,13 @@ function ComparisonResults({ modelA, modelB, rows, categories, workingStyle, onB
 type CompareViewProps = {
   projects: ProjectSummary[]
   onBack: () => void
+  // Pre-resolved canonical model ids from --model-a/--model-b (already
+  // validated to exist in `projects`' aggregated stats by the caller). When
+  // set, comparison results load immediately instead of showing the picker.
+  presetModels?: [string, string]
 }
 
-export function CompareView({ projects, onBack }: CompareViewProps) {
+export function CompareView({ projects, onBack, presetModels }: CompareViewProps) {
   const { exit } = useApp()
   const [phase, setPhase] = useState<'select' | 'loading' | 'results'>('select')
   const [models, setModels] = useState<ModelStats[]>(() => aggregateModelStats(projects))
@@ -347,13 +351,13 @@ export function CompareView({ projects, onBack }: CompareViewProps) {
     }
     return recs
   })
-  const [pickedNames, setPickedNames] = useState<[string, string] | null>(null)
+  const [pickedNames, setPickedNames] = useState<[string, string] | null>(presetModels ?? null)
   const [selectedA, setSelectedA] = useState<ModelStats | null>(null)
   const [selectedB, setSelectedB] = useState<ModelStats | null>(null)
   const [rows, setRows] = useState<ComparisonRow[]>([])
   const [categories, setCategories] = useState<CategoryComparison[]>([])
   const [style, setStyle] = useState<WorkingStyleRow[]>([])
-  const [loadTrigger, setLoadTrigger] = useState(0)
+  const [loadTrigger, setLoadTrigger] = useState(presetModels ? 1 : 0)
   const projectsRef = useRef(projects)
   projectsRef.current = projects
 
@@ -504,7 +508,7 @@ export function CompareView({ projects, onBack }: CompareViewProps) {
   )
 }
 
-export async function renderCompare(range: DateRange, provider: string): Promise<void> {
+export async function renderCompare(range: DateRange, provider: string, modelA?: string, modelB?: string): Promise<void> {
   // Interactive Ink UI: suppress the CLI scan-progress line for the whole
   // lifetime so it can't print over the rendered comparison. Plain CLI
   // commands still show progress.
@@ -517,8 +521,28 @@ export async function renderCompare(range: DateRange, provider: string): Promise
 
   patchStdoutForWindows()
   const projects = await parseAllSessions(range, provider)
+
+  // --model-a/--model-b: resolve up front (by canonical id or display name,
+  // same lookup the JSON path uses) so the TUI jumps straight to results
+  // instead of ignoring the flags and showing the picker.
+  let presetModels: [string, string] | undefined
+  if (modelA && modelB) {
+    const models = aggregateModelStats(projects)
+    const a = findModelStat(models, modelA)
+    const b = findModelStat(models, modelB)
+    if (!a) {
+      process.stderr.write(`codeburn compare: model not found: "${modelA}".\n`)
+      process.exit(1)
+    }
+    if (!b) {
+      process.stderr.write(`codeburn compare: model not found: "${modelB}".\n`)
+      process.exit(1)
+    }
+    presetModels = [a.model, b.model]
+  }
+
   const { waitUntilExit } = render(
-    <CompareView projects={projects} onBack={() => process.exit(0)} />
+    <CompareView projects={projects} onBack={() => process.exit(0)} presetModels={presetModels} />
   )
   await waitUntilExit()
 }

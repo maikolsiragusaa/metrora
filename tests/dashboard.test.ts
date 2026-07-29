@@ -2,7 +2,7 @@ import { homedir } from 'os'
 
 import { describe, it, expect } from 'vitest'
 
-import { getDailyActivityRows, getDashboardScanRange, pageHistoryCursor, scrollHistoryCursor, selectDashboardPeriodProjects, shortProject, showEmptyState } from '../src/dashboard.js'
+import { dailyActivityFooter, getDailyActivityRows, getDashboardScanRange, pageHistoryCursor, scrollHistoryCursor, selectDashboardPeriodProjects, shortProject, showEmptyState } from '../src/dashboard.js'
 import { getDateRange } from '../src/cli-date.js'
 import { formatCost } from '../src/format.js'
 import type { ProjectSummary, SessionSummary } from '../src/types.js'
@@ -246,5 +246,20 @@ describe('showEmptyState', () => {
   it('non-scrollable mode (custom range, day view) keeps the original behavior', () => {
     expect(showEmptyState(0, false, 0, false)).toBe(true)
     expect(showEmptyState(2, false, 0, false)).toBe(false)
+  })
+})
+
+// Issue #767 item 3: the Daily Activity panel's "of N" is a count of days
+// found by the bounded live scan, not the same population the Overview
+// headline (durable cache) counts for the period. The two numbers are each
+// correct for what they measure, but nothing on screen said so - label the
+// denominator instead of changing it.
+describe('dailyActivityFooter', () => {
+  it('labels the count as the scanned-days population, not a bare total', () => {
+    expect(dailyActivityFooter(0, 14, 37)).toBe('Showing 1–14 of 37 days scanned · newest first')
+  })
+
+  it('clamps the visible end to the row count', () => {
+    expect(dailyActivityFooter(30, 14, 37)).toBe('Showing 31–37 of 37 days scanned · newest first')
   })
 })

@@ -2,6 +2,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 
 import type { ProjectSummary } from './types.js'
+import { getShortModelName } from './models.js'
 
 const PLANNING_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode'])
 
@@ -71,6 +72,16 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
   }
 
   return [...byModel.values()].sort((a, b) => b.cost - a.cost)
+}
+
+/// Look up a model by the exact canonical id (what --model-a/--model-b has
+/// always accepted) or, failing that, by its display name (what the compare
+/// picker actually shows the user, e.g. "Opus 4.8") - case-insensitively.
+/// Reuses getShortModelName, the existing canonical -> display mapping,
+/// rather than a new alias table.
+export function findModelStat(models: ModelStats[], input: string): ModelStats | undefined {
+  return models.find(m => m.model === input)
+    ?? models.find(m => getShortModelName(m.model).toLowerCase() === input.toLowerCase())
 }
 
 export type ComparisonRow = {

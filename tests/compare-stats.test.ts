@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { aggregateModelStats, buildCompareJson, computeComparison, computeCategoryComparison, computeWorkingStyle, renderCompareJson, scanSelfCorrections, type ModelStats } from '../src/compare-stats.js'
+import { aggregateModelStats, buildCompareJson, computeComparison, computeCategoryComparison, computeWorkingStyle, findModelStat, renderCompareJson, scanSelfCorrections, type ModelStats } from '../src/compare-stats.js'
 import type { ProjectSummary, SessionSummary, ClassifiedTurn } from '../src/types.js'
 
 function makeTurn(model: string, cost: number, opts: { hasEdits?: boolean; retries?: number; outputTokens?: number; inputTokens?: number; cacheRead?: number; cacheWrite?: number; timestamp?: string; category?: string; hasAgentSpawn?: boolean; hasPlanMode?: boolean; speed?: 'standard' | 'fast'; tools?: string[] } = {}): ClassifiedTurn {
@@ -594,5 +594,32 @@ describe('computeWorkingStyle', () => {
     const result = computeWorkingStyle([project], 'model-a', 'model-b')
     const planning = result.find(r => r.label === 'Planning rate')!
     expect(planning.valueA).toBeCloseTo(50)
+  })
+})
+
+// Issue #767 item 1: `codeburn compare --model-a/--model-b` (both the JSON
+// path and the TUI picker) required the canonical model id (e.g.
+// claude-opus-4-8) with no way to pass the display name shown in the picker
+// itself (e.g. "Opus 4.8"). findModelStat is the shared lookup both surfaces
+// use, reusing getShortModelName (the existing canonical -> display mapping)
+// instead of a new alias table.
+describe('findModelStat', () => {
+  it('matches the exact canonical model id', () => {
+    const project = makeProject([makeTurn('claude-opus-4-6', 0.10)])
+    const stats = aggregateModelStats([project])
+    expect(findModelStat(stats, 'claude-opus-4-6')?.model).toBe('claude-opus-4-6')
+  })
+
+  it('matches the display name, case-insensitively', () => {
+    const project = makeProject([makeTurn('claude-opus-4-6', 0.10)])
+    const stats = aggregateModelStats([project])
+    expect(findModelStat(stats, 'opus 4.6')?.model).toBe('claude-opus-4-6')
+    expect(findModelStat(stats, 'Opus 4.6')?.model).toBe('claude-opus-4-6')
+  })
+
+  it('returns undefined for an unknown model', () => {
+    const project = makeProject([makeTurn('claude-opus-4-6', 0.10)])
+    const stats = aggregateModelStats([project])
+    expect(findModelStat(stats, 'claude-opus-9-9')).toBeUndefined()
   })
 })

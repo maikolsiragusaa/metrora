@@ -322,8 +322,12 @@ export async function runWebDashboard(opts: {
           writeJsonError(res, 400, 'provider (claude|codex) and id are required')
           return
         }
+        // findClaudeSession/findCodexSession resolve an id prefix the same way
+        // `codeburn context <session>` does (see context-tree.ts's resolveSession) -
+        // trust that match instead of re-requiring the full id here, so a prefix
+        // that works on the CLI works through the API too.
         const ref = provider === 'claude' ? await findClaudeSession(id) : await findCodexSession(id)
-        if (!ref || ref.sessionId !== id) {
+        if (!ref) {
           writeJsonError(res, 404, `no ${provider} session ${id}`)
           return
         }
