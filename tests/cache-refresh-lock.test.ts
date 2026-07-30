@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, stat, unlink, utimes, writeFile } from 'fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, unlink, utimes, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -7,6 +7,7 @@ import {
   acquireCacheRefreshLock,
   type RefreshLockClock,
 } from '../src/cache-refresh-lock.js'
+import { clearSessionCache, parseAllSessions } from '../src/parser.js'
 import { emptyCache, loadCache, saveCache, sessionCachePath } from '../src/session-cache.js'
 
 const dirs: string[] = []
@@ -221,5 +222,227 @@ describe('warm session-cache refresh lock', () => {
     }
     await result.handle.release()
     await rm(dir, { recursive: true, force: true })
+  })
+})
+
+// A lock body that never parses into a record is a corrupt leftover, not an
+// unusable filesystem: classifying it as 'unavailable' routed every subsequent
+// refresh to the read-only path and froze ingestion permanently.
+describe('warm session-cache refresh lock: corrupt lock recovery', () => {
+  it('takes over a stale zero-byte lock', async () => {
+    const dir = await tempDir()
+    const clock = fakeClock(100_000)
+    const path = lockPath(dir)
+    await writeFile(path, '')
+    const old = new Date(1)
+    await utimes(path, old, old)
+
+    const result = await acquireCacheRefreshLock({ cacheDir: dir, clock, staleMs: 90, waitMs: 100, pollMs: 1 })
+    expect(result.outcome).toBe('acquired')
+    if (result.outcome !== 'acquired') return
+    expect(JSON.parse(await readFile(path, 'utf-8')).token).toBe(result.handle.token)
+    await result.handle.release()
+    await expect(stat(join(dir, 'session-refresh.lock.takeover'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('takes over a stale malformed-JSON lock', async () => {
+    const dir = await tempDir()
+    const clock = fakeClock(100_000)
+    const path = lockPath(dir)
+    await writeFile(path, '{"pid":1,"token":')
+    const old = new Date(1)
+    await utimes(path, old, old)
+
+    const result = await acquireCacheRefreshLock({ cacheDir: dir, clock, staleMs: 90, waitMs: 100, pollMs: 1 })
+    expect(result.outcome).toBe('acquired')
+    if (result.outcome !== 'acquired') return
+    expect(JSON.parse(await readFile(path, 'utf-8')).token).toBe(result.handle.token)
+    await result.handle.release()
+  })
+
+  it('takes over a stale lock whose body parses but has the wrong shape', async () => {
+    const dir = await tempDir()
+    const clock = fakeClock(100_000)
+    const path = lockPath(dir)
+    await writeFile(path, JSON.stringify({ pid: 'one', token: 7 }))
+    const old = new Date(1)
+    await utimes(path, old, old)
+
+    const result = await acquireCacheRefreshLock({ cacheDir: dir, clock, staleMs: 90, waitMs: 100, pollMs: 1 })
+    expect(result.outcome).toBe('acquired')
+    if (result.outcome === 'acquired') await result.handle.release()
+  })
+
+  // Staleness is never waived for a corrupt body, so a FRESH one is waited out
+  // and left alone: it may belong to a live owner whose heartbeat is about to
+  // repair it. The resulting freeze is bounded by staleMs rather than
+  // permanent, which is the whole of the reported defect.
+  it('waits out a fresh malformed lock, then recovers it once it ages past staleMs', async () => {
+    const dir = await tempDir()
+    const clock = fakeClock(100_000)
+    const path = lockPath(dir)
+    await writeFile(path, '')
+    const now = new Date(clock.wallNow())
+    await utimes(path, now, now)
+
+    let polls = 0
+    const fresh = await acquireCacheRefreshLock({
+      cacheDir: dir,
+      clock,
+      staleMs: 90_000,
+      waitMs: 50,
+      pollMs: 10,
+      sleep: async ms => { polls++; clock.advance(ms) },
+    })
+    expect(polls).toBeGreaterThan(0)
+    expect(fresh).toEqual({ outcome: 'timed-out' })
+    expect(await readFile(path, 'utf-8')).toBe('')
+
+    // Nothing rewrote the body, so its mtime is still frozen. One stale window
+    // later the very next run recovers it through the unmodified age gate.
+    clock.advance(90_001)
+    const later = await acquireCacheRefreshLock({ cacheDir: dir, clock, staleMs: 90_000, waitMs: 50, pollMs: 10 })
+    expect(later.outcome).toBe('acquired')
+    if (later.outcome !== 'acquired') return
+    expect(JSON.parse(await readFile(path, 'utf-8')).token).toBe(later.handle.token)
+    await later.handle.release()
+  })
+
+  it('never steals a fresh malformed lock from an owner that repairs it mid-wait', async () => {
+    const dir = await tempDir()
+    const clock = fakeClock(100_000)
+    const path = lockPath(dir)
+    await writeFile(path, '')
+    const now = new Date(clock.wallNow())
+    await utimes(path, now, now)
+
+    let polls = 0
+    const result = await acquireCacheRefreshLock({
+      cacheDir: dir,
+      clock,
+      staleMs: 90_000,
+      waitMs: 50,
+      pollMs: 10,
+      sleep: async ms => {
+        if (++polls === 1) {
+          await writeFile(path, JSON.stringify({ pid: 1, token: 'holder', at: clock.wallNow() }))
+          const t = new Date(clock.wallNow())
+          await utimes(path, t, t)
+        }
+        clock.advance(ms)
+      },
+    })
+    expect(result).toEqual({ outcome: 'timed-out' })
+    expect(JSON.parse(await readFile(path, 'utf-8')).token).toBe('holder')
+  })
+
+  it('treats a body truncated mid-heartbeat as contention, not corruption', async () => {
+    const dir = await tempDir()
+    const path = lockPath(dir)
+    const record = (): string => JSON.stringify({ pid: 1, token: 'holder', at: Date.now() })
+    await writeFile(path, record())
+    // A real heartbeat rewrite exposes a zero-length body for an instant. The
+    // waiter must keep polling and leave the live owner alone.
+    const heartbeat = setInterval(() => {
+      void (async () => {
+        try {
+          await writeFile(path, '')
+          await writeFile(path, record())
+        } catch { /* the winner may have replaced the file */ }
+      })()
+    }, 1)
+    let result
+    try {
+      result = await acquireCacheRefreshLock({ cacheDir: dir, staleMs: 30, waitMs: 120, pollMs: 5 })
+    } finally {
+      clearInterval(heartbeat)
+    }
+    await new Promise(resolve => { setTimeout(resolve, 20) })
+    expect(result).toEqual({ outcome: 'timed-out' })
+    expect(JSON.parse(await readFile(path, 'utf-8')).token).toBe('holder')
+  })
+
+  // The sidecar is created by the same createExclusive as the lock, so it can be
+  // left 0-byte by exactly the same crash. Before observe() separated corrupt
+  // from unreadable this returned 'unavailable' from acquireTakeoverGuard and
+  // froze recovery even when the primary lock was perfectly fine.
+  it('reclaims a stale zero-byte takeover sidecar', async () => {
+    const dir = await tempDir()
+    const path = lockPath(dir)
+    const sidecar = join(dir, 'session-refresh.lock.takeover')
+    await writeFile(path, '')
+    await writeFile(sidecar, '')
+    const old = new Date(1)
+    await utimes(path, old, old)
+    await utimes(sidecar, old, old)
+
+    const result = await acquireCacheRefreshLock({ cacheDir: dir, staleMs: 90, waitMs: 200, pollMs: 5 })
+    expect(result.outcome).toBe('acquired')
+    if (result.outcome !== 'acquired') return
+    expect(JSON.parse(await readFile(path, 'utf-8')).token).toBe(result.handle.token)
+    await result.handle.release()
+    await expect(stat(sidecar)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('still reports unavailable when the lock body cannot be read', async () => {
+    if (process.getuid?.() === 0) return
+    const dir = await tempDir()
+    const path = lockPath(dir)
+    await writeFile(path, '')
+    await chmod(path, 0o000)
+    const old = new Date(1)
+    await utimes(path, old, old)
+    try {
+      const result = await acquireCacheRefreshLock({ cacheDir: dir, staleMs: 1, waitMs: 50, pollMs: 5 })
+      expect(result).toEqual({ outcome: 'unavailable' })
+    } finally {
+      await chmod(path, 0o600)
+    }
+  })
+
+  it('resumes ingesting changed sources after a corrupt lock froze the refresh', async () => {
+    const root = await tempDir()
+    const cacheDir = join(root, 'cache')
+    const config = join(root, 'claude')
+    const projectDir = join(config, 'projects', 'frozen-proj')
+    await mkdir(cacheDir, { recursive: true })
+    await mkdir(projectDir, { recursive: true })
+    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['CLAUDE_CONFIG_DIR'] = config
+    process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = join(root, 'desktop-sessions')
+
+    const session = (id: string, ts: string): string => [
+      JSON.stringify({ type: 'user', sessionId: id, timestamp: ts, cwd: '/tmp/frozen-proj', message: { role: 'user', content: 'hi' } }),
+      JSON.stringify({
+        type: 'assistant', sessionId: id, timestamp: ts, cwd: '/tmp/frozen-proj',
+        message: { id: `msg-${id}`, type: 'message', role: 'assistant', model: 'claude-sonnet-4-5', content: [], usage: { input_tokens: 100, output_tokens: 20 } },
+      }),
+    ].join('\n') + '\n'
+
+    await writeFile(join(projectDir, 'sess-1.jsonl'), session('sess-1', '2026-05-01T10:00:00.000Z'))
+    clearSessionCache()
+    const warm = await parseAllSessions()
+    expect(warm[0]?.sessions.map(s => s.sessionId)).toEqual(['sess-1'])
+
+    // The field state: a 0-byte lock AND the takeover sidecar of the dead owner
+    // that was mid-recovery when it died, both older than the stale window.
+    // Nothing else on the machine ever repairs either file, so on every later
+    // run the lock read as 'unavailable', the parser fell back to a read-only
+    // re-parse, and sess-2 was never ingested.
+    const old = new Date(1)
+    for (const name of ['session-refresh.lock', 'session-refresh.lock.takeover']) {
+      await writeFile(join(cacheDir, name), name.endsWith('.takeover') ? JSON.stringify({ pid: 999_999, token: 'dead-owner', at: 1 }) : '')
+      await utimes(join(cacheDir, name), old, old)
+    }
+
+    await writeFile(join(projectDir, 'sess-2.jsonl'), session('sess-2', '2026-05-01T11:00:00.000Z'))
+    clearSessionCache()
+    const after = await parseAllSessions()
+    expect(after[0]?.sessions.map(s => s.sessionId).sort()).toEqual(['sess-1', 'sess-2'])
+    expect(Object.keys((await loadCache()).providers['claude']?.files ?? {}).length).toBe(2)
+
+    clearSessionCache()
+    delete process.env['CLAUDE_CONFIG_DIR']
+    delete process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
   })
 })
