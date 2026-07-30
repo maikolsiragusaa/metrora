@@ -1,21 +1,40 @@
-# Security Policy
+# Qovrion security policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Please report security vulnerabilities via [GitHub's private vulnerability reporting](https://github.com/getagentseal/codeburn/security/advisories/new).
+Use GitHub's private vulnerability reporting for this repository:
 
-Do not open a public issue for security vulnerabilities.
+`https://github.com/maikolsiragusaa/qovrion/security/advisories/new`
 
-## Scope
+Do not open a public issue for a suspected vulnerability. Include the affected surface, reproduction steps, impact, and a safe proof of concept where possible. Do not include real prompts, source code, credentials, or private session data unless explicitly requested through a secure channel.
+
+## Current scope
 
 Security reports are welcome for:
 
-- The CLI (`src/`)
-- The menubar installer (`src/menubar-installer.ts`)
-- The macOS menubar app (`mac/`)
-- The desktop app (`desktop/`)
-- CI/CD workflows (`.github/workflows/`)
+- the TypeScript engine and CLI (`src/`);
+- provider collectors and local artifact parsing;
+- local cache, history, and migration behavior;
+- local web dashboard (`dash/`);
+- Electron desktop application (`app/`);
+- macOS menubar (`mac/`) and GNOME extension (`gnome/`);
+- device pairing and local sharing;
+- release, installer, update, and CI workflows;
+- privacy boundaries and unintended data disclosure.
 
-## Release Integrity
+## Security principles
 
-Menubar release assets include a `.sha256` checksum file. The installer verifies the checksum before extracting and launching the downloaded bundle.
+- Local-first operation and least privilege.
+- No prompt or source-code collection by default.
+- No secret or full local-path export by default.
+- Renderer isolation from direct filesystem and process access.
+- Revocable and scoped device pairing.
+- Explicit provenance for analytical values.
+
+## Release integrity
+
+Qovrion does not yet publish official binaries. Signing, checksums, update channels, and store identities will be documented before an official release. Upstream CodeBurn artifacts are not Qovrion releases.
+
+## Upstream reports
+
+A vulnerability that exists unchanged in the CodeBurn-derived baseline may also require responsible disclosure to the upstream project. Qovrion will preserve reporter confidentiality and coordinate when appropriate.
