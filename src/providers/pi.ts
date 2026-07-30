@@ -90,16 +90,21 @@ function getOmpSessionsDir(override?: string): string {
   return override ?? join(homedir(), '.omp', 'agent', 'sessions')
 }
 
-async function readFirstEntry(filePath: string): Promise<PiEntry | null> {
+async function readSessionEntry(filePath: string): Promise<PiEntry | null> {
   const content = await readSessionFile(filePath)
   if (content === null) return null
-  const line = content.split('\n')[0]
-  if (!line?.trim()) return null
-  try {
-    return JSON.parse(line) as PiEntry
-  } catch {
-    return null
+
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const entry = JSON.parse(line) as PiEntry
+      if (entry?.type === 'session') return entry
+    } catch {
+      continue
+    }
   }
+
+  return null
 }
 
 async function discoverSessionsInDir(sessionsDir: string, providerName: string): Promise<SessionSource[]> {
@@ -130,10 +135,10 @@ async function discoverSessionsInDir(sessionsDir: string, providerName: string):
       const fileStat = await stat(filePath).catch(() => null)
       if (!fileStat?.isFile()) continue
 
-      const first = await readFirstEntry(filePath)
-      if (!first || first.type !== 'session') continue
+      const entry = await readSessionEntry(filePath)
+      if (!entry) continue
 
-      const cwd = first.cwd ?? dirName
+      const cwd = entry.cwd ?? dirName
       sources.push({ path: filePath, project: basename(cwd), provider: providerName })
     }
   }
