@@ -1,0 +1,48 @@
+node_modules/
+dist/
+*.tgz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Planning artifacts (internal, not shipped)
+docs/superpowers/
+.claude/
+/CLAUDE.md
+
+# Config / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Debug / logs
+*.log
+npm-debug.log*
+
+# Cache
+.cache/
+*.sqlite
+
+# Build artifacts
+*.tsbuildinfo
+
+# Local Discord brand / promo assets not yet ready to publish
+assets/discord-*.png
+
+# Desktop app experiments
+desktop/
+
+# Mac App Store app (private)
+appstore/
+
+# WIP / not ready
+src/summit.ts

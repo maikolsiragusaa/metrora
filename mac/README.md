@@ -1,0 +1,112 @@
+# CodeBurn Menubar (macOS)
+
+Native Swift + SwiftUI menubar app. The codeburn menubar surface.
+
+## Requirements
+
+- macOS 14+ (Sonoma)
+- Swift 6.0+ toolchain (bundled with Xcode 16 or standalone)
+- `codeburn` CLI installed globally (`npm install -g codeburn`)
+
+## Install (end users)
+
+One command:
+
+```bash
+codeburn menubar
+```
+
+That's it. The command records the persistent `codeburn` CLI path, downloads the latest `.app` from the newest `mac-v*` GitHub Release with a matching checksum, verifies it, drops it into `~/Applications`, clears Gatekeeper quarantine, and launches it. Re-running it upgrades in place with `--force`, or just launches the existing copy otherwise.
+
+### Build from source
+
+For contributors running a local build instead of the packaged release:
+
+```bash
+npm install -g codeburn                       # CLI the app shells out to for data
+git clone https://github.com/getagentseal/codeburn.git
+cd codeburn/mac
+swift build -c release
+.build/release/CodeBurnMenubar                # launch
+```
+
+#### On macOS 14 (Sonoma) without Xcode 16
+
+`swift build` above assumes the macOS 15 SDK, whose SwiftUI marks the `View`
+protocol `@MainActor`. The Sonoma SDK (shipped with Command Line Tools) lacks
+that annotation, so a plain build fails with ~80 `main actor-isolated ... from a
+nonisolated context` errors.
+
+(The `-10825` launch failure itself is fixed by `Package.swift`'s `.macOS(.v14)`
+deployment target: ld64 drops the macOS-15-only `libswift_errno.dylib`
+dependency for any build with that target, regardless of which SDK built it, including the CI-distributed release. This local-build path exists only for
+the narrower case of building on a Sonoma machine with nothing but the
+Command Line Tools, where the SDK's un-annotated `View` protocol needs the
+`@MainActor` patch below.)
+
+Use the helper, which builds against the local macOS 14 SDK with a standalone
+[swift.org](https://www.swift.org/install/macos/) Swift 6.x toolchain and
+adds explicit `@MainActor` to the views in a scratch copy (repo sources stay
+clean), producing a `minos = 14.0` bundle installed to `~/Applications`:
+
+```bash
+mac/Scripts/build-local.sh         # then: codeburn menubar
+```
+
+## Build & run (dev against a local CLI checkout)
+
+```bash
+cd mac
+swift build
+# Point the app at your dev CLI build instead of the globally installed `codeburn`:
+npm --prefix .. run build
+CODEBURN_ALLOW_DEV_BIN=1 CODEBURN_BIN="node $(pwd)/../dist/cli.js" swift run
+```
+
+The app registers itself as a menubar accessory (`LSUIElement = true` at runtime). No Dock icon.
+
+## Data source
+
+On launch and every 60 seconds thereafter, the app spawns `codeburn status --format menubar-json --no-optimize` directly (argv, no shell) via `CodeburnCLI.makeProcess` and decodes the JSON into `MenubarPayload`. The manual refresh button in the footer invokes the same command without `--no-optimize`, which includes optimize findings but takes longer.
+
+Release installs record a persistent absolute CLI path in `~/Library/Application Support/CodeBurn/codeburn-cli-path.v1`, then fall back to Homebrew's common `codeburn` locations. For development only, set `CODEBURN_ALLOW_DEV_BIN=1` with `CODEBURN_BIN`; the value is validated against a strict allowlist before use, so a malicious env var can't inject shell commands.
+
+## Project layout
+
+```
+mac/
+├── Package.swift                     SwiftPM manifest (deployment target: macOS 14)
+├── Scripts/
+│   ├── package-app.sh                CI: universal signed .app + zip + checksum
+│   └── build-local.sh                Local macOS 14 build (Sonoma SDK + @MainActor patch)
+├── Sources/CodeBurnMenubar/
+│   ├── CodeBurnApp.swift             @main + MenuBarExtra scene
+│   ├── AppStore.swift                @Observable store + enums
+│   ├── Data/MenubarPayload.swift     Codable payload types + placeholder
+│   ├── Theme/Theme.swift             Design tokens (warm terracotta palette)
+│   └── Views/MenuBarContent.swift    Popover layout + footer action bar
+└── README.md                         This file
+```
+
+## Status
+
+Live data wired. Next iterations:
+
+1. FSEvents watch for `~/.claude/projects/` changes (debounced refresh on real edits)
+2. Persistent disk cache for optimize findings so the default refresh can include them without the 30-second penalty
+3. Currency metadata in the JSON payload + Swift-side formatting
+4. Sparkle auto-update
+5. DMG packaging + Homebrew Cask tap
+
+## Design tokens
+
+Sourced from `~/codeburn-menubar-mac-swiftui.html`. Warm terracotta-ember palette:
+
+- Accent (light): `#C9521D`
+- Accent (dark): `#E8774A`
+- Ember deep: `#8B3E13`
+- Ember glow: `#F0A070`
+- Surface (light): `#FAF7F3`
+- Surface (dark): `#1C1816`
+
+SF Mono for currency values; SF Pro Rounded for hero.

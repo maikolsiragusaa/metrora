@@ -1,0 +1,8 @@
+{
+  "name": "CodeBurn Monitor",
+  "description": "Monitor AI coding assistant token usage and costs",
+  "uuid": "codeburn@codeburn.dev",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/getagentseal/codeburn",
+  "settings-schema": "org.gnome.shell.extensions.codeburn"
+}
