@@ -197,3 +197,46 @@ describe('provider turn grouping', () => {
     }
   })
 })
+
+describe('provider turn range filtering', () => {
+  it('keeps the in-range calls of a codex turn that spans midnight instead of dropping the whole turn', async () => {
+    // Regression test for #852: the range filter keyed on the turn's FIRST
+    // call timestamp, so a long autonomous turn starting 23:59 the previous
+    // day was excluded from the next day's view entirely, losing every
+    // post-midnight call. One turn (t1) here has two token_count events
+    // straddling midnight; only the post-midnight call may survive.
+    const codexHome = join(home, 'codex')
+    const sessionDir = join(codexHome, 'sessions', '2026', '05', '15')
+    await mkdir(sessionDir, { recursive: true })
+    const lines = [
+      JSON.stringify({ type: 'session_meta', timestamp: '2026-05-15T23:55:00Z', payload: { session_id: 'sess-span', model: 'gpt-5.5', cwd: '/Users/test/project-a', originator: 'codex_cli_rs' } }),
+      JSON.stringify({ type: 'response_item', timestamp: '2026-05-15T23:57:00Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'run the long task' }] } }),
+      JSON.stringify({ type: 'response_item', timestamp: '2026-05-15T23:58:00Z', payload: { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ command: 'npm test' }) } }),
+      JSON.stringify({ type: 'event_msg', timestamp: '2026-05-15T23:59:00Z', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 100, output_tokens: 30 }, total_token_usage: { total_tokens: 130 } } } }),
+      JSON.stringify({ type: 'response_item', timestamp: '2026-05-16T00:10:00Z', payload: { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ command: 'npm run build' }) } }),
+      JSON.stringify({ type: 'event_msg', timestamp: '2026-05-16T00:15:00Z', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 80, output_tokens: 20 }, total_token_usage: { total_tokens: 230 } } } }),
+    ]
+    await writeFile(join(sessionDir, 'rollout-span.jsonl'), lines.join('\n') + '\n')
+
+    process.env['CODEX_HOME'] = codexHome
+    try {
+      const parseAllSessions = await loadParser()
+      const projects = await parseAllSessions(dayRange(), 'codex')
+      const session = projects[0]!.sessions[0]!
+      const turn = session.turns[0]!
+
+      expect(session.turns).toHaveLength(1)
+      expect(turn.assistantCalls.map(call => new Date(call.timestamp).toISOString())).toEqual([
+        '2026-05-16T00:15:00.000Z',
+      ])
+      // The slice re-anchors the turn's timestamp from the user-message time
+      // (2026-05-15T23:57Z) to the first surviving call, so turn-anchored
+      // bucketing lands the slice on the day its calls actually fall in.
+      expect(new Date(turn.timestamp).toISOString()).toBe('2026-05-16T00:15:00.000Z')
+      expect(session.totalInputTokens).toBe(80)
+      expect(session.totalOutputTokens).toBe(20)
+    } finally {
+      delete process.env['CODEX_HOME']
+    }
+  })
+})
