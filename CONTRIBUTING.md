@@ -1,127 +1,87 @@
-# Contributing to CodeBurn
+# Contributing to Qovrion
 
-Thanks for your interest. This document covers what you need to know to send a working pull request.
+Thanks for helping improve Qovrion.
+
+Qovrion is early in its independent development and still contains CodeBurn-era runtime names. Keep changes focused, evidence-based, and compatible with existing local data.
 
 ## Prerequisites
 
-- Node.js 22.20 or newer (`engines.node` in `package.json`).
-- npm 10 or newer (ships with recent Node).
-- macOS or Linux for full provider coverage. Windows works for most providers but Cursor / Antigravity development is easier on macOS.
-- Optional: Swift 6 toolchain if you are touching the macOS menubar (`mac/`).
-- Optional: GNOME 45 or newer if you are touching the GNOME extension (`gnome/`).
+- Node.js 22.13 or newer
+- npm
+- Optional: Swift toolchain for `mac/`
+- Optional: GNOME 45 or newer for `gnome/`
+- A supported AI tool with real local session data when validating a collector
 
 ## Setup
 
 ```bash
-git clone https://github.com/getagentseal/codeburn
-cd codeburn
-npm install
+git clone https://github.com/maikolsiragusaa/qovrion.git
+cd qovrion
+npm ci
+npm run build:cli
 ```
 
-There is no separate build step required to run the dev CLI. `npm run dev` runs `tsx` against `src/cli.ts` directly.
+## Repository layout
 
-## Common Commands
+```text
+src/       TypeScript engine, CLI, collectors, caches, and analytics
+app/       Electron desktop application
+dash/      Local React web dashboard
+mac/       macOS menubar application
+gnome/     GNOME extension
+tests/     Test suite
+docs/      Upstream and public implementation documentation
+```
 
-| Command | What it does |
-|---|---|
-| `npm test` | Runs the vitest suite (42 test files, 568 tests). |
-| `npm run dev -- status` | Runs the CLI in dev mode against your real data. |
-| `npm run build` | Bundles the litellm pricing snapshot, then runs `tsup` to produce `dist/cli.js`. |
-| `npm run bundle-litellm` | Refreshes `src/data/litellm-snapshot.json` from the upstream litellm repo. |
-
-To test a specific suite, pass a path:
+## Common commands
 
 ```bash
-npm test -- tests/providers/codex.test.ts
+npm run build:cli
+npm test -- --run
+npm test -- tests/<target>.test.ts
+npm --prefix app ci --no-audit --no-fund
+npm --prefix app run typecheck
+npm --prefix app run build
 ```
 
-## What to Read Before Editing
+The imported CodeBurn 0.9.19 suite includes platform-sensitive failures on Ubuntu. New or changed behavior still requires targeted blocking tests and must not add regressions.
 
-- `docs/architecture.md` for the high-level codebase map.
-- `docs/providers/<name>.md` for the provider you intend to change.
-- `RELEASING.md` if you are touching version bumps or the release pipeline.
-- `SECURITY.md` for the disclosure policy.
+## Contribution principles
 
-## Project Layout
+- Keep each pull request bounded to one primary concern.
+- Separate rebranding, structural changes, parser changes, and feature changes.
+- Preserve raw values, provenance, confidence, and unknown states.
+- Do not infer model, provider, billing route, or reasoning configuration without evidence.
+- Do not collect or export prompts, code, secrets, or full local paths by default.
+- Treat Windows as a first-class target.
+- Preserve compatibility or provide migration for persisted local data.
+- Retain attribution for upstream-derived code and fixes.
+- Never claim real-data, real-device, or store validation without performing it.
 
-```
-src/                CLI, parsers, optimize detectors, cache layers
-src/providers/      One file per AI tool integration
-src/data/           Bundled litellm pricing snapshot
-tests/              vitest specs
-mac/                Swift menubar app
-gnome/              GNOME shell extension
-scripts/            Build helpers (litellm bundle)
-```
+## Provider and collector changes
 
-See `docs/architecture.md` for a fuller map.
+Collectors silently affect totals and therefore have a high evidence bar. A provider change should include:
 
-## Coding Conventions
+1. fixtures representing the observed format;
+2. targeted parser tests;
+3. cache/parser version review;
+4. validation against real sessions generated with the tool;
+5. comparison with authoritative counters or source records when available;
+6. explicit handling of ambiguous and estimated values;
+7. privacy review for new captured fields.
 
-- TypeScript strict mode is on. Do not introduce `any` without a comment explaining why.
-- Avoid bracket-assign (`obj[key] = value`) on parsed user input in hot paths inside `src/providers/` and `src/parser.ts`. There is a Semgrep rule (`.semgrep/rules/no-bracket-assign-hot-paths.yml`) enforced in CI that will fail your PR if you do. Use a `Map` or an explicit allowlist instead.
-- Provider parsers must be deterministic given the same input. If you read the system clock or the filesystem outside the documented session paths, add a fixture-based test.
-- New providers go through `src/providers/index.ts`. Lazy-load anything that pulls a heavy native dependency (sqlite, protobuf) so users without that provider are not slowed down.
+Online documentation or AI-generated assumptions are not sufficient evidence for storage paths, schemas, token semantics, or pricing.
 
-## Tests
+## Pull requests
 
-- Each new provider should ship with a fixture-based test under `tests/providers/`. The five providers without test files today (claude, gemini, goose, qwen, antigravity) are a known gap; new code should not add to that list.
-- Each new optimize detector in `src/optimize.ts` needs at least one positive and one negative case in `tests/optimize.test.ts`.
-- If your change affects the menubar JSON contract, update `tests/menubar-json.test.ts`.
+Use the pull-request template and report only validation actually performed. Include screenshots for visible changes, migration impact where applicable, known risks, and rollback information.
 
-## Commit Message Format
+Squash merge is preferred for bounded feature branches unless preserving a structured series is materially useful.
 
-Short imperative subject, optional body. Examples from `git log`:
+## Security issues
 
-```
-Enhance GNOME extension with scrollable UI, dark mode, charts, and performance fixes
-Add table column headers, oneshot placeholder, currency picker dropdown
-```
-
-### No AI Co-Author Trailers
-
-The `.github/workflows/block-claude-coauthor.yml` workflow rejects any PR whose commits contain a `Co-authored-by: ... claude ...` or `... anthropic ...` trailer. You may use AI tools to help write code, but strip the co-author line before pushing.
-
-If a flagged PR rejects on this check, the workflow prints the exact rebase command to fix it.
-
-## Before You Start
-
-**Comment on the issue first.** Before writing code for a feature or new provider, leave a comment on the relevant issue saying what you plan to do. Wait for a maintainer to confirm the approach. Unsolicited PRs that duplicate work already in progress or take an incompatible approach will be closed.
-
-**One PR at a time.** We will not review a second PR from you until the first is merged or closed. This keeps the review queue manageable and ensures each contribution gets proper attention.
-
-## Adding a New Provider
-
-New providers have the highest bar because broken parsing silently produces wrong data for users. Before opening a PR:
-
-1. **Install the tool and use it.** Generate real sessions by actually coding with the provider. We do this ourselves for every provider we ship.
-2. **Test against real data.** Run `npm run dev -- today` and `npm run dev -- models` with your real sessions and confirm the output looks correct — costs are non-zero, model names resolve, session counts match what you see in the tool.
-3. **Include proof in the PR.** Attach a screenshot or terminal output showing codeburn correctly parsing your real sessions. PRs for new providers without evidence of local testing will not be reviewed.
-4. **Do not rely on AI-generated guesses about storage paths or schemas.** Tools change their data formats between versions. The only way to know the current schema is to install the tool and inspect the actual files on disk.
-
-PRs that add a provider based solely on online documentation or AI-generated code, without evidence of testing against real data, will be closed.
-
-## Pull Requests
-
-1. Fork or branch from `main`.
-2. Push your branch and open a PR against `main`.
-3. The `firstlook` workflow will auto-assess the PR. The `semgrep` CI workflow runs the hot-path bracket-assign guard. The `block-claude-coauthor` workflow scans commits.
-4. A maintainer reviews. For non-trivial changes, expect requests for tests.
-5. Squash-merge is the default. Keep the PR title short and accurate; the description carries the context.
-
-## Reporting Bugs
-
-File issues at https://github.com/getagentseal/codeburn/issues. Useful details:
-
-- Output of `codeburn --version`.
-- Provider involved and rough size of your session history (`du -sh ~/.codex/sessions`, etc.).
-- Output of the failing command with `DEBUG=1` if applicable.
-- For parsing bugs: a redacted JSONL or SQLite snippet that reproduces the issue.
-
-## Security Issues
-
-Do not file security issues in the public tracker. See `SECURITY.md` for the disclosure process.
+Do not file vulnerabilities in the public tracker. Follow [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-CodeBurn is MIT-licensed. By contributing, you agree your contributions are licensed under the same terms.
+Qovrion is distributed under the MIT License and contains software initially derived from CodeBurn 0.9.19. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`UPSTREAM.md`](UPSTREAM.md).
