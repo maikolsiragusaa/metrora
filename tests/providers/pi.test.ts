@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-import { createPiProvider } from '../../src/providers/pi.js'
+import { createPiProvider, createOmpProvider } from '../../src/providers/pi.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 import { classifyTurn } from '../../src/classifier.js'
 import type { ParsedApiCall, ParsedTurn } from '../../src/types.js'
@@ -56,6 +56,18 @@ function sessionMeta(opts: { id?: string; cwd?: string } = {}) {
     id: opts.id ?? 'sess-001',
     timestamp: '2026-04-14T10:00:00.000Z',
     cwd: opts.cwd ?? '/Users/test/myproject',
+  })
+}
+
+// Oh My Pi (issue #845): a fixed-width title metadata line written before the
+// `type: "session"` header, per upstream can1357/oh-my-pi@0ce330a.
+function titleSlot(opts: { title?: string; pad?: string } = {}) {
+  return JSON.stringify({
+    type: 'title',
+    v: 1,
+    title: opts.title ?? 'My Session',
+    updatedAt: '2026-04-14T10:00:00.000Z',
+    pad: opts.pad ?? '',
   })
 }
 
@@ -184,6 +196,119 @@ describe('pi provider - session discovery', () => {
     const provider = createPiProvider(tmpDir)
     const sessions = await provider.discoverSessions()
     expect(sessions).toEqual([])
+  })
+
+  // Issue #845: OMP writes a `type: "title"` metadata line before the
+  // `type: "session"` header. Discovery must scan past it instead of only
+  // checking the first physical line.
+  it('discovers an OMP transcript with a title slot before the session record', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    await writeSession(projectDir, 'omp-session.jsonl', [
+      titleSlot({ title: 'Fix the bug' }),
+      sessionMeta({ cwd: '/Users/test/myproject' }),
+      assistantMessage({}),
+    ])
+
+    const provider = createOmpProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.provider).toBe('omp')
+    expect(sessions[0]!.project).toBe('myproject')
+  })
+
+  it('Pi and OMP discover an identical title-slot transcript the same way', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    const lines = [titleSlot(), sessionMeta({ cwd: '/Users/test/myproject' }), assistantMessage({})]
+    await writeSession(projectDir, 'shared.jsonl', lines)
+
+    const piSessions = await createPiProvider(tmpDir).discoverSessions()
+    const ompSessions = await createOmpProvider(tmpDir).discoverSessions()
+
+    expect(piSessions).toHaveLength(1)
+    expect(ompSessions).toHaveLength(1)
+    expect(piSessions[0]!.project).toBe(ompSessions[0]!.project)
+  })
+
+  it('tolerates blank lines before the session record', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    await writeSession(projectDir, 'blank-padded.jsonl', [
+      titleSlot(),
+      '',
+      '',
+      sessionMeta({ cwd: '/Users/test/myproject' }),
+      assistantMessage({}),
+    ])
+
+    const provider = createOmpProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions).toHaveLength(1)
+  })
+
+  it('skips a malformed leading JSON line without throwing', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    await writeSession(projectDir, 'malformed-head.jsonl', [
+      '{not valid json',
+      sessionMeta({ cwd: '/Users/test/myproject' }),
+      assistantMessage({}),
+    ])
+
+    const provider = createOmpProvider(tmpDir)
+    await expect(provider.discoverSessions()).resolves.toHaveLength(1)
+  })
+
+  it('excludes a message-only file with no session record', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    await writeSession(projectDir, 'messages-only.jsonl', [
+      titleSlot(),
+      userMessage('hello'),
+      assistantMessage({}),
+    ])
+
+    const provider = createOmpProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions).toEqual([])
+  })
+
+  it('does not discover a session record beyond the bounded leading-line scan', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    // 25 non-session leading lines exceeds MAX_HEADER_LINES_SCANNED (20), so
+    // the session record on line 26 must NOT be found. This proves the scan
+    // is bounded rather than silently degrading into a full-file read.
+    const junkLines = Array.from({ length: 25 }, (_, i) => JSON.stringify({ type: 'message', id: `junk-${i}` }))
+    await writeSession(projectDir, 'too-deep.jsonl', [
+      ...junkLines,
+      sessionMeta({ cwd: '/Users/test/myproject' }),
+      assistantMessage({}),
+    ])
+
+    const provider = createOmpProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions).toEqual([])
+  })
+
+  it('does not read an unreasonable amount of a large message-only file', async () => {
+    const projectDir = join(tmpDir, '--Users-test-myproject--')
+    // ~20MB of message lines with no session record anywhere. A bounded
+    // scan rejects this after its leading-line cap, not after reading the
+    // whole file; this keeps discovery cheap for provider directories full
+    // of large, irrelevant transcripts.
+    const bigPad = 'x'.repeat(50_000)
+    const junkLines = Array.from({ length: 400 }, (_, i) =>
+      JSON.stringify({ type: 'message', id: `junk-${i}`, pad: bigPad }))
+    await writeSession(projectDir, 'huge.jsonl', junkLines)
+
+    const provider = createOmpProvider(tmpDir)
+    const start = performance.now()
+    const sessions = await provider.discoverSessions()
+    const elapsedMs = performance.now() - start
+
+    expect(sessions).toEqual([])
+    // Generous ceiling: a genuinely bounded scan (20 lines) finishes in low
+    // single-digit milliseconds; reading the full ~20MB file would still be
+    // fast on local disk, so this mainly guards against a regression to an
+    // unbounded per-line-parse scan across the entire file.
+    expect(elapsedMs).toBeLessThan(500)
   })
 })
 
