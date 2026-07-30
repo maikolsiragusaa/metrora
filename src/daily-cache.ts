@@ -671,6 +671,22 @@ export async function ensureCacheHydrated(
       c = { ...c, days: freshDays, lastComputedDate: latestFresh }
     }
 
+    // A cache can claim `complete` while its watermark points PAST its newest
+    // populated day — what a run finalizing off a degraded (read-only) parse
+    // leaves behind: it advanced lastComputedDate over days the parse never
+    // covered. Since gapStart is lastComputedDate + 1, that hole is invisible
+    // to the gap logic forever. Trust the DATA over the marker: pull the
+    // watermark back to the newest day actually present so the ordinary gap
+    // parse re-derives the tail. Nothing is dropped — the cached days all stay,
+    // and a genuinely idle tail simply re-derives as empty. A cache with NO
+    // days is exempt: it has no newest day to trust, and a machine with no
+    // history at all must still be able to finalize (line below) rather than
+    // re-backfill the whole window on every launch.
+    const newestCachedDate = c.days.reduce<string | null>((max, d) => (max === null || d.date > max ? d.date : max), null)
+    if (newestCachedDate !== null && c.lastComputedDate !== null && c.lastComputedDate > newestCachedDate) {
+      c = { ...c, lastComputedDate: newestCachedDate }
+    }
+
     // Three reasons to re-derive the whole retention window:
     //  1. Savings config changed — cached `savingsUSD` totals are stale.
     //  2. The cache was never finalized against a COMPLETE session parse (an old
@@ -691,6 +707,7 @@ export async function ensureCacheHydrated(
     const tzChanged = c.tzKey !== undefined && c.tzKey !== tzKey
     if (c.savingsConfigHash !== savingsConfigHash || c.complete !== true || tzChanged) {
       const baseline = c.days
+      const priorWatermark = c.lastComputedDate
       const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - BACKFILL_DAYS)
       let freshDays: DailyEntry[] = []
       if (backfillStart.getTime() <= yesterdayEnd.getTime()) {
@@ -708,7 +725,13 @@ export async function ensureCacheHydrated(
         version: DAILY_CACHE_VERSION,
         savingsConfigHash,
         tzKey,
-        lastComputedDate: yesterdayStr,
+        // The watermark records how far history has actually been derived, so
+        // only a COMPLETE parse may advance it. A partial one produced no data
+        // for whatever it could not read; moving the watermark to yesterday
+        // anyway would place those days behind the next run's gapStart and
+        // freeze the hole in (retention still anchors on yesterdayStr — the
+        // real calendar edge — so holding the watermark can't evict anything).
+        lastComputedDate: parseWasComplete ? yesterdayStr : priorWatermark,
         days: applyRetention(merged, yesterdayStr),
         complete: parseWasComplete,
       }
@@ -733,12 +756,17 @@ export async function ensureCacheHydrated(
       const gapRange: DateRange = { start: gapStart, end: yesterdayEnd }
       const gapProjects = await parseSessions(gapRange)
       const gapDays = aggregateDays(gapProjects)
+      const parseWasComplete = sessionComplete()
+      const priorWatermark = c.lastComputedDate
       c = addNewDays(c, gapDays, yesterdayStr)
       // Finalize as complete ONLY when the session parse that produced these days
       // was itself complete. If it was partial, leave `complete: false` so the
       // next launch (once the session cache is whole) re-backfills instead of
-      // freezing the partial history.
-      c = { ...c, complete: sessionComplete() }
+      // freezing the partial history — and hold the watermark where it was, for
+      // the same reason as the re-derive path above: a partial parse cannot
+      // vouch for the days it never read, and gapStart is the only thing that
+      // will ever bring them back.
+      c = { ...c, lastComputedDate: parseWasComplete ? c.lastComputedDate : priorWatermark, complete: parseWasComplete }
       await saveDailyCache(c)
     } else if (c.complete !== true && sessionComplete()) {
       // No gap to fill (already current through yesterday) but not yet marked —

@@ -1936,6 +1936,7 @@ async function scanProjectDirs(
       const cached = section.files[filePath]
       const action = reconcileFile(fp, cached)
       if (cached && (readOnly || action.action === 'unchanged')) {
+        if (readOnly && action.action !== 'unchanged') readOnlyServedStale = true
         unchangedFiles.push({ filePath, dirName, source, cached: section.files[filePath]! })
       } else if (!readOnly) {
         if (action.action === 'appended') {
@@ -1947,6 +1948,10 @@ async function scanProjectDirs(
           continue
         }
         changedFiles.push({ filePath, info: { dirName, fp, source } })
+      } else {
+        // Read-only with no cache entry at all: this file is dropped from what
+        // we serve, so the snapshot under-reports whatever days it covers.
+        readOnlyServedStale = true
       }
     }
     dirsDone++
@@ -2840,9 +2845,13 @@ async function parseProviderSources(
     // re-read a file that already threw and hasn't changed. It re-parses only
     // when the file changes (then `reconcileFile` reports non-'unchanged').
     if (cached && (readOnly || (action.action === 'unchanged' && (cached.failed || !cachedFileNeedsProviderReparse(providerName, source.path, cached))))) {
+      if (readOnly && action.action !== 'unchanged') readOnlyServedStale = true
       unchangedSources.push({ source, cached })
     } else if (!readOnly) {
       changedSources.push({ source, fp })
+    } else {
+      // Read-only with no cache entry at all — see scanProjectDirs.
+      readOnlyServedStale = true
     }
   }
 
@@ -3539,6 +3548,15 @@ export function isSessionHydrationComplete(): boolean {
   return sessionHydrationComplete
 }
 
+// Set by the read-only serving paths when the snapshot they served did NOT
+// match what is on disk: in read-only mode a changed file is served at its
+// stale fingerprint and a file with no cache entry is skipped entirely. A
+// read-only run under which nothing changed is equivalent to a full parse and
+// stays trustworthy; one that skipped real data is a PARTIAL hydration, and
+// finalizing daily history off it freezes the days it never saw out of the
+// chart (gapStart = lastComputedDate + 1 never looks back at them).
+let readOnlyServedStale = false
+
 export async function parseAllSessions(dateRange?: DateRange, providerFilter?: string): Promise<ProjectSummary[]> {
   const key = cacheKey(dateRange, providerFilter)
   const cached = sessionCache.get(key)
@@ -3608,6 +3626,7 @@ async function runParse(
   options: RunParseOptions = {},
 ): Promise<ProjectSummary[]> {
   const { isCold = false, readOnly = false, refreshLock } = options
+  readOnlyServedStale = false
   const seenMsgIds = new Set<string>()
   const seenKeys = new Set<string>()
   const allSources = await discoverAllSessions(providerFilter)
@@ -3712,7 +3731,10 @@ async function runParse(
       if (refreshLock) throw new RefreshPublicationUnavailableError()
     }
   }
-  sessionHydrationComplete = true
+  // Assigned, not forced true: a read-only run that had to skip or stale real
+  // files reached the end of the scan without hydrating everything, and the
+  // daily backfill must not finalize history off it.
+  sessionHydrationComplete = !readOnly || !readOnlyServedStale
 
   // Merge across providers by normalised project path so the same repository
   // is not double-counted when it was worked on with more than one tool
