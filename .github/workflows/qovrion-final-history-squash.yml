@@ -1,0 +1,159 @@
+name: Qovrion final public history squash
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/qovrion-final-history-squash.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qovrion-final-public-history-squash
+  cancel-in-progress: false
+
+jobs:
+  squash:
+    name: Verify and create one clean Qovrion root commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out complete repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+
+      - name: Verify expected public tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="c65b75f8beaf1a7554ad9f7a8c0e636f52373fe6"
+          git cat-file -e "$expected^{commit}"
+          git diff --exit-code "$expected" HEAD -- . ':(exclude).github/workflows/qovrion-final-history-squash.yml'
+          test -f README.md
+          test -f LICENSE
+          test -f THIRD_PARTY_NOTICES.md
+          test -f UPSTREAM.md
+          test -f .github/workflows/qovrion-ci.yml
+          test ! -e docs/CANONICAL_DOCS_INDEX.md
+          test ! -e docs/EXECUTION_MASTERPLAN.md
+          test ! -e docs/product/QOVRION_ADVISOR_PLATFORM.md
+          test ! -e docs/product/QOVRION_MOBILE_AND_WORKSPACES.md
+          test ! -e docs/product/QOVRION_PRICING_HISTORY.md
+          test ! -e docs/product/QOVRION_PRODUCT_DIRECTION.md
+          test ! -e docs/product/OPEN_DECISIONS.md
+          test ! -e docs/architecture/QOVRION_TARGET_ARCHITECTURE.md
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Validate current public source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build:cli
+          npm --prefix app ci --no-audit --no-fund
+          npm --prefix app run typecheck
+          npm --prefix app run build
+
+      - name: Create one clean root commit
+        id: root
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard HEAD
+          git clean -fdx
+          git config user.name "Maikol Siragusa"
+          git config user.email "268940776+maikolsiragusaa@users.noreply.github.com"
+
+          git checkout --orphan qovrion-public-root
+          rm -f .github/workflows/qovrion-final-history-squash.yml
+          git rm -r --cached . >/dev/null 2>&1 || true
+          git add -A
+
+          git commit \
+            --author="Maikol Siragusa <268940776+maikolsiragusaa@users.noreply.github.com>" \
+            -m "chore: establish Qovrion public baseline" \
+            -m "Create the independent Qovrion public source baseline from the CodeBurn 0.9.19-derived tree. Preserve the upstream MIT license and explicit provenance while retaining only public-safe project documentation and CI."
+
+          new_sha="$(git rev-parse HEAD)"
+          echo "sha=$new_sha" >> "$GITHUB_OUTPUT"
+          git branch -M main
+          git push --force origin main
+
+      - name: Remove non-main refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'qovrion-history-cleanup',
+          }
+
+          def request(method, path):
+              req = urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}{path}',
+                  headers=headers,
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      return json.load(response) if response.length else None
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 404 and method == 'DELETE':
+                      return None
+                  raise
+
+          for namespace in ('heads', 'tags'):
+              refs = request('GET', f'/git/matching-refs/{namespace}/') or []
+              for item in refs:
+                  ref = item['ref']
+                  if ref == 'refs/heads/main':
+                      continue
+                  encoded = urllib.parse.quote(ref.removeprefix('refs/'), safe='/')
+                  request('DELETE', f'/git/refs/{encoded}')
+          PY
+
+      - name: Verify final repository state
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ steps.root.outputs.sha }}"
+          actual="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$actual" = "$expected"
+          test "$(git ls-remote --heads origin | grep -c 'refs/heads/' || true)" = "1"
+          test "$(git ls-remote --tags --refs origin | grep -c 'refs/tags/' || true)" = "0"
+
+          parent_count="$(git cat-file -p HEAD | grep -c '^parent ' || true)"
+          test "$parent_count" = "0"
+
+          {
+            echo "## Qovrion public history compacted"
+            echo
+            echo "- Root commit: \`$actual\`"
+            echo "- Reachable commits: 1"
+            echo "- Remote branches: 1 (\`main\`)"
+            echo "- Remote tags: 0"
+          } >> "$GITHUB_STEP_SUMMARY"
