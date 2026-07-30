@@ -42,6 +42,13 @@ const HONEST_FOOTER =
   + 'Guard rows are correlation, not attribution. Realized numbers are rounded down.'
 
 const MCP_KINDS = new Set<ActionKind>(['mcp-remove', 'mcp-project-scope'])
+// defer-* re-enable native MCP tool deferral (part 2 of #614): the same
+// prefix schema tokens mcp-remove eliminates, deferral moves out of the
+// upfront prefix. Realized the same way — per-session schema tokens times the
+// post-apply sessions that benefited — but "benefited" flips: instead of a
+// server no longer loading, it is deferral having become active (the session
+// now carries a deferred-tools inventory, the detector's own signal).
+const DEFER_KINDS = new Set<ActionKind>(['defer-enable', 'defer-alwaysload', 'defer-threshold'])
 const ARCHIVE_DEF_TOKENS: Partial<Record<ActionKind, number>> = {
   'archive-skill': TOKENS_PER_SKILL_DEF,
   'archive-agent': TOKENS_PER_AGENT_DEF,
@@ -178,6 +185,28 @@ function countSessionsLoading(projects: ProjectSummary[], servers: string[]): nu
   return allSessions(projects).filter(s => sessionLoadsAny(s, servers)).length
 }
 
+// Deferral is active in a session exactly when Claude Code emitted a
+// deferred-tools inventory for it — the same signal the mcp-deferral-off
+// detector uses (its absence, alongside MCP overhead, is what flags a gap).
+function sessionHasDeferralActive(s: SessionSummary): boolean {
+  return (s.mcpInventory?.length ?? 0) > 0
+}
+
+// MCP servers observed loading in the window (via inventory or invocation).
+// defer-enable / defer-threshold re-enable deferral for the whole MCP surface
+// rather than a named set, so the affected servers are derived here.
+function observedMcpServers(projects: ProjectSummary[]): string[] {
+  const servers = new Set<string>()
+  for (const s of allSessions(projects)) {
+    for (const fqn of s.mcpInventory ?? []) {
+      const seg = fqn.split('__')[1]
+      if (seg) servers.add(seg)
+    }
+    for (const server of Object.keys(s.mcpBreakdown)) servers.add(server)
+  }
+  return [...servers]
+}
+
 // A kind whose realized effect is a token saving (everything except guard,
 // which is a dollars/yield correlation, and out-of-scope kinds).
 function isTokenKind(kind: ActionKind): boolean {
@@ -224,6 +253,33 @@ function mcpRow(
   }
   const savedSessions = Math.max(0, sessions.length - stillLoading)
   return { ...base, estimatedForWindow, status: 'measured', realizedTokens: Math.floor(perSessionTokens * savedSessions), confidence }
+}
+
+function deferRow(
+  base: ActReportRow, sessions: SessionSummary[],
+  baseline: ActionBaseline, afterStart: Date, now: Date,
+): ActReportRow {
+  const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
+  if (perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
+  if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
+  const estimatedForWindow = Math.floor(perSessionTokens * sessions.length)
+  // A post-apply session realized the saving only if deferral actually became
+  // active in it. ENABLE_TOOL_SEARCH is read at process start, so sessions
+  // begun before the user restarted still run deferral-off — those aren't
+  // counted, and if none benefited we report it plainly rather than claim a
+  // saving that hasn't taken effect.
+  const deferredSessions = sessions.filter(sessionHasDeferralActive).length
+  const confidence = confidenceFor(sessions.length, baseline, afterStart, now)
+  if (deferredSessions === 0) {
+    return {
+      ...base,
+      estimatedForWindow,
+      status: 'reverted',
+      confidence,
+      note: `not yet in effect: deferral is still inactive in ${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'} (takes effect on the next session; the client may not have restarted, or the change was reverted)`,
+    }
+  }
+  return { ...base, estimatedForWindow, status: 'measured', realizedTokens: Math.floor(perSessionTokens * deferredSessions), confidence }
 }
 
 function archiveRow(
@@ -378,6 +434,7 @@ async function computeRow(
   if (!baseline) return { ...base, note: 'not measurable: no baseline captured at apply time' }
 
   if (MCP_KINDS.has(rec.kind)) return mcpRow(base, rec, sessions, baseline, afterStart, now)
+  if (DEFER_KINDS.has(rec.kind)) return deferRow(base, sessions, baseline, afterStart, now)
   if (rec.kind in ARCHIVE_DEF_TOKENS) return archiveRow(base, rec, sessions, baseline, afterStart, now)
   if (rec.kind === 'claude-md-rule') return readEditRow(base, sessions, baseline, afterStart, now)
   if (rec.kind === 'shell-config') return { ...base, note: 'not measurable: bash result token sizes are not retained in the summary' }
@@ -585,7 +642,15 @@ function mcpServersFromApply(finding: WasteFinding): string[] {
 }
 
 function needsConfigBaseline(kind: ActionKind): boolean {
-  return MCP_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
+  return MCP_KINDS.has(kind) || DEFER_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
+}
+
+// Servers whose upfront schema deferral removes from the prefix. defer-alwaysload
+// names them; defer-enable / defer-threshold re-enable deferral across the whole
+// observed MCP surface.
+function deferServers(finding: WasteFinding, ctx: CaptureCtx): string[] {
+  if (finding.apply?.kind === 'defer-alwaysload') return finding.apply.servers.map(s => s.server)
+  return observedMcpServers(ctx.projects)
 }
 
 export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: CaptureCtx): ActionBaseline | undefined {
@@ -597,6 +662,19 @@ export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: Ca
 
   if (MCP_KINDS.has(kind)) {
     const servers = mcpServersFromApply(finding)
+    if (servers.length === 0) return undefined
+    const covByServer = new Map(ctx.coverage.map(c => [c.server, c]))
+    const metrics: Record<string, number> = {}
+    for (const server of servers) {
+      const cov = covByServer.get(server)
+      const tools = cov && cov.toolsAvailable > 0 ? cov.toolsAvailable : TOOLS_PER_MCP_SERVER
+      metrics[server] = tools * TOKENS_PER_MCP_TOOL
+    }
+    return { ...common, sessions: countSessionsLoading(ctx.projects, servers), metrics }
+  }
+
+  if (DEFER_KINDS.has(kind)) {
+    const servers = deferServers(finding, ctx)
     if (servers.length === 0) return undefined
     const covByServer = new Map(ctx.coverage.map(c => [c.server, c]))
     const metrics: Record<string, number> = {}

@@ -7,10 +7,12 @@ import { journalPath } from '../src/act/journal.js'
 import {
   buildActReportJson,
   buildOptimizeAppliedHeader,
+  captureBaseline,
   computeActReport,
   renderActReport,
 } from '../src/act/report.js'
 import type { ActionRecord } from '../src/act/types.js'
+import type { WasteFinding } from '../src/optimize.js'
 import type { ClassifiedTurn, ProjectSummary } from '../src/types.js'
 
 type Session = ProjectSummary['sessions'][number]
@@ -582,5 +584,143 @@ describe('json + render shape', () => {
     expect(out).toMatch(/40\.0K/)
     expect(out).toMatch(/measures only its own metric/)
     expect(out).toMatch(/scaled to the measured window/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// defer-* realized deltas (part 2 of #614)
+// ---------------------------------------------------------------------------
+
+function deferRecord(over: Partial<ActionRecord> = {}): ActionRecord {
+  const at = daysAgo(10)
+  return {
+    id: 'd1',
+    at,
+    kind: 'defer-enable',
+    findingId: 'mcp-deferral-off',
+    description: 'Remove the ENABLE_TOOL_SEARCH=false override from settings.json',
+    changes: [],
+    status: 'applied',
+    // 2 servers x 2000 tokens/session = 4000 prefix tokens/session.
+    baseline: { windowDays: 14, capturedAt: at, estimatedTokens: 40_000, sessions: 5, metrics: { everything: 2000, 'fs-tools': 2000 } },
+    ...over,
+  }
+}
+
+// NOTE: an mcpInventory on a post-apply session means the OPPOSITE for defer-*
+// vs mcp-remove. For mcp-remove it is "the server loaded again" (reverted);
+// for defer-* it is "deferral became active" (saved). Same fixture, inverse
+// meaning — exactly the design.
+const DEFERRED = { mcpInventory: ['mcp__everything__get-sum'] }
+
+describe('defer realized delta', () => {
+  it('measures savings across post-apply sessions where deferral became active', async () => {
+    const actionsDir = await writeJournal([deferRecord()])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(5, daysAgo(5), DEFERRED))]) })
+
+    const row = report.rows[0]!
+    expect(row.status).toBe('measured')
+    expect(row.realizedTokens).toBe(20_000) // 4000/session * 5 deferred sessions
+    expect(row.estimatedForWindow).toBe(20_000)
+    expect(report.totalRealizedTokens).toBe(20_000)
+  })
+
+  it('reports "not yet in effect" with zero savings when no post-apply session shows deferral', async () => {
+    const actionsDir = await writeJournal([deferRecord()])
+    // sessions with MCP activity but NO inventory = deferral still off
+    const off = sessionsAt(4, daysAgo(5), { mcpBreakdown: { everything: { calls: 2, savingsUSD: 0, costUSD: 0 } } })
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(off)]) })
+
+    const row = report.rows[0]!
+    expect(row.status).toBe('reverted')
+    expect(row.realizedTokens ?? 0).toBe(0)
+    expect(row.note).toMatch(/not yet in effect/)
+    expect(report.totalRealizedTokens).toBe(0)
+  })
+
+  it('counts only the sessions where deferral actually became active (partial)', async () => {
+    const actionsDir = await writeJournal([deferRecord()])
+    const active = sessionsAt(3, daysAgo(5), DEFERRED)
+    const stillOff = sessionsAt(2, daysAgo(4))
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf([...active, ...stillOff])]) })
+
+    const row = report.rows[0]!
+    expect(row.status).toBe('measured')
+    expect(row.realizedTokens).toBe(12_000) // 4000 * 3 active (2 still-off excluded)
+    expect(row.estimatedForWindow).toBe(20_000) // 4000 * all 5 window sessions
+  })
+
+  it('is not measurable when no post-apply sessions exist yet', async () => {
+    const actionsDir = await writeJournal([deferRecord()])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf([])]) })
+    expect(report.rows[0]!.note).toMatch(/no sessions in the window yet/)
+  })
+
+  it('is not measurable with an empty baseline (zero prefix tokens)', async () => {
+    const rec = deferRecord({ baseline: { windowDays: 14, capturedAt: daysAgo(10), estimatedTokens: 0, sessions: 5, metrics: { everything: 0 } } })
+    const actionsDir = await writeJournal([rec])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(5, daysAgo(5), DEFERRED))]) })
+    expect(report.rows[0]!.note).toMatch(/empty baseline/)
+  })
+
+  it('falls back to the no-baseline note for records applied before baselines existed', async () => {
+    const rec = deferRecord({ baseline: undefined })
+    const actionsDir = await writeJournal([rec])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(5, daysAgo(5), DEFERRED))]) })
+    expect(report.rows[0]!.note).toMatch(/no baseline captured at apply time/)
+  })
+
+  it('measures defer-alwaysload against its named servers', async () => {
+    const rec = deferRecord({
+      kind: 'defer-alwaysload',
+      findingId: 'mcp-alwaysload-hygiene',
+      description: 'Unpin an alwaysLoad MCP server',
+      baseline: { windowDays: 14, capturedAt: daysAgo(10), estimatedTokens: 30_000, sessions: 6, metrics: { 'heavy-server': 5000 } },
+    })
+    const actionsDir = await writeJournal([rec])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(6, daysAgo(5), DEFERRED))]) })
+    const row = report.rows[0]!
+    expect(row.status).toBe('measured')
+    expect(row.realizedTokens).toBe(30_000) // 5000 * 6
+  })
+
+  it('measures defer-threshold like the other defer kinds', async () => {
+    const rec = deferRecord({ kind: 'defer-threshold', findingId: 'mcp-defer-threshold', description: 'Tighten the auto threshold' })
+    const actionsDir = await writeJournal([rec])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(5, daysAgo(5), DEFERRED))]) })
+    expect(report.rows[0]!.status).toBe('measured')
+    expect(report.rows[0]!.realizedTokens).toBe(20_000)
+  })
+})
+
+describe('defer baseline capture', () => {
+  const finding = (apply: WasteFinding['apply']): WasteFinding => ({
+    id: 'mcp-deferral-off',
+    title: 't', explanation: 'e', impact: 'medium', tokensSaved: 40_000,
+    fix: { type: 'command', label: 'l', text: 'x' },
+    apply,
+  })
+  const ctx = (projects: ProjectSummary[]) => ({ projects, coverage: [], windowDays: 14, now: NOW })
+
+  it('derives servers from observed MCP usage for defer-enable', () => {
+    const projects = [projectOf(sessionsAt(3, daysAgo(5), { mcpBreakdown: { everything: { calls: 2, savingsUSD: 0, costUSD: 0 }, 'fs-tools': { calls: 1, savingsUSD: 0, costUSD: 0 } } }))]
+    const b = captureBaseline(finding({ kind: 'defer-enable', cause: 'env-false', settingPath: '/x', settingScope: 'project settings', value: 'false' }), 'defer-enable', ctx(projects))
+    expect(b).toBeDefined()
+    // no coverage -> 5 tools x 400 fallback per server
+    expect(b!.metrics.everything).toBe(2000)
+    expect(b!.metrics['fs-tools']).toBe(2000)
+  })
+
+  it('uses the named servers for defer-alwaysload', () => {
+    const projects = [projectOf(sessionsAt(2, daysAgo(5)))]
+    const b = captureBaseline(finding({ kind: 'defer-alwaysload', servers: [{ server: 'pinned', paths: ['/a/.mcp.json'] }] }), 'defer-alwaysload', ctx(projects))
+    expect(b).toBeDefined()
+    expect(Object.keys(b!.metrics)).toEqual(['pinned'])
+  })
+
+  it('returns undefined when there is no observed MCP surface to defer', () => {
+    const projects = [projectOf(sessionsAt(3, daysAgo(5)))] // no mcpBreakdown, no inventory
+    const b = captureBaseline(finding({ kind: 'defer-enable', cause: 'env-false', settingPath: '/x', settingScope: 'project settings', value: 'false' }), 'defer-enable', ctx(projects))
+    expect(b).toBeUndefined()
   })
 })
