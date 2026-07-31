@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto'
 import { existsSync } from 'fs'
-import { mkdir, open, readFile, stat, unlink, utimes, writeFile } from 'fs/promises'
+import { mkdir, open, readFile, rename, stat, unlink, utimes } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 
@@ -81,6 +81,36 @@ async function retryWindowsMutation(operation: () => Promise<void>, sleep: (ms: 
   return false
 }
 
+async function replaceAtomically(path: string, body: string, sleep: (ms: number) => Promise<void>): Promise<boolean> {
+  const tempPath = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`
+  let published = false
+  try {
+    const handle = await open(tempPath, 'wx', 0o600)
+    try {
+      await handle.writeFile(body, { encoding: 'utf-8' })
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+
+    for (let attempt = 0; attempt < WINDOWS_RETRIES; attempt++) {
+      try {
+        await rename(tempPath, path)
+        published = true
+        return true
+      } catch (err) {
+        if (!isBusyError(err) || attempt === WINDOWS_RETRIES - 1) return false
+        await sleep(10 * (attempt + 1))
+      }
+    }
+    return false
+  } catch {
+    return false
+  } finally {
+    if (!published) await retryWindowsMutation(() => unlink(tempPath), sleep)
+  }
+}
+
 async function createExclusive(path: string, body: string): Promise<'created' | 'exists' | 'unavailable'> {
   try {
     const handle = await open(path, 'wx', 0o600)
@@ -97,8 +127,8 @@ type ObservationResult = Observation | 'missing' | 'changing' | 'unavailable'
 
 async function observe(path: string): Promise<ObservationResult> {
   // Exclusive create exposes the directory entry just before its small body is
-  // written, and heartbeat rewrites briefly truncate it. Treat that bounded
-  // transition as contention, not broken infrastructure.
+  // written, and an atomic heartbeat can replace the file between either stat.
+  // Treat those bounded transitions as contention, not broken infrastructure.
   let sawChange = false
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -239,7 +269,7 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
         try {
           const current = await observe(lockPath)
           if (current === 'missing' || current === 'changing' || current === 'unavailable' || current.record.token !== token) return
-          await writeFile(lockPath, body(), { encoding: 'utf-8' })
+          if (!await replaceAtomically(lockPath, body(), sleep)) return
           const now = new Date(clock.wallNow())
           await utimes(lockPath, now, now)
         } catch { /* verify/release will turn displacement or I/O failure into a closed gate */ }
