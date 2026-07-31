@@ -61,8 +61,8 @@ jobs:
       - name: Build desktop
         run: npm --prefix app run build
 
-  inherited-suite-audit:
-    name: Full inherited test audit
+  full-suite:
+    name: Full core test suite
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -73,17 +73,15 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Run complete inherited suite
-        id: suite
-        continue-on-error: true
+      - name: Run complete core suite
         run: npm test -- --run
-      - name: Record audit status
+      - name: Record blocking status
         shell: bash
         run: |
           {
-            echo "## Full inherited test audit"
+            echo "## Full core test suite"
             echo
-            echo "Outcome: \`${{ steps.suite.outcome }}\`"
+            echo "Outcome: \`success\`"
             echo
-            echo "The imported baseline contains platform-sensitive Ubuntu failures. Changed behavior still requires targeted blocking tests."
+            echo "The complete inherited and Qovrion-specific suite is a blocking merge gate."
           } >> "$GITHUB_STEP_SUMMARY"
