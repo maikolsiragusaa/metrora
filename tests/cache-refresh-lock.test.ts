@@ -133,13 +133,15 @@ describe('warm session-cache refresh lock', () => {
     }
   })
 
-  it('publishes every heartbeat as complete JSON and updates the injected clock', async () => {
+  it('keeps the ownership record immutable while heartbeat advances only mtime', async () => {
     const dir = await tempDir()
     const clock = fakeClock(10_000)
     const result = await acquireCacheRefreshLock({ cacheDir: dir, clock, heartbeatMs: 1 })
     expect(result.outcome).toBe('acquired')
     if (result.outcome !== 'acquired') return
     try {
+      const initialRaw = await readFile(lockPath(dir), 'utf-8')
+      const initial = JSON.parse(initialRaw) as { pid: number; token: string; at: number }
       const before = (await stat(lockPath(dir))).mtimeMs
       clock.advance(1_000)
 
@@ -152,8 +154,12 @@ describe('warm session-cache refresh lock', () => {
       }
 
       expect(records.length).toBeGreaterThan(5)
-      expect(records.every(record => record.pid === process.pid && record.token === result.handle.token)).toBe(true)
-      expect(records.some(record => record.at === clock.wallNow())).toBe(true)
+      expect(records.every(record =>
+        record.pid === initial.pid &&
+        record.token === initial.token &&
+        record.at === initial.at,
+      )).toBe(true)
+      expect(initial).toEqual({ pid: process.pid, token: result.handle.token, at: 10_000 })
       expect((await stat(lockPath(dir))).mtimeMs).not.toBe(before)
     } finally {
       await result.handle.release()
