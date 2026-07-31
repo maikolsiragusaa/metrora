@@ -1,29 +1,33 @@
 import { describe, expect, it } from 'vitest'
 
+import { GEMINI_PARSER_VERSION } from '../../providers/gemini.js'
 import { PROVIDER_PARSE_VERSIONS } from '../../session-cache.js'
 import {
   CLAUDE_JSONL_PROFILE_V1,
   CODEX_CONTENT_FALLBACK_PROFILE_V1,
   CODEX_TOKEN_COUNT_PROFILE_V1,
+  GEMINI_MESSAGE_USAGE_PROFILE_V1,
   CollectorProvenanceProfileV1Schema,
   CollectorProvenanceProfilesV1,
   collectorProvenanceProfileForCall,
 } from './collector-provenance.js'
 
 describe('collector provenance registry v1', () => {
-  it('contains only the three reviewed Claude and Codex paths', () => {
+  it('contains only the four reviewed Claude, Codex and Gemini paths', () => {
     expect(CollectorProvenanceProfilesV1.map(profile => profile.profileId)).toEqual([
       'claude-jsonl-usage-v1',
       'codex-rollout-token-count-v1',
       'codex-rollout-content-fallback-v1',
+      'gemini-message-usage-v1',
     ])
-    expect(new Set(CollectorProvenanceProfilesV1.map(profile => profile.profileId)).size).toBe(3)
+    expect(new Set(CollectorProvenanceProfilesV1.map(profile => profile.profileId)).size).toBe(4)
   })
 
-  it('fails review when an inherited parser version drifts', () => {
+  it('fails review when an approved parser version drifts', () => {
     expect(CLAUDE_JSONL_PROFILE_V1.parserVersion).toBe(PROVIDER_PARSE_VERSIONS['claude'])
     expect(CODEX_TOKEN_COUNT_PROFILE_V1.parserVersion).toBe(PROVIDER_PARSE_VERSIONS['codex'])
     expect(CODEX_CONTENT_FALLBACK_PROFILE_V1.parserVersion).toBe(PROVIDER_PARSE_VERSIONS['codex'])
+    expect(GEMINI_MESSAGE_USAGE_PROFILE_V1.parserVersion).toBe(GEMINI_PARSER_VERSION)
   })
 
   it('classifies normalized calls without granting defaults to unknown paths', () => {
@@ -31,6 +35,8 @@ describe('collector provenance registry v1', () => {
     expect(collectorProvenanceProfileForCall({ provider: 'claude', isEstimated: true })).toBeUndefined()
     expect(collectorProvenanceProfileForCall({ provider: 'codex', isEstimated: false })).toBe(CODEX_TOKEN_COUNT_PROFILE_V1)
     expect(collectorProvenanceProfileForCall({ provider: 'codex', isEstimated: true })).toBe(CODEX_CONTENT_FALLBACK_PROFILE_V1)
+    expect(collectorProvenanceProfileForCall({ provider: 'gemini' })).toBe(GEMINI_MESSAGE_USAGE_PROFILE_V1)
+    expect(collectorProvenanceProfileForCall({ provider: 'gemini', isEstimated: true })).toBeUndefined()
     expect(collectorProvenanceProfileForCall({ provider: 'zed' })).toBeUndefined()
     expect(collectorProvenanceProfileForCall({ provider: 'opencode' })).toBeUndefined()
     expect(collectorProvenanceProfileForCall({ provider: 'copilot' })).toBeUndefined()
@@ -58,6 +64,18 @@ describe('collector provenance registry v1', () => {
       cacheWrite: 'derived',
       reasoning: 'unknown',
     })
+    expect(GEMINI_MESSAGE_USAGE_PROFILE_V1.facts.tokens).toEqual({
+      input: 'derived',
+      output: 'measured',
+      cacheRead: 'measured',
+      cacheWrite: 'unknown',
+      reasoning: 'measured',
+    })
+  })
+
+  it('keeps measured thought tokens separate from unknown reasoning effort', () => {
+    expect(GEMINI_MESSAGE_USAGE_PROFILE_V1.facts.tokens.reasoning).toBe('measured')
+    expect(GEMINI_MESSAGE_USAGE_PROFILE_V1.facts.reasoningAttribution).toEqual(['unknown'])
   })
 
   it('never presents locally priced cost as provider-metered evidence', () => {
@@ -69,6 +87,7 @@ describe('collector provenance registry v1', () => {
       })
     }
     expect(CODEX_CONTENT_FALLBACK_PROFILE_V1.facts.cost.tokenBasis).toBe('estimated-content-length')
+    expect(GEMINI_MESSAGE_USAGE_PROFILE_V1.facts.cost.tokenBasis).toBe('measured')
   })
 
   it('keeps the v1 schema extensible without registering unreviewed collectors', () => {
@@ -134,6 +153,7 @@ describe('collector provenance registry v1', () => {
   it('freezes registry metadata deeply and rejects undeclared claims', () => {
     expect(Object.isFrozen(CollectorProvenanceProfilesV1)).toBe(true)
     expect(Object.isFrozen(CODEX_TOKEN_COUNT_PROFILE_V1)).toBe(true)
+    expect(Object.isFrozen(GEMINI_MESSAGE_USAGE_PROFILE_V1)).toBe(true)
     expect(Object.isFrozen(CODEX_TOKEN_COUNT_PROFILE_V1.facts)).toBe(true)
     expect(Object.isFrozen(CODEX_TOKEN_COUNT_PROFILE_V1.facts.tokens)).toBe(true)
 
