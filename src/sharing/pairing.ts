@@ -98,10 +98,19 @@ export class PeerStore {
     return [...this.byFingerprint.values()]
   }
 
+  get(fingerprint: string): PairedPeer | undefined {
+    const peer = this.byFingerprint.get(fingerprint)
+    return peer ? { ...peer } : undefined
+  }
+
   pair(fingerprint: string, name: string, now: number = Date.now()): PairedPeer {
     const peer: PairedPeer = { fingerprint, name, token: mintToken(), pairedAt: now }
     this.byFingerprint.set(fingerprint, peer)
     return peer
+  }
+
+  restore(peer: PairedPeer): void {
+    this.byFingerprint.set(peer.fingerprint, { ...peer })
   }
 
   authorize(token: string, fingerprint: string): boolean {
