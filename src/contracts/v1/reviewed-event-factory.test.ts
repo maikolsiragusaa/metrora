@@ -47,6 +47,43 @@ function codexCall(overrides: Partial<ParsedApiCall> = {}): ParsedApiCall {
   }
 }
 
+function geminiCall(overrides: Partial<ParsedApiCall> = {}): ParsedApiCall {
+  const usage = {
+    inputTokens: 100,
+    outputTokens: 30,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 20,
+    cachedInputTokens: 20,
+    reasoningTokens: 5,
+    webSearchRequests: 0,
+  }
+  const model = 'gemini-2.5-flash'
+  return {
+    provider: 'gemini',
+    model,
+    usage,
+    costUSD: calculateCost(
+      model,
+      usage.inputTokens,
+      usage.outputTokens + usage.reasoningTokens,
+      usage.cacheCreationInputTokens,
+      usage.cacheReadInputTokens,
+      usage.webSearchRequests,
+    ),
+    tools: ['Read'],
+    mcpTools: [],
+    skills: [],
+    subagentTypes: [],
+    hasAgentSpawn: false,
+    hasPlanMode: false,
+    speed: 'standard',
+    timestamp: '2026-07-31T14:31:00.000Z',
+    bashCommands: [],
+    deduplicationKey: 'gemini-private-message-id',
+    ...overrides,
+  }
+}
+
 function context() {
   return {
     workspaceId: 'workspace_01',
@@ -97,6 +134,40 @@ describe('reviewed usage measurement event factory v1', () => {
     expect(result.event.data.cost).toMatchObject({ kind: 'estimated', method: 'token-pricing' })
   })
 
+  it('creates a reviewed Gemini event without inventing reasoning effort', () => {
+    const result = createReviewedUsageMeasurementEventV1(geminiCall(), {
+      ...context(),
+      session: { mode: 'include', sessionId: 'gemini-session-01' },
+      tool: { name: 'Gemini CLI', version: '1.0.0' },
+      genAi: {
+        operationName: 'invoke_agent',
+        providerName: 'google',
+        requestModel: 'gemini-2.5-flash',
+      },
+    })
+    expect(result.status).toBe('created')
+    if (result.status !== 'created') return
+
+    expect(result.profileId).toBe('gemini-message-usage-v1')
+    expect(result.event.data.collector).toMatchObject({
+      adapterId: 'gemini-message-usage-v1',
+      sourceKind: 'gemini-session-json-or-jsonl-message-usage',
+    })
+    expect(result.event.data.genAi).toEqual({
+      operationName: 'invoke_agent',
+      providerName: 'google',
+      requestModel: 'gemini-2.5-flash',
+      responseModel: 'gemini-2.5-flash',
+    })
+    expect(result.event.data.quality).toEqual({
+      tokenCounts: 'derived',
+      modelIdentity: 'exact',
+      sessionIdentity: 'exact',
+    })
+    expect(result.event.data.cost).toMatchObject({ kind: 'estimated', method: 'token-pricing' })
+    expect(result.event.data.reasoning).toBeUndefined()
+  })
+
   it('omits session identity only through the explicit omit branch', () => {
     const result = createReviewedUsageMeasurementEventV1(codexCall(), {
       ...context(),
@@ -142,6 +213,18 @@ describe('reviewed usage measurement event factory v1', () => {
         reasoningLevelSource: 'explicit',
       },
       context(),
+    )).toEqual({ status: 'withheld', reason: 'unreviewed-evidence-path' })
+
+    expect(createReviewedUsageMeasurementEventV1(
+      geminiCall({ reasoningLevel: 'high', reasoningLevelSource: 'explicit' }),
+      {
+        ...context(),
+        genAi: {
+          operationName: 'invoke_agent',
+          providerName: 'google',
+          requestModel: 'gemini-2.5-flash',
+        },
+      },
     )).toEqual({ status: 'withheld', reason: 'unreviewed-evidence-path' })
   })
 
