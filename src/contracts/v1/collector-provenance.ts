@@ -153,11 +153,11 @@ export const CollectorProvenanceProfilesV1 = Object.freeze([
  * quality or cost defaults merely because they already produce ParsedApiCall.
  */
 export function collectorProvenanceProfileForCall(
-  call: Pick<ParsedApiCall, 'provider' | 'costIsEstimated'>,
+  call: Pick<ParsedApiCall, 'provider' | 'isEstimated'>,
 ): CollectorProvenanceProfileV1 | undefined {
   if (call.provider === 'claude') return CLAUDE_JSONL_PROFILE_V1
   if (call.provider === 'codex') {
-    return call.costIsEstimated
+    return call.isEstimated
       ? CODEX_CONTENT_FALLBACK_PROFILE_V1
       : CODEX_TOKEN_COUNT_PROFILE_V1
   }
