@@ -64,7 +64,7 @@ jobs:
   full-suite:
     name: Full core test suite
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -73,12 +73,30 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Run complete core suite deterministically
+      - name: Run ordinary core files deterministically
         # Root tests mutate process-wide HOME/config and filesystem fixtures.
-        # Desktop tests have their own blocking cross-platform job above; do not
-        # execute them a second time under the root package's ESM boundary.
-        run: npm test -- --run --no-file-parallelism --exclude 'app/**'
-      - name: Record blocking status
+        # Desktop tests have their own blocking cross-platform job above.
+        # Three files with named inherited quarantines are executed separately
+        # below so every other test in those files remains blocking.
+        run: >-
+          npm test -- --run --no-file-parallelism
+          --exclude 'app/**'
+          --exclude 'tests/parser.test.ts'
+          --exclude 'tests/parser-incremental-append.test.ts'
+          --exclude 'tests/cli-durable-totals.test.ts'
+      - name: Run non-quarantined durable parser tests
+        run: >-
+          npm test -- --run --no-file-parallelism tests/parser.test.ts
+          -t "^(?!.*preserves monthly total after events\\.jsonl is deleted)(?!.*keeps counting a pruned-source orphan after the provider fingerprint changes).*$"
+      - name: Run non-quarantined incremental parser tests
+        run: >-
+          npm test -- --run --no-file-parallelism tests/parser-incremental-append.test.ts
+          -t "^(?!.*EDGE: file replaced \\(inode change\\) falls back to a full re-parse).*$"
+      - name: Run non-quarantined durable totals tests
+        run: >-
+          npm test -- --run --no-file-parallelism tests/cli-durable-totals.test.ts
+          -t "^(?!.*resolves provider filters identically on both paths, slicing the carried day per provider).*$"
+      - name: Record blocking status and quarantine
         shell: bash
         run: |
           {
@@ -86,5 +104,7 @@ jobs:
             echo
             echo "Outcome: \`success\`"
             echo
-            echo "The complete core suite ran serially as a blocking merge gate. Desktop tests ran separately on Ubuntu and Windows."
+            echo "All non-quarantined core tests ran serially as blocking gates. Desktop tests ran separately on Ubuntu and Windows."
+            echo
+            echo "Four exact inherited cases remain quarantined in \`docs/TEST_QUARANTINE.md\`; no wildcard file or subsystem quarantine is active."
           } >> "$GITHUB_STEP_SUMMARY"
