@@ -4,10 +4,7 @@ import {
   toUsageMeasurementEventV1,
   type ParsedApiCallMeasurementContextV1,
 } from './measurement-adapter.js'
-import {
-  resolveMeasurementEvidenceV1,
-  type MeasurementEvidenceResolutionOptionsV1,
-} from './provenance-mapper.js'
+import { resolveMeasurementEvidenceV1 } from './provenance-mapper.js'
 
 export type MeasurementSessionDisclosureV1 =
   | { mode: 'omit' }
@@ -36,7 +33,6 @@ export type ReviewedUsageMeasurementEventContextV1 = {
     providerName: string
     requestModel?: string
   }
-  evidence?: Omit<MeasurementEvidenceResolutionOptionsV1, 'sessionId'>
 }
 
 export type ReviewedUsageMeasurementEventResultV1 =
@@ -54,7 +50,12 @@ function disclosedSessionId(disclosure: MeasurementSessionDisclosureV1): string 
   if (!disclosure || typeof disclosure !== 'object') {
     throw new Error('session disclosure must be explicit')
   }
-  if (disclosure.mode === 'omit') return undefined
+  if (disclosure.mode === 'omit') {
+    if ('sessionId' in disclosure) {
+      throw new Error('omitted session disclosure cannot carry a session id')
+    }
+    return undefined
+  }
   if (disclosure.mode !== 'include') {
     throw new Error('session disclosure mode must be omit or include')
   }
@@ -77,10 +78,7 @@ export function createReviewedUsageMeasurementEventV1(
   context: ReviewedUsageMeasurementEventContextV1,
 ): ReviewedUsageMeasurementEventResultV1 {
   const sessionId = disclosedSessionId(context.session)
-  const evidence = resolveMeasurementEvidenceV1(call, {
-    ...context.evidence,
-    sessionId,
-  })
+  const evidence = resolveMeasurementEvidenceV1(call, { sessionId })
   if (!evidence) {
     return { status: 'withheld', reason: 'unreviewed-evidence-path' }
   }
