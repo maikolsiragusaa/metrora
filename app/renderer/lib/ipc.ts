@@ -1,22 +1,23 @@
 import type { CliError, CodeburnBridge } from './types'
 
-// The preload script (app/electron/preload.ts) exposes `window.codeburn` as the
-// typed CodeburnBridge (methods resolve to CLI JSON or reject with a plain
-// CliError).
+// Both globals point at the same compatibility-shaped preload surface during
+// the migration window. New renderer code uses qovrion; codeburn remains an
+// exported alias so existing sections and third-party integrations keep working.
 declare global {
   interface Window {
+    qovrion?: CodeburnBridge
     codeburn: CodeburnBridge
   }
 }
 
-/** The typed bridge. Import this instead of touching `window` directly. */
-export const codeburn: CodeburnBridge = window.codeburn
+export const qovrion: CodeburnBridge = window.qovrion ?? window.codeburn
+export const codeburn: CodeburnBridge = qovrion
 
 /** Coerce anything thrown across the IPC boundary into a CliError shape. */
 export function normalizeCliError(err: unknown): CliError {
   if (err && typeof err === 'object' && 'kind' in err && typeof (err as CliError).kind === 'string') {
-    const e = err as CliError
-    return { kind: e.kind, message: e.message ?? 'codeburn CLI error' }
+    const error = err as CliError
+    return { kind: error.kind, message: error.message ?? 'Qovrion CLI error' }
   }
   const message = err instanceof Error ? err.message : String(err)
   return { kind: 'nonzero', message }

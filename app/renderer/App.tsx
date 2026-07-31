@@ -18,6 +18,7 @@ import { motionClass } from './lib/motion'
 import { codeburn } from './lib/ipc'
 import { localDateKey } from './lib/period'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
+import { readCompatStorage, removeCompatStorage, writeCompatStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
 import { Models } from './sections/Models'
@@ -155,21 +156,18 @@ function isPeriod(value: string): value is Period {
 
 /** Boot period = the persisted "Default period" Settings writes, else today. */
 function initialPeriod(): Period {
-  let saved: string | null = null
-  try { saved = globalThis.localStorage?.getItem('codeburn.defaultPeriod') ?? null } catch { /* storage can be unavailable */ }
+  const saved = readCompatStorage('defaultPeriod')
   return saved && isPeriod(saved) ? saved : 'today'
 }
 
 /** Persisted Claude config override (empty/absent = aggregate all configs). */
 function initialConfigSource(): string | null {
-  try { return globalThis.localStorage?.getItem('codeburn.claudeConfigSource') || null } catch { return null }
+  return readCompatStorage('claudeConfigSource') || null
 }
 
 function persistConfigSource(id: string | null): void {
-  try {
-    if (id) globalThis.localStorage?.setItem('codeburn.claudeConfigSource', id)
-    else globalThis.localStorage?.removeItem('codeburn.claudeConfigSource')
-  } catch { /* storage can be unavailable */ }
+  if (id) writeCompatStorage('claudeConfigSource', id)
+  else removeCompatStorage('claudeConfigSource')
 }
 
 function providerName(provider: string): string {
@@ -288,8 +286,7 @@ function AppMain() {
   }, [overview.data, provider, customRange, claudeConfigSource, period, trackEvent])
 
   useEffect(() => {
-    let saved: string | null = null
-    try { saved = globalThis.localStorage?.getItem('codeburn.theme') ?? null } catch { /* storage can be unavailable */ }
+    const saved = readCompatStorage('theme')
     if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved)
     else document.documentElement.removeAttribute('data-theme')
   }, [])
@@ -583,8 +580,7 @@ function DailyBudgetBanner({ payload, provider }: { payload: MenubarPayload | nu
   if (budget.kind === 'tokens' && provider !== 'all') return null
 
   const todayKey = localDateKey(new Date())
-  let dismissed: string | null = null
-  try { dismissed = globalThis.localStorage?.getItem('codeburn.dailyBudget.dismissed') ?? null } catch { /* storage can be unavailable */ }
+  const dismissed = readCompatStorage('dailyBudget.dismissed')
   if (dismissed === todayKey) return null
 
   // Today's entry may be absent when there has been no activity yet: that's 0 used.
@@ -603,7 +599,7 @@ function DailyBudgetBanner({ payload, provider }: { payload: MenubarPayload | nu
     : `Today's spend is at ${Math.floor(percent)}% of your daily budget`
 
   const dismiss = () => {
-    try { globalThis.localStorage?.setItem('codeburn.dailyBudget.dismissed', todayKey) } catch { /* storage can be unavailable */ }
+    writeCompatStorage('dailyBudget.dismissed', todayKey)
     bumpDismiss(tick => tick + 1)
   }
 
