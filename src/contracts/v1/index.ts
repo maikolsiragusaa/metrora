@@ -17,6 +17,7 @@ export * from './measurement-adapter.js'
 export * from './measurement.js'
 export * from './provenance-mapper.js'
 export * from './repository.js'
+export * from './reviewed-event-factory.js'
 export * from './sharing-policy.js'
 export * from './workspace.js'
 
