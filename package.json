@@ -1,11 +1,12 @@
 {
-  "name": "codeburn",
+  "name": "qovrion",
   "version": "0.9.19",
   "private": true,
-  "description": "Qovrion local-first AI usage intelligence, currently retaining the codeburn CLI command for compatibility",
+  "description": "Qovrion local-first AI usage intelligence with a temporary codeburn CLI compatibility alias",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
+    "qovrion": "dist/cli.js",
     "codeburn": "dist/cli.js"
   },
   "files": [
@@ -21,6 +22,7 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
+    "qovrion",
     "claude-code",
     "cursor",
     "codex",
