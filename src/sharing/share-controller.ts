@@ -61,7 +61,7 @@ export class ShareController {
       identity,
       peers: this.peers,
       getUsage: this.getUsage,
-      onPaired: () => {
+      onPeersChanged: () => {
         if (this.peers) void savePeers(this.peers.list(), this.dir)
       },
       approve: (req) => this.enqueueApproval(req),
