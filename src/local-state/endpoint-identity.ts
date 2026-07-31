@@ -30,7 +30,7 @@ const SECRET_CONTEXT = 'dev.qovrion.local-endpoint-identity.v1'
 const METADATA_FILE = 'endpoint-identity.v1.json'
 const SECRET_FILE = 'endpoint-identity.v1.secret'
 
-const CanonicalBase64Schema = z.string().min(1).refine(value => {
+const CanonicalBase64Schema = z.string().min(1).max(16_384).refine(value => {
   try { return Buffer.from(value, 'base64').toString('base64') === value } catch { return false }
 }, 'must be canonical base64')
 
@@ -156,13 +156,22 @@ function materialFromSecret(secret: LocalEndpointIdentitySecretV1): LoadedLocalE
   }
 }
 
-function assertMetadataMatches(
+function metadataIsInterruptedOlderPublication(
   stored: LocalEndpointIdentityMetadataV1,
   derived: LocalEndpointIdentityMetadataV1,
-): void {
-  if (JSON.stringify(stored) !== JSON.stringify(derived)) {
-    throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata does not match the protected secret')
-  }
+): boolean {
+  return stored.endpointId === derived.endpointId
+    && stored.createdAt === derived.createdAt
+    && stored.generation < derived.generation
+    && stored.eventIdentityKeyVersion < derived.eventIdentityKeyVersion
+    && derived.rotatedAt !== undefined
+}
+
+function metadataMatchesExactly(
+  stored: LocalEndpointIdentityMetadataV1,
+  derived: LocalEndpointIdentityMetadataV1,
+): boolean {
+  return JSON.stringify(stored) === JSON.stringify(derived)
 }
 
 async function decodeSecret(protector: SecretProtector, sealed: Uint8Array): Promise<LocalEndpointIdentitySecretV1> {
@@ -260,8 +269,12 @@ async function loadOrCreateUnlocked(
   } catch {
     throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata is invalid')
   }
-  assertMetadataMatches(metadata, loaded.metadata)
-  return loaded
+  if (metadataMatchesExactly(metadata, loaded.metadata)) return loaded
+  if (metadataIsInterruptedOlderPublication(metadata, loaded.metadata)) {
+    await atomicWritePrivateFile(paths.metadata, JSON.stringify(loaded.metadata))
+    return loaded
+  }
+  throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata does not match the protected secret')
 }
 
 export async function loadOrCreateLocalEndpointIdentityV1(
@@ -278,6 +291,8 @@ export async function rotateLocalEndpointIdentityV1(
   const resolved = resolvedOptions(options)
   const paths = identityPaths(resolved.dataDir)
   return withLocalStateLease(paths.directory, async () => {
+    // Validate and repair current state before deriving a successor generation.
+    await loadOrCreateUnlocked(resolved, paths)
     const sealedSecret = await readOptionalPrivateFile(paths.secret)
     if (!sealedSecret) {
       throw new EndpointIdentityRecoveryRequiredError('cannot rotate an endpoint identity without its protected secret')
