@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -31,19 +32,20 @@ describe('desktop local-state Electron host', () => {
       isPackaged: false,
       appPath: '/repo/app',
       resourcesPath: '/unused',
-    })).toBe('/repo/app/build/cli/dist/desktop-local-state.js')
+    })).toBe(join('/repo/app', 'build', 'cli', 'dist', 'desktop-local-state.js'))
     expect(desktopLocalStateModulePath({
       isPackaged: true,
       appPath: '/unused',
       resourcesPath: '/app/resources',
-    })).toBe('/app/resources/cli/dist/desktop-local-state.js')
+    })).toBe(join('/app/resources', 'cli', 'dist', 'desktop-local-state.js'))
   })
 
   it('passes a narrow async safeStorage adapter to the shared runtime', async () => {
     const storage = safeStorage()
+    const userDataPath = 'C:\\Users\\test\\Qovrion'
     const initialize = vi.fn<DesktopLocalStateModule['initializeDesktopLocalStateV1']>(async options => {
       expect(options.backend).toBe('windows-dpapi')
-      expect(options.dataDir).toBe('C:\\Users\\test\\Qovrion/qovrion-local-state')
+      expect(options.dataDir).toBe(join(userDataPath, 'qovrion-local-state'))
       expect(await options.safeStorage.isAvailable()).toBe(true)
       const sealed = await options.safeStorage.encryptString('secret')
       expect(Buffer.from(sealed).toString()).toBe('sealed:secret')
@@ -65,7 +67,7 @@ describe('desktop local-state Electron host', () => {
       isPackaged: false,
       resourcesPath: 'C:\\app\\resources',
       appPath: 'C:\\repo\\app',
-      userDataPath: 'C:\\Users\\test\\Qovrion',
+      userDataPath,
       safeStorage: storage,
       importModule,
     })
