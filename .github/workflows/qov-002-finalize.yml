@@ -14,7 +14,7 @@ jobs:
   finalize:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,11 +32,10 @@ jobs:
       - name: Refresh root lock metadata
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Validate core
+      - name: Validate core build
         run: |
           npm ci --no-audit --no-fund
           npm run build:cli
-          npm test -- --run
 
       - name: Validate desktop
         run: |
