@@ -39,13 +39,6 @@ const ExplicitZeroCostAssignmentV1Schema = z.strictObject({
   reason: z.enum(['free-route', 'free-model', 'local-inference', 'manual-reviewed']),
   priceRecordId: NonEmptyIdentifierSchema.optional(),
   priceOrigin: CostAssignmentOriginV1Schema.optional(),
-}).superRefine((assignment, context) => {
-  if ((assignment.priceRecordId === undefined) !== (assignment.priceOrigin === undefined)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'explicit-zero priceRecordId and priceOrigin must be present together',
-    })
-  }
 })
 
 const LegacyFrozenCostAssignmentV1Schema = z.strictObject({
@@ -69,13 +62,23 @@ const UnavailableCostAssignmentV1Schema = z.strictObject({
   ]),
 })
 
-export const CostAssignmentV1Schema = z.discriminatedUnion('kind', [
+const CostAssignmentUnionV1Schema = z.union([
   MeteredCostAssignmentV1Schema,
   TokenPriceCostAssignmentV1Schema,
   ExplicitZeroCostAssignmentV1Schema,
   LegacyFrozenCostAssignmentV1Schema,
   UnavailableCostAssignmentV1Schema,
 ])
+
+export const CostAssignmentV1Schema = CostAssignmentUnionV1Schema.superRefine((assignment, context) => {
+  if (assignment.kind !== 'explicit-zero') return
+  if ((assignment.priceRecordId === undefined) !== (assignment.priceOrigin === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'explicit-zero priceRecordId and priceOrigin must be present together',
+    })
+  }
+})
 
 export type CostAssignmentOriginV1 = z.infer<typeof CostAssignmentOriginV1Schema>
 export type CostAssignmentRateSelectionV1 = z.infer<typeof CostAssignmentRateSelectionV1Schema>
