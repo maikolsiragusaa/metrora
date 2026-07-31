@@ -15,7 +15,8 @@ const catalog = parseHistoricalPriceBookV1(JSON.parse(await readFile(catalogPath
 const expected = renderHistoricalPriceBookMarkdownV1(catalog)
 
 if (checkOnly) {
-  const actual = await readFile(documentationPath, 'utf8').catch(() => '')
+  const actual = (await readFile(documentationPath, 'utf8').catch(() => ''))
+    .replace(/\r\n/g, '\n')
   if (actual !== expected) {
     process.stderr.write('docs/PRICING_HISTORY.md is stale. Run npm run pricing:docs.\n')
     process.exitCode = 1
