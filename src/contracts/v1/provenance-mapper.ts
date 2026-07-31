@@ -19,7 +19,7 @@ export type MeasurementEvidenceResolutionV1 = {
 }
 
 export type MeasurementEvidenceResolutionOptionsV1 = {
-  sessionIdExported: boolean
+  sessionId?: string
   pricingLookup?: (model: string) => ModelCosts | null
   costCalculator?: typeof calculateCost
 }
@@ -29,7 +29,7 @@ type TokenFact = {
   provenance: FactProvenanceV1
 }
 
-function assertNormalizedToken(value: number, name: string): void {
+function assertNormalizedCount(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative safe integer`)
   }
@@ -48,7 +48,7 @@ function activeTokenFacts(
   ]
 
   for (const [index, fact] of facts.entries()) {
-    assertNormalizedToken(fact.value, [
+    assertNormalizedCount(fact.value, [
       'inputTokens',
       'outputTokens',
       'cacheReadInputTokens',
@@ -56,6 +56,7 @@ function activeTokenFacts(
       'reasoningTokens',
     ][index]!)
   }
+  assertNormalizedCount(call.usage.webSearchRequests, 'webSearchRequests')
 
   return facts.filter(fact => fact.value > 0)
 }
@@ -78,9 +79,9 @@ function rollUpModelIdentity(
 
 function rollUpSessionIdentity(
   provenance: IdentityProvenanceV1,
-  sessionIdExported: boolean,
+  sessionId: string | undefined,
 ): UsageMeasurementDataV1['quality']['sessionIdentity'] {
-  if (!sessionIdExported) return 'unknown'
+  if (typeof sessionId !== 'string' || sessionId.trim().length === 0) return 'unknown'
   if (provenance === 'exact') return 'exact'
   if (provenance === 'normalized' || provenance === 'derived') return 'derived'
   return 'unknown'
@@ -98,6 +99,9 @@ function reasoningAttributionIsAllowed(
 }
 
 function positiveUsageHasPricingCoverage(call: ParsedApiCall, costs: ModelCosts): boolean {
+  const outputAndReasoning = call.usage.outputTokens + call.usage.reasoningTokens
+  if (!Number.isSafeInteger(outputAndReasoning)) return false
+
   let sawBillableFact = false
   const requireRate = (value: number, rate: number): boolean => {
     if (value <= 0) return true
@@ -107,10 +111,9 @@ function positiveUsageHasPricingCoverage(call: ParsedApiCall, costs: ModelCosts)
 
   const covered =
     requireRate(call.usage.inputTokens, costs.inputCostPerToken) &&
-    requireRate(call.usage.outputTokens + call.usage.reasoningTokens, costs.outputCostPerToken) &&
+    requireRate(outputAndReasoning, costs.outputCostPerToken) &&
     requireRate(call.usage.cacheCreationInputTokens, costs.cacheWriteCostPerToken) &&
-    requireRate(call.usage.cacheReadInputTokens, costs.cacheReadCostPerToken) &&
-    requireRate(call.usage.webSearchRequests, costs.webSearchCostPerRequest)
+    requireRate(call.usage.cacheReadInputTokens, costs.cacheReadCostPerToken)
 
   return covered && sawBillableFact
 }
@@ -119,10 +122,13 @@ function locallyCalculatedCostMatches(
   call: ParsedApiCall,
   calculator: typeof calculateCost,
 ): boolean {
+  const outputAndReasoning = call.usage.outputTokens + call.usage.reasoningTokens
+  if (!Number.isSafeInteger(outputAndReasoning)) return false
+
   const expected = calculator(
     call.model,
     call.usage.inputTokens,
-    call.usage.outputTokens + call.usage.reasoningTokens,
+    outputAndReasoning,
     call.usage.cacheCreationInputTokens,
     call.usage.cacheReadInputTokens,
     call.usage.webSearchRequests,
@@ -136,7 +142,10 @@ function locallyCalculatedCostMatches(
 
   // The public contract stores micro-USD integers. Compare at that exact wire
   // precision so harmless binary floating-point tails do not create drift.
-  return Math.round(expected * 1_000_000) === Math.round(call.costUSD * 1_000_000)
+  const expectedMicros = Math.round(expected * 1_000_000)
+  const actualMicros = Math.round(call.costUSD * 1_000_000)
+  if (!Number.isSafeInteger(expectedMicros) || !Number.isSafeInteger(actualMicros)) return false
+  return expectedMicros === actualMicros
 }
 
 function resolveCostEvidence(
@@ -150,6 +159,11 @@ function resolveCostEvidence(
   if (cost.basis === 'provider-metered') return { kind: 'metered', source: 'provider' }
   if (cost.basis === 'client-metered') return { kind: 'metered', source: 'client' }
   if (cost.basis === 'billing-export') return { kind: 'metered', source: 'billing-export' }
+
+  // UsageMeasurementEventV1 does not yet expose web-search request counts. A
+  // locally calculated cost that includes them cannot be reconciled from the
+  // public event, so withhold it until that fact has a reviewed wire field.
+  if (call.usage.webSearchRequests > 0) return { kind: 'unavailable' }
 
   const modelCosts = pricingLookup(call.model)
   if (!modelCosts || !positiveUsageHasPricingCoverage(call, modelCosts)) {
@@ -191,7 +205,7 @@ export function resolveMeasurementEvidenceV1(
       modelIdentity: rollUpModelIdentity(profile.facts.modelIdentity),
       sessionIdentity: rollUpSessionIdentity(
         profile.facts.sessionIdentity,
-        options.sessionIdExported,
+        options.sessionId,
       ),
     },
     costEvidence: resolveCostEvidence(call, profile, pricingLookup, calculator),
