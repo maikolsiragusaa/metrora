@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -87,6 +87,43 @@ describe.sequential('local endpoint identity v1', () => {
     expect(repaired.metadata).toEqual(first.metadata)
     expect(JSON.parse(await readFile(join(dataDir, 'identity', 'endpoint-identity.v1.json'), 'utf-8')))
       .toEqual(first.metadata)
+  })
+
+  it('repairs older public metadata after an interrupted rotation publication', async () => {
+    const dataDir = await root()
+    const times = [
+      new Date('2026-07-31T14:00:00.000Z'),
+      new Date('2026-07-31T15:00:00.000Z'),
+    ]
+    let timeIndex = 0
+    const options = {
+      dataDir,
+      protector: protector(),
+      now: () => times[Math.min(timeIndex++, times.length - 1)]!,
+    }
+    const first = await loadOrCreateLocalEndpointIdentityV1(options)
+    const rotated = await rotateLocalEndpointIdentityV1(options)
+    const metadataPath = join(dataDir, 'identity', 'endpoint-identity.v1.json')
+
+    // Simulate a crash after the protected generation-2 secret was published
+    // but before its public metadata replaced generation 1.
+    await writeFile(metadataPath, JSON.stringify(first.metadata))
+    const repaired = await loadOrCreateLocalEndpointIdentityV1(options)
+    expect(repaired.metadata).toEqual(rotated.metadata)
+    expect(JSON.parse(await readFile(metadataPath, 'utf-8'))).toEqual(rotated.metadata)
+  })
+
+  it('does not hide a same-generation metadata mismatch', async () => {
+    const dataDir = await root()
+    const options = { dataDir, protector: protector() }
+    const first = await loadOrCreateLocalEndpointIdentityV1(options)
+    const metadataPath = join(dataDir, 'identity', 'endpoint-identity.v1.json')
+    await writeFile(metadataPath, JSON.stringify({
+      ...first.metadata,
+      publicKeyFingerprintSha256: 'f'.repeat(64),
+    }))
+
+    await expect(loadOrCreateLocalEndpointIdentityV1(options)).rejects.toThrow(/does not match/)
   })
 
   it('fails closed when metadata survives but the protected secret is missing', async () => {
