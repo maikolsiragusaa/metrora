@@ -30,8 +30,8 @@ describe('CollectorInventoryV1', () => {
   it('tracks the current documentation gaps explicitly', () => {
     expect(collectorInventorySummaryV1()).toEqual({
       total: 38,
-      approved: 2,
-      priority: 10,
+      approved: 3,
+      priority: 9,
       pending: 26,
       documented: 34,
       documentationGaps: ['codebuff', 'kimicode', 'open-design', 'quickdesk'],
@@ -42,7 +42,7 @@ describe('CollectorInventoryV1', () => {
     const approved = CollectorInventoryV1.entries.filter(entry => entry.shareEligibility === 'approved')
     const approvedProfileIds = approved.flatMap(entry => entry.provenanceProfileIds).sort()
     const actualProfileIds = CollectorProvenanceProfilesV1.map(profile => profile.profileId).sort()
-    expect(approved.map(entry => entry.provider)).toEqual(['claude', 'codex'])
+    expect(approved.map(entry => entry.provider)).toEqual(['claude', 'codex', 'gemini'])
     expect(approvedProfileIds).toEqual(actualProfileIds)
 
     for (const entry of CollectorInventoryV1.entries) {
@@ -50,6 +50,7 @@ describe('CollectorInventoryV1', () => {
         expect(entry.reviewStatus).toBe('approved')
         expect(entry.reviewWave).toBe(0)
         expect(entry.automatedEvidence).toBe('parser-fixture-parity')
+        expect(entry.manualValidation).toBe('not-blocking')
         expect(entry.provenanceProfileIds.length).toBeGreaterThan(0)
       } else {
         expect(entry.provenanceProfileIds).toEqual([])
