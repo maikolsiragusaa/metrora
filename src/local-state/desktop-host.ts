@@ -155,15 +155,18 @@ export async function initializeDesktopLocalStateV1(
     randomBytes: input.randomBytes ?? randomBytes,
   }
   const master = await loadOrCreateMasterKey(options)
-  const identity = await loadOrCreateLocalEndpointIdentityV1({
-    dataDir: options.dataDir,
-    protector: new Aes256GcmSecretProtector(master.key),
-    now: options.now,
-  })
-  master.key.fill(0)
-  return {
-    endpoint: identity.metadata,
-    masterKeyState: master.state,
-    backend: options.backend,
+  try {
+    const identity = await loadOrCreateLocalEndpointIdentityV1({
+      dataDir: options.dataDir,
+      protector: new Aes256GcmSecretProtector(master.key),
+      now: options.now,
+    })
+    return {
+      endpoint: identity.metadata,
+      masterKeyState: master.state,
+      backend: options.backend,
+    }
+  } finally {
+    master.key.fill(0)
   }
 }
