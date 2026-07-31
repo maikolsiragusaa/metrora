@@ -60,6 +60,11 @@ function nullableNonNegativeNumber(value: unknown): number | null {
   return value
 }
 
+function nullableFraction(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return null
+  return value
+}
+
 function usdToMicros(value: unknown): number {
   const dollars = finiteNumber(value)
   if (dollars <= 0) return 0
@@ -134,7 +139,7 @@ export function toCompanionUsageV1(payload: unknown): CompanionUsageV1 {
     },
     topModels,
     quality: {
-      pricingCoverage: nullableNonNegativeNumber(current.pricingCoverage),
+      pricingCoverage: nullableFraction(current.pricingCoverage),
     },
   }
 }
