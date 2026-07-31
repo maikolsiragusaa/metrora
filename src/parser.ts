@@ -2340,7 +2340,7 @@ export function extractPrUrlsFromText(text: string): string[] {
   return [...new Set(text.match(PR_URL_IN_TEXT_RE) ?? [])].sort()
 }
 
-function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
+export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
   const tools = call.tools
   const usage: TokenUsage = {
     inputTokens: call.inputTokens,
@@ -2355,6 +2355,7 @@ function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
   const apiCall: ParsedApiCall = applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2386,10 +2387,11 @@ function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
 
 // ── Cache Conversion ───────────────────────────────────────────────────
 
-function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
+export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
   return {
     provider: call.provider,
     model: call.model,
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2440,10 +2442,11 @@ async function canonicalizeProviderCallProject(call: ParsedProviderCall): Promis
   }
 }
 
-function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
+export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
   return {
     provider: call.provider,
     model: call.model,
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2542,7 +2545,7 @@ function providerCallsToCachedTurns(calls: ParsedProviderCall[]): CachedTurn[] {
   return turns
 }
 
-function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
+export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
   const u = call.usage
   const outputForCost = call.provider === 'claude'
     ? u.outputTokens
@@ -2555,6 +2558,7 @@ function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
   return applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,

@@ -23,6 +23,8 @@ export type CachedUsage = {
 export type CachedCall = {
   provider: string
   model: string
+  /** Explicit model/API provider preserved from the source when available. */
+  modelProvider?: string
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   usage: CachedUsage
@@ -234,6 +236,8 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   'roo-code': 'worktree-project-grouping-v1',
   warp: 'worktree-project-grouping-v1-est-cost',
   antigravity: 'worktree-project-grouping-v5',
+  // Preserve the source-recorded thread.model.provider through the shared cache.
+  zed: 'sqlite-zstd-ledger-v1-model-provider-v1',
 }
 
 // ── Cache Dir ──────────────────────────────────────────────────────────

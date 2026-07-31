@@ -16,8 +16,16 @@ export type SessionParser = {
 }
 
 export type ParsedProviderCall = {
+  /** Collector/tool that produced the record (for example zed or opencode). */
   provider: string
+  /** Model identifier recorded by the source. */
   model: string
+  /**
+   * Actual model/API provider recorded explicitly by the source (for example
+   * anthropic, openai, google, or zed.dev). Never inferred from the collector
+   * name or model label. Omitted when the source does not expose it.
+   */
+  modelProvider?: string
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   inputTokens: number
