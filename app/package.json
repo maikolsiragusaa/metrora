@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.9.19",
   "description": "Qovrion Desktop — local-first AI usage intelligence powered by the compatibility CLI",
-  "main": "dist/electron/main.js",
+  "main": "dist/electron/bootstrap.js",
   "scripts": {
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "vite build",
