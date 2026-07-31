@@ -1,36 +1,66 @@
+<div align="center">
+
 # Qovrion
 
-**Local-first AI usage intelligence.**
+### Local-first intelligence for AI-assisted development
 
-Qovrion is an independent open-source project for understanding AI coding usage and cost across tools, models, projects, tasks, and sessions.
+Understand where AI time, tokens, and money go — across tools, models, projects, and sessions — without routing your work through another service.
 
-The project was bootstrapped from the CodeBurn 0.9.19 source tree under the MIT License. Original copyright and provenance are preserved in [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`UPSTREAM.md`](UPSTREAM.md).
+[![Qovrion CI](https://github.com/maikolsiragusaa/qovrion/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/qovrion/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Current status
+</div>
 
-Qovrion is in an early controlled-rebranding and stabilization phase.
+> [!IMPORTANT]
+> Qovrion is under active development. The source is usable for development and validation, but there are no official signed Qovrion releases yet.
 
-The current source baseline already includes:
+## Why Qovrion
 
-- a TypeScript CLI and terminal dashboard;
-- local usage and cost collection for many AI coding tools;
-- a local React web dashboard;
-- an Electron desktop application for Windows, macOS, and Linux;
-- breakdowns by tool, model, task, project, activity, and session;
-- model comparison, token audit, optimization findings, and budget guards;
-- local device pairing and sharing capabilities.
+AI-assisted work is split across editors, desktop apps, CLIs, providers, subscriptions, and models. Each tool exposes a different fragment of the picture.
 
-Some runtime commands, package identifiers, application IDs, assets, paths, and documentation still use CodeBurn-era naming. There are **no official Qovrion binaries, npm packages, store listings, hosted services, or mobile releases yet**. Upstream CodeBurn downloads must not be presented as Qovrion releases.
+Qovrion builds one evidence-based view from the usage records already stored on your machine. It helps answer practical questions:
 
-## Privacy
+- Which tools and models are driving cost?
+- Which models work best for different kinds of tasks?
+- How much value comes from cache, subscriptions, and local models?
+- Which sessions were efficient, abandoned, reverted, or unusually expensive?
+- Where can usage be improved without exposing prompts or source code?
 
-The inherited product is local-first and reads session artifacts already stored on the user's device. Contributions must preserve privacy-safe defaults:
+## What works today
 
-- do not collect or export prompts, source code, secrets, or full local paths by default;
-- distinguish exact, observed, estimated, and unknown values;
-- retain provenance for analytical claims;
-- do not require AI traffic to pass through Qovrion;
-- keep device pairing revocable and scoped.
+- **Multi-tool collection** from supported AI coding clients and local session stores.
+- **Desktop application** for Windows, macOS, and Linux development builds.
+- **CLI and terminal dashboard** for scripts, exports, and keyboard-first workflows.
+- **Session intelligence** across projects, tasks, tools, models, cost, tokens, cache, and timing.
+- **Model comparison** across performance, efficiency, working style, task categories, and observed context.
+- **Reasoning attribution** when a source exposes a trustworthy effort level, with unknown coverage kept explicit.
+- **Optimization findings** for waste, reverts, abandoned work, and actionable savings opportunities.
+- **Budgets, plans, pricing overrides, token audit, and CSV/JSON export.**
+- **Private device linking** and combined local usage across machines.
+
+## Surfaces
+
+| Surface | Role | Status |
+| --- | --- | --- |
+| Desktop | Primary local analysis and configuration | Active development |
+| CLI | First-class automation, inspection, and export | Active development |
+| Local web dashboard | Browser view served from the local machine | Available |
+| Android companion | Read-only local-network companion foundation | Experimental |
+
+Windows is the first release target. Other platforms remain part of the source tree, but signed distribution will follow only after the release pipeline is ready.
+
+## Privacy model
+
+Qovrion is local-first by default:
+
+- no account is required for local use;
+- AI traffic does not pass through Qovrion;
+- prompts, responses, source code, patches, secrets, and full local paths are not exported by default;
+- analytical claims distinguish observed, estimated, and unknown values;
+- sharing is explicit, scoped, revocable, and designed around structured usage data;
+- user-owned data remains exportable through open formats.
+
+Read the [product principles](docs/PRODUCT_PRINCIPLES.md) and [security policy](SECURITY.md).
 
 ## Development
 
@@ -40,37 +70,51 @@ Requirements:
 - npm
 
 ```bash
+git clone https://github.com/maikolsiragusaa/qovrion.git
+cd qovrion
 npm ci
 npm run build:cli
 npm test -- --run
 ```
 
-Main inherited directories:
+Run the CLI from source:
 
-```text
-src/       TypeScript engine, CLI, collectors, caches, and analytics
-app/       Electron desktop application
-dash/      Local React web dashboard
-mac/       macOS menubar application
-gnome/     GNOME extension
-tests/     Test suite
+```bash
+npm run dev -- --help
 ```
 
-The canonical runtime command is `qovrion`; `codeburn` remains a temporary compatibility alias. There are still no official Qovrion packages or binaries, so do not publish or distribute artifacts without an explicit release change.
+Build and validate the desktop application:
+
+```bash
+npm --prefix app ci
+npm --prefix app test
+npm --prefix app run typecheck
+npm --prefix app run build
+```
+
+Repository map:
+
+```text
+src/       collection, parsing, canonical records, CLI, analytics, and sharing
+app/       Electron desktop application
+dash/      local React web dashboard
+android/   experimental Android companion
+mac/       macOS menubar application
+gnome/     GNOME extension
+tests/     core test suite
+docs/      public contracts, principles, and technical documentation
+```
+
+The canonical command is `qovrion`. `codeburn` remains a temporary compatibility alias while inherited paths and integrations are migrated safely.
 
 ## Contributing
 
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Provider and parser changes require fixtures, targeted tests, provenance, privacy review, and real-session validation where applicable.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Provider and parser changes require fixtures, targeted tests, provenance, privacy review, and real-session validation where possible.
 
-Security issues must be reported privately according to [`SECURITY.md`](SECURITY.md).
+Security issues must be reported privately according to [SECURITY.md](SECURITY.md).
 
 ## License and provenance
 
-Qovrion contains substantial software initially derived from CodeBurn 0.9.19.
+Qovrion is open source under the MIT License and contains substantial software originally derived from CodeBurn 0.9.19.
 
-- Upstream project: CodeBurn by AgentSeal
-- Imported baseline: `146037bfd533edff85cd39f322571b2c5434fcca`
-- Qovrion bootstrap commit: `b669bac85e3caa6d7547c08428799473fa255c8d`
-- License: MIT
-
-See [`LICENSE`](LICENSE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and [`UPSTREAM.md`](UPSTREAM.md).
+Original copyright, license, and provenance are preserved in [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and [UPSTREAM.md](UPSTREAM.md). Qovrion is an independent project and does not present upstream CodeBurn packages or releases as Qovrion artifacts.
