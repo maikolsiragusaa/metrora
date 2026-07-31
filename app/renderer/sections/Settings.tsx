@@ -8,7 +8,6 @@ import { Panel } from '../components/Panel'
 import { ProviderLogo } from '../components/ProviderLogo'
 import type { Section } from '../components/Sidebar'
 import { usePolled } from '../hooks/usePolled'
-import { updateDownloadUrl, useUpdateStatus } from '../hooks/useUpdateStatus'
 import { version as appVersion } from '../../package.json'
 import { readDailyBudget } from '../lib/budget'
 import { formatConverted, formatUsd } from '../lib/format'
@@ -18,7 +17,7 @@ import { REFRESH_OPTIONS, useRefreshCadence } from '../lib/refreshCadence'
 import { showToast } from '../lib/toast'
 import { ToastHost } from '../components/ToastHost'
 import { rateLimitedNote } from './Plans'
-import type { ActionResult, AliasRow, ClaudeConfigSelector, CliError, CombinedUsage, DeviceScanResult, Identity, JsonPlanSummary, MenubarPayload, Period, PlanId, PlanProvider, PriceOverrideList, PriceOverrideRow, PriceRates, QuotaProvider, ShareStatus, StatusJson, TelemetryStatus } from '../lib/types'
+import type { ActionResult, AliasRow, ClaudeConfigSelector, CliError, CombinedUsage, DeviceScanResult, Identity, JsonPlanSummary, MenubarPayload, Period, PlanId, PlanProvider, PriceOverrideList, PriceOverrideRow, PriceRates, QuotaProvider, ShareStatus, StatusJson } from '../lib/types'
 
 export type SettingsPane = 'general' | 'providers' | 'aliases' | 'pricing' | 'plans' | 'devices' | 'export' | 'privacy'
 type Pane = SettingsPane
@@ -140,13 +139,6 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
   const [budgetKind, setBudgetKind] = useState<'off' | 'usd' | 'tokens'>(() => readDailyBudget()?.kind ?? 'off')
   const [budgetInput, setBudgetInput] = useState(() => { const budget = readDailyBudget(); return budget ? String(budget.value) : '' })
   const [budgetError, setBudgetError] = useState('')
-  const update = useUpdateStatus()
-  const version = update?.currentVersion || appVersion
-  const updateNote = update?.updateAvailable && update.latestVersion
-    ? `Update available: ${update.latestVersion}`
-    : update?.latestVersion
-    ? 'Up to date'
-    : ''
 
   useEffect(() => {
     if (theme === 'system') document.documentElement.removeAttribute('data-theme')
@@ -192,7 +184,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
         {hasConfigs && (
           <div className="about-sec">
             <div className="about-sec-h">Claude config</div>
-            <div className="about-row"><span className="tx">Active config<small>Applies to the overview data. Manage config folders with the codeburn CLI.</small></span><span className="r"><span className="set-cap">{activeConfigLabel}</span></span></div>
+            <div className="about-row"><span className="tx">Active config<small>Applies to the overview data. Manage config folders with the compatibility CLI (`codeburn`).</small></span><span className="r"><span className="set-cap">{activeConfigLabel}</span></span></div>
           </div>
         )}
         <div className="about-sec">
@@ -208,7 +200,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
         </div>
         <div className="about-sec set-last-sec">
           <div className="about-sec-h">About</div>
-          <div className="about-row"><span className="tx">Version {version}{updateNote && <small>{updateNote}</small>}</span><span className="r">{update?.updateAvailable && update.tag ? <button className="set-text-button" onClick={() => { void codeburn.openExternal(updateDownloadUrl(update.tag!)) }}>Download</button> : null}</span></div>
+          <div className="about-row"><span className="tx">Qovrion {appVersion}<small>Automatic updates are not configured for this development build.</small></span><span className="r" /></div>
         </div>
       </div>
     </section>
@@ -225,7 +217,7 @@ function ProvidersPane({ period, refreshToken }: { period: Period; refreshToken:
     ? details.filter(entry => entry.cost > 0).map(entry => ({ id: entry.id, label: entry.label, cost: entry.cost }))
     : Object.entries(overview.data?.current.providers ?? {}).map(([id, cost]) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1), cost }))
   return <section className="set-p on">
-    <div><h3 className="set-h">Providers</h3><p className="set-sub">codeburn auto-detects coding tools from local session files. No setup needed.</p></div>
+    <div><h3 className="set-h">Providers</h3><p className="set-sub">Qovrion auto-detects coding tools from local session files. No setup needed.</p></div>
     {overview.error ? <SettingsErrorText error={overview.error} /> : !overview.data ? <p className="set-cap">Loading detected providers…</p> : providers.length === 0 ? <p className="set-cap">No providers detected.</p> : providers.map(entry => <div className="card" key={entry.id}><div className="set-prov-head"><ProviderLogo provider={entry.id} /><span className="set-prov-name">{entry.label}</span><span className="set-status"><span className="set-dot ok" />Detected · {formatUsd(entry.cost)}</span></div></div>)}
   </section>
 }
@@ -420,7 +412,7 @@ function ExportPane({ period, refreshToken }: { period: Period; refreshToken: nu
       </div>
       <div className="about-sec set-last-sec"><div className="about-row"><span className="tx" /><span className="r"><button className="btnp btnp-primary" disabled={!destination || exporting} onClick={() => void exportNow()}>{exporting ? 'Exporting…' : 'Export'}</button></span></div></div>
     </div>
-    <p className="set-cap">CSV writes a folder (summary, daily, models, projects, sessions, tools, mcp). JSON writes one file (schema codeburn.export.v2).</p>
+    <p className="set-cap">CSV writes a folder (summary, daily, models, projects, sessions, tools, mcp). JSON currently uses the legacy compatibility schema <code>codeburn.export.v2</code>.</p>
   </section>
 }
 
@@ -435,28 +427,11 @@ function DevicesPane({ period, refreshToken }: { period: Period; refreshToken: n
 }
 
 function PrivacyPane() {
-  return <section className="set-p on"><div><h3 className="set-h">Privacy &amp; data</h3><p className="set-sub">What codeburn does, and does not do, with your data.</p></div><div className="card">
-    <PrivacyClaim title="Local-only" detail="Everything runs on your machine. Data is read from local session files." icon={<><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>} />
+  return <section className="set-p on"><div><h3 className="set-h">Privacy &amp; data</h3><p className="set-sub">What Qovrion does, and does not do, with your data.</p></div><div className="card">
+    <PrivacyClaim title="Local-only" detail="Usage analysis runs on your machine and reads local session files." icon={<><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>} />
     <PrivacyClaim title="No API keys" detail="Usage is detected from local files; no provider API keys are required." icon={<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />} />
-    <TelemetryClaim />
+    <PrivacyClaim title="No product telemetry" detail="This build does not transmit product telemetry or query inherited CodeBurn update services." icon={<path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" />} />
   </div></section>
-}
-
-/** The anonymous-telemetry consent toggle, mirroring the onboarding decision. */
-function TelemetryClaim() {
-  const [status, setStatus] = useState<TelemetryStatus | null>(null)
-  useEffect(() => {
-    if (typeof codeburn.telemetryStatus !== 'function') return
-    codeburn.telemetryStatus().then(value => setStatus(value)).catch(() => {})
-  }, [])
-  if (!status) return null
-  const toggle = () => {
-    if (typeof codeburn.setTelemetryEnabled !== 'function') return
-    codeburn.setTelemetryEnabled(!status.enabled).then(value => setStatus(value)).catch(() => {})
-  }
-  return <div className="set-claim"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" /></svg><div style={{ flex: 1 }}><div className="set-claim-t">Anonymous telemetry</div><div className="set-claim-d">Optional usage statistics: model mix, task success, performance and errors. Never prompts, code or anything identifying.</div></div>
-    <button type="button" role="switch" aria-checked={status.enabled} aria-label="Anonymous telemetry" className={status.enabled ? 'switch on' : 'switch'} onClick={toggle}><span className="switch-knob" /></button>
-  </div>
 }
 
 function PrivacyClaim({ title, detail, icon }: { title: string; detail: string; icon: React.ReactNode }) {
@@ -470,7 +445,7 @@ function ThisDevicePanel({ identity, shareStatus }: { identity: ReturnType<typeo
 
 function DiscoveredPanel({ scan }: { scan: ReturnType<typeof usePolled<DeviceScanResult>> }) {
   const found = scan.data?.found.filter(device => !device.paired) ?? []
-  return <Panel title="Discovered nearby" right={scan.loading ? 'listening…' : undefined}>{!scan.data && scan.error ? <SettingsErrorText error={scan.error} /> : !scan.data ? <p className="set-cap">listening…</p> : found.length === 0 ? <p className="set-cap">No nearby devices found.</p> : found.map(device => <div className="li" key={`${device.host}:${device.port}:${device.fingerprint}`}><div className="lx"><b>{device.name}</b><span>fingerprint {shortFingerprint(device.fingerprint)}</span></div></div>)}<p className="set-cap set-device-caption">To pair a device, run <code>codeburn devices add</code> in a terminal. Pairing is interactive (approve on the other device).</p></Panel>
+  return <Panel title="Discovered nearby" right={scan.loading ? 'listening…' : undefined}>{!scan.data && scan.error ? <SettingsErrorText error={scan.error} /> : !scan.data ? <p className="set-cap">listening…</p> : found.length === 0 ? <p className="set-cap">No nearby devices found.</p> : found.map(device => <div className="li" key={`${device.host}:${device.port}:${device.fingerprint}`}><div className="lx"><b>{device.name}</b><span>fingerprint {shortFingerprint(device.fingerprint)}</span></div></div>)}<p className="set-cap set-device-caption">To pair a device, run the compatibility command <code>codeburn devices add</code> in a terminal. Pairing is interactive (approve on the other device).</p></Panel>
 }
 
 function PairedPanel({ devices, period, onRefresh }: { devices: ReturnType<typeof usePolled<CombinedUsage>>; period: Period; onRefresh: () => void }) {
