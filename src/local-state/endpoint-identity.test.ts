@@ -61,6 +61,22 @@ describe.sequential('local endpoint identity v1', () => {
     expect(sealedText).not.toContain('eventIdentityKeyBase64')
   })
 
+  it('serializes concurrent initialization into one endpoint generation', async () => {
+    const dataDir = await root()
+    let uuidCounter = 0
+    const options = {
+      dataDir,
+      protector: protector(),
+      randomUUID: () => `11111111-2222-4333-8444-${String(++uuidCounter).padStart(12, '0')}`,
+    }
+    const identities = await Promise.all(
+      Array.from({ length: 8 }, () => loadOrCreateLocalEndpointIdentityV1(options)),
+    )
+    expect(new Set(identities.map(identity => identity.metadata.endpointId)).size).toBe(1)
+    expect(new Set(identities.map(identity => identity.metadata.generation))).toEqual(new Set([1]))
+    expect(uuidCounter).toBe(1)
+  })
+
   it('repairs missing public metadata from the protected secret', async () => {
     const dataDir = await root()
     const options = { dataDir, protector: protector() }
