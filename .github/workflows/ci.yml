@@ -52,6 +52,10 @@ jobs:
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required by the Zed gate')"
       - name: Install core dependencies
         run: npm ci --no-audit --no-fund
+      - name: Validate historical price book and generated docs
+        run: npm run pricing:docs:check
+      - name: Test historical price boundaries
+        run: npm test -- --run --no-file-parallelism src/pricing/history.test.ts
       - name: Build CLI and desktop local-state runtime
         run: npm run build:cli
       - name: Test Zed SQLite and zstd collector
@@ -131,6 +135,8 @@ jobs:
             echo "All non-quarantined core tests ran serially as blocking gates. Desktop tests ran separately on Ubuntu and Windows."
             echo
             echo "The Zed SQLite/zstd collector ran as an explicit blocking gate on Node 22.15 on Ubuntu and Windows."
+            echo
+            echo "The historical price-book schema, boundary lookup and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
             echo
             echo "The refresh-lock lease, local endpoint state, signed-batch suite and real Electron DPAPI probe also ran on Windows."
             echo
