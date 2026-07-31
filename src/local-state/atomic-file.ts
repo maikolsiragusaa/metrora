@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, stat, unlink } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 const WINDOWS_MUTATION_RETRIES = 5
 const TEMP_SUFFIX = '.qovrion-tmp-'
@@ -84,7 +84,7 @@ export async function removePrivateFile(path: string): Promise<void> {
 export async function cleanupStaleAtomicTemps(directory: string, maxAgeMs = 5 * 60 * 1000): Promise<void> {
   let entries: import('node:fs').Dirent[]
   try {
-    entries = await import('node:fs/promises').then(fs => fs.readdir(directory, { withFileTypes: true }))
+    entries = await readdir(directory, { withFileTypes: true })
   } catch (error) {
     if (isMissingError(error)) return
     throw error
@@ -94,7 +94,7 @@ export async function cleanupStaleAtomicTemps(directory: string, maxAgeMs = 5 * 
   await Promise.all(entries
     .filter(entry => entry.isFile() && entry.name.includes(TEMP_SUFFIX))
     .map(async entry => {
-      const path = `${directory}/${entry.name}`
+      const path = join(directory, entry.name)
       const info = await stat(path).catch(() => undefined)
       if (!info || info.mtimeMs > cutoff) return
       await rm(path, { force: true }).catch(() => undefined)
