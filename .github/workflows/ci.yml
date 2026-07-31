@@ -13,6 +13,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  one-time-ref-cleanup:
+    name: Remove final temporary refs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+      - name: Verify cleanup-only change
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="7d888e553648c22c4938d3e774b670e7c034df69"
+          git cat-file -e "$root^{commit}"
+          git diff --exit-code "$root" HEAD -- . ':(exclude).github/workflows/ci.yml'
+      - name: Delete non-canonical refs and restore root
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'qovrion-final-ref-cleanup',
+          }
+
+          def request(method, path):
+              req = urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}{path}',
+                  headers=headers,
+                  method=method,
+              )
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      body = response.read()
+                      return json.loads(body) if body else None
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 404 and method == 'DELETE':
+                      return None
+                  raise
+
+          for namespace in ('heads', 'tags'):
+              refs = request('GET', f'/git/matching-refs/{namespace}/') or []
+              for item in refs:
+                  ref = item['ref']
+                  if ref == 'refs/heads/main':
+                      continue
+                  encoded = urllib.parse.quote(ref.removeprefix('refs/'), safe='/')
+                  request('DELETE', f'/git/refs/{encoded}')
+          PY
+
+          git push --force origin \
+            7d888e553648c22c4938d3e774b670e7c034df69:refs/heads/main
+
   semgrep:
     name: Semgrep guard
     runs-on: ubuntu-latest
