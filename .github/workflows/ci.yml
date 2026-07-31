@@ -41,7 +41,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,20 +50,28 @@ jobs:
           cache: npm
       - name: Install core dependencies
         run: npm ci --no-audit --no-fund
-      - name: Build CLI
+      - name: Build CLI and desktop local-state runtime
         run: npm run build:cli
       - name: Test refresh lock lease on Windows
         if: runner.os == 'Windows'
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
-      - name: Test local endpoint state on Windows
+      - name: Test local endpoint state and signed batches on Windows
         if: runner.os == 'Windows'
         run: >-
           npm test -- --run --no-file-parallelism
+          src/vendor/rfc8785-canonicalize.test.ts
           src/local-state/secret-protector.test.ts
           src/local-state/endpoint-identity.test.ts
+          src/local-state/desktop-host.test.ts
           src/local-state/measurement-outbox.test.ts
+          src/local-state/signed-batch.test.ts
       - name: Install desktop dependencies
         run: npm --prefix app ci --no-audit --no-fund
+      - name: Stage desktop runtime
+        run: npm --prefix app run stage-cli
+      - name: Probe Electron safeStorage with Windows DPAPI
+        if: runner.os == 'Windows'
+        run: npm --prefix app run test:safe-storage
       - name: Test desktop
         run: npm --prefix app test
       - name: Typecheck desktop
@@ -116,7 +124,7 @@ jobs:
             echo
             echo "All non-quarantined core tests ran serially as blocking gates. Desktop tests ran separately on Ubuntu and Windows."
             echo
-            echo "The refresh-lock lease and local endpoint state suites also ran on Windows."
+            echo "The refresh-lock lease, local endpoint state, signed-batch suite and real Electron DPAPI probe also ran on Windows."
             echo
             echo "Four exact inherited cases remain quarantined in \`docs/TEST_QUARANTINE.md\`; no wildcard file or subsystem quarantine is active."
           } >> "$GITHUB_STEP_SUMMARY"

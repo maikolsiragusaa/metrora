@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/main.ts'],
+  entry: {
+    main: 'src/main.ts',
+    'desktop-local-state': 'src/desktop-local-state-entry.ts',
+  },
   format: ['esm'],
   target: 'node20',
   outDir: 'dist',

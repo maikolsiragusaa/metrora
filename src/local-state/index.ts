@@ -1,5 +1,7 @@
 export * from './atomic-file.js'
+export * from './desktop-host.js'
 export * from './endpoint-identity.js'
 export * from './local-state-lease.js'
 export * from './measurement-outbox.js'
 export * from './secret-protector.js'
+export * from './signed-batch.js'
