@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import * as z from 'zod/v4'
 
 const SecretEnvelopeV1Schema = z.strictObject({
@@ -81,11 +81,5 @@ export class Aes256GcmSecretProtector implements SecretProtector {
     } catch {
       throw new Error('sealed secret could not be authenticated')
     }
-  }
-
-  matchesKey(candidate: Uint8Array): boolean {
-    return candidate instanceof Uint8Array
-      && candidate.byteLength === this.#key.byteLength
-      && timingSafeEqual(this.#key, Buffer.from(candidate))
   }
 }
