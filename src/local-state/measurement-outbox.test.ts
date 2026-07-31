@@ -154,6 +154,29 @@ describe.sequential('local measurement outbox v1', () => {
       .toEqual([1, 9])
   })
 
+  it('excludes a valid quarantined event without rewriting its source record', async () => {
+    const dataDir = await root()
+    await enqueueMeasurementEventV1(event('evt_quarantine'), { dataDir })
+    const eventsDir = join(dataDir, 'outbox', 'v1', 'events')
+    const [file] = (await readdir(eventsDir)).filter(name => name.endsWith('.json'))
+    const sourceBefore = await readFile(join(eventsDir, file!))
+
+    const marker = await quarantineMeasurementOutboxFileV1(file!, 'source requires manual review', {
+      dataDir,
+      now: () => new Date('2026-07-31T14:09:00.000Z'),
+    })
+    const duplicate = await quarantineMeasurementOutboxFileV1(file!, 'source requires manual review', { dataDir })
+    expect(duplicate).toEqual(marker)
+    const scan = await scanMeasurementOutboxV1({ dataDir })
+    expect(scan.pending).toHaveLength(0)
+    expect(scan.acknowledged).toHaveLength(0)
+    expect(scan.invalid).toHaveLength(0)
+    expect(scan.quarantined).toEqual([marker])
+    expect(await readFile(join(eventsDir, file!))).toEqual(sourceBefore)
+    await expect(quarantineMeasurementOutboxFileV1(file!, 'a different decision', { dataDir }))
+      .rejects.toThrow(/different quarantine decision/)
+  })
+
   it('surfaces corrupt immutable events and records a separate quarantine marker', async () => {
     const dataDir = await root()
     await enqueueMeasurementEventV1(event('evt_corrupt'), { dataDir })
@@ -174,12 +197,17 @@ describe.sequential('local measurement outbox v1', () => {
     expect(await readFile(join(eventsDir, file!), 'utf-8')).toBe('{broken')
   })
 
-  it('rejects malformed counters and invalid read limits instead of guessing', async () => {
+  it('rejects malformed counters, exhausted sequences and invalid read limits', async () => {
     const dataDir = await root()
     await enqueueMeasurementEventV1(event('evt_counter_seed'), { dataDir })
-    await writeFile(join(dataDir, 'outbox', 'v1', 'next-sequence.json'), '{bad')
+    const counterPath = join(dataDir, 'outbox', 'v1', 'next-sequence.json')
+    await writeFile(counterPath, '{bad')
     await expect(enqueueMeasurementEventV1(event('evt_counter_next'), { dataDir }))
       .rejects.toThrow(/recovery is required/)
+
+    await writeFile(counterPath, JSON.stringify({ version: 1, nextSequence: Number.MAX_SAFE_INTEGER }))
+    await expect(enqueueMeasurementEventV1(event('evt_counter_exhausted'), { dataDir }))
+      .rejects.toThrow(/sequence space is exhausted/)
     await expect(readPendingMeasurementEventsV1(0, { dataDir })).rejects.toThrow(/1 to 10000/)
   })
 })
