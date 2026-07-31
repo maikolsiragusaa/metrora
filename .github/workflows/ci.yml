@@ -54,7 +54,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Validate historical price book and generated docs
         run: npm run pricing:docs:check
-      - name: Test historical price storage, reviewed data, calculation, and boundaries
+      - name: Test historical pricing, settlement, and assignment contracts
         run: >-
           npm test -- --run --no-file-parallelism
           src/pricing/history.test.ts
@@ -63,6 +63,8 @@ jobs:
           src/pricing/gpt-5-6-history.test.ts
           src/pricing/local-observation-ledger.test.ts
           src/pricing/local-observation-bands.test.ts
+          src/pricing/cost-assignment.test.ts
+          src/pricing/settled-historical-cost.test.ts
       - name: Build CLI and desktop local-state runtime
         run: npm run build:cli
       - name: Test Zed SQLite and zstd collector
@@ -143,7 +145,7 @@ jobs:
             echo
             echo "The Zed SQLite/zstd collector ran as an explicit blocking gate on Node 22.15 on Ubuntu and Windows."
             echo
-            echo "The reviewed GPT-5.6 price intervals, optional-rate coverage, conditional bands, formula parity, local first-observation ledger, cross-book resolution and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
+            echo "The reviewed GPT-5.6 intervals, historical calculations, immutable cost assignments, local observation ledger, cross-book resolution and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
             echo
             echo "The refresh-lock lease, local endpoint state, signed-batch suite and real Electron DPAPI probe also ran on Windows."
             echo
