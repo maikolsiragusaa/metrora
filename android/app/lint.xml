@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Android 17 / API 37 is used for compilation; production targeting remains on stable API 36 for this alpha. -->
+    <issue id="OldTargetApi">
+        <ignore path="build.gradle.kts" regexp="targetSdk = 36" />
+    </issue>
+</lint>

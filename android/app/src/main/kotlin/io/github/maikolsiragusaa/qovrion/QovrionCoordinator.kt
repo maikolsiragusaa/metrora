@@ -1,0 +1,189 @@
+package io.github.maikolsiragusaa.qovrion
+
+import android.content.Context
+import android.os.Build
+import io.github.maikolsiragusaa.qovrion.data.PairingCredentials
+import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
+import io.github.maikolsiragusaa.qovrion.network.QovrionApiClient
+import io.github.maikolsiragusaa.qovrion.network.QovrionProtocol
+import io.github.maikolsiragusaa.qovrion.security.SecureStore
+import java.io.Closeable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class QovrionUiState(
+    val initializing: Boolean = true,
+    val busy: Boolean = false,
+    val credentials: PairingCredentials? = null,
+    val snapshot: UsageSnapshot? = null,
+    val showingCachedData: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+) {
+    val paired: Boolean
+        get() = credentials != null
+}
+
+class QovrionCoordinator(context: Context) : Closeable {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val store = SecureStore(context.applicationContext)
+    private val api = QovrionApiClient()
+    private val mutableState = MutableStateFlow(QovrionUiState())
+
+    val state: StateFlow<QovrionUiState> = mutableState.asStateFlow()
+
+    init {
+        scope.launch {
+            try {
+                val credentials = store.loadCredentials()
+                val snapshot = store.loadSnapshot()?.takeIf { cached ->
+                    credentials != null && cached.desktopId == credentials.serverFingerprint
+                }
+                mutableState.value = QovrionUiState(
+                    initializing = false,
+                    credentials = credentials,
+                    snapshot = snapshot,
+                    showingCachedData = snapshot != null,
+                )
+            } catch (error: Exception) {
+                runCatching { store.clearPairing() }
+                mutableState.value = QovrionUiState(
+                    initializing = false,
+                    error = error.safeMessage("Encrypted local state could not be read and was removed."),
+                )
+            }
+        }
+    }
+
+    fun pair(host: String, portText: String, pin: String) {
+        if (mutableState.value.busy || mutableState.value.paired) return
+        val port = try {
+            QovrionProtocol.validatePort(portText.trim().toInt())
+        } catch (error: Exception) {
+            mutableState.update { it.copy(error = error.safeMessage("Enter a valid port."), message = null) }
+            return
+        }
+        mutableState.update { it.copy(busy = true, error = null, message = null) }
+        scope.launch {
+            try {
+                val desktop = api.discover(host, port)
+                val credentials = api.pair(desktop, pin, androidDeviceName())
+                store.saveCredentials(credentials)
+                mutableState.update {
+                    it.copy(
+                        busy = true,
+                        credentials = credentials,
+                        message = "Desktop paired. Loading the first usage snapshot…",
+                    )
+                }
+                try {
+                    val snapshot = api.fetchUsage(credentials)
+                    store.saveSnapshot(snapshot)
+                    mutableState.update {
+                        it.copy(
+                            busy = false,
+                            snapshot = snapshot,
+                            showingCachedData = false,
+                            message = "Pairing complete.",
+                            error = null,
+                        )
+                    }
+                } catch (error: Exception) {
+                    mutableState.update {
+                        it.copy(
+                            busy = false,
+                            showingCachedData = it.snapshot != null,
+                            message = "The desktop is paired. Usage will appear after the first successful refresh.",
+                            error = error.safeMessage("The initial usage refresh failed."),
+                        )
+                    }
+                }
+            } catch (error: Exception) {
+                mutableState.update {
+                    it.copy(
+                        busy = false,
+                        credentials = null,
+                        error = error.safeMessage("Pairing failed."),
+                    )
+                }
+            }
+        }
+    }
+
+    fun refresh() {
+        val credentials = mutableState.value.credentials ?: return
+        if (mutableState.value.busy) return
+        mutableState.update { it.copy(busy = true, error = null, message = null) }
+        scope.launch {
+            try {
+                val snapshot = api.fetchUsage(credentials)
+                store.saveSnapshot(snapshot)
+                mutableState.update {
+                    it.copy(
+                        busy = false,
+                        snapshot = snapshot,
+                        showingCachedData = false,
+                        message = "Usage refreshed from the desktop.",
+                    )
+                }
+            } catch (error: Exception) {
+                mutableState.update {
+                    it.copy(
+                        busy = false,
+                        showingCachedData = it.snapshot != null,
+                        error = error.safeMessage("Desktop unreachable. The last encrypted snapshot remains available."),
+                    )
+                }
+            }
+        }
+    }
+
+    fun disconnect() {
+        if (mutableState.value.busy || !mutableState.value.paired) return
+        mutableState.update { it.copy(busy = true, error = null, message = null) }
+        scope.launch {
+            try {
+                store.clearPairing()
+                mutableState.value = QovrionUiState(
+                    initializing = false,
+                    message = "Pairing removed from this phone.",
+                )
+            } catch (error: Exception) {
+                mutableState.update {
+                    it.copy(
+                        busy = false,
+                        error = error.safeMessage("Local pairing data could not be removed."),
+                    )
+                }
+            }
+        }
+    }
+
+    override fun close() {
+        scope.cancel()
+    }
+
+    private fun androidDeviceName(): String = listOf(Build.MANUFACTURER, Build.MODEL)
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
+        .joinToString(" ")
+        .ifBlank { "Android" }
+        .take(80)
+
+    private fun Throwable.safeMessage(fallback: String): String {
+        val sanitized = message
+            ?.replace(Regex("[\\u0000-\\u001f\\u007f]"), " ")
+            ?.trim()
+            ?.take(180)
+            .orEmpty()
+        return sanitized.ifBlank { fallback }
+    }
+}
