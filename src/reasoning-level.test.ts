@@ -47,6 +47,7 @@ describe('model-label attribution', () => {
 
   it('does not treat generic quality or latency words as reasoning levels', () => {
     expect(reasoningLevelFromModelLabel('generic-high')).toBeNull()
+    expect(reasoningLevelFromModelLabel('generic (high)')).toBeNull()
     expect(reasoningLevelFromModelLabel('gpt-5-low-latency')).toBeNull()
     expect(reasoningLevelFromModelLabel('claude-high-speed')).toBeNull()
     expect(reasoningLevelFromModelLabel('gpt-5-auto')).toBeNull()
