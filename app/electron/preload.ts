@@ -1,8 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-// Handlers resolve with { ok, value } | { ok, error } so the structured error
-// `kind` survives the contextBridge boundary. `import type` is erased at build,
-// so this shares main.ts's declaration without pulling its runtime in.
 import type { Envelope } from './main'
 
 type DateRange = { from: string; to: string }
@@ -14,8 +11,9 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return Promise.reject(res.error)
 }
 
-// Shape matches CodeburnBridge (app/renderer/lib/types.ts). The `codeburn`
-// property name and IPC channels remain a temporary compatibility boundary.
+// The legacy IPC channel names remain behind this adapter until main-process
+// aliases are installed. Renderer code receives Qovrion as the canonical bridge
+// immediately, while old windows/integrations can keep using window.codeburn.
 const bridge = {
   getQuota: (force?: boolean) => invoke('codeburn:getQuota', force),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean) => invoke('codeburn:getOverview', period, provider, range, configSource, background),
@@ -49,9 +47,7 @@ const bridge = {
   chooseDirectory: () => invoke('codeburn:chooseDirectory'),
   cliStatus: () => invoke('codeburn:cliStatus'),
 
-  // Qovrion performs no product telemetry. These compatibility methods settle
-  // locally and never cross IPC, so renderer code cannot accidentally reactivate
-  // inherited telemetry by calling old bridge methods.
+  // Qovrion performs no product telemetry. Compatibility calls settle locally.
   telemetryStatus: async () => null,
   setTelemetryEnabled: async (_enabled: boolean) => null,
   completeOnboarding: async (_enabled: boolean) => null,
@@ -63,9 +59,6 @@ const bridge = {
     ipcRenderer.on('codeburn:progress', listener)
     return () => { ipcRenderer.removeListener('codeburn:progress', listener) }
   },
-
-  // The main-process checker is also no-network until Qovrion publishes a
-  // verified release channel. Preserve the compatibility event shape for now.
   getUpdateStatus: () => invoke('codeburn:getUpdateStatus'),
   onUpdateStatus: (cb: (status: unknown) => void) => {
     const listener = (_event: unknown, status: unknown) => cb(status)
@@ -76,4 +69,5 @@ const bridge = {
   arch: process.arch,
 }
 
+contextBridge.exposeInMainWorld('qovrion', bridge)
 contextBridge.exposeInMainWorld('codeburn', bridge)
