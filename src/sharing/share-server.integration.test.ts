@@ -12,6 +12,11 @@ import { pairingCode, PeerStore } from './pairing.js'
 import { ShareServer, type PairRequest } from './share-server.js'
 
 describe('secure companion lifecycle', () => {
+  it('locks the cross-platform six-digit SAS derivation', () => {
+    expect(pairingCode('00'.repeat(32), 'ff'.repeat(32))).toBe('404542')
+    expect(pairingCode('ff'.repeat(32), '00'.repeat(32))).toBe('404542')
+  })
+
   it('compares identities, binds the token to mTLS, serves v1 DTOs and revokes access', async () => {
     const desktop = await generateIdentity('Qovrion desktop')
     const phone = await generateIdentity('Android phone')
@@ -104,6 +109,45 @@ describe('secure companion lifecycle', () => {
 
       const afterRevoke = await fetchCompanionUsage(endpoint, token)
       expect(afterRevoke.status).toBe(401)
+    } finally {
+      await server.close()
+    }
+  }, 30_000)
+
+  it('rolls peer state back when durable persistence fails', async () => {
+    const desktop = await generateIdentity('Qovrion desktop')
+    const phone = await generateIdentity('Existing phone')
+    const candidate = await generateIdentity('New phone')
+    const peers = new PeerStore()
+    const existing = peers.pair(phone.fingerprint, 'Existing phone')
+    const server = new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async () => ({ generated: new Date().toISOString(), current: {} }),
+      onPeersChanged: async () => {
+        throw new Error('simulated persistence failure')
+      },
+      approve: async () => true,
+    })
+
+    const port = await server.listen(0, '127.0.0.1')
+    try {
+      const failedPair = await companionPairRequest(
+        { identity: candidate, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'New phone',
+      )
+      expect(failedPair.status).toBe(500)
+      expect(failedPair.json).toEqual({ error: 'simulated persistence failure' })
+      expect(peers.get(candidate.fingerprint)).toBeUndefined()
+      expect(peers.authorize(existing.token, phone.fingerprint)).toBe(true)
+
+      const failedRevoke = await revokeCompanion(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        existing.token,
+      )
+      expect(failedRevoke.status).toBe(500)
+      expect(failedRevoke.json).toEqual({ error: 'simulated persistence failure' })
+      expect(peers.authorize(existing.token, phone.fingerprint)).toBe(true)
     } finally {
       await server.close()
     }
