@@ -117,11 +117,11 @@ const entries = [
   approved('claude', 'src/providers/claude.ts', 'docs/providers/claude.md', 'core', 'jsonl-and-desktop-session-files', ['claude-jsonl-usage-v1']),
   approved('codex', 'src/providers/codex.ts', 'docs/providers/codex.md', 'core', 'rollout-jsonl', ['codex-rollout-token-count-v1', 'codex-rollout-content-fallback-v1']),
   approved('gemini', 'src/providers/gemini.ts', 'docs/providers/gemini.md', 'core', 'session-json-or-jsonl-message-usage', ['gemini-message-usage-v1']),
+  approved('zed', 'src/providers/zed.ts', 'docs/providers/zed.md', 'lazy', 'sqlite-zstd-json', ['zed-request-token-usage-v1', 'zed-cumulative-remainder-v1']),
 
   priority('antigravity', 'src/providers/antigravity.ts', 'docs/providers/antigravity.md', 'lazy', 'protobuf-rpc-cache-and-statusline', 1),
   priority('copilot', 'src/providers/copilot.ts', 'docs/providers/copilot.md', 'core', 'otel-sqlite-and-legacy-multi-store', 1),
   priority('opencode', 'src/providers/opencode.ts', 'docs/providers/opencode.md', 'lazy', 'sqlite-or-file-storage', 1),
-  priority('zed', 'src/providers/zed.ts', 'docs/providers/zed.md', 'lazy', 'sqlite-zstd-json', 1),
 
   priority('cursor', 'src/providers/cursor.ts', 'docs/providers/cursor.md', 'lazy', 'sqlite-mixed-measured-estimated', 2),
   priority('kiro', 'src/providers/kiro.ts', 'docs/providers/kiro.md', 'core', 'chat-json-estimated', 2),
