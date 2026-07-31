@@ -1,3 +1,4 @@
+# Existing default-branch workflow: this update intentionally triggers the one-time squash.
 name: Qovrion final public history squash
 
 on:
