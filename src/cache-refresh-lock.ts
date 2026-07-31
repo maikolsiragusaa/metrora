@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto'
 import { existsSync } from 'fs'
-import { mkdir, open, readFile, stat, unlink, utimes, writeFile } from 'fs/promises'
+import { mkdir, open, readFile, stat, unlink, utimes } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 
@@ -12,6 +12,8 @@ const DEFAULT_WAIT_MS = 30_000
 const DEFAULT_POLL_MS = 100
 const WINDOWS_RETRIES = 3
 
+// `at` records acquisition time for diagnostics. Lease freshness is represented
+// exclusively by the file mtime, which heartbeats update without rewriting JSON.
 type LockRecord = { pid: number; token: string; at: number }
 
 export type RefreshLockClock = {
@@ -97,8 +99,8 @@ type ObservationResult = Observation | 'missing' | 'changing' | 'unavailable'
 
 async function observe(path: string): Promise<ObservationResult> {
   // Exclusive create exposes the directory entry just before its small body is
-  // written, and heartbeat rewrites briefly truncate it. Treat that bounded
-  // transition as contention, not broken infrastructure.
+  // written, and heartbeat may update mtime between either stat. Treat those
+  // bounded transitions as contention, not broken infrastructure.
   let sawChange = false
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -229,24 +231,24 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
 
   const makeHandle = (): RefreshLockHandle => {
     let released = false
-    let heartbeatRunning = false
+    let heartbeatScheduled = false
     const heartbeat = setInterval(() => {
+      if (released || heartbeatScheduled) return
+      heartbeatScheduled = true
       void serializeOwnerOp(async () => {
-        if (released || heartbeatRunning) return
-        heartbeatRunning = true
+        if (released) return
         const guard = await acquireTakeoverGuard()
-        if (guard !== 'created') { heartbeatRunning = false; return }
+        if (guard !== 'created') return
         try {
           const current = await observe(lockPath)
           if (current === 'missing' || current === 'changing' || current === 'unavailable' || current.record.token !== token) return
-          await writeFile(lockPath, body(), { encoding: 'utf-8' })
           const now = new Date(clock.wallNow())
           await utimes(lockPath, now, now)
-        } catch { /* verify/release will turn displacement or I/O failure into a closed gate */ }
-        finally {
+        } finally {
           await retryWindowsMutation(() => unlink(takeoverPath), sleep)
-          heartbeatRunning = false
         }
+      }).catch(() => undefined).finally(() => {
+        heartbeatScheduled = false
       })
     }, heartbeatMs)
     heartbeat.unref()
@@ -258,7 +260,7 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
         if (released) return
         released = true
         clearInterval(heartbeat)
-        while (heartbeatRunning) await sleep(1)
+        while (heartbeatScheduled) await sleep(1)
         await removeIfOwned()
         leave()
       },

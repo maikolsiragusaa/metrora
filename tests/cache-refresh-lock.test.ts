@@ -133,18 +133,33 @@ describe('warm session-cache refresh lock', () => {
     }
   })
 
-  it('heartbeats its own lock body and mtime with the injected clock', async () => {
+  it('keeps the ownership record immutable while heartbeat advances only mtime', async () => {
     const dir = await tempDir()
     const clock = fakeClock(10_000)
-    const result = await acquireCacheRefreshLock({ cacheDir: dir, clock, heartbeatMs: 5 })
+    const result = await acquireCacheRefreshLock({ cacheDir: dir, clock, heartbeatMs: 1 })
     expect(result.outcome).toBe('acquired')
     if (result.outcome !== 'acquired') return
     try {
+      const initialRaw = await readFile(lockPath(dir), 'utf-8')
+      const initial = JSON.parse(initialRaw) as { pid: number; token: string; at: number }
       const before = (await stat(lockPath(dir))).mtimeMs
       clock.advance(1_000)
-      await new Promise(resolve => { setTimeout(resolve, 100) })
-      const record = JSON.parse(await readFile(lockPath(dir), 'utf-8'))
-      expect(record.at).toBe(clock.wallNow())
+
+      const records: Array<{ pid: number; token: string; at: number }> = []
+      const deadline = Date.now() + 100
+      while (Date.now() < deadline) {
+        const raw = await readFile(lockPath(dir), 'utf-8')
+        records.push(JSON.parse(raw) as { pid: number; token: string; at: number })
+        await new Promise(resolve => { setTimeout(resolve, 1) })
+      }
+
+      expect(records.length).toBeGreaterThan(5)
+      expect(records.every(record =>
+        record.pid === initial.pid &&
+        record.token === initial.token &&
+        record.at === initial.at,
+      )).toBe(true)
+      expect(initial).toEqual({ pid: process.pid, token: result.handle.token, at: 10_000 })
       expect((await stat(lockPath(dir))).mtimeMs).not.toBe(before)
     } finally {
       await result.handle.release()
