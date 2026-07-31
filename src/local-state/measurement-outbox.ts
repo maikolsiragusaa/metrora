@@ -19,11 +19,14 @@ import {
   readOptionalPrivateFile,
 } from './atomic-file.js'
 import { defaultQovrionDataDir } from './endpoint-identity.js'
-import { withShortFileLock } from './short-file-lock.js'
+import { withLocalStateLease } from './local-state-lease.js'
 
 export const LOCAL_OUTBOX_RECORD_KIND = 'qovrion.local-measurement-outbox-record' as const
 export const LOCAL_OUTBOX_ACK_KIND = 'qovrion.local-measurement-outbox-ack' as const
 export const LOCAL_OUTBOX_QUARANTINE_KIND = 'qovrion.local-measurement-outbox-quarantine' as const
+
+const OutboxEventIdSchema = z.string().min(3).max(128)
+const OutboxReceiptIdSchema = z.string().trim().min(1).max(240)
 
 export const LocalMeasurementOutboxRecordV1Schema = z.strictObject({
   kind: z.literal(LOCAL_OUTBOX_RECORD_KIND),
@@ -38,10 +41,10 @@ export const LocalMeasurementOutboxRecordV1Schema = z.strictObject({
 export const LocalMeasurementOutboxAckV1Schema = z.strictObject({
   kind: z.literal(LOCAL_OUTBOX_ACK_KIND),
   version: z.literal(1),
-  eventId: z.string().min(3).max(128),
+  eventId: OutboxEventIdSchema,
   sequence: PositiveIntegerSchema,
   acknowledgedAt: TimestampSchema,
-  receiptId: z.string().trim().min(1).max(240).optional(),
+  receiptId: OutboxReceiptIdSchema.optional(),
 })
 
 const LocalMeasurementOutboxCounterV1Schema = z.strictObject({
@@ -86,7 +89,8 @@ function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
   if (typeof value === 'object') {
     const object = value as Record<string, unknown>
-    return `{${Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(',')}}`
+    const keys = Object.keys(object).filter(key => object[key] !== undefined).sort()
+    return `{${keys.map(key => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(',')}}`
   }
   throw new Error('outbox canonical JSON cannot encode this value')
 }
@@ -107,7 +111,6 @@ function outboxPaths(dataDir: string) {
     acknowledgements: join(root, 'acks'),
     quarantine: join(root, 'quarantine'),
     counter: join(root, 'next-sequence.json'),
-    lock: join(root, 'outbox.lock'),
   }
 }
 
@@ -162,7 +165,7 @@ export async function enqueueMeasurementEventV1(
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 
-  return withShortFileLock(paths.lock, async () => {
+  return withLocalStateLease(paths.root, async () => {
     const existing = await readRecordByEventId(paths, event.id)
     const digest = sha256(canonicalJson(event))
     if (existing) {
@@ -183,10 +186,7 @@ export async function enqueueMeasurementEventV1(
       eventSha256: digest,
       event,
     })
-    await atomicWritePrivateFile(
-      join(paths.events, eventFileName(event.id)),
-      JSON.stringify(record),
-    )
+    await atomicWritePrivateFile(join(paths.events, eventFileName(event.id)), JSON.stringify(record))
     return { status: 'enqueued' as const, record }
   })
 }
@@ -205,19 +205,23 @@ async function readAck(
 }
 
 export async function acknowledgeMeasurementEventV1(
-  eventId: string,
+  eventIdInput: string,
   options: MeasurementOutboxOptions & { receiptId?: string } = {},
 ): Promise<{ status: 'acknowledged' | 'duplicate'; ack: LocalMeasurementOutboxAckV1 }> {
+  const eventId = OutboxEventIdSchema.parse(eventIdInput)
+  const requestedReceiptId = options.receiptId === undefined
+    ? undefined
+    : OutboxReceiptIdSchema.parse(options.receiptId)
   const paths = outboxPaths(options.dataDir ?? defaultQovrionDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 
-  return withShortFileLock(paths.lock, async () => {
+  return withLocalStateLease(paths.root, async () => {
     const record = await readRecordByEventId(paths, eventId)
     if (!record) throw new Error('cannot acknowledge an event that is not in the local outbox')
     const existing = await readAck(paths, record)
     if (existing) {
-      if (options.receiptId !== undefined && existing.receiptId !== options.receiptId) {
+      if (requestedReceiptId !== undefined && existing.receiptId !== requestedReceiptId) {
         throw new Error('outbox event was already acknowledged with a different receipt')
       }
       return { status: 'duplicate' as const, ack: existing }
@@ -229,7 +233,7 @@ export async function acknowledgeMeasurementEventV1(
       eventId: record.event.id,
       sequence: record.sequence,
       acknowledgedAt: now().toISOString(),
-      ...(options.receiptId !== undefined ? { receiptId: options.receiptId } : {}),
+      ...(requestedReceiptId !== undefined ? { receiptId: requestedReceiptId } : {}),
     })
     await atomicWritePrivateFile(
       join(paths.acknowledgements, eventFileName(record.event.id)),
@@ -248,6 +252,24 @@ export async function scanMeasurementOutboxV1(
   const acknowledged: MeasurementOutboxScanV1['acknowledged'] = []
   const invalid: MeasurementOutboxScanV1['invalid'] = []
   const quarantined: LocalMeasurementOutboxQuarantineV1[] = []
+  const quarantinedFiles = new Set<string>()
+
+  const quarantineFiles = (await readdir(paths.quarantine)).filter(name => /^[a-f0-9]{64}\.json$/.test(name)).sort()
+  for (const file of quarantineFiles) {
+    try {
+      const [markerBytes, sourceBytes] = await Promise.all([
+        readOptionalPrivateFile(join(paths.quarantine, file)),
+        readOptionalPrivateFile(join(paths.events, file)),
+      ])
+      if (!markerBytes || !sourceBytes) continue
+      const marker = LocalMeasurementOutboxQuarantineV1Schema.parse(JSON.parse(markerBytes.toString('utf-8')))
+      if (marker.eventFile !== file || marker.sourceSha256 !== sha256(sourceBytes)) continue
+      quarantined.push(marker)
+      quarantinedFiles.add(file)
+    } catch {
+      // An invalid quarantine marker cannot hide or mutate the source event.
+    }
+  }
 
   const eventFiles = (await readdir(paths.events)).filter(name => /^[a-f0-9]{64}\.json$/.test(name)).sort()
   for (const file of eventFiles) {
@@ -255,22 +277,12 @@ export async function scanMeasurementOutboxV1(
       const bytes = await readOptionalPrivateFile(join(paths.events, file))
       if (!bytes) continue
       const record = parseRecord(bytes, file)
+      if (quarantinedFiles.has(file)) continue
       const ack = await readAck(paths, record)
       if (ack) acknowledged.push({ record, ack })
       else pending.push(record)
     } catch (error) {
       invalid.push({ eventFile: file, reason: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  const quarantineFiles = (await readdir(paths.quarantine)).filter(name => /^[a-f0-9]{64}\.json$/.test(name)).sort()
-  for (const file of quarantineFiles) {
-    try {
-      const bytes = await readOptionalPrivateFile(join(paths.quarantine, file))
-      if (!bytes) continue
-      quarantined.push(LocalMeasurementOutboxQuarantineV1Schema.parse(JSON.parse(bytes.toString('utf-8'))))
-    } catch {
-      // An invalid quarantine marker cannot hide or mutate the source event.
     }
   }
 
@@ -298,16 +310,30 @@ export async function quarantineMeasurementOutboxFileV1(
   const paths = outboxPaths(options.dataDir ?? defaultQovrionDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
-  const source = await readOptionalPrivateFile(join(paths.events, eventFile))
-  if (!source) throw new Error('cannot quarantine a missing outbox event file')
-  const marker = LocalMeasurementOutboxQuarantineV1Schema.parse({
-    kind: LOCAL_OUTBOX_QUARANTINE_KIND,
-    version: 1,
-    eventFile,
-    sourceSha256: sha256(source),
-    quarantinedAt: now().toISOString(),
-    reason,
+
+  return withLocalStateLease(paths.root, async () => {
+    const source = await readOptionalPrivateFile(join(paths.events, eventFile))
+    if (!source) throw new Error('cannot quarantine a missing outbox event file')
+    const marker = LocalMeasurementOutboxQuarantineV1Schema.parse({
+      kind: LOCAL_OUTBOX_QUARANTINE_KIND,
+      version: 1,
+      eventFile,
+      sourceSha256: sha256(source),
+      quarantinedAt: now().toISOString(),
+      reason,
+    })
+    const markerPath = join(paths.quarantine, eventFile)
+    const existingBytes = await readOptionalPrivateFile(markerPath)
+    if (existingBytes) {
+      const existing = LocalMeasurementOutboxQuarantineV1Schema.parse(JSON.parse(existingBytes.toString('utf-8')))
+      if (
+        existing.eventFile === marker.eventFile
+        && existing.sourceSha256 === marker.sourceSha256
+        && existing.reason === marker.reason
+      ) return existing
+      throw new Error('outbox event already has a different quarantine decision')
+    }
+    await atomicWritePrivateFile(markerPath, JSON.stringify(marker))
+    return marker
   })
-  await atomicWritePrivateFile(join(paths.quarantine, eventFile), JSON.stringify(marker))
-  return marker
 }
