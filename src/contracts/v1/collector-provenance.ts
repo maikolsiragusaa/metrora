@@ -49,6 +49,12 @@ export type CollectorProvenanceProfileV1 = z.infer<typeof CollectorProvenancePro
 const CLAUDE_PARSER_VERSION = 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1'
 const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1'
 
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+  return Object.freeze(value)
+}
+
 const privacyWithoutContent = {
   promptsRequired: false,
   responsesRequired: false,
@@ -57,7 +63,7 @@ const privacyWithoutContent = {
   localPathsRequired: false,
 } as const
 
-export const CLAUDE_JSONL_PROFILE_V1 = CollectorProvenanceProfileV1Schema.parse({
+export const CLAUDE_JSONL_PROFILE_V1 = deepFreeze(CollectorProvenanceProfileV1Schema.parse({
   kind: COLLECTOR_PROVENANCE_PROFILE_KIND,
   version: 1,
   profileId: 'claude-jsonl-usage-v1',
@@ -83,9 +89,9 @@ export const CLAUDE_JSONL_PROFILE_V1 = CollectorProvenanceProfileV1Schema.parse(
     },
   },
   privacy: privacyWithoutContent,
-})
+}))
 
-export const CODEX_TOKEN_COUNT_PROFILE_V1 = CollectorProvenanceProfileV1Schema.parse({
+export const CODEX_TOKEN_COUNT_PROFILE_V1 = deepFreeze(CollectorProvenanceProfileV1Schema.parse({
   kind: COLLECTOR_PROVENANCE_PROFILE_KIND,
   version: 1,
   profileId: 'codex-rollout-token-count-v1',
@@ -111,9 +117,9 @@ export const CODEX_TOKEN_COUNT_PROFILE_V1 = CollectorProvenanceProfileV1Schema.p
     },
   },
   privacy: privacyWithoutContent,
-})
+}))
 
-export const CODEX_CONTENT_FALLBACK_PROFILE_V1 = CollectorProvenanceProfileV1Schema.parse({
+export const CODEX_CONTENT_FALLBACK_PROFILE_V1 = deepFreeze(CollectorProvenanceProfileV1Schema.parse({
   kind: COLLECTOR_PROVENANCE_PROFILE_KIND,
   version: 1,
   profileId: 'codex-rollout-content-fallback-v1',
@@ -139,9 +145,9 @@ export const CODEX_CONTENT_FALLBACK_PROFILE_V1 = CollectorProvenanceProfileV1Sch
     },
   },
   privacy: privacyWithoutContent,
-})
+}))
 
-export const CollectorProvenanceProfilesV1 = Object.freeze([
+export const CollectorProvenanceProfilesV1 = deepFreeze([
   CLAUDE_JSONL_PROFILE_V1,
   CODEX_TOKEN_COUNT_PROFILE_V1,
   CODEX_CONTENT_FALLBACK_PROFILE_V1,
