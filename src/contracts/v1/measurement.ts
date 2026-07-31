@@ -5,6 +5,7 @@ import {
   MicrosUsdSchema,
   NonNegativeIntegerSchema,
   OpaqueIdSchema,
+  PositiveIntegerSchema,
   Sha256DigestSchema,
   TimestampSchema,
   schemaUri,
@@ -16,14 +17,27 @@ export const USAGE_MEASUREMENT_DATA_SCHEMA_URI = schemaUri('usage-measurement')
 
 export const GenAiOperationNameSchema = z.enum([
   'chat',
-  'text-completion',
+  'create_agent',
   'embeddings',
-  'execute-tool',
-  'invoke-agent',
+  'execute_tool',
+  'generate_content',
+  'invoke_agent',
+  'invoke_workflow',
+  'retrieval',
+  'text_completion',
   'other',
 ])
 
-export const ReasoningLevelSchema = z.enum(['minimal', 'low', 'medium', 'high', 'max'])
+export const ReasoningLevelSchema = z.enum([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'adaptive',
+])
 
 const KnownReasoningSchema = z.strictObject({
   level: ReasoningLevelSchema,
@@ -82,12 +96,12 @@ export const UsageMeasurementDataV1Schema = z.strictObject({
   }),
   genAi: z.strictObject({
     operationName: GenAiOperationNameSchema,
-    system: z.string().trim().min(1).max(120),
+    providerName: z.string().trim().min(1).max(120),
     requestModel: z.string().trim().min(1).max(240).optional(),
     responseModel: z.string().trim().min(1).max(240),
   }),
   usage: z.strictObject({
-    calls: NonNegativeIntegerSchema,
+    calls: PositiveIntegerSchema,
     inputTokens: NonNegativeIntegerSchema,
     outputTokens: NonNegativeIntegerSchema,
     cacheReadTokens: NonNegativeIntegerSchema,
