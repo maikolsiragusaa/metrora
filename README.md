@@ -37,6 +37,7 @@ Qovrion builds one evidence-based view from the usage records already stored on 
 - **Optimization findings** for waste, reverts, abandoned work, and actionable savings opportunities.
 - **Budgets, plans, pricing overrides, token audit, and CSV/JSON export.**
 - **Private device linking** and combined local usage across machines.
+- **Public v1 contracts** for workspaces, endpoints, sharing, normalized measurements, and evidence.
 
 ## Surfaces
 
@@ -60,7 +61,7 @@ Qovrion is local-first by default:
 - networked sharing is being built around explicit scope, revocation, and structured usage data;
 - user-owned data remains exportable through open formats.
 
-Read the [product principles](docs/PRODUCT_PRINCIPLES.md) and [security policy](SECURITY.md).
+Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), and [security policy](SECURITY.md).
 
 ## Development
 
