@@ -24,6 +24,10 @@ export const EVENT_NAMES = new Set([
   'cli_error',
 ])
 
+const MAX_STRING = 64
+const MAX_ARRAY = 12
+const MAX_KEYS = 16
+
 export type TelemetryStatus = {
   installId: string
   country: string | null
@@ -49,18 +53,55 @@ export function defaultEnabledFor(_country: string | null | undefined): false {
   return false
 }
 
+function sanitizeValue(value: unknown): unknown | undefined {
+  if (typeof value === 'string') return value.slice(0, MAX_STRING)
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (typeof value === 'boolean') return value
+  return undefined
+}
+
 /**
- * Retained for compatibility with callers and tests. No sanitized payload is
- * sent anywhere; this merely returns a shallow, bounded primitive-only object.
+ * Retained for compatibility with local analytics helpers and tests. This
+ * bounded whitelist never sends anything; it only produces primitive values
+ * and one level of arrays containing flat primitive-only objects.
  */
 export function sanitizeProps(props: unknown): Record<string, unknown> {
   if (!props || typeof props !== 'object' || Array.isArray(props)) return {}
   const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(props as Record<string, unknown>).slice(0, 16)) {
-    if (typeof value === 'string') out[key.slice(0, 64)] = value.slice(0, 64)
-    else if (typeof value === 'number' && Number.isFinite(value)) out[key.slice(0, 64)] = value
-    else if (typeof value === 'boolean') out[key.slice(0, 64)] = value
+  let keys = 0
+
+  for (const [key, value] of Object.entries(props as Record<string, unknown>)) {
+    if (keys >= MAX_KEYS) break
+    const safeKey = key.slice(0, MAX_STRING)
+
+    if (Array.isArray(value)) {
+      const items: Record<string, unknown>[] = []
+      for (const entry of value.slice(0, MAX_ARRAY)) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+        const flat: Record<string, unknown> = {}
+        let innerKeys = 0
+        for (const [innerKey, innerValue] of Object.entries(entry as Record<string, unknown>)) {
+          if (innerKeys >= MAX_KEYS) break
+          const sanitized = sanitizeValue(innerValue)
+          if (sanitized === undefined) continue
+          flat[innerKey.slice(0, MAX_STRING)] = sanitized
+          innerKeys++
+        }
+        if (Object.keys(flat).length > 0) items.push(flat)
+      }
+      if (items.length > 0) {
+        out[safeKey] = items
+        keys++
+      }
+      continue
+    }
+
+    const sanitized = sanitizeValue(value)
+    if (sanitized === undefined) continue
+    out[safeKey] = sanitized
+    keys++
   }
+
   return out
 }
 
