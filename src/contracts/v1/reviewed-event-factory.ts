@@ -1,3 +1,4 @@
+import { normalizeExplicitModelProvider } from '../../model-provider.js'
 import type { ParsedApiCall } from '../../types.js'
 import type { GenAiOperationNameV1, UsageMeasurementEventV1 } from './measurement.js'
 import {
@@ -43,7 +44,7 @@ export type ReviewedUsageMeasurementEventResultV1 =
     }
   | {
       status: 'withheld'
-      reason: 'unreviewed-evidence-path'
+      reason: 'unreviewed-evidence-path' | 'model-provider-mismatch'
     }
 
 function disclosedSessionId(disclosure: MeasurementSessionDisclosureV1): string | undefined {
@@ -65,14 +66,6 @@ function disclosedSessionId(disclosure: MeasurementSessionDisclosureV1): string 
   return disclosure.sessionId
 }
 
-/**
- * Create one public event only when the normalized call belongs to a reviewed
- * collector provenance path and its reasoning attribution is supported.
- *
- * This factory does not discover endpoint identity, AI provider, operation,
- * repository, account, or sharing intent. Those facts remain explicit inputs.
- * It also does not persist or transmit the resulting event.
- */
 export function createReviewedUsageMeasurementEventV1(
   call: ParsedApiCall,
   context: ReviewedUsageMeasurementEventContextV1,
@@ -81,6 +74,15 @@ export function createReviewedUsageMeasurementEventV1(
   const evidence = resolveMeasurementEvidenceV1(call, { sessionId })
   if (!evidence) {
     return { status: 'withheld', reason: 'unreviewed-evidence-path' }
+  }
+
+  let providerName = context.genAi.providerName
+  if (call.modelProvider !== undefined) {
+    const declaredProvider = normalizeExplicitModelProvider(context.genAi.providerName)
+    if (!declaredProvider || declaredProvider !== call.modelProvider) {
+      return { status: 'withheld', reason: 'model-provider-mismatch' }
+    }
+    providerName = call.modelProvider
   }
 
   const adapterContext: ParsedApiCallMeasurementContextV1 = {
@@ -98,7 +100,7 @@ export function createReviewedUsageMeasurementEventV1(
       sourceKind: evidence.profile.sourceKind,
       sourceFingerprintSha256: context.collector.sourceFingerprintSha256,
     },
-    genAi: { ...context.genAi },
+    genAi: { ...context.genAi, providerName },
     costEvidence: evidence.costEvidence,
     quality: evidence.quality,
   }
