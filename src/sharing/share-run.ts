@@ -40,9 +40,7 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     identity,
     peers,
     getUsage,
-    onPeersChanged: () => {
-      void savePeers(peers.list(), dir)
-    },
+    onPeersChanged: () => savePeers(peers.list(), dir),
     approve: async (req) => {
       process.stdout.write(`\n  "${req.name}" wants access to your shared usage.\n`)
       process.stdout.write(`  Confirm this complete code matches on that device:  ${req.code}\n`)
