@@ -11,13 +11,11 @@ type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCr
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
   if (res.ok) return res.value
-  // Reject with a plain object so `kind` is preserved (Error subclasses lose
-  // custom fields when cloned across worlds).
   return Promise.reject(res.error)
 }
 
-// Shape matches CodeburnBridge (app/renderer/lib/types.ts); typing is enforced
-// renderer-side where `window.codeburn` is declared as CodeburnBridge.
+// Shape matches CodeburnBridge (app/renderer/lib/types.ts). The `codeburn`
+// property name and IPC channels remain a temporary compatibility boundary.
 const bridge = {
   getQuota: (force?: boolean) => invoke('codeburn:getQuota', force),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean) => invoke('codeburn:getOverview', period, provider, range, configSource, background),
@@ -50,21 +48,27 @@ const bridge = {
   exportData: (format: string, provider: string, outPath: string) => invoke('codeburn:exportData', format, provider, outPath),
   chooseDirectory: () => invoke('codeburn:chooseDirectory'),
   cliStatus: () => invoke('codeburn:cliStatus'),
-  telemetryStatus: () => invoke('codeburn:telemetryStatus'),
-  setTelemetryEnabled: (enabled: boolean) => invoke('codeburn:telemetrySetEnabled', enabled),
-  completeOnboarding: (enabled: boolean) => invoke('codeburn:telemetryOnboarded', enabled),
-  telemetryTrack: (name: string, props?: Record<string, unknown>) => invoke('codeburn:telemetryTrack', name, props),
+
+  // Qovrion performs no product telemetry. These compatibility methods settle
+  // locally and never cross IPC, so renderer code cannot accidentally reactivate
+  // inherited telemetry by calling old bridge methods.
+  telemetryStatus: async () => null,
+  setTelemetryEnabled: async (_enabled: boolean) => null,
+  completeOnboarding: async (_enabled: boolean) => null,
+  telemetryTrack: async (_name: string, _props?: Record<string, unknown>) => true,
+
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
-  // Cold-start scan progress (main → renderer). Returns an unsubscribe fn.
   onProgress: (cb: (event: unknown) => void) => {
-    const listener = (_e: unknown, event: unknown) => cb(event)
+    const listener = (_event: unknown, event: unknown) => cb(event)
     ipcRenderer.on('codeburn:progress', listener)
     return () => { ipcRenderer.removeListener('codeburn:progress', listener) }
   },
-  // Update availability: a one-shot read plus a push for the launch + 24h checks.
+
+  // The main-process checker is also no-network until Qovrion publishes a
+  // verified release channel. Preserve the compatibility event shape for now.
   getUpdateStatus: () => invoke('codeburn:getUpdateStatus'),
   onUpdateStatus: (cb: (status: unknown) => void) => {
-    const listener = (_e: unknown, status: unknown) => cb(status)
+    const listener = (_event: unknown, status: unknown) => cb(status)
     ipcRenderer.on('codeburn:update', listener)
     return () => { ipcRenderer.removeListener('codeburn:update', listener) }
   },
