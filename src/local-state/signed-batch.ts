@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, createPublicKey, verify } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
@@ -8,6 +8,7 @@ import {
   type MeasurementBatchV1,
 } from '../contracts/v1/measurement.js'
 import {
+  OpaqueIdSchema,
   PositiveIntegerSchema,
   Sha256DigestSchema,
   TimestampSchema,
@@ -16,16 +17,13 @@ import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
 import { atomicWritePrivateFile, ensurePrivateDirectory, readOptionalPrivateFile } from './atomic-file.js'
 import {
   signWithLocalEndpointIdentityV1,
-  verifyLocalEndpointIdentitySignatureV1,
   type LoadedLocalEndpointIdentityV1,
-  type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import {
   acknowledgeMeasurementEventV1,
   scanMeasurementOutboxV1,
   type LocalMeasurementOutboxRecordV1,
-  type MeasurementOutboxOptions,
 } from './measurement-outbox.js'
 
 export const LOCAL_SIGNED_BATCH_KIND = 'qovrion.local-signed-measurement-batch' as const
@@ -35,20 +33,24 @@ const CanonicalBase64Schema = z.string().min(1).refine(value => {
   try { return Buffer.from(value, 'base64').toString('base64') === value } catch { return false }
 }, 'must be canonical base64')
 
+const BatchRangeV1Schema = z.strictObject({
+  firstSequence: PositiveIntegerSchema,
+  lastSequence: PositiveIntegerSchema,
+  eventCount: PositiveIntegerSchema,
+})
+
 export const LocalSignedMeasurementBatchV1Schema = z.strictObject({
   kind: z.literal(LOCAL_SIGNED_BATCH_KIND),
   version: z.literal(1),
   canonicalization: z.literal('RFC8785'),
-  range: z.strictObject({
-    firstSequence: PositiveIntegerSchema,
-    lastSequence: PositiveIntegerSchema,
-    eventCount: PositiveIntegerSchema,
-  }),
+  range: BatchRangeV1Schema,
   batchSha256: Sha256DigestSchema,
+  signedPayloadSha256: Sha256DigestSchema,
   batch: MeasurementBatchV1Schema,
   signature: z.strictObject({
     algorithm: z.literal('ed25519'),
     identityGeneration: PositiveIntegerSchema,
+    publicKeySpkiBase64: CanonicalBase64Schema,
     publicKeyFingerprintSha256: Sha256DigestSchema,
     signatureBase64: CanonicalBase64Schema,
   }),
@@ -57,7 +59,7 @@ export const LocalSignedMeasurementBatchV1Schema = z.strictObject({
 export const LocalSignedMeasurementBatchAckV1Schema = z.strictObject({
   kind: z.literal(LOCAL_SIGNED_BATCH_ACK_KIND),
   version: z.literal(1),
-  batchId: z.string().min(3).max(128),
+  batchId: OpaqueIdSchema,
   batchSha256: Sha256DigestSchema,
   acceptedThroughSequence: PositiveIntegerSchema,
   acknowledgedAt: TimestampSchema,
@@ -67,7 +69,10 @@ export const LocalSignedMeasurementBatchAckV1Schema = z.strictObject({
 export type LocalSignedMeasurementBatchV1 = z.infer<typeof LocalSignedMeasurementBatchV1Schema>
 export type LocalSignedMeasurementBatchAckV1 = z.infer<typeof LocalSignedMeasurementBatchAckV1Schema>
 
-export type CreateSignedMeasurementBatchV1Options = MeasurementOutboxOptions & {
+type BatchRangeV1 = z.infer<typeof BatchRangeV1Schema>
+
+export type CreateSignedMeasurementBatchV1Options = {
+  dataDir: string
   identity: LoadedLocalEndpointIdentityV1
   qovrionVersion: string
   adapterSetSha256: string
@@ -76,8 +81,9 @@ export type CreateSignedMeasurementBatchV1Options = MeasurementOutboxOptions & {
   now?: () => Date
 }
 
-export type SignedMeasurementBatchStoreOptions = MeasurementOutboxOptions & {
-  endpointMetadata: LocalEndpointIdentityMetadataV1
+export type SignedMeasurementBatchStoreOptions = {
+  dataDir: string
+  endpointId: string
 }
 
 function sha256(value: string | Uint8Array): string {
@@ -107,37 +113,60 @@ function canonicalBatch(batch: MeasurementBatchV1): string {
   return canonicalizeRfc8785(MeasurementBatchV1Schema.parse(batch))
 }
 
+function canonicalSignedPayload(
+  range: BatchRangeV1,
+  batchSha256: string,
+  batch: MeasurementBatchV1,
+): string {
+  return canonicalizeRfc8785({
+    canonicalization: 'RFC8785',
+    range: BatchRangeV1Schema.parse(range),
+    batchSha256: Sha256DigestSchema.parse(batchSha256),
+    batch: MeasurementBatchV1Schema.parse(batch),
+  })
+}
+
+function verifySignature(signed: LocalSignedMeasurementBatchV1, payload: string): boolean {
+  const publicKeyBytes = Buffer.from(signed.signature.publicKeySpkiBase64, 'base64')
+  if (sha256(publicKeyBytes) !== signed.signature.publicKeyFingerprintSha256) return false
+  try {
+    const publicKey = createPublicKey({ key: publicKeyBytes, type: 'spki', format: 'der' })
+    return verify(
+      null,
+      Buffer.from(payload, 'utf-8'),
+      publicKey,
+      Buffer.from(signed.signature.signatureBase64, 'base64'),
+    )
+  } catch {
+    return false
+  }
+}
+
 function parseSignedBatch(
   bytes: Uint8Array,
-  metadata: LocalEndpointIdentityMetadataV1,
+  expectedEndpointId: string,
   expectedFile?: string,
 ): LocalSignedMeasurementBatchV1 {
   const signed = LocalSignedMeasurementBatchV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
-  const canonical = canonicalBatch(signed.batch)
-  if (sha256(canonical) !== signed.batchSha256) throw new Error('signed batch digest does not match its RFC 8785 payload')
-  if (signed.batch.producer.endpointId !== metadata.endpointId) throw new Error('signed batch belongs to another endpoint')
-  if (signed.signature.publicKeyFingerprintSha256 !== metadata.publicKeyFingerprintSha256) {
-    throw new Error('signed batch fingerprint does not match endpoint metadata')
-  }
-  if (signed.signature.identityGeneration !== metadata.generation) {
-    throw new Error('signed batch identity generation does not match endpoint metadata')
-  }
-  const signature = Buffer.from(signed.signature.signatureBase64, 'base64')
-  if (!verifyLocalEndpointIdentitySignatureV1(metadata, Buffer.from(canonical, 'utf-8'), signature)) {
-    throw new Error('signed batch signature is invalid')
-  }
+  if (signed.range.firstSequence > signed.range.lastSequence) throw new Error('signed batch sequence range is reversed')
   if (signed.range.eventCount !== signed.batch.events.length) throw new Error('signed batch event count is invalid')
-  const sequences = signed.batch.events.map(event => event.data.endpointId)
-  if (sequences.some(endpointId => endpointId !== metadata.endpointId)) {
+  if (signed.batch.producer.endpointId !== expectedEndpointId) throw new Error('signed batch belongs to another endpoint')
+  if (signed.batch.events.some(event => event.data.endpointId !== expectedEndpointId)) {
     throw new Error('signed batch contains an event from another endpoint')
   }
+
+  const canonical = canonicalBatch(signed.batch)
+  if (sha256(canonical) !== signed.batchSha256) throw new Error('signed batch digest does not match its RFC 8785 payload')
+  const signedPayload = canonicalSignedPayload(signed.range, signed.batchSha256, signed.batch)
+  if (sha256(signedPayload) !== signed.signedPayloadSha256) throw new Error('signed payload digest is invalid')
+  if (!verifySignature(signed, signedPayload)) throw new Error('signed batch signature is invalid')
   if (expectedFile && batchFileName(signed) !== expectedFile) throw new Error('signed batch filename does not match its payload')
   return signed
 }
 
 async function listSignedBatches(
   paths: ReturnType<typeof batchPaths>,
-  metadata: LocalEndpointIdentityMetadataV1,
+  endpointId: string,
 ): Promise<Array<{ file: string; signed: LocalSignedMeasurementBatchV1 }>> {
   await ensurePrivateDirectory(paths.batches)
   const files = (await readdir(paths.batches)).filter(file => /^\d{16}-\d{16}-[a-f0-9]{64}\.json$/.test(file)).sort()
@@ -145,14 +174,13 @@ async function listSignedBatches(
   for (const file of files) {
     const bytes = await readOptionalPrivateFile(join(paths.batches, file))
     if (!bytes) continue
-    result.push({ file, signed: parseSignedBatch(bytes, metadata, file) })
+    result.push({ file, signed: parseSignedBatch(bytes, endpointId, file) })
   }
   result.sort((a, b) => a.signed.range.firstSequence - b.signed.range.firstSequence)
 
   let previousDigest: string | undefined
   let previousLast = 0
-  for (const item of result) {
-    const { signed } = item
+  for (const { signed } of result) {
     if (signed.range.firstSequence <= previousLast) throw new Error('signed batch sequence ranges overlap')
     if (signed.batch.previousBatchSha256 !== previousDigest) throw new Error('signed batch digest chain is broken')
     previousDigest = signed.batchSha256
@@ -181,21 +209,14 @@ export async function createNextSignedMeasurementBatchV1(
   if (!Number.isInteger(maxEvents) || maxEvents < 1 || maxEvents > 10_000) {
     throw new Error('signed batch maxEvents must be an integer from 1 to 10000')
   }
-  const dataDir = options.dataDir ?? join(process.env['QOVRION_DATA_DIR'] ?? '', '')
-  const effectiveDataDir = dataDir || undefined
-  const outboxOptions = effectiveDataDir ? { dataDir: effectiveDataDir } : {}
-  const paths = batchPaths(effectiveDataDir ?? join(process.cwd(), '.qovrion-invalid-default'))
-
-  // The actual default is resolved by the outbox/identity layer. Require an
-  // explicit directory here so one signed-batch transaction cannot accidentally
-  // split across two host-specific defaults.
-  if (!effectiveDataDir) throw new Error('signed batch creation requires an explicit Qovrion data directory')
+  if (!options.dataDir.trim()) throw new Error('signed batch creation requires an explicit Qovrion data directory')
+  const paths = batchPaths(options.dataDir)
 
   return withLocalStateLease(paths.root, async () => {
     await Promise.all([ensurePrivateDirectory(paths.batches), ensurePrivateDirectory(paths.acknowledgements)])
-    const existing = await listSignedBatches(paths, options.identity.metadata)
+    const existing = await listSignedBatches(paths, options.identity.metadata.endpointId)
     const previous = existing.at(-1)?.signed
-    const scan = await scanMeasurementOutboxV1(outboxOptions)
+    const scan = await scanMeasurementOutboxV1({ dataDir: options.dataDir })
     if (scan.invalid.length) throw new Error('cannot create a signed batch while invalid outbox events require review')
     const afterSequence = previous?.range.lastSequence ?? 0
     const records = scan.pending
@@ -232,23 +253,26 @@ export async function createNextSignedMeasurementBatchV1(
       ...(previousDigest ? { previousBatchSha256: previousDigest } : {}),
       events: records.map(record => record.event),
     })
-    const canonical = canonicalBatch(batch)
-    const batchSha256 = sha256(canonical)
-    const signature = signWithLocalEndpointIdentityV1(options.identity, Buffer.from(canonical, 'utf-8'))
+    const range = BatchRangeV1Schema.parse({
+      firstSequence: records[0]!.sequence,
+      lastSequence: records.at(-1)!.sequence,
+      eventCount: records.length,
+    })
+    const batchSha256 = sha256(canonicalBatch(batch))
+    const signedPayload = canonicalSignedPayload(range, batchSha256, batch)
+    const signature = signWithLocalEndpointIdentityV1(options.identity, Buffer.from(signedPayload, 'utf-8'))
     const signed = LocalSignedMeasurementBatchV1Schema.parse({
       kind: LOCAL_SIGNED_BATCH_KIND,
       version: 1,
       canonicalization: 'RFC8785',
-      range: {
-        firstSequence: records[0]!.sequence,
-        lastSequence: records.at(-1)!.sequence,
-        eventCount: records.length,
-      },
+      range,
       batchSha256,
+      signedPayloadSha256: sha256(signedPayload),
       batch,
       signature: {
         algorithm: 'ed25519',
         identityGeneration: options.identity.metadata.generation,
+        publicKeySpkiBase64: options.identity.metadata.publicKeySpkiBase64,
         publicKeyFingerprintSha256: options.identity.metadata.publicKeyFingerprintSha256,
         signatureBase64: Buffer.from(signature).toString('base64'),
       },
@@ -257,8 +281,8 @@ export async function createNextSignedMeasurementBatchV1(
     const target = join(paths.batches, file)
     const already = await readOptionalPrivateFile(target)
     if (already) {
-      const parsed = parseSignedBatch(already, options.identity.metadata, file)
-      if (parsed.batchSha256 !== signed.batchSha256) throw new Error('signed batch filename collision')
+      const parsed = parseSignedBatch(already, options.identity.metadata.endpointId, file)
+      if (parsed.signedPayloadSha256 !== signed.signedPayloadSha256) throw new Error('signed batch filename collision')
       return parsed
     }
     await atomicWritePrivateFile(target, JSON.stringify(signed))
@@ -284,10 +308,11 @@ async function readAck(
 export async function listUnacknowledgedSignedMeasurementBatchesV1(
   options: SignedMeasurementBatchStoreOptions,
 ): Promise<LocalSignedMeasurementBatchV1[]> {
-  if (!options.dataDir) throw new Error('signed batch listing requires an explicit Qovrion data directory')
+  if (!options.dataDir.trim()) throw new Error('signed batch listing requires an explicit Qovrion data directory')
+  const endpointId = OpaqueIdSchema.parse(options.endpointId)
   const paths = batchPaths(options.dataDir)
   await ensurePrivateDirectory(paths.acknowledgements)
-  const batches = await listSignedBatches(paths, options.endpointMetadata)
+  const batches = await listSignedBatches(paths, endpointId)
   const pending: LocalSignedMeasurementBatchV1[] = []
   for (const { signed } of batches) {
     if (!await readAck(paths, signed)) pending.push(signed)
@@ -296,14 +321,17 @@ export async function listUnacknowledgedSignedMeasurementBatchesV1(
 }
 
 export async function acknowledgeSignedMeasurementBatchV1(
-  batchId: string,
-  receiptId: string,
+  batchIdInput: string,
+  receiptIdInput: string,
   options: SignedMeasurementBatchStoreOptions & { now?: () => Date },
 ): Promise<{ status: 'acknowledged' | 'duplicate'; ack: LocalSignedMeasurementBatchAckV1 }> {
-  if (!options.dataDir) throw new Error('signed batch acknowledgement requires an explicit Qovrion data directory')
+  if (!options.dataDir.trim()) throw new Error('signed batch acknowledgement requires an explicit Qovrion data directory')
+  const endpointId = OpaqueIdSchema.parse(options.endpointId)
+  const batchId = OpaqueIdSchema.parse(batchIdInput)
+  const receiptId = z.string().trim().min(1).max(200).parse(receiptIdInput)
   const paths = batchPaths(options.dataDir)
   await ensurePrivateDirectory(paths.acknowledgements)
-  const batches = await listSignedBatches(paths, options.endpointMetadata)
+  const batches = await listSignedBatches(paths, endpointId)
   const signed = batches.find(item => item.signed.batch.batchId === batchId)?.signed
   if (!signed) throw new Error('cannot acknowledge an unknown signed batch')
   const existing = await readAck(paths, signed)
