@@ -1,6 +1,7 @@
 import {
   toJsonSchema202012,
 } from './common.js'
+import { CollectorProvenanceProfileV1Schema } from './collector-provenance.js'
 import { EndpointV1Schema } from './endpoint.js'
 import { UsageEvidenceStatementV1Schema } from './evidence.js'
 import { MeasurementBatchV1Schema, UsageMeasurementDataV1Schema, UsageMeasurementEventV1Schema } from './measurement.js'
@@ -8,6 +9,7 @@ import { RepositoryIdentityV1Schema } from './repository.js'
 import { SharingPolicyV1Schema } from './sharing-policy.js'
 import { WorkspaceMembershipV1Schema, WorkspaceV1Schema } from './workspace.js'
 
+export * from './collector-provenance.js'
 export * from './common.js'
 export * from './endpoint.js'
 export * from './evidence.js'
@@ -18,6 +20,7 @@ export * from './sharing-policy.js'
 export * from './workspace.js'
 
 export const PublicContractSchemasV1 = {
+  collectorProvenanceProfile: CollectorProvenanceProfileV1Schema,
   workspace: WorkspaceV1Schema,
   workspaceMembership: WorkspaceMembershipV1Schema,
   endpoint: EndpointV1Schema,
@@ -30,6 +33,7 @@ export const PublicContractSchemasV1 = {
 } as const
 
 export const PublicContractJsonSchemasV1 = {
+  collectorProvenanceProfile: toJsonSchema202012(CollectorProvenanceProfileV1Schema, 'collector-provenance-profile'),
   workspace: toJsonSchema202012(WorkspaceV1Schema, 'workspace'),
   workspaceMembership: toJsonSchema202012(WorkspaceMembershipV1Schema, 'workspace-membership'),
   endpoint: toJsonSchema202012(EndpointV1Schema, 'endpoint'),
