@@ -17,7 +17,6 @@ function splashEl(): HTMLElement | null {
   return document.querySelector('.splash')
 }
 
-
 afterEach(() => {
   vi.useRealTimers()
   Reflect.deleteProperty(window, 'matchMedia')
@@ -29,10 +28,11 @@ describe('Splash', () => {
     const el = splashEl()
     expect(el).toBeInTheDocument()
     // Static under vitest / the closed motion gate: no ignite/pulse class,
-    // the static mark instead of the loader video.
+    // the Qovrion vector mark instead of the inherited loader video.
     expect(el).not.toHaveClass('splash-lit')
     expect(el?.querySelector('video')).toBeNull()
-    expect(el?.querySelector('.flamemark')).not.toBeNull()
+    expect(el?.querySelector('.splash-mark svg')).not.toBeNull()
+    expect(el?.textContent).toContain('Qovrion')
   })
 
   it('holds the min on-screen time, then crossfades away once data lands', () => {
