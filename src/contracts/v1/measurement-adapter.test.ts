@@ -76,6 +76,7 @@ describe('ParsedApiCall -> UsageMeasurementEventV1', () => {
   it('projects only the public allowlist and preserves explicit provenance', () => {
     const event = toUsageMeasurementEventV1(call(), context())
 
+    expect(event.subject).toBe('workspace/workspace_01/endpoint/endpoint_01')
     expect(event.data.genAi).toEqual({
       operationName: 'invoke_agent',
       providerName: 'openai',
@@ -188,6 +189,29 @@ describe('ParsedApiCall -> UsageMeasurementEventV1', () => {
     )
     expect(event.data.sessionId).toBeUndefined()
     expect(event.data.quality.sessionIdentity).toBe('unknown')
+  })
+
+  it('does not hide invalid optional fields by silently omitting them', () => {
+    expect(() => toUsageMeasurementEventV1(
+      call(),
+      context({ repositoryId: '' }),
+    )).toThrow()
+
+    expect(() => toUsageMeasurementEventV1(
+      call(),
+      context({ tool: { name: 'Codex', version: '' } }),
+    )).toThrow()
+
+    expect(() => toUsageMeasurementEventV1(
+      call(),
+      context({
+        genAi: {
+          operationName: 'invoke_agent',
+          providerName: 'openai',
+          requestModel: '',
+        },
+      }),
+    )).toThrow()
   })
 
   it('lets the public schema reject invalid token facts instead of coercing them', () => {
