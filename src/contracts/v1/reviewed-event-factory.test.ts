@@ -165,6 +165,11 @@ describe('reviewed usage measurement event factory v1', () => {
 
     expect(() => createReviewedUsageMeasurementEventV1(codexCall(), {
       ...context(),
+      session: { mode: 'omit', sessionId: 'hidden-session' } as never,
+    })).toThrow(/omitted session disclosure cannot carry a session id/)
+
+    expect(() => createReviewedUsageMeasurementEventV1(codexCall(), {
+      ...context(),
       session: { mode: 'later' } as never,
     })).toThrow(/session disclosure mode must be omit or include/)
   })
