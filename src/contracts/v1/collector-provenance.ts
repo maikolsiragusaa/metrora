@@ -184,13 +184,16 @@ export const CollectorProvenanceProfilesV1 = deepFreeze([
 
 /**
  * Resolve only collector paths whose provenance has been reviewed. Returning
- * undefined is intentional: unknown collectors must not receive optimistic
- * quality or cost defaults merely because they already produce ParsedApiCall.
+ * undefined is intentional: unknown or newly estimated collector paths must not
+ * receive optimistic quality or cost defaults merely because they already
+ * produce ParsedApiCall.
  */
 export function collectorProvenanceProfileForCall(
   call: Pick<ParsedApiCall, 'provider' | 'isEstimated'>,
 ): CollectorProvenanceProfileV1 | undefined {
-  if (call.provider === 'claude') return CLAUDE_JSONL_PROFILE_V1
+  if (call.provider === 'claude') {
+    return call.isEstimated ? undefined : CLAUDE_JSONL_PROFILE_V1
+  }
   if (call.provider === 'codex') {
     return call.isEstimated
       ? CODEX_CONTENT_FALLBACK_PROFILE_V1
