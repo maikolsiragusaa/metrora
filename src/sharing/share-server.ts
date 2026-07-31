@@ -5,7 +5,7 @@ import type { AddressInfo } from 'net'
 
 import { UsageQueryError } from '../cli-date.js'
 import { toCompanionUsageV1 } from './companion-contract.js'
-import { certFingerprint, pairingCode, PeerStore, PairingWindow } from './pairing.js'
+import { certFingerprint, pairingCode, PeerStore, PairingWindow, type PairedPeer } from './pairing.js'
 import type { Identity } from './identity.js'
 
 export type UsageQuery = { period?: string; from?: string; to?: string }
@@ -18,9 +18,9 @@ export type ShareServerOptions = {
   peers: PeerStore
   getUsage: (query: UsageQuery) => Promise<unknown>
   // Legacy callback kept for compatibility with existing embedders.
-  onPaired?: () => void
-  // Called after pairing or revocation so the caller can persist the peer list.
-  onPeersChanged?: () => void
+  onPaired?: () => void | Promise<void>
+  // Called after pairing or revocation so the caller can durably persist peers.
+  onPeersChanged?: () => void | Promise<void>
   // Enables the interactive approve flow (POST /api/peer/pair-request): return
   // true to accept. The user confirms the matching `code` shown on both devices.
   approve?: (req: PairRequest) => Promise<boolean>
@@ -87,9 +87,34 @@ export class ShareServer {
     return certFingerprint(cert.raw)
   }
 
-  private notifyPeersChanged(): void {
-    if (this.opts.onPeersChanged) this.opts.onPeersChanged()
-    else this.opts.onPaired?.()
+  private async notifyPeersChanged(): Promise<void> {
+    if (this.opts.onPeersChanged) await this.opts.onPeersChanged()
+    else await this.opts.onPaired?.()
+  }
+
+  private async pairAndPersist(fingerprint: string, name: string): Promise<PairedPeer> {
+    const previous = this.opts.peers.get(fingerprint)
+    const peer = this.opts.peers.pair(fingerprint, name)
+    try {
+      await this.notifyPeersChanged()
+      return peer
+    } catch (error) {
+      if (previous) this.opts.peers.restore(previous)
+      else this.opts.peers.unpair(fingerprint)
+      throw error
+    }
+  }
+
+  private async revokeAndPersist(fingerprint: string): Promise<boolean> {
+    const previous = this.opts.peers.get(fingerprint)
+    if (!previous || !this.opts.peers.unpair(fingerprint)) return false
+    try {
+      await this.notifyPeersChanged()
+      return true
+    } catch (error) {
+      this.opts.peers.restore(previous)
+      throw error
+    }
   }
 
   private authorizedPeer(req: IncomingMessage): { fingerprint: string; token: string } | null {
@@ -157,8 +182,7 @@ export class ShareServer {
         return
       }
       this.pairing = null
-      const peer = this.opts.peers.pair(clientFp, name)
-      this.notifyPeersChanged()
+      const peer = await this.pairAndPersist(clientFp, name)
       json(200, { token: peer.token, name: this.opts.identity.name, fingerprint: this.opts.identity.fingerprint })
       return
     }
@@ -181,8 +205,7 @@ export class ShareServer {
         json(403, { error: 'pairing declined' })
         return
       }
-      const peer = this.opts.peers.pair(clientFp, name)
-      this.notifyPeersChanged()
+      const peer = await this.pairAndPersist(clientFp, name)
       json(200, { token: peer.token, name: this.opts.identity.name, fingerprint: this.opts.identity.fingerprint, code })
       return
     }
@@ -193,8 +216,10 @@ export class ShareServer {
         json(401, { error: 'unauthorized' })
         return
       }
-      this.opts.peers.unpair(authorized.fingerprint)
-      this.notifyPeersChanged()
+      if (!await this.revokeAndPersist(authorized.fingerprint)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
       json(200, { revoked: true })
       return
     }
