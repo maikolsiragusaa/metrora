@@ -43,8 +43,8 @@ function usageEvent() {
         sourceFingerprintSha256: SHA_A,
       },
       genAi: {
-        operationName: 'invoke-agent',
-        system: 'openai',
+        operationName: 'invoke_agent',
+        providerName: 'openai',
         requestModel: 'gpt-5.6-luna',
         responseModel: 'gpt-5.6-luna',
       },
@@ -61,7 +61,7 @@ function usageEvent() {
         amountMicrosUsd: 1200,
         method: 'token-pricing',
       },
-      reasoning: { level: 'high', source: 'explicit' },
+      reasoning: { level: 'xhigh', source: 'explicit' },
       quality: {
         tokenCounts: 'measured',
         modelIdentity: 'exact',
@@ -214,7 +214,7 @@ describe('public contracts v1', () => {
       },
       semanticConventions: {
         cloudEvents: '1.0',
-        openTelemetryGenAi: { version: '1.43.0', stability: 'development' },
+        openTelemetryGenAi: { version: '1.42.0', stability: 'development' },
         qovrion: '1',
       },
       events: [event],
