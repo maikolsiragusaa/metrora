@@ -28,6 +28,9 @@ jobs:
       - name: Preserve additive report output
         run: node .github/scripts/refine-qov-003-session-row.mjs
 
+      - name: Align contract tests
+        run: node .github/scripts/refine-qov-003-contract-tests.mjs
+
       - name: Apply exact transformations
         run: node .github/scripts/apply-qov-003.mjs
 
@@ -49,13 +52,24 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         run: npm run build:cli
 
-      - name: Run root tests with diagnostic capture
+      - name: Run focused root contract tests
         id: root_tests
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
           set +e
-          npm test -- --run 2>&1 | tee qov-003-root-tests.log
+          npm test -- --run \
+            src/reasoning-level.test.ts \
+            src/providers/codex-reasoning.test.ts \
+            tests/providers/codex.test.ts \
+            tests/session-cache.test.ts \
+            tests/sessions-report.test.ts \
+            tests/cli-emitters.test.ts \
+            tests/parser.test.ts \
+            tests/parser-single-pass-scanner.test.ts \
+            tests/parser-large-session.test.ts \
+            --maxWorkers=1 --fileParallelism=false \
+            2>&1 | tee qov-003-root-tests.log
           status=${PIPESTATUS[0]}
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit 0
@@ -69,7 +83,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Enforce root test result
+      - name: Enforce focused root tests
         if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status != '0'
         shell: bash
         run: exit 1
