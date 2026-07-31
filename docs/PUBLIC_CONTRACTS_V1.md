@@ -172,9 +172,11 @@ The adapter is deliberately an allowlist rather than a serializer:
 - it copies token facts and the normalized response model;
 - it requires the caller to declare the actual AI provider, operation, collector provenance, cost provenance, and quality;
 - it never infers the AI provider from the collector name;
-- it hashes the private deduplication key together with endpoint and source identity to create a deterministic opaque CloudEvents ID;
+- it derives the opaque CloudEvents ID with HMAC-SHA-256 over endpoint, source, and private deduplication identity;
+- it requires at least 32 bytes of local endpoint key material, never exports that key, and intentionally breaks cross-key linkability when the key rotates;
 - it never exports the raw deduplication key, tools, MCP names, skills, subagents, shell commands, file names, local paths, prompts, responses, source code, or patches;
 - it emits `unavailable` rather than inventing a zero when cost evidence is absent;
+- it rejects negative, non-finite, or micro-USD amounts that cannot be represented exactly as a JavaScript safe integer instead of silently clamping them;
 - it rejects partial reasoning attribution and non-unknown session quality without an exported session ID;
 - it validates its own output through the public Zod schema before returning it.
 
@@ -194,6 +196,6 @@ This does not replace any CodeBurn/Qovrion collector or parser. Existing collect
 
 The public contracts, schema export, and one-call projection adapter have unit tests. The adapter is not yet enabled in normal parser/cache execution, and no provider-specific provenance registry has been ratified.
 
-There is still no hosted service, Android synchronization through these contracts, measurement-batch persistence, RFC 8785 hashing implementation, DSSE signing, or Sigstore integration.
+There is still no hosted service, Android synchronization through these contracts, endpoint event-key provisioning, measurement-batch persistence, RFC 8785 hashing implementation, DSSE signing, or Sigstore integration.
 
 The next safe step is a provider-provenance registry for the collectors whose token and cost evidence is already understood, followed by fixture-based parity tests. Unknown providers must remain unavailable/unknown rather than receiving optimistic defaults.
