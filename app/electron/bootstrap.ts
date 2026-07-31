@@ -23,7 +23,7 @@ void app.whenReady().then(async () => {
   }
 })
 
-void import('./main').catch(error => {
+void import('./main.js').catch(error => {
   console.error('desktop main bootstrap failed:', error)
   app.quit()
 })
