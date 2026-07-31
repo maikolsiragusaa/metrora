@@ -2,7 +2,7 @@
   "name": "codeburn-desktop",
   "private": true,
   "version": "0.9.19",
-  "description": "CodeBurn Desktop — Electron app fed by the codeburn CLI",
+  "description": "Qovrion Desktop — local-first AI usage intelligence powered by the compatibility CLI",
   "main": "dist/electron/main.js",
   "scripts": {
     "build:electron": "tsc -p tsconfig.electron.json",
@@ -16,7 +16,6 @@
     "package:arm64": "npm run stage-cli && npm run build && electron-builder --mac --arm64",
     "package:x64": "npm run stage-cli && npm run build && electron-builder --mac --x64",
     "package:win": "npm run stage-cli && npm run build && electron-builder --win",
-    "package:store": "npm run stage-cli && npm run build && electron-builder --win appx --x64",
     "package:linux": "npm run stage-cli && npm run build && electron-builder --linux"
   },
   "dependencies": {
@@ -45,8 +44,8 @@
     "wait-on": "^9.0.10"
   },
   "build": {
-    "appId": "org.agentseal.codeburn-desktop",
-    "productName": "CodeBurn",
+    "appId": "org.qovrion.desktop",
+    "productName": "Qovrion",
     "directories": {
       "output": "release"
     },
@@ -79,9 +78,9 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
-        "NSDocumentsFolderUsageDescription": "CodeBurn reads your local AI coding tool session logs (Claude Code, Codex, Cursor, and others) to calculate your token usage and cost. Your data never leaves your machine.",
-        "NSDesktopFolderUsageDescription": "CodeBurn reads your local AI coding tool session logs (Claude Code, Codex, Cursor, and others) to calculate your token usage and cost. Your data never leaves your machine.",
-        "NSDownloadsFolderUsageDescription": "CodeBurn reads your local AI coding tool session logs (Claude Code, Codex, Cursor, and others) to calculate your token usage and cost. Your data never leaves your machine."
+        "NSDocumentsFolderUsageDescription": "Qovrion reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
+        "NSDesktopFolderUsageDescription": "Qovrion reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
+        "NSDownloadsFolderUsageDescription": "Qovrion reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry."
       }
     },
     "dmg": {},
@@ -99,21 +98,7 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "artifactName": "CodeBurn-Setup-${version}.${ext}"
-    },
-    "appx": {
-      "applicationId": "CodeBurn",
-      "identityName": "Codeburn.CodeBurn",
-      "publisher": "CN=3EFA3336-87E1-46F2-9DFA-2EB5A7693F89",
-      "publisherDisplayName": "Codeburn",
-      "displayName": "CodeBurn",
-      "artifactName": "CodeBurn-Store-${version}-${arch}.${ext}",
-      "backgroundColor": "#15100D",
-      "languages": [
-        "en-US"
-      ],
-      "minVersion": "10.0.17763.0",
-      "maxVersionTested": "10.0.26100.0"
+      "artifactName": "Qovrion-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -138,10 +123,10 @@
       ],
       "category": "Development",
       "icon": "build/icon.png",
-      "maintainer": "AgentSeal <hello@agentseal.org>",
-      "executableName": "codeburn"
+      "maintainer": "Maikol Siragusa",
+      "executableName": "qovrion"
     }
   },
-  "homepage": "https://github.com/getagentseal/codeburn",
-  "author": "AgentSeal <hello@agentseal.org>"
+  "homepage": "https://github.com/maikolsiragusaa/qovrion",
+  "author": "Maikol Siragusa"
 }
