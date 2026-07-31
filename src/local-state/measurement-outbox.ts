@@ -174,6 +174,9 @@ export async function enqueueMeasurementEventV1(
     }
 
     const sequence = await readCounter(paths.counter)
+    if (sequence >= Number.MAX_SAFE_INTEGER) {
+      throw new Error('local outbox sequence space is exhausted')
+    }
     // Reserve first. A crash after this write creates a harmless gap rather than
     // allowing the next process to reuse a sequence already present on disk.
     await atomicWritePrivateFile(paths.counter, JSON.stringify({ version: 1, nextSequence: sequence + 1 }))
