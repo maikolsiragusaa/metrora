@@ -119,6 +119,7 @@ describe('historical cost calculation v1', () => {
 
     const result = calculateHistoricalCostV1(conditional, {
       ...usage,
+      webSearchRequests: 0,
       promptInputTokens: 700_000,
     })
     expect(result.kind).toBe('calculated')
@@ -183,6 +184,7 @@ describe('historical cost calculation v1', () => {
         outputPerToken: 2e-6,
         cacheReadPerToken: 0.1e-6,
         cacheWritePerToken: 1.25e-6,
+        webSearchPerRequest: 0.01,
         fastMultiplier: 2,
       },
     })
