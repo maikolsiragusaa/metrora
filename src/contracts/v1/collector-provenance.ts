@@ -78,6 +78,7 @@ export type CollectorProvenanceProfileV1 = z.infer<typeof CollectorProvenancePro
 
 const CLAUDE_PARSER_VERSION = 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1'
 const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1'
+const GEMINI_PARSER_VERSION = 'message-token-ledger-v1'
 
 function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
@@ -177,10 +178,43 @@ export const CODEX_CONTENT_FALLBACK_PROFILE_V1 = deepFreeze(CollectorProvenanceP
   privacy: privacyWithoutContent,
 }))
 
+export const GEMINI_MESSAGE_USAGE_PROFILE_V1 = deepFreeze(CollectorProvenanceProfileV1Schema.parse({
+  kind: COLLECTOR_PROVENANCE_PROFILE_KIND,
+  version: 1,
+  profileId: 'gemini-message-usage-v1',
+  collector: 'gemini',
+  parserVersion: GEMINI_PARSER_VERSION,
+  sourceKind: 'gemini-session-json-or-jsonl-message-usage',
+  facts: {
+    tokens: {
+      // Gemini input includes cached tokens. Qovrion derives fresh input by
+      // subtracting the measured cached subset before pricing and export.
+      input: 'derived',
+      output: 'measured',
+      cacheRead: 'measured',
+      cacheWrite: 'unknown',
+      reasoning: 'measured',
+    },
+    modelIdentity: 'exact',
+    sessionIdentity: 'exact',
+    // Gemini exposes thought-token quantity, but the current session format does
+    // not expose an effort level such as low/high. Keep the two claims separate.
+    reasoningAttribution: ['unknown'],
+    cost: {
+      basis: 'local-token-pricing',
+      tokenBasis: 'measured',
+      metered: false,
+      requiresPricingCoverage: true,
+    },
+  },
+  privacy: privacyWithoutContent,
+}))
+
 export const CollectorProvenanceProfilesV1 = deepFreeze([
   CLAUDE_JSONL_PROFILE_V1,
   CODEX_TOKEN_COUNT_PROFILE_V1,
   CODEX_CONTENT_FALLBACK_PROFILE_V1,
+  GEMINI_MESSAGE_USAGE_PROFILE_V1,
 ] as const)
 
 /**
@@ -199,6 +233,9 @@ export function collectorProvenanceProfileForCall(
     return call.isEstimated
       ? CODEX_CONTENT_FALLBACK_PROFILE_V1
       : CODEX_TOKEN_COUNT_PROFILE_V1
+  }
+  if (call.provider === 'gemini') {
+    return call.isEstimated ? undefined : GEMINI_MESSAGE_USAGE_PROFILE_V1
   }
   return undefined
 }

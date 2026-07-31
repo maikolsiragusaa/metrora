@@ -1,0 +1,3 @@
+{"sessionId":"gemini-session-jsonl-01","projectHash":"project-fixture","startTime":"2026-05-16T10:00:00.000Z","lastUpdated":"2026-05-16T10:00:05.000Z","kind":"chat"}
+{"id":"user-jsonl-01","timestamp":"2026-05-16T10:00:00.000Z","type":"user","content":"inspect the repository"}
+{"id":"gemini-jsonl-01","timestamp":"2026-05-16T10:00:05.000Z","type":"gemini","content":"reading files","model":"gemini-2.5-flash","tokens":{"input":120,"cached":20,"output":30,"thoughts":5,"total":155},"toolCalls":[{"id":"tool-jsonl-01","name":"read_file","args":{"path":"src/index.ts"}}]}

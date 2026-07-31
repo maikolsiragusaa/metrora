@@ -7,6 +7,9 @@ import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
+/** Bump whenever unchanged Gemini session files must be re-reviewed for sharing. */
+export const GEMINI_PARSER_VERSION = 'message-token-ledger-v1'
+
 const toolNameMap: Record<string, string> = {
   read_file: 'Read',
   write_file: 'Write',

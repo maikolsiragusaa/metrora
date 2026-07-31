@@ -5,12 +5,14 @@ import { join } from 'node:path'
 
 import { parseApiCall, parseJsonlLine } from '../../parser.js'
 import { createCodexProvider } from '../../providers/codex.js'
+import { createGeminiProvider } from '../../providers/gemini.js'
 import type { ParsedProviderCall, SessionSource } from '../../providers/types.js'
 import type { ParsedApiCall } from '../../types.js'
 import {
   CLAUDE_JSONL_PROFILE_V1,
   CODEX_CONTENT_FALLBACK_PROFILE_V1,
   CODEX_TOKEN_COUNT_PROFILE_V1,
+  GEMINI_MESSAGE_USAGE_PROFILE_V1,
 } from './collector-provenance.js'
 import { resolveMeasurementEvidenceV1 } from './provenance-mapper.js'
 
@@ -65,21 +67,32 @@ function normalizeProviderCall(call: ParsedProviderCall): ParsedApiCall {
   }
 }
 
-async function codexFixtureCall(name: string): Promise<ParsedApiCall> {
-  const cacheRoot = await mkdtemp(join(tmpdir(), 'qovrion-provenance-'))
-  temporaryRoots.push(cacheRoot)
-  process.env['CODEBURN_CACHE_DIR'] = cacheRoot
-
+async function providerFixtureCall(
+  provider: 'codex' | 'gemini',
+  name: string,
+): Promise<ParsedApiCall> {
   const source: SessionSource = {
     path: join(FIXTURES, name),
     project: 'qovrion-fixture',
-    provider: 'codex',
+    provider,
   }
-  const parser = createCodexProvider().createSessionParser(source, new Set())
+  const implementation = provider === 'codex' ? createCodexProvider() : createGeminiProvider()
+  const parser = implementation.createSessionParser(source, new Set())
   const calls: ParsedProviderCall[] = []
   for await (const call of parser.parse()) calls.push(call)
   expect(calls).toHaveLength(1)
   return normalizeProviderCall(calls[0]!)
+}
+
+async function codexFixtureCall(name: string): Promise<ParsedApiCall> {
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'qovrion-provenance-'))
+  temporaryRoots.push(cacheRoot)
+  process.env['CODEBURN_CACHE_DIR'] = cacheRoot
+  return providerFixtureCall('codex', name)
+}
+
+async function geminiFixtureCall(name: string): Promise<ParsedApiCall> {
+  return providerFixtureCall('gemini', name)
 }
 
 afterEach(async () => {
@@ -163,6 +176,43 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
     expect(evidence?.costEvidence).toEqual({ kind: 'estimated', method: 'content-length' })
   })
 
+  it('keeps Gemini JSON and JSONL message ledgers equivalent', async () => {
+    const json = await geminiFixtureCall('gemini-session-json-v1.json')
+    const jsonl = await geminiFixtureCall('gemini-session-jsonl-v1.jsonl')
+
+    for (const call of [json, jsonl]) {
+      expect(call).toMatchObject({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        usage: {
+          inputTokens: 100,
+          outputTokens: 30,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 20,
+          reasoningTokens: 5,
+          webSearchRequests: 0,
+        },
+        tools: ['Read'],
+      })
+      expect(call.isEstimated).not.toBe(true)
+      expect(Number.isFinite(call.costUSD)).toBe(true)
+      expect(call.costUSD).toBeGreaterThan(0)
+    }
+
+    expect(json.usage).toEqual(jsonl.usage)
+    expect(json.model).toBe(jsonl.model)
+    expect(json.costUSD).toBe(jsonl.costUSD)
+
+    const evidence = resolveMeasurementEvidenceV1(json, { sessionId: 'gemini-session-json-01' })
+    expect(evidence?.profile).toBe(GEMINI_MESSAGE_USAGE_PROFILE_V1)
+    expect(evidence?.quality).toEqual({
+      tokenCounts: 'derived',
+      modelIdentity: 'exact',
+      sessionIdentity: 'exact',
+    })
+    expect(evidence?.costEvidence).toEqual({ kind: 'estimated', method: 'token-pricing' })
+  })
+
   it('degrades cost to unavailable when pricing coverage is absent or stale', async () => {
     const call = await codexFixtureCall('codex-token-count-v1.jsonl')
 
@@ -203,6 +253,12 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
     expect(resolveMeasurementEvidenceV1(
       { ...claudeCall, reasoningLevel: 'high', reasoningLevelSource: 'explicit' },
       { sessionId: 'claude-session-01' },
+    )).toBeUndefined()
+
+    const geminiCall = await geminiFixtureCall('gemini-session-json-v1.json')
+    expect(resolveMeasurementEvidenceV1(
+      { ...geminiCall, reasoningLevel: 'high', reasoningLevelSource: 'explicit' },
+      { sessionId: 'gemini-session-json-01' },
     )).toBeUndefined()
   })
 
