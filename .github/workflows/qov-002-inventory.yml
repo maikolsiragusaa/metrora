@@ -1,0 +1,72 @@
+name: QOV-002 identity inventory
+
+on:
+  push:
+    branches:
+      - feat/qov-002-technical-identity-migration
+    paths:
+      - .github/workflows/qov-002-inventory.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Inventory compatibility boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '=== LEGACY IDENTITY MATCHES ==='
+            git grep -n -I \
+              -e 'codeburn' \
+              -e 'CodeBurn' \
+              -e 'CODEBURN' \
+              -- \
+              ':!package-lock.json' \
+              ':!app/package-lock.json' \
+              ':!LICENSE' \
+              ':!THIRD_PARTY_NOTICES.md' \
+              ':!UPSTREAM.md' \
+              || true
+
+            echo
+            echo '=== LOCAL STORAGE / PERSISTENCE CALLS ==='
+            git grep -n -I \
+              -e 'localStorage' \
+              -e 'sessionStorage' \
+              -e 'userData' \
+              -e 'Application Support' \
+              -e 'XDG_CONFIG_HOME' \
+              -- app src scripts dash \
+              || true
+
+            echo
+            echo '=== FILE COUNTS BY LEGACY MATCH ==='
+            git grep -l -I \
+              -e 'codeburn' \
+              -e 'CodeBurn' \
+              -e 'CODEBURN' \
+              -- \
+              ':!package-lock.json' \
+              ':!app/package-lock.json' \
+              ':!LICENSE' \
+              ':!THIRD_PARTY_NOTICES.md' \
+              ':!UPSTREAM.md' \
+              | sort \
+              || true
+          } | tee qov-002-inventory.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qov-002-identity-inventory
+          path: qov-002-inventory.txt
+          if-no-files-found: error
+          retention-days: 3
