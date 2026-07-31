@@ -1,0 +1,47 @@
+name: QOV-002 desktop lock refresh
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - app/package.json
+      - .github/workflows/qov-002-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - name: Regenerate lockfile with npm
+        run: npm --prefix app install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Validate desktop package
+        run: |
+          npm --prefix app ci --no-audit --no-fund
+          npm --prefix app test
+          npm --prefix app run typecheck
+          npm --prefix app run build
+      - name: Commit generated lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/package-lock.json; then
+            echo 'Lockfile already synchronized.'
+            exit 0
+          fi
+          git config user.name 'Maikol Siragusa'
+          git config user.email '268940776+maikolsiragusaa@users.noreply.github.com'
+          git add app/package-lock.json
+          git commit -m 'chore: synchronize Qovrion desktop lockfile'
+          git push origin HEAD:${{ github.head_ref }}
