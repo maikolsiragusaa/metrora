@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, isAbsolute, relative, win32, posix } from 'node:path'
+import { delimiter, dirname, join, isAbsolute, relative, win32, posix } from 'node:path'
 
 import { spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, CliError, nodeManagerDirs, notFoundStage, resolveCodeburnPath, resolveTarget } from './cli'
 
@@ -14,12 +14,23 @@ const originalViteUrl = process.env.VITE_DEV_SERVER_URL
 const originalBundled = process.env.CODEBURN_BUNDLED_CLI
 const originalDevRepoRoot = process.env.CODEBURN_DEV_REPO_ROOT
 
-/** Writes an executable node script and points CODEBURN_BIN at it. */
-function fakeBin(name: string, body: string): string {
+/**
+ * Writes a Node script. Spawn-oriented tests use the same bundled-entry path as
+ * the packaged desktop app, which is portable on Windows and POSIX. Resolution
+ * tests can explicitly request an external executable without trying to launch
+ * a JavaScript file directly on Windows.
+ */
+function fakeBin(name: string, body: string, target: 'bundled' | 'external' = 'bundled'): string {
   const p = join(dir, name)
   writeFileSync(p, `#!/usr/bin/env node\n${body}\n`, { mode: 0o755 })
   chmodSync(p, 0o755)
-  process.env.CODEBURN_BIN = p
+  if (target === 'external') {
+    process.env.CODEBURN_BIN = p
+    delete process.env.CODEBURN_BUNDLED_CLI
+  } else {
+    delete process.env.CODEBURN_BIN
+    process.env.CODEBURN_BUNDLED_CLI = p
+  }
   return p
 }
 
@@ -35,7 +46,9 @@ function fakeDevRepoCli(): string {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'codeburn-cli-'))
+  // Keep fixtures on the workspace volume. On Windows, path.relative across
+  // drive letters returns an absolute path and invalidates relative-path tests.
+  dir = mkdtempSync(join(process.cwd(), '.codeburn-cli-'))
 })
 
 afterEach(() => {
@@ -123,7 +136,7 @@ describe('resolveTarget (bundled CLI in the packaged app)', () => {
   })
 
   it('CODEBURN_BIN still overrides the bundled CLI', () => {
-    const override = fakeBin('override.js', 'process.stdout.write("{}")') // sets CODEBURN_BIN
+    const override = fakeBin('override.js', 'process.stdout.write("{}")', 'external')
     process.env.CODEBURN_BUNDLED_CLI = bundledEntry('bundled.js')
     delete process.env.VITE_DEV_SERVER_URL
 
@@ -259,7 +272,7 @@ describe('spawnSpecFor (bundled CLI runs via Electron-as-node)', () => {
     expect(spec.env.ELECTRON_RUN_AS_NODE).toBe('1')
     // PATH is still augmented (the bundle's own dir leads), harmless for a CLI
     // that itself shells out during pairing/sync.
-    expect((spec.env.PATH ?? '').split(':')[0]).toBe('/res/cli/dist')
+    expect((spec.env.PATH ?? '').split(delimiter)[0]).toBe('/res/cli/dist')
   })
 
   it('spawns an external CLI directly, with no run-as-node flag', () => {
@@ -267,7 +280,7 @@ describe('spawnSpecFor (bundled CLI runs via Electron-as-node)', () => {
     expect(spec.bin).toBe('/some/bin/codeburn')
     expect(spec.args).toEqual(['status'])
     expect(spec.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
-    expect((spec.env.PATH ?? '').split(':')[0]).toBe('/some/bin')
+    expect((spec.env.PATH ?? '').split(delimiter)[0]).toBe('/some/bin')
   })
 
   it('spawnCli runs the bundled entry end-to-end as Node', async () => {
@@ -313,6 +326,7 @@ describe('spawnCli', () => {
 
   it('rejects with kind "not-found" when no binary resolves', async () => {
     delete process.env.CODEBURN_BIN
+    delete process.env.CODEBURN_BUNDLED_CLI
     process.env.CODEBURN_PATH_DIRS = '' // force an empty search space
     process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-such-persisted-path')
     try {
@@ -333,15 +347,15 @@ describe('spawn PATH augmentation (GUI-launched apps have a minimal PATH)', () =
   it("prepends the resolved binary's own directory so its env-shebang finds node", async () => {
     const bin = fakeBin('path-echo.js', 'process.stdout.write(JSON.stringify({ path: process.env.PATH }))')
     const result = await spawnCli(['status']) as { path: string }
-    expect(result.path.split(':')[0]).toBe(dirname(bin))
+    expect(result.path.split(delimiter)[0]).toBe(dirname(bin))
   })
 
   it('spawnEnvFor dedupes and keeps the original PATH entries', () => {
     const env = spawnEnvFor('/some/tool/bin/codeburn')
-    const parts = (env.PATH ?? '').split(':')
+    const parts = (env.PATH ?? '').split(delimiter)
     expect(parts[0]).toBe('/some/tool/bin')
     expect(new Set(parts).size).toBe(parts.length)
-    for (const original of (process.env.PATH ?? '').split(':').filter(Boolean)) {
+    for (const original of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
       expect(parts).toContain(original)
     }
   })
