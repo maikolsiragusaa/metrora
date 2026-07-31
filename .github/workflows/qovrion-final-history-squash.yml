@@ -1,9 +1,13 @@
-# Existing default-branch workflow: this update intentionally triggers the one-time squash.
+# One-time workflow. It deletes itself from the final public root commit.
 name: Qovrion final public history squash
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]
+    paths:
+      - .github/workflows/qovrion-final-history-squash.yml
+  pull_request:
     branches: [main]
     paths:
       - .github/workflows/qovrion-final-history-squash.yml
