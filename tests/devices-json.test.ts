@@ -198,7 +198,7 @@ describe('devices/share/identity JSON CLI output', () => {
         fingerprint: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
         paired: false,
       })
-      expect(payload.found[0]?.code).toMatch(/^\d{3}$/)
+      expect(payload.found[0]?.code).toMatch(/^\d{6}$/)
     } finally {
       await rm(home, { recursive: true, force: true })
     }

@@ -6,9 +6,9 @@ import { ShareServer } from '../../src/sharing/share-server.js'
 import { pairRequest, fetchUsage } from '../../src/sharing/client.js'
 
 describe('pairingCode', () => {
-  it('is order-independent, deterministic, and 3 digits', () => {
+  it('is order-independent, deterministic, and 6 digits', () => {
     expect(pairingCode('aaa', 'bbb')).toBe(pairingCode('bbb', 'aaa'))
-    expect(pairingCode('aaa', 'bbb')).toMatch(/^\d{3}$/)
+    expect(pairingCode('aaa', 'bbb')).toMatch(/^\d{6}$/)
     expect(pairingCode('aaa', 'bbb')).toBe(pairingCode('aaa', 'bbb'))
   })
 })

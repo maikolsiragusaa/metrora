@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -40,7 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.maikolsiragusaa.qovrion.QovrionCoordinator
 import io.github.maikolsiragusaa.qovrion.QovrionUiState
@@ -68,8 +68,13 @@ fun QovrionApp(coordinator: QovrionCoordinator) {
             Feedback(state)
             when {
                 state.initializing -> LoadingState()
-                state.paired -> PairedState(state, coordinator::refresh, coordinator::disconnect)
-                else -> PairingState(state.busy, coordinator::pair)
+                state.paired -> PairedState(
+                    state = state,
+                    onRefresh = coordinator::refresh,
+                    onDisconnect = coordinator::disconnect,
+                    onForgetLocal = coordinator::forgetLocal,
+                )
+                else -> PairingState(state, coordinator::pair)
             }
         }
     }
@@ -121,10 +126,9 @@ private fun Feedback(state: QovrionUiState) {
 }
 
 @Composable
-private fun PairingState(busy: Boolean, onPair: (String, String, String) -> Unit) {
+private fun PairingState(state: QovrionUiState, onPair: (String, String) -> Unit) {
     var host by rememberSaveable { mutableStateOf("") }
     var port by rememberSaveable { mutableStateOf(QovrionProtocol.DEFAULT_PORT.toString()) }
-    var pin by rememberSaveable { mutableStateOf("") }
 
     Card {
         Column(
@@ -145,7 +149,7 @@ private fun PairingState(busy: Boolean, onPair: (String, String, String) -> Unit
                 value = host,
                 onValueChange = { host = it },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !busy,
+                enabled = !state.busy,
                 singleLine = true,
                 label = { Text(stringResource(R.string.desktop_address)) },
                 supportingText = { Text(stringResource(R.string.desktop_address_hint)) },
@@ -154,27 +158,17 @@ private fun PairingState(busy: Boolean, onPair: (String, String, String) -> Unit
                 value = port,
                 onValueChange = { value -> port = value.filter(Char::isDigit).take(5) },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !busy,
+                enabled = !state.busy,
                 singleLine = true,
                 label = { Text(stringResource(R.string.port)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
-            OutlinedTextField(
-                value = pin,
-                onValueChange = { value -> pin = value.filter(Char::isDigit).take(6) },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !busy,
-                singleLine = true,
-                label = { Text(stringResource(R.string.pairing_pin)) },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            )
             Button(
-                onClick = { onPair(host, port, pin) },
-                enabled = !busy && host.isNotBlank() && port.isNotBlank() && pin.length == 6,
+                onClick = { onPair(host, port) },
+                enabled = !state.busy && host.isNotBlank() && port.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                if (busy) {
+                if (state.busy) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
@@ -182,6 +176,36 @@ private fun PairingState(busy: Boolean, onPair: (String, String, String) -> Unit
                 } else {
                     Text(stringResource(R.string.pair_action))
                 }
+            }
+        }
+    }
+
+    state.pairingCode?.let { code ->
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(Icons.Outlined.Security, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.compare_code_title, state.pairingDesktopName.orEmpty()),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = code,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = MaterialTheme.typography.headlineLarge.letterSpacing,
+                )
+                Text(
+                    text = stringResource(R.string.compare_code_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
             }
         }
     }
@@ -206,7 +230,12 @@ private fun PairingState(busy: Boolean, onPair: (String, String, String) -> Unit
 }
 
 @Composable
-private fun PairedState(state: QovrionUiState, onRefresh: () -> Unit, onDisconnect: () -> Unit) {
+private fun PairedState(
+    state: QovrionUiState,
+    onRefresh: () -> Unit,
+    onDisconnect: () -> Unit,
+    onForgetLocal: () -> Unit,
+) {
     val credentials = state.credentials ?: return
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card {
@@ -256,6 +285,18 @@ private fun PairedState(state: QovrionUiState, onRefresh: () -> Unit, onDisconne
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.disconnect))
         }
+        OutlinedButton(
+            onClick = onForgetLocal,
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.forget_local))
+        }
+        Text(
+            text = stringResource(R.string.forget_local_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

@@ -1,15 +1,12 @@
 package io.github.maikolsiragusaa.qovrion.network
 
 import android.annotation.SuppressLint
-import io.github.maikolsiragusaa.qovrion.data.ModelUsage
 import io.github.maikolsiragusaa.qovrion.data.PairingCredentials
 import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
 import io.github.maikolsiragusaa.qovrion.security.DeviceIdentity
 import io.github.maikolsiragusaa.qovrion.security.IdentityMaterial
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.math.BigDecimal
-import java.math.RoundingMode
 import java.net.Socket
 import java.net.URL
 import java.security.MessageDigest
@@ -18,7 +15,6 @@ import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
-import java.time.Instant
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -34,7 +30,6 @@ data class DiscoveredDesktop(
     val port: Int,
     val name: String,
     val fingerprint: String,
-    val pairingOpen: Boolean,
 )
 
 class QovrionApiClient(
@@ -59,6 +54,10 @@ class QovrionApiClient(
                 (0 until versions.length()).any { index -> versions.optInt(index, -1) == QovrionProtocol.API_VERSION }
             } == true)
         require(supportsV1) { "The desktop does not support Qovrion companion API v1." }
+        val supportsApprovedPairing = json.optJSONArray("pairingMethods")?.let { methods ->
+            (0 until methods.length()).any { index -> methods.optString(index) == "approve-sas" }
+        } == true
+        require(supportsApprovedPairing) { "Update Qovrion Desktop before pairing this phone." }
         val advertisedFingerprint = QovrionProtocol.normalizeFingerprint(json.getString("fingerprint"))
         require(advertisedFingerprint == response.serverFingerprint) { "Desktop certificate identity mismatch." }
         DiscoveredDesktop(
@@ -66,50 +65,56 @@ class QovrionApiClient(
             port = normalizedPort,
             name = json.optString("name").ifBlank { normalizedHost },
             fingerprint = advertisedFingerprint,
-            pairingOpen = json.optBoolean("pairingOpen", false),
         )
     }
 
-    suspend fun pair(desktop: DiscoveredDesktop, pin: String, deviceName: String): PairingCredentials =
-        withContext(Dispatchers.IO) {
-            require(desktop.pairingOpen) { "Open a pairing window on the desktop first." }
-            val normalizedPin = QovrionProtocol.validatePin(pin)
-            val body = JSONObject()
-                .put("pin", normalizedPin)
-                .put("name", deviceName.trim().ifBlank { "Android" })
-                .toString()
-            val response = call(
-                host = desktop.host,
-                port = desktop.port,
-                method = "POST",
-                path = QovrionProtocol.PAIR_PATH,
-                expectedFingerprint = desktop.fingerprint,
-                body = body,
-            )
-            if (response.status != 200) {
-                val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
-                error(error.ifBlank { "Pairing failed with HTTP ${response.status}." })
-            }
-            val json = JSONObject(response.body)
-            val returnedFingerprint = QovrionProtocol.normalizeFingerprint(json.getString("fingerprint"))
-            require(returnedFingerprint == desktop.fingerprint) { "Desktop identity changed during pairing." }
-            val identity = deviceIdentity.material()
-            PairingCredentials(
-                host = desktop.host,
-                port = desktop.port,
-                desktopName = json.optString("name").ifBlank { desktop.name },
-                serverFingerprint = desktop.fingerprint,
-                clientFingerprint = identity.fingerprint,
-                token = json.getString("token"),
-                pairedAtEpochMs = System.currentTimeMillis(),
-            )
+    fun pairingCode(desktop: DiscoveredDesktop): String = QovrionProtocol.pairingCode(
+        desktop.fingerprint,
+        deviceIdentity.material().fingerprint,
+    )
+
+    suspend fun pair(
+        desktop: DiscoveredDesktop,
+        expectedCode: String,
+        deviceName: String,
+    ): PairingCredentials = withContext(Dispatchers.IO) {
+        val identity = deviceIdentity.material()
+        val localCode = QovrionProtocol.pairingCode(desktop.fingerprint, identity.fingerprint)
+        require(localCode == expectedCode) { "The local pairing identity changed. Start again." }
+        val body = JSONObject()
+            .put("name", deviceName.trim().ifBlank { "Android" })
+            .toString()
+        val response = call(
+            host = desktop.host,
+            port = desktop.port,
+            method = "POST",
+            path = QovrionProtocol.PAIR_REQUEST_PATH,
+            expectedFingerprint = desktop.fingerprint,
+            body = body,
+            readTimeoutMs = PAIRING_TIMEOUT_MS,
+        )
+        if (response.status != 200) {
+            val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
+            error(error.ifBlank { "Pairing failed with HTTP ${response.status}." })
         }
+        val json = JSONObject(response.body)
+        val returnedFingerprint = QovrionProtocol.normalizeFingerprint(json.getString("fingerprint"))
+        require(returnedFingerprint == desktop.fingerprint) { "Desktop identity changed during pairing." }
+        require(json.getString("code") == expectedCode) { "The pairing confirmation code changed." }
+        PairingCredentials(
+            host = desktop.host,
+            port = desktop.port,
+            desktopName = json.optString("name").ifBlank { desktop.name },
+            serverFingerprint = desktop.fingerprint,
+            clientFingerprint = identity.fingerprint,
+            token = json.getString("token"),
+            pairedAtEpochMs = System.currentTimeMillis(),
+        )
+    }
 
     suspend fun fetchUsage(credentials: PairingCredentials, period: String = "month"): UsageSnapshot =
         withContext(Dispatchers.IO) {
-            require(deviceIdentity.material().fingerprint == credentials.clientFingerprint) {
-                "This phone's client identity changed. Pair the desktop again."
-            }
+            requireCurrentIdentity(credentials)
             val response = call(
                 host = credentials.host,
                 port = credentials.port,
@@ -122,44 +127,32 @@ class QovrionApiClient(
                 val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
                 error(error.ifBlank { "Usage refresh failed with HTTP ${response.status}." })
             }
-            parseUsage(response.body, credentials)
+            CompanionUsageV1Parser.parse(response.body, credentials)
         }
 
-    private fun parseUsage(raw: String, credentials: PairingCredentials): UsageSnapshot {
-        val root = JSONObject(raw)
-        val current = root.getJSONObject("current")
-        val modelsJson = current.optJSONArray("topModels")
-        val topModels = buildList {
-            if (modelsJson != null) {
-                for (index in 0 until minOf(modelsJson.length(), MAX_TOP_MODELS)) {
-                    val model = modelsJson.getJSONObject(index)
-                    add(
-                        ModelUsage(
-                            name = model.optString("name").ifBlank { "Unknown model" },
-                            calls = model.optLong("calls", 0L).coerceAtLeast(0L),
-                            costMicrosUsd = usdToMicros(model.optDouble("cost", 0.0)),
-                        ),
-                    )
-                }
-            }
-        }
-        val generatedAt = runCatching { Instant.parse(root.getString("generated")).toEpochMilli() }
-            .getOrElse { System.currentTimeMillis() }
-        return UsageSnapshot(
-            desktopId = credentials.serverFingerprint,
-            desktopName = credentials.desktopName,
-            generatedAtEpochMs = generatedAt,
-            periodLabel = current.optString("label").ifBlank { "This month" },
-            costMicrosUsd = usdToMicros(current.optDouble("cost", 0.0)),
-            calls = current.optLong("calls", 0L).coerceAtLeast(0L),
-            sessions = current.optLong("sessions", 0L).coerceAtLeast(0L),
-            inputTokens = current.optLong("inputTokens", 0L).coerceAtLeast(0L),
-            outputTokens = current.optLong("outputTokens", 0L).coerceAtLeast(0L),
-            cacheReadTokens = current.optLong("cacheReadTokens", 0L).coerceAtLeast(0L),
-            cacheWriteTokens = current.optLong("cacheWriteTokens", 0L).coerceAtLeast(0L),
-            cacheHitPercent = current.optDouble("cacheHitPercent", 0.0).takeIf { it.isFinite() }?.coerceIn(0.0, 100.0) ?: 0.0,
-            topModels = topModels,
+    suspend fun revoke(credentials: PairingCredentials) = withContext(Dispatchers.IO) {
+        requireCurrentIdentity(credentials)
+        val response = call(
+            host = credentials.host,
+            port = credentials.port,
+            method = "POST",
+            path = QovrionProtocol.REVOKE_PATH,
+            expectedFingerprint = credentials.serverFingerprint,
+            headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
         )
+        if (response.status != 200) {
+            val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
+            error(error.ifBlank { "Access revocation failed with HTTP ${response.status}." })
+        }
+        require(JSONObject(response.body).optBoolean("revoked", false)) {
+            "The desktop did not confirm access revocation."
+        }
+    }
+
+    private fun requireCurrentIdentity(credentials: PairingCredentials) {
+        require(deviceIdentity.material().fingerprint == credentials.clientFingerprint) {
+            "This phone's client identity changed. Pair the desktop again."
+        }
     }
 
     @SuppressLint("BadHostnameVerifier", "CustomX509TrustManager", "TrustAllX509TrustManager")
@@ -171,6 +164,7 @@ class QovrionApiClient(
         expectedFingerprint: String?,
         headers: Map<String, String> = emptyMap(),
         body: String? = null,
+        readTimeoutMs: Int = READ_TIMEOUT_MS,
     ): ApiResponse {
         val identity = deviceIdentity.material()
         val trustManager = FingerprintTrustManager(expectedFingerprint)
@@ -179,7 +173,7 @@ class QovrionApiClient(
         val connection = (URL("https", host, port, path).openConnection() as HttpsURLConnection).apply {
             requestMethod = method
             connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
+            readTimeout = readTimeoutMs
             sslSocketFactory = context.socketFactory
             hostnameVerifier = HostnameVerifier { _, _ -> true }
             useCaches = false
@@ -218,20 +212,11 @@ class QovrionApiClient(
         return output.toString(Charsets.UTF_8.name())
     }
 
-    private fun usdToMicros(value: Double): Long {
-        if (!value.isFinite() || value <= 0.0) return 0L
-        return BigDecimal.valueOf(value)
-            .movePointRight(6)
-            .setScale(0, RoundingMode.HALF_UP)
-            .min(BigDecimal.valueOf(Long.MAX_VALUE))
-            .longValueExact()
-    }
-
     private companion object {
         const val CONNECT_TIMEOUT_MS = 4_000
         const val READ_TIMEOUT_MS = 20_000
+        const val PAIRING_TIMEOUT_MS = 70_000
         const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-        const val MAX_TOP_MODELS = 5
     }
 }
 

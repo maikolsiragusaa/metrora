@@ -28,8 +28,6 @@ describe('isProxiedPath: path matching rule', () => {
   })
 
   it('does NOT match across a partial path segment (boundary guard)', () => {
-    // The single most important negative: a string prefix that is not a
-    // directory-segment boundary must not silently zero unrelated spend.
     setProxyPaths(['/Users/me/proj'])
     expect(isProxiedPath('/Users/me/project-unrelated')).toBe(false)
   })
@@ -40,9 +38,10 @@ describe('isProxiedPath: path matching rule', () => {
     expect(isProxiedPath('/Users/me/work/')).toBe(true)
   })
 
-  it('is case-insensitive (macOS/Windows default filesystems)', () => {
+  it('follows the current platform filesystem case semantics', () => {
     setProxyPaths(['/Users/Me/Work'])
-    expect(isProxiedPath('/users/me/work/acme')).toBe(true)
+    const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin'
+    expect(isProxiedPath('/users/me/work/acme')).toBe(caseInsensitive)
   })
 
   it('matches a Windows-style config against a forward-slash cwd', () => {
@@ -82,8 +81,6 @@ describe('isProxiedPath: path matching rule', () => {
   })
 
   it('matches a leading-slash-stripped cwd (non-Claude provider path form)', () => {
-    // Codex/unsanitizePath project paths drop the leading slash; the configured
-    // path keeps it. Matching must be agnostic to that difference.
     setProxyPaths(['/Users/me/work'])
     expect(isProxiedPath('Users/me/work/acme')).toBe(true)
     expect(isProxiedPath('Users/me/work')).toBe(true)
@@ -106,8 +103,6 @@ describe('getProxyPathsConfigHash: cache-key stability', () => {
   })
 
   it('does NOT collide two materially different sets (delimited join)', () => {
-    // Regression guard: a separator-less join would make {'/a','/b'} and
-    // {'/a/b'} hash identically and let the session cache serve stale numbers.
     setProxyPaths(['/a', '/b'])
     const h1 = getProxyPathsConfigHash()
     setProxyPaths(['/a/b'])
@@ -115,17 +110,11 @@ describe('getProxyPathsConfigHash: cache-key stability', () => {
   })
 })
 
-// ── Part B: end-to-end attribution through parseAllSessions ────────────────
-
 const FIXTURE_DAY = Date.UTC(2026, 3, 16)
 const RANGE_START = new Date(FIXTURE_DAY - 24 * 60 * 60 * 1000)
 const RANGE_END = new Date(FIXTURE_DAY + 24 * 60 * 60 * 1000)
 const makeRange = (): DateRange => ({ start: RANGE_START, end: RANGE_END })
-
-// A stable, non-existent absolute path: resolveCanonicalProjectPath finds no
-// .git ancestor and returns it unchanged, so projectPath is predictable.
 const FIXTURE_CWD = '/private/var/eywa-proxy-fixture/acme'
-
 let tmpDirs: string[] = []
 
 beforeAll(async () => {
@@ -189,16 +178,11 @@ describe('proxy pricing: end-to-end through parseAllSessions', () => {
     setProxyPaths([FIXTURE_CWD])
     clearSessionCache()
     const projects = await parseAllSessions(makeRange(), 'all')
-
     const total = projects.reduce((s, p) => s + p.totalCostUSD, 0)
     const proxied = projects.reduce((s, p) => s + p.totalProxiedCostUSD, 0)
     expect(total).toBeGreaterThan(0)
-    // "Full cost, flagged": the billable figure is preserved, the same amount
-    // is reported as subscription-covered, so net out-of-pocket is 0.
     expect(proxied).toBeCloseTo(total, 10)
     expect(total - proxied).toBeCloseTo(0, 10)
-
-    // The raw per-call cost is never destroyed — it stays at the full API rate.
     const calls = allCalls(projects)
     expect(calls.length).toBeGreaterThan(0)
     for (const c of calls) expect(c.costUSD).toBeGreaterThan(0)
@@ -209,14 +193,11 @@ describe('proxy pricing: end-to-end through parseAllSessions', () => {
     setProxyPaths(['/private/var/eywa-proxy-fixture'])
     clearSessionCache()
     const projects = await parseAllSessions(makeRange(), 'all')
-    const proxied = projects.reduce((s, p) => s + p.totalProxiedCostUSD, 0)
-    expect(proxied).toBeGreaterThan(0)
+    expect(projects.reduce((s, p) => s + p.totalProxiedCostUSD, 0)).toBeGreaterThan(0)
   })
 
   it('does NOT flag a sibling path that is only a string prefix (no spend silently zeroed)', async () => {
     await setupProxiedSession()
-    // '/private/var/eywa-proxy-fixture/ac' is a string prefix of '.../acme'
-    // but not a directory-segment boundary — must not match.
     setProxyPaths(['/private/var/eywa-proxy-fixture/ac'])
     clearSessionCache()
     const projects = await parseAllSessions(makeRange(), 'all')
@@ -231,8 +212,7 @@ describe('proxy pricing: end-to-end through parseAllSessions', () => {
     setProxyPaths(['/Users/someone/else'])
     clearSessionCache()
     const projects = await parseAllSessions(makeRange(), 'all')
-    const proxied = projects.reduce((s, p) => s + p.totalProxiedCostUSD, 0)
-    expect(proxied).toBe(0)
+    expect(projects.reduce((s, p) => s + p.totalProxiedCostUSD, 0)).toBe(0)
   })
 
   it('preserves proxy attribution after date-range filtering (filterProjectsByDateRange)', async () => {
@@ -249,16 +229,11 @@ describe('proxy pricing: end-to-end through parseAllSessions', () => {
   })
 
   it('does not serve stale proxy attribution from the in-memory cache after proxyPaths changes', async () => {
-    // parseAllSessions caches ProjectSummary[] for 180s keyed partly on the
-    // proxy-config hash. Toggling proxyPaths must change the key so the second
-    // call recomputes rather than returning the pre-change (proxied=0) result.
     await setupProxiedSession()
     const before = await parseAllSessions(makeRange(), 'all')
     expect(before.reduce((s, p) => s + p.totalProxiedCostUSD, 0)).toBe(0)
-
-    setProxyPaths([FIXTURE_CWD]) // deliberately NO clearSessionCache()
+    setProxyPaths([FIXTURE_CWD])
     const after = await parseAllSessions(makeRange(), 'all')
-    const proxied = after.reduce((s, p) => s + p.totalProxiedCostUSD, 0)
-    expect(proxied).toBeGreaterThan(0)
+    expect(after.reduce((s, p) => s + p.totalProxiedCostUSD, 0)).toBeGreaterThan(0)
   })
 })

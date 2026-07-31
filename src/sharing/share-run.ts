@@ -24,7 +24,7 @@ const IDLE_TIMEOUT_MS = 10 * 60_000
 
 // Run the secure share server. On-demand by default: it stops after 10 minutes
 // of no requests. `--always` keeps it up until Ctrl+C (the opt-in persistent
-// mode). `--pair` opens a one-time pairing window and prints the PIN + command.
+// mode). `--pair` opens the inherited one-time PIN fallback for legacy clients.
 export async function runShareServer(opts: { port: number; pair: boolean; always: boolean }): Promise<void> {
   await loadPricing()
   const dir = getSharingDir()
@@ -40,12 +40,10 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     identity,
     peers,
     getUsage,
-    onPaired: () => {
-      void savePeers(peers.list(), dir)
-    },
+    onPeersChanged: () => savePeers(peers.list(), dir),
     approve: async (req) => {
-      process.stdout.write(`\n  "${req.name}" wants your usage.\n`)
-      process.stdout.write(`  Confirm this code matches on that device:  ${req.code}\n`)
+      process.stdout.write(`\n  "${req.name}" wants access to your shared usage.\n`)
+      process.stdout.write(`  Confirm this complete code matches on that device:  ${req.code}\n`)
       const ok = await promptYesNo('  Approve?', 60_000)
       process.stdout.write(ok ? `  Approved "${req.name}".\n\n` : `  Declined "${req.name}".\n\n`)
       return ok
@@ -63,12 +61,13 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
   }
   process.on('SIGINT', () => void shutdown())
 
-  process.stdout.write(`\n  Sharing "${identity.name}" - discoverable on your network.\n`)
-  process.stdout.write(`  On your other Mac, run:  codeburn devices add\n`)
+  process.stdout.write(`\n  Sharing "${identity.name}" - discoverable on your local network.\n`)
+  process.stdout.write('  In Qovrion Mobile, enter this computer address and compare the six-digit code.\n')
+  process.stdout.write(`  Address: ${ip}:${port}\n`)
   if (opts.pair) {
     const pin = server.openPairing(120_000)
-    process.stdout.write(`\n  Manual fallback (if discovery is blocked):\n`)
-    process.stdout.write(`    codeburn devices add ${ip}:${port} --pin ${pin}\n`)
+    process.stdout.write(`\n  Legacy manual fallback:\n`)
+    process.stdout.write(`    qovrion devices add ${ip}:${port} --pin ${pin}\n`)
   }
   process.stdout.write(`\n  ${peers.list().length} paired device(s). Press Ctrl+C to stop.\n\n`)
 
@@ -79,7 +78,7 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     })
     const timer = setInterval(() => {
       if (Date.now() - last > IDLE_TIMEOUT_MS) {
-        process.stdout.write('\n  Idle, stopping share. Run `codeburn share` again when you need it.\n')
+        process.stdout.write('\n  Idle, stopping share. Run `qovrion share` again when you need it.\n')
         process.exit(0)
       }
     }, 30_000)
