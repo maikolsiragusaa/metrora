@@ -96,14 +96,7 @@ function eventId(call: ParsedApiCall, context: ParsedApiCallMeasurementContextV1
 }
 
 function eventSubject(context: ParsedApiCallMeasurementContextV1): string {
-  const parts = [
-    'workspace', context.workspaceId,
-    'endpoint', context.endpointId,
-  ]
-  if (context.repositoryId) parts.push('repository', context.repositoryId)
-  if (context.projectId) parts.push('project', context.projectId)
-  if (context.sessionId) parts.push('session', context.sessionId)
-  return parts.join('/')
+  return `workspace/${context.workspaceId}/endpoint/${context.endpointId}`
 }
 
 /**
@@ -115,7 +108,7 @@ export function toUsageMeasurementEventV1(
   call: ParsedApiCall,
   context: ParsedApiCallMeasurementContextV1,
 ): UsageMeasurementEventV1 {
-  if (!context.sessionId && context.quality.sessionIdentity !== 'unknown') {
+  if (context.sessionId === undefined && context.quality.sessionIdentity !== 'unknown') {
     throw new Error('session identity quality must be unknown when no sessionId is exported')
   }
 
@@ -132,19 +125,19 @@ export function toUsageMeasurementEventV1(
       version: 1,
       workspaceId: context.workspaceId,
       endpointId: context.endpointId,
-      ...(context.repositoryId ? { repositoryId: context.repositoryId } : {}),
-      ...(context.projectId ? { projectId: context.projectId } : {}),
-      ...(context.sessionId ? { sessionId: context.sessionId } : {}),
-      ...(context.accountId ? { accountId: context.accountId } : {}),
+      ...(context.repositoryId !== undefined ? { repositoryId: context.repositoryId } : {}),
+      ...(context.projectId !== undefined ? { projectId: context.projectId } : {}),
+      ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+      ...(context.accountId !== undefined ? { accountId: context.accountId } : {}),
       tool: {
         name: context.tool.name,
-        ...(context.tool.version ? { version: context.tool.version } : {}),
+        ...(context.tool.version !== undefined ? { version: context.tool.version } : {}),
       },
       collector: { ...context.collector },
       genAi: {
         operationName: context.genAi.operationName,
         providerName: context.genAi.providerName,
-        ...(context.genAi.requestModel ? { requestModel: context.genAi.requestModel } : {}),
+        ...(context.genAi.requestModel !== undefined ? { requestModel: context.genAi.requestModel } : {}),
         responseModel: call.model,
       },
       usage: {
