@@ -29,6 +29,9 @@ export const HistoricalPriceUsageV1Schema = z.strictObject({
 })
 
 export type HistoricalPriceUsageV1 = z.infer<typeof HistoricalPriceUsageV1Schema>
+export type HistoricalRateSelectionV1 =
+  | { kind: 'base' }
+  | { kind: 'prompt-input-tokens-above'; tokens: number }
 
 export type HistoricalCostCalculationV1 =
   | {
@@ -36,9 +39,7 @@ export type HistoricalCostCalculationV1 =
       costUSD: number
       priceRecordId: string
       selectedRates: HistoricalPriceRatesV1
-      rateSelection:
-        | { kind: 'base' }
-        | { kind: 'prompt-input-tokens-above'; tokens: number }
+      rateSelection: HistoricalRateSelectionV1
     }
   | {
       kind: 'unavailable'
@@ -63,16 +64,13 @@ function validatedStandaloneRecord(input: HistoricalPriceRecordV1 | unknown): Hi
 function selectRates(
   record: HistoricalPriceRecordV1,
   promptInputTokens: number | undefined,
-):
-  | { rates: HistoricalPriceRatesV1; selection: HistoricalCostCalculationV1 & never }
-  | { rates: HistoricalPriceRatesV1; selection: { kind: 'base' } | { kind: 'prompt-input-tokens-above'; tokens: number } }
-  | undefined {
+): { rates: HistoricalPriceRatesV1; selection: HistoricalRateSelectionV1 } | undefined {
   const bands = record.rateBands ?? []
   if (bands.length === 0) return { rates: record.rates, selection: { kind: 'base' } }
   if (promptInputTokens === undefined) return undefined
 
   let rates = record.rates
-  let selection: { kind: 'base' } | { kind: 'prompt-input-tokens-above'; tokens: number } = { kind: 'base' }
+  let selection: HistoricalRateSelectionV1 = { kind: 'base' }
   for (const band of bands) {
     if (promptInputTokens <= band.when.tokens) break
     rates = band.rates
