@@ -49,14 +49,14 @@ This file is generated from `CollectorInventoryV1`. Local support and share elig
 | vercel-gateway | lazy | unassessed | docs/providers/vercel-gateway.md | pending | 3 | withheld |
 | warp | lazy | sqlite-weighted-estimation | docs/providers/warp.md | priority | 2 | withheld |
 | zcode | lazy | unassessed | docs/providers/zcode.md | pending | 3 | withheld |
-| zed | lazy | sqlite-zstd-json | docs/providers/zed.md | priority | 1 | withheld |
+| zed | lazy | sqlite-zstd-json | docs/providers/zed.md | approved | 0 | approved |
 | zerostack | core | unassessed | docs/providers/zerostack.md | pending | 3 | withheld |
 
 ## Current totals
 
 - Registered local collectors: **38**.
-- Approved for signed sharing: **3 collectors / 4 path-specific profiles**.
-- Priority audit queue: **9**.
+- Approved for signed sharing: **4 collectors / 6 path-specific profiles**.
+- Priority audit queue: **8**.
 - Pending audit: **26**.
 - Provider documentation present: **34**.
 - Documentation gaps: **codebuff, kimicode, open-design, quickdesk**.
