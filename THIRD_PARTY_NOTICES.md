@@ -20,4 +20,5 @@ The upstream work is licensed under the Apache License, Version 2.0.
 Qovrion changed the implementation to TypeScript, added explicit named exports
 and stricter unsupported-value errors, and formatted it for the Qovrion codebase.
 
-Apache License 2.0: `https://www.apache.org/licenses/LICENSE-2.0`
+The complete Apache License 2.0 text is distributed in
+`LICENSES/Apache-2.0.txt`.
