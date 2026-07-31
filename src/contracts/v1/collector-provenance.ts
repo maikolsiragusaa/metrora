@@ -9,11 +9,44 @@ export const FactProvenanceSchema = z.enum(['measured', 'derived', 'estimated', 
 export const IdentityProvenanceSchema = z.enum(['exact', 'normalized', 'derived', 'unknown'])
 export const ReasoningAttributionCapabilitySchema = z.enum(['explicit', 'model-label', 'unknown'])
 
+const LocalTokenPricingSchema = z.strictObject({
+  basis: z.literal('local-token-pricing'),
+  tokenBasis: z.enum(['measured', 'estimated-content-length', 'mixed']),
+  metered: z.literal(false),
+  requiresPricingCoverage: z.literal(true),
+})
+
+const MeteredCostSchema = z.strictObject({
+  basis: z.enum(['provider-metered', 'client-metered', 'billing-export']),
+  tokenBasis: z.enum(['measured', 'mixed', 'unknown']),
+  metered: z.literal(true),
+  requiresPricingCoverage: z.literal(false),
+})
+
+const UnavailableCostSchema = z.strictObject({
+  basis: z.literal('unavailable'),
+  tokenBasis: z.literal('unknown'),
+  metered: z.literal(false),
+  requiresPricingCoverage: z.literal(false),
+})
+
+export const CollectorCostProvenanceSchema = z.union([
+  LocalTokenPricingSchema,
+  MeteredCostSchema,
+  UnavailableCostSchema,
+])
+
+const CollectorNameSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+
 export const CollectorProvenanceProfileV1Schema = z.strictObject({
   kind: z.literal(COLLECTOR_PROVENANCE_PROFILE_KIND),
   version: ContractVersionSchema,
   profileId: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120),
-  collector: z.enum(['claude', 'codex']),
+  collector: CollectorNameSchema,
   parserVersion: z.string().min(1).max(240),
   sourceKind: z.string().min(1).max(120),
   facts: z.strictObject({
@@ -27,12 +60,7 @@ export const CollectorProvenanceProfileV1Schema = z.strictObject({
     modelIdentity: IdentityProvenanceSchema,
     sessionIdentity: IdentityProvenanceSchema,
     reasoningAttribution: z.array(ReasoningAttributionCapabilitySchema).min(1).max(3),
-    cost: z.strictObject({
-      basis: z.literal('local-token-pricing'),
-      tokenBasis: z.enum(['measured', 'estimated-content-length', 'mixed']),
-      metered: z.literal(false),
-      requiresPricingCoverage: z.literal(true),
-    }),
+    cost: CollectorCostProvenanceSchema,
   }),
   privacy: z.strictObject({
     promptsRequired: z.literal(false),
@@ -44,6 +72,7 @@ export const CollectorProvenanceProfileV1Schema = z.strictObject({
 })
 
 export type FactProvenanceV1 = z.infer<typeof FactProvenanceSchema>
+export type CollectorCostProvenanceV1 = z.infer<typeof CollectorCostProvenanceSchema>
 export type CollectorProvenanceProfileV1 = z.infer<typeof CollectorProvenanceProfileV1Schema>
 
 const CLAUDE_PARSER_VERSION = 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1'
@@ -51,7 +80,7 @@ const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait
 
 function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value
-  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+  for (const child of Object.values(value as object)) deepFreeze(child)
   return Object.freeze(value)
 }
 
