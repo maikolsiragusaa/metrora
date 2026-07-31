@@ -231,23 +231,24 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
 
   const makeHandle = (): RefreshLockHandle => {
     let released = false
-    let heartbeatRunning = false
+    let heartbeatScheduled = false
     const heartbeat = setInterval(() => {
+      if (released || heartbeatScheduled) return
+      heartbeatScheduled = true
       void serializeOwnerOp(async () => {
-        if (released || heartbeatRunning) return
-        heartbeatRunning = true
+        if (released) return
         const guard = await acquireTakeoverGuard()
-        if (guard !== 'created') { heartbeatRunning = false; return }
+        if (guard !== 'created') return
         try {
           const current = await observe(lockPath)
           if (current === 'missing' || current === 'changing' || current === 'unavailable' || current.record.token !== token) return
           const now = new Date(clock.wallNow())
           await utimes(lockPath, now, now)
-        } catch { /* verify/release will turn displacement or I/O failure into a closed gate */ }
-        finally {
+        } finally {
           await retryWindowsMutation(() => unlink(takeoverPath), sleep)
-          heartbeatRunning = false
         }
+      }).catch(() => undefined).finally(() => {
+        heartbeatScheduled = false
       })
     }, heartbeatMs)
     heartbeat.unref()
@@ -259,7 +260,7 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
         if (released) return
         released = true
         clearInterval(heartbeat)
-        while (heartbeatRunning) await sleep(1)
+        while (heartbeatScheduled) await sleep(1)
         await removeIfOwned()
         leave()
       },
