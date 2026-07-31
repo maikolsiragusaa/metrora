@@ -26,8 +26,9 @@ describe('collector provenance registry v1', () => {
     expect(CODEX_CONTENT_FALLBACK_PROFILE_V1.parserVersion).toBe(PROVIDER_PARSE_VERSIONS['codex'])
   })
 
-  it('classifies normalized calls without granting defaults to unknown collectors', () => {
+  it('classifies normalized calls without granting defaults to unknown paths', () => {
     expect(collectorProvenanceProfileForCall({ provider: 'claude' })).toBe(CLAUDE_JSONL_PROFILE_V1)
+    expect(collectorProvenanceProfileForCall({ provider: 'claude', isEstimated: true })).toBeUndefined()
     expect(collectorProvenanceProfileForCall({ provider: 'codex', isEstimated: false })).toBe(CODEX_TOKEN_COUNT_PROFILE_V1)
     expect(collectorProvenanceProfileForCall({ provider: 'codex', isEstimated: true })).toBe(CODEX_CONTENT_FALLBACK_PROFILE_V1)
     expect(collectorProvenanceProfileForCall({ provider: 'zed' })).toBeUndefined()
