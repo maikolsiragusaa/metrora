@@ -1,11 +1,17 @@
 name: QOV-002 identity inventory
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/qov-002-technical-identity-migration
+      - main
     paths:
       - .github/workflows/qov-002-inventory.yml
+      - app/**
+      - src/**
+      - scripts/**
+      - dash/**
+      - package.json
+      - package-lock.json
 
 permissions:
   contents: read
@@ -49,7 +55,7 @@ jobs:
               || true
 
             echo
-            echo '=== FILE COUNTS BY LEGACY MATCH ==='
+            echo '=== FILES WITH LEGACY MATCHES ==='
             git grep -l -I \
               -e 'codeburn' \
               -e 'CodeBurn' \
