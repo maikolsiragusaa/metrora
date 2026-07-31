@@ -104,7 +104,7 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
       cacheCreationOneHourTokens: 3,
     })
 
-    const evidence = resolveMeasurementEvidenceV1(call, { sessionIdExported: true })
+    const evidence = resolveMeasurementEvidenceV1(call, { sessionId: 'claude-session-01' })
     expect(evidence?.profile).toBe(CLAUDE_JSONL_PROFILE_V1)
     expect(evidence?.quality).toEqual({
       tokenCounts: 'derived',
@@ -132,7 +132,7 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
     })
     expect(call.isEstimated).not.toBe(true)
 
-    const evidence = resolveMeasurementEvidenceV1(call, { sessionIdExported: true })
+    const evidence = resolveMeasurementEvidenceV1(call, { sessionId: 'codex-measured-01' })
     expect(evidence?.profile).toBe(CODEX_TOKEN_COUNT_PROFILE_V1)
     expect(evidence?.quality).toEqual({
       tokenCounts: 'measured',
@@ -153,7 +153,7 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
     expect(call.usage.cacheReadInputTokens).toBe(0)
     expect(call.usage.reasoningTokens).toBe(0)
 
-    const evidence = resolveMeasurementEvidenceV1(call, { sessionIdExported: true })
+    const evidence = resolveMeasurementEvidenceV1(call, { sessionId: 'codex-fallback-01' })
     expect(evidence?.profile).toBe(CODEX_CONTENT_FALLBACK_PROFILE_V1)
     expect(evidence?.quality).toEqual({
       tokenCounts: 'estimated',
@@ -168,45 +168,66 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
 
     const unpriced = resolveMeasurementEvidenceV1(
       { ...call, model: 'qovrion-unpriced-fixture-model', costUSD: 0 },
-      { sessionIdExported: true },
+      { sessionId: 'codex-measured-01' },
     )
     expect(unpriced?.costEvidence).toEqual({ kind: 'unavailable' })
 
     const stale = resolveMeasurementEvidenceV1(
       { ...call, costUSD: call.costUSD + 1 },
-      { sessionIdExported: true },
+      { sessionId: 'codex-measured-01' },
     )
     expect(stale?.costEvidence).toEqual({ kind: 'unavailable' })
+  })
+
+  it('withholds locally priced cost when the event cannot expose every billed fact', async () => {
+    const call = await codexFixtureCall('codex-token-count-v1.jsonl')
+    const evidence = resolveMeasurementEvidenceV1(
+      {
+        ...call,
+        usage: { ...call.usage, webSearchRequests: 1 },
+        costUSD: call.costUSD + 0.01,
+      },
+      { sessionId: 'codex-measured-01' },
+    )
+    expect(evidence?.costEvidence).toEqual({ kind: 'unavailable' })
   })
 
   it('fails closed for unreviewed collectors and unsupported attribution', async () => {
     const codexCall = await codexFixtureCall('codex-token-count-v1.jsonl')
     expect(resolveMeasurementEvidenceV1(
       { ...codexCall, provider: 'zed' },
-      { sessionIdExported: true },
+      { sessionId: 'codex-measured-01' },
     )).toBeUndefined()
 
     const claudeCall = await claudeFixtureCall()
     expect(resolveMeasurementEvidenceV1(
       { ...claudeCall, reasoningLevel: 'high', reasoningLevelSource: 'explicit' },
-      { sessionIdExported: true },
+      { sessionId: 'claude-session-01' },
     )).toBeUndefined()
   })
 
-  it('does not claim session identity when the session id is withheld', async () => {
+  it('does not claim session identity without a concrete exported identifier', async () => {
     const call = await codexFixtureCall('codex-token-count-v1.jsonl')
-    const evidence = resolveMeasurementEvidenceV1(call, { sessionIdExported: false })
-    expect(evidence?.quality.sessionIdentity).toBe('unknown')
+    expect(resolveMeasurementEvidenceV1(call, {})?.quality.sessionIdentity).toBe('unknown')
+    expect(resolveMeasurementEvidenceV1(call, { sessionId: '   ' })?.quality.sessionIdentity).toBe('unknown')
   })
 
-  it('rejects malformed normalized token facts before producing evidence', async () => {
+  it('rejects malformed normalized counts before producing evidence', async () => {
     const call = await codexFixtureCall('codex-token-count-v1.jsonl')
     expect(() => resolveMeasurementEvidenceV1(
       {
         ...call,
         usage: { ...call.usage, inputTokens: -1 },
       },
-      { sessionIdExported: true },
+      { sessionId: 'codex-measured-01' },
     )).toThrow(/non-negative safe integer/)
+
+    expect(() => resolveMeasurementEvidenceV1(
+      {
+        ...call,
+        usage: { ...call.usage, webSearchRequests: Number.NaN },
+      },
+      { sessionId: 'codex-measured-01' },
+    )).toThrow(/webSearchRequests must be a non-negative safe integer/)
   })
 })
