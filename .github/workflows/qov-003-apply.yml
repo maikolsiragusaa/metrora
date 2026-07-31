@@ -1,0 +1,78 @@
+name: QOV-003 bounded applicator
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/qov-003-reasoning-attribution'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply exact transformations
+        run: node .github/scripts/apply-qov-003.mjs
+
+      - name: Detect generated changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install root dependencies
+        if: steps.changes.outputs.changed == 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Build CLI
+        if: steps.changes.outputs.changed == 'true'
+        run: npm run build:cli
+
+      - name: Run root tests
+        if: steps.changes.outputs.changed == 'true'
+        run: npm test -- --run
+
+      - name: Install desktop dependencies
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: app
+        run: npm ci --no-audit --no-fund
+
+      - name: Run desktop tests
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: app
+        run: npm test
+
+      - name: Typecheck desktop
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: app
+        run: npm run typecheck
+
+      - name: Build desktop
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: app
+        run: npm run build
+
+      - name: Commit validated implementation
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git config user.name "Maikol Siragusa"
+          git config user.email "268940776+maikolsiragusaa@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: attribute reasoning levels and session mix"
+          git push origin "HEAD:${{ github.head_ref }}"
