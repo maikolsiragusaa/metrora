@@ -1,3 +1,4 @@
+# Internal one-time PR trigger. This comment and cleanup job disappear when main returns to the root commit.
 name: Qovrion CI
 
 on:
