@@ -4,9 +4,12 @@
 // dynamically imports the local-state entry in the Electron main process.
 //
 // The tsup bundles keep runtime dependencies external, so the staged layout
-// mirrors what `npm install` produces:
+// mirrors what `npm install` produces and carries the third-party license used
+// by the vendored RFC 8785 implementation:
 //
 //   build/cli/package.json
+//   build/cli/THIRD_PARTY_NOTICES.md
+//   build/cli/LICENSES/Apache-2.0.txt
 //   build/cli/dist/cli.js
 //   build/cli/dist/main.js
 //   build/cli/dist/desktop-local-state.js
@@ -28,18 +31,27 @@ const dist = join(root, 'dist')
 const rootModules = join(root, 'node_modules')
 const stage = join(appDir, 'build', 'cli')
 const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js']
+const noticeFiles = [
+  ['THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'],
+  [join('LICENSES', 'Apache-2.0.txt'), join('LICENSES', 'Apache-2.0.txt')],
+]
 
 for (const file of emittedFiles) {
   if (!existsSync(join(dist, file))) {
     throw new Error(`stage-cli: ${join(dist, file)} is missing — build the root CLI first`)
   }
 }
+for (const [source] of noticeFiles) {
+  if (!existsSync(join(root, source))) throw new Error(`stage-cli: required notice ${source} is missing`)
+}
 
 rmSync(stage, { recursive: true, force: true })
 mkdirSync(join(stage, 'dist'), { recursive: true })
+mkdirSync(join(stage, 'LICENSES'), { recursive: true })
 
 copyFileSync(join(root, 'package.json'), join(stage, 'package.json'))
 for (const file of emittedFiles) copyFileSync(join(dist, file), join(stage, 'dist', file))
+for (const [source, destination] of noticeFiles) copyFileSync(join(root, source), join(stage, destination))
 
 // Desktop-app launch shim (the app spawns this, not cli.js). The packaged app
 // runs the CLI with Electron's own binary as Node (ELECTRON_RUN_AS_NODE=1).
@@ -120,4 +132,4 @@ if (missing.length) {
   throw new Error(`stage-cli: staged bundle is missing runtime deps: ${missing.join(', ')}`)
 }
 
-console.log(`stage-cli: staged ${topLevel.size} production packages and ${emittedFiles.length} runtime files -> ${stage}`)
+console.log(`stage-cli: staged ${topLevel.size} production packages, ${emittedFiles.length} runtime files and third-party notices -> ${stage}`)
