@@ -1,5 +1,6 @@
 import * as z from 'zod/v4'
 
+import { normalizeExplicitModelProvider } from '../../model-provider.js'
 import type { ParsedApiCall } from '../../types.js'
 import { ContractVersionSchema } from './common.js'
 
@@ -103,11 +104,17 @@ export const CLAUDE_JSONL_PROFILE_V1 = deepFreeze(CollectorProvenanceProfileV1Sc
   parserVersion: CLAUDE_PARSER_VERSION,
   sourceKind: 'claude-jsonl',
   facts: {
-    tokens: { input: 'measured', output: 'measured', cacheRead: 'derived', cacheWrite: 'derived', reasoning: 'unknown' },
+    tokens: {
+      input: 'measured', output: 'measured', cacheRead: 'derived',
+      cacheWrite: 'derived', reasoning: 'unknown',
+    },
     modelIdentity: 'normalized',
     sessionIdentity: 'exact',
     reasoningAttribution: ['model-label', 'unknown'],
-    cost: { basis: 'local-token-pricing', tokenBasis: 'mixed', metered: false, requiresPricingCoverage: true },
+    cost: {
+      basis: 'local-token-pricing', tokenBasis: 'mixed',
+      metered: false, requiresPricingCoverage: true,
+    },
   },
   privacy: privacyWithoutContent,
 }))
@@ -120,11 +127,17 @@ export const CODEX_TOKEN_COUNT_PROFILE_V1 = deepFreeze(CollectorProvenanceProfil
   parserVersion: CODEX_PARSER_VERSION,
   sourceKind: 'codex-rollout-jsonl-token-count',
   facts: {
-    tokens: { input: 'measured', output: 'measured', cacheRead: 'measured', cacheWrite: 'unknown', reasoning: 'measured' },
+    tokens: {
+      input: 'measured', output: 'measured', cacheRead: 'measured',
+      cacheWrite: 'unknown', reasoning: 'measured',
+    },
     modelIdentity: 'normalized',
     sessionIdentity: 'exact',
     reasoningAttribution: ['explicit', 'model-label', 'unknown'],
-    cost: { basis: 'local-token-pricing', tokenBasis: 'measured', metered: false, requiresPricingCoverage: true },
+    cost: {
+      basis: 'local-token-pricing', tokenBasis: 'measured',
+      metered: false, requiresPricingCoverage: true,
+    },
   },
   privacy: privacyWithoutContent,
 }))
@@ -137,11 +150,17 @@ export const CODEX_CONTENT_FALLBACK_PROFILE_V1 = deepFreeze(CollectorProvenanceP
   parserVersion: CODEX_PARSER_VERSION,
   sourceKind: 'codex-rollout-jsonl-content-fallback',
   facts: {
-    tokens: { input: 'estimated', output: 'estimated', cacheRead: 'unknown', cacheWrite: 'unknown', reasoning: 'unknown' },
+    tokens: {
+      input: 'estimated', output: 'estimated', cacheRead: 'unknown',
+      cacheWrite: 'unknown', reasoning: 'unknown',
+    },
     modelIdentity: 'normalized',
     sessionIdentity: 'exact',
     reasoningAttribution: ['explicit', 'model-label', 'unknown'],
-    cost: { basis: 'local-token-pricing', tokenBasis: 'estimated-content-length', metered: false, requiresPricingCoverage: true },
+    cost: {
+      basis: 'local-token-pricing', tokenBasis: 'estimated-content-length',
+      metered: false, requiresPricingCoverage: true,
+    },
   },
   privacy: privacyWithoutContent,
 }))
@@ -155,16 +174,16 @@ export const GEMINI_MESSAGE_USAGE_PROFILE_V1 = deepFreeze(CollectorProvenancePro
   sourceKind: 'gemini-session-json-or-jsonl-message-usage',
   facts: {
     tokens: {
-      input: 'derived',
-      output: 'measured',
-      cacheRead: 'measured',
-      cacheWrite: 'unknown',
-      reasoning: 'measured',
+      input: 'derived', output: 'measured', cacheRead: 'measured',
+      cacheWrite: 'unknown', reasoning: 'measured',
     },
     modelIdentity: 'exact',
     sessionIdentity: 'exact',
     reasoningAttribution: ['unknown'],
-    cost: { basis: 'local-token-pricing', tokenBasis: 'measured', metered: false, requiresPricingCoverage: true },
+    cost: {
+      basis: 'local-token-pricing', tokenBasis: 'measured',
+      metered: false, requiresPricingCoverage: true,
+    },
   },
   privacy: privacyWithoutContent,
 }))
@@ -177,11 +196,17 @@ export const ZED_REQUEST_USAGE_PROFILE_V1 = deepFreeze(CollectorProvenanceProfil
   parserVersion: ZED_PARSER_VERSION,
   sourceKind: 'zed-threads-sqlite-request-token-usage',
   facts: {
-    tokens: { input: 'measured', output: 'measured', cacheRead: 'measured', cacheWrite: 'measured', reasoning: 'unknown' },
+    tokens: {
+      input: 'measured', output: 'measured', cacheRead: 'measured',
+      cacheWrite: 'measured', reasoning: 'unknown',
+    },
     modelIdentity: 'exact',
     sessionIdentity: 'exact',
     reasoningAttribution: ['unknown'],
-    cost: { basis: 'local-token-pricing', tokenBasis: 'measured', metered: false, requiresPricingCoverage: true },
+    cost: {
+      basis: 'local-token-pricing', tokenBasis: 'measured',
+      metered: false, requiresPricingCoverage: true,
+    },
   },
   privacy: privacyWithoutContent,
 }))
@@ -194,11 +219,17 @@ export const ZED_CUMULATIVE_REMAINDER_PROFILE_V1 = deepFreeze(CollectorProvenanc
   parserVersion: ZED_PARSER_VERSION,
   sourceKind: 'zed-threads-sqlite-cumulative-remainder',
   facts: {
-    tokens: { input: 'derived', output: 'derived', cacheRead: 'derived', cacheWrite: 'derived', reasoning: 'unknown' },
+    tokens: {
+      input: 'derived', output: 'derived', cacheRead: 'derived',
+      cacheWrite: 'derived', reasoning: 'unknown',
+    },
     modelIdentity: 'exact',
     sessionIdentity: 'exact',
     reasoningAttribution: ['unknown'],
-    cost: { basis: 'local-token-pricing', tokenBasis: 'mixed', metered: false, requiresPricingCoverage: true },
+    cost: {
+      basis: 'local-token-pricing', tokenBasis: 'mixed',
+      metered: false, requiresPricingCoverage: true,
+    },
   },
   privacy: privacyWithoutContent,
 }))
@@ -227,6 +258,8 @@ export function collectorProvenanceProfileForCall(
   if (call.provider === 'gemini') return call.isEstimated ? undefined : GEMINI_MESSAGE_USAGE_PROFILE_V1
   if (call.provider === 'zed') {
     if (call.isEstimated || !call.modelProvider || !call.deduplicationKey) return undefined
+    if (normalizeExplicitModelProvider(call.modelProvider) !== call.modelProvider) return undefined
+    if (!call.deduplicationKey.startsWith('zed:')) return undefined
     return call.deduplicationKey.endsWith(':cumulative-remainder')
       ? ZED_CUMULATIVE_REMAINDER_PROFILE_V1
       : ZED_REQUEST_USAGE_PROFILE_V1
