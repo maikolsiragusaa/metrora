@@ -31,10 +31,10 @@ const MAX_KEYS = 16
 export type TelemetryStatus = {
   installId: string
   country: string | null
-  enabled: false
-  defaultEnabled: false
+  enabled: boolean
+  defaultEnabled: boolean
   /** True so the inherited consent onboarding is never displayed. */
-  onboarded: true
+  onboarded: boolean
 }
 
 type Deps = {
