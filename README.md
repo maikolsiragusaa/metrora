@@ -57,7 +57,7 @@ Qovrion is local-first by default:
 - AI traffic does not pass through Qovrion;
 - prompts, responses, source code, patches, secrets, and full local paths are not exported by default;
 - analytical claims distinguish observed, estimated, and unknown values;
-- sharing is explicit, scoped, revocable, and designed around structured usage data;
+- networked sharing is being built around explicit scope, revocation, and structured usage data;
 - user-owned data remains exportable through open formats.
 
 Read the [product principles](docs/PRODUCT_PRINCIPLES.md) and [security policy](SECURITY.md).
