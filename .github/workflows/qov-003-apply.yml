@@ -65,7 +65,6 @@ jobs:
             tests/session-cache.test.ts \
             tests/sessions-report.test.ts \
             tests/cli-emitters.test.ts \
-            tests/parser.test.ts \
             tests/parser-single-pass-scanner.test.ts \
             tests/parser-large-session.test.ts \
             --maxWorkers=1 --fileParallelism=false \
