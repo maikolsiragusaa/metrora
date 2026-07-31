@@ -1,4 +1,4 @@
-// Types mirrored verbatim from the codeburn CLI (`src/*`). The renderer is a
+// Types mirrored from the Qovrion CLI (`src/*`). The renderer is a
 // pure view over CLI JSON, so these shapes must match the emitters exactly.
 // Do not invent fields — copy from the cited source files.
 
@@ -463,7 +463,25 @@ export type ActReportJson = {
   }
 }
 
-// ————— src/sessions-report.ts —————
+// ————— src/reasoning-level.ts + src/sessions-report.ts —————
+export type ReasoningLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'adaptive'
+export type ReasoningLevelOrUnknown = ReasoningLevel | 'unknown'
+export type ReasoningLevelSource = 'explicit' | 'model-label'
+export type ReasoningMix = {
+  totalCalls: number
+  knownCalls: number
+  coverage: number
+  rows: Array<{
+    level: ReasoningLevelOrUnknown
+    calls: number
+    callShare: number
+    generatedTokens: number
+    reasoningTokens: number
+    costUSD: number
+    sources: ReasoningLevelSource[]
+  }>
+}
+
 export type SessionRow = {
   sessionId: string
   // Captured human title (src/sessions-report.ts). Empty string when the
@@ -481,6 +499,8 @@ export type SessionRow = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  reasoningTokens?: number
+  reasoningMix?: ReasoningMix
   startedAt: string
   endedAt: string
   durationMs: number

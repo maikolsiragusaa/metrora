@@ -14,7 +14,8 @@ import type { ParsedProviderCall } from './providers/types.js'
 // v6/v7: rich-session-capture — per-call locAdded/locRemoved/editFailed from
 // patch_apply_end. Sessions cached under v5 lack these fields; re-parse to add.
 // v8: persist native MCP timing and compact invocation attribution.
-const CODEX_CACHE_VERSION = 8
+// v9: persist explicit per-call reasoning attribution from turn_context.
+const CODEX_CACHE_VERSION = 9
 const CACHE_FILE = 'codex-results.json'
 
 type FileFingerprint = { mtimeMs: number; sizeBytes: number }

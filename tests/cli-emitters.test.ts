@@ -89,9 +89,15 @@ describe('CLI JSON emitters', () => {
       expect(Object.keys(rows[0]!)).toEqual([
         'sessionId', 'title', 'project', 'provider', 'models', 'cost', 'savingsUSD', 'calls', 'turns',
         'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens',
+        'reasoningTokens', 'reasoningMix',
         'startedAt', 'endedAt', 'durationMs',
       ])
       expect(rows.every(row => row.provider === 'claude')).toBe(true)
+      expect(rows.every(row => typeof row.reasoningTokens === 'number')).toBe(true)
+      expect(rows.every(row => {
+        const mix = row.reasoningMix as { totalCalls?: number; rows?: Array<{ level?: string }> } | undefined
+        return mix?.totalCalls === row.calls && mix.rows?.some(item => item.level === 'unknown')
+      })).toBe(true)
     } finally {
       await rm(home, { recursive: true, force: true })
     }

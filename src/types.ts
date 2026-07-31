@@ -1,3 +1,5 @@
+import type { ReasoningLevel, ReasoningLevelSource, ReasoningMix } from './reasoning-level.js'
+
 export type TokenUsage = {
   inputTokens: number
   outputTokens: number
@@ -109,6 +111,8 @@ export type ParsedTurn = {
 export type ParsedApiCall = {
   provider: string
   model: string
+  reasoningLevel?: ReasoningLevel
+  reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage
   costUSD: number
   tools: string[]
@@ -251,6 +255,7 @@ export type SessionSummary = {
   totalCacheReadTokens: number
   totalCacheWriteTokens: number
   apiCalls: number
+  reasoningMix?: ReasoningMix
   turns: ClassifiedTurn[]
   /// GitHub PR URLs captured or deterministically correlated for this session
   /// (session-level, deduplicated). Absent when none were observed.

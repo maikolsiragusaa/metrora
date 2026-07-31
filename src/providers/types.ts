@@ -1,4 +1,5 @@
 import type { DateRange, ToolCall } from '../types.js'
+import type { ReasoningLevel, ReasoningLevelSource } from '../reasoning-level.js'
 
 export type SessionSource = {
   path: string
@@ -17,6 +18,8 @@ export type SessionParser = {
 export type ParsedProviderCall = {
   provider: string
   model: string
+  reasoningLevel?: ReasoningLevel
+  reasoningLevelSource?: ReasoningLevelSource
   inputTokens: number
   outputTokens: number
   cacheCreationInputTokens: number

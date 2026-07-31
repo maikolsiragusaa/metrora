@@ -11,7 +11,7 @@ import { Stat } from '../components/Stat'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatDayLong, formatDayShort, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
 import { codeburn } from '../lib/ipc'
-import type { DateRange, Period, SessionRow } from '../lib/types'
+import type { DateRange, Period, ReasoningMix, ReasoningLevelOrUnknown, SessionRow } from '../lib/types'
 
 export const INITIAL_VISIBLE = 120
 const STEP = 120
@@ -34,6 +34,34 @@ function providerName(provider: string): string {
     .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+const REASONING_LABELS: Record<ReasoningLevelOrUnknown, string> = {
+  none: 'None',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'XHigh',
+  max: 'Max',
+  adaptive: 'Adaptive',
+  unknown: 'Unknown',
+}
+
+export function reasoningMixLabel(mix?: ReasoningMix): string {
+  if (!mix || mix.totalCalls === 0 || mix.rows.length === 0) return 'Unknown'
+  const rows = mix.rows.filter(row => row.calls > 0)
+  if (rows.length === 1 && rows[0]!.callShare === 1) return REASONING_LABELS[rows[0]!.level]
+  const visible = rows.slice(0, 2).map(row =>
+    `${REASONING_LABELS[row.level]} ${Math.round(row.callShare * 100)}%`
+  )
+  if (rows.length > 2) visible.push(`+${rows.length - 2}`)
+  return visible.join(' · ')
+}
+
+function reasoningCoverageLabel(mix?: ReasoningMix): string {
+  if (!mix || mix.totalCalls === 0) return 'No attributed calls'
+  return `${mix.knownCalls.toLocaleString('en-US')} of ${mix.totalCalls.toLocaleString('en-US')} calls known · ${Math.round(mix.coverage * 100)}% coverage`
 }
 
 function endedAtTime(row: SessionRow): number {
@@ -129,6 +157,7 @@ export function Sessions({
     row.project,
     row.sessionId,
     row.models.join(' '),
+    row.reasoningMix?.rows.map(item => item.level).join(' ') ?? '',
   ].some(value => value.toLowerCase().includes(q)))
 
   useEffect(() => {
@@ -257,7 +286,10 @@ export function Sessions({
                     </span>
                   </span>
                   <span className="session-when">{formatDayShort(entry.row.endedAt)}</span>
-                  <span className="session-models">{entry.row.models.join(', ')}</span>
+                  <span className="session-models">
+                    <span className="session-model-list">{entry.row.models.join(', ')}</span>
+                    <span className="session-reasoning-mix">{reasoningMixLabel(entry.row.reasoningMix)}</span>
+                  </span>
                   <span>{entry.row.turns}</span>
                   <span>{formatUsd(entry.row.cost)}</span>
                   <span>{formatCompact(entry.row.inputTokens + entry.row.outputTokens)}</span>
@@ -297,6 +329,7 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
       <div className="detail-head">
         <h3 className="detail-title">{shortenProjectPath(session.project)}</h3>
         <div className="detail-line">{session.provider} · {session.models.join(', ')}</div>
+        <div className="detail-line">Reasoning · {reasoningMixLabel(session.reasoningMix)} · {reasoningCoverageLabel(session.reasoningMix)}</div>
         <div className="detail-line">
           {formatDayLong(session.startedAt)} → {formatDayLong(session.endedAt)} · {formatDuration(session.durationMs)}
         </div>
@@ -311,6 +344,25 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
         <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta={`${cacheHit}% hit`} />
         <Stat label="Cache write" value={formatCompact(session.cacheWriteTokens)} delta="tokens cached" />
       </div>
+      {session.reasoningMix && session.reasoningMix.rows.length > 0 && (
+        <div className="reasoning-detail">
+          <div className="reasoning-detail-head">
+            <span>Reasoning mix by API call</span>
+            <span>{formatCompact(session.reasoningTokens ?? 0)} dedicated reasoning tokens</span>
+          </div>
+          <div className="reasoning-detail-rows">
+            {session.reasoningMix.rows.map(row => (
+              <div className="reasoning-detail-row" key={row.level}>
+                <span className="reasoning-detail-label">{REASONING_LABELS[row.level]}</span>
+                <span className="reasoning-detail-track"><span style={{ width: `${Math.max(2, row.callShare * 100)}%` }} /></span>
+                <span className="reasoning-detail-value">
+                  {Math.round(row.callShare * 100)}% · {row.calls.toLocaleString('en-US')} calls · {formatCompact(row.reasoningTokens)} reasoning
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
