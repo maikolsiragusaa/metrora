@@ -81,9 +81,11 @@ const WARMUP_TIMEOUT_MS = 10 * 60_000
 // Wire marker for CLI scan-progress lines (src/parser.ts: PROGRESS_LINE_PREFIX).
 const PROGRESS_LINE_PREFIX = 'CODEBURN_PROGRESS '
 // IPC channel carrying cold-start scan-progress events to the splash.
-export const PROGRESS_CHANNEL = 'codeburn:progress'
+export const PROGRESS_CHANNEL = 'qovrion:progress'
+export const LEGACY_PROGRESS_CHANNEL = 'codeburn:progress'
 // IPC channel pushing update-availability status to open windows (launch + 24h).
-export const UPDATE_CHANNEL = 'codeburn:update'
+export const UPDATE_CHANNEL = 'qovrion:update'
+export const LEGACY_UPDATE_CHANNEL = 'codeburn:update'
 
 /** Line-buffer a spawn's stderr and forward each parsed scan-progress event. */
 export function makeProgressReader(emit: (event: unknown) => void): (chunk: string) => void {
@@ -104,13 +106,17 @@ export function makeProgressReader(emit: (event: unknown) => void): (chunk: stri
 
 function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(PROGRESS_CHANNEL, event)
+    if (win.isDestroyed()) continue
+    win.webContents.send(PROGRESS_CHANNEL, event)
+    win.webContents.send(LEGACY_PROGRESS_CHANNEL, event)
   }
 }
 
 function broadcastUpdateStatus(status: UpdateStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(UPDATE_CHANNEL, status)
+    if (win.isDestroyed()) continue
+    win.webContents.send(UPDATE_CHANNEL, status)
+    win.webContents.send(LEGACY_UPDATE_CHANNEL, status)
   }
 }
 
@@ -285,7 +291,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
       if (overviewWarmed) return { ok: true, value: await deps.spawnCli(args, priority ? { priority } : undefined) }
       const value = await deps.spawnCli(args, {
         timeoutMs: WARMUP_TIMEOUT_MS,
-        extraEnv: { CODEBURN_PROGRESS: '1' },
+        extraEnv: { QOVRION_PROGRESS: '1', CODEBURN_PROGRESS: '1' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
       })
@@ -379,15 +385,23 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
   }
 }
 
+export function ipcChannelAliases(channel: string): string[] {
+  if (!channel.startsWith('codeburn:')) return [channel]
+  return [channel.replace(/^codeburn:/, 'qovrion:'), channel]
+}
+
 function registerHandlers(): void {
   const handlers = createBridgeHandlers()
   for (const [channel, handler] of Object.entries(handlers)) {
-    ipcMain.handle(channel, (_event, ...args) => handler(...args))
+    for (const alias of ipcChannelAliases(channel)) {
+      ipcMain.handle(alias, (_event, ...args) => handler(...args))
+    }
   }
-  ipcMain.handle('codeburn:chooseDirectory', async () => {
+  const chooseDirectory = async () => {
     const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }
-  })
+  }
+  for (const channel of ipcChannelAliases('codeburn:chooseDirectory')) ipcMain.handle(channel, chooseDirectory)
   ipcMain.handle('open-external', (_event, url: string) => {
     try {
       const { protocol } = new URL(url)
@@ -528,7 +542,9 @@ function bootstrap(): void {
   // cli.js, is the entry — it corrects argv for commander under Electron. Unset
   // in dev, where the repo build is used instead.
   if (app.isPackaged) {
-    process.env.CODEBURN_BUNDLED_CLI = path.join(process.resourcesPath, 'cli', 'dist', 'launch.js')
+    const bundledCli = path.join(process.resourcesPath, 'cli', 'dist', 'launch.js')
+    process.env.QOVRION_BUNDLED_CLI = bundledCli
+    if (process.env.CODEBURN_BUNDLED_CLI === undefined) process.env.CODEBURN_BUNDLED_CLI = bundledCli
   }
 
   // A second launch focuses the running window instead of opening a rival one.

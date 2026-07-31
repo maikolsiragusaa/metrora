@@ -14,6 +14,7 @@ import { formatConverted, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
 import { REFRESH_OPTIONS, useRefreshCadence } from '../lib/refreshCadence'
+import { readCompatStorage, writeCompatStorage } from '../lib/storage'
 import { showToast } from '../lib/toast'
 import { ToastHost } from '../components/ToastHost'
 import { rateLimitedNote } from './Plans'
@@ -43,12 +44,18 @@ const CURRENCIES = [
   'KRW', 'BRL', 'MXN', 'ZAR', 'AED', 'SAR', 'TRY', 'PLN', 'THB', 'IDR', 'MYR', 'PHP', 'RUB', 'ILS', 'CZK',
 ]
 
+function storageSuffix(key: string): string {
+  if (key.startsWith('codeburn.')) return key.slice('codeburn.'.length)
+  if (key.startsWith('qovrion.')) return key.slice('qovrion.'.length)
+  return key
+}
+
 function readSetting(key: string): string | null {
-  try { return globalThis.localStorage?.getItem(key) ?? null } catch { return null }
+  return readCompatStorage(storageSuffix(key))
 }
 
 function writeSetting(key: string, value: string): void {
-  try { globalThis.localStorage?.setItem(key, value) } catch { /* storage can be unavailable in hardened contexts */ }
+  writeCompatStorage(storageSuffix(key), value)
 }
 
 const RAIL_ITEMS: Array<{ id: Pane; label: string; icon: React.ReactNode }> = [
