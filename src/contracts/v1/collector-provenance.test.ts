@@ -70,6 +70,60 @@ describe('collector provenance registry v1', () => {
     expect(CODEX_CONTENT_FALLBACK_PROFILE_V1.facts.cost.tokenBasis).toBe('estimated-content-length')
   })
 
+  it('keeps the v1 schema extensible without registering unreviewed collectors', () => {
+    const futureMeteredProfile = {
+      kind: 'qovrion.collector-provenance-profile',
+      version: 1,
+      profileId: 'future-metered-source-v1',
+      collector: 'future-tool',
+      parserVersion: 'reviewed-parser-v1',
+      sourceKind: 'future-metered-ledger',
+      facts: {
+        tokens: {
+          input: 'measured',
+          output: 'measured',
+          cacheRead: 'unknown',
+          cacheWrite: 'unknown',
+          reasoning: 'unknown',
+        },
+        modelIdentity: 'exact',
+        sessionIdentity: 'exact',
+        reasoningAttribution: ['unknown'],
+        cost: {
+          basis: 'provider-metered',
+          tokenBasis: 'mixed',
+          metered: true,
+          requiresPricingCoverage: false,
+        },
+      },
+      privacy: {
+        promptsRequired: false,
+        responsesRequired: false,
+        sourceCodeRequired: false,
+        patchesRequired: false,
+        localPathsRequired: false,
+      },
+    }
+
+    expect(CollectorProvenanceProfileV1Schema.safeParse(futureMeteredProfile).success).toBe(true)
+    expect(CollectorProvenanceProfilesV1.some(profile => profile.collector === 'future-tool')).toBe(false)
+  })
+
+  it('rejects internally inconsistent cost provenance combinations', () => {
+    expect(CollectorProvenanceProfileV1Schema.safeParse({
+      ...CODEX_TOKEN_COUNT_PROFILE_V1,
+      facts: {
+        ...CODEX_TOKEN_COUNT_PROFILE_V1.facts,
+        cost: {
+          basis: 'provider-metered',
+          tokenBasis: 'measured',
+          metered: false,
+          requiresPricingCoverage: true,
+        },
+      },
+    }).success).toBe(false)
+  })
+
   it('requires no raw content or local paths for any reviewed profile', () => {
     for (const profile of CollectorProvenanceProfilesV1) {
       expect(Object.values(profile.privacy).every(value => value === false)).toBe(true)
