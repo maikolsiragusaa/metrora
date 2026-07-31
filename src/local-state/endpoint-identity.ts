@@ -20,20 +20,15 @@ import {
   Sha256DigestSchema,
   TimestampSchema,
 } from '../contracts/v1/common.js'
-import {
-  atomicWritePrivateFile,
-  ensurePrivateDirectory,
-  readOptionalPrivateFile,
-} from './atomic-file.js'
+import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.js'
+import { withLocalStateLease } from './local-state-lease.js'
 import type { SecretProtector } from './secret-protector.js'
-import { withShortFileLock } from './short-file-lock.js'
 
 export const LOCAL_ENDPOINT_IDENTITY_KIND = 'qovrion.local-endpoint-identity' as const
 export const LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'qovrion.local-endpoint-identity-secret' as const
 const SECRET_CONTEXT = 'dev.qovrion.local-endpoint-identity.v1'
 const METADATA_FILE = 'endpoint-identity.v1.json'
 const SECRET_FILE = 'endpoint-identity.v1.secret'
-const LOCK_FILE = 'endpoint-identity.lock'
 
 const CanonicalBase64Schema = z.string().min(1).refine(value => {
   try { return Buffer.from(value, 'base64').toString('base64') === value } catch { return false }
@@ -101,13 +96,12 @@ export function defaultQovrionDataDir(): string {
   return join(process.env['XDG_DATA_HOME'] ?? join(homedir(), '.local', 'share'), 'qovrion')
 }
 
-function identityPaths(dataDir: string): { directory: string; metadata: string; secret: string; lock: string } {
+function identityPaths(dataDir: string): { directory: string; metadata: string; secret: string } {
   const directory = join(dataDir, 'identity')
   return {
     directory,
     metadata: join(directory, METADATA_FILE),
     secret: join(directory, SECRET_FILE),
-    lock: join(directory, LOCK_FILE),
   }
 }
 
@@ -275,8 +269,7 @@ export async function loadOrCreateLocalEndpointIdentityV1(
 ): Promise<LoadedLocalEndpointIdentityV1> {
   const resolved = resolvedOptions(options)
   const paths = identityPaths(resolved.dataDir)
-  await ensurePrivateDirectory(paths.directory)
-  return withShortFileLock(paths.lock, () => loadOrCreateUnlocked(resolved, paths))
+  return withLocalStateLease(paths.directory, () => loadOrCreateUnlocked(resolved, paths))
 }
 
 export async function rotateLocalEndpointIdentityV1(
@@ -284,8 +277,7 @@ export async function rotateLocalEndpointIdentityV1(
 ): Promise<LoadedLocalEndpointIdentityV1> {
   const resolved = resolvedOptions(options)
   const paths = identityPaths(resolved.dataDir)
-  await ensurePrivateDirectory(paths.directory)
-  return withShortFileLock(paths.lock, async () => {
+  return withLocalStateLease(paths.directory, async () => {
     const sealedSecret = await readOptionalPrivateFile(paths.secret)
     if (!sealedSecret) {
       throw new EndpointIdentityRecoveryRequiredError('cannot rotate an endpoint identity without its protected secret')
