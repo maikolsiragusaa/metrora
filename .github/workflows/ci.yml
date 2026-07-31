@@ -35,13 +35,13 @@ jobs:
           fi
 
   build:
-    name: Core and desktop build (${{ matrix.os }})
+    name: Core and desktop validation (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -54,6 +54,8 @@ jobs:
         run: npm run build:cli
       - name: Install desktop dependencies
         run: npm --prefix app ci --no-audit --no-fund
+      - name: Test desktop
+        run: npm --prefix app test
       - name: Typecheck desktop
         run: npm --prefix app run typecheck
       - name: Build desktop
