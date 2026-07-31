@@ -4,6 +4,7 @@ const IsoInstantSchema = z.string().datetime({ offset: true })
 const NonEmptyIdentifierSchema = z.string().trim().min(1).max(240)
 const OptionalIdentityPartSchema = z.string().trim().min(1).max(240).optional()
 const MoneyRateSchema = z.number().finite().nonnegative()
+const PositiveSafeIntegerSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 
 export const HistoricalPriceStartBasisV1Schema = z.enum([
   'official-effective',
@@ -36,6 +37,14 @@ export const HistoricalPriceRatesV1Schema = z.strictObject({
   fastMultiplier: z.number().finite().positive().optional(),
 })
 
+export const HistoricalPriceRateBandV1Schema = z.strictObject({
+  when: z.strictObject({
+    kind: z.literal('prompt-input-tokens-above'),
+    tokens: PositiveSafeIntegerSchema,
+  }),
+  rates: HistoricalPriceRatesV1Schema,
+})
+
 export const HistoricalPriceValuationV1Schema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('priced') }),
   z.strictObject({
@@ -56,6 +65,7 @@ export const HistoricalPriceRecordV1Schema = z.strictObject({
   }),
   validUntil: IsoInstantSchema.optional(),
   rates: HistoricalPriceRatesV1Schema,
+  rateBands: z.array(HistoricalPriceRateBandV1Schema).max(20).optional(),
   valuation: HistoricalPriceValuationV1Schema,
   source: z.strictObject({
     kind: HistoricalPriceSourceKindV1Schema,
@@ -74,6 +84,8 @@ export const HistoricalPriceBookV1Schema = z.strictObject({
 
 export type HistoricalPriceStartBasisV1 = z.infer<typeof HistoricalPriceStartBasisV1Schema>
 export type HistoricalPriceSourceKindV1 = z.infer<typeof HistoricalPriceSourceKindV1Schema>
+export type HistoricalPriceRatesV1 = z.infer<typeof HistoricalPriceRatesV1Schema>
+export type HistoricalPriceRateBandV1 = z.infer<typeof HistoricalPriceRateBandV1Schema>
 export type HistoricalPriceRecordV1 = z.infer<typeof HistoricalPriceRecordV1Schema>
 export type HistoricalPriceBookV1 = z.infer<typeof HistoricalPriceBookV1Schema>
 
@@ -108,14 +120,33 @@ function identityKey(record: Pick<HistoricalPriceRecordV1, 'pricingAuthority' | 
   ])
 }
 
-function monetaryRates(record: HistoricalPriceRecordV1): number[] {
+function monetaryRates(rates: HistoricalPriceRatesV1): number[] {
   return [
-    record.rates.inputPerToken,
-    record.rates.outputPerToken,
-    record.rates.cacheReadPerToken,
-    record.rates.cacheWritePerToken,
-    record.rates.webSearchPerRequest ?? 0,
+    rates.inputPerToken,
+    rates.outputPerToken,
+    rates.cacheReadPerToken,
+    rates.cacheWritePerToken,
+    rates.webSearchPerRequest ?? 0,
   ]
+}
+
+function validateRateBands(record: HistoricalPriceRecordV1, issues: string[]): void {
+  let previousThreshold = 0
+  for (const [index, band] of (record.rateBands ?? []).entries()) {
+    const threshold = band.when.tokens
+    if (index > 0 && threshold <= previousThreshold) {
+      issues.push(`${record.priceRecordId} rateBands must be strictly ordered by ascending prompt-input threshold`)
+    }
+    previousThreshold = threshold
+
+    const rates = monetaryRates(band.rates)
+    if (record.valuation.kind === 'explicit-zero' && rates.some(rate => rate !== 0)) {
+      issues.push(`${record.priceRecordId} is explicit-zero but rate band above ${threshold} tokens contains a positive monetary rate`)
+    }
+    if (record.valuation.kind === 'priced' && rates.every(rate => rate === 0)) {
+      issues.push(`${record.priceRecordId} rate band above ${threshold} tokens has no positive monetary rate`)
+    }
+  }
 }
 
 export function parseHistoricalPriceBookV1(input: unknown): HistoricalPriceBookV1 {
@@ -137,13 +168,14 @@ export function parseHistoricalPriceBookV1(input: unknown): HistoricalPriceBookV
       issues.push(`${record.priceRecordId} validUntil must be later than validFrom`)
     }
 
-    const rates = monetaryRates(record)
+    const rates = monetaryRates(record.rates)
     if (record.valuation.kind === 'explicit-zero' && rates.some(rate => rate !== 0)) {
       issues.push(`${record.priceRecordId} is explicit-zero but contains a positive monetary rate`)
     }
     if (record.valuation.kind === 'priced' && rates.every(rate => rate === 0)) {
       issues.push(`${record.priceRecordId} is priced but has no positive monetary rate`)
     }
+    validateRateBands(record, issues)
 
     const key = identityKey(record)
     const records = grouped.get(key) ?? []
@@ -223,6 +255,20 @@ function perMillion(rate: number): string {
   return `$${trimDecimal(rate * 1_000_000)}`
 }
 
+function renderRateBands(record: HistoricalPriceRecordV1): string {
+  if (!record.rateBands?.length) return '—'
+  return record.rateBands.map(band => {
+    const rates = band.rates
+    return [
+      `prompt input > ${band.when.tokens}`,
+      `input ${perMillion(rates.inputPerToken)}`,
+      `output ${perMillion(rates.outputPerToken)}`,
+      `cache read ${perMillion(rates.cacheReadPerToken)}`,
+      `cache write ${perMillion(rates.cacheWritePerToken)}`,
+    ].join('; ')
+  }).join('<br>')
+}
+
 export function renderHistoricalPriceBookMarkdownV1(bookInput: HistoricalPriceBookV1 | unknown): string {
   const book = parseHistoricalPriceBookV1(bookInput)
   const records = [...book.records].sort((a, b) => {
@@ -245,8 +291,8 @@ export function renderHistoricalPriceBookMarkdownV1(bookInput: HistoricalPriceBo
   }
 
   lines.push(
-    '| Authority | Pricing model | Route | Tier | Valid from | Valid until | Valuation | Input / 1M | Output / 1M | Cache read / 1M | Cache write / 1M | Source | Record ID |',
-    '| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |',
+    '| Authority | Pricing model | Route | Tier | Valid from | Valid until | Valuation | Input / 1M | Output / 1M | Cache read / 1M | Cache write / 1M | Conditional rates | Source | Record ID |',
+    '| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |',
   )
 
   for (const record of records) {
@@ -266,6 +312,7 @@ export function renderHistoricalPriceBookMarkdownV1(bookInput: HistoricalPriceBo
       perMillion(record.rates.outputPerToken),
       perMillion(record.rates.cacheReadPerToken),
       perMillion(record.rates.cacheWritePerToken),
+      renderRateBands(record),
       escapeMarkdown(source),
       escapeMarkdown(record.priceRecordId),
     ].join(' | ').replace(/^/, '| ').replace(/$/, ' |'))

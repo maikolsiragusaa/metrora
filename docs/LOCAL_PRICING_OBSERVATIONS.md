@@ -1,6 +1,6 @@
 # Qovrion local pricing observations
 
-Status: **storage and resolution contract implemented; runtime pricing not connected**.
+Status: **storage, conditional-rate, and resolution contracts implemented; runtime pricing not connected**.
 
 The reviewed repository price book cannot know about a mutable upstream price change until Qovrion publishes an update. The local observation ledger closes that timing gap without introducing a hosted dependency or rewriting inherited collection behavior.
 
@@ -41,7 +41,16 @@ Every local record:
 - starts exactly at its source observation timestamp;
 - requires a SHA-256 digest of the observed source content;
 - never edits the earlier record or backdates the new rate;
-- preserves explicit free routes as identities distinct from ordinary paid routes.
+- preserves explicit free routes as identities distinct from ordinary paid routes;
+- preserves conditional rate bands, including prompt-input thresholds, as part of the immutable economic meaning.
+
+## Conditional rates
+
+A price record may carry ordered rate bands for cases where the provider changes the full request price above a prompt-input threshold. Each band stores complete input, output, cache-read, cache-write, request, and speed rates rather than an ambiguous multiplier.
+
+Historical calculation selects the highest threshold strictly exceeded by the observed request. At the exact threshold, the lower band still applies. When a record has conditional bands but the collector cannot provide trustworthy prompt-size evidence, calculation returns `unavailable` rather than assuming the cheaper base rate.
+
+The calculator keeps billable output explicit because some collectors expose reasoning tokens separately while providers bill them with output. It also preserves the inherited one-hour cache-write treatment and verifies formula parity against the current flat-rate CodeBurn-derived engine.
 
 ## Reviewed and local precedence
 

@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import {
   HistoricalPriceBookV1Schema,
+  HistoricalPriceRateBandV1Schema,
   HistoricalPriceRatesV1Schema,
   HistoricalPriceRecordV1Schema,
   HistoricalPriceSourceKindV1Schema,
@@ -36,6 +37,7 @@ export const LocalPriceObservationInputV1Schema = z.strictObject({
   route: OptionalIdentityPartSchema,
   billingTier: OptionalIdentityPartSchema,
   rates: HistoricalPriceRatesV1Schema,
+  rateBands: z.array(HistoricalPriceRateBandV1Schema).max(20).optional(),
   valuation: HistoricalPriceValuationV1Schema,
   source: z.strictObject({
     kind: HistoricalPriceSourceKindV1Schema,
@@ -135,8 +137,14 @@ function identityKey(record: Pick<HistoricalPriceRecordV1, 'pricingAuthority' | 
   ])
 }
 
-function pricingSemantics(record: Pick<HistoricalPriceRecordV1, 'rates' | 'valuation'>): string {
-  return stableJson({ rates: record.rates, valuation: record.valuation })
+function pricingSemantics(
+  record: Pick<HistoricalPriceRecordV1, 'rates' | 'rateBands' | 'valuation'>,
+): string {
+  return stableJson({
+    rates: record.rates,
+    rateBands: record.rateBands ?? [],
+    valuation: record.valuation,
+  })
 }
 
 function timestampMs(value: string): number {
@@ -224,6 +232,7 @@ function observationRecordId(input: LocalPriceObservationInputV1, observedAt: st
     route: input.route ?? null,
     billingTier: input.billingTier ?? null,
     rates: input.rates,
+    rateBands: input.rateBands ?? [],
     valuation: input.valuation,
     source: input.source,
     observedAt,
@@ -265,6 +274,7 @@ export async function observeCurrentPriceV1(
       ...(input.billingTier !== undefined ? { billingTier: input.billingTier } : {}),
       validFrom: { basis: 'first-observed', at: observedAt },
       rates: input.rates,
+      ...(input.rateBands !== undefined ? { rateBands: input.rateBands } : {}),
       valuation: input.valuation,
       source: {
         ...input.source,
