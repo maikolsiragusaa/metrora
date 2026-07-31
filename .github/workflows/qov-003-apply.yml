@@ -49,32 +49,53 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         run: npm run build:cli
 
-      - name: Run root tests
+      - name: Run root tests with diagnostic capture
+        id: root_tests
         if: steps.changes.outputs.changed == 'true'
-        run: npm test -- --run
+        shell: bash
+        run: |
+          set +e
+          npm test -- --run 2>&1 | tee qov-003-root-tests.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload root test diagnostic
+        if: always() && steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qov-003-root-tests
+          path: qov-003-root-tests.log
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Enforce root test result
+        if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status != '0'
+        shell: bash
+        run: exit 1
 
       - name: Install desktop dependencies
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status == '0'
         working-directory: app
         run: npm ci --no-audit --no-fund
 
       - name: Run desktop tests
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status == '0'
         working-directory: app
         run: npm test
 
       - name: Typecheck desktop
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status == '0'
         working-directory: app
         run: npm run typecheck
 
       - name: Build desktop
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status == '0'
         working-directory: app
         run: npm run build
 
       - name: Commit validated implementation
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.changed == 'true' && steps.root_tests.outputs.status == '0'
         shell: bash
         run: |
           git config user.name "Maikol Siragusa"
