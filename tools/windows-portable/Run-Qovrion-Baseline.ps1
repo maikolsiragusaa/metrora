@@ -43,6 +43,13 @@ function Restore-EnvironmentValue {
   }
 }
 
+function Quote-NativeArgument {
+  param([AllowEmptyString()][string]$Value)
+  if ($Value.Length -eq 0) { return '""' }
+  if ($Value -notmatch '[\s"]') { return $Value }
+  return '"' + $Value.Replace('"', '\"') + '"'
+}
+
 function Invoke-CapturedCommand {
   param(
     [Parameter(Mandatory = $true)][string]$Name,
@@ -53,12 +60,6 @@ function Invoke-CapturedCommand {
     [switch]$ExpectJson
   )
 
-  $stderrTemp = [System.IO.Path]::GetTempFileName()
-  $electronWasPresent = Test-Path Env:ELECTRON_RUN_AS_NODE
-  $electronPrevious = if ($electronWasPresent) { $env:ELECTRON_RUN_AS_NODE } else { $null }
-  $noColorWasPresent = Test-Path Env:NO_COLOR
-  $noColorPrevious = if ($noColorWasPresent) { $env:NO_COLOR } else { $null }
-
   $exitCode = 1
   $stdout = ''
   $stderr = ''
@@ -67,28 +68,57 @@ function Invoke-CapturedCommand {
 
   try {
     if ($UseElectronAsNode) {
-      $env:ELECTRON_RUN_AS_NODE = '1'
-    } else {
-      Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
-    }
-    $env:NO_COLOR = '1'
+      # Qovrion.exe is a Windows GUI-subsystem executable. PowerShell's ordinary
+      # invocation can return before its stdout pipe is attached, even when
+      # ELECTRON_RUN_AS_NODE is set. ProcessStartInfo gives us explicit pipes and
+      # wait semantics on Windows PowerShell 5.1 as well as PowerShell 7.
+      $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+      $startInfo.FileName = $Executable
+      $startInfo.Arguments = (($Arguments | ForEach-Object { Quote-NativeArgument $_ }) -join ' ')
+      $startInfo.UseShellExecute = $false
+      $startInfo.CreateNoWindow = $true
+      $startInfo.RedirectStandardOutput = $true
+      $startInfo.RedirectStandardError = $true
+      $startInfo.EnvironmentVariables['ELECTRON_RUN_AS_NODE'] = '1'
+      $startInfo.EnvironmentVariables['NO_COLOR'] = '1'
 
-    $lines = & $Executable @Arguments 2> $stderrTemp
-    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
-    if ($null -ne $lines) {
-      $stdout = (($lines | ForEach-Object { [string]$_ }) -join [Environment]::NewLine)
-      if ($stdout.Length -gt 0) { $stdout += [Environment]::NewLine }
-    }
-    if (Test-Path -LiteralPath $stderrTemp) {
-      $stderr = [System.IO.File]::ReadAllText($stderrTemp)
+      $process = New-Object System.Diagnostics.Process
+      $process.StartInfo = $startInfo
+      if (-not $process.Start()) { throw "Failed to start $Executable" }
+      $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+      $stderrTask = $process.StandardError.ReadToEndAsync()
+      $process.WaitForExit()
+      $stdout = $stdoutTask.Result
+      $stderr = $stderrTask.Result
+      $exitCode = $process.ExitCode
+      $process.Dispose()
+    } else {
+      $stderrTemp = [System.IO.Path]::GetTempFileName()
+      $electronWasPresent = Test-Path Env:ELECTRON_RUN_AS_NODE
+      $electronPrevious = if ($electronWasPresent) { $env:ELECTRON_RUN_AS_NODE } else { $null }
+      $noColorWasPresent = Test-Path Env:NO_COLOR
+      $noColorPrevious = if ($noColorWasPresent) { $env:NO_COLOR } else { $null }
+      try {
+        Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+        $env:NO_COLOR = '1'
+        $lines = & $Executable @Arguments 2> $stderrTemp
+        $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        if ($null -ne $lines) {
+          $stdout = (($lines | ForEach-Object { [string]$_ }) -join [Environment]::NewLine)
+          if ($stdout.Length -gt 0) { $stdout += [Environment]::NewLine }
+        }
+        if (Test-Path -LiteralPath $stderrTemp) {
+          $stderr = [System.IO.File]::ReadAllText($stderrTemp)
+        }
+      } finally {
+        Restore-EnvironmentValue -Name 'ELECTRON_RUN_AS_NODE' -Value $electronPrevious -WasPresent $electronWasPresent
+        Restore-EnvironmentValue -Name 'NO_COLOR' -Value $noColorPrevious -WasPresent $noColorWasPresent
+        Remove-Item -LiteralPath $stderrTemp -Force -ErrorAction SilentlyContinue
+      }
     }
   } catch {
     $exitCode = 9001
     $stderr = $_ | Out-String
-  } finally {
-    Restore-EnvironmentValue -Name 'ELECTRON_RUN_AS_NODE' -Value $electronPrevious -WasPresent $electronWasPresent
-    Restore-EnvironmentValue -Name 'NO_COLOR' -Value $noColorPrevious -WasPresent $noColorWasPresent
-    Remove-Item -LiteralPath $stderrTemp -Force -ErrorAction SilentlyContinue
   }
 
   Write-Utf8File -Path $OutputFile -Content $stdout
