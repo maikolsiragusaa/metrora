@@ -1,0 +1,148 @@
+name: Qovrion Windows Portable
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-portable.yml'
+      - 'app/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'tools/windows-portable/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-portable.yml'
+      - 'app/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'tools/windows-portable/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qovrion-windows-portable-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    name: Build and smoke-test portable bundle
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+
+      - name: Require Node zstd support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
+
+      - name: Install core dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install desktop dependencies
+        run: npm --prefix app ci --no-audit --no-fund
+
+      - name: Stage bundled CLI
+        run: npm --prefix app run stage-cli
+
+      - name: Build desktop application
+        run: npm --prefix app run build
+
+      - name: Build unpacked Windows application
+        shell: pwsh
+        run: |
+          Push-Location app
+          npx --no-install electron-builder --win --x64 --dir --publish never
+          Pop-Location
+
+      - name: Assemble portable baseline bundle
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'app\release\win-unpacked'
+          $destination = Join-Path $PWD 'app\release\Qovrion-Windows-Portable'
+          if (-not (Test-Path -LiteralPath (Join-Path $source 'Qovrion.exe'))) {
+            throw "electron-builder did not produce $source\Qovrion.exe"
+          }
+
+          Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $destination -Recurse -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\Run-Qovrion-Baseline.ps1' -Destination $destination -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\Run-Qovrion-Baseline.cmd' -Destination $destination -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\README.txt' -Destination $destination -Force
+
+          @(
+            'artifact=qovrion-windows-portable'
+            "commit=${{ github.sha }}"
+            "ref=${{ github.ref }}"
+            "run_id=${{ github.run_id }}"
+            "run_attempt=${{ github.run_attempt }}"
+            "built_at=$([DateTime]::UtcNow.ToString('o'))"
+            'platform=windows-x64'
+            'distribution=unsigned-development-artifact'
+          ) | Set-Content -LiteralPath (Join-Path $destination 'BUILD_INFO.txt') -Encoding utf8
+
+          $hashTargets = @(
+            'Qovrion.exe'
+            'resources\app.asar'
+            'resources\cli\dist\main.js'
+            'resources\cli\dist\launch.js'
+            'Run-Qovrion-Baseline.ps1'
+            'Run-Qovrion-Baseline.cmd'
+            'BUILD_INFO.txt'
+          )
+          $hashLines = foreach ($relative in $hashTargets) {
+            $path = Join-Path $destination $relative
+            if (-not (Test-Path -LiteralPath $path)) { throw "portable hash target missing: $relative" }
+            $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($relative.Replace('\', '/'))"
+          }
+          $hashLines | Set-Content -LiteralPath (Join-Path $destination 'SHA256SUMS.txt') -Encoding ascii
+
+      - name: Smoke-test bundled CLI and baseline runner
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'app\release\Qovrion-Windows-Portable'
+          $exe = Join-Path $bundle 'Qovrion.exe'
+          $cli = Join-Path $bundle 'resources\cli\dist\launch.js'
+          $env:ELECTRON_RUN_AS_NODE = '1'
+
+          $version = & $exe $cli --version
+          if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'bundled CLI version probe failed' }
+
+          $doctor = & $exe $cli doctor --json | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $null -eq $doctor) { throw 'bundled CLI doctor probe failed' }
+
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $smokeOutput = Join-Path $env:RUNNER_TEMP 'qovrion-baseline-smoke'
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $bundle 'Run-Qovrion-Baseline.ps1') `
+            -OutputDirectory $smokeOutput `
+            -SkipCodeBurn `
+            -SkipPrivateCacheBackup `
+            -NoArchive
+          if ($LASTEXITCODE -ne 0) { throw 'portable baseline runner failed' }
+
+          $manifest = Get-Content -LiteralPath (Join-Path $smokeOutput 'manifest.json') -Raw | ConvertFrom-Json
+          if ($manifest.schemaVersion -ne 1) { throw 'unexpected baseline manifest schema' }
+          Get-Content -LiteralPath (Join-Path $smokeOutput 'qovrion-report-lifetime.json') -Raw | ConvertFrom-Json | Out-Null
+          Get-Content -LiteralPath (Join-Path $smokeOutput 'qovrion-doctor.json') -Raw | ConvertFrom-Json | Out-Null
+
+      - name: Upload portable Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qovrion-windows-portable-${{ github.sha }}
+          path: app/release/Qovrion-Windows-Portable
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
