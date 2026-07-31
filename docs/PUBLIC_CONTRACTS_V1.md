@@ -64,7 +64,7 @@ CloudEvents gives Qovrion a portable event identity and routing envelope without
 The measurement data uses the same core concepts as the OpenTelemetry Generative AI semantic conventions:
 
 - operation name;
-- AI system/provider;
+- AI provider;
 - requested and response model;
 - input and output token usage;
 - cache and reasoning token usage.
@@ -163,6 +163,23 @@ Defines aggregate claims over a measurement batch using an in-toto statement. Cl
 
 The evidence content policy permanently records that content and local paths were excluded.
 
+## Internal projection adapter
+
+`toUsageMeasurementEventV1()` is the only first-party projection from the inherited normalized `ParsedApiCall` record into the public event contract.
+
+The adapter is deliberately an allowlist rather than a serializer:
+
+- it copies token facts and the normalized response model;
+- it requires the caller to declare the actual AI provider, operation, collector provenance, cost provenance, and quality;
+- it never infers the AI provider from the collector name;
+- it hashes the private deduplication key together with endpoint and source identity to create a deterministic opaque CloudEvents ID;
+- it never exports the raw deduplication key, tools, MCP names, skills, subagents, shell commands, file names, local paths, prompts, responses, source code, or patches;
+- it emits `unavailable` rather than inventing a zero when cost evidence is absent;
+- it rejects partial reasoning attribution and non-unknown session quality without an exported session ID;
+- it validates its own output through the public Zod schema before returning it.
+
+This does not replace any CodeBurn/Qovrion collector or parser. Existing collectors remain authoritative and can be projected only after their adapter-specific provenance and quality mapping is reviewed.
+
 ## Versioning rules
 
 - `version` changes only for Qovrion contract semantics.
@@ -175,6 +192,8 @@ The evidence content policy permanently records that content and local paths wer
 
 ## Current limits
 
-These contracts have unit and schema-export tests. They are not yet wired into the inherited parser/cache runtime, a hosted service, Android synchronization, or cryptographic signing.
+The public contracts, schema export, and one-call projection adapter have unit tests. The adapter is not yet enabled in normal parser/cache execution, and no provider-specific provenance registry has been ratified.
 
-The next implementation step is a narrow adapter from existing `ParsedApiCall` records into `UsageMeasurementEventV1`, validated against real fixtures. Existing collectors remain authoritative until that adapter demonstrates parity.
+There is still no hosted service, Android synchronization through these contracts, measurement-batch persistence, RFC 8785 hashing implementation, DSSE signing, or Sigstore integration.
+
+The next safe step is a provider-provenance registry for the collectors whose token and cost evidence is already understood, followed by fixture-based parity tests. Unknown providers must remain unavailable/unknown rather than receiving optimistic defaults.
