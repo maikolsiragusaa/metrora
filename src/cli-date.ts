@@ -1,0 +1,232 @@
+import type { DateRange } from './types.js'
+import { toDateString } from './daily-cache.js'
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+const END_OF_DAY_HOURS = 23
+const END_OF_DAY_MINUTES = 59
+const END_OF_DAY_SECONDS = 59
+const END_OF_DAY_MS = 999
+
+// The "all" period is intentionally bounded to the last 6 months. Older data
+// is rarely actionable for a cost tracker, and capping the range keeps the
+// parse path bounded so providers like Codex/Cursor with sparse multi-year
+// history still load in seconds. Users who need an unbounded window can use
+// the explicit `lifetime` period or `--from` / `--to`.
+const ALL_TIME_MONTHS = 6
+
+export type Period = 'today' | 'week' | '30days' | 'month' | 'all' | 'lifetime'
+
+export const PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all', 'lifetime']
+
+// Short labels suitable for the dashboard tab strip. Long-form labels for
+// header text come from `getDateRange().label`.
+export const PERIOD_LABELS: Record<Period, string> = {
+  today: 'Today',
+  week: '7 Days',
+  '30days': '30 Days',
+  month: 'This Month',
+  all: '6 Months',
+  lifetime: 'Lifetime',
+}
+
+const VALID_PERIODS: ReadonlyArray<Period> = ['today', 'week', '30days', 'month', 'all', 'lifetime']
+
+export class UsageQueryError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UsageQueryError'
+  }
+}
+
+export function parsePeriodOrThrow(s: string): Period {
+  if ((VALID_PERIODS as readonly string[]).includes(s)) return s as Period
+  throw new UsageQueryError(`Unknown period "${s}". Valid values: ${VALID_PERIODS.join(', ')}.`)
+}
+
+export function toPeriod(s: string): Period {
+  try {
+    return parsePeriodOrThrow(s)
+  } catch {
+    // Fail loudly instead of silently coercing to 'week'. Previously a typo
+    // like `-p mounth` produced a quiet 7-day report and the user thought
+    // they were viewing the month.
+    process.stderr.write(
+      `codeburn: unknown period "${s}". Valid values: ${VALID_PERIODS.join(', ')}.\n`
+    )
+    process.exit(1)
+  }
+}
+
+function parseLocalDate(s: string): Date {
+  if (!ISO_DATE_RE.test(s)) {
+    throw new UsageQueryError(`Invalid date format "${s}": expected YYYY-MM-DD`)
+  }
+  const [y, m, d] = s.split('-').map(Number) as [number, number, number]
+  const date = new Date(y, m - 1, d)
+  // JS Date silently rolls overflow forward (Feb 31 → Mar 3). That makes a
+  // typo like `--from 2026-02-31 --to 2026-03-15` quietly drop sessions
+  // dated Feb 28 - Mar 2. Reject overflow so the user gets a loud error
+  // instead of an off-by-N-days date range.
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+    throw new UsageQueryError(`Invalid date "${s}": ${m}/${d}/${y} is not a real calendar date`)
+  }
+  return date
+}
+
+function endOfLocalDay(date: Date): Date {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    END_OF_DAY_HOURS,
+    END_OF_DAY_MINUTES,
+    END_OF_DAY_SECONDS,
+    END_OF_DAY_MS,
+  )
+}
+
+export function dayRangeForDate(date: Date): DateRange {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return { start, end: endOfLocalDay(start) }
+}
+
+export function formatDayRangeLabel(day: string): string {
+  return `Day (${day})`
+}
+
+export function shiftDay(day: string, delta: number): string {
+  const date = parseLocalDate(day)
+  return toDateString(new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta))
+}
+
+export function parseDayFlag(day: string | undefined): { day: string; range: DateRange; label: string } | null {
+  if (day === undefined) return null
+
+  const now = new Date()
+  let date: Date
+  if (day === 'today') {
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  } else if (day === 'yesterday') {
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  } else {
+    date = parseLocalDate(day)
+  }
+
+  const resolvedDay = toDateString(date)
+  return { day: resolvedDay, range: dayRangeForDate(date), label: formatDayRangeLabel(resolvedDay) }
+}
+
+export function parseDateRangeFlags(from: string | undefined, to: string | undefined): DateRange | null {
+  if (from === undefined && to === undefined) return null
+
+  const now = new Date()
+  // When --from is omitted, default to 6 months back (the same window the
+  // dashboard's "all" period uses) instead of epoch. Previously a bare
+  // `--to 2026-01-01` opened a 55-year scan from 1970 which is rarely what
+  // the user meant and is expensive on machines with many session files.
+  const ALL_TIME_FALLBACK_MS = 6 * 31 * 24 * 60 * 60 * 1000
+  const start = from !== undefined
+    ? parseLocalDate(from)
+    : new Date(now.getTime() - ALL_TIME_FALLBACK_MS)
+
+  const endDate = to !== undefined ? parseLocalDate(to) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = endOfLocalDay(endDate)
+
+  if (start > end) {
+    throw new UsageQueryError(`--from must not be after --to (got ${from} > ${to})`)
+  }
+  return { start, end }
+}
+
+/**
+ * Returns the date range and a human-readable label for a named period.
+ *
+ * Accepts a string (rather than the strict `Period` type) because the CLI
+ * surfaces a few extra inputs not exposed in the dashboard tab strip
+ * (e.g. `'yesterday'`). Unknown values fall back to `'week'`.
+ *
+ * Note: `'all'` is bounded to the last 6 months. Use `'lifetime'` or
+ * `--from`/`--to` for an unbounded historical window.
+ */
+export function getDateRange(period: string): { range: DateRange; label: string } {
+  const now = new Date()
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    END_OF_DAY_HOURS,
+    END_OF_DAY_MINUTES,
+    END_OF_DAY_SECONDS,
+    END_OF_DAY_MS,
+  )
+
+  switch (period) {
+    case 'today': {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      return { range: dayRangeForDate(start), label: `Today (${toDateString(start)})` }
+    }
+    case 'yesterday': {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+      return { range: dayRangeForDate(start), label: `Yesterday (${toDateString(start)})` }
+    }
+    case 'week': {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+      return { range: { start, end }, label: 'Last 7 Days' }
+    }
+    case 'month': {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1)
+      return { range: { start, end }, label: `${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}` }
+    }
+    case '30days': {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      return { range: { start, end }, label: 'Last 30 Days' }
+    }
+    case 'all': {
+      const start = new Date(now.getFullYear(), now.getMonth() - ALL_TIME_MONTHS, 1)
+      return { range: { start, end }, label: 'Last 6 months' }
+    }
+    case 'lifetime': {
+      const start = new Date(1970, 0, 1)
+      return { range: { start, end }, label: 'Lifetime' }
+    }
+    default: {
+      process.stderr.write(
+        `codeburn: unknown period "${period}". Valid values: today, week, 30days, month, all, lifetime.\n`
+      )
+      process.exit(1)
+    }
+  }
+}
+
+export function parseDaysFlag(days: string | undefined): { days: Set<string>; range: DateRange; label: string } | null {
+  if (days === undefined) return null
+  const list = days.split(',').map(s => s.trim()).filter(Boolean)
+  if (list.length === 0) return null
+  const dates = list.map(parseLocalDate)
+  const strings = dates.map(toDateString)
+  const sorted = [...strings].sort()
+  const startDate = parseLocalDate(sorted[0]!)
+  const endDate = parseLocalDate(sorted[sorted.length - 1]!)
+  return {
+    days: new Set(sorted),
+    range: { start: startDate, end: endOfLocalDay(endDate) },
+    label: sorted.length === 1 ? sorted[0]! : `${sorted.length} days (${sorted[0]} .. ${sorted[sorted.length - 1]})`,
+  }
+}
+
+export function formatDateRangeLabel(from: string | undefined, to: string | undefined): string {
+  return `${from ?? 'all'} to ${to ?? 'today'}`
+}
+
+/** Resolve a usage query period for HTTP handlers without calling process.exit. */
+export function periodInfoFromQuery(
+  q: { period?: string; from?: string; to?: string },
+  defaultPeriod: string,
+): { range: DateRange; label: string } {
+  const customRange = parseDateRangeFlags(q.from, q.to)
+  if (customRange) {
+    return { range: customRange, label: formatDateRangeLabel(q.from, q.to) }
+  }
+  return getDateRange(parsePeriodOrThrow(q.period ?? defaultPeriod))
+}

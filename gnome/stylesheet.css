@@ -1,0 +1,610 @@
+/* ---- panel button ---- */
+.codeburn-panel {
+  spacing: 4px;
+}
+.codeburn-flame {
+  font-size: 14px;
+}
+.codeburn-label {
+  font-weight: 500;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+/* ---- popup host ---- */
+.codeburn-menu {
+  padding: 0;
+}
+.codeburn-host {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+}
+.codeburn-host:hover,
+.codeburn-host:focus,
+.codeburn-host:active,
+.codeburn-host:selected {
+  background: transparent;
+}
+.codeburn-root {
+  width: 340px;
+  height: 540px;
+  padding: 0;
+  spacing: 0;
+}
+.codeburn-scroll {
+  padding: 0;
+}
+
+/* ---- brand header ---- */
+.codeburn-brand-header {
+  padding: 14px 16px 10px 16px;
+  spacing: 2px;
+}
+.codeburn-brand-row {
+  spacing: 0;
+}
+.codeburn-brand-primary {
+  font-weight: 700;
+  font-size: 18px;
+}
+.codeburn-brand-accent {
+  font-weight: 700;
+  font-size: 18px;
+  color: #ff8c42;
+}
+.codeburn-brand-subhead {
+  font-size: 10.5px;
+  opacity: 0.55;
+}
+
+/* ---- tab rows ---- */
+.codeburn-tab-row {
+  padding: 4px 10px 8px 10px;
+  spacing: 4px;
+}
+.codeburn-period-row {
+  padding-top: 0;
+  padding-bottom: 10px;
+}
+.codeburn-tab,
+.codeburn-period {
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  opacity: 0.7;
+  transition-duration: 80ms;
+}
+.codeburn-tab:hover,
+.codeburn-period:hover {
+  background: rgba(255, 140, 66, 0.08);
+  opacity: 1;
+}
+.codeburn-tab-active,
+.codeburn-period-active {
+  background: rgba(255, 140, 66, 0.18);
+  color: #ff8c42;
+  opacity: 1;
+  font-weight: 600;
+}
+.codeburn-agent-scroll {
+  padding: 0;
+}
+.codeburn-agent-badge {
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(255, 140, 66, 0.12);
+  color: #ff8c42;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+/* ---- hero ---- */
+.codeburn-hero {
+  padding: 4px 16px 10px 16px;
+  spacing: 2px;
+}
+.codeburn-hero-top {
+  spacing: 6px;
+}
+.codeburn-hero-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: #ff8c42;
+  margin-top: 7px;
+}
+.codeburn-hero-label {
+  font-size: 11px;
+  opacity: 0.65;
+  font-weight: 500;
+}
+.codeburn-hero-amount {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffd700;
+}
+.codeburn-hero-meta {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* ---- activity section ---- */
+.codeburn-section-title {
+  font-weight: 600;
+  font-size: 11px;
+  opacity: 0.6;
+  padding-bottom: 2px;
+}
+/* ---- table headers ---- */
+.codeburn-table-header {
+  spacing: 6px;
+  padding: 2px 0 4px 0;
+}
+.codeburn-th {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.45;
+}
+.codeburn-th-cost {
+  min-width: 64px;
+}
+.codeburn-th-turns {
+  min-width: 40px;
+}
+.codeburn-th-calls {
+  min-width: 50px;
+}
+
+.codeburn-activity-rows {
+  spacing: 0;
+}
+.codeburn-activity-row {
+  spacing: 3px;
+  padding: 6px 0;
+}
+.codeburn-activity-top {
+  spacing: 6px;
+}
+.codeburn-activity-name {
+  font-size: 11.5px;
+  font-weight: 500;
+  min-width: 120px;
+}
+.codeburn-activity-cost {
+  font-size: 11.5px;
+  font-family: monospace;
+  font-weight: 600;
+  color: #ffd700;
+  min-width: 64px;
+}
+.codeburn-activity-turns {
+  font-size: 10.5px;
+  font-family: monospace;
+  opacity: 0.6;
+  min-width: 40px;
+}
+.codeburn-activity-oneshot {
+  font-size: 10.5px;
+  font-family: monospace;
+  color: #4ec972;
+  min-width: 40px;
+}
+.codeburn-bar-track {
+  height: 4px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.08);
+  width: 240px;
+}
+.codeburn-bar-fill {
+  height: 4px;
+  border-radius: 2px;
+  background-color: #ff8c42;
+}
+.codeburn-empty {
+  font-style: italic;
+  opacity: 0.55;
+  padding: 6px 0;
+}
+
+/* ---- loading skeleton ---- */
+.codeburn-loading {
+  padding: 10px 16px;
+  spacing: 10px;
+}
+.codeburn-skeleton-bar {
+  background-color: rgba(255, 140, 66, 0.15);
+  border-radius: 4px;
+}
+.codeburn-light .codeburn-skeleton-bar {
+  background-color: rgba(200, 80, 30, 0.12);
+}
+
+/* ---- findings CTA ---- */
+.codeburn-findings {
+  margin: 2px 16px 10px 16px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(255, 140, 66, 0.12);
+  border: none;
+  transition-duration: 120ms;
+}
+.codeburn-findings:hover {
+  background: rgba(255, 140, 66, 0.2);
+}
+.codeburn-findings-inner {
+  spacing: 8px;
+}
+.codeburn-findings-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #ff8c42;
+}
+.codeburn-findings-savings {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #ff8c42;
+  opacity: 0.8;
+}
+
+/* ---- footer ---- */
+.codeburn-footer {
+  padding: 10px 12px;
+  spacing: 6px;
+}
+.codeburn-footer-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  font-size: 11px;
+  font-weight: 500;
+  transition-duration: 80ms;
+}
+.codeburn-footer-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.codeburn-currency-box {
+  spacing: 2px;
+}
+.codeburn-currency-btn {
+  font-family: monospace;
+  min-width: 62px;
+}
+.codeburn-currency-picker {
+  background: rgba(30, 30, 30, 0.95);
+  border-radius: 8px;
+  padding: 4px;
+  height: 180px;
+}
+.codeburn-currency-list {
+  spacing: 1px;
+}
+.codeburn-currency-item {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  background: transparent;
+  border: none;
+}
+.codeburn-currency-item:hover {
+  background: rgba(255, 140, 66, 0.12);
+}
+.codeburn-currency-item-active {
+  background: rgba(255, 140, 66, 0.2);
+  color: #ff8c42;
+  font-weight: 600;
+}
+.codeburn-footer-cta {
+  background: #c9521d;
+  color: #ffffff;
+}
+.codeburn-footer-cta:hover {
+  background: #ff8c42;
+}
+.codeburn-updated {
+  font-size: 10px;
+  opacity: 0.45;
+  padding: 0 16px 10px 16px;
+}
+
+/* ---- insight pills row ---- */
+.codeburn-insight-row {
+  padding: 4px 10px 8px 10px;
+  spacing: 4px;
+}
+.codeburn-insight-pill {
+  padding: 4px 4px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  opacity: 0.65;
+  transition-duration: 80ms;
+}
+.codeburn-insight-pill:hover {
+  background: rgba(255, 140, 66, 0.08);
+  opacity: 1;
+}
+.codeburn-insight-pill-active {
+  background: rgba(255, 140, 66, 0.18);
+  color: #ff8c42;
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* ---- token histogram chart ---- */
+.codeburn-chart {
+  padding: 0 16px 10px 16px;
+  spacing: 4px;
+}
+.codeburn-chart-header {
+  spacing: 6px;
+}
+.codeburn-chart-label {
+  font-weight: 600;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.codeburn-chart-total {
+  font-family: monospace;
+  font-size: 11px;
+  opacity: 0.7;
+  color: #ff8c42;
+}
+.codeburn-chart-bars {
+  spacing: 2px;
+  height: 52px;
+}
+.codeburn-chart-col {
+  height: 52px;
+}
+.codeburn-chart-spacer {
+  background: transparent;
+}
+.codeburn-chart-bar {
+  background-color: #ff8c42;
+  border-radius: 2px 2px 0 0;
+}
+.codeburn-chart-bar-hover {
+  background-color: #ffa94d;
+}
+.codeburn-chart-total-hover {
+  font-weight: 600;
+}
+.codeburn-divider {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.08);
+  margin: 4px 16px;
+}
+
+/* ---- trend, pulse, stats, kv rows ---- */
+.codeburn-content {
+  padding: 6px 16px 10px 16px;
+  spacing: 6px;
+}
+.codeburn-trend-row,
+.codeburn-kv-row {
+  padding: 4px 0;
+  spacing: 8px;
+}
+.codeburn-trend-date,
+.codeburn-kv-label {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.codeburn-trend-cost,
+.codeburn-kv-value {
+  font-family: monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #ffd700;
+}
+.codeburn-trend-calls {
+  font-size: 10.5px;
+  opacity: 0.6;
+  min-width: 62px;
+}
+
+/* ---- pulse tiles ---- */
+.codeburn-pulse-row {
+  spacing: 6px;
+  padding: 4px 0;
+}
+.codeburn-pulse-tile {
+  padding: 10px 8px;
+  border-radius: 8px;
+  background: rgba(255, 140, 66, 0.08);
+  spacing: 2px;
+}
+.codeburn-pulse-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ff8c42;
+  font-family: monospace;
+}
+.codeburn-pulse-label {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* ---- models rows ---- */
+.codeburn-models-rows {
+  spacing: 0;
+  padding-top: 4px;
+}
+.codeburn-model-row {
+  spacing: 8px;
+  padding: 6px 0;
+}
+.codeburn-model-name {
+  font-size: 11.5px;
+  min-width: 120px;
+}
+.codeburn-model-cost {
+  font-family: monospace;
+  font-size: 11.5px;
+  color: #ffd700;
+  min-width: 64px;
+}
+.codeburn-model-calls {
+  font-family: monospace;
+  font-size: 10.5px;
+  opacity: 0.6;
+  min-width: 50px;
+}
+
+/* ---- settings gear button ---- */
+.codeburn-prefs-btn {
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
+/* ---- budget warning ---- */
+.codeburn-budget-warning {
+  color: #e5a50a;
+  font-weight: bold;
+  font-size: 11.5px;
+  padding: 6px 16px;
+}
+
+/* ---- dark theme ---- */
+.codeburn-dark {
+  background-color: rgba(30, 30, 30, 0.98);
+  color: #e0e0e0;
+  border-radius: 12px;
+}
+.codeburn-dark .codeburn-brand-primary {
+  color: #ffffff;
+}
+.codeburn-dark .codeburn-brand-subhead {
+  color: rgba(255, 255, 255, 0.55);
+}
+.codeburn-dark .codeburn-hero-label,
+.codeburn-dark .codeburn-hero-meta {
+  color: rgba(255, 255, 255, 0.65);
+}
+.codeburn-dark .codeburn-section-title,
+.codeburn-dark .codeburn-th,
+.codeburn-dark .codeburn-chart-label {
+  color: rgba(255, 255, 255, 0.5);
+}
+.codeburn-dark .codeburn-activity-name,
+.codeburn-dark .codeburn-model-name,
+.codeburn-dark .codeburn-trend-date,
+.codeburn-dark .codeburn-kv-label {
+  color: #e0e0e0;
+}
+.codeburn-dark .codeburn-activity-turns,
+.codeburn-dark .codeburn-model-calls,
+.codeburn-dark .codeburn-trend-calls {
+  color: rgba(255, 255, 255, 0.5);
+}
+.codeburn-dark .codeburn-footer-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e0e0e0;
+}
+.codeburn-dark .codeburn-footer-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.codeburn-dark .codeburn-currency-picker {
+  background: rgba(20, 20, 20, 0.98);
+}
+.codeburn-dark .codeburn-currency-item {
+  color: #e0e0e0;
+}
+.codeburn-dark .codeburn-tab,
+.codeburn-dark .codeburn-period,
+.codeburn-dark .codeburn-insight-pill {
+  color: rgba(255, 255, 255, 0.7);
+}
+.codeburn-dark .codeburn-updated {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ---- light theme ---- */
+.codeburn-light {
+  background-color: rgba(255, 255, 255, 0.98);
+  color: #1a1a1a;
+  border-radius: 12px;
+}
+.codeburn-light .codeburn-brand-primary {
+  color: #1a1a1a;
+}
+.codeburn-light .codeburn-brand-subhead {
+  color: rgba(0, 0, 0, 0.5);
+}
+.codeburn-light .codeburn-hero-label,
+.codeburn-light .codeburn-hero-meta {
+  color: rgba(0, 0, 0, 0.6);
+}
+.codeburn-light .codeburn-hero-amount {
+  color: #c9521d;
+}
+.codeburn-light .codeburn-section-title,
+.codeburn-light .codeburn-th,
+.codeburn-light .codeburn-chart-label {
+  color: rgba(0, 0, 0, 0.45);
+}
+.codeburn-light .codeburn-activity-name,
+.codeburn-light .codeburn-model-name,
+.codeburn-light .codeburn-trend-date,
+.codeburn-light .codeburn-kv-label {
+  color: #1a1a1a;
+}
+.codeburn-light .codeburn-activity-cost,
+.codeburn-light .codeburn-model-cost,
+.codeburn-light .codeburn-trend-cost,
+.codeburn-light .codeburn-kv-value {
+  color: #c9521d;
+}
+.codeburn-light .codeburn-activity-turns,
+.codeburn-light .codeburn-model-calls,
+.codeburn-light .codeburn-trend-calls {
+  color: rgba(0, 0, 0, 0.5);
+}
+.codeburn-light .codeburn-activity-oneshot {
+  color: #1b7a35;
+}
+.codeburn-light .codeburn-bar-track {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+.codeburn-light .codeburn-bar-fill {
+  background-color: #c9521d;
+}
+.codeburn-light .codeburn-chart-bar {
+  background-color: #c9521d;
+}
+.codeburn-light .codeburn-footer-btn {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1a1a1a;
+}
+.codeburn-light .codeburn-footer-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+.codeburn-light .codeburn-currency-picker {
+  background: rgba(245, 245, 245, 0.98);
+}
+.codeburn-light .codeburn-currency-item {
+  color: #1a1a1a;
+}
+.codeburn-light .codeburn-tab,
+.codeburn-light .codeburn-period,
+.codeburn-light .codeburn-insight-pill {
+  color: rgba(0, 0, 0, 0.65);
+}
+.codeburn-light .codeburn-pulse-tile {
+  background: rgba(255, 140, 66, 0.1);
+}
+.codeburn-light .codeburn-updated {
+  color: rgba(0, 0, 0, 0.4);
+}
+.codeburn-light .codeburn-divider {
+  background-color: rgba(0, 0, 0, 0.1);
+}
