@@ -44,7 +44,11 @@ export type HistoricalCostCalculationV1 =
   | {
       kind: 'unavailable'
       priceRecordId: string
-      reason: 'missing-prompt-input-token-count' | 'non-finite-result'
+      reason:
+        | 'missing-prompt-input-token-count'
+        | 'missing-web-search-rate'
+        | 'missing-fast-rate'
+        | 'non-finite-result'
     }
 
 const ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE = 1.6
@@ -79,6 +83,13 @@ function selectRates(
   return { rates, selection }
 }
 
+function unavailable(
+  record: HistoricalPriceRecordV1,
+  reason: Extract<HistoricalCostCalculationV1, { kind: 'unavailable' }>['reason'],
+): HistoricalCostCalculationV1 {
+  return { kind: 'unavailable', priceRecordId: record.priceRecordId, reason }
+}
+
 export function calculateHistoricalCostV1(
   recordInput: HistoricalPriceRecordV1 | unknown,
   usageInput: HistoricalPriceUsageV1 | unknown,
@@ -97,18 +108,19 @@ export function calculateHistoricalCostV1(
   }
 
   const selected = selectRates(record, usage.promptInputTokens)
-  if (!selected) {
-    return {
-      kind: 'unavailable',
-      priceRecordId: record.priceRecordId,
-      reason: 'missing-prompt-input-token-count',
-    }
-  }
+  if (!selected) return unavailable(record, 'missing-prompt-input-token-count')
 
   const rates = selected.rates
+  if (usage.webSearchRequests > 0 && rates.webSearchPerRequest === undefined) {
+    return unavailable(record, 'missing-web-search-rate')
+  }
+  if (usage.speed === 'fast' && rates.fastMultiplier === undefined) {
+    return unavailable(record, 'missing-fast-rate')
+  }
+
   const oneHourCacheWriteTokens = usage.oneHourCacheWriteTokens ?? 0
   const fiveMinuteCacheWriteTokens = usage.cacheWriteTokens - oneHourCacheWriteTokens
-  const speedMultiplier = usage.speed === 'fast' ? (rates.fastMultiplier ?? 1) : 1
+  const speedMultiplier = usage.speed === 'fast' ? rates.fastMultiplier! : 1
   const costUSD = speedMultiplier * (
     usage.inputTokens * rates.inputPerToken
     + usage.billableOutputTokens * rates.outputPerToken
@@ -121,11 +133,7 @@ export function calculateHistoricalCostV1(
   )
 
   if (!Number.isFinite(costUSD) || costUSD < 0) {
-    return {
-      kind: 'unavailable',
-      priceRecordId: record.priceRecordId,
-      reason: 'non-finite-result',
-    }
+    return unavailable(record, 'non-finite-result')
   }
 
   return {
