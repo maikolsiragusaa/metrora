@@ -9,10 +9,11 @@ describe('Qovrion sharing API version compatibility', () => {
     expect(canonicalSharePath('/api/usage')).toBe('/api/usage')
   })
 
-  it('maps stable v1 routes to the same handlers', () => {
+  it('maps stable v1 routes to the corresponding handlers', () => {
     expect(canonicalSharePath('/api/v1/peer/hello')).toBe('/api/peer/hello')
     expect(canonicalSharePath('/api/v1/peer/pair')).toBe('/api/peer/pair')
     expect(canonicalSharePath('/api/v1/peer/pair-request')).toBe('/api/peer/pair-request')
+    expect(canonicalSharePath('/api/v1/peer/revoke')).toBe('/api/peer/revoke')
     expect(canonicalSharePath('/api/v1/usage')).toBe('/api/usage')
   })
 
