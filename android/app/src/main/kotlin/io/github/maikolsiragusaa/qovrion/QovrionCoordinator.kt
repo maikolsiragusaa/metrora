@@ -24,6 +24,8 @@ data class QovrionUiState(
     val credentials: PairingCredentials? = null,
     val snapshot: UsageSnapshot? = null,
     val showingCachedData: Boolean = false,
+    val pairingCode: String? = null,
+    val pairingDesktopName: String? = null,
     val message: String? = null,
     val error: String? = null,
 ) {
@@ -62,7 +64,7 @@ class QovrionCoordinator(context: Context) : Closeable {
         }
     }
 
-    fun pair(host: String, portText: String, pin: String) {
+    fun pair(host: String, portText: String) {
         if (mutableState.value.busy || mutableState.value.paired) return
         val port = try {
             QovrionProtocol.validatePort(portText.trim().toInt())
@@ -70,16 +72,34 @@ class QovrionCoordinator(context: Context) : Closeable {
             mutableState.update { it.copy(error = error.safeMessage("Enter a valid port."), message = null) }
             return
         }
-        mutableState.update { it.copy(busy = true, error = null, message = null) }
+        mutableState.update {
+            it.copy(
+                busy = true,
+                pairingCode = null,
+                pairingDesktopName = null,
+                error = null,
+                message = "Connecting to the desktop…",
+            )
+        }
         scope.launch {
             try {
                 val desktop = api.discover(host, port)
-                val credentials = api.pair(desktop, pin, androidDeviceName())
+                val code = api.pairingCode(desktop)
+                mutableState.update {
+                    it.copy(
+                        pairingCode = code,
+                        pairingDesktopName = desktop.name,
+                        message = "Compare the complete code with Qovrion Desktop, then approve there.",
+                    )
+                }
+                val credentials = api.pair(desktop, code, androidDeviceName())
                 store.saveCredentials(credentials)
                 mutableState.update {
                     it.copy(
                         busy = true,
                         credentials = credentials,
+                        pairingCode = null,
+                        pairingDesktopName = null,
                         message = "Desktop paired. Loading the first usage snapshot…",
                     )
                 }
@@ -110,6 +130,9 @@ class QovrionCoordinator(context: Context) : Closeable {
                     it.copy(
                         busy = false,
                         credentials = null,
+                        pairingCode = null,
+                        pairingDesktopName = null,
+                        message = null,
                         error = error.safeMessage("Pairing failed."),
                     )
                 }
@@ -146,6 +169,32 @@ class QovrionCoordinator(context: Context) : Closeable {
     }
 
     fun disconnect() {
+        val credentials = mutableState.value.credentials ?: return
+        if (mutableState.value.busy) return
+        mutableState.update { it.copy(busy = true, error = null, message = "Revoking this phone on the desktop…") }
+        scope.launch {
+            try {
+                api.revoke(credentials)
+                store.clearPairing()
+                mutableState.value = QovrionUiState(
+                    initializing = false,
+                    message = "Desktop access revoked and local pairing data removed.",
+                )
+            } catch (error: Exception) {
+                mutableState.update {
+                    it.copy(
+                        busy = false,
+                        message = null,
+                        error = error.safeMessage(
+                            "The desktop could not confirm revocation. Access remains paired; retry or forget only this phone.",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun forgetLocal() {
         if (mutableState.value.busy || !mutableState.value.paired) return
         mutableState.update { it.copy(busy = true, error = null, message = null) }
         scope.launch {
@@ -153,7 +202,7 @@ class QovrionCoordinator(context: Context) : Closeable {
                 store.clearPairing()
                 mutableState.value = QovrionUiState(
                     initializing = false,
-                    message = "Pairing removed from this phone.",
+                    message = "Pairing data removed only from this phone. Revoke the old device from the desktop when available.",
                 )
             } catch (error: Exception) {
                 mutableState.update {
