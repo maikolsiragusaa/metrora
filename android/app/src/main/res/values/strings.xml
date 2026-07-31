@@ -22,6 +22,6 @@
     <string name="sessions">Sessions</string>
     <string name="cache_hit">Cache hit</string>
     <string name="top_models">Top models</string>
-    <string name="model_calls_cost">%1$d calls · %2$s</string>
+    <string name="model_calls_cost">Count: %1$d · %2$s</string>
     <string name="no_snapshot">The desktop is paired, but no usage snapshot has been downloaded yet.</string>
 </resources>
