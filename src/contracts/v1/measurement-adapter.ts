@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 
 import type { ParsedApiCall } from '../../types.js'
 import {
@@ -26,6 +26,13 @@ export type MeasurementCostEvidenceV1 =
 export type ParsedApiCallMeasurementContextV1 = {
   workspaceId: string
   endpointId: string
+  /**
+   * Local endpoint secret used only to pseudonymize private source identities.
+   * It must contain at least 256 bits of entropy and is never copied into the
+   * public event. Stable keys produce stable IDs on one endpoint; rotating the
+   * key intentionally breaks linkability.
+   */
+  eventIdentityKey: Uint8Array
   repositoryId?: string
   projectId?: string
   sessionId?: string
@@ -49,13 +56,15 @@ export type ParsedApiCallMeasurementContextV1 = {
   quality: UsageMeasurementDataV1['quality']
 }
 
-const MAX_SAFE_MICROS_USD = Number.MAX_SAFE_INTEGER
-
 function costMicrosUsd(costUSD: number): number {
   if (!Number.isFinite(costUSD) || costUSD < 0) {
     throw new Error('measurement cost must be a finite, non-negative USD amount')
   }
-  return Math.min(MAX_SAFE_MICROS_USD, Math.round(costUSD * 1_000_000))
+  const amountMicrosUsd = Math.round(costUSD * 1_000_000)
+  if (!Number.isSafeInteger(amountMicrosUsd)) {
+    throw new Error('measurement cost exceeds the safe integer micro-USD range')
+  }
+  return amountMicrosUsd
 }
 
 function measurementCost(
@@ -84,7 +93,14 @@ function measurementReasoning(call: ParsedApiCall): UsageMeasurementDataV1['reas
 }
 
 function eventId(call: ParsedApiCall, context: ParsedApiCallMeasurementContextV1): string {
-  const digest = createHash('sha256')
+  if (!(context.eventIdentityKey instanceof Uint8Array) || context.eventIdentityKey.byteLength < 32) {
+    throw new Error('event identity key must contain at least 32 bytes')
+  }
+  if (call.deduplicationKey.length === 0) {
+    throw new Error('measurement source deduplication key must not be empty')
+  }
+
+  const digest = createHmac('sha256', context.eventIdentityKey)
     .update('qovrion.measurement.v1\0')
     .update(context.endpointId)
     .update('\0')
