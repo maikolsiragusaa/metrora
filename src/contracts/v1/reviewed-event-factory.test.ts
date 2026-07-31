@@ -165,7 +165,10 @@ describe('reviewed usage measurement event factory v1', () => {
       sessionIdentity: 'exact',
     })
     expect(result.event.data.cost).toMatchObject({ kind: 'estimated', method: 'token-pricing' })
-    expect(result.event.data.reasoning).toBeUndefined()
+    expect(result.event.data.reasoning).toEqual({
+      level: 'unknown',
+      source: 'unknown',
+    })
   })
 
   it('omits session identity only through the explicit omit branch', () => {
