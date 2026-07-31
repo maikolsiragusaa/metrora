@@ -23,6 +23,18 @@ export type ShareServerOptions = {
   approve?: (req: PairRequest) => Promise<boolean>
 }
 
+export const SHARE_API_VERSION = 1 as const
+
+/**
+ * Keep the inherited unversioned routes working while making `/api/v1` the
+ * stable first-party surface for Qovrion companions and integrations.
+ */
+export function canonicalSharePath(pathname: string): string {
+  if (pathname === '/api/v1') return '/api'
+  if (pathname.startsWith('/api/v1/')) return `/api/${pathname.slice('/api/v1/'.length)}`
+  return pathname
+}
+
 // A device's HTTPS sharing endpoint. Mutual TLS: the server presents its own
 // self-signed cert (clients pin its fingerprint) and requests the client's cert
 // so it can bind tokens to the caller's fingerprint. A pull is served only when
@@ -96,11 +108,15 @@ export class ShareServer {
     res: ServerResponse,
     json: (code: number, body: unknown) => void,
   ): Promise<void> {
+    const pathname = canonicalSharePath(url.pathname)
 
     // Unauthenticated: just enough for a joiner to learn who this is and whether
     // pairing is currently open. No usage data here.
-    if (url.pathname === '/api/peer/hello' && req.method === 'GET') {
+    if (pathname === '/api/peer/hello' && req.method === 'GET') {
       json(200, {
+        product: 'qovrion',
+        apiVersion: SHARE_API_VERSION,
+        apiVersions: [SHARE_API_VERSION],
         fingerprint: this.opts.identity.fingerprint,
         name: this.opts.identity.name,
         pairingOpen: !!this.pairing?.isOpen(),
@@ -108,7 +124,7 @@ export class ShareServer {
       return
     }
 
-    if (url.pathname === '/api/peer/pair' && req.method === 'POST') {
+    if (pathname === '/api/peer/pair' && req.method === 'POST') {
       const clientFp = this.clientFingerprint(req)
       if (!clientFp) {
         json(400, { error: 'client certificate required' })
@@ -128,7 +144,7 @@ export class ShareServer {
       return
     }
 
-    if (url.pathname === '/api/peer/pair-request' && req.method === 'POST') {
+    if (pathname === '/api/peer/pair-request' && req.method === 'POST') {
       const clientFp = this.clientFingerprint(req)
       if (!clientFp) {
         json(400, { error: 'client certificate required' })
@@ -152,7 +168,7 @@ export class ShareServer {
       return
     }
 
-    if (url.pathname === '/api/usage' && req.method === 'GET') {
+    if (pathname === '/api/usage' && req.method === 'GET') {
       const clientFp = this.clientFingerprint(req)
       const token = (req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '')
       if (!clientFp || !token || !this.opts.peers.authorize(token, clientFp)) {
