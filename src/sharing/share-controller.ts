@@ -61,9 +61,7 @@ export class ShareController {
       identity,
       peers: this.peers,
       getUsage: this.getUsage,
-      onPeersChanged: () => {
-        if (this.peers) void savePeers(this.peers.list(), this.dir)
-      },
+      onPeersChanged: () => this.peers ? savePeers(this.peers.list(), this.dir) : Promise.resolve(),
       approve: (req) => this.enqueueApproval(req),
     })
     // listen() can reject (e.g. EADDRINUSE); only commit state after it binds,
