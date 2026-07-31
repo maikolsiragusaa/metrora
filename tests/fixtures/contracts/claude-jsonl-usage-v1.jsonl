@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-07-31T10:00:00.000Z","sessionId":"claude-session-01","message":{"role":"user","content":"Check provenance"}}
+{"type":"assistant","timestamp":"2026-07-31T10:00:01.000Z","sessionId":"claude-session-01","message":{"id":"claude-message-01","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":100,"output_tokens":20,"cache_creation":{"ephemeral_5m_input_tokens":7,"ephemeral_1h_input_tokens":3},"cache_read_input_tokens":30,"speed":"standard"}}}
