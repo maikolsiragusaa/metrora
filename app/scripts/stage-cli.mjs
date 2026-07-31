@@ -1,17 +1,16 @@
-// Stage a self-contained copy of the root codeburn CLI into app/build/cli so
-// electron-builder can ship it as `extraResources`. The packaged app spawns
-// this copy (via Electron-as-node) instead of a globally-installed `codeburn`,
-// guaranteeing the CLI matches the app's version with no install prerequisite.
+// Stage a self-contained copy of the root Qovrion runtime into app/build/cli so
+// electron-builder can ship both the compatibility CLI and the narrow desktop
+// local-state entry. The packaged app spawns the CLI via Electron-as-node and
+// dynamically imports the local-state entry in the Electron main process.
 //
-// The tsup bundle (dist/main.js) is NOT self-contained: it keeps the runtime
-// dependencies external (chalk, react, ink, undici, zod, @modelcontextprotocol/
-// sdk, ...), and dist/main.js reads `../package.json` for its version string. So
-// the staged layout mirrors what `npm install` produces:
+// The tsup bundles keep runtime dependencies external, so the staged layout
+// mirrors what `npm install` produces:
 //
-//   build/cli/package.json          (root package.json: {version}, type:module)
-//   build/cli/dist/cli.js           (Node-version-guard launcher → ./main.js)
-//   build/cli/dist/main.js          (the bundle)
-//   build/cli/node_modules/         (production dependency closure)
+//   build/cli/package.json
+//   build/cli/dist/cli.js
+//   build/cli/dist/main.js
+//   build/cli/dist/desktop-local-state.js
+//   build/cli/node_modules/
 //
 // The production closure is copied out of the already-installed root
 // node_modules (offline, no reinstall). Run the root CLI build first so dist/ is
@@ -28,10 +27,11 @@ const root = join(appDir, '..') // repo root
 const dist = join(root, 'dist')
 const rootModules = join(root, 'node_modules')
 const stage = join(appDir, 'build', 'cli')
+const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js']
 
-for (const f of ['cli.js', 'main.js']) {
-  if (!existsSync(join(dist, f))) {
-    throw new Error(`stage-cli: ${join(dist, f)} is missing — build the root CLI first`)
+for (const file of emittedFiles) {
+  if (!existsSync(join(dist, file))) {
+    throw new Error(`stage-cli: ${join(dist, file)} is missing — build the root CLI first`)
   }
 }
 
@@ -39,8 +39,7 @@ rmSync(stage, { recursive: true, force: true })
 mkdirSync(join(stage, 'dist'), { recursive: true })
 
 copyFileSync(join(root, 'package.json'), join(stage, 'package.json'))
-copyFileSync(join(dist, 'cli.js'), join(stage, 'dist', 'cli.js'))
-copyFileSync(join(dist, 'main.js'), join(stage, 'dist', 'main.js'))
+for (const file of emittedFiles) copyFileSync(join(dist, file), join(stage, 'dist', file))
 
 // Desktop-app launch shim (the app spawns this, not cli.js). The packaged app
 // runs the CLI with Electron's own binary as Node (ELECTRON_RUN_AS_NODE=1).
@@ -84,7 +83,7 @@ try {
 // Every parseable line is an absolute path to a production package instance.
 // Map each back to its top-level node_modules entry (`name` or `@scope/name`),
 // then copy those dirs whole — a package's own nested node_modules comes with
-// it, which is exactly the closure it needs at runtime.
+// it, which is exactly the closure it needs.
 // `npm ls --parseable` uses native separators on Windows. Normalize both sides
 // before extracting the package name so Store builds do not treat a populated
 // node_modules tree as empty merely because it uses `\\` instead of `/`.
@@ -110,8 +109,8 @@ for (const pkg of topLevel) {
   cpSync(src, join(stage, 'node_modules', pkg), { recursive: true, dereference: true })
 }
 
-// A partially-copied CLI that crashes on import is worse than none: fail the
-// build if any of the bundle's external runtime deps did not land.
+// A partially-copied runtime that crashes on import is worse than none: fail the
+// build if any external runtime dependency did not land.
 const required = [
   'chalk', 'react', 'ink', 'strip-ansi', 'zod', 'undici',
   'selfsigned', 'commander', 'bonjour-service', '@modelcontextprotocol/sdk',
@@ -121,4 +120,4 @@ if (missing.length) {
   throw new Error(`stage-cli: staged bundle is missing runtime deps: ${missing.join(', ')}`)
 }
 
-console.log(`stage-cli: staged ${topLevel.size} production packages -> ${stage}`)
+console.log(`stage-cli: staged ${topLevel.size} production packages and ${emittedFiles.length} runtime files -> ${stage}`)
