@@ -102,6 +102,28 @@ export function fetchUsage(ep: PeerEndpoint, token: string, query: UsageQuery = 
   return call(ep, 'GET', `/api/usage${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
 }
 
+// Stable first-party companion operations. These deliberately coexist with the
+// inherited unversioned calls above so desktop-to-desktop compatibility remains
+// intact while companions consume explicit contracts.
+export function companionHello(ep: PeerEndpoint): Promise<Response> {
+  return call(ep, 'GET', '/api/v1/peer/hello')
+}
+
+export function companionPairRequest(ep: PeerEndpoint, name: string): Promise<Response> {
+  return call(ep, 'POST', '/api/v1/peer/pair-request', {}, JSON.stringify({ name }), 70_000)
+}
+
+export function fetchCompanionUsage(ep: PeerEndpoint, token: string, query: UsageQuery = {}): Promise<Response> {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(query)) if (v) params.set(k, v)
+  const qs = params.toString()
+  return call(ep, 'GET', `/api/v1/usage${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
+}
+
+export function revokeCompanion(ep: PeerEndpoint, token: string): Promise<Response> {
+  return call(ep, 'POST', '/api/v1/peer/revoke', { authorization: `Bearer ${token}` })
+}
+
 function safeJson(s: string): unknown {
   try {
     return JSON.parse(s)
