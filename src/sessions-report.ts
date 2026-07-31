@@ -1,5 +1,6 @@
 import { getShortModelName } from './models.js'
 import { CATEGORY_LABELS } from './types.js'
+import type { ReasoningMix } from './reasoning-level.js'
 import type { ProjectSummary, SessionSummary, TaskCategory } from './types.js'
 
 export type SessionRow = {
@@ -17,6 +18,8 @@ export type SessionRow = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  reasoningTokens: number
+  reasoningMix?: ReasoningMix
   startedAt: string
   endedAt: string
   durationMs: number
@@ -57,6 +60,10 @@ export function aggregateSessions(projects: ProjectSummary[]): SessionRow[] {
     outputTokens: session.totalOutputTokens,
     cacheReadTokens: session.totalCacheReadTokens,
     cacheWriteTokens: session.totalCacheWriteTokens,
+    ...(session.reasoningMix ? {
+      reasoningTokens: session.totalReasoningTokens,
+      reasoningMix: session.reasoningMix,
+    } : {}),
     startedAt: session.firstTimestamp,
     endedAt: session.lastTimestamp,
     durationMs: durationMs(session.firstTimestamp, session.lastTimestamp),

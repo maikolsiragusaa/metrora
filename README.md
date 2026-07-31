@@ -56,7 +56,7 @@ gnome/     GNOME extension
 tests/     Test suite
 ```
 
-The runtime command remains `codeburn` until the compatibility-safe rebranding work is completed. Do not publish packages or binaries under the Qovrion name without an explicit release change.
+The canonical runtime command is `qovrion`; `codeburn` remains a temporary compatibility alias. There are still no official Qovrion packages or binaries, so do not publish or distribute artifacts without an explicit release change.
 
 ## Contributing
 

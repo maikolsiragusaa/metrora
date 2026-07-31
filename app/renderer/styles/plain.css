@@ -784,7 +784,9 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-project { display: block; overflow: hidden; margin-top: 2px; color: var(--mut2); font-family: var(--mono); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .session-row > span:not(:first-child) { overflow: hidden; color: var(--mut); text-overflow: ellipsis; }
 .session-when { color: var(--mut2) !important; }
-.session-models { text-align: right; }
+.session-models { display: flex; min-width: 0; flex-direction: column; align-items: flex-end; text-align: right; }
+.session-model-list { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.session-reasoning-mix { max-width: 100%; overflow: hidden; margin-top: 2px; color: var(--accent-text); font-size: 10px; font-weight: 600; text-overflow: ellipsis; }
 .sessions-more { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--mut); font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums; cursor: pointer; }
 .sessions-more:hover, .sessions-more:focus-visible { border-color: var(--accent); background: var(--hover); color: var(--ink); outline: none; }
 .sessions-more-caption { color: var(--mut2); font-size: 10.5px; font-variant-numeric: tabular-nums; }
@@ -792,6 +794,14 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .detail-head { padding: 10px 14px; }
 .detail-head h3 { margin: 0 0 6px; font-size: 15px; font-weight: 620; }
 .detail-line { color: var(--mut); font-size: 12px; font-variant-numeric: tabular-nums; }
+.reasoning-detail { padding: 12px 14px; border: 1px solid var(--line2); border-radius: 9px; background: var(--panel); }
+.reasoning-detail-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--mut); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.reasoning-detail-rows { display: grid; gap: 7px; }
+.reasoning-detail-row { display: grid; grid-template-columns: 68px minmax(80px, 1fr) minmax(190px, auto); align-items: center; gap: 9px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.reasoning-detail-label { color: var(--ink); font-weight: 600; }
+.reasoning-detail-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--bar); }
+.reasoning-detail-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.reasoning-detail-value { color: var(--mut2); text-align: right; }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .stat .v { font-size: var(--fs-stat); font-weight: var(--fw-kpi); font-variant-numeric: tabular-nums; letter-spacing: -.03em; line-height: 1.1; }
 .stat .d { margin-top: 4px; color: var(--mut2); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }

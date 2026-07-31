@@ -9,6 +9,7 @@ import { calculateCost } from '../models.js'
 import { readCachedCodexResults, writeCachedCodexResults, getCachedCodexProject, fingerprintFile } from '../codex-cache.js'
 import { normalizeContentBlocks } from '../content-utils.js'
 import { estimateTokensFromChars } from '../token-estimate.js'
+import { findExplicitReasoningLevel, reasoningLevelFromModelLabel, type ReasoningLevel } from '../reasoning-level.js'
 import type { ToolCall } from '../types.js'
 import type { Provider, ProbeRoot, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
@@ -111,6 +112,7 @@ type CodexEntry = {
     session_id?: string
     forked_from_id?: string
     model?: string
+    reasoning_effort?: string
     name?: string
     invocation?: { server?: string; tool?: string }
     content?: Array<{ type?: string; text?: string }>
@@ -203,6 +205,22 @@ function getRawJsonStringField(head: string, field: string): string | undefined 
   } catch {
     return match[1]
   }
+}
+
+function getRawReasoningEffort(head: string): string | undefined {
+  for (const field of [
+    'reasoning_effort',
+    'reasoningEffort',
+    'model_reasoning_effort',
+    'modelReasoningEffort',
+    'thinking_effort',
+    'thinkingEffort',
+    'effort',
+  ]) {
+    const value = getRawJsonStringField(head, field)
+    if (value) return value
+  }
+  return undefined
 }
 
 function getRawJsonNumberField(head: string, field: string): number | undefined {
@@ -415,6 +433,7 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
   const timingDuration = payloadDuration ?? getRawDurationMs(pHead) ?? getRawDurationMs(timingTail)
   const compactModel = getRawJsonStringField(pHead, 'model')
   const compactModelName = getRawJsonStringField(pHead, 'model_name')
+  const compactReasoningEffort = getRawReasoningEffort(pHead)
   const compactLastUsage = getRawTokenUsage(pHead, 'last_token_usage')
   const compactTotalUsage = getRawTokenUsage(pHead, 'total_token_usage')
   const compactInfo = compactModel || compactModelName || compactLastUsage || compactTotalUsage
@@ -434,6 +453,7 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
       session_id: getRawJsonStringField(pHead, 'session_id'),
       forked_from_id: getRawJsonStringField(pHead, 'forked_from_id'),
       model: getRawJsonStringField(pHead, 'model'),
+      reasoning_effort: compactReasoningEffort,
       name: getRawJsonStringField(pHead, 'name'),
       invocation,
       call_id: getRawJsonStringField(pHead, 'call_id'),
@@ -538,6 +558,17 @@ function resolveModel(info: CodexEntry['payload'], sessionModel?: string): strin
     ?? 'gpt-5'
 }
 
+function reasoningMetadata(
+  model: string,
+  explicit?: ReasoningLevel,
+): Pick<ParsedProviderCall, 'reasoningLevel' | 'reasoningLevelSource'> {
+  if (explicit) return { reasoningLevel: explicit, reasoningLevelSource: 'explicit' }
+  const inferred = reasoningLevelFromModelLabel(model)
+  return inferred
+    ? { reasoningLevel: inferred.level, reasoningLevelSource: inferred.source }
+    : {}
+}
+
 function createParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
@@ -555,6 +586,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       if (!fp) return
 
       let sessionModel: string | undefined
+      let currentExplicitReasoning: ReasoningLevel | undefined
       let sessionId = ''
       let sessionCwd: string | undefined
       let forkedFromId = ''
@@ -613,11 +645,19 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             forkCutoff = new Date(new Date(entry.timestamp).getTime() + 5000).toISOString()
           }
           sessionModel = entry.payload?.model ?? sessionModel
+          const explicit = findExplicitReasoningLevel(entry.payload)
+          if (explicit) currentExplicitReasoning = explicit
           continue
         }
 
-        if (entry.type === 'turn_context' && entry.payload?.model) {
-          sessionModel = entry.payload.model
+        if (entry.type === 'turn_context') {
+          const previousModel = sessionModel
+          if (entry.payload?.model) sessionModel = entry.payload.model
+          const explicit = findExplicitReasoningLevel(entry.payload)
+          if (explicit) currentExplicitReasoning = explicit
+          else if (entry.payload?.model && previousModel && entry.payload.model !== previousModel) {
+            currentExplicitReasoning = undefined
+          }
           continue
         }
 
@@ -801,6 +841,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             pendingTaskCalls.push({
               provider: 'codex',
               model,
+              ...reasoningMetadata(model, currentExplicitReasoning),
               inputTokens: estInput,
               outputTokens: estOutput,
               cacheCreationInputTokens: 0,
@@ -920,6 +961,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           pendingTaskCalls.push({
             provider: 'codex',
             model,
+            ...reasoningMetadata(model, currentExplicitReasoning),
             inputTokens: uncachedInputTokens,
             outputTokens,
             cacheCreationInputTokens: 0,

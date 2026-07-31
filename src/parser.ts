@@ -3,6 +3,7 @@ import { lstat, readFile, readdir, stat } from 'fs/promises'
 import { basename, dirname, join, resolve, sep } from 'path'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, calculateLocalModelSavings, getShortModelName, isProxiedPath, getProxyPathsConfigHash } from './models.js'
+import { buildReasoningMix, reasoningLevelFromModelLabel, type ReasoningMixInput } from './reasoning-level.js'
 import { resolveSubagentAttribution, sessionIdentity } from './sessions-report.js'
 import { normalizeContentBlocks } from './content-utils.js'
 import { discoverAllSessions, getProvider } from './providers/index.js'
@@ -1146,20 +1147,24 @@ function extractClaudeCacheCreation(usage: {
 /// Returns the input unchanged when no mapping is configured for the
 /// model — keeps the hot path branch-free for the common paid-only case.
 function applyLocalModelSavings(call: ParsedApiCall): ParsedApiCall {
-  const u = call.usage
+  const inferred = call.reasoningLevel ? null : reasoningLevelFromModelLabel(call.model)
+  const attributed: ParsedApiCall = inferred
+    ? { ...call, reasoningLevel: inferred.level, reasoningLevelSource: inferred.source }
+    : call
+  const u = attributed.usage
   const savings = calculateLocalModelSavings(
-    call.model,
+    attributed.model,
     u.inputTokens,
     u.outputTokens,
     u.cacheCreationInputTokens,
     u.cacheReadInputTokens,
     u.webSearchRequests,
-    call.speed,
-    call.cacheCreationOneHourTokens ?? 0,
+    attributed.speed,
+    attributed.cacheCreationOneHourTokens ?? 0,
   )
-  if (!savings) return call
+  if (!savings) return attributed
   return {
-    ...call,
+    ...attributed,
     costUSD: 0,
     savingsUSD: savings.savingsUSD,
     savingsBaselineModel: savings.baselineModel,
@@ -1659,6 +1664,7 @@ function buildSessionSummary(
   const categoryBreakdown: SessionSummary['categoryBreakdown'] = Object.create(null)
   const skillBreakdown: SessionSummary['skillBreakdown'] = Object.create(null)
   const subagentBreakdown: SessionSummary['subagentBreakdown'] = Object.create(null)
+  const reasoningCalls: ReasoningMixInput[] = []
 
   let totalCost = 0
   let totalSavings = 0
@@ -1714,6 +1720,13 @@ function buildSessionSummary(
       totalCacheRead += call.usage.cacheReadInputTokens
       totalCacheWrite += call.usage.cacheCreationInputTokens
       apiCalls++
+      reasoningCalls.push({
+        reasoningLevel: call.reasoningLevel,
+        reasoningLevelSource: call.reasoningLevelSource,
+        outputTokens: call.usage.outputTokens,
+        reasoningTokens: call.usage.reasoningTokens,
+        costUSD: call.costUSD,
+      })
 
       const modelKey = call.provider === 'devin' ? call.model : getShortModelName(call.model)
       if (!modelBreakdown[modelKey]) {
@@ -1779,6 +1792,7 @@ function buildSessionSummary(
     totalCacheReadTokens: totalCacheRead,
     totalCacheWriteTokens: totalCacheWrite,
     apiCalls,
+    reasoningMix: buildReasoningMix(reasoningCalls),
     turns,
     modelBreakdown,
     toolBreakdown,
@@ -2341,6 +2355,10 @@ function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
   const apiCall: ParsedApiCall = applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
+    ...(call.reasoningLevel ? {
+      reasoningLevel: call.reasoningLevel,
+      reasoningLevelSource: call.reasoningLevelSource,
+    } : {}),
     usage,
     costUSD: call.costUSD,
     tools,
@@ -2372,6 +2390,10 @@ function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
   return {
     provider: call.provider,
     model: call.model,
+    ...(call.reasoningLevel ? {
+      reasoningLevel: call.reasoningLevel,
+      reasoningLevelSource: call.reasoningLevelSource,
+    } : {}),
     usage: {
       inputTokens: call.inputTokens,
       outputTokens: call.outputTokens,
@@ -2422,6 +2444,10 @@ function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
   return {
     provider: call.provider,
     model: call.model,
+    ...(call.reasoningLevel ? {
+      reasoningLevel: call.reasoningLevel,
+      reasoningLevelSource: call.reasoningLevelSource,
+    } : {}),
     usage: { ...call.usage, cacheCreationOneHourTokens: call.cacheCreationOneHourTokens ?? 0 },
     isEstimated: call.isEstimated || undefined,
     speed: call.speed,
@@ -2529,6 +2555,10 @@ function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
   return applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
+    ...(call.reasoningLevel ? {
+      reasoningLevel: call.reasoningLevel,
+      reasoningLevelSource: call.reasoningLevelSource,
+    } : {}),
     usage: {
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,

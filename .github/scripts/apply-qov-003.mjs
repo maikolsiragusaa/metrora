@@ -102,8 +102,8 @@ update('src/parser.ts', [
     "function applyLocalModelSavings(call: ParsedApiCall): ParsedApiCall {\n  const inferred = call.reasoningLevel ? null : reasoningLevelFromModelLabel(call.model)\n  const attributed: ParsedApiCall = inferred\n    ? { ...call, reasoningLevel: inferred.level, reasoningLevelSource: inferred.source }\n    : call\n  const u = attributed.usage\n  const savings = calculateLocalModelSavings(\n    attributed.model,\n    u.inputTokens,\n    u.outputTokens,\n    u.cacheCreationInputTokens,\n    u.cacheReadInputTokens,\n    u.webSearchRequests,\n    attributed.speed,\n    attributed.cacheCreationOneHourTokens ?? 0,\n  )\n  if (!savings) return attributed\n  return {\n    ...attributed,\n    costUSD: 0,\n    savingsUSD: savings.savingsUSD,\n    savingsBaselineModel: savings.baselineModel,\n    isLocalSavings: true,\n  }\n}\n",
   ],
   [
-    "    provider: call.provider,\n    model: call.model,\n    usage,\n",
-    "    provider: call.provider,\n    model: call.model,\n    ...(call.reasoningLevel ? {\n      reasoningLevel: call.reasoningLevel,\n      reasoningLevelSource: call.reasoningLevelSource,\n    } : {}),\n    usage,\n",
+    "  const apiCall: ParsedApiCall = applyLocalModelSavings({\n    provider: call.provider,\n    model: call.model,\n    usage,\n",
+    "  const apiCall: ParsedApiCall = applyLocalModelSavings({\n    provider: call.provider,\n    model: call.model,\n    ...(call.reasoningLevel ? {\n      reasoningLevel: call.reasoningLevel,\n      reasoningLevelSource: call.reasoningLevelSource,\n    } : {}),\n    usage,\n",
   ],
   [
     "  const subagentBreakdown: SessionSummary['subagentBreakdown'] = Object.create(null)\n\n  let totalCost = 0\n",
@@ -118,8 +118,8 @@ update('src/parser.ts', [
     "    apiCalls,\n    reasoningMix: buildReasoningMix(reasoningCalls),\n    turns,\n",
   ],
   [
-    "    provider: call.provider,\n    model: call.model,\n    usage: {\n",
-    "    provider: call.provider,\n    model: call.model,\n    ...(call.reasoningLevel ? {\n      reasoningLevel: call.reasoningLevel,\n      reasoningLevelSource: call.reasoningLevelSource,\n    } : {}),\n    usage: {\n",
+    "function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {\n  return {\n    provider: call.provider,\n    model: call.model,\n    usage: {\n",
+    "function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {\n  return {\n    provider: call.provider,\n    model: call.model,\n    ...(call.reasoningLevel ? {\n      reasoningLevel: call.reasoningLevel,\n      reasoningLevelSource: call.reasoningLevelSource,\n    } : {}),\n    usage: {\n",
   ],
   [
     "    provider: call.provider,\n    model: call.model,\n    usage: { ...call.usage, cacheCreationOneHourTokens: call.cacheCreationOneHourTokens ?? 0 },\n",
@@ -164,7 +164,7 @@ update('src/sessions-report.ts', [
   ],
   [
     "    cacheReadTokens: session.totalCacheReadTokens,\n    cacheWriteTokens: session.totalCacheWriteTokens,\n    startedAt: session.firstTimestamp,\n",
-    "    cacheReadTokens: session.totalCacheReadTokens,\n    cacheWriteTokens: session.totalCacheWriteTokens,\n    reasoningTokens: session.totalReasoningTokens,\n    ...(session.reasoningMix ? { reasoningMix: session.reasoningMix } : {}),\n    startedAt: session.firstTimestamp,\n",
+    "    cacheReadTokens: session.totalCacheReadTokens,\n    cacheWriteTokens: session.totalCacheWriteTokens,\n    ...(session.reasoningMix ? {\n      reasoningTokens: session.totalReasoningTokens,\n      reasoningMix: session.reasoningMix,\n    } : {}),\n    startedAt: session.firstTimestamp,\n",
   ],
 ])
 
@@ -225,6 +225,17 @@ update('app/renderer/styles/plain.css', [
   ],
 ])
 
+update('tests/cli-emitters.test.ts', [
+  [
+    "        'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens',\n        'startedAt', 'endedAt', 'durationMs',\n",
+    "        'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens',\n        'reasoningTokens', 'reasoningMix',\n        'startedAt', 'endedAt', 'durationMs',\n",
+  ],
+  [
+    "      expect(rows.every(row => row.provider === 'claude')).toBe(true)\n",
+    "      expect(rows.every(row => row.provider === 'claude')).toBe(true)\n      expect(rows.every(row => typeof row.reasoningTokens === 'number')).toBe(true)\n      expect(rows.every(row => {\n        const mix = row.reasoningMix as { totalCalls?: number; rows?: Array<{ level?: string }> } | undefined\n        return mix?.totalCalls === row.calls && mix.rows?.some(item => item.level === 'unknown')\n      })).toBe(true)\n",
+  ],
+])
+
 update('README.md', [
   [
     'The runtime command remains `codeburn` until the compatibility-safe rebranding work is completed. Do not publish packages or binaries under the Qovrion name without an explicit release change.\n',
@@ -234,6 +245,6 @@ update('README.md', [
 
 write('src/providers/codex-reasoning.test.ts', `import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'\nimport { tmpdir } from 'node:os'\nimport { join } from 'node:path'\nimport { afterEach, describe, expect, it } from 'vitest'\n\nimport { createCodexProvider } from './codex.js'\n\nlet root: string | undefined\nconst savedCacheDir = process.env.CODEBURN_CACHE_DIR\n\nafterEach(async () => {\n  if (savedCacheDir === undefined) delete process.env.CODEBURN_CACHE_DIR\n  else process.env.CODEBURN_CACHE_DIR = savedCacheDir\n  if (root) await rm(root, { recursive: true, force: true })\n  root = undefined\n})\n\nfunction usage(input: number, cached: number, output: number, reasoning: number) {\n  return {\n    input_tokens: input,\n    cached_input_tokens: cached,\n    output_tokens: output,\n    reasoning_output_tokens: reasoning,\n    total_tokens: input + output + reasoning,\n  }\n}\n\ndescribe('Codex reasoning attribution', () => {\n  it('preserves effort changes per call, including a large compact turn_context line', async () => {\n    root = await mkdtemp(join(tmpdir(), 'qovrion-codex-reasoning-'))\n    process.env.CODEBURN_CACHE_DIR = join(root, 'cache')\n    const day = join(root, 'sessions', '2026', '07', '31')\n    await mkdir(day, { recursive: true })\n    const file = join(day, 'rollout-2026-07-31T00-00-00-session.jsonl')\n\n    const first = usage(100, 20, 10, 5)\n    const second = usage(220, 40, 25, 8)\n    const lines = [\n      { timestamp: '2026-07-31T00:00:00.000Z', type: 'session_meta', payload: { originator: 'codex_cli_rs', session_id: 'session', cwd: root, model: 'gpt-5.6-sol' } },\n      { timestamp: '2026-07-31T00:00:01.000Z', type: 'turn_context', payload: { model: 'gpt-5.6-sol', padding: 'x'.repeat(40_000), collaboration_mode: { settings: { reasoning_effort: 'high' } } } },\n      { timestamp: '2026-07-31T00:00:02.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.6-sol', last_token_usage: first, total_token_usage: first } } },\n      { timestamp: '2026-07-31T00:00:03.000Z', type: 'turn_context', payload: { model: 'gpt-5.6-sol', collaboration_mode: { settings: { reasoning_effort: 'low' } } } },\n      { timestamp: '2026-07-31T00:00:04.000Z', type: 'event_msg', payload: { type: 'token_count', info: { model: 'gpt-5.6-sol', last_token_usage: { ...second, input_tokens: 120, cached_input_tokens: 20, output_tokens: 15, reasoning_output_tokens: 3, total_tokens: 138 }, total_token_usage: second } } },\n    ]\n    await writeFile(file, lines.map(line => JSON.stringify(line)).join('\\n') + '\\n')\n\n    const provider = createCodexProvider(root)\n    const sources = await provider.discoverSessions()\n    expect(sources).toHaveLength(1)\n    const calls = []\n    for await (const call of provider.createSessionParser(sources[0]!, new Set()).parse()) calls.push(call)\n\n    expect(calls).toHaveLength(2)\n    expect(calls.map(call => [call.reasoningLevel, call.reasoningLevelSource])).toEqual([\n      ['high', 'explicit'],\n      ['low', 'explicit'],\n    ])\n    expect(calls.map(call => call.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol'])\n  })\n})\n`)
 
-write('app/renderer/sections/Sessions.reasoning.test.ts', `import { describe, expect, it } from 'vitest'\n\nimport { reasoningMixLabel } from './Sessions'\n\ndescribe('session reasoning mix label', () => {\n  it('shows a single complete level without noise', () => {\n    expect(reasoningMixLabel({\n      totalCalls: 3,\n      knownCalls: 3,\n      coverage: 1,\n      rows: [{ level: 'high', calls: 3, callShare: 1, generatedTokens: 100, reasoningTokens: 20, costUSD: 1, sources: ['explicit'] }],\n    })).toBe('High')\n  })\n\n  it('keeps unknown calls visible in a mixed session', () => {\n    expect(reasoningMixLabel({\n      totalCalls: 3,\n      knownCalls: 2,\n      coverage: 2 / 3,\n      rows: [\n        { level: 'high', calls: 2, callShare: 2 / 3, generatedTokens: 100, reasoningTokens: 20, costUSD: 1, sources: ['explicit'] },\n        { level: 'unknown', calls: 1, callShare: 1 / 3, generatedTokens: 40, reasoningTokens: 15, costUSD: 0.4, sources: [] },\n      ],\n    })).toBe('High 67% · Unknown 33%')\n  })\n})\n`)
+write('app/renderer/sections/Sessions.reasoning.test.ts', `// @vitest-environment jsdom\nimport { describe, expect, it } from 'vitest'\n\nimport { reasoningMixLabel } from './Sessions'\n\ndescribe('session reasoning mix label', () => {\n  it('shows a single complete level without noise', () => {\n    expect(reasoningMixLabel({\n      totalCalls: 3,\n      knownCalls: 3,\n      coverage: 1,\n      rows: [{ level: 'high', calls: 3, callShare: 1, generatedTokens: 100, reasoningTokens: 20, costUSD: 1, sources: ['explicit'] }],\n    })).toBe('High')\n  })\n\n  it('keeps unknown calls visible in a mixed session', () => {\n    expect(reasoningMixLabel({\n      totalCalls: 3,\n      knownCalls: 2,\n      coverage: 2 / 3,\n      rows: [\n        { level: 'high', calls: 2, callShare: 2 / 3, generatedTokens: 100, reasoningTokens: 20, costUSD: 1, sources: ['explicit'] },\n        { level: 'unknown', calls: 1, callShare: 1 / 3, generatedTokens: 40, reasoningTokens: 15, costUSD: 0.4, sources: [] },\n      ],\n    })).toBe('High 67% · Unknown 33%')\n  })\n})\n`)
 
 rmSync('docs/.qov-003-placeholder', { force: true })
