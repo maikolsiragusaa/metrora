@@ -1,4 +1,4 @@
-# One-time workflow. It deletes itself from the final public root commit.
+# Internal PR trigger only. This workflow deletes itself and this branch from the final state.
 name: Qovrion final public history squash
 
 on:
