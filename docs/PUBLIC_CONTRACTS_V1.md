@@ -15,6 +15,7 @@ The v1 boundary covers:
 - privacy-aware repository identity;
 - bounded sharing policy;
 - normalized AI-usage measurement events and batches;
+- collector provenance profiles;
 - verifiable aggregate-usage evidence statements.
 
 It does **not** define billing, hosted BYOK, account provisioning, cloud synchronization, an advisor prompt protocol, or a general authorization engine.
@@ -153,6 +154,31 @@ Batches up to 10,000 CloudEvents measurement records, identifies the producing e
 
 It is not OTLP. OTLP is the transport protocol for OpenTelemetry data and can be added as an adapter when Qovrion actually exports to or receives from an OpenTelemetry Collector. Forcing the existing local historical parsers into OTLP's wire representation now would make the core more complex without improving interoperability.
 
+### `CollectorProvenanceProfileV1`
+
+Defines what one reviewed collector path can actually prove, per field. It does not use a single optimistic “measured” badge for an entire call.
+
+The initial registry contains only three paths:
+
+- Claude JSONL usage records;
+- Codex rollout `token_count` records;
+- Codex content-length fallback records.
+
+For each path the profile records:
+
+- provenance of input, output, cache-read, cache-write, and reasoning tokens;
+- model and session identity quality;
+- supported reasoning-attribution sources;
+- whether cost is provider-metered or locally priced;
+- whether pricing coverage must be established before a cost claim is exported;
+- whether raw content or local paths are required.
+
+All current profiles explicitly mark cost as local token pricing, never provider-metered. Codex cache-write remains unknown because the reviewed token-count record does not expose it. Codex content fallback marks input/output as estimated and cache/reasoning fields as unknown. Claude marks its principal input/output counts as measured, optional cache fields as derived, and separate reasoning tokens as unknown.
+
+Profile objects are deeply frozen after Zod validation. Their embedded parser versions are tested against `PROVIDER_PARSE_VERSIONS`; a parser change therefore forces an explicit provenance review instead of silently inheriting old guarantees.
+
+`collectorProvenanceProfileForCall()` returns `undefined` for every unreviewed collector. Zed, OpenCode, Copilot, Cursor, Antigravity, and the other inherited collectors receive no optimistic default merely because they already produce internal calls.
+
 ### `UsageEvidenceStatementV1`
 
 Defines aggregate claims over a measurement batch using an in-toto statement. Claims record totals and assurance separately:
@@ -176,7 +202,7 @@ The adapter is deliberately an allowlist rather than a serializer:
 - it requires at least 32 bytes of local endpoint key material, never exports that key, and intentionally breaks cross-key linkability when the key rotates;
 - it never exports the raw deduplication key, tools, MCP names, skills, subagents, shell commands, file names, local paths, prompts, responses, source code, or patches;
 - it emits `unavailable` rather than inventing a zero when cost evidence is absent;
-- it rejects negative, non-finite, or micro-USD amounts that cannot be represented exactly as a JavaScript safe integer instead of silently clamping them;
+- it rejects negative, non-finite, or micro-USD amounts that cannot be represented as a JavaScript safe integer instead of silently clamping them;
 - it rejects partial reasoning attribution and non-unknown session quality without an exported session ID;
 - it validates its own output through the public Zod schema before returning it.
 
@@ -194,8 +220,10 @@ This does not replace any CodeBurn/Qovrion collector or parser. Existing collect
 
 ## Current limits
 
-The public contracts, schema export, and one-call projection adapter have unit tests. The adapter is not yet enabled in normal parser/cache execution, and no provider-specific provenance registry has been ratified.
+The public contracts, schema export, one-call projection adapter, and initial collector provenance registry have unit tests. The adapter is not yet enabled in normal parser/cache execution.
+
+Only the three reviewed Claude/Codex paths have profiles. The registry does not yet prove pricing coverage, convert field-level provenance into an event-level quality rollup, or authorize export by itself.
 
 There is still no hosted service, Android synchronization through these contracts, endpoint event-key provisioning, measurement-batch persistence, RFC 8785 hashing implementation, DSSE signing, or Sigstore integration.
 
-The next safe step is a provider-provenance registry for the collectors whose token and cost evidence is already understood, followed by fixture-based parity tests. Unknown providers must remain unavailable/unknown rather than receiving optimistic defaults.
+The next safe step is fixture-based parity for the three registered paths and a fail-closed mapper that combines a reviewed profile with verified pricing coverage. Other collectors should be added one at a time only after equivalent source and fixture review.
