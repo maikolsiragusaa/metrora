@@ -26,7 +26,7 @@ This file is generated from `CollectorInventoryV1`. Local support and share elig
 | devin | core | unassessed | docs/providers/devin.md | pending | 3 | withheld |
 | droid | core | unassessed | docs/providers/droid.md | pending | 3 | withheld |
 | forge | lazy | unassessed | docs/providers/forge.md | pending | 3 | withheld |
-| gemini | core | session-json | docs/providers/gemini.md | priority | 1 | withheld |
+| gemini | core | session-json-or-jsonl-message-usage | docs/providers/gemini.md | approved | 0 | approved |
 | goose | lazy | unassessed | docs/providers/goose.md | pending | 3 | withheld |
 | grok | core | unassessed | docs/providers/grok.md | pending | 3 | withheld |
 | hermes | core | unassessed | docs/providers/hermes.md | pending | 3 | withheld |
@@ -55,8 +55,8 @@ This file is generated from `CollectorInventoryV1`. Local support and share elig
 ## Current totals
 
 - Registered local collectors: **38**.
-- Approved for signed sharing: **2 collectors / 3 path-specific profiles**.
-- Priority audit queue: **10**.
+- Approved for signed sharing: **3 collectors / 4 path-specific profiles**.
+- Priority audit queue: **9**.
 - Pending audit: **26**.
 - Provider documentation present: **34**.
 - Documentation gaps: **codebuff, kimicode, open-design, quickdesk**.
