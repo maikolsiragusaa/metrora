@@ -1,0 +1,448 @@
+name: QOV-002 apply identity core
+
+on:
+  push:
+    branches:
+      - feat/qov-002-technical-identity-migration
+    paths:
+      - .github/workflows/qov-002-apply-core.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/qov-002-technical-identity-migration
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply identity core
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs')
+
+          function read(path) { return fs.readFileSync(path, 'utf8') }
+          function write(path, content) { fs.writeFileSync(path, content) }
+          function replaceOnce(content, from, to, label) {
+            if (!content.includes(from)) throw new Error(`Missing expected pattern: ${label}`)
+            return content.replace(from, to)
+          }
+
+          const identity = `import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+          import { homedir, platform } from 'node:os'
+          import { dirname, join } from 'node:path'
+
+          export const QOVRION_ENV = {
+            bin: 'QOVRION_BIN',
+            pathDirs: 'QOVRION_PATH_DIRS',
+            cliPathFile: 'QOVRION_CLI_PATH_FILE',
+            bundledCli: 'QOVRION_BUNDLED_CLI',
+            devRepoRoot: 'QOVRION_DEV_REPO_ROOT',
+          } as const
+
+          export const LEGACY_CODEBURN_ENV = {
+            bin: 'CODEBURN_BIN',
+            pathDirs: 'CODEBURN_PATH_DIRS',
+            cliPathFile: 'CODEBURN_CLI_PATH_FILE',
+            bundledCli: 'CODEBURN_BUNDLED_CLI',
+            devRepoRoot: 'CODEBURN_DEV_REPO_ROOT',
+          } as const
+
+          /** Canonical values win even when deliberately set to an empty string. */
+          export function compatEnv(
+            env: NodeJS.ProcessEnv,
+            canonical: string,
+            legacy: string,
+          ): string | undefined {
+            return env[canonical] !== undefined ? env[canonical] : env[legacy]
+          }
+
+          /** npm shims are .cmd on Windows; keep the extensionless forms as fallbacks. */
+          export function cliExecutableNames(platformName: NodeJS.Platform = platform()): string[] {
+            const bases = ['qovrion', 'codeburn']
+            if (platformName !== 'win32') return bases
+            return bases.flatMap(name => [\`${'${name}'}.cmd\`, \`${'${name}'}.exe\`, name])
+          }
+
+          export type CliPathFiles = {
+            canonical: string
+            legacy: string | null
+          }
+
+          export function cliPathFiles(
+            env: NodeJS.ProcessEnv = process.env,
+            home = homedir(),
+            platformName: NodeJS.Platform = platform(),
+          ): CliPathFiles {
+            const canonicalOverride = env[QOVRION_ENV.cliPathFile]
+            const canonical = canonicalOverride !== undefined
+              ? canonicalOverride
+              : platformName === 'darwin'
+                ? join(home, 'Library', 'Application Support', 'Qovrion', 'qovrion-cli-path.v1')
+                : join(env.XDG_CONFIG_HOME || join(home, '.config'), 'Qovrion', 'qovrion-cli-path.v1')
+
+            // An explicit canonical override is authoritative and intentionally
+            // disables automatic fallback to a legacy pointer file.
+            if (canonicalOverride !== undefined) return { canonical, legacy: null }
+
+            const legacyOverride = env[LEGACY_CODEBURN_ENV.cliPathFile]
+            const legacy = legacyOverride !== undefined
+              ? legacyOverride
+              : platformName === 'darwin'
+                ? join(home, 'Library', 'Application Support', 'CodeBurn', 'codeburn-cli-path.v1')
+                : join(env.XDG_CONFIG_HOME || join(home, '.config'), 'CodeBurn', 'codeburn-cli-path.v1')
+            return { canonical, legacy }
+          }
+
+          export type PersistedCliPathResult = {
+            value: string
+            source: 'canonical' | 'legacy'
+            migrated: boolean
+          }
+
+          function readCandidate(file: string | null, isUsable: (value: string) => boolean): string | null {
+            if (!file || !existsSync(file)) return null
+            try {
+              const value = readFileSync(file, 'utf8').trim()
+              return value && isUsable(value) ? value : null
+            } catch {
+              return null
+            }
+          }
+
+          /**
+           * Read the canonical pointer first, then the legacy pointer. A valid
+           * legacy value is copied to the canonical file only when that file does
+           * not exist. The legacy file is never modified or removed.
+           */
+          export function readPersistedCliPath(options: {
+            env?: NodeJS.ProcessEnv
+            home?: string
+            platformName?: NodeJS.Platform
+            isUsable: (value: string) => boolean
+          }): PersistedCliPathResult | null {
+            const env = options.env ?? process.env
+            const files = cliPathFiles(env, options.home ?? homedir(), options.platformName ?? platform())
+            const canonicalValue = readCandidate(files.canonical, options.isUsable)
+            if (canonicalValue) return { value: canonicalValue, source: 'canonical', migrated: false }
+
+            const legacyValue = readCandidate(files.legacy, options.isUsable)
+            if (!legacyValue) return null
+
+            let migrated = false
+            if (files.canonical && !existsSync(files.canonical)) {
+              try {
+                mkdirSync(dirname(files.canonical), { recursive: true })
+                writeFileSync(files.canonical, \`${'${legacyValue}'}\\n\`, { flag: 'wx', mode: 0o600 })
+                migrated = true
+              } catch {
+                // Best effort only. Resolution still uses the valid legacy value.
+              }
+            }
+            return { value: legacyValue, source: 'legacy', migrated }
+          }
+          `
+          write('app/electron/identity.ts', identity.replace(/^          /gm, ''))
+
+          const identityTest = `// @vitest-environment node
+          import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+          import { tmpdir } from 'node:os'
+          import { join } from 'node:path'
+          import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+          import { cliExecutableNames, cliPathFiles, compatEnv, readPersistedCliPath } from './identity'
+
+          let dir: string
+          beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'qovrion-identity-')) })
+          afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+          function executable(name: string): string {
+            const file = join(dir, name)
+            writeFileSync(file, '#!/usr/bin/env node\\n', { mode: 0o755 })
+            return file
+          }
+
+          describe('technical identity compatibility', () => {
+            it('gives QOVRION values precedence, including deliberate empty values', () => {
+              expect(compatEnv({ QOVRION_BIN: '/new', CODEBURN_BIN: '/old' }, 'QOVRION_BIN', 'CODEBURN_BIN')).toBe('/new')
+              expect(compatEnv({ QOVRION_PATH_DIRS: '', CODEBURN_PATH_DIRS: '/old' }, 'QOVRION_PATH_DIRS', 'CODEBURN_PATH_DIRS')).toBe('')
+              expect(compatEnv({ CODEBURN_BIN: '/old' }, 'QOVRION_BIN', 'CODEBURN_BIN')).toBe('/old')
+            })
+
+            it('searches the Qovrion executable before the legacy alias on every platform', () => {
+              expect(cliExecutableNames('linux')).toEqual(['qovrion', 'codeburn'])
+              expect(cliExecutableNames('win32').slice(0, 3)).toEqual(['qovrion.cmd', 'qovrion.exe', 'qovrion'])
+              expect(cliExecutableNames('win32')).toContain('codeburn.cmd')
+            })
+
+            it('uses canonical persisted locations while retaining the legacy fallback', () => {
+              const files = cliPathFiles({}, dir, 'linux')
+              expect(files.canonical).toBe(join(dir, '.config', 'Qovrion', 'qovrion-cli-path.v1'))
+              expect(files.legacy).toBe(join(dir, '.config', 'CodeBurn', 'codeburn-cli-path.v1'))
+            })
+
+            it('migrates a valid legacy pointer once without deleting the legacy file', () => {
+              const bin = executable('qovrion')
+              const files = cliPathFiles({}, dir, 'linux')
+              writeFileSync(files.legacy!, bin)
+
+              const first = readPersistedCliPath({ env: {}, home: dir, platformName: 'linux', isUsable: value => value === bin })
+              expect(first).toEqual({ value: bin, source: 'legacy', migrated: true })
+              expect(readFileSync(files.legacy!, 'utf8')).toBe(bin)
+              expect(readFileSync(files.canonical, 'utf8').trim()).toBe(bin)
+
+              const second = readPersistedCliPath({ env: {}, home: dir, platformName: 'linux', isUsable: value => value === bin })
+              expect(second).toEqual({ value: bin, source: 'canonical', migrated: false })
+            })
+
+            it('never overwrites a canonical pointer when both generations exist', () => {
+              const canonicalBin = executable('canonical')
+              const legacyBin = executable('legacy')
+              const files = cliPathFiles({}, dir, 'linux')
+              writeFileSync(files.canonical, canonicalBin)
+              writeFileSync(files.legacy!, legacyBin)
+
+              expect(readPersistedCliPath({ env: {}, home: dir, platformName: 'linux', isUsable: () => true }))
+                .toEqual({ value: canonicalBin, source: 'canonical', migrated: false })
+              expect(readFileSync(files.legacy!, 'utf8')).toBe(legacyBin)
+            })
+
+            it('falls back to legacy without replacing an existing invalid canonical file', () => {
+              const legacyBin = executable('legacy')
+              const files = cliPathFiles({}, dir, 'linux')
+              writeFileSync(files.canonical, '/invalid')
+              writeFileSync(files.legacy!, legacyBin)
+
+              expect(readPersistedCliPath({ env: {}, home: dir, platformName: 'linux', isUsable: value => value === legacyBin }))
+                .toEqual({ value: legacyBin, source: 'legacy', migrated: false })
+              expect(readFileSync(files.canonical, 'utf8')).toBe('/invalid')
+            })
+
+            it('treats an explicit QOVRION pointer as authoritative', () => {
+              const legacyBin = executable('legacy')
+              const legacyFile = join(dir, 'legacy-pointer')
+              writeFileSync(legacyFile, legacyBin)
+              const canonicalFile = join(dir, 'missing-canonical')
+              const env = { QOVRION_CLI_PATH_FILE: canonicalFile, CODEBURN_CLI_PATH_FILE: legacyFile }
+
+              expect(readPersistedCliPath({ env, home: dir, platformName: 'linux', isUsable: () => true })).toBeNull()
+              expect(existsSync(legacyFile)).toBe(true)
+            })
+          })
+          `
+          write('app/electron/identity.test.ts', identityTest.replace(/^          /gm, ''))
+
+          const cliIdentityTest = `// @vitest-environment node
+          import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+          import { tmpdir } from 'node:os'
+          import { join } from 'node:path'
+          import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+          import { resolveTarget } from './cli'
+
+          const saved = { ...process.env }
+          let dir: string
+
+          beforeEach(() => {
+            dir = mkdtempSync(join(tmpdir(), 'qovrion-cli-identity-'))
+            for (const key of Object.keys(process.env)) delete process.env[key]
+            Object.assign(process.env, saved)
+            delete process.env.QOVRION_BIN
+            delete process.env.CODEBURN_BIN
+            delete process.env.QOVRION_BUNDLED_CLI
+            delete process.env.CODEBURN_BUNDLED_CLI
+            delete process.env.VITE_DEV_SERVER_URL
+            process.env.QOVRION_PATH_DIRS = ''
+            process.env.QOVRION_CLI_PATH_FILE = join(dir, 'none')
+          })
+
+          afterEach(() => {
+            for (const key of Object.keys(process.env)) delete process.env[key]
+            Object.assign(process.env, saved)
+            rmSync(dir, { recursive: true, force: true })
+          })
+
+          function file(name: string): string {
+            const value = join(dir, name)
+            writeFileSync(value, '#!/usr/bin/env node\\n', { mode: 0o755 })
+            chmodSync(value, 0o755)
+            return value
+          }
+
+          describe('Qovrion CLI resolver wiring', () => {
+            it('prefers QOVRION_BIN over CODEBURN_BIN', () => {
+              const canonical = file('qovrion')
+              const legacy = file('codeburn')
+              process.env.QOVRION_BIN = canonical
+              process.env.CODEBURN_BIN = legacy
+              expect(resolveTarget()).toEqual({ kind: 'external', bin: canonical })
+            })
+
+            it('retains CODEBURN_BIN as a fallback', () => {
+              const legacy = file('codeburn')
+              process.env.CODEBURN_BIN = legacy
+              expect(resolveTarget()).toEqual({ kind: 'external', bin: legacy })
+            })
+
+            it('prefers the canonical bundled entry over the legacy bundled entry', () => {
+              const canonical = file('qovrion-bundled.js')
+              const legacy = file('codeburn-bundled.js')
+              process.env.QOVRION_BUNDLED_CLI = canonical
+              process.env.CODEBURN_BUNDLED_CLI = legacy
+              expect(resolveTarget()).toEqual({ kind: 'bundled', entry: canonical })
+            })
+          })
+          `
+          write('app/electron/cli-identity.test.ts', cliIdentityTest.replace(/^          /gm, ''))
+
+          const rootIdentityTest = `import { readFileSync } from 'node:fs'
+          import { describe, expect, it } from 'vitest'
+
+          describe('Qovrion CLI package identity', () => {
+            it('publishes canonical and legacy commands from the same entry point', () => {
+              const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+              expect(pkg.name).toBe('qovrion')
+              expect(pkg.bin.qovrion).toBe('dist/cli.js')
+              expect(pkg.bin.codeburn).toBe(pkg.bin.qovrion)
+            })
+          })
+          `
+          write('src/technical-identity.test.ts', rootIdentityTest.replace(/^          /gm, ''))
+
+          const pkg = JSON.parse(read('package.json'))
+          pkg.name = 'qovrion'
+          pkg.description = 'Qovrion local-first AI usage intelligence with a temporary codeburn CLI compatibility alias'
+          pkg.bin = { qovrion: 'dist/cli.js', codeburn: 'dist/cli.js' }
+          pkg.keywords = Array.from(new Set(['qovrion', ...pkg.keywords]))
+          write('package.json', JSON.stringify(pkg, null, 2) + '\n')
+
+          let launcher = read('src/cli.ts')
+          launcher = launcher.replace('`codeburn requires Node.js >= 22.13.0', '`Qovrion requires Node.js >= 22.13.0')
+          write('src/cli.ts', launcher)
+
+          let mainCli = read('src/main.ts')
+          const renamed = mainCli.replace(/\.name\((['"])codeburn\1\)/g, ".name('qovrion')")
+          if (renamed === mainCli) throw new Error('Commander program name pattern not found')
+          write('src/main.ts', renamed)
+
+          let cli = read('app/electron/cli.ts')
+          cli = replaceOnce(
+            cli,
+            "import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'",
+            "import { accessSync, constants, readdirSync, statSync } from 'node:fs'",
+            'cli fs imports',
+          )
+          cli = replaceOnce(
+            cli,
+            "import { delimiter, dirname, isAbsolute, join } from 'node:path'",
+            "import { delimiter, dirname, isAbsolute, join } from 'node:path'\nimport { cliExecutableNames, compatEnv, LEGACY_CODEBURN_ENV, QOVRION_ENV, readPersistedCliPath } from './identity'",
+            'cli identity import',
+          )
+          cli = cli.replaceAll("new CliError('nonzero', 'codeburn cancelled')", "new CliError('nonzero', 'Qovrion cancelled')")
+          cli = replaceOnce(
+            cli,
+            "if (isExecutableFile(join(bin, 'codeburn'))) {",
+            "if (findExecutableInDir(bin)) {",
+            'nvm executable lookup',
+          )
+          cli = replaceOnce(
+            cli,
+            'const override = process.env.CODEBURN_PATH_DIRS',
+            'const override = compatEnv(process.env, QOVRION_ENV.pathDirs, LEGACY_CODEBURN_ENV.pathDirs)',
+            'path dirs compatibility',
+          )
+          cli = replaceOnce(
+            cli,
+            "function isFile(p: string): boolean {",
+            `function findExecutableInDir(dir: string): string | null {
+            for (const name of cliExecutableNames()) {
+              const candidate = join(dir, name)
+              if (isExecutableFile(candidate)) return candidate
+            }
+            return null
+          }
+
+          function isFile(p: string): boolean {`.replace(/^          /gm, ''),
+            'executable candidate helper',
+          )
+          cli = cli.replace(
+            /\/\/ Persisted-path file written[\s\S]*?function readPersistedPath\(\): string \| null \{[\s\S]*?\n\}\n\n\/\*\*/,
+            `// Canonical pointer first, then a preserved legacy pointer with a
+          // best-effort, non-destructive migration to the Qovrion location.
+          function readPersistedPath(): string | null {
+            return readPersistedCliPath({ isUsable: isExecutableFile })?.value ?? null
+          }
+
+          /**`.replace(/^          /gm, ''),
+          )
+          if (cli.includes('function persistedPathFile()')) throw new Error('Persisted path block was not replaced')
+          cli = cli.replaceAll('const override = process.env.CODEBURN_BIN', 'const override = compatEnv(process.env, QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)')
+          cli = cli.replaceAll('const devRepoRoot = process.env.CODEBURN_DEV_REPO_ROOT', 'const devRepoRoot = compatEnv(process.env, QOVRION_ENV.devRepoRoot, LEGACY_CODEBURN_ENV.devRepoRoot)')
+          cli = cli.replaceAll('const bundled = process.env.CODEBURN_BUNDLED_CLI', 'const bundled = compatEnv(process.env, QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)')
+          cli = replaceOnce(
+            cli,
+            "for (const bin of searchDirs().map(dir => join(dir, 'codeburn'))) {\n    if (isExecutableFile(bin)) return { kind: 'external', bin }\n  }",
+            "for (const dir of searchDirs()) {\n    const bin = findExecutableInDir(dir)\n    if (bin) return { kind: 'external', bin }\n  }",
+            'PATH executable search',
+          )
+          cli = replaceOnce(
+            cli,
+            "export function resolveCodeburnPath(): string | null {\n  const target = resolveTarget()\n  if (!target) return null\n  return target.kind === 'bundled' ? target.entry : target.bin\n}",
+            "export function resolveQovrionPath(): string | null {\n  const target = resolveTarget()\n  if (!target) return null\n  return target.kind === 'bundled' ? target.entry : target.bin\n}\n\n/** Temporary API alias for the inherited desktop bridge. */\nexport function resolveCodeburnPath(): string | null {\n  return resolveQovrionPath()\n}",
+            'canonical resolver export',
+          )
+          cli = cli.replaceAll('`codeburn ${cmdLabel}', '`Qovrion ${cmdLabel}')
+          cli = cli.replaceAll('`codeburn exited with code ${code}`', '`Qovrion exited with code ${code}`')
+          cli = cli.replaceAll("'codeburn produced output that was not valid JSON'", "'Qovrion produced output that was not valid JSON'")
+          cli = cli.replaceAll("'codeburn CLI not found'", "'Qovrion CLI not found'")
+          cli = cli.replaceAll("'codeburn cancelled'", "'Qovrion cancelled'")
+          cli = cli.replaceAll('`codeburn ${args[0] ?? \'\'} timed out', '`Qovrion ${args[0] ?? \'\'} timed out')
+          write('app/electron/cli.ts', cli)
+
+          let desktopMain = read('app/electron/main.ts')
+          desktopMain = replaceOnce(
+            desktopMain,
+            "process.env.CODEBURN_BUNDLED_CLI = path.join(process.resourcesPath, 'cli', 'dist', 'launch.js')",
+            "const bundledCli = path.join(process.resourcesPath, 'cli', 'dist', 'launch.js')\n    process.env.QOVRION_BUNDLED_CLI = bundledCli\n    if (process.env.CODEBURN_BUNDLED_CLI === undefined) process.env.CODEBURN_BUNDLED_CLI = bundledCli",
+            'packaged bundled CLI identity',
+          )
+          write('app/electron/main.ts', desktopMain)
+          NODE
+
+      - name: Refresh lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Install and validate core
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build:cli
+          npm test -- --run
+
+      - name: Install and validate desktop
+        run: |
+          npm --prefix app ci --no-audit --no-fund
+          npm --prefix app test
+          npm --prefix app run typecheck
+          npm --prefix app run build
+
+      - name: Commit verified implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/qov-002-apply-core.yml
+          git config user.name 'Maikol Siragusa'
+          git config user.email '268940776+maikolsiragusaa@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: establish Qovrion technical identity core'
+          git push origin HEAD:feat/qov-002-technical-identity-migration
