@@ -2,15 +2,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  openExternal: vi.fn(),
-}))
-
-vi.mock('../lib/ipc', () => ({
-  codeburn: { openExternal: mocks.openExternal },
-  normalizeCliError: (err: unknown) => err,
-}))
-
 import { Onboarding } from './Onboarding'
 
 function next(): void {
@@ -18,46 +9,36 @@ function next(): void {
 }
 
 describe('Onboarding', () => {
-  it('walks three feature screens into the consent screen', () => {
-    render(<Onboarding defaultEnabled onDone={() => {}} />)
-
-    expect(screen.getByText('Every agent. One dashboard.')).toBeInTheDocument()
-    next()
-    expect(screen.getByText('Local-first by design.')).toBeInTheDocument()
-    next()
-    expect(screen.getByText('Find the waste.')).toBeInTheDocument()
-    next()
-    expect(screen.getByText('Help improve CodeBurn')).toBeInTheDocument()
-    // Back returns to the previous screen.
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
-    expect(screen.getByText('Find the waste.')).toBeInTheDocument()
-  })
-
-  it('seeds the toggle from the regional default and reports the final choice', () => {
-    const onDone = vi.fn()
-    render(<Onboarding defaultEnabled={false} onDone={onDone} />)
-    next(); next(); next()
-
-    // EU-style default: switch starts off.
-    const toggle = screen.getByRole('switch', { name: 'Anonymous telemetry' })
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
-
-    // The user opts in, then finishes.
-    fireEvent.click(toggle)
-    expect(toggle).toHaveAttribute('aria-checked', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Get started' }))
-    expect(onDone).toHaveBeenCalledWith(true)
-  })
-
-  it('keeps the regional default when untouched and links the data policy', () => {
+  it('walks the three Qovrion feature screens and completes locally', () => {
     const onDone = vi.fn()
     render(<Onboarding defaultEnabled onDone={onDone} />)
-    next(); next(); next()
 
-    fireEvent.click(screen.getByRole('button', { name: 'What data we collect' }))
-    expect(mocks.openExternal).toHaveBeenCalledWith('https://www.codeburn.app/telemetry')
+    expect(screen.getByRole('dialog', { name: 'Welcome to Qovrion' })).toBeInTheDocument()
+    expect(screen.getByText('Every tool. One clear view.')).toBeInTheDocument()
 
+    next()
+    expect(screen.getByText('Local-first by default.')).toBeInTheDocument()
+    expect(screen.getByText(/sends no product telemetry/i)).toBeInTheDocument()
+
+    next()
+    expect(screen.getByText('Measure before you optimize.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.getByText('Local-first by default.')).toBeInTheDocument()
+
+    next()
     fireEvent.click(screen.getByRole('button', { name: 'Get started' }))
-    expect(onDone).toHaveBeenCalledWith(true)
+    expect(onDone).toHaveBeenCalledOnce()
+    expect(onDone).toHaveBeenCalledWith(false)
+  })
+
+  it('does not render inherited telemetry consent or external-policy controls', () => {
+    render(<Onboarding defaultEnabled={false} onDone={() => {}} />)
+    next()
+    next()
+
+    expect(screen.queryByRole('switch', { name: /telemetry/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /what data we collect/i })).toBeNull()
+    expect(screen.queryByText(/CodeBurn/i)).toBeNull()
   })
 })
