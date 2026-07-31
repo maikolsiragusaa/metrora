@@ -1,39 +1,61 @@
 # Qovrion provenance parity v1
 
-Status: **implemented contract test and fail-closed evidence resolver**.
+Status: **implemented contract tests and fail-closed evidence resolver**.
 
-This tranche connects the reviewed collector provenance registry to real parser output without enabling runtime export.
+This layer connects reviewed collector provenance to real parser output without enabling automatic runtime export.
 
-## Fixture parity
+## Reviewed paths
 
-Three static JSONL fixtures exercise the three registered paths through the existing parser code:
+Six concrete evidence paths are registered:
+
+- Claude JSONL usage;
+- Codex `token_count`;
+- Codex content-length fallback;
+- Gemini message usage from JSON or JSONL;
+- Zed per-request token usage;
+- Zed cumulative remainder.
+
+Approval is path-specific. A collector name alone never grants a quality claim.
+
+## Parser parity
+
+Tests exercise the inherited parser code rather than recreating provider logic:
 
 - Claude JSONL is decoded with `parseJsonlLine()` and `parseApiCall()`;
-- Codex `token_count` is decoded by the streaming Codex session parser;
-- Codex content fallback is decoded by the same streaming parser when no token ledger is present.
+- Codex paths use the streaming Codex session parser;
+- Gemini JSON and JSONL pass through the same Gemini provider parser and must agree;
+- Zed builds a real `threads.db`, passes through the existing SQLite parser, preserves `model.provider`, and emits both request and remainder records;
+- the blocking CI suite separately exercises Zed's primary zstd-compressed database path on Ubuntu and Windows.
 
-The tests assert the normalized facts that the provenance profiles describe:
+The fixtures contain no real prompts, source code, credentials, user paths or private data.
 
-- Claude: measured input/output, derived positive cache fields, no separate reasoning-token count;
-- Codex token-count: cached input is removed from ordinary input, cache-read and reasoning remain separately measured;
-- Codex fallback: input/output are positive estimates derived from content length and the call is marked estimated.
+## Field-level facts
 
-The fixtures contain no real prompts, source code, credentials, user-specific paths, or private data.
+The registry describes each field independently:
+
+- Claude: measured input/output, derived cache fields, no reviewed separate reasoning-token count;
+- Codex token-count: measured input/output/cache-read/reasoning after cached-input normalization;
+- Codex fallback: estimated input/output from content length;
+- Gemini: derived fresh input, measured output/cache-read/thought tokens, unknown effort level;
+- Zed request entries: measured input/output/cache-read/cache-write;
+- Zed remainder: those four fields are derived by subtracting visible requests from cumulative counters.
+
+A zero reasoning value does not prove that the underlying model performed no hidden reasoning.
 
 ## Evidence resolver
 
 `resolveMeasurementEvidenceV1()` combines:
 
-1. one reviewed `CollectorProvenanceProfileV1`;
+1. one reviewed path-specific profile;
 2. the normalized `ParsedApiCall`;
 3. current model-pricing coverage;
 4. the concrete session identifier, when one will actually be exported.
 
-It returns the profile, public event quality, and public cost evidence. It returns `undefined` for an unreviewed collector path or an attribution source the profile does not support.
+It returns the profile, public quality and public cost evidence. It returns `undefined` for unreviewed paths, missing required source identity or unsupported reasoning attribution.
 
 ### Token-quality roll-up
 
-The public event has one token-quality label while the registry remains field-level. The roll-up therefore considers only positive token quantities that will be exported:
+The public event has one token-quality label while the registry remains field-level. Only positive exported quantities participate:
 
 - any active `unknown` field -> `unknown`;
 - otherwise any active `estimated` field -> `estimated`;
@@ -41,40 +63,37 @@ The public event has one token-quality label while the registry remains field-le
 - otherwise -> `measured`;
 - no positive token quantity -> `unknown`.
 
-Zero-valued fields do not convert an unknown capability into a measured zero. The field-level collector profile remains authoritative for completeness.
+Zero-valued fields do not turn an unknown capability into a measured zero.
 
-### Identity roll-up
+### Identity
 
 - exact model identity remains `exact`;
 - normalized model identity remains `normalized`;
-- derived model identity degrades to `unknown` because the event schema has no derived model tier;
-- session identity is always `unknown` when no non-empty session ID is supplied;
-- normalized or derived exported session identity maps to the weaker public `derived` tier.
+- session identity is `unknown` unless a non-empty session ID is actually exported;
+- Zed sharing additionally requires the explicit provider from `thread.model.provider`;
+- the event factory withholds the event when its caller-supplied provider conflicts with the provider read from Zed.
 
-### Pricing coverage
+No provider is inferred from a model label or collector name.
 
-For locally token-priced profiles, cost is exportable only when every positive token dimension represented by the public event has a positive current rate:
+### Cost
 
-- input;
-- output plus reasoning;
-- cache creation;
-- cache read.
+For locally token-priced profiles, every positive exported token dimension must have pricing coverage. The resolver recomputes cost using the existing pricing engine and compares it at micro-USD wire precision.
 
-The resolver recomputes local cost using the existing pricing engine and compares it with the normalized call at micro-USD wire precision. Both rounded values must remain JavaScript safe integers. Missing pricing, zero-rate stubs, stale cached costs, local-savings rewrites, unsafe monetary ranges, or any mismatch degrade cost to `unavailable` rather than publishing a false zero or silently changing the amount.
+Missing rates, stale costs, unsafe ranges or mismatches degrade cost to `unavailable`; token facts remain usable.
 
-`UsageMeasurementEventV1` does not currently expose web-search request counts. If a locally priced call includes such requests, its cost is therefore `unavailable`: publishing the amount would make it impossible for a consumer to reconcile cost from the public usage facts.
+These values are labelled estimated token-pricing costs. In particular, a Zed estimate is not a `zed.dev` billing receipt and does not claim that a subscription incurred a marginal charge.
 
-A Codex content-length fallback uses `estimated/content-length`; measured or mixed locally priced paths use `estimated/token-pricing`. Future reviewed metered profiles can map to provider, client, or billing-export evidence without changing the resolver shape.
+Calls with web-search charges remain `unavailable` because the v1 public event does not yet expose the billed request count.
+
+## Privacy
+
+None of the six profiles requires prompts, responses, source code, patches or local paths. Private parser deduplication keys and thread summaries are not serialized into public events.
 
 ## Explicit non-goals
 
-- no automatic parser/cache export;
+- no automatic parser-to-outbox producer;
 - no mutation or repricing of internal calls;
-- no profile for Zed, OpenCode, Copilot, Cursor, Antigravity, or other unreviewed collectors;
+- no profile for OpenCode, Copilot, Cursor, Antigravity or other pending paths;
 - no hosted synchronization;
-- no batch persistence or signing;
-- no replacement of the inherited pricing engine.
-
-## Next safe integration
-
-The next bounded step is to build one event-context factory for the three approved paths. It may call the evidence resolver and `toUsageMeasurementEventV1()`, but must still require explicit endpoint identity, source fingerprint, actual AI provider, operation, and session-sharing decision. It must not be wired into normal collection until endpoint key storage and an offline outbox are defined.
+- no inference of provider or reasoning effort;
+- no replacement of the inherited parsers or pricing engine.
