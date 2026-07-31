@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "io.github.maikolsiragusaa.qovrion"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.github.maikolsiragusaa.qovrion"

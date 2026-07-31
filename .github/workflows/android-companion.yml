@@ -36,9 +36,11 @@ jobs:
         with:
           gradle-version: "9.6.1"
       - uses: android-actions/setup-android@v3
-      - name: Install Android API 37
+        with:
+          packages: platform-tools
+      - name: Install Android API 36
         shell: bash
-        run: sdkmanager "platforms;android-37"
+        run: sdkmanager "platforms;android-36"
       - name: Validate every distribution channel
         shell: bash
         run: >-
