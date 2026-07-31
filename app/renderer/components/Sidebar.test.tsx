@@ -28,11 +28,12 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: /Overview/ })).not.toHaveClass('on')
   })
 
-  it('renders the brand flame mark, static under the closed motion gate', () => {
+  it('renders the static Qovrion vector mark instead of the inherited flame asset', () => {
     const { container } = render(<Sidebar active="overview" onNavigate={() => {}} />)
-    const flame = container.querySelector('.app .flamemark')
-    expect(flame?.tagName.toLowerCase()).toBe('img')
-    // motionEnabled() is off under vitest, so the idle flicker never attaches.
+    const mark = container.querySelector('.app svg')
+    expect(mark?.tagName.toLowerCase()).toBe('svg')
+    expect(container.querySelector('.flamemark')).toBeNull()
     expect(container.querySelector('.fm-flicker')).toBeNull()
+    expect(container.querySelector('.app')?.textContent).toContain('Qovrion')
   })
 })

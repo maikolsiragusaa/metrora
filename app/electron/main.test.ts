@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 // Stub electron so importing main.ts does not require an Electron runtime.
 vi.mock('electron', () => ({
-  app: { name: 'CodeBurn', whenReady: () => Promise.resolve(), on: () => {}, quit: () => {} },
+  app: { name: 'Qovrion', whenReady: () => Promise.resolve(), on: () => {}, quit: () => {} },
   BrowserWindow: class {},
   dialog: { showOpenDialog: vi.fn() },
   ipcMain: { handle: () => {} },
@@ -279,18 +279,11 @@ describe('createApplicationMenuTemplate', () => {
 })
 
 describe('createBeforeQuitHandler', () => {
-  it('flushes app_close to a fast endpoint before allowing quit', async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), 'cb-main-quit-'))
+  it('cleans up and quits without sending an app-close request', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'qovrion-main-quit-'))
     try {
-      const posts: Array<{ events: Array<{ name: string }> }> = []
-      const fetchFn = vi.fn(async (_url: unknown, init?: { body?: unknown }) => {
-        posts.push(JSON.parse(String(init?.body)) as { events: Array<{ name: string }> })
-        return { ok: true } as Response
-      }) as unknown as typeof fetch
+      const fetchFn = vi.fn(async () => ({ ok: true } as Response)) as unknown as typeof fetch
       const telemetry = new Telemetry({ stateDir, country: 'US', isPackaged: true, appVersion: '1', fetchFn })
-      telemetry.completeOnboarding(true)
-      await telemetry.flush() // isolate the final beat from the onboarding app_open
-      posts.length = 0
 
       const quit = vi.fn()
       const killChildren = vi.fn()
@@ -301,8 +294,8 @@ describe('createBeforeQuitHandler', () => {
       expect(firstEvent.preventDefault).toHaveBeenCalledOnce()
       await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce())
       expect(killChildren).toHaveBeenCalledOnce()
-      expect(posts).toHaveLength(1)
-      expect(posts[0]!.events.map(event => event.name)).toContain('app_close')
+      expect(fetchFn).not.toHaveBeenCalled()
+      expect(telemetry.queueLength).toBe(0)
 
       const finalEvent = { preventDefault: vi.fn() }
       handler(finalEvent)

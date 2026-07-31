@@ -4,41 +4,20 @@ vi.mock('../lib/ipc', () => ({
   codeburn: { platform: 'linux', arch: 'x64' },
 }))
 
-import { directDownloadUrl, MICROSOFT_STORE_URL, releasePageUrl, updateDownloadUrl } from './useUpdateStatus'
+import { directDownloadUrl, QOVRION_RELEASES_URL, releasePageUrl, updateDownloadUrl } from './useUpdateStatus'
 
-const TAG = 'desktop-v0.9.19'
-const BASE = 'https://github.com/getagentseal/codeburn/releases/download/desktop-v0.9.19'
-
-describe('directDownloadUrl', () => {
-  it('maps macOS arm64 to the arm64 dmg', () => {
-    expect(directDownloadUrl(TAG, 'darwin', 'arm64')).toBe(`${BASE}/CodeBurn-0.9.19-arm64.dmg`)
+describe('Qovrion release boundary', () => {
+  it('has no direct download mapping before a verified channel exists', () => {
+    expect(directDownloadUrl('desktop-v99.0.0', 'darwin', 'arm64')).toBeNull()
+    expect(directDownloadUrl('desktop-v99.0.0', 'win32', 'x64')).toBeNull()
+    expect(directDownloadUrl('desktop-v99.0.0', 'linux', 'x64')).toBeNull()
   })
 
-  it('maps macOS x64 to the plain dmg', () => {
-    expect(directDownloadUrl(TAG, 'darwin', 'x64')).toBe(`${BASE}/CodeBurn-0.9.19.dmg`)
-  })
-
-  it('maps Windows to the official Microsoft Store regardless of arch', () => {
-    expect(directDownloadUrl(TAG, 'win32', 'x64')).toBe(MICROSOFT_STORE_URL)
-    expect(directDownloadUrl(TAG, 'win32', undefined)).toBe(MICROSOFT_STORE_URL)
-  })
-
-  it('returns null for Linux (three formats, the user picks on the page)', () => {
-    expect(directDownloadUrl(TAG, 'linux', 'x64')).toBeNull()
-  })
-
-  it('returns null for unknown platforms, missing mac arch, and foreign tags', () => {
-    expect(directDownloadUrl(TAG, 'freebsd', 'x64')).toBeNull()
-    expect(directDownloadUrl(TAG, 'darwin', undefined)).toBeNull()
-    expect(directDownloadUrl('mac-v0.9.19', 'darwin', 'arm64')).toBeNull()
-  })
-})
-
-describe('updateDownloadUrl fallback', () => {
-  it('falls back to the release page when no direct asset fits', () => {
-    // The mocked bridge reports linux, where no single asset fits, so the
-    // click target is the release page.
-    expect(releasePageUrl(TAG)).toBe('https://github.com/getagentseal/codeburn/releases/tag/desktop-v0.9.19')
-    expect(updateDownloadUrl(TAG)).toBe(releasePageUrl(TAG))
+  it('never points to CodeBurn or its Store identity', () => {
+    expect(releasePageUrl('desktop-v0.9.19')).toBe(QOVRION_RELEASES_URL)
+    expect(updateDownloadUrl('desktop-v0.9.19')).toBe(QOVRION_RELEASES_URL)
+    expect(QOVRION_RELEASES_URL).toBe('https://github.com/maikolsiragusaa/qovrion/releases')
+    expect(QOVRION_RELEASES_URL).not.toContain('getagentseal')
+    expect(QOVRION_RELEASES_URL).not.toContain('codeburn')
   })
 })
