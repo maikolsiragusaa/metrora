@@ -18,7 +18,7 @@ The tests assert the normalized facts that the provenance profiles describe:
 - Codex token-count: cached input is removed from ordinary input, cache-read and reasoning remain separately measured;
 - Codex fallback: input/output are positive estimates derived from content length and the call is marked estimated.
 
-The fixtures contain no real prompts, source code, paths, credentials, or user data.
+The fixtures contain no real prompts, source code, credentials, user-specific paths, or private data.
 
 ## Evidence resolver
 
@@ -27,7 +27,7 @@ The fixtures contain no real prompts, source code, paths, credentials, or user d
 1. one reviewed `CollectorProvenanceProfileV1`;
 2. the normalized `ParsedApiCall`;
 3. current model-pricing coverage;
-4. whether a session identifier will actually be exported.
+4. the concrete session identifier, when one will actually be exported.
 
 It returns the profile, public event quality, and public cost evidence. It returns `undefined` for an unreviewed collector path or an attribution source the profile does not support.
 
@@ -48,20 +48,21 @@ Zero-valued fields do not convert an unknown capability into a measured zero. Th
 - exact model identity remains `exact`;
 - normalized model identity remains `normalized`;
 - derived model identity degrades to `unknown` because the event schema has no derived model tier;
-- session identity is always `unknown` when the session ID is withheld;
+- session identity is always `unknown` when no non-empty session ID is supplied;
 - normalized or derived exported session identity maps to the weaker public `derived` tier.
 
 ### Pricing coverage
 
-For locally token-priced profiles, cost is exportable only when all positive billable dimensions have a positive current rate:
+For locally token-priced profiles, cost is exportable only when every positive token dimension represented by the public event has a positive current rate:
 
 - input;
 - output plus reasoning;
 - cache creation;
-- cache read;
-- web-search requests.
+- cache read.
 
-The resolver recomputes local cost using the existing pricing engine and compares it with the normalized call at micro-USD wire precision. Missing pricing, zero-rate stubs, stale cached costs, local-savings rewrites, or any mismatch degrade cost to `unavailable` rather than publishing a false zero or silently changing the amount.
+The resolver recomputes local cost using the existing pricing engine and compares it with the normalized call at micro-USD wire precision. Both rounded values must remain JavaScript safe integers. Missing pricing, zero-rate stubs, stale cached costs, local-savings rewrites, unsafe monetary ranges, or any mismatch degrade cost to `unavailable` rather than publishing a false zero or silently changing the amount.
+
+`UsageMeasurementEventV1` does not currently expose web-search request counts. If a locally priced call includes such requests, its cost is therefore `unavailable`: publishing the amount would make it impossible for a consumer to reconcile cost from the public usage facts.
 
 A Codex content-length fallback uses `estimated/content-length`; measured or mixed locally priced paths use `estimated/token-pricing`. Future reviewed metered profiles can map to provider, client, or billing-export evidence without changing the resolver shape.
 
