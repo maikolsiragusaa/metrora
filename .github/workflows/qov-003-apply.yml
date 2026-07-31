@@ -25,6 +25,9 @@ jobs:
       - name: Refine contextual transformations
         run: node .github/scripts/refine-qov-003-applicator.mjs
 
+      - name: Preserve additive report output
+        run: node .github/scripts/refine-qov-003-session-row.mjs
+
       - name: Apply exact transformations
         run: node .github/scripts/apply-qov-003.mjs
 
