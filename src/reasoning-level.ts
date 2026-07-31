@@ -132,6 +132,8 @@ export function reasoningLevelFromModelLabel(model: unknown): ReasoningAttributi
     if (level) return { level, source: 'model-label' }
   }
 
+  if (!isReasoningCapableModelLabel(raw)) return null
+
   const parenthesized = raw.match(
     /[([]\s*(extra[\s._-]*high|x[\s._-]*high|none|minimal|low|medium|high|max(?:imum)?|adaptive)(?:[\s._-]+reasoning)?\s*[)\]]/i,
   )
@@ -140,7 +142,6 @@ export function reasoningLevelFromModelLabel(model: unknown): ReasoningAttributi
     if (level) return { level, source: 'model-label' }
   }
 
-  if (!isReasoningCapableModelLabel(raw)) return null
   const normalized = raw.toLowerCase().replace(/[\s._]+/g, '-').replace(/-+/g, '-')
   const suffix = normalized.match(
     /(?:^|[/:-])(extra-high|x-high|xhigh|none|minimal|low|medium|high|max|adaptive)(?:-reasoning)?(?:-fast)?$/,
