@@ -72,6 +72,7 @@ export const CollectorProvenanceProfileV1Schema = z.strictObject({
 })
 
 export type FactProvenanceV1 = z.infer<typeof FactProvenanceSchema>
+export type IdentityProvenanceV1 = z.infer<typeof IdentityProvenanceSchema>
 export type CollectorCostProvenanceV1 = z.infer<typeof CollectorCostProvenanceSchema>
 export type CollectorProvenanceProfileV1 = z.infer<typeof CollectorProvenanceProfileV1Schema>
 
