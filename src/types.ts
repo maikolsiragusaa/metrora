@@ -109,8 +109,11 @@ export type ParsedTurn = {
 }
 
 export type ParsedApiCall = {
+  /** Collector/tool that produced the call. */
   provider: string
   model: string
+  /** Explicit source-recorded model/API provider; never inferred. */
+  modelProvider?: string
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage

@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import zlib from 'zlib'
 
 import { calculateCost } from '../models.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { getSqliteLoadError, isSqliteAvailable, openDatabase, type SqliteDatabase } from '../sqlite.js'
 import type { ParsedProviderCall, Provider, SessionParser, SessionSource } from './types.js'
 
@@ -74,6 +75,7 @@ function buildCall(opts: {
   requestKey: string
   usage: TokenUsage
   model: string
+  modelProvider?: string
   timestamp: string
   userMessage: string
 }): ParsedProviderCall {
@@ -84,6 +86,7 @@ function buildCall(opts: {
   return {
     provider: 'zed',
     model: opts.model,
+    ...(opts.modelProvider ? { modelProvider: opts.modelProvider } : {}),
     inputTokens: input,
     outputTokens: output,
     cacheCreationInputTokens: cacheWrite,
@@ -130,6 +133,7 @@ function parseThreads(db: SqliteDatabase, seenKeys: Set<string>): ParsedProvider
         : Buffer.from(row.data).toString('utf-8')
       const thread = JSON.parse(jsonText) as ThreadJson
       const model = thread.model?.model || 'unknown'
+      const modelProvider = normalizeExplicitModelProvider(thread.model?.provider)
       const userMessage = row.summary ?? ''
 
       const requests = Object.entries(thread.request_token_usage ?? {}).filter(([, usage]) => usage != null && !usageIsEmpty(usage))
@@ -157,7 +161,7 @@ function parseThreads(db: SqliteDatabase, seenKeys: Set<string>): ParsedProvider
       }
 
       for (const [requestKey, usage] of entries) {
-        const call = buildCall({ threadId: row.id, requestKey, usage, model, timestamp, userMessage })
+        const call = buildCall({ threadId: row.id, requestKey, usage, model, modelProvider, timestamp, userMessage })
         if (seenKeys.has(call.deduplicationKey)) continue
         seenKeys.add(call.deduplicationKey)
         calls.push(call)
