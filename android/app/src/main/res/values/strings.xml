@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Qovrion</string>
+    <string name="app_subtitle">Private, local-first AI usage intelligence.</string>
+    <string name="pair_title">Pair this phone</string>
+    <string name="pair_body">On the desktop, start Qovrion sharing with a pairing window. Enter its LAN address and the six-digit PIN shown there.</string>
+    <string name="desktop_address">Desktop address</string>
+    <string name="desktop_address_hint">For example 192.168.1.24 or qovrion-pc.local</string>
+    <string name="port">Port</string>
+    <string name="pairing_pin">Pairing PIN</string>
+    <string name="pair_action">Pair securely</string>
+    <string name="local_first_title">Local network only</string>
+    <string name="local_first_body">Prompts, source code and transcripts are not requested. Qovrion uses mutual TLS, pins the desktop certificate and encrypts credentials and cached usage on this phone.</string>
+    <string name="paired_endpoint">%1$s:%2$d</string>
+    <string name="cached_data">Showing the last encrypted offline snapshot</string>
+    <string name="refresh">Refresh from desktop</string>
+    <string name="disconnect">Remove pairing</string>
+    <string name="last_updated">Updated %1$s</string>
+    <string name="cost">Cost</string>
+    <string name="total_tokens">Total tokens</string>
+    <string name="calls">Calls</string>
+    <string name="sessions">Sessions</string>
+    <string name="cache_hit">Cache hit</string>
+    <string name="top_models">Top models</string>
+    <string name="model_calls_cost">Count: %1$d · %2$s</string>
+    <string name="no_snapshot">The desktop is paired, but no usage snapshot has been downloaded yet.</string>
+</resources>
