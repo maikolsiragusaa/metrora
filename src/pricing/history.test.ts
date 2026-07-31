@@ -29,6 +29,18 @@ function pricedRecord(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function conditionalRates() {
+  return [{
+    when: { kind: 'prompt-input-tokens-above', tokens: 272_000 },
+    rates: {
+      inputPerToken: 2e-6,
+      outputPerToken: 3e-6,
+      cacheReadPerToken: 0.2e-6,
+      cacheWritePerToken: 2.5e-6,
+    },
+  }]
+}
+
 function book(records: unknown[]) {
   return { schemaVersion: 1, records }
 }
@@ -101,6 +113,56 @@ describe('historical price book v1', () => {
     })?.valuation).toEqual({ kind: 'priced' })
   })
 
+  it('accepts ordered conditional rate bands', () => {
+    const record = pricedRecord({
+      rateBands: [
+        ...conditionalRates(),
+        {
+          when: { kind: 'prompt-input-tokens-above', tokens: 500_000 },
+          rates: {
+            inputPerToken: 3e-6,
+            outputPerToken: 4e-6,
+            cacheReadPerToken: 0.3e-6,
+            cacheWritePerToken: 3.75e-6,
+          },
+        },
+      ],
+    })
+
+    expect(parseHistoricalPriceBookV1(book([record])).records[0]?.rateBands).toHaveLength(2)
+  })
+
+  it('rejects unordered or duplicate conditional thresholds', () => {
+    const invalid = pricedRecord({
+      rateBands: [
+        {
+          when: { kind: 'prompt-input-tokens-above', tokens: 500_000 },
+          rates: conditionalRates()[0]!.rates,
+        },
+        ...conditionalRates(),
+      ],
+    })
+
+    expect(() => parseHistoricalPriceBookV1(book([invalid])))
+      .toThrow(/strictly ordered by ascending prompt-input threshold/)
+  })
+
+  it('rejects positive conditional rates for an explicit-zero route', () => {
+    const invalid = pricedRecord({
+      rates: {
+        inputPerToken: 0,
+        outputPerToken: 0,
+        cacheReadPerToken: 0,
+        cacheWritePerToken: 0,
+      },
+      rateBands: conditionalRates(),
+      valuation: { kind: 'explicit-zero', reason: 'free-route' },
+    })
+
+    expect(() => parseHistoricalPriceBookV1(book([invalid])))
+      .toThrow(/explicit-zero but rate band above 272000 tokens contains a positive monetary rate/)
+  })
+
   it('rejects a zero-only record presented as priced', () => {
     const invalid = pricedRecord({
       rates: {
@@ -135,8 +197,15 @@ describe('historical price book v1', () => {
   })
 
   it('renders deterministic human-readable documentation', () => {
-    const markdown = renderHistoricalPriceBookMarkdownV1(book([]))
-    expect(markdown).toContain('Generated from `src/data/pricing-history/catalog.v1.json`')
-    expect(markdown).toContain('No reviewed historical price records have been added yet.')
+    const emptyMarkdown = renderHistoricalPriceBookMarkdownV1(book([]))
+    expect(emptyMarkdown).toContain('Generated from `src/data/pricing-history/catalog.v1.json`')
+    expect(emptyMarkdown).toContain('No reviewed historical price records have been added yet.')
+
+    const conditionalMarkdown = renderHistoricalPriceBookMarkdownV1(book([
+      pricedRecord({ rateBands: conditionalRates() }),
+    ]))
+    expect(conditionalMarkdown).toContain('Conditional rates')
+    expect(conditionalMarkdown).toContain('prompt input > 272000')
+    expect(conditionalMarkdown).toContain('input $2')
   })
 })
