@@ -4,6 +4,7 @@ import type { TLSSocket } from 'tls'
 import type { AddressInfo } from 'net'
 
 import { UsageQueryError } from '../cli-date.js'
+import { toCompanionUsageV1 } from './companion-contract.js'
 import { certFingerprint, pairingCode, PeerStore, PairingWindow } from './pairing.js'
 import type { Identity } from './identity.js'
 
@@ -16,8 +17,10 @@ export type ShareServerOptions = {
   identity: Identity
   peers: PeerStore
   getUsage: (query: UsageQuery) => Promise<unknown>
-  // Called after a successful pairing so the caller can persist the peer list.
+  // Legacy callback kept for compatibility with existing embedders.
   onPaired?: () => void
+  // Called after pairing or revocation so the caller can persist the peer list.
+  onPeersChanged?: () => void
   // Enables the interactive approve flow (POST /api/peer/pair-request): return
   // true to accept. The user confirms the matching `code` shown on both devices.
   approve?: (req: PairRequest) => Promise<boolean>
@@ -57,7 +60,7 @@ export class ShareServer {
     this.server.on('tlsClientError', () => {})
   }
 
-  // Open a one-time pairing window and return the PIN to show the user.
+  // Open a one-time legacy pairing window and return the PIN to show the user.
   openPairing(ttlMs = 60_000): string {
     this.pairing = new PairingWindow(ttlMs)
     return this.pairing.pin
@@ -84,6 +87,18 @@ export class ShareServer {
     return certFingerprint(cert.raw)
   }
 
+  private notifyPeersChanged(): void {
+    if (this.opts.onPeersChanged) this.opts.onPeersChanged()
+    else this.opts.onPaired?.()
+  }
+
+  private authorizedPeer(req: IncomingMessage): { fingerprint: string; token: string } | null {
+    const fingerprint = this.clientFingerprint(req)
+    const token = (req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '')
+    if (!fingerprint || !token || !this.opts.peers.authorize(token, fingerprint)) return null
+    return { fingerprint, token }
+  }
+
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'https://localhost')
     const json = (code: number, body: unknown): void => {
@@ -108,10 +123,11 @@ export class ShareServer {
     res: ServerResponse,
     json: (code: number, body: unknown) => void,
   ): Promise<void> {
-    const pathname = canonicalSharePath(url.pathname)
+    const requestedPath = url.pathname
+    const pathname = canonicalSharePath(requestedPath)
 
     // Unauthenticated: just enough for a joiner to learn who this is and whether
-    // pairing is currently open. No usage data here.
+    // legacy PIN pairing is currently open. No usage data here.
     if (pathname === '/api/peer/hello' && req.method === 'GET') {
       json(200, {
         product: 'qovrion',
@@ -120,10 +136,13 @@ export class ShareServer {
         fingerprint: this.opts.identity.fingerprint,
         name: this.opts.identity.name,
         pairingOpen: !!this.pairing?.isOpen(),
+        pairingMethods: ['approve-sas', ...(this.pairing?.isOpen() ? ['legacy-pin'] : [])],
       })
       return
     }
 
+    // Compatibility fallback for inherited clients. First-party Qovrion
+    // companions must use pair-request and compare the SAS on both devices.
     if (pathname === '/api/peer/pair' && req.method === 'POST') {
       const clientFp = this.clientFingerprint(req)
       if (!clientFp) {
@@ -132,14 +151,14 @@ export class ShareServer {
       }
       const body = safeJson(await readBody(req)) as { pin?: unknown; name?: unknown } | null
       const pin = typeof body?.pin === 'string' ? body.pin : ''
-      const name = typeof body?.name === 'string' ? body.name : 'device'
+      const name = typeof body?.name === 'string' ? body.name.slice(0, 120) : 'device'
       if (!this.pairing || !this.pairing.verify(pin)) {
         json(401, { error: 'invalid or expired PIN' })
         return
       }
       this.pairing = null
       const peer = this.opts.peers.pair(clientFp, name)
-      this.opts.onPaired?.()
+      this.notifyPeersChanged()
       json(200, { token: peer.token, name: this.opts.identity.name, fingerprint: this.opts.identity.fingerprint })
       return
     }
@@ -155,7 +174,7 @@ export class ShareServer {
         return
       }
       const body = safeJson(await readBody(req)) as { name?: unknown } | null
-      const name = typeof body?.name === 'string' ? body.name : 'device'
+      const name = typeof body?.name === 'string' ? body.name.slice(0, 120) : 'device'
       const code = pairingCode(this.opts.identity.fingerprint, clientFp)
       const approved = await this.opts.approve({ name, fingerprint: clientFp, code })
       if (!approved) {
@@ -163,15 +182,25 @@ export class ShareServer {
         return
       }
       const peer = this.opts.peers.pair(clientFp, name)
-      this.opts.onPaired?.()
+      this.notifyPeersChanged()
       json(200, { token: peer.token, name: this.opts.identity.name, fingerprint: this.opts.identity.fingerprint, code })
       return
     }
 
+    if (pathname === '/api/peer/revoke' && req.method === 'POST') {
+      const authorized = this.authorizedPeer(req)
+      if (!authorized) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      this.opts.peers.unpair(authorized.fingerprint)
+      this.notifyPeersChanged()
+      json(200, { revoked: true })
+      return
+    }
+
     if (pathname === '/api/usage' && req.method === 'GET') {
-      const clientFp = this.clientFingerprint(req)
-      const token = (req.headers['authorization'] ?? '').replace(/^Bearer\s+/i, '')
-      if (!clientFp || !token || !this.opts.peers.authorize(token, clientFp)) {
+      if (!this.authorizedPeer(req)) {
         json(401, { error: 'unauthorized' })
         return
       }
@@ -180,7 +209,9 @@ export class ShareServer {
         from: url.searchParams.get('from') ?? undefined,
         to: url.searchParams.get('to') ?? undefined,
       })
-      json(200, payload)
+      // The versioned companion surface is an explicit DTO. The inherited
+      // unversioned route keeps its legacy payload for compatible desktop peers.
+      json(200, requestedPath === '/api/v1/usage' ? toCompanionUsageV1(payload) : payload)
       return
     }
 
