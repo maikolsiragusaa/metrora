@@ -5,6 +5,7 @@ import {
   initializeDesktopWorkspaceRuntimeState,
   installDesktopWorkspaceRuntimePromise,
 } from './local-state'
+import { registerWorkspaceHandlers } from './workspace-register'
 
 // Install the promise before loading the inherited desktop main module. IPC
 // handlers can therefore await the same one-time OS-vault initialization even
@@ -21,6 +22,7 @@ const workspaceRuntimePromise = app.whenReady().then(() => initializeDesktopWork
   safeStorage,
 }))
 installDesktopWorkspaceRuntimePromise(workspaceRuntimePromise)
+registerWorkspaceHandlers()
 
 void workspaceRuntimePromise.then(state => {
   if (state.status === 'ready' || state.status === 'unsupported-platform') return
