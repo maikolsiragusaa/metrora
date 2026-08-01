@@ -1,0 +1,44 @@
+name: Apply runtime brand baseline remediation PR
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/apply-runtime-brand-baseline.py'
+      - '.github/workflows/apply-runtime-brand-baseline-pr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-runtime-brand-baseline-pr
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/runtime-brand-baseline
+          fetch-depth: 0
+      - name: Apply and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/apply-runtime-brand-baseline.py
+          rm -f scripts/apply-runtime-brand-baseline.py
+          node scripts/check-brand-boundary.mjs
+          git diff --check
+      - name: Commit remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests scripts tools
+          git commit -m "fix: finish Metrora runtime branding and baseline capture"
+          git push origin HEAD:fix/runtime-brand-baseline
