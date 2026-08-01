@@ -65,6 +65,8 @@ jobs:
           src/pricing/local-observation-bands.test.ts
           src/pricing/cost-assignment.test.ts
           src/pricing/settled-historical-cost.test.ts
+      - name: Test reviewed production receipt semantics
+        run: npm test -- --run --no-file-parallelism src/local-state/measurement-production-receipt.test.ts
       - name: Build CLI and desktop local-state runtime
         run: npm run build:cli
       - name: Test Zed SQLite and zstd collector
@@ -72,7 +74,7 @@ jobs:
       - name: Test refresh lock lease on Windows
         if: runner.os == 'Windows'
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
-      - name: Test local endpoint, workspace, outbox, and signed batches on Windows
+      - name: Test local endpoint, workspace, reviewed production, outbox, and signed batches on Windows
         if: runner.os == 'Windows'
         run: >-
           npm test -- --run --no-file-parallelism
@@ -80,6 +82,8 @@ jobs:
           src/local-state/secret-protector.test.ts
           src/local-state/endpoint-identity.test.ts
           src/local-state/local-workspace.test.ts
+          src/local-state/reviewed-measurement-producer.test.ts
+          src/local-state/measurement-production-receipt.test.ts
           src/local-state/desktop-host.test.ts
           src/local-state/measurement-outbox.test.ts
           src/local-state/signed-batch.test.ts
@@ -116,12 +120,42 @@ jobs:
         # Desktop tests have their own blocking cross-platform job above.
         # Three files with named inherited quarantines are executed separately
         # below so every other test in those files remains blocking.
-        run: >-
-          npm test -- --run --no-file-parallelism
-          --exclude 'app/**'
-          --exclude 'tests/parser.test.ts'
-          --exclude 'tests/parser-incremental-append.test.ts'
-          --exclude 'tests/cli-durable-totals.test.ts'
+        shell: bash
+        run: |
+          set +e
+          npm test -- --run --no-file-parallelism \
+            --reporter=json --outputFile=vitest-ordinary.json \
+            --exclude 'app/**' \
+            --exclude 'tests/parser.test.ts' \
+            --exclude 'tests/parser-incremental-append.test.ts' \
+            --exclude 'tests/cli-durable-totals.test.ts'
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            node <<'NODE'
+          const fs = require('node:fs')
+          const report = JSON.parse(fs.readFileSync('vitest-ordinary.json', 'utf8'))
+          const failed = []
+          for (const file of report.testResults ?? []) {
+            const assertions = file.assertionResults ?? []
+            for (const assertion of assertions) {
+              if (assertion.status !== 'failed') continue
+              failed.push({
+                file: file.name ?? file.testFilePath ?? 'unknown file',
+                test: [...(assertion.ancestorTitles ?? []), assertion.title].filter(Boolean).join(' > '),
+                messages: assertion.failureMessages ?? [],
+              })
+            }
+          }
+          console.error(`Ordinary core gate failed: ${report.numFailedTestSuites ?? '?'} suite(s), ${report.numFailedTests ?? failed.length} test(s).`)
+          for (const item of failed) {
+            console.error(`\nFILE: ${item.file}\nTEST: ${item.test}`)
+            for (const message of item.messages) console.error(message)
+          }
+          if (failed.length === 0) console.error('No failed assertion was present in the JSON report.')
+          NODE
+            exit "$status"
+          fi
       - name: Run non-quarantined durable parser tests
         run: >-
           npm test -- --run --no-file-parallelism tests/parser.test.ts
@@ -148,7 +182,9 @@ jobs:
             echo
             echo "The reviewed GPT-5.6 intervals, historical calculations, immutable cost assignments, local observation ledger, cross-book resolution and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
             echo
-            echo "The refresh-lock lease, local endpoint and workspace state, signed-batch suite and real Electron DPAPI probe also ran on Windows."
+            echo "Reviewed production-receipt semantics ran explicitly on Ubuntu and Windows."
+            echo
+            echo "The refresh-lock lease, local endpoint and workspace state, reviewed measurement production, signed-batch suite and real Electron DPAPI probe also ran on Windows."
             echo
             echo "Four exact inherited cases remain quarantined in \`docs/TEST_QUARANTINE.md\`; no wildcard file or subsystem quarantine is active."
           } >> "$GITHUB_STEP_SUMMARY"

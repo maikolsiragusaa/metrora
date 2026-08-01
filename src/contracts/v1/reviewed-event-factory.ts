@@ -5,7 +5,10 @@ import {
   toUsageMeasurementEventV1,
   type ParsedApiCallMeasurementContextV1,
 } from './measurement-adapter.js'
-import { resolveMeasurementEvidenceV1 } from './provenance-mapper.js'
+import {
+  resolveMeasurementEvidenceV1,
+  type MeasurementCostEvidenceModeV1,
+} from './provenance-mapper.js'
 
 export type MeasurementSessionDisclosureV1 =
   | { mode: 'omit' }
@@ -34,6 +37,15 @@ export type ReviewedUsageMeasurementEventContextV1 = {
     providerName: string
     requestModel?: string
   }
+}
+
+export type ReviewedUsageMeasurementEventFactoryOptionsV1 = {
+  /**
+   * Workspace production uses `immutable-assignment`: missing assignments keep
+   * reviewed usage publishable but expose cost as unavailable, never by looking
+   * up a mutable current-price feed.
+   */
+  costEvidenceMode?: MeasurementCostEvidenceModeV1
 }
 
 export type ReviewedUsageMeasurementEventResultV1 =
@@ -69,9 +81,13 @@ function disclosedSessionId(disclosure: MeasurementSessionDisclosureV1): string 
 export function createReviewedUsageMeasurementEventV1(
   call: ParsedApiCall,
   context: ReviewedUsageMeasurementEventContextV1,
+  options: ReviewedUsageMeasurementEventFactoryOptionsV1 = {},
 ): ReviewedUsageMeasurementEventResultV1 {
   const sessionId = disclosedSessionId(context.session)
-  const evidence = resolveMeasurementEvidenceV1(call, { sessionId })
+  const evidence = resolveMeasurementEvidenceV1(call, {
+    sessionId,
+    ...(options.costEvidenceMode ? { costEvidenceMode: options.costEvidenceMode } : {}),
+  })
   if (!evidence) {
     return { status: 'withheld', reason: 'unreviewed-evidence-path' }
   }

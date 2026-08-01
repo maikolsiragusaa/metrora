@@ -1,5 +1,10 @@
 import type { ModelCosts } from '../../models.js'
 import { calculateCost, getModelCosts } from '../../models.js'
+import {
+  CostAssignmentV1Schema,
+  costAssignmentMatchesUsdV1,
+  type CostAssignmentV1,
+} from '../../pricing/cost-assignment.js'
 import type { ParsedApiCall } from '../../types.js'
 import {
   collectorProvenanceProfileForCall,
@@ -18,10 +23,19 @@ export type MeasurementEvidenceResolutionV1 = {
   costEvidence: MeasurementCostEvidenceV1
 }
 
+export type MeasurementCostEvidenceModeV1 = 'current-compatible' | 'immutable-assignment'
+
 export type MeasurementEvidenceResolutionOptionsV1 = {
   sessionId?: string
   pricingLookup?: (model: string) => ModelCosts | null
   costCalculator?: typeof calculateCost
+  /**
+   * `current-compatible` preserves the pre-history factory behavior for callers
+   * that have not crossed the runtime settlement boundary yet.
+   * `immutable-assignment` never consults mutable current pricing when a call
+   * lacks a CostAssignmentV1; usage remains publishable with unavailable cost.
+   */
+  costEvidenceMode?: MeasurementCostEvidenceModeV1
 }
 
 type TokenFact = {
@@ -148,7 +162,56 @@ function locallyCalculatedCostMatches(
   return expectedMicros === actualMicros
 }
 
-function resolveCostEvidence(
+function expectedMeteredSource(
+  profile: CollectorProvenanceProfileV1,
+): 'provider' | 'client' | 'billing-export' | undefined {
+  if (profile.facts.cost.basis === 'provider-metered') return 'provider'
+  if (profile.facts.cost.basis === 'client-metered') return 'client'
+  if (profile.facts.cost.basis === 'billing-export') return 'billing-export'
+  return undefined
+}
+
+function assignmentCostEvidence(
+  call: ParsedApiCall,
+  profile: CollectorProvenanceProfileV1,
+  assignmentValue: CostAssignmentV1 | unknown,
+): MeasurementCostEvidenceV1 {
+  const parsed = CostAssignmentV1Schema.safeParse(assignmentValue)
+  if (!parsed.success) return { kind: 'unavailable' }
+  const assignment = parsed.data
+  if (assignment.kind === 'unavailable') return { kind: 'unavailable' }
+  if (!costAssignmentMatchesUsdV1(assignment, call.costUSD)) return { kind: 'unavailable' }
+
+  if (assignment.kind === 'metered') {
+    const expectedSource = expectedMeteredSource(profile)
+    if (expectedSource === undefined || expectedSource !== assignment.source) {
+      return { kind: 'unavailable' }
+    }
+    return { kind: 'metered', source: assignment.source }
+  }
+
+  // A token-price, explicit-zero, or legacy-frozen assignment can explain only
+  // a profile reviewed as local token pricing. This prevents an assignment from
+  // laundering an incompatible collector path into a stronger public claim.
+  if (profile.facts.cost.basis !== 'local-token-pricing') {
+    return { kind: 'unavailable' }
+  }
+  if (assignment.kind === 'token-price') {
+    return { kind: 'estimated', method: 'token-pricing' }
+  }
+  if (assignment.kind === 'explicit-zero') {
+    // Measurement v1 distinguishes intentional numeric zero from unavailable,
+    // but does not expose the richer local zero-reason field yet. Keep local
+    // inference separate from token-priced/free-route zero in the method.
+    return {
+      kind: 'estimated',
+      method: assignment.reason === 'local-inference' ? 'other' : 'token-pricing',
+    }
+  }
+  return { kind: 'estimated', method: 'other' }
+}
+
+function resolveCurrentCompatibleCostEvidence(
   call: ParsedApiCall,
   profile: CollectorProvenanceProfileV1,
   pricingLookup: (model: string) => ModelCosts | null,
@@ -181,9 +244,31 @@ function resolveCostEvidence(
   }
 }
 
+function resolveCostEvidence(
+  call: ParsedApiCall,
+  profile: CollectorProvenanceProfileV1,
+  options: MeasurementEvidenceResolutionOptionsV1,
+): MeasurementCostEvidenceV1 {
+  // Once the runtime has settled a call, that immutable assignment is the only
+  // cost authority for public measurement projection. Current catalogs are not
+  // allowed to re-validate or reinterpret settled historical amounts.
+  if (call.costAssignment !== undefined) {
+    return assignmentCostEvidence(call, profile, call.costAssignment)
+  }
+  if (options.costEvidenceMode === 'immutable-assignment') {
+    return { kind: 'unavailable' }
+  }
+  return resolveCurrentCompatibleCostEvidence(
+    call,
+    profile,
+    options.pricingLookup ?? getModelCosts,
+    options.costCalculator ?? calculateCost,
+  )
+}
+
 /**
  * Combine a reviewed collector profile with the actual normalized call and the
- * current pricing registry. Returning undefined is intentional: an unreviewed
+ * approved cost authority. Returning undefined is intentional: an unreviewed
  * collector path or unsupported reasoning attribution must never inherit a
  * plausible-looking public quality claim.
  */
@@ -195,8 +280,6 @@ export function resolveMeasurementEvidenceV1(
   if (!profile || !reasoningAttributionIsAllowed(call, profile)) return undefined
 
   const tokenFacts = activeTokenFacts(call, profile)
-  const pricingLookup = options.pricingLookup ?? getModelCosts
-  const calculator = options.costCalculator ?? calculateCost
 
   return {
     profile,
@@ -208,6 +291,6 @@ export function resolveMeasurementEvidenceV1(
         options.sessionId,
       ),
     },
-    costEvidence: resolveCostEvidence(call, profile, pricingLookup, calculator),
+    costEvidence: resolveCostEvidence(call, profile, options),
   }
 }

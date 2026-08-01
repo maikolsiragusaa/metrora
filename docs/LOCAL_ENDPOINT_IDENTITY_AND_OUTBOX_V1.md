@@ -1,8 +1,8 @@
 # Metrora local endpoint identity, outbox and signed batches v1
 
-Status: **desktop vault and local durability primitives implemented; normal collection and network sync remain disabled**.
+Status: **desktop vault, local Workspace identity, explicit reviewed production, outbox and signed-batch primitives implemented; automatic collection and network sync remain disabled**.
 
-This layer gives one Metrora installation a durable cryptographic identity, a crash-recoverable queue for reviewed usage events and a locally verifiable signed-batch chain.
+This layer gives one Metrora installation a durable cryptographic identity, a local personal workspace, a crash-recoverable queue for reviewed usage events and a locally verifiable signed-batch chain.
 
 ## Reused foundations
 
@@ -63,16 +63,45 @@ Metrora never silently generates a replacement identity when evidence shows that
 - identity generation;
 - event-identity key version.
 
-It generates a new Ed25519 pair and a new HMAC key. Rotation intentionally breaks future HMAC linkability. Signed batches embed the public key and generation that produced them, so batches from older generations remain independently verifiable.
+It generates a new Ed25519 pair and a new HMAC key. Rotation intentionally breaks future public HMAC linkability. Signed batches embed the public key and generation that produced them, so batches from older generations remain independently verifiable.
+
+The local workspace reconciles the new public fingerprint without changing workspace, membership, subject or endpoint IDs. Private production receipts prevent old reviewed calls from being enqueued again under a new public event ID.
+
+## Local personal workspace
+
+`createLocalPersonalWorkspaceV1()` explicitly creates one local personal workspace with:
+
+- an active owner membership bound to a pseudonymous local subject;
+- active enrollment of the existing desktop endpoint identity;
+- exact public v1 Workspace, Membership and Endpoint records inside a Metrora-owned local container;
+- atomic, lease-protected and idempotent publication;
+- fail-closed corruption, cross-link, foreign-identity and stale-generation handling.
+
+Loading does not create a workspace implicitly. No server, account or network path is involved.
+
+## Reviewed measurement production
+
+`produceLocalReviewedMeasurementV1()` accepts one already-normalized call plus explicit source/tool/provider/session context. It:
+
+- loads the local workspace and enrolled endpoint;
+- invokes only the executable reviewed-provenance boundary;
+- uses immutable per-call cost assignments rather than mutable current pricing;
+- withholds unreviewed evidence or source-provider conflicts;
+- publishes only validated content-minimal `UsageMeasurementEventV1` records;
+- returns `enqueued` or `duplicate` through the local outbox;
+- performs no scan, automatic hook, signing, upload or retry scheduling.
+
+A supported collector is not automatically eligible. Only an exact reviewed evidence path can produce an event.
 
 ## Local measurement outbox
 
-The outbox accepts only validated `UsageMeasurementEventV1` objects. It does not call parsers, create events or transmit data.
+The outbox accepts only validated `UsageMeasurementEventV1` objects. It does not call parsers or transmit data.
 
 ```text
 <METRORA_DATA_DIR>/outbox/v1/
   next-sequence.json
   events/<sha256(event-id)>.json
+  production/<private-production-sha256>.json
   acks/<sha256(event-id)>.json
   quarantine/<sha256(event-id)>.json
 ```
@@ -82,11 +111,34 @@ Event identifiers are hashed for filenames so CloudEvents IDs never become files
 ### Append-only semantics
 
 - event files are immutable;
+- production receipts are immutable private recovery/index records;
 - acknowledgements are separate immutable marker files;
 - quarantine decisions are separate immutable marker files;
 - acknowledgement never deletes or rewrites an event;
-- retrying the same ID and payload returns the existing sequence;
-- reusing one ID for another payload is rejected.
+- retrying the same event ID and payload returns the existing sequence;
+- reusing one event ID for another payload is rejected;
+- reusing one private production identity for another semantic event is rejected.
+
+### Rotation-safe production receipts
+
+The event ID is HMAC-derived and intentionally changes after event-key rotation. To preserve repeated-scan idempotency, the reviewed producer also derives a private SHA-256 production key from:
+
+- workspace ID;
+- stable endpoint ID;
+- reviewed profile ID;
+- source fingerprint;
+- private normalized-call deduplication key.
+
+The raw private deduplication key is never stored. The production receipt contains the digest, the semantic event digest excluding the rotating public event ID, and the original immutable outbox record.
+
+The semantic comparison also excludes the Metrora adapter release version. A normal application upgrade is not a new measurement. Evidence profile, source identity, scope, disclosure, provider/model facts, token facts and cost remain bound.
+
+The receipt is published before the public event file. Therefore:
+
+- an interruption between receipt and event publication can be repaired;
+- reprojection after HMAC-key rotation returns the original event record;
+- changed public semantics under the same private production identity fail closed;
+- the private production digest is never copied into a public event or signed batch.
 
 ### Sequence allocation
 
@@ -94,7 +146,9 @@ The counter is atomically advanced before an event is published. A crash may lea
 
 ### Event digest
 
-The outbox still uses the narrow `metrora-sorted-json-v1` digest for local event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
+The outbox still uses the narrow Metrora local v1 canonicalization contract for event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
+
+The frozen v1 identifier retains its historical value. Changing an already-issued identifier requires a future contract version rather than an in-place rename.
 
 ## Signed measurement batches
 
@@ -140,7 +194,7 @@ No server currently issues these receipts. The API is a local contract for the f
 - parent-directory fsync is attempted where supported;
 - transactions reuse the cross-platform refresh lease with heartbeat and stale-owner takeover;
 - stale temp files are cleaned without touching canonical records;
-- Windows CI runs the full identity/outbox/batch suite plus a real Electron DPAPI probe.
+- Windows CI runs identity, workspace, reviewed production, outbox and signed-batch tests plus a real Electron DPAPI probe.
 
 ## Explicit non-goals
 
@@ -151,7 +205,7 @@ This tranche does not add:
 - network transport or hosted sync;
 - a retry scheduler;
 - a server acknowledgement implementation;
-- endpoint enrollment or workspace authentication;
+- team enrollment or hosted workspace authentication;
 - DSSE/Sigstore packaging;
 - compaction or retention deletion;
 - repository-path derivation;
@@ -159,4 +213,4 @@ This tranche does not add:
 
 ## Next safe step
 
-The next bounded integration is an opt-in local producer that feeds only reviewed event-factory outputs into the outbox and exposes non-sensitive health/status. Network upload still waits for endpoint enrollment, workspace authorization, transport idempotency and server acknowledgement contracts.
+W1.C can bind pending workspace-authorized outbox records into the existing signed-batch chain and create an independently verifiable local export package. Network upload still waits for managed workspace authorization, transport idempotency and server acknowledgement contracts.

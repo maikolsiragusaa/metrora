@@ -24,6 +24,7 @@ import { withLocalStateLease } from './local-state-lease.js'
 export const LOCAL_OUTBOX_RECORD_KIND = 'qovrion.local-measurement-outbox-record' as const
 export const LOCAL_OUTBOX_ACK_KIND = 'qovrion.local-measurement-outbox-ack' as const
 export const LOCAL_OUTBOX_QUARANTINE_KIND = 'qovrion.local-measurement-outbox-quarantine' as const
+export const LOCAL_OUTBOX_PRODUCTION_RECEIPT_KIND = 'metrora.local-measurement-production-receipt' as const
 
 const OutboxEventIdSchema = z.string().min(3).max(128)
 const OutboxReceiptIdSchema = z.string().trim().min(1).max(240)
@@ -61,13 +62,30 @@ export const LocalMeasurementOutboxQuarantineV1Schema = z.strictObject({
   reason: z.string().trim().min(1).max(1000),
 })
 
+export const LocalMeasurementProductionReceiptV1Schema = z.strictObject({
+  kind: z.literal(LOCAL_OUTBOX_PRODUCTION_RECEIPT_KIND),
+  version: z.literal(1),
+  productionKeySha256: Sha256DigestSchema,
+  semanticEventSha256: Sha256DigestSchema,
+  record: LocalMeasurementOutboxRecordV1Schema,
+})
+
 export type LocalMeasurementOutboxRecordV1 = z.infer<typeof LocalMeasurementOutboxRecordV1Schema>
 export type LocalMeasurementOutboxAckV1 = z.infer<typeof LocalMeasurementOutboxAckV1Schema>
 export type LocalMeasurementOutboxQuarantineV1 = z.infer<typeof LocalMeasurementOutboxQuarantineV1Schema>
+export type LocalMeasurementProductionReceiptV1 = z.infer<typeof LocalMeasurementProductionReceiptV1Schema>
 
 export type MeasurementOutboxOptions = {
   dataDir?: string
   now?: () => Date
+}
+
+export type EnqueueMeasurementEventV1Options = MeasurementOutboxOptions & {
+  /**
+   * Private, already-hashed producer identity. It is stored only in the local
+   * receipt index and never copied into a public event or signed batch.
+   */
+  productionKeySha256?: string
 }
 
 export type MeasurementOutboxScanV1 = {
@@ -99,8 +117,44 @@ function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
+function eventDigest(event: UsageMeasurementEventV1): string {
+  return sha256(canonicalJson(event))
+}
+
+function semanticEventDigest(event: UsageMeasurementEventV1): string {
+  const {
+    id: _eventId,
+    data: {
+      collector: {
+        adapterVersion: _adapterVersion,
+        ...collectorWithoutReleaseVersion
+      },
+      ...dataWithoutCollector
+    },
+    ...eventWithoutRotatingIdAndData
+  } = event
+
+  // The endpoint HMAC key and the Metrora release may rotate while the source
+  // measurement remains identical. Both public event ID and adapterVersion are
+  // therefore excluded from the private receipt's semantic collision check.
+  // Evidence profile, source kind/fingerprint, token/cost facts, scope,
+  // provider/model identity, disclosure and every other public field remain
+  // strictly bound.
+  return sha256(canonicalJson({
+    ...eventWithoutRotatingIdAndData,
+    data: {
+      ...dataWithoutCollector,
+      collector: collectorWithoutReleaseVersion,
+    },
+  }))
+}
+
 function eventFileName(eventId: string): string {
   return `${sha256(`qovrion-outbox-event-v1\0${eventId}`)}.json`
+}
+
+function productionReceiptFileName(productionKeySha256: string): string {
+  return `${productionKeySha256}.json`
 }
 
 function outboxPaths(dataDir: string) {
@@ -110,6 +164,7 @@ function outboxPaths(dataDir: string) {
     events: join(root, 'events'),
     acknowledgements: join(root, 'acks'),
     quarantine: join(root, 'quarantine'),
+    production: join(root, 'production'),
     counter: join(root, 'next-sequence.json'),
   }
 }
@@ -119,22 +174,44 @@ async function prepare(paths: ReturnType<typeof outboxPaths>): Promise<void> {
     ensurePrivateDirectory(paths.events),
     ensurePrivateDirectory(paths.acknowledgements),
     ensurePrivateDirectory(paths.quarantine),
+    ensurePrivateDirectory(paths.production),
   ])
   await Promise.all([
     cleanupStaleAtomicTemps(paths.events),
     cleanupStaleAtomicTemps(paths.acknowledgements),
     cleanupStaleAtomicTemps(paths.quarantine),
+    cleanupStaleAtomicTemps(paths.production),
   ])
 }
 
 function parseRecord(bytes: Uint8Array, expectedFile?: string): LocalMeasurementOutboxRecordV1 {
   const record = LocalMeasurementOutboxRecordV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
-  const expectedDigest = sha256(canonicalJson(record.event))
+  const expectedDigest = eventDigest(record.event)
   if (record.eventSha256 !== expectedDigest) throw new Error('event digest does not match its canonical payload')
   if (expectedFile && eventFileName(record.event.id) !== expectedFile) {
     throw new Error('event id does not match its outbox filename')
   }
   return record
+}
+
+function parseProductionReceipt(
+  bytes: Uint8Array,
+  expectedProductionKey: string,
+): LocalMeasurementProductionReceiptV1 {
+  const receipt = LocalMeasurementProductionReceiptV1Schema.parse(
+    JSON.parse(Buffer.from(bytes).toString('utf-8')),
+  )
+  if (receipt.productionKeySha256 !== expectedProductionKey) {
+    throw new Error('production receipt does not match its private index key')
+  }
+  const record = parseRecord(Buffer.from(JSON.stringify(receipt.record)))
+  if (record.eventSha256 !== receipt.record.eventSha256) {
+    throw new Error('production receipt record is invalid')
+  }
+  if (receipt.semanticEventSha256 !== semanticEventDigest(record.event)) {
+    throw new Error('production receipt semantic digest does not match its event')
+  }
+  return receipt
 }
 
 async function readCounter(path: string): Promise<number> {
@@ -156,20 +233,76 @@ async function readRecordByEventId(
   return bytes ? parseRecord(bytes, file) : undefined
 }
 
+async function readProductionReceipt(
+  paths: ReturnType<typeof outboxPaths>,
+  productionKeySha256: string,
+): Promise<LocalMeasurementProductionReceiptV1 | undefined> {
+  const bytes = await readOptionalPrivateFile(
+    join(paths.production, productionReceiptFileName(productionKeySha256)),
+  )
+  return bytes ? parseProductionReceipt(bytes, productionKeySha256) : undefined
+}
+
+async function ensureRecordPublished(
+  paths: ReturnType<typeof outboxPaths>,
+  record: LocalMeasurementOutboxRecordV1,
+): Promise<void> {
+  const file = eventFileName(record.event.id)
+  const path = join(paths.events, file)
+  const bytes = await readOptionalPrivateFile(path)
+  if (!bytes) {
+    await atomicWritePrivateFile(path, JSON.stringify(record))
+    return
+  }
+  const existing = parseRecord(bytes, file)
+  if (canonicalJson(existing) !== canonicalJson(record)) {
+    throw new Error('production receipt conflicts with the published outbox event')
+  }
+}
+
 export async function enqueueMeasurementEventV1(
   eventInput: UsageMeasurementEventV1,
-  options: MeasurementOutboxOptions = {},
+  options: EnqueueMeasurementEventV1Options = {},
 ): Promise<{ status: 'enqueued' | 'duplicate'; record: LocalMeasurementOutboxRecordV1 }> {
   const event = UsageMeasurementEventV1Schema.parse(eventInput)
+  const productionKeySha256 = options.productionKeySha256 === undefined
+    ? undefined
+    : Sha256DigestSchema.parse(options.productionKeySha256)
   const paths = outboxPaths(options.dataDir ?? defaultMetroraDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 
   return withLocalStateLease(paths.root, async () => {
+    const digest = eventDigest(event)
+    const semanticDigest = semanticEventDigest(event)
+
+    if (productionKeySha256 !== undefined) {
+      const productionReceipt = await readProductionReceipt(paths, productionKeySha256)
+      if (productionReceipt) {
+        if (productionReceipt.semanticEventSha256 !== semanticDigest) {
+          throw new Error('outbox production key collision with different measurement payload')
+        }
+        await ensureRecordPublished(paths, productionReceipt.record)
+        return { status: 'duplicate' as const, record: productionReceipt.record }
+      }
+    }
+
     const existing = await readRecordByEventId(paths, event.id)
-    const digest = sha256(canonicalJson(event))
     if (existing) {
       if (existing.eventSha256 !== digest) throw new Error('outbox event id collision with different payload')
+      if (productionKeySha256 !== undefined) {
+        const receipt = LocalMeasurementProductionReceiptV1Schema.parse({
+          kind: LOCAL_OUTBOX_PRODUCTION_RECEIPT_KIND,
+          version: 1,
+          productionKeySha256,
+          semanticEventSha256: semanticDigest,
+          record: existing,
+        })
+        await atomicWritePrivateFile(
+          join(paths.production, productionReceiptFileName(productionKeySha256)),
+          JSON.stringify(receipt),
+        )
+      }
       return { status: 'duplicate' as const, record: existing }
     }
 
@@ -189,6 +322,25 @@ export async function enqueueMeasurementEventV1(
       eventSha256: digest,
       event,
     })
+
+    if (productionKeySha256 !== undefined) {
+      // Publish the private recovery receipt before the public outbox file. If
+      // the process stops between these writes, the next identical production
+      // repairs the event from the immutable receipt. The receipt also keeps the
+      // original event ID stable across endpoint HMAC-key rotation.
+      const receipt = LocalMeasurementProductionReceiptV1Schema.parse({
+        kind: LOCAL_OUTBOX_PRODUCTION_RECEIPT_KIND,
+        version: 1,
+        productionKeySha256,
+        semanticEventSha256: semanticDigest,
+        record,
+      })
+      await atomicWritePrivateFile(
+        join(paths.production, productionReceiptFileName(productionKeySha256)),
+        JSON.stringify(receipt),
+      )
+    }
+
     await atomicWritePrivateFile(join(paths.events, eventFileName(event.id)), JSON.stringify(record))
     return { status: 'enqueued' as const, record }
   })
