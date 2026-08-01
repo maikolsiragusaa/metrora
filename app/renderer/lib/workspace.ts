@@ -6,6 +6,8 @@ export type WorkspaceEvidenceState =
   | 'quarantined'
   | 'blocked'
 
+export type WorkspaceProductionMode = 'active' | 'paused'
+
 export type DesktopWorkspaceSnapshot = {
   kind: 'metrora.desktop-workspace-snapshot'
   version: 1
@@ -34,6 +36,12 @@ export type DesktopWorkspaceSnapshot = {
       capabilities: Array<'collect' | 'normalize' | 'aggregate' | 'serve-local-api' | 'read-companion-api'>
       enrollmentState: 'active'
     }
+  }
+  productionLifecycle: null | {
+    mode: WorkspaceProductionMode
+    revision: number
+    persisted: boolean
+    updatedAt: string | null
   }
   evidence: {
     state: WorkspaceEvidenceState
@@ -81,6 +89,11 @@ export type DesktopWorkspaceBatchResult = {
   snapshot: DesktopWorkspaceSnapshot
 }
 
+export type DesktopWorkspaceProductionLifecycleResult = {
+  outcome: 'changed' | 'unchanged'
+  snapshot: DesktopWorkspaceSnapshot
+}
+
 export type DesktopWorkspaceExportResult =
   | { outcome: 'cancelled' }
   | {
@@ -107,6 +120,8 @@ export interface WorkspaceBridge {
     slug?: string
     endpointDisplayName: string
   }): Promise<{ outcome: 'created' | 'existing'; snapshot: DesktopWorkspaceSnapshot }>
+  pauseWorkspaceProduction(): Promise<DesktopWorkspaceProductionLifecycleResult>
+  resumeWorkspaceProduction(): Promise<DesktopWorkspaceProductionLifecycleResult>
   createWorkspaceBatch(): Promise<DesktopWorkspaceBatchResult>
   exportWorkspaceEvidence(): Promise<DesktopWorkspaceExportResult>
 }
