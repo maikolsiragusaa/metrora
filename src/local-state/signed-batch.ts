@@ -77,6 +77,9 @@ export type CreateSignedMeasurementBatchV1Options = {
   qovrionVersion: string
   adapterSetSha256: string
   openTelemetryGenAiVersion: string
+  /** Frozen public batch v1 has no top-level workspace field. When supplied,
+   * every stored and candidate event is authorized against this workspace. */
+  workspaceId?: string
   maxEvents?: number
   now?: () => Date
 }
@@ -84,6 +87,18 @@ export type CreateSignedMeasurementBatchV1Options = {
 export type SignedMeasurementBatchStoreOptions = {
   dataDir: string
   endpointId: string
+  workspaceId?: string
+}
+
+export type LocalSignedMeasurementBatchStateV1 = {
+  signed: LocalSignedMeasurementBatchV1
+  acknowledgement?: LocalSignedMeasurementBatchAckV1
+}
+
+export type VerifyLocalSignedMeasurementBatchV1Options = {
+  endpointId: string
+  workspaceId?: string
+  expectedFile?: string
 }
 
 function sha256(value: string | Uint8Array): string {
@@ -142,17 +157,30 @@ function verifySignature(signed: LocalSignedMeasurementBatchV1, payload: string)
   }
 }
 
-function parseSignedBatch(
-  bytes: Uint8Array,
-  expectedEndpointId: string,
-  expectedFile?: string,
+function parseSignedInput(input: unknown): LocalSignedMeasurementBatchV1 {
+  if (input instanceof Uint8Array) {
+    return LocalSignedMeasurementBatchV1Schema.parse(JSON.parse(Buffer.from(input).toString('utf-8')))
+  }
+  return LocalSignedMeasurementBatchV1Schema.parse(input)
+}
+
+export function verifyLocalSignedMeasurementBatchV1(
+  input: unknown,
+  options: VerifyLocalSignedMeasurementBatchV1Options,
 ): LocalSignedMeasurementBatchV1 {
-  const signed = LocalSignedMeasurementBatchV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
+  const endpointId = OpaqueIdSchema.parse(options.endpointId)
+  const workspaceId = options.workspaceId === undefined
+    ? undefined
+    : OpaqueIdSchema.parse(options.workspaceId)
+  const signed = parseSignedInput(input)
   if (signed.range.firstSequence > signed.range.lastSequence) throw new Error('signed batch sequence range is reversed')
   if (signed.range.eventCount !== signed.batch.events.length) throw new Error('signed batch event count is invalid')
-  if (signed.batch.producer.endpointId !== expectedEndpointId) throw new Error('signed batch belongs to another endpoint')
-  if (signed.batch.events.some(event => event.data.endpointId !== expectedEndpointId)) {
+  if (signed.batch.producer.endpointId !== endpointId) throw new Error('signed batch belongs to another endpoint')
+  if (signed.batch.events.some(event => event.data.endpointId !== endpointId)) {
     throw new Error('signed batch contains an event from another endpoint')
+  }
+  if (workspaceId !== undefined && signed.batch.events.some(event => event.data.workspaceId !== workspaceId)) {
+    throw new Error('signed batch contains an event from another workspace')
   }
 
   const canonical = canonicalBatch(signed.batch)
@@ -160,13 +188,34 @@ function parseSignedBatch(
   const signedPayload = canonicalSignedPayload(signed.range, signed.batchSha256, signed.batch)
   if (sha256(signedPayload) !== signed.signedPayloadSha256) throw new Error('signed payload digest is invalid')
   if (!verifySignature(signed, signedPayload)) throw new Error('signed batch signature is invalid')
-  if (expectedFile && batchFileName(signed) !== expectedFile) throw new Error('signed batch filename does not match its payload')
+  if (options.expectedFile && batchFileName(signed) !== options.expectedFile) {
+    throw new Error('signed batch filename does not match its payload')
+  }
   return signed
+}
+
+export function verifyLocalSignedMeasurementBatchChainV1(
+  inputs: readonly unknown[],
+  options: Omit<VerifyLocalSignedMeasurementBatchV1Options, 'expectedFile'>,
+): LocalSignedMeasurementBatchV1[] {
+  const result: LocalSignedMeasurementBatchV1[] = []
+  let previousDigest: string | undefined
+  let previousLast = 0
+  for (const input of inputs) {
+    const signed = verifyLocalSignedMeasurementBatchV1(input, options)
+    if (signed.range.firstSequence <= previousLast) throw new Error('signed batch sequence ranges overlap or are out of order')
+    if (signed.batch.previousBatchSha256 !== previousDigest) throw new Error('signed batch digest chain is broken')
+    result.push(signed)
+    previousDigest = signed.batchSha256
+    previousLast = signed.range.lastSequence
+  }
+  return result
 }
 
 async function listSignedBatches(
   paths: ReturnType<typeof batchPaths>,
   endpointId: string,
+  workspaceId?: string,
 ): Promise<Array<{ file: string; signed: LocalSignedMeasurementBatchV1 }>> {
   await ensurePrivateDirectory(paths.batches)
   const files = (await readdir(paths.batches)).filter(file => /^\d{16}-\d{16}-[a-f0-9]{64}\.json$/.test(file)).sort()
@@ -174,18 +223,20 @@ async function listSignedBatches(
   for (const file of files) {
     const bytes = await readOptionalPrivateFile(join(paths.batches, file))
     if (!bytes) continue
-    result.push({ file, signed: parseSignedBatch(bytes, endpointId, file) })
+    result.push({
+      file,
+      signed: verifyLocalSignedMeasurementBatchV1(bytes, {
+        endpointId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+        expectedFile: file,
+      }),
+    })
   }
   result.sort((a, b) => a.signed.range.firstSequence - b.signed.range.firstSequence)
-
-  let previousDigest: string | undefined
-  let previousLast = 0
-  for (const { signed } of result) {
-    if (signed.range.firstSequence <= previousLast) throw new Error('signed batch sequence ranges overlap')
-    if (signed.batch.previousBatchSha256 !== previousDigest) throw new Error('signed batch digest chain is broken')
-    previousDigest = signed.batchSha256
-    previousLast = signed.range.lastSequence
-  }
+  verifyLocalSignedMeasurementBatchChainV1(
+    result.map(item => item.signed),
+    { endpointId, ...(workspaceId !== undefined ? { workspaceId } : {}) },
+  )
   return result
 }
 
@@ -202,6 +253,15 @@ function buildBatchId(
   return `batch_${sha256(preimage)}`
 }
 
+function recordBelongsTo(
+  record: LocalMeasurementOutboxRecordV1,
+  endpointId: string,
+  workspaceId?: string,
+): boolean {
+  return record.event.data.endpointId === endpointId
+    && (workspaceId === undefined || record.event.data.workspaceId === workspaceId)
+}
+
 export async function createNextSignedMeasurementBatchV1(
   options: CreateSignedMeasurementBatchV1Options,
 ): Promise<LocalSignedMeasurementBatchV1 | undefined> {
@@ -210,14 +270,32 @@ export async function createNextSignedMeasurementBatchV1(
     throw new Error('signed batch maxEvents must be an integer from 1 to 10000')
   }
   if (!options.dataDir.trim()) throw new Error('signed batch creation requires an explicit Metrora data directory')
+  const endpointId = OpaqueIdSchema.parse(options.identity.metadata.endpointId)
+  const workspaceId = options.workspaceId === undefined
+    ? undefined
+    : OpaqueIdSchema.parse(options.workspaceId)
   const paths = batchPaths(options.dataDir)
 
   return withLocalStateLease(paths.root, async () => {
     await Promise.all([ensurePrivateDirectory(paths.batches), ensurePrivateDirectory(paths.acknowledgements)])
-    const existing = await listSignedBatches(paths, options.identity.metadata.endpointId)
+    const existing = await listSignedBatches(paths, endpointId, workspaceId)
     const previous = existing.at(-1)?.signed
     const scan = await scanMeasurementOutboxV1({ dataDir: options.dataDir })
     if (scan.invalid.length) throw new Error('cannot create a signed batch while invalid outbox events require review')
+    if (workspaceId !== undefined && scan.quarantined.length) {
+      throw new Error('cannot create a workspace signed batch while quarantined outbox events require review')
+    }
+
+    if (workspaceId !== undefined) {
+      const allVisibleRecords = [
+        ...scan.pending,
+        ...scan.acknowledged.map(item => item.record),
+      ]
+      if (allVisibleRecords.some(record => !recordBelongsTo(record, endpointId, workspaceId))) {
+        throw new Error('outbox contains an event outside the authorized workspace endpoint')
+      }
+    }
+
     const afterSequence = previous?.range.lastSequence ?? 0
     const records = scan.pending
       .filter(record => record.sequence > afterSequence)
@@ -226,8 +304,10 @@ export async function createNextSignedMeasurementBatchV1(
     if (!records.length) return undefined
 
     for (const record of records) {
-      if (record.event.data.endpointId !== options.identity.metadata.endpointId) {
-        throw new Error('outbox contains an event from another endpoint')
+      if (!recordBelongsTo(record, endpointId, workspaceId)) {
+        throw new Error(workspaceId === undefined
+          ? 'outbox contains an event from another endpoint'
+          : 'outbox contains an event outside the authorized workspace endpoint')
       }
     }
 
@@ -235,10 +315,10 @@ export async function createNextSignedMeasurementBatchV1(
     const batch = MeasurementBatchV1Schema.parse({
       kind: 'qovrion.measurement-batch',
       version: 1,
-      batchId: buildBatchId(options.identity.metadata.endpointId, previousDigest, records),
+      batchId: buildBatchId(endpointId, previousDigest, records),
       createdAt: (options.now ?? (() => new Date()))().toISOString(),
       producer: {
-        endpointId: options.identity.metadata.endpointId,
+        endpointId,
         qovrionVersion: options.qovrionVersion,
         adapterSetSha256: options.adapterSetSha256,
       },
@@ -281,7 +361,11 @@ export async function createNextSignedMeasurementBatchV1(
     const target = join(paths.batches, file)
     const already = await readOptionalPrivateFile(target)
     if (already) {
-      const parsed = parseSignedBatch(already, options.identity.metadata.endpointId, file)
+      const parsed = verifyLocalSignedMeasurementBatchV1(already, {
+        endpointId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+        expectedFile: file,
+      })
       if (parsed.signedPayloadSha256 !== signed.signedPayloadSha256) throw new Error('signed batch filename collision')
       return parsed
     }
@@ -305,19 +389,31 @@ async function readAck(
   return ack
 }
 
+export async function listSignedMeasurementBatchStatesV1(
+  options: SignedMeasurementBatchStoreOptions,
+): Promise<LocalSignedMeasurementBatchStateV1[]> {
+  if (!options.dataDir.trim()) throw new Error('signed batch listing requires an explicit Metrora data directory')
+  const endpointId = OpaqueIdSchema.parse(options.endpointId)
+  const workspaceId = options.workspaceId === undefined
+    ? undefined
+    : OpaqueIdSchema.parse(options.workspaceId)
+  const paths = batchPaths(options.dataDir)
+  await ensurePrivateDirectory(paths.acknowledgements)
+  const batches = await listSignedBatches(paths, endpointId, workspaceId)
+  const result: LocalSignedMeasurementBatchStateV1[] = []
+  for (const { signed } of batches) {
+    const acknowledgement = await readAck(paths, signed)
+    result.push({ signed, ...(acknowledgement ? { acknowledgement } : {}) })
+  }
+  return result
+}
+
 export async function listUnacknowledgedSignedMeasurementBatchesV1(
   options: SignedMeasurementBatchStoreOptions,
 ): Promise<LocalSignedMeasurementBatchV1[]> {
-  if (!options.dataDir.trim()) throw new Error('signed batch listing requires an explicit Metrora data directory')
-  const endpointId = OpaqueIdSchema.parse(options.endpointId)
-  const paths = batchPaths(options.dataDir)
-  await ensurePrivateDirectory(paths.acknowledgements)
-  const batches = await listSignedBatches(paths, endpointId)
-  const pending: LocalSignedMeasurementBatchV1[] = []
-  for (const { signed } of batches) {
-    if (!await readAck(paths, signed)) pending.push(signed)
-  }
-  return pending
+  return (await listSignedMeasurementBatchStatesV1(options))
+    .filter(item => item.acknowledgement === undefined)
+    .map(item => item.signed)
 }
 
 export async function acknowledgeSignedMeasurementBatchV1(
@@ -327,11 +423,14 @@ export async function acknowledgeSignedMeasurementBatchV1(
 ): Promise<{ status: 'acknowledged' | 'duplicate'; ack: LocalSignedMeasurementBatchAckV1 }> {
   if (!options.dataDir.trim()) throw new Error('signed batch acknowledgement requires an explicit Metrora data directory')
   const endpointId = OpaqueIdSchema.parse(options.endpointId)
+  const workspaceId = options.workspaceId === undefined
+    ? undefined
+    : OpaqueIdSchema.parse(options.workspaceId)
   const batchId = OpaqueIdSchema.parse(batchIdInput)
   const receiptId = z.string().trim().min(1).max(200).parse(receiptIdInput)
   const paths = batchPaths(options.dataDir)
   await ensurePrivateDirectory(paths.acknowledgements)
-  const batches = await listSignedBatches(paths, endpointId)
+  const batches = await listSignedBatches(paths, endpointId, workspaceId)
   const signed = batches.find(item => item.signed.batch.batchId === batchId)?.signed
   if (!signed) throw new Error('cannot acknowledge an unknown signed batch')
   const existing = await readAck(paths, signed)

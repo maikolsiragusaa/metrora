@@ -1,6 +1,6 @@
 # Workspace v1
 
-**Status:** active product milestone
+**Status:** active product milestone; local state, reviewed production, signed batches, and independent export are implemented. Desktop experience remains.
 
 Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns the existing public contracts, endpoint identity, reviewed measurements, outbox, and signed batches into one understandable local workspace experience.
 
@@ -21,7 +21,7 @@ The ordinary local analytics experience remains available without creating a wor
 
 ## Existing foundations reused
 
-Workspace v1 must reuse rather than replace:
+Workspace v1 reuses rather than replaces:
 
 - `WorkspaceV1`, membership, endpoint, repository, sharing, measurement, and evidence contracts;
 - the canonical parser and normalized usage records;
@@ -33,37 +33,42 @@ Workspace v1 must reuse rather than replace:
 - current cross-process leases and atomic publication primitives;
 - the local companion API where a stable public DTO already exists.
 
-No second collector, pricing engine, workspace schema, or analytics database is introduced.
+No second collector, pricing engine, workspace schema, signer, or analytics database is introduced.
 
-## First implementation slices
+## Implementation slices
 
-### 1. Local workspace state
+### 1. Local workspace state — implemented
 
 - one personal workspace created explicitly by the user;
 - one owner membership bound to the local subject;
 - enrollment of the existing endpoint identity;
 - atomic, versioned, recoverable local persistence;
 - idempotent creation and reload;
+- safe reconciliation after endpoint-key rotation;
 - no silent conversion of existing local usage into shared workspace data.
 
-### 2. Reviewed measurement production
+### 2. Reviewed measurement production — implemented
 
-- connect only collector paths already approved by the provenance registry;
-- project normalized calls through the existing reviewed-event factory;
-- preserve historical cost assignments and evidence quality;
-- enqueue idempotently using stable event identity;
-- never export prompts, responses, source code, patches, secrets, tool arguments, or full local paths;
-- leave unreviewed or insufficient evidence local rather than inventing claims.
+- only collector paths already approved by the provenance registry can produce Workspace measurements;
+- normalized calls pass through the existing reviewed-event factory;
+- immutable historical cost assignments and evidence quality are preserved;
+- private rotation-safe production receipts prevent duplication and repair interrupted publication;
+- prompts, responses, source code, patches, secrets, tool arguments, and full local paths remain excluded;
+- unreviewed or insufficient evidence remains local rather than becoming an invented claim.
 
-### 3. Signed workspace batches
+### 3. Signed workspace batches and export — implemented in the local runtime
 
-- batch only workspace-authorized reviewed events;
-- bind workspace, endpoint, sequence range, previous digest, signer generation, and public batch digest;
-- preserve verification after endpoint-key rotation;
-- expose ready, acknowledged, quarantined, and blocked states honestly;
-- do not implement a network uploader in this slice.
+- only workspace-authorized reviewed events enter the signed chain;
+- workspace, endpoint, sequence range, previous digest, signer generation, and public batch digest are verified;
+- old batches remain independently verifiable after endpoint-key rotation;
+- local states expose `empty`, `ready`, `acknowledged`, `quarantined`, and `blocked` honestly;
+- the user-owned JSON export is signed by the current endpoint and independently verifies the complete included batch chain;
+- private production receipts, acknowledgement receipt IDs, secrets, and local paths never enter the export;
+- no network uploader is implemented.
 
-### 4. Desktop workspace experience
+The export and verification contract is documented in `docs/WORKSPACE_EVIDENCE_EXPORT_V1.md`.
+
+### 4. Desktop workspace experience — next tranche
 
 The first desktop view should show:
 
@@ -74,7 +79,7 @@ The first desktop view should show:
 - usage totals derived from the same canonical local records;
 - provenance and coverage summary;
 - clear explanation of what would and would not be shared;
-- export, pause, and reset/recovery actions with explicit consequences.
+- explicit creation, batching, export, pause, and recovery actions.
 
 The UI must not show empty enterprise concepts, invite flows, billing, or team administration before they exist.
 
@@ -97,6 +102,7 @@ It must not require or export:
 - credentials, provider keys, cookies, or tokens;
 - unrestricted local paths;
 - raw tool arguments or outputs;
+- private production identities or acknowledgement receipts;
 - unsupported inferences about people, productivity, or causality.
 
 ## Non-goals
