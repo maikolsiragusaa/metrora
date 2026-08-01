@@ -268,6 +268,8 @@ function ReadyWorkspaceView({
   const workspace = snapshot.workspace
   const evidence = snapshot.evidence
   const busy = action !== null
+  const evidenceBlocked = evidence.state === 'blocked' || evidence.state === 'quarantined'
+  const exportBlocked = evidenceBlocked || evidence.unbatchedEventCount > 0
 
   return (
     <>
@@ -357,6 +359,7 @@ function ReadyWorkspaceView({
               <EvidenceCount label="Pending batches" value={evidence.pendingBatchCount} />
               <EvidenceCount label="Acknowledged batches" value={evidence.acknowledgedBatchCount} />
               <EvidenceCount label="Quarantined" value={evidence.quarantinedEventCount} />
+              <EvidenceCount label="Invalid" value={evidence.invalidEventCount} />
             </div>
             {evidence.blockers.length > 0 ? (
               <ul className="workspace-blockers">
@@ -381,14 +384,18 @@ function ReadyWorkspaceView({
             <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
               {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
             </button>
-            <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidence.state === 'blocked' || evidence.state === 'quarantined'}>
+            <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceBlocked}>
               {action === 'batch' ? 'Signing…' : 'Create signed batch'}
             </button>
-            <button type="button" className="btn btn-p" onClick={() => void onExport()} disabled={busy || !workspace || evidence.state === 'blocked'}>
+            <button type="button" className="btn btn-p" onClick={() => void onExport()} disabled={busy || !workspace || exportBlocked}>
               {action === 'export' ? 'Exporting…' : 'Export verifiable evidence'}
             </button>
           </div>
-          <p className="workspace-action-note">Batching and export are always explicit. Opening this screen never scans, signs, uploads, or publishes data automatically.</p>
+          <p className="workspace-action-note">
+            {evidence.unbatchedEventCount > 0
+              ? 'Create a signed batch before export. Batching and export are always explicit.'
+              : 'Batching and export are always explicit. Opening this screen never scans, signs, uploads, or publishes data automatically.'}
+          </p>
         </Panel>
       </div>
     </>
