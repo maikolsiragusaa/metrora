@@ -1,0 +1,58 @@
+name: Workspace production orchestrator
+
+on:
+  pull_request:
+    paths:
+      - 'src/local-state/reviewed-production-orchestrator.ts'
+      - 'src/local-state/reviewed-production-orchestrator.test.ts'
+      - 'src/local-state/reviewed-measurement-producer.ts'
+      - 'src/local-state/reviewed-measurement-producer.test.ts'
+      - 'src/local-state/measurement-production-receipt.ts'
+      - 'src/local-state/measurement-production-receipt.test.ts'
+      - 'src/local-state/workspace-production-lifecycle.ts'
+      - 'src/local-state/workspace-production-lifecycle.test.ts'
+      - '.github/workflows/workspace-production-orchestrator.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/local-state/reviewed-production-orchestrator.ts'
+      - 'src/local-state/reviewed-production-orchestrator.test.ts'
+      - 'src/local-state/reviewed-measurement-producer.ts'
+      - 'src/local-state/reviewed-measurement-producer.test.ts'
+      - 'src/local-state/measurement-production-receipt.ts'
+      - 'src/local-state/measurement-production-receipt.test.ts'
+      - 'src/local-state/workspace-production-lifecycle.ts'
+      - 'src/local-state/workspace-production-lifecycle.test.ts'
+      - '.github/workflows/workspace-production-orchestrator.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-production-orchestrator-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    name: Trusted production control (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run lifecycle, receipt, producer, and orchestrator gates
+        run: >-
+          npm test -- --run --no-file-parallelism --testTimeout=15000
+          src/local-state/workspace-production-lifecycle.test.ts
+          src/local-state/measurement-production-receipt.test.ts
+          src/local-state/reviewed-measurement-producer.test.ts
+          src/local-state/reviewed-production-orchestrator.test.ts
