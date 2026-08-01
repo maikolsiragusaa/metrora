@@ -3,6 +3,8 @@ name: Workspace production orchestrator
 on:
   pull_request:
     paths:
+      - 'src/cache-refresh-lock.ts'
+      - 'tests/cache-refresh-lock.test.ts'
       - 'src/local-state/reviewed-production-orchestrator.ts'
       - 'src/local-state/reviewed-production-orchestrator.test.ts'
       - 'src/local-state/reviewed-measurement-producer.ts'
@@ -15,6 +17,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/cache-refresh-lock.ts'
+      - 'tests/cache-refresh-lock.test.ts'
       - 'src/local-state/reviewed-production-orchestrator.ts'
       - 'src/local-state/reviewed-production-orchestrator.test.ts'
       - 'src/local-state/reviewed-measurement-producer.ts'
@@ -58,13 +62,16 @@ jobs:
           --strict
           --esModuleInterop
           --skipLibCheck
+          src/cache-refresh-lock.ts
+          tests/cache-refresh-lock.test.ts
           src/local-state/reviewed-production-orchestrator.ts
           src/local-state/reviewed-production-orchestrator.test.ts
           src/local-state/workspace-production-lifecycle.ts
           src/local-state/workspace-production-lifecycle.test.ts
-      - name: Run lifecycle, receipt, producer, and orchestrator gates
+      - name: Run lock, lifecycle, receipt, producer, and orchestrator gates
         run: >-
           npx vitest --run --no-file-parallelism --testTimeout=15000
+          tests/cache-refresh-lock.test.ts
           src/local-state/workspace-production-lifecycle.test.ts
           src/local-state/measurement-production-receipt.test.ts
           src/local-state/reviewed-measurement-producer.test.ts
