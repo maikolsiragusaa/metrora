@@ -23,6 +23,7 @@ export type {
   CreateDesktopWorkspaceInputV1,
   DesktopWorkspaceBatchResultV1,
   DesktopWorkspaceExportResultV1,
+  DesktopWorkspaceProductionLifecycleResultV1,
   DesktopWorkspaceRuntimeV1,
   DesktopWorkspaceSnapshotV1,
 } from './local-state/desktop-workspace-runtime.js'
