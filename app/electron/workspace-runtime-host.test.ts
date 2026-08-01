@@ -93,7 +93,7 @@ describe('Electron private Workspace runtime host', () => {
       initializeDesktopWorkspaceRuntimeV1: initialize,
     }))
     const scan = vi.fn(async () => ({ candidates: [], withheldCount: 3, failedCount: 1 }))
-    const importReviewedProductionModule = vi.fn(async () => ({
+    const importReviewedProductionModule = vi.fn(async (_url: string) => ({
       scanCanonicalReviewedProductionCandidatesV1: scan,
     } satisfies DesktopReviewedProductionModule))
 
