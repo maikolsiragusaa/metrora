@@ -1,0 +1,130 @@
+# Workspace v1
+
+**Status:** active product milestone
+
+Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns the existing public contracts, endpoint identity, reviewed measurements, outbox, and signed batches into one understandable local workspace experience.
+
+This milestone is deliberately local-first. It does not require a Metrora account, hosted service, subscription, or remote manager console.
+
+## User outcome
+
+A person can:
+
+1. create a personal workspace on the current computer;
+2. see that computer enrolled as the first endpoint;
+3. understand which structured usage evidence is eligible for the workspace;
+4. generate durable reviewed measurements and signed batches without duplicating calls;
+5. inspect workspace usage, endpoint status, evidence coverage, and synchronization readiness in the desktop application;
+6. export a verifiable workspace package before any cloud synchronization exists.
+
+The ordinary local analytics experience remains available without creating a workspace.
+
+## Existing foundations reused
+
+Workspace v1 must reuse rather than replace:
+
+- `WorkspaceV1`, membership, endpoint, repository, sharing, measurement, and evidence contracts;
+- the canonical parser and normalized usage records;
+- reviewed collector provenance profiles;
+- historical per-call cost assignments and desktop/CLI pricing authority;
+- durable endpoint identity protected by the operating-system vault where supported;
+- the append-only reviewed measurement outbox;
+- immutable signed measurement batches and acknowledgements;
+- current cross-process leases and atomic publication primitives;
+- the local companion API where a stable public DTO already exists.
+
+No second collector, pricing engine, workspace schema, or analytics database is introduced.
+
+## First implementation slices
+
+### 1. Local workspace state
+
+- one personal workspace created explicitly by the user;
+- one owner membership bound to the local subject;
+- enrollment of the existing endpoint identity;
+- atomic, versioned, recoverable local persistence;
+- idempotent creation and reload;
+- no silent conversion of existing local usage into shared workspace data.
+
+### 2. Reviewed measurement production
+
+- connect only collector paths already approved by the provenance registry;
+- project normalized calls through the existing reviewed-event factory;
+- preserve historical cost assignments and evidence quality;
+- enqueue idempotently using stable event identity;
+- never export prompts, responses, source code, patches, secrets, tool arguments, or full local paths;
+- leave unreviewed or insufficient evidence local rather than inventing claims.
+
+### 3. Signed workspace batches
+
+- batch only workspace-authorized reviewed events;
+- bind workspace, endpoint, sequence range, previous digest, signer generation, and public batch digest;
+- preserve verification after endpoint-key rotation;
+- expose ready, acknowledged, quarantined, and blocked states honestly;
+- do not implement a network uploader in this slice.
+
+### 4. Desktop workspace experience
+
+The first desktop view should show:
+
+- workspace name and local-only status;
+- owner membership;
+- enrolled endpoint and identity health;
+- latest reviewed measurement and signed-batch state;
+- usage totals derived from the same canonical local records;
+- provenance and coverage summary;
+- clear explanation of what would and would not be shared;
+- export, pause, and reset/recovery actions with explicit consequences.
+
+The UI must not show empty enterprise concepts, invite flows, billing, or team administration before they exist.
+
+## Privacy boundary
+
+Workspace v1 may handle structured metadata needed to explain AI usage, such as:
+
+- timestamp and period;
+- tool/collector identity;
+- model and source-recorded model provider when available;
+- token dimensions and reasoning attribution where reviewed;
+- API-equivalent or provider-metered cost with its immutable assignment;
+- opaque event, endpoint, workspace, session, repository, or project references when explicitly permitted;
+- evidence quality, version, coverage, and freshness.
+
+It must not require or export:
+
+- prompts or assistant responses;
+- source code, patches, diffs, or file contents;
+- credentials, provider keys, cookies, or tokens;
+- unrestricted local paths;
+- raw tool arguments or outputs;
+- unsupported inferences about people, productivity, or causality.
+
+## Non-goals
+
+- hosted synchronization or account creation;
+- invitations, team roles, organization administration, or browser manager console;
+- entitlement, billing, licensing, or commercial packaging;
+- Android-side collection or pricing;
+- remote command execution;
+- Advisor or Bench implementation;
+- collector rewrites, model-label cleanup, or aggregation redesign;
+- automatic publication of private data.
+
+## Acceptance gates
+
+Workspace v1 is complete only when:
+
+1. creating and reopening the local workspace is deterministic and crash-safe;
+2. the existing endpoint identity is enrolled without generating a competing identity;
+3. repeated scans cannot duplicate reviewed events or signed batches;
+4. unsupported collectors and insufficient evidence fail closed;
+5. historical pricing, calls, sessions, token counts, model labels, and project labels remain unchanged;
+6. the desktop view reconciles exactly with CLI/local analytics for the same scope;
+7. exported workspace evidence verifies independently and contains no prohibited content;
+8. Windows and Ubuntu blocking tests pass, including Windows vault and filesystem behavior;
+9. no hosted service is required to complete the flow;
+10. the implementation is divided into bounded, reviewable pull requests with rollback points.
+
+## After Workspace v1
+
+The next milestones are a trustworthy signed Windows release and a physical desktop-to-Android validation. Managed synchronization, team workspaces, Advisor, and Bench follow only after this local workspace slice proves the contracts and user experience.
