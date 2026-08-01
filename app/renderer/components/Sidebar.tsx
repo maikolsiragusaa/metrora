@@ -4,7 +4,7 @@ import { codeburn } from '../lib/ipc'
 import { AboutModal, type SocialLink } from './AboutModal'
 import { MetroraMark } from './MetroraMark'
 
-export type Section = 'overview' | 'sessions' | 'pullRequests' | 'spend' | 'optimize' | 'models' | 'compare' | 'plans' | 'settings'
+export type Section = 'overview' | 'sessions' | 'pullRequests' | 'spend' | 'optimize' | 'models' | 'compare' | 'plans' | 'workspace' | 'settings'
 
 export const NAV_ITEMS: Array<{ id: Section; label: string; key: string; icon: ReactNode }> = [
   { id: 'overview', label: 'Overview', key: '⌘1', icon: (
@@ -30,6 +30,9 @@ export const NAV_ITEMS: Array<{ id: Section; label: string; key: string; icon: R
   ) },
   { id: 'plans', label: 'Plans', key: '⌘8', icon: (
     <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>
+  ) },
+  { id: 'workspace', label: 'Workspace', key: '⌘9', icon: (
+    <svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 2.9 7.7 7.5 9.5 4.6-1.8 7.5-4.9 7.5-9.5V6L12 3z"/><path d="M8.5 12h7M12 8.5v7"/></svg>
   ) },
   { id: 'settings', label: 'Settings', key: '⌘,', icon: (
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
