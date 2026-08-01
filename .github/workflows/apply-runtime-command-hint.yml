@@ -1,0 +1,47 @@
+name: Apply runtime command hint cleanup
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/fix-runtime-command-hint.py'
+      - '.github/workflows/apply-runtime-command-hint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-runtime-command-hint
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/runtime-brand-baseline
+          fetch-depth: 0
+      - name: Apply and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fix-runtime-command-hint.py
+          rm -f scripts/fix-runtime-command-hint.py
+          git rm -f .github/workflows/apply-runtime-command-hint.yml
+          git add -A
+          node scripts/check-brand-boundary.mjs
+          git diff --cached --check
+          git restore --source=HEAD --staged --worktree .github/workflows
+          git add -A
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: remove final legacy runtime command hint"
+          git push origin HEAD:fix/runtime-brand-baseline
