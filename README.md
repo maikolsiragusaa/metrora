@@ -36,10 +36,20 @@ Metrora builds one evidence-based view from the usage records already stored on 
 - **Session intelligence** across projects, tasks, tools, models, cost, tokens, cache, and timing.
 - **Model comparison** across performance, efficiency, working style, task categories, and observed context.
 - **Reasoning attribution** when a source exposes a trustworthy effort level, with unknown coverage kept explicit.
+- **Historical API-equivalent pricing** with immutable per-call cost assignments, date-effective reviewed rates, explicit free-route handling, metered-cost precedence, and conservative legacy fallback.
 - **Optimization findings** for waste, reverts, abandoned work, and actionable savings opportunities.
 - **Budgets, plans, pricing overrides, token audit, and CSV/JSON export.**
 - **Private device linking** and combined local usage across machines.
 - **Public v1 contracts** for workspaces, endpoints, sharing, normalized measurements, and evidence.
+- **Durable local endpoint identity, reviewed measurement outbox, and signed batch foundations** for future workspace synchronization.
+
+Historical pricing is the default runtime behavior. A later catalog refresh cannot silently rewrite already settled historical costs. Provider- or client-metered values remain authoritative, explicit zero remains different from unavailable pricing, and subscription coverage stays separate from API-equivalent valuation. See [Pricing history](docs/PRICING_HISTORY.md).
+
+## Current product milestone
+
+The next vertical slice is [Workspace v1](docs/WORKSPACE_V1.md): a local-first personal workspace that binds the current computer, reviewed measurements, signed batches, and an understandable desktop workspace view without requiring an account or hosted service.
+
+Workspace v1 does not introduce cloud synchronization, billing, team administration, or prompt/code collection. Those capabilities require separate contracts and explicit product work after the local slice is proven.
 
 ## Surfaces
 
@@ -59,17 +69,17 @@ Metrora is local-first by default:
 - no account is required for local use;
 - AI traffic does not pass through Metrora;
 - prompts, responses, source code, patches, secrets, and full local paths are not exported by default;
-- analytical claims distinguish observed, estimated, and unknown values;
+- analytical claims distinguish observed, derived, estimated, metered, explicit-zero, legacy-frozen, and unavailable evidence where relevant;
 - networked sharing is being built around explicit scope, revocation, and structured usage data;
 - user-owned data remains exportable through open formats.
 
-Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), and [security policy](SECURITY.md).
+Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1 boundary](docs/WORKSPACE_V1.md), and [security policy](SECURITY.md).
 
 ## Development
 
 Requirements:
 
-- Node.js 22.13 or newer
+- Node.js 22.15 or newer
 - npm
 
 ```bash
