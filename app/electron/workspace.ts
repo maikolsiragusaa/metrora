@@ -141,11 +141,14 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       if (outputPath === null) return { ok: true, value: { outcome: 'cancelled' as const } }
       if (!path.isAbsolute(outputPath)) return workspaceError('bad-args', 'Workspace export path must be absolute.')
       try {
+        const exported = await state.runtime.exportEvidence(outputPath)
         return {
           ok: true,
           value: {
             outcome: 'exported' as const,
-            ...(await state.runtime.exportEvidence(outputPath)),
+            fileName: path.basename(exported.outputPath),
+            verification: exported.verification,
+            snapshot: exported.snapshot,
           },
         }
       } catch (error) {
