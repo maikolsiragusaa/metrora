@@ -3,14 +3,25 @@ import { join } from 'node:path'
 import * as z from 'zod/v4'
 
 import { TimestampSchema } from '../contracts/v1/common.js'
+import {
+  EndpointArchitectureSchema,
+  EndpointCapabilitySchema,
+  EndpointOsSchema,
+  type EndpointCapabilityV1,
+} from '../contracts/v1/endpoint.js'
 import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.js'
 import {
   defaultMetroraDataDir,
   loadOrCreateLocalEndpointIdentityV1,
+  type LoadedLocalEndpointIdentityV1,
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
+import {
+  createDesktopWorkspaceRuntimeV1,
+  type DesktopWorkspaceRuntimeV1,
+} from './desktop-workspace-runtime.js'
 
 export const DESKTOP_MASTER_KEY_KIND = 'qovrion.desktop-master-key' as const
 const MASTER_KEY_FILE = 'desktop-master-key.v1.json'
@@ -43,10 +54,25 @@ export type InitializeDesktopLocalStateV1Options = {
   randomBytes?: (size: number) => Buffer
 }
 
+export type InitializeDesktopWorkspaceRuntimeV1Options = InitializeDesktopLocalStateV1Options & {
+  platform: {
+    os: z.infer<typeof EndpointOsSchema>
+    architecture: z.infer<typeof EndpointArchitectureSchema>
+  }
+  metroraVersion: string
+  collectorVersion: string
+  capabilities?: EndpointCapabilityV1[]
+  openTelemetryGenAiVersion?: string
+}
+
 export type InitializedDesktopLocalStateV1 = {
   endpoint: LocalEndpointIdentityMetadataV1
   masterKeyState: DesktopMasterKeyStateV1
   backend: DesktopVaultBackendV1
+}
+
+export type InitializedDesktopWorkspaceRuntimeV1 = InitializedDesktopLocalStateV1 & {
+  runtime: DesktopWorkspaceRuntimeV1
 }
 
 export class DesktopVaultUnavailableError extends Error {
@@ -144,19 +170,29 @@ async function loadOrCreateMasterKey(
   })
 }
 
-export async function initializeDesktopLocalStateV1(
-  input: InitializeDesktopLocalStateV1Options,
-): Promise<InitializedDesktopLocalStateV1> {
-  const options = {
+function normalizeBaseOptions(input: InitializeDesktopLocalStateV1Options) {
+  return {
     safeStorage: input.safeStorage,
     backend: DesktopVaultBackendV1Schema.parse(input.backend),
     dataDir: input.dataDir ?? defaultMetroraDataDir(),
     now: input.now ?? (() => new Date()),
     randomBytes: input.randomBytes ?? randomBytes,
   }
+}
+
+function disposeLoadedIdentity(identity: LoadedLocalEndpointIdentityV1 | undefined): void {
+  identity?.privateKeyPkcs8.fill(0)
+  identity?.eventIdentityKey.fill(0)
+}
+
+export async function initializeDesktopLocalStateV1(
+  input: InitializeDesktopLocalStateV1Options,
+): Promise<InitializedDesktopLocalStateV1> {
+  const options = normalizeBaseOptions(input)
   const master = await loadOrCreateMasterKey(options)
+  let identity: LoadedLocalEndpointIdentityV1 | undefined
   try {
-    const identity = await loadOrCreateLocalEndpointIdentityV1({
+    identity = await loadOrCreateLocalEndpointIdentityV1({
       dataDir: options.dataDir,
       protector: new Aes256GcmSecretProtector(master.key),
       now: options.now,
@@ -168,5 +204,56 @@ export async function initializeDesktopLocalStateV1(
     }
   } finally {
     master.key.fill(0)
+    disposeLoadedIdentity(identity)
+  }
+}
+
+export async function initializeDesktopWorkspaceRuntimeV1(
+  input: InitializeDesktopWorkspaceRuntimeV1Options,
+): Promise<InitializedDesktopWorkspaceRuntimeV1> {
+  const options = normalizeBaseOptions(input)
+  const platform = z.strictObject({
+    os: EndpointOsSchema,
+    architecture: EndpointArchitectureSchema,
+  }).parse(input.platform)
+  const capabilities = z.array(EndpointCapabilitySchema).min(1).max(8).parse(
+    input.capabilities ?? ['collect', 'normalize', 'aggregate', 'serve-local-api'],
+  )
+  const master = await loadOrCreateMasterKey(options)
+  let identity: LoadedLocalEndpointIdentityV1 | undefined
+  try {
+    identity = await loadOrCreateLocalEndpointIdentityV1({
+      dataDir: options.dataDir,
+      protector: new Aes256GcmSecretProtector(master.key),
+      now: options.now,
+    })
+    const runtime = createDesktopWorkspaceRuntimeV1({
+      dataDir: options.dataDir,
+      identity,
+      platform,
+      metroraVersion: z.string().trim().min(1).max(64).parse(input.metroraVersion),
+      collectorVersion: z.string().trim().min(1).max(64).parse(input.collectorVersion),
+      capabilities,
+      ...(input.openTelemetryGenAiVersion !== undefined
+        ? { openTelemetryGenAiVersion: input.openTelemetryGenAiVersion }
+        : {}),
+      now: options.now,
+    })
+    identity = undefined // ownership transferred to the private runtime
+    return {
+      endpoint: runtime ? (await runtime.getSnapshot()).identity && {
+        ...((await loadOrCreateLocalEndpointIdentityV1({
+          dataDir: options.dataDir,
+          protector: new Aes256GcmSecretProtector(master.key),
+          now: options.now,
+        })).metadata,
+      } : never,
+      masterKeyState: master.state,
+      backend: options.backend,
+      runtime,
+    }
+  } finally {
+    master.key.fill(0)
+    disposeLoadedIdentity(identity)
   }
 }
