@@ -10,9 +10,11 @@ import { getProvider } from '../providers/index.js'
 import {
   isCacheComplete,
   loadCache,
+  type CachedCall,
   type CachedFile,
   type SessionCache,
 } from '../session-cache.js'
+import type { ParsedApiCall } from '../types.js'
 import type {
   CanonicalReviewedProductionCandidateV1,
   CanonicalReviewedProductionScanV1,
@@ -70,6 +72,16 @@ export function canonicalSourceRecordFingerprintSha256V1(input: {
 
 function callCount(file: CachedFile): number {
   return file.turns.reduce((sum, turn) => sum + turn.calls.length, 0)
+}
+
+function canonicalApiCall(cachedCall: CachedCall): ParsedApiCall {
+  try {
+    return cachedCallToApiCall(cachedCall)
+  } catch {
+    throw new CanonicalReviewedProductionScannerIntegrityError(
+      'canonical cached call could not be validated',
+    )
+  }
 }
 
 function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1 {
@@ -141,7 +153,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
             )
           }
 
-          const call = cachedCallToApiCall(cachedCall)
+          const call = canonicalApiCall(cachedCall)
           const explicitProvider = normalizeExplicitModelProvider(call.modelProvider)
           const profile = collectorProvenanceProfileForCall(call)
           if (!displayName || !explicitProvider || explicitProvider !== call.modelProvider || !profile) {
