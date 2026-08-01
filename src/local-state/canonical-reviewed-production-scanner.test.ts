@@ -26,7 +26,11 @@ function zedCall(overrides: Partial<CachedCall> = {}): CachedCall {
       webSearchRequests: 0,
       cacheCreationOneHourTokens: 0,
     },
-    costAssignment: { version: 1, kind: 'unavailable' },
+    costAssignment: {
+      version: 1,
+      kind: 'unavailable',
+      reason: 'no-price-record',
+    },
     speed: 'standard',
     timestamp: '2026-08-01T21:00:00.000Z',
     tools: [],
