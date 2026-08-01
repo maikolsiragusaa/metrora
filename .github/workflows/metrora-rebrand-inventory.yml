@@ -32,7 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           parts=(
-            scripts/rebrand/apply/part-00
+            scripts/rebrand/apply/part-00-00
+            scripts/rebrand/apply/part-00-01
+            scripts/rebrand/apply/part-00-02
+            scripts/rebrand/apply/part-00-03
+            scripts/rebrand/apply/part-00-04
             scripts/rebrand/apply/part-01
             scripts/rebrand/apply/part-02
             scripts/rebrand/apply/part-03
