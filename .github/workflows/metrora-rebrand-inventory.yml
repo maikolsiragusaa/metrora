@@ -62,8 +62,9 @@ jobs:
           rm -rf scripts/rebrand
           rm -f .github/workflows/apply-metrora-rebrand.yml
           rm -f .github/workflows/metrora-rebrand-inventory.yml
+          git add -A
           node scripts/check-brand-boundary.mjs
-          git diff --check
+          git diff --cached --check
 
       - name: Commit completed rebrand
         shell: bash
@@ -71,6 +72,5 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
           git commit -m "brand: complete Metrora rebrand with compatibility migration"
           git push origin HEAD:brand/metrora-rebrand
