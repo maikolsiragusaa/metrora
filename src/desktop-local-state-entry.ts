@@ -35,3 +35,20 @@ export type {
   ProduceLocalReviewedMeasurementV1Options,
   ProduceLocalReviewedMeasurementV1Result,
 } from './local-state/reviewed-measurement-producer.js'
+
+export {
+  createLocalWorkspaceEvidenceExportV1,
+  createNextLocalWorkspaceSignedBatchV1,
+  inspectLocalWorkspaceEvidenceV1,
+  LocalWorkspaceEvidenceBlockedError,
+  LocalWorkspaceEvidenceExportV1Schema,
+  verifyLocalWorkspaceEvidenceExportV1,
+} from './local-state/workspace-evidence.js'
+export type {
+  CreateLocalWorkspaceEvidenceExportV1Options,
+  CreateNextLocalWorkspaceSignedBatchV1Options,
+  InspectLocalWorkspaceEvidenceV1Options,
+  LocalWorkspaceEvidenceExportV1,
+  LocalWorkspaceEvidenceStateV1,
+  VerifiedLocalWorkspaceEvidenceExportV1,
+} from './local-state/workspace-evidence.js'
