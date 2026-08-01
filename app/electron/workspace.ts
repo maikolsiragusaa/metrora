@@ -60,6 +60,12 @@ function sanitizeActionError(error: unknown): { kind: string; message: string } 
   if (name === 'LocalWorkspaceProductionLifecycleWorkspaceRequiredError') {
     return { kind: 'workspace-required', message: 'Create the local Workspace before changing production state.' }
   }
+  if (name === 'CanonicalReviewedProductionScannerIntegrityError') {
+    return { kind: 'workspace-production-scan-failed', message: 'Canonical local usage could not be validated for reviewed production.' }
+  }
+  if (name === 'DesktopReviewedProductionUnavailableError') {
+    return { kind: 'workspace-production-unavailable', message: 'Reviewed production is unavailable in this desktop runtime.' }
+  }
   if (name === 'LocalWorkspaceEvidenceBlockedError') {
     return { kind: 'workspace-blocked', message: 'Workspace evidence is blocked or requires review.' }
   }
@@ -149,6 +155,16 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       if ('ok' in state) return state
       try {
         return { ok: true, value: await state.runtime.setProductionMode('active') }
+      } catch (error) {
+        return { ok: false, error: sanitizeActionError(error) }
+      }
+    },
+
+    'codeburn:produceWorkspaceMeasurements': async () => {
+      const state = await readyState(deps)
+      if ('ok' in state) return state
+      try {
+        return { ok: true, value: await state.runtime.produceReviewedMeasurements() }
       } catch (error) {
         return { ok: false, error: sanitizeActionError(error) }
       }
