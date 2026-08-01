@@ -1,7 +1,8 @@
 // Stage a self-contained copy of the root Metrora runtime into app/build/cli so
-// electron-builder can ship both the compatibility CLI and the narrow desktop
-// local-state entry. The packaged app spawns the CLI via Electron-as-node and
-// dynamically imports the local-state entry in the Electron main process.
+// electron-builder can ship the compatibility CLI and the narrow desktop
+// main-process entries. The packaged app spawns the CLI via Electron-as-node,
+// imports local state at startup, and imports reviewed production only after an
+// explicit user action.
 //
 // The tsup bundles keep runtime dependencies external, so the staged layout
 // mirrors what `npm install` produces and carries the third-party license used
@@ -13,6 +14,7 @@
 //   build/cli/dist/cli.js
 //   build/cli/dist/main.js
 //   build/cli/dist/desktop-local-state.js
+//   build/cli/dist/desktop-reviewed-production.js
 //   build/cli/node_modules/
 //
 // The production closure is copied out of the already-installed root
@@ -30,7 +32,7 @@ const root = join(appDir, '..') // repo root
 const dist = join(root, 'dist')
 const rootModules = join(root, 'node_modules')
 const stage = join(appDir, 'build', 'cli')
-const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js']
+const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js', 'desktop-reviewed-production.js']
 const noticeFiles = [
   ['THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'],
   [join('LICENSES', 'Apache-2.0.txt'), join('LICENSES', 'Apache-2.0.txt')],
