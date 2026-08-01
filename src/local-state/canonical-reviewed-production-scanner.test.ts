@@ -119,23 +119,20 @@ describe('canonical reviewed-production scanner v1', () => {
     expect(serializedContext).not.toContain('zed:thread-1:request-1')
   })
 
-  it('keeps the source-record fingerprint stable and endpoint-scoped', () => {
+  it('keeps the source-record fingerprint stable, path-independent, and endpoint-scoped', () => {
     const first = canonicalSourceRecordFingerprintSha256V1({
       endpointId: ENDPOINT_ID,
       provider: 'zed',
-      sourcePath: SOURCE_PATH,
       privateDeduplicationKey: 'zed:thread-1:request-1',
     })
     const second = canonicalSourceRecordFingerprintSha256V1({
       endpointId: ENDPOINT_ID,
       provider: 'zed',
-      sourcePath: SOURCE_PATH,
       privateDeduplicationKey: 'zed:thread-1:request-1',
     })
     const anotherEndpoint = canonicalSourceRecordFingerprintSha256V1({
       endpointId: 'ep_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
       provider: 'zed',
-      sourcePath: SOURCE_PATH,
       privateDeduplicationKey: 'zed:thread-1:request-1',
     })
 
