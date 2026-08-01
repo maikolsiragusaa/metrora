@@ -210,7 +210,7 @@ describe.sequential('local reviewed measurement producer v1', () => {
     expect(contradictory.record.event.data.cost).toEqual({ kind: 'unavailable' })
   })
 
-  it('preserves metered, explicit-zero, unavailable, and legacy-frozen distinctions', async () => {
+  it('preserves explicit-zero, unavailable, and legacy-frozen distinctions while rejecting incompatible metered claims', async () => {
     const dataDir = await root()
     const identity = await initializeWorkspace(dataDir)
 
@@ -221,10 +221,10 @@ describe.sequential('local reviewed measurement producer v1', () => {
       expected: unknown
     }> = [
       {
-        key: 'metered',
+        key: 'incompatible-metered',
         costUSD: 0.25,
         assignment: { version: 1, kind: 'metered', amountMicrosUsd: 250_000, source: 'client' },
-        expected: { kind: 'metered', amountMicrosUsd: 250_000, source: 'client' },
+        expected: { kind: 'unavailable' },
       },
       {
         key: 'explicit-zero',
