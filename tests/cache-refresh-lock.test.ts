@@ -226,7 +226,7 @@ describe('warm session-cache refresh lock', () => {
     await writeFile(lockPath(dir), JSON.stringify({ pid: 999, token: 'successor', at: Date.now() }))
     const changed = emptyCache()
     changed.complete = true
-    changed.providers['claude'] = { parseVersion: 'test', envFingerprint: 'test', files: {} }
+    changed.providers['claude'] = { envFingerprint: 'test', files: {} }
     expect(await saveCache(changed, result.handle.verifyStillOwner)).toBe(false)
     expect((await loadCache()).providers['claude']).toBeUndefined()
 
