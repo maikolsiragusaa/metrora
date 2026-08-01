@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import type { ParsedApiCall } from '../types.js'
 import {
   createReviewedUsageMeasurementEventV1,
@@ -39,6 +41,30 @@ export class LocalWorkspaceRequiredError extends Error {
   }
 }
 
+function productionKeySha256(input: {
+  workspaceId: string
+  endpointId: string
+  profileId: string
+  sourceFingerprintSha256: string
+  privateDeduplicationKey: string
+}): string {
+  if (input.privateDeduplicationKey.length === 0) {
+    throw new Error('reviewed measurement source deduplication key must not be empty')
+  }
+  return createHash('sha256')
+    .update('metrora-reviewed-production-v1\0')
+    .update(input.workspaceId)
+    .update('\0')
+    .update(input.endpointId)
+    .update('\0')
+    .update(input.profileId)
+    .update('\0')
+    .update(input.sourceFingerprintSha256)
+    .update('\0')
+    .update(input.privateDeduplicationKey)
+    .digest('hex')
+}
+
 /**
  * Explicitly project one already-normalized call through the reviewed evidence
  * boundary and into the durable local outbox.
@@ -70,6 +96,13 @@ export async function produceLocalReviewedMeasurementV1(
   if (projected.status === 'withheld') return projected
 
   const outbox = await enqueueMeasurementEventV1(projected.event, {
+    productionKeySha256: productionKeySha256({
+      workspaceId: workspace.workspace.workspaceId,
+      endpointId: workspace.endpoint.endpointId,
+      profileId: projected.profileId,
+      sourceFingerprintSha256: input.context.collector.sourceFingerprintSha256,
+      privateDeduplicationKey: input.call.deduplicationKey,
+    }),
     ...(input.dataDir !== undefined ? { dataDir: input.dataDir } : {}),
     ...(input.now !== undefined ? { now: input.now } : {}),
   })
