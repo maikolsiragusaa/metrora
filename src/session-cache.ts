@@ -6,6 +6,7 @@ import { homedir } from 'os'
 
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
+import { CostAssignmentV1Schema, costAssignmentMatchesUsdV1, type CostAssignmentV1 } from './pricing/cost-assignment.js'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -29,6 +30,14 @@ export type CachedCall = {
   reasoningLevelSource?: ReasoningLevelSource
   usage: CachedUsage
   costUSD?: number
+  /// Immutable basis for `costUSD`. `unavailable` carries no stored numeric
+  /// amount; the query layer may still display 0 while preserving that it is not
+  /// an intentional free route.
+  costAssignment?: CostAssignmentV1
+  /// Pre-historical API-equivalent value retained only when it differs from a
+  /// reviewed date-effective settlement. Enables compare/rollback mode without
+  /// mutating the authoritative assignment.
+  legacyCostUSD?: number
   /// True when `costUSD` (or the tokens it is priced from) is estimated rather
   /// than metered. Persisted so the estimated-cost marker survives the cache.
   isEstimated?: boolean
@@ -159,10 +168,13 @@ export type SessionCache = {
 // v7: sidechain->parent linkage - per-turn `spawnToolUseIds`, per-file
 // `parentSessionId` / `agentSpawnLinks` - so subagent spend folds into the parent
 // turn's PR set. v6 never shipped, so users cross v5->v7 in a single combined bump.
+// v8: immutable per-call cost assignments. Present sources reparse and settle
+// against reviewed history; durable and PR-bearing source-less entries are
+// carried forward and conservatively assigned before publication.
 // INVARIANT: a version bump must extend `PRIOR_CACHE_VERSIONS` (the adoption path
 // below) to EVERY prior version that can still exist on disk, or expired-PR
 // history from the immediately preceding build silently vanishes.
-export const CACHE_VERSION = 7
+export const CACHE_VERSION = 8
 
 // The cache filename is version-suffixed so different binaries (e.g. an old
 // launchd menubar on a prior release and a newer desktop app) each own a
@@ -302,6 +314,10 @@ function isOptionalBool(v: unknown): boolean {
   return v === undefined || typeof v === 'boolean'
 }
 
+function isOptionalCostAssignment(v: unknown): v is CostAssignmentV1 | undefined {
+  return v === undefined || CostAssignmentV1Schema.safeParse(v).success
+}
+
 // A plain object whose every value is a string (or undefined). Used for the
 // sidechain `agentSpawnLinks` map (agentId -> spawn tool_use id).
 function isOptionalStringRecord(v: unknown): boolean {
@@ -337,6 +353,19 @@ function validateUsage(u: unknown): u is CachedUsage {
     && isNum(o['webSearchRequests']) && isNum(o['cacheCreationOneHourTokens'])
 }
 
+function validateCachedCostAssignment(assignmentValue: unknown, costValue: unknown): boolean {
+  if (assignmentValue === undefined) return true
+  const parsed = CostAssignmentV1Schema.safeParse(assignmentValue)
+  if (!parsed.success) return false
+  if (parsed.data.kind === 'unavailable') return costValue === undefined
+  if (typeof costValue !== 'number' || !Number.isFinite(costValue) || costValue < 0) return false
+  try {
+    return costAssignmentMatchesUsdV1(parsed.data, costValue)
+  } catch {
+    return false
+  }
+}
+
 function validateCall(c: unknown): c is CachedCall {
   if (!c || typeof c !== 'object') return false
   const o = c as Record<string, unknown>
@@ -346,6 +375,9 @@ function validateCall(c: unknown): c is CachedCall {
     && typeof o['timestamp'] === 'string'
     && (o['speed'] === 'standard' || o['speed'] === 'fast')
     && isOptionalNum(o['costUSD'])
+    && isOptionalNum(o['legacyCostUSD'])
+    && isOptionalCostAssignment(o['costAssignment'])
+    && validateCachedCostAssignment(o['costAssignment'], o['costUSD'])
     && isOptionalBool(o['isEstimated'])
     && isOptionalNum(o['activeDurationMs'])
     && isOptionalNum(o['activeGeneratedTokens'])
@@ -425,7 +457,7 @@ function validateCache(raw: unknown): raw is SessionCache {
 // CACHE_VERSION bump MUST extend this list to every prior version that can still
 // exist on disk, or that history silently vanishes. (v5 was missed on the 5->6
 // bump; v6 on the 6->7 bump; both are listed here.)
-const PRIOR_CACHE_VERSIONS = [6, 5] as const
+const PRIOR_CACHE_VERSIONS = [7, 6, 5] as const
 
 function priorCacheFile(version: number): string {
   return `session-cache.v${version}.json`
@@ -462,7 +494,8 @@ async function adoptPriorCache(version: number): Promise<SessionCache | null> {
       if (rawFiles && typeof rawFiles === 'object' && !Array.isArray(rawFiles)) {
         for (const [path, file] of Object.entries(rawFiles as Record<string, unknown>)) {
           if (!validateCachedFile(file)) continue
-          if (!existsSync(path) && file.prLinks?.length) files[path] = file
+          const durable = (section as Record<string, unknown>)['durable'] === true
+          if (!existsSync(path) && (file.prLinks?.length || durable)) files[path] = file
         }
       }
       migrated.providers[provider] = {
@@ -513,7 +546,7 @@ export async function loadCache(): Promise<SessionCache> {
 }
 
 // The current versioned file is absent/unreadable. Prefer adopting the newest
-// prior versioned file's expired-source PR orphans (v6 before v5); failing that,
+// prior versioned file's expired-source PR/durable orphans (v7 before v6/v5); failing that,
 // fall back to the legacy unversioned file. Either way the versioned file is
 // minted on the next save.
 async function afterMissingVersionedCache(): Promise<SessionCache> {

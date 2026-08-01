@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
 import { parseAllSessions, clearSessionCache } from '../src/parser.js'
 import { aggregateByPr } from '../src/sessions-report.js'
 import { loadPricing } from '../src/models.js'
+import { CACHE_VERSION, sessionCachePath } from '../src/session-cache.js'
 
 // Finding 1: the 5 -> 6 session-cache bump must not make PR-linked sessions whose
 // transcript has since expired VANISH. loadCache adopts such expired-source
@@ -251,5 +252,71 @@ describe('newest-prior cache adoption (v6 then v5)', () => {
     const urls = aggregateByPr(await parseAllSessions(range, 'claude')).map(r => r.url)
     expect(urls).toContain('https://github.com/o/r/pull/600')     // newer v6 entry wins
     expect(urls).not.toContain('https://github.com/o/r/pull/500')  // older v5 entry for same path superseded
+  })
+})
+
+
+describe('v7 -> v8 cost-assignment adoption', () => {
+  it('preserves an expired PR session and freezes its inherited API-equivalent value', async () => {
+    await loadPricing()
+    const gonePath = join(configDir, 'projects', 'gone7', 'gone7.jsonl')
+    await writeFile(join(cacheDir, 'session-cache.v7.json'), JSON.stringify({
+      version: 7,
+      complete: true,
+      providers: {
+        claude: {
+          envFingerprint: 'stale-v7',
+          files: {
+            [gonePath]: expiredPrEntry('/gone7', 'gone7', 'https://github.com/o/r/pull/7'),
+          },
+        },
+      },
+    }))
+
+    const range = { start: new Date('2026-07-20T00:00:00Z'), end: new Date('2026-07-20T23:59:59Z') }
+    const rows = aggregateByPr(await parseAllSessions(range, 'claude'))
+    expect(rows.find(row => row.url === 'https://github.com/o/r/pull/7')?.cost).toBeCloseTo(40, 6)
+
+    const migrated = JSON.parse(await readFile(sessionCachePath(), 'utf8')) as {
+      version: number
+      providers: Record<string, { files: Record<string, { turns: Array<{ calls: Array<{ costUSD?: number; costAssignment?: { kind?: string } }> }> }> }>
+    }
+    expect(migrated.version).toBe(CACHE_VERSION)
+    const call = migrated.providers['claude']?.files[gonePath]?.turns[0]?.calls[0]
+    expect(call?.costUSD).toBe(40)
+    expect(call?.costAssignment?.kind).toBe('legacy-frozen')
+  })
+
+  it('carries source-less durable v7 entries even when they have no PR links', async () => {
+    await loadPricing()
+    const gonePath = join(tmpDir, 'gone-copilot.sqlite')
+    await writeFile(join(cacheDir, 'session-cache.v7.json'), JSON.stringify({
+      version: 7,
+      complete: true,
+      providers: {
+        copilot: {
+          envFingerprint: 'stale-v7',
+          durable: true,
+          files: {
+            [gonePath]: {
+              fingerprint: { dev: 1, ino: 2, mtimeMs: 3, sizeBytes: 4 },
+              mcpInventory: [],
+              turns: [{
+                timestamp: '2026-07-20T10:00:00.000Z',
+                sessionId: 'durable',
+                userMessage: 'work',
+                calls: [{ ...cachedCall('durable-call', 12), provider: 'copilot' }],
+              }],
+            },
+          },
+        },
+      },
+    }))
+
+    await parseAllSessions(undefined, 'copilot')
+    const migrated = JSON.parse(await readFile(sessionCachePath(), 'utf8')) as any
+    const call = migrated.providers?.copilot?.files?.[gonePath]?.turns?.[0]?.calls?.[0]
+    expect(call?.costUSD).toBe(12)
+    expect(call?.costAssignment?.kind).toBe('legacy-frozen')
   })
 })

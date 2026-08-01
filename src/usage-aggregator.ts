@@ -13,6 +13,7 @@ import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, compu
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
 import { getDaysInRange, ensureCacheHydrated, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
 import { buildGranularHistory } from './granular-history.js'
 
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
@@ -82,8 +83,16 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
 export function getDailyCacheConfigHash(): string {
   const savingsHash = getLocalModelSavingsConfigHash()
   const overridesHash = getPriceOverridesConfigHash()
-  if (!overridesHash) return savingsHash
-  return `localModelSavings=${savingsHash}\u0002priceOverrides=${overridesHash}`
+  const accountingHash = overridesHash
+    ? `localModelSavings=${savingsHash}\u0002priceOverrides=${overridesHash}`
+    : savingsHash
+  // Daily entries store the runtime-visible cost, not only immutable
+  // per-call assignments. Switching historical/compare/legacy must
+  // therefore re-derive surviving source slices; otherwise a daily
+  // headline from one mode can be combined with model/project rows
+  // from another. Sourceless slices are still carried forward by the
+  // v14+ merge contract and remain conservatively legacy-frozen.
+  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\u0002${accountingHash}`
 }
 
 async function hydrateCache(): Promise<DailyCache> {
