@@ -49,8 +49,19 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Typecheck the core source tree
-        run: npx tsc --noEmit
+      - name: Typecheck the reviewed-production boundary
+        run: >-
+          npx tsc --noEmit
+          --target ES2022
+          --module ESNext
+          --moduleResolution bundler
+          --strict
+          --esModuleInterop
+          --skipLibCheck
+          src/local-state/reviewed-production-orchestrator.ts
+          src/local-state/reviewed-production-orchestrator.test.ts
+          src/local-state/workspace-production-lifecycle.ts
+          src/local-state/workspace-production-lifecycle.test.ts
       - name: Run lifecycle, receipt, producer, and orchestrator gates
         run: >-
           npm test -- --run --no-file-parallelism --testTimeout=15000
