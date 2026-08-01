@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -371,8 +371,9 @@ describe.sequential('local reviewed measurement producer v1', () => {
     expect(serialized).not.toContain(Buffer.from(identity.privateKeyPkcs8).toString('base64'))
 
     const outboxDir = join(dataDir, 'outbox', 'v1', 'events')
-    const [eventFile] = (await import('node:fs/promises')).then(fs => fs.readdir(outboxDir))
-    const onDisk = await readFile(join(outboxDir, await eventFile), 'utf-8')
+    const [eventFile] = await readdir(outboxDir)
+    expect(eventFile).toBeDefined()
+    const onDisk = await readFile(join(outboxDir, eventFile!), 'utf-8')
     expect(onDisk).toBe(serialized)
   })
 })
