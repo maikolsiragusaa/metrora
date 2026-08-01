@@ -23,6 +23,7 @@ export type {
   CreateDesktopWorkspaceInputV1,
   DesktopWorkspaceBatchResultV1,
   DesktopWorkspaceExportResultV1,
+  DesktopWorkspaceProductionLifecycleResultV1,
   DesktopWorkspaceRuntimeV1,
   DesktopWorkspaceSnapshotV1,
 } from './local-state/desktop-workspace-runtime.js'
@@ -40,6 +41,24 @@ export type {
   LocalPersonalWorkspaceStateV1,
   LocalPersonalWorkspaceStoreOptions,
 } from './local-state/local-workspace.js'
+
+export {
+  inspectLocalWorkspaceProductionLifecycleV1,
+  LocalWorkspaceProductionLifecycleRecoveryRequiredError,
+  LocalWorkspaceProductionLifecycleStateV1Schema,
+  LocalWorkspaceProductionLifecycleSummaryV1Schema,
+  LocalWorkspaceProductionLifecycleWorkspaceRequiredError,
+  LocalWorkspaceProductionModeV1Schema,
+  setLocalWorkspaceProductionModeV1,
+} from './local-state/workspace-production-lifecycle.js'
+export type {
+  LocalWorkspaceProductionLifecycleOptions,
+  LocalWorkspaceProductionLifecycleStateV1,
+  LocalWorkspaceProductionLifecycleSummaryV1,
+  LocalWorkspaceProductionModeV1,
+  SetLocalWorkspaceProductionModeV1Options,
+  SetLocalWorkspaceProductionModeV1Result,
+} from './local-state/workspace-production-lifecycle.js'
 
 export {
   LocalWorkspaceRequiredError,

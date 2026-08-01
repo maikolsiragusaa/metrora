@@ -1,17 +1,17 @@
 # Desktop Workspace runtime v1
 
-**Status:** W1.D.A secure main-process boundary and W1.D.B focused desktop view are implemented. Explicit reviewed-production and lifecycle controls remain separate work before the complete W1.D experience is closed.
+**Status:** W1.D.A secure main-process boundary, W1.D.B focused desktop view, and W1.D.C.A durable production lifecycle policy are implemented. The canonical reviewed-production orchestrator, focused lifecycle UI, and deterministic recovery controls remain separate work before the complete W1.D experience is closed.
 
-The desktop Workspace runtime exposes the already implemented local Workspace, reviewed evidence, signed-batch, and export capabilities to Electron without creating a second analytics engine or exposing endpoint secrets to the renderer.
+The desktop Workspace runtime exposes the already implemented local Workspace, reviewed evidence, signed-batch, export, and production-policy capabilities to Electron without creating a second analytics engine or exposing endpoint secrets to the renderer.
 
 ## Authority split
 
 The desktop keeps two explicit authorities:
 
 - the existing CLI/menubar Overview payload remains authoritative for calls, sessions, token dimensions, costs, pricing coverage, model labels, source labels, project labels, filters, and periods;
-- the private Workspace runtime is authoritative only for local Workspace identity, enrollment, evidence state, batch creation, and signed export.
+- the private Workspace runtime is authoritative only for local Workspace identity, enrollment, evidence state, production policy, batch creation, and signed export.
 
-The Workspace renderer combines those two read models. It never recalculates analytics totals from outbox events or signed batches.
+The Workspace renderer combines those read models. It never recalculates analytics totals from outbox events or signed batches.
 
 ## Main-process secret boundary
 
@@ -36,15 +36,19 @@ The runtime object is never exposed through `contextBridge`. Only strict public 
 - optional personal Workspace display data and active owner role;
 - enrolled endpoint display/platform/software/capability data;
 - honest evidence state and counts;
+- optional production lifecycle mode, revision, persistence flag, and update timestamp;
 - explicit privacy flags.
 
-It contains no analytics totals. It also excludes:
+The lifecycle field is optional inside the existing v1 snapshot so older staged runtimes and preload consumers remain compatible. The current runtime always emits `null` before Workspace creation and a strict summary after creation.
+
+The snapshot contains no analytics totals. It also excludes:
 
 - private signing keys;
 - event-identity/HMAC keys;
 - OS-vault ciphertext or master key;
 - data directories and internal file paths;
 - raw deduplication keys or production receipts;
+- normalized calls, provider claims, source fingerprints, or cost assignments;
 - prompts, responses, source code, patches, secrets, and tool arguments.
 
 ## Focused desktop view
@@ -65,7 +69,23 @@ The view presents:
 
 Opening the view performs only a public Workspace-status read. It does not scan collectors, produce reviewed measurements, sign a batch, open a save dialog, upload data, or publish anything automatically.
 
-## Actions
+## Production lifecycle policy
+
+W1.D.C.A adds one private atomic `active` / `paused` policy for future explicit reviewed production.
+
+- missing state means active without creating a file;
+- pause and resume are idempotent, revisioned, and cross-process serialized;
+- the record binds the stable Workspace and endpoint, so endpoint-key rotation preserves the policy;
+- malformed, cross-Workspace, cross-endpoint, or clock-regressing state fails closed;
+- resume never deletes state or rewrites existing evidence.
+
+Pause has no effect on collectors, parser execution, Overview analytics, historical pricing, labels, existing outbox events, batches, or exports. Enforcement at the reviewed-production entry point belongs to W1.D.C.B.
+
+The main process exposes two fixed no-argument IPC actions: pause and resume. The renderer cannot supply a mode, call, provider, provenance profile, cost assignment, source fingerprint, path, receipt, or evidence claim. W1.D.C.A does not yet enable user-interface controls for those actions.
+
+The complete contract is documented in `docs/WORKSPACE_PRODUCTION_LIFECYCLE_V1.md`.
+
+## Existing actions
 
 The renderer may request:
 
@@ -98,13 +118,16 @@ All handlers:
 - wait for the same one-time runtime initialization promise;
 - return structured envelopes rather than throwing across IPC;
 - validate user input before invoking the private runtime;
-- map unsupported, unavailable, recovery, blocked, and unknown failures to bounded messages;
+- choose lifecycle modes inside the main process rather than accepting renderer input;
+- map unsupported, unavailable, lifecycle-recovery, Workspace-recovery, blocked, and unknown failures to bounded messages;
 - never forward raw exception text or local paths.
 
 ## Non-goals
 
 - no alternate analytics calculation or total store;
+- no canonical reviewed-production scan or orchestrator yet;
 - no automatic collector scan or reviewed measurement production;
+- no lifecycle UI or destructive reset/recovery action;
 - no automatic batch creation, export, upload, or publication;
 - no uploader, synchronization, network, account, team, invitation, entitlement, billing, or retention service;
 - no Android, Advisor, or Bench behavior;
@@ -112,4 +135,4 @@ All handlers:
 
 ## Remaining W1.D work
 
-The focused W1.D.B screen does not by itself close the complete desktop Workspace experience. A later bounded tranche must expose reviewed-measurement production explicitly and settle honest pause/recovery controls without weakening the main-process secret boundary, duplicating analytics, or introducing hosted dependencies.
+W1.D.C.B must create the trusted canonical reviewed-production orchestrator inside the parser/cache and main-process authority. W1.D.C.C must expose explicit Produce, Pause, Resume, and deterministic non-destructive Recovery controls, then validate the complete portable Windows flow. Neither tranche may weaken the secret boundary, duplicate analytics, infer unsupported providers, or introduce hosted dependencies.

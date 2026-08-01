@@ -33,6 +33,7 @@ function runtime(): DesktopWorkspaceRuntime {
         publicKeyFingerprintSha256: 'a'.repeat(64),
       },
       workspace: null,
+      productionLifecycle: null,
       evidence: {
         state: 'workspace-required',
         pendingEventCount: 0,
@@ -54,6 +55,7 @@ function runtime(): DesktopWorkspaceRuntime {
       },
     })),
     createWorkspace: vi.fn(),
+    setProductionMode: vi.fn(),
     createNextBatch: vi.fn(),
     exportEvidence: vi.fn(),
     dispose: vi.fn(),

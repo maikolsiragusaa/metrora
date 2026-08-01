@@ -37,6 +37,12 @@ export type DesktopWorkspaceSnapshot = {
       enrollmentState: 'active'
     }
   }
+  productionLifecycle?: null | {
+    mode: 'active' | 'paused'
+    revision: number
+    persisted: boolean
+    updatedAt: string | null
+  }
   evidence: {
     state: 'workspace-required' | 'empty' | 'ready' | 'acknowledged' | 'quarantined' | 'blocked'
     pendingEventCount: number
@@ -65,6 +71,10 @@ export type DesktopWorkspaceRuntime = {
     slug?: string
     endpointDisplayName: string
   }): Promise<{ outcome: 'created' | 'existing'; snapshot: DesktopWorkspaceSnapshot }>
+  setProductionMode(mode: 'active' | 'paused'): Promise<{
+    outcome: 'changed' | 'unchanged'
+    snapshot: DesktopWorkspaceSnapshot
+  }>
   createNextBatch(): Promise<{
     outcome: 'created' | 'empty'
     batch?: {
