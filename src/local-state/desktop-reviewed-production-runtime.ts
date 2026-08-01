@@ -43,6 +43,13 @@ export class DesktopReviewedProductionUnavailableError extends Error {
   }
 }
 
+function scannerError(error: unknown): Error {
+  if (error instanceof Error && error.name === 'CanonicalReviewedProductionScannerIntegrityError') {
+    return error
+  }
+  return new DesktopReviewedProductionUnavailableError()
+}
+
 /**
  * Extend the private desktop Workspace runtime without exposing identity or
  * canonical calls. Electron receives one zero-argument action; the trusted
@@ -65,10 +72,16 @@ export function attachDesktopReviewedProductionV1(
       const summary = await produceCanonicalReviewedMeasurementsV1({
         dataDir: input.dataDir,
         identity: input.identity,
-        scanCanonicalCandidates: () => input.scanCanonicalCandidates!({
-          endpointId: input.identity.metadata.endpointId,
-          adapterVersion: input.adapterVersion,
-        }),
+        scanCanonicalCandidates: async () => {
+          try {
+            return await input.scanCanonicalCandidates!({
+              endpointId: input.identity.metadata.endpointId,
+              adapterVersion: input.adapterVersion,
+            })
+          } catch (error) {
+            throw scannerError(error)
+          }
+        },
         now,
       })
       return {
