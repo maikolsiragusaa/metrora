@@ -40,7 +40,7 @@ const sqliteDescribe = isSqliteAvailable() ? describe : describe.skip
 
 sqliteDescribe('Zed model provider provenance', () => {
   it('preserves an explicit provider recorded by Zed', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'qovrion-zed-provider-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-zed-provider-'))
     tempDirs.push(dir)
     const dbPath = join(dir, 'threads.db')
     createThreadsDb(dbPath, 'Anthropic')
@@ -59,7 +59,7 @@ sqliteDescribe('Zed model provider provenance', () => {
   })
 
   it('omits malformed provider claims instead of inferring one from the model', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'qovrion-zed-provider-invalid-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-zed-provider-invalid-'))
     tempDirs.push(dir)
     const dbPath = join(dir, 'threads.db')
     createThreadsDb(dbPath, 'anthropic/claude')

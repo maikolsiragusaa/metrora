@@ -24,7 +24,7 @@ export type ReviewedUsageMeasurementEventContextV1 = {
     version?: string
   }
   collector: {
-    /** Qovrion release/adapter implementation version, not parser provenance. */
+    /** Metrora release/adapter implementation version, not parser provenance. */
     adapterVersion: string
     sourceFingerprintSha256: string
   }

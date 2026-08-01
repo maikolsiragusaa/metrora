@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Qovrion</string>
+    <string name="app_name">Metrora</string>
     <string name="app_subtitle">Private, local-first AI usage intelligence.</string>
     <string name="pair_title">Connect this phone</string>
-    <string name="pair_body">Start sharing in Qovrion Desktop, then enter its local-network address. Qovrion will show the same six-digit confirmation code on both devices.</string>
+    <string name="pair_body">Start sharing in Metrora Desktop, then enter its local-network address. Metrora will show the same six-digit confirmation code on both devices.</string>
     <string name="desktop_address">Desktop address</string>
-    <string name="desktop_address_hint">For example 192.168.1.24 or qovrion-pc.local</string>
+    <string name="desktop_address_hint">For example 192.168.1.24 or metrora-pc.local</string>
     <string name="port">Port</string>
     <string name="pair_action">Connect and compare code</string>
     <string name="compare_code_title">Compare with %1$s</string>
     <string name="compare_code_body">Approve on the desktop only when every digit matches. A different code can indicate the wrong computer or an intercepted connection.</string>
     <string name="local_first_title">Local network only</string>
-    <string name="local_first_body">Prompts, source code and transcripts are not requested. Qovrion uses mutual TLS, compares both device identities, pins the desktop certificate and encrypts credentials and cached usage on this phone.</string>
+    <string name="local_first_body">Prompts, source code and transcripts are not requested. Metrora uses mutual TLS, compares both device identities, pins the desktop certificate and encrypts credentials and cached usage on this phone.</string>
     <string name="paired_endpoint">%1$s:%2$d</string>
     <string name="cached_data">Showing the last encrypted offline snapshot</string>
     <string name="refresh">Refresh from desktop</string>

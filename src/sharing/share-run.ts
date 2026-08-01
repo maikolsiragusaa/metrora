@@ -62,12 +62,12 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
   process.on('SIGINT', () => void shutdown())
 
   process.stdout.write(`\n  Sharing "${identity.name}" - discoverable on your local network.\n`)
-  process.stdout.write('  In Qovrion Mobile, enter this computer address and compare the six-digit code.\n')
+  process.stdout.write('  In Metrora Mobile, enter this computer address and compare the six-digit code.\n')
   process.stdout.write(`  Address: ${ip}:${port}\n`)
   if (opts.pair) {
     const pin = server.openPairing(120_000)
     process.stdout.write(`\n  Legacy manual fallback:\n`)
-    process.stdout.write(`    qovrion devices add ${ip}:${port} --pin ${pin}\n`)
+    process.stdout.write(`    metrora devices add ${ip}:${port} --pin ${pin}\n`)
   }
   process.stdout.write(`\n  ${peers.list().length} paired device(s). Press Ctrl+C to stop.\n\n`)
 
@@ -78,7 +78,7 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     })
     const timer = setInterval(() => {
       if (Date.now() - last > IDLE_TIMEOUT_MS) {
-        process.stdout.write('\n  Idle, stopping share. Run `qovrion share` again when you need it.\n')
+        process.stdout.write('\n  Idle, stopping share. Run `metrora share` again when you need it.\n')
         process.exit(0)
       }
     }, 30_000)

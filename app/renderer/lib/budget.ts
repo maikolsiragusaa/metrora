@@ -1,6 +1,6 @@
 import { readCompatStorage } from './storage'
 
-// Renderer-only daily budget setting. Canonical storage is qovrion.dailyBudget;
+// Renderer-only daily budget setting. Canonical storage is metrora.dailyBudget;
 // the adapter preserves the CodeBurn-era key during the compatibility window.
 export type DailyBudget = { kind: 'usd' | 'tokens'; value: number }
 

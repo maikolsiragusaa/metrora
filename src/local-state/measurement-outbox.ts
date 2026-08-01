@@ -18,7 +18,7 @@ import {
   ensurePrivateDirectory,
   readOptionalPrivateFile,
 } from './atomic-file.js'
-import { defaultQovrionDataDir } from './endpoint-identity.js'
+import { defaultMetroraDataDir } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 
 export const LOCAL_OUTBOX_RECORD_KIND = 'qovrion.local-measurement-outbox-record' as const
@@ -161,7 +161,7 @@ export async function enqueueMeasurementEventV1(
   options: MeasurementOutboxOptions = {},
 ): Promise<{ status: 'enqueued' | 'duplicate'; record: LocalMeasurementOutboxRecordV1 }> {
   const event = UsageMeasurementEventV1Schema.parse(eventInput)
-  const paths = outboxPaths(options.dataDir ?? defaultQovrionDataDir())
+  const paths = outboxPaths(options.dataDir ?? defaultMetroraDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 
@@ -215,7 +215,7 @@ export async function acknowledgeMeasurementEventV1(
   const requestedReceiptId = options.receiptId === undefined
     ? undefined
     : OutboxReceiptIdSchema.parse(options.receiptId)
-  const paths = outboxPaths(options.dataDir ?? defaultQovrionDataDir())
+  const paths = outboxPaths(options.dataDir ?? defaultMetroraDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 
@@ -249,7 +249,7 @@ export async function acknowledgeMeasurementEventV1(
 export async function scanMeasurementOutboxV1(
   options: MeasurementOutboxOptions = {},
 ): Promise<MeasurementOutboxScanV1> {
-  const paths = outboxPaths(options.dataDir ?? defaultQovrionDataDir())
+  const paths = outboxPaths(options.dataDir ?? defaultMetroraDataDir())
   await prepare(paths)
   const pending: LocalMeasurementOutboxRecordV1[] = []
   const acknowledged: MeasurementOutboxScanV1['acknowledged'] = []
@@ -310,7 +310,7 @@ export async function quarantineMeasurementOutboxFileV1(
   options: MeasurementOutboxOptions = {},
 ): Promise<LocalMeasurementOutboxQuarantineV1> {
   if (!/^[a-f0-9]{64}\.json$/.test(eventFile)) throw new Error('invalid outbox event filename')
-  const paths = outboxPaths(options.dataDir ?? defaultQovrionDataDir())
+  const paths = outboxPaths(options.dataDir ?? defaultMetroraDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 

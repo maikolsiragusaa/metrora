@@ -9,7 +9,7 @@ import { defaultEnabledFor, sanitizeProps, TELEMETRY_ENDPOINT, Telemetry } from 
 let dir: string
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'qovrion-telemetry-'))
+  dir = mkdtempSync(join(tmpdir(), 'metrora-telemetry-'))
 })
 
 afterEach(() => {
@@ -28,7 +28,7 @@ function make() {
   return { telemetry, fetchFn }
 }
 
-describe('Qovrion telemetry boundary', () => {
+describe('Metrora telemetry boundary', () => {
   it('has no network endpoint and defaults off in every region', () => {
     expect(TELEMETRY_ENDPOINT).toBeNull()
     for (const country of ['IT', 'US', 'JP', null, undefined]) {

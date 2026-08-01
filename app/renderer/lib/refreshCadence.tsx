@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 
 import { readCompatStorage, writeCompatStorage } from './storage'
 
-// The auto-refresh cadence, chosen in Settings > General. Qovrion storage is
+// The auto-refresh cadence, chosen in Settings > General. Metrora storage is
 // canonical; the adapter dual-writes the legacy key during the migration window.
 export const REFRESH_OPTIONS: ReadonlyArray<{ value: string; label: string; ms: number | null }> = [
   { value: 'manual', label: 'Manual', ms: null },

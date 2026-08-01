@@ -27,8 +27,8 @@ describe('version utilities', () => {
   })
 })
 
-describe('Qovrion update boundary', () => {
-  it('is disabled until Qovrion owns a verified release channel', () => {
+describe('Metrora update boundary', () => {
+  it('is disabled until Metrora owns a verified release channel', () => {
     expect(UPDATES_ENABLED).toBe(false)
   })
 

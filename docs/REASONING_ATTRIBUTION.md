@@ -1,6 +1,6 @@
 # Reasoning attribution
 
-Qovrion records a reasoning level only when a local source exposes it explicitly or when a saved model label encodes it unambiguously.
+Metrora records a reasoning level only when a local source exposes it explicitly or when a saved model label encodes it unambiguously.
 
 ## Canonical levels
 
@@ -35,7 +35,7 @@ Coverage is the share of calls with a known level. Calls without evidence remain
 
 Codex effort changes recorded during a session are applied from the relevant `turn_context` onward, so a session can contain a real mixture of levels.
 
-Zed currently persists a thread-level `thinking_effort` snapshot rather than a trustworthy historical setting for each request. Qovrion does not assign that final snapshot to previous calls. It may be shown separately as snapshot-only metadata in a future change.
+Zed currently persists a thread-level `thinking_effort` snapshot rather than a trustworthy historical setting for each request. Metrora does not assign that final snapshot to previous calls. It may be shown separately as snapshot-only metadata in a future change.
 
 ## Privacy
 

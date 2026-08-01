@@ -1,4 +1,4 @@
-# Qovrion reviewed event factory v1
+# Metrora reviewed event factory v1
 
 Status: **implemented but not connected to runtime collection or transport**.
 
@@ -20,7 +20,7 @@ The factory does not discover or infer the following facts:
 - local endpoint event-identity key;
 - repository, project, account, or session disclosure;
 - tool name and version;
-- Qovrion adapter version;
+- Metrora adapter version;
 - source fingerprint;
 - actual AI/API provider;
 - GenAI operation;
@@ -38,7 +38,7 @@ The caller cannot choose the public collector profile identity or source kind. W
 
 This prevents a content-length fallback from being labelled as a measured token-count path.
 
-`collector.adapterVersion` remains explicit because it identifies the Qovrion implementation release, while the provenance profile separately pins the inherited parser fingerprint.
+`collector.adapterVersion` remains explicit because it identifies the Metrora implementation release, while the provenance profile separately pins the inherited parser fingerprint.
 
 ## Session disclosure
 
@@ -78,4 +78,4 @@ The factory ultimately calls the existing allowlist adapter. The event never ser
 
 ## Next safe step
 
-Before normal collection can emit these events, Qovrion needs an offline endpoint event-identity store and an append-only local outbox with idempotent batch publication. That layer should reuse the existing desktop identity and atomic cache patterns rather than introduce a hosted dependency.
+Before normal collection can emit these events, Metrora needs an offline endpoint event-identity store and an append-only local outbox with idempotent batch publication. That layer should reuse the existing desktop identity and atomic cache patterns rather than introduce a hosted dependency.

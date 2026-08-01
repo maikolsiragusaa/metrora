@@ -1,6 +1,6 @@
-# Qovrion Android companion foundation
+# Metrora Android companion foundation
 
-The Android application is a private local companion to Qovrion Desktop. It does not collect AI usage itself and does not introduce a second gateway, parser, provider registry or analytics engine.
+The Android application is a private local companion to Metrora Desktop. It does not collect AI usage itself and does not introduce a second gateway, parser, provider registry or analytics engine.
 
 ## Authority and data flow
 
@@ -15,9 +15,9 @@ The user enters a LAN address and port. Discovery and QR conveniences can be lay
 
 ## Verified first pairing
 
-The app creates an EC client identity in Android Keystore and presents its certificate during mutual TLS. It observes the desktop certificate fingerprint, verifies that it matches the fingerprint advertised by Qovrion and computes a six-digit confirmation code from both device fingerprints.
+The app creates an EC client identity in Android Keystore and presents its certificate during mutual TLS. It observes the desktop certificate fingerprint, verifies that it matches the fingerprint advertised by Metrora and computes a six-digit confirmation code from both device fingerprints.
 
-The same code is shown on Android and Qovrion Desktop. The desktop owner approves only when every digit matches. This comparison authenticates the first contact and detects an active local-network intermediary whose certificate would produce a different code.
+The same code is shown on Android and Metrora Desktop. The desktop owner approves only when every digit matches. This comparison authenticates the first contact and detects an active local-network intermediary whose certificate would produce a different code.
 
 After approval, the desktop fingerprint is pinned for all subsequent operations. The bearer token is useful only together with the same client certificate because the desktop authorizes the token and certificate fingerprint as one peer identity.
 

@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 // Stub electron so importing main.ts does not require an Electron runtime.
 vi.mock('electron', () => ({
-  app: { name: 'Qovrion', whenReady: () => Promise.resolve(), on: () => {}, quit: () => {} },
+  app: { name: 'Metrora', whenReady: () => Promise.resolve(), on: () => {}, quit: () => {} },
   BrowserWindow: class {},
   dialog: { showOpenDialog: vi.fn() },
   ipcMain: { handle: () => {} },
@@ -280,7 +280,7 @@ describe('createApplicationMenuTemplate', () => {
 
 describe('createBeforeQuitHandler', () => {
   it('cleans up and quits without sending an app-close request', async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), 'qovrion-main-quit-'))
+    const stateDir = mkdtempSync(join(tmpdir(), 'metrora-main-quit-'))
     try {
       const fetchFn = vi.fn(async () => ({ ok: true } as Response)) as unknown as typeof fetch
       const telemetry = new Telemetry({ stateDir, country: 'US', isPackaged: true, appVersion: '1', fetchFn })

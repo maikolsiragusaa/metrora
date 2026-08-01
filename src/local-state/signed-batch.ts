@@ -209,7 +209,7 @@ export async function createNextSignedMeasurementBatchV1(
   if (!Number.isInteger(maxEvents) || maxEvents < 1 || maxEvents > 10_000) {
     throw new Error('signed batch maxEvents must be an integer from 1 to 10000')
   }
-  if (!options.dataDir.trim()) throw new Error('signed batch creation requires an explicit Qovrion data directory')
+  if (!options.dataDir.trim()) throw new Error('signed batch creation requires an explicit Metrora data directory')
   const paths = batchPaths(options.dataDir)
 
   return withLocalStateLease(paths.root, async () => {
@@ -308,7 +308,7 @@ async function readAck(
 export async function listUnacknowledgedSignedMeasurementBatchesV1(
   options: SignedMeasurementBatchStoreOptions,
 ): Promise<LocalSignedMeasurementBatchV1[]> {
-  if (!options.dataDir.trim()) throw new Error('signed batch listing requires an explicit Qovrion data directory')
+  if (!options.dataDir.trim()) throw new Error('signed batch listing requires an explicit Metrora data directory')
   const endpointId = OpaqueIdSchema.parse(options.endpointId)
   const paths = batchPaths(options.dataDir)
   await ensurePrivateDirectory(paths.acknowledgements)
@@ -325,7 +325,7 @@ export async function acknowledgeSignedMeasurementBatchV1(
   receiptIdInput: string,
   options: SignedMeasurementBatchStoreOptions & { now?: () => Date },
 ): Promise<{ status: 'acknowledged' | 'duplicate'; ack: LocalSignedMeasurementBatchAckV1 }> {
-  if (!options.dataDir.trim()) throw new Error('signed batch acknowledgement requires an explicit Qovrion data directory')
+  if (!options.dataDir.trim()) throw new Error('signed batch acknowledgement requires an explicit Metrora data directory')
   const endpointId = OpaqueIdSchema.parse(options.endpointId)
   const batchId = OpaqueIdSchema.parse(batchIdInput)
   const receiptId = z.string().trim().min(1).max(200).parse(receiptIdInput)

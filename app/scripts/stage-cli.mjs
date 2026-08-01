@@ -1,4 +1,4 @@
-// Stage a self-contained copy of the root Qovrion runtime into app/build/cli so
+// Stage a self-contained copy of the root Metrora runtime into app/build/cli so
 // electron-builder can ship both the compatibility CLI and the narrow desktop
 // local-state entry. The packaged app spawns the CLI via Electron-as-node and
 // dynamically imports the local-state entry in the Electron main process.

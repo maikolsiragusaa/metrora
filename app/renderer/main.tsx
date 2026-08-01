@@ -10,7 +10,7 @@ import './styles/plain.css'
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')
 
-// Copy known CodeBurn-era settings to canonical Qovrion keys before any React
+// Copy known CodeBurn-era settings to canonical Metrora keys before any React
 // state initializer reads them. Legacy keys are intentionally retained.
 migrateKnownStorage()
 
@@ -20,9 +20,9 @@ installPageHiddenClass()
 // Tag the platform so CSS can adapt native chrome. Prefer the canonical bridge
 // and retain the legacy bridge only as a compatibility fallback.
 const desktopBridge = (window as unknown as {
-  qovrion?: { platform?: string }
+  metrora?: { platform?: string }
   codeburn?: { platform?: string }
-}).qovrion ?? (window as unknown as { codeburn?: { platform?: string } }).codeburn
+}).metrora ?? (window as unknown as { codeburn?: { platform?: string } }).codeburn
 document.documentElement.dataset.platform = desktopBridge?.platform ?? ''
 
 createRoot(root).render(

@@ -1,4 +1,4 @@
-export const COMPANION_USAGE_KIND = 'qovrion.companion.usage' as const
+export const COMPANION_USAGE_KIND = 'metrora.companion.usage' as const
 export const COMPANION_USAGE_VERSION = 1 as const
 
 export type CompanionModelUsageV1 = {

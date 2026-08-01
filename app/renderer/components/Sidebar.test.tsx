@@ -28,12 +28,12 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: /Overview/ })).not.toHaveClass('on')
   })
 
-  it('renders the static Qovrion vector mark instead of the inherited flame asset', () => {
+  it('renders the static Metrora vector mark instead of the inherited flame asset', () => {
     const { container } = render(<Sidebar active="overview" onNavigate={() => {}} />)
     const mark = container.querySelector('.app svg')
     expect(mark?.tagName.toLowerCase()).toBe('svg')
     expect(container.querySelector('.flamemark')).toBeNull()
     expect(container.querySelector('.fm-flicker')).toBeNull()
-    expect(container.querySelector('.app')?.textContent).toContain('Qovrion')
+    expect(container.querySelector('.app')?.textContent).toContain('Metrora')
   })
 })

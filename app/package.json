@@ -1,8 +1,8 @@
 {
-  "name": "qovrion-desktop",
+  "name": "metrora-desktop",
   "private": true,
   "version": "0.9.19",
-  "description": "Qovrion Desktop — local-first AI usage intelligence powered by the compatibility CLI",
+  "description": "Metrora Desktop — local-first AI usage intelligence powered by the compatibility CLI",
   "main": "dist/electron/bootstrap.js",
   "scripts": {
     "build:electron": "tsc -p tsconfig.electron.json",
@@ -45,8 +45,8 @@
     "wait-on": "^9.0.10"
   },
   "build": {
-    "appId": "org.qovrion.desktop",
-    "productName": "Qovrion",
+    "appId": "eu.metrora.desktop",
+    "productName": "Metrora",
     "directories": {
       "output": "release"
     },
@@ -79,9 +79,9 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
-        "NSDocumentsFolderUsageDescription": "Qovrion reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
-        "NSDesktopFolderUsageDescription": "Qovrion reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
-        "NSDownloadsFolderUsageDescription": "Qovrion reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry."
+        "NSDocumentsFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
+        "NSDesktopFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
+        "NSDownloadsFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry."
       }
     },
     "dmg": {},
@@ -99,7 +99,7 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "artifactName": "Qovrion-Setup-${version}.${ext}"
+      "artifactName": "Metrora-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -125,9 +125,9 @@
       "category": "Development",
       "icon": "build/icon.png",
       "maintainer": "Maikol Siragusa",
-      "executableName": "qovrion"
+      "executableName": "metrora"
     }
   },
-  "homepage": "https://github.com/maikolsiragusaa/qovrion",
+  "homepage": "https://metrora.eu",
   "author": "Maikol Siragusa"
 }

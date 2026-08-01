@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "QovrionAndroid"
+rootProject.name = "MetroraAndroid"
 include(":app")

@@ -46,7 +46,7 @@ const CURRENCIES = [
 
 function storageSuffix(key: string): string {
   if (key.startsWith('codeburn.')) return key.slice('codeburn.'.length)
-  if (key.startsWith('qovrion.')) return key.slice('qovrion.'.length)
+  if (key.startsWith('metrora.')) return key.slice('metrora.'.length)
   return key
 }
 
@@ -207,7 +207,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
         </div>
         <div className="about-sec set-last-sec">
           <div className="about-sec-h">About</div>
-          <div className="about-row"><span className="tx">Qovrion {appVersion}<small>Automatic updates are not configured for this development build.</small></span><span className="r" /></div>
+          <div className="about-row"><span className="tx">Metrora {appVersion}<small>Automatic updates are not configured for this development build.</small></span><span className="r" /></div>
         </div>
       </div>
     </section>
@@ -224,7 +224,7 @@ function ProvidersPane({ period, refreshToken }: { period: Period; refreshToken:
     ? details.filter(entry => entry.cost > 0).map(entry => ({ id: entry.id, label: entry.label, cost: entry.cost }))
     : Object.entries(overview.data?.current.providers ?? {}).map(([id, cost]) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1), cost }))
   return <section className="set-p on">
-    <div><h3 className="set-h">Providers</h3><p className="set-sub">Qovrion auto-detects coding tools from local session files. No setup needed.</p></div>
+    <div><h3 className="set-h">Providers</h3><p className="set-sub">Metrora auto-detects coding tools from local session files. No setup needed.</p></div>
     {overview.error ? <SettingsErrorText error={overview.error} /> : !overview.data ? <p className="set-cap">Loading detected providers…</p> : providers.length === 0 ? <p className="set-cap">No providers detected.</p> : providers.map(entry => <div className="card" key={entry.id}><div className="set-prov-head"><ProviderLogo provider={entry.id} /><span className="set-prov-name">{entry.label}</span><span className="set-status"><span className="set-dot ok" />Detected · {formatUsd(entry.cost)}</span></div></div>)}
   </section>
 }
@@ -434,7 +434,7 @@ function DevicesPane({ period, refreshToken }: { period: Period; refreshToken: n
 }
 
 function PrivacyPane() {
-  return <section className="set-p on"><div><h3 className="set-h">Privacy &amp; data</h3><p className="set-sub">What Qovrion does, and does not do, with your data.</p></div><div className="card">
+  return <section className="set-p on"><div><h3 className="set-h">Privacy &amp; data</h3><p className="set-sub">What Metrora does, and does not do, with your data.</p></div><div className="card">
     <PrivacyClaim title="Local-only" detail="Usage analysis runs on your machine and reads local session files." icon={<><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>} />
     <PrivacyClaim title="No API keys" detail="Usage is detected from local files; no provider API keys are required." icon={<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />} />
     <PrivacyClaim title="No product telemetry" detail="This build does not transmit product telemetry or query inherited CodeBurn update services." icon={<path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" />} />

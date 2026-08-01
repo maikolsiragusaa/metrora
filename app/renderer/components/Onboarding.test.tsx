@@ -9,11 +9,11 @@ function next(): void {
 }
 
 describe('Onboarding', () => {
-  it('walks the three Qovrion feature screens and completes locally', () => {
+  it('walks the three Metrora feature screens and completes locally', () => {
     const onDone = vi.fn()
     render(<Onboarding defaultEnabled onDone={onDone} />)
 
-    expect(screen.getByRole('dialog', { name: 'Welcome to Qovrion' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Welcome to Metrora' })).toBeInTheDocument()
     expect(screen.getByText('Every tool. One clear view.')).toBeInTheDocument()
 
     next()

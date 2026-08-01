@@ -1,4 +1,4 @@
-# Qovrion Public Contracts v1
+# Metrora Public Contracts v1
 
 Status: **foundation contract**. These schemas are public, local-first, content-minimal, and intentionally independent from any future commercial control plane.
 
@@ -6,7 +6,7 @@ The TypeScript source of truth lives in `src/contracts/v1/`. Every object is run
 
 ## Why these contracts exist
 
-Qovrion already has mature collectors, parsers, analytics, desktop surfaces, and local sharing inherited and hardened from CodeBurn. The missing boundary was not another collector framework. It was one stable vocabulary that future desktop, CLI, web, Android, team, export, and managed-advisor surfaces can share without exposing the internal parser model.
+Metrora already has mature collectors, parsers, analytics, desktop surfaces, and local sharing inherited and hardened from CodeBurn. The missing boundary was not another collector framework. It was one stable vocabulary that future desktop, CLI, web, Android, team, export, and managed-advisor surfaces can share without exposing the internal parser model.
 
 The v1 boundary covers:
 
@@ -24,7 +24,7 @@ It does **not** define billing, hosted BYOK, account provisioning, cloud synchro
 
 ### Zod 4
 
-Qovrion already depends on `zod@3.25.x`, which includes the stable `zod/v4` subpath. The contracts use that existing dependency rather than introducing TypeBox, Joi, Yup, Valibot, or a home-grown validator.
+Metrora already depends on `zod@3.25.x`, which includes the stable `zod/v4` subpath. The contracts use that existing dependency rather than introducing TypeBox, Joi, Yup, Valibot, or a home-grown validator.
 
 Zod is the executable source of truth and its built-in `z.toJSONSchema()` converter produces language-neutral JSON Schema documents.
 
@@ -34,7 +34,7 @@ The generated schema target is JSON Schema Draft 2020-12:
 
 - https://json-schema.org/draft/2020-12
 
-When Qovrion exposes a public HTTP control-plane API, it should describe that API with OpenAPI 3.1 or newer. OpenAPI 3.1 aligns its Schema Object with modern JSON Schema and avoids maintaining a separate DTO dialect:
+When Metrora exposes a public HTTP control-plane API, it should describe that API with OpenAPI 3.1 or newer. OpenAPI 3.1 aligns its Schema Object with modern JSON Schema and avoids maintaining a separate DTO dialect:
 
 - https://spec.openapis.org/oas/v3.1.1.html
 
@@ -54,9 +54,9 @@ Each `UsageMeasurementEventV1` uses the CloudEvents 1.0 core envelope:
 - `dataschema`
 - `data`
 
-The event type is `dev.qovrion.measurement.ai-usage.v1`.
+The event type is `dev.metrora.measurement.ai-usage.v1`.
 
-CloudEvents gives Qovrion a portable event identity and routing envelope without selecting Kafka, NATS, a cloud event bus, or any hosted infrastructure:
+CloudEvents gives Metrora a portable event identity and routing envelope without selecting Kafka, NATS, a cloud event bus, or any hosted infrastructure:
 
 - https://github.com/cloudevents/spec
 
@@ -70,18 +70,18 @@ The measurement data uses the same core concepts as the OpenTelemetry Generative
 - input and output token usage;
 - cache and reasoning token usage.
 
-The OpenTelemetry GenAI conventions are still marked as development and have moved to their own repository. Qovrion therefore records the convention version in each batch instead of importing unstable generated constants into the public wire contract:
+The OpenTelemetry GenAI conventions are still marked as development and have moved to their own repository. Metrora therefore records the convention version in each batch instead of importing unstable generated constants into the public wire contract:
 
 - https://github.com/open-telemetry/semantic-conventions-genai
 
-Qovrion extensions cover facts OpenTelemetry does not currently standardize for this product boundary, including cost provenance, repository/session attribution, reasoning attribution confidence, collector evidence, and content-exclusion guarantees.
+Metrora extensions cover facts OpenTelemetry does not currently standardize for this product boundary, including cost provenance, repository/session attribution, reasoning attribution confidence, collector evidence, and content-exclusion guarantees.
 
 ### in-toto Statement v1
 
-`UsageEvidenceStatementV1` is an in-toto Statement v1 with a Qovrion predicate type. It does not invent a proprietary attestation envelope:
+`UsageEvidenceStatementV1` is an in-toto Statement v1 with a Metrora predicate type. It does not invent a proprietary attestation envelope:
 
 - `_type`: `https://in-toto.io/Statement/v1`
-- `predicateType`: `https://schemas.qovrion.dev/attestations/usage-evidence/v1`
+- `predicateType`: `https://schemas.metrora.dev/attestations/usage-evidence/v1`
 
 The statement subject binds the exact SHA-256 digest of the measurement batch. Runtime validation also checks that the subject and predicate name the same batch and digest.
 
@@ -93,7 +93,7 @@ Evidence predicates declare RFC 8785 JSON Canonicalization Scheme as the canonic
 
 - https://www.rfc-editor.org/rfc/rfc8785.html
 
-Qovrion must use a tested RFC 8785 implementation when hashing is wired into runtime. It must not create an ad-hoc sorted-key serializer.
+Metrora must use a tested RFC 8785 implementation when hashing is wired into runtime. It must not create an ad-hoc sorted-key serializer.
 
 ### DSSE and Sigstore later, not now
 
@@ -132,7 +132,7 @@ Defines a narrow positive allowlist for aggregate datasets, recipients, time win
 
 V1 can never authorize prompts, responses, source code, patches, secrets, or full local paths. Those fields are literals fixed to `none`.
 
-This is deliberately smaller than OPA/Rego, Cedar, OpenFGA, SpiceDB, or Casbin. Qovrion should adopt one of those systems only when a real multi-user control plane requires delegated authorization evaluation. Embedding a general policy engine in the local core now would add complexity without enforcing an existing product flow.
+This is deliberately smaller than OPA/Rego, Cedar, OpenFGA, SpiceDB, or Casbin. Metrora should adopt one of those systems only when a real multi-user control plane requires delegated authorization evaluation. Embedding a general policy engine in the local core now would add complexity without enforcing an existing product flow.
 
 ### `UsageMeasurementEventV1`
 
@@ -152,7 +152,7 @@ Reasoning is also explicit: a known level requires an attribution source; otherw
 
 Batches up to 10,000 CloudEvents measurement records, identifies the producing endpoint and adapter set, pins the semantic-convention versions, and optionally chains to a previous batch digest.
 
-It is not OTLP. OTLP is the transport protocol for OpenTelemetry data and can be added as an adapter when Qovrion actually exports to or receives from an OpenTelemetry Collector. Forcing the existing local historical parsers into OTLP's wire representation now would make the core more complex without improving interoperability.
+It is not OTLP. OTLP is the transport protocol for OpenTelemetry data and can be added as an adapter when Metrora actually exports to or receives from an OpenTelemetry Collector. Forcing the existing local historical parsers into OTLP's wire representation now would make the core more complex without improving interoperability.
 
 ### `CollectorProvenanceProfileV1`
 
@@ -206,15 +206,15 @@ The adapter is deliberately an allowlist rather than a serializer:
 - it rejects partial reasoning attribution and non-unknown session quality without an exported session ID;
 - it validates its own output through the public Zod schema before returning it.
 
-This does not replace any CodeBurn/Qovrion collector or parser. Existing collectors remain authoritative and can be projected only after their adapter-specific provenance and quality mapping is reviewed.
+This does not replace any CodeBurn/Metrora collector or parser. Existing collectors remain authoritative and can be projected only after their adapter-specific provenance and quality mapping is reviewed.
 
 ## Versioning rules
 
-- `version` changes only for Qovrion contract semantics.
+- `version` changes only for Metrora contract semantics.
 - CloudEvents uses its own `specversion`.
 - OpenTelemetry semantic-convention versions are pinned in each measurement batch.
 - in-toto uses its own `_type` URI.
-- Breaking Qovrion changes create `v2`; v1 schemas are not silently reinterpreted.
+- Breaking Metrora changes create `v2`; v1 schemas are not silently reinterpreted.
 - Consumers must reject unknown required fields because all v1 objects are strict.
 - Producers may continue emitting v1 after v2 exists.
 

@@ -1,6 +1,6 @@
 # Core test quarantine
 
-Qovrion treats the complete core and desktop suites as blocking merge gates. A test may be quarantined only when it is named exactly, the underlying behavior is outside the current bounded change, and an explicit exit condition is recorded here.
+Metrora treats the complete core and desktop suites as blocking merge gates. A test may be quarantined only when it is named exactly, the underlying behavior is outside the current bounded change, and an explicit exit condition is recorded here.
 
 Quarantine is not equivalent to deletion or success. CI continues to execute every non-quarantined test in the affected files and reports the quarantined cases separately.
 
@@ -27,7 +27,7 @@ Exact test:
 
 - `incremental append parsing > EDGE: file replaced (inode change) falls back to a full re-parse`
 
-Reason: the fixture unlinks and immediately recreates the file, then assumes Linux cannot reuse the released inode. Linux is permitted to reuse it, so the assertion fails before Qovrion parsing runs.
+Reason: the fixture unlinks and immediately recreates the file, then assumes Linux cannot reuse the released inode. Linux is permitted to reuse it, so the assertion fails before Metrora parsing runs.
 
 Exit condition: create the replacement while the original still exists, assert distinct identities, atomically rename it over the original and retain the cold-versus-warm parser equality check.
 

@@ -12,7 +12,7 @@ import {
 const temporaryRoots: string[] = []
 
 async function temporaryDataDir(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'qovrion-price-bands-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-price-bands-'))
   temporaryRoots.push(root)
   return root
 }

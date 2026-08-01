@@ -2,14 +2,14 @@ import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
- * Qovrion does not transmit product telemetry.
+ * Metrora does not transmit product telemetry.
  *
  * The CodeBurn-derived desktop shell expects a Telemetry-compatible object, so
  * this module intentionally preserves that local interface while making every
  * operation a no-op. Keeping the interface avoids a risky cross-cutting IPC
  * rewrite during the compatibility phase; keeping the implementation inert
  * guarantees that no inherited endpoint, identifier, queue, or consent state is
- * used by Qovrion.
+ * used by Metrora.
  */
 
 export const TELEMETRY_ENDPOINT = null

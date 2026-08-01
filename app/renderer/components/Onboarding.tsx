@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { motionClass } from '../lib/motion'
-import { QovrionMark } from './QovrionMark'
+import { MetroraMark } from './MetroraMark'
 
 type Screen = {
   title: string
@@ -18,7 +18,7 @@ const SCREENS: Screen[] = [
   },
   {
     title: 'Local-first by default.',
-    body: 'Qovrion reads local usage records directly. This build sends no product telemetry and performs no inherited update checks.',
+    body: 'Metrora reads local usage records directly. This build sends no product telemetry and performs no inherited update checks.',
     glyph: <><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
   },
   {
@@ -36,11 +36,11 @@ export function Onboarding({ onDone }: { defaultEnabled: boolean; onDone: (enabl
   if (typeof document === 'undefined') return null
 
   return createPortal(
-    <div className={motionClass('onboard', 'onboard-in')} role="dialog" aria-label="Welcome to Qovrion">
+    <div className={motionClass('onboard', 'onboard-in')} role="dialog" aria-label="Welcome to Metrora">
       <div className="onboard-card">
         <div className="onboard-glyph" aria-hidden>
           {last
-            ? <QovrionMark size={40} />
+            ? <MetroraMark size={40} />
             : <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{SCREENS[step].glyph}</svg>}
         </div>
 

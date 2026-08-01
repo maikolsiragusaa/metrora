@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { UpdateBanner } from './UpdateBanner'
 
 describe('UpdateBanner', () => {
-  it('renders no inherited update prompt while Qovrion has no verified release channel', () => {
+  it('renders no inherited update prompt while Metrora has no verified release channel', () => {
     const { container } = render(<UpdateBanner />)
 
     expect(container).toBeEmptyDOMElement()

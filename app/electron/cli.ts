@@ -7,7 +7,8 @@ import {
   cliExecutableNames,
   compatEnv,
   LEGACY_CODEBURN_ENV,
-  QOVRION_ENV,
+  LEGACY_QOVRION_ENV,
+  METRORA_ENV,
   readPersistedCliPath,
 } from './identity'
 
@@ -84,7 +85,7 @@ export function killAll(): void {
   interactiveQueue.length = 0
   backgroundQueue.length = 0
   running = 0
-  for (const waiter of waiting) waiter.reject(new CliError('nonzero', 'Qovrion cancelled'))
+  for (const waiter of waiting) waiter.reject(new CliError('nonzero', 'Metrora cancelled'))
 }
 
 function isExecutableFile(path: string): boolean {
@@ -142,7 +143,7 @@ export function nodeManagerDirs(): string[] {
 }
 
 function searchDirs(): string[] {
-  const override = compatEnv(process.env, QOVRION_ENV.pathDirs, LEGACY_CODEBURN_ENV.pathDirs)
+  const override = compatEnv(process.env, METRORA_ENV.pathDirs, LEGACY_QOVRION_ENV.pathDirs, LEGACY_CODEBURN_ENV.pathDirs)
   if (override !== undefined) return override.split(delimiter).filter(Boolean)
   const pathDirs = (process.env.PATH || '').split(delimiter).filter(Boolean)
   return [...pathDirs, ...nodeManagerDirs()]
@@ -174,17 +175,17 @@ function readPersistedPath(): string | null {
 
 /**
  * Resolution order:
- * QOVRION_BIN/CODEBURN_BIN → dev repository → packaged bundle → persisted
+ * METRORA_BIN/CODEBURN_BIN → dev repository → packaged bundle → persisted
  * canonical/legacy pointer → PATH. Canonical values always take precedence.
  */
 export function resolveTarget(): CliTarget | null {
-  const override = compatEnv(process.env, QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)
+  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)
   if (override && isAbsolute(override) && isExecutableFile(override)) {
     return { kind: 'external', bin: override }
   }
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    const devRepoRoot = compatEnv(process.env, QOVRION_ENV.devRepoRoot, LEGACY_CODEBURN_ENV.devRepoRoot)
+    const devRepoRoot = compatEnv(process.env, METRORA_ENV.devRepoRoot, LEGACY_QOVRION_ENV.devRepoRoot, LEGACY_CODEBURN_ENV.devRepoRoot)
     if (devRepoRoot) {
       const devBin = join(devRepoRoot, 'dist', 'cli.js')
       if (isExecutableFile(devBin)) return { kind: 'external', bin: devBin }
@@ -197,7 +198,7 @@ export function resolveTarget(): CliTarget | null {
     }
   }
 
-  const bundled = compatEnv(process.env, QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)
+  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)
   if (bundled && isAbsolute(bundled) && isFile(bundled)) {
     return { kind: 'bundled', entry: bundled }
   }
@@ -213,26 +214,30 @@ export function resolveTarget(): CliTarget | null {
 }
 
 /** Canonical display/status resolver. */
-export function resolveQovrionPath(): string | null {
+export function resolveMetroraPath(): string | null {
   const target = resolveTarget()
   if (!target) return null
   return target.kind === 'bundled' ? target.entry : target.bin
 }
 
-/** Temporary API alias retained for the inherited desktop bridge. */
+/** Temporary API aliases retained for old desktop integrations. */
+export function resolveQovrionPath(): string | null {
+  return resolveMetroraPath()
+}
+
 export function resolveCodeburnPath(): string | null {
-  return resolveQovrionPath()
+  return resolveMetroraPath()
 }
 
 /** Return a bounded, non-sensitive reason for a resolution failure. */
 export function notFoundStage(): NotFoundStage {
-  const override = compatEnv(process.env, QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)
+  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)
   if (override) {
     if (!isAbsolute(override)) return 'bin-not-absolute'
     if (!isExecutableFile(override)) return 'bin-not-executable'
   }
 
-  const bundled = compatEnv(process.env, QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)
+  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)
   if (bundled) {
     if (!isAbsolute(bundled)) return 'bundled-not-absolute'
     if (!isFile(bundled)) return 'bundled-missing'
@@ -270,7 +275,7 @@ function runCli(
     const timer = setTimeout(() => {
       finish(() => {
         child.kill('SIGKILL')
-        reject(new CliError('timeout', `Qovrion ${cmdLabel} timed out after ${timeoutMs}ms`))
+        reject(new CliError('timeout', `Metrora ${cmdLabel} timed out after ${timeoutMs}ms`))
       })
     }, timeoutMs)
 
@@ -279,7 +284,7 @@ function runCli(
       if (total > MAX_OUTPUT_BYTES) {
         finish(() => {
           child.kill('SIGKILL')
-          reject(new CliError('too-large', `Qovrion ${cmdLabel} produced more than ${MAX_OUTPUT_BYTES} bytes`))
+          reject(new CliError('too-large', `Metrora ${cmdLabel} produced more than ${MAX_OUTPUT_BYTES} bytes`))
         })
       }
     }
@@ -307,13 +312,13 @@ function runCli(
     child.on('close', code => {
       finish(() => {
         if (code !== 0) {
-          reject(new CliError('nonzero', stderr.trim() || `Qovrion exited with code ${code}`))
+          reject(new CliError('nonzero', stderr.trim() || `Metrora exited with code ${code}`))
           return
         }
         try {
           resolve(JSON.parse(stdout))
         } catch {
-          reject(new CliError('bad-json', 'Qovrion produced output that was not valid JSON'))
+          reject(new CliError('bad-json', 'Metrora produced output that was not valid JSON'))
         }
       })
     })
@@ -332,7 +337,7 @@ export function spawnCli(
 ): Promise<unknown> {
   const target = resolveTarget()
   if (!target) {
-    return Promise.reject(new CliError('not-found', 'Qovrion CLI not found', notFoundStage()))
+    return Promise.reject(new CliError('not-found', 'Metrora CLI not found', notFoundStage()))
   }
 
   const spec = spawnSpecFor(target, args)
@@ -374,7 +379,7 @@ export function spawnCliAction(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const target = resolveTarget()
   if (!target) {
-    return Promise.resolve({ ok: false, stdout: '', stderr: 'Qovrion CLI not found', code: null })
+    return Promise.resolve({ ok: false, stdout: '', stderr: 'Metrora CLI not found', code: null })
   }
 
   const spec = spawnSpecFor(target, args)
@@ -382,7 +387,7 @@ export function spawnCliAction(
     try {
       await acquireSlot('interactive')
     } catch {
-      return { ok: false, stdout: '', stderr: 'Qovrion cancelled', code: null }
+      return { ok: false, stdout: '', stderr: 'Metrora cancelled', code: null }
     }
 
     try {
@@ -420,7 +425,7 @@ function runAction(spec: SpawnSpec, args: string[], timeoutMs: number): Promise<
       finish({
         ok: false,
         stdout,
-        stderr: `Qovrion ${args[0] ?? ''} timed out after ${timeoutMs}ms`,
+        stderr: `Metrora ${args[0] ?? ''} timed out after ${timeoutMs}ms`,
         code: null,
       })
     }, timeoutMs)

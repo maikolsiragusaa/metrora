@@ -20,7 +20,7 @@ One SQLite database with one row per agent thread:
 
 The `threads` table stores each thread's `data` BLOB as zstd-compressed JSON (`data_type = "zstd"`). Legacy rows may be uncompressed JSON (`data_type = "json"`); both are read.
 
-Decompression uses Node's built-in `zlib.zstdDecompressSync`, with no extra native dependency. Qovrion CI runs the collector explicitly on Node 22.15 on Ubuntu and Windows so the primary zstd path cannot pass by being silently skipped.
+Decompression uses Node's built-in `zlib.zstdDecompressSync`, with no extra native dependency. Metrora CI runs the collector explicitly on Node 22.15 on Ubuntu and Windows so the primary zstd path cannot pass by being silently skipped.
 
 The decompressed thread JSON carries:
 
@@ -30,7 +30,7 @@ The decompressed thread JSON carries:
 
 ## Reviewed token paths
 
-Zed contains two distinct evidence paths. Qovrion never assigns them one universal quality label.
+Zed contains two distinct evidence paths. Metrora never assigns them one universal quality label.
 
 ### Per-request usage
 
@@ -44,7 +44,7 @@ zed-request-token-usage-v1
 
 ### Cumulative remainder
 
-The per-request map does not always cover every request. Qovrion sums the visible request entries and derives one `cumulative-remainder` entry by subtracting those values from `cumulative_token_usage`.
+The per-request map does not always cover every request. Metrora sums the visible request entries and derives one `cumulative-remainder` entry by subtracting those values from `cumulative_token_usage`.
 
 The remainder keeps totals equal to the database, but its token fields are **derived**, not independently measured request records. A thread with no request entries degrades to one cumulative-remainder call.
 
@@ -61,7 +61,7 @@ Zed records both:
 - the exact model identifier in `model.model`;
 - the underlying model/API provider in `model.provider`, such as `anthropic`, `openai`, `google` or `zed.dev`.
 
-Qovrion now preserves that provider through:
+Metrora now preserves that provider through:
 
 ```text
 ParsedProviderCall → CachedCall → ParsedApiCall → reviewed event
@@ -69,7 +69,7 @@ ParsedProviderCall → CachedCall → ParsedApiCall → reviewed event
 
 Signed sharing requires the recorded provider. If it is missing or malformed, the call remains available locally but is withheld from signed measurements. The reviewed event factory also rejects a caller-supplied provider that conflicts with the value read from Zed.
 
-Qovrion never infers the provider from the model string and never treats the Zed client as the underlying model provider.
+Metrora never infers the provider from the model string and never treats the Zed client as the underlying model provider.
 
 ## Reasoning
 
@@ -77,7 +77,7 @@ The current Zed thread format does not expose a reviewed reasoning-token field o
 
 ## Cost
 
-Cost is calculated locally from model and token counters through Qovrion's pricing registry and is marked as an **estimated token-pricing cost**.
+Cost is calculated locally from model and token counters through Metrora's pricing registry and is marked as an **estimated token-pricing cost**.
 
 It is not:
 
@@ -89,7 +89,7 @@ Missing model or cache pricing, or a mismatch with the locally calculated value,
 
 ## Caching and deduplication
 
-Zed uses Qovrion's shared session cache.
+Zed uses Metrora's shared session cache.
 
 Deduplication is per:
 
