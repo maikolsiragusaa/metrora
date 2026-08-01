@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,7 @@ import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 import type { ParsedApiCall } from '../types.js'
 import {
   loadOrCreateLocalEndpointIdentityV1,
+  rotateLocalEndpointIdentityV1,
   type LoadedLocalEndpointIdentityV1,
 } from './endpoint-identity.js'
 import { createLocalPersonalWorkspaceV1 } from './local-workspace.js'
@@ -19,12 +20,18 @@ import { Aes256GcmSecretProtector } from './secret-protector.js'
 
 const roots: string[] = []
 const NOW = '2026-08-01T14:00:00.000Z'
+const LATER = '2026-08-01T15:00:00.000Z'
 const SOURCE_SHA = 'a'.repeat(64)
+const MASTER_KEY = Buffer.alloc(32, 7)
 
 async function root(): Promise<string> {
   const value = await mkdtemp(join(tmpdir(), 'metrora-reviewed-producer-'))
   roots.push(value)
   return value
+}
+
+function protector(): Aes256GcmSecretProtector {
+  return new Aes256GcmSecretProtector(MASTER_KEY)
 }
 
 function uuidSource() {
@@ -35,7 +42,7 @@ function uuidSource() {
 async function createIdentity(dataDir: string, endpointUuid = '11111111-2222-4333-8444-555555555555') {
   return loadOrCreateLocalEndpointIdentityV1({
     dataDir,
-    protector: new Aes256GcmSecretProtector(Buffer.alloc(32, 7)),
+    protector: protector(),
     now: () => new Date(NOW),
     randomUUID: () => endpointUuid,
     randomBytes: size => Buffer.alloc(size, 9),
@@ -171,6 +178,110 @@ describe.sequential('local reviewed measurement producer v1', () => {
     expect(scan.pending).toHaveLength(1)
     expect(scan.invalid).toEqual([])
     expect(scan.pending[0]).toEqual(first.record)
+  })
+
+  it('keeps one original event after endpoint HMAC and signing-key rotation', async () => {
+    const dataDir = await root()
+    const firstIdentity = await initializeWorkspace(dataDir)
+    const first = await produceLocalReviewedMeasurementV1({
+      dataDir,
+      identity: firstIdentity,
+      call: codexCall(),
+      context: context(),
+      now: () => new Date(NOW),
+    })
+    expect(first.status).toBe('enqueued')
+    if (first.status !== 'enqueued') return
+
+    const rotatedIdentity = await rotateLocalEndpointIdentityV1({
+      dataDir,
+      protector: protector(),
+      now: () => new Date(LATER),
+      randomUUID: () => 'unused-on-rotation',
+      randomBytes: size => Buffer.alloc(size, 10),
+    })
+    expect(rotatedIdentity.metadata.endpointId).toBe(firstIdentity.metadata.endpointId)
+    expect(rotatedIdentity.metadata.generation).toBe(firstIdentity.metadata.generation + 1)
+    expect(Buffer.from(rotatedIdentity.eventIdentityKey)).not.toEqual(Buffer.from(firstIdentity.eventIdentityKey))
+
+    const duplicate = await produceLocalReviewedMeasurementV1({
+      dataDir,
+      identity: rotatedIdentity,
+      call: codexCall(),
+      context: context(),
+      now: () => new Date(LATER),
+    })
+    expect(duplicate.status).toBe('duplicate')
+    if (duplicate.status !== 'duplicate') return
+    expect(duplicate.record).toEqual(first.record)
+    expect(duplicate.record.event.id).toBe(first.record.event.id)
+
+    const scan = await scanMeasurementOutboxV1({ dataDir })
+    expect(scan.pending).toEqual([first.record])
+    expect(scan.invalid).toEqual([])
+  })
+
+  it('repairs an interrupted event publication from its private production receipt', async () => {
+    const dataDir = await root()
+    const identity = await initializeWorkspace(dataDir)
+    const first = await produceLocalReviewedMeasurementV1({
+      dataDir,
+      identity,
+      call: codexCall(),
+      context: context(),
+      now: () => new Date(NOW),
+    })
+    expect(first.status).toBe('enqueued')
+    if (first.status !== 'enqueued') return
+
+    const eventDir = join(dataDir, 'outbox', 'v1', 'events')
+    const [eventFile] = await readdir(eventDir)
+    expect(eventFile).toBeDefined()
+    await unlink(join(eventDir, eventFile!))
+    expect(await readdir(eventDir)).toEqual([])
+    expect(await readdir(join(dataDir, 'outbox', 'v1', 'production'))).toHaveLength(1)
+
+    const repaired = await produceLocalReviewedMeasurementV1({
+      dataDir,
+      identity,
+      call: codexCall(),
+      context: context(),
+      now: () => new Date(LATER),
+    })
+    expect(repaired.status).toBe('duplicate')
+    if (repaired.status !== 'duplicate') return
+    expect(repaired.record).toEqual(first.record)
+
+    const scan = await scanMeasurementOutboxV1({ dataDir })
+    expect(scan.pending).toEqual([first.record])
+    expect(scan.invalid).toEqual([])
+  })
+
+  it('rejects one private production key reused for a different semantic measurement', async () => {
+    const dataDir = await root()
+    const identity = await initializeWorkspace(dataDir)
+    await produceLocalReviewedMeasurementV1({
+      dataDir,
+      identity,
+      call: codexCall(),
+      context: context(),
+    })
+
+    await expect(produceLocalReviewedMeasurementV1({
+      dataDir,
+      identity,
+      call: codexCall({
+        usage: {
+          ...codexCall().usage,
+          outputTokens: 21,
+        },
+      }),
+      context: context(),
+    })).rejects.toThrow(/production key collision/)
+
+    const scan = await scanMeasurementOutboxV1({ dataDir })
+    expect(scan.pending).toHaveLength(1)
+    expect(scan.invalid).toEqual([])
   })
 
   it('never falls back to mutable current pricing when the immutable assignment is absent or contradictory', async () => {
@@ -349,7 +460,7 @@ describe.sequential('local reviewed measurement producer v1', () => {
     expect(new Set(records.map(record => record.eventSha256)).size).toBe(1)
   })
 
-  it('keeps rich call details and endpoint secrets out of the published record', async () => {
+  it('keeps rich call details and endpoint secrets out of events and private production receipts', async () => {
     const dataDir = await root()
     const identity = await initializeWorkspace(dataDir)
     const produced = await produceLocalReviewedMeasurementV1({
@@ -362,18 +473,26 @@ describe.sequential('local reviewed measurement producer v1', () => {
     if (produced.status !== 'enqueued') return
 
     const serialized = JSON.stringify(produced.record)
-    expect(serialized).not.toContain('private-message-id')
-    expect(serialized).not.toContain('/private/secret.txt')
-    expect(serialized).not.toContain('mcp__private__lookup')
-    expect(serialized).not.toContain('private-skill')
-    expect(serialized).not.toContain('reviewer')
-    expect(serialized).not.toContain(Buffer.from(identity.eventIdentityKey).toString('base64'))
-    expect(serialized).not.toContain(Buffer.from(identity.privateKeyPkcs8).toString('base64'))
+    const prohibited = [
+      'private-message-id',
+      '/private/secret.txt',
+      'mcp__private__lookup',
+      'private-skill',
+      'reviewer',
+      Buffer.from(identity.eventIdentityKey).toString('base64'),
+      Buffer.from(identity.privateKeyPkcs8).toString('base64'),
+    ]
+    for (const value of prohibited) expect(serialized).not.toContain(value)
 
-    const outboxDir = join(dataDir, 'outbox', 'v1', 'events')
-    const [eventFile] = await readdir(outboxDir)
+    const outboxDir = join(dataDir, 'outbox', 'v1')
+    const [eventFile] = await readdir(join(outboxDir, 'events'))
+    const [receiptFile] = await readdir(join(outboxDir, 'production'))
     expect(eventFile).toBeDefined()
-    const onDisk = await readFile(join(outboxDir, eventFile!), 'utf-8')
-    expect(onDisk).toBe(serialized)
+    expect(receiptFile).toMatch(/^[a-f0-9]{64}\.json$/)
+
+    const onDiskEvent = await readFile(join(outboxDir, 'events', eventFile!), 'utf-8')
+    const onDiskReceipt = await readFile(join(outboxDir, 'production', receiptFile!), 'utf-8')
+    expect(onDiskEvent).toBe(serialized)
+    for (const value of prohibited) expect(onDiskReceipt).not.toContain(value)
   })
 })
