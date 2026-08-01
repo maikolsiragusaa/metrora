@@ -6,7 +6,7 @@ const { pathToFileURL } = require('node:url')
 
 async function main() {
   if (process.platform !== 'win32') throw new Error('safeStorage probe is Windows-only')
-  const root = await mkdtemp(join(tmpdir(), 'qovrion-electron-vault-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-electron-vault-'))
   const userData = join(root, 'user-data')
   await mkdir(userData, { recursive: true })
   app.setPath('userData', userData)

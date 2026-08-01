@@ -1,12 +1,12 @@
-# Qovrion local endpoint identity, outbox and signed batches v1
+# Metrora local endpoint identity, outbox and signed batches v1
 
 Status: **desktop vault and local durability primitives implemented; normal collection and network sync remain disabled**.
 
-This layer gives one Qovrion installation a durable cryptographic identity, a crash-recoverable queue for reviewed usage events and a locally verifiable signed-batch chain.
+This layer gives one Metrora installation a durable cryptographic identity, a crash-recoverable queue for reviewed usage events and a locally verifiable signed-batch chain.
 
 ## Reused foundations
 
-Qovrion does not introduce custom cryptographic algorithms or a private JSON canonicalization standard.
+Metrora does not introduce custom cryptographic algorithms or a private JSON canonicalization standard.
 
 - Ed25519 signing, SHA-256, HMAC inputs, AES-256-GCM and secure random generation use Node.js Crypto.
 - Desktop secret wrapping uses Electron asynchronous `safeStorage` APIs.
@@ -25,11 +25,11 @@ Initially supported vault backends:
 - Windows DPAPI through Electron asynchronous `safeStorage`;
 - macOS Keychain through Electron asynchronous `safeStorage`.
 
-Linux is deliberately not enabled yet. Qovrion does not accept Electron's weak `basic_text` fallback as protection for endpoint signing or HMAC material. A secure Linux Secret Service/keyring adapter can be added later behind the same core interface.
+Linux is deliberately not enabled yet. Metrora does not accept Electron's weak `basic_text` fallback as protection for endpoint signing or HMAC material. A secure Linux Secret Service/keyring adapter can be added later behind the same core interface.
 
-The desktop stores only an OS-encrypted 32-byte master-key envelope under its `userData` directory. The master key protects the endpoint secret through AES-256-GCM and is never returned to the renderer or exposed over IPC. If Electron reports that ciphertext should be re-encrypted after OS key rotation, Qovrion atomically rewraps it.
+The desktop stores only an OS-encrypted 32-byte master-key envelope under its `userData` directory. The master key protects the endpoint secret through AES-256-GCM and is never returned to the renderer or exposed over IPC. If Electron reports that ciphertext should be re-encrypted after OS key rotation, Metrora atomically rewraps it.
 
-Failure to access or decrypt the OS vault leaves Qovrion in its existing local-only mode. It does not generate replacement identity material and does not fall back to plaintext.
+Failure to access or decrypt the OS vault leaves Metrora in its existing local-only mode. It does not generate replacement identity material and does not fall back to plaintext.
 
 ## Endpoint identity
 
@@ -50,11 +50,11 @@ The protected secret is written and fsynced before public metadata. Therefore:
 
 - secret present + metadata missing: metadata is reconstructed safely;
 - secret generation newer than public metadata: the interrupted publication is repaired;
-- metadata present + secret missing: recovery is required and Qovrion fails closed;
+- metadata present + secret missing: recovery is required and Metrora fails closed;
 - wrong master key, same-generation mismatch or mismatched signing pair: recovery is required;
 - concurrent create, repair and rotation operations reuse the cross-process refresh lease.
 
-Qovrion never silently generates a replacement identity when evidence shows that an endpoint already existed.
+Metrora never silently generates a replacement identity when evidence shows that an endpoint already existed.
 
 ### Rotation
 
@@ -70,7 +70,7 @@ It generates a new Ed25519 pair and a new HMAC key. Rotation intentionally break
 The outbox accepts only validated `UsageMeasurementEventV1` objects. It does not call parsers, create events or transmit data.
 
 ```text
-<QOVRION_DATA_DIR>/outbox/v1/
+<METRORA_DATA_DIR>/outbox/v1/
   next-sequence.json
   events/<sha256(event-id)>.json
   acks/<sha256(event-id)>.json
@@ -94,14 +94,14 @@ The counter is atomically advanced before an event is published. A crash may lea
 
 ### Event digest
 
-The outbox still uses the narrow `qovrion-sorted-json-v1` digest for local event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
+The outbox still uses the narrow `metrora-sorted-json-v1` digest for local event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
 
 ## Signed measurement batches
 
 `createNextSignedMeasurementBatchV1()` selects pending immutable events in sequence order and creates a bounded `MeasurementBatchV1`.
 
 ```text
-<QOVRION_DATA_DIR>/batches/v1/
+<METRORA_DATA_DIR>/batches/v1/
   signed/<first>-<last>-<batch-sha256>.json
   acks/<sha256(batch-id)>.json
 ```
@@ -112,7 +112,7 @@ Each signed record binds:
 - event count;
 - RFC 8785 SHA-256 digest of the public batch;
 - previous batch digest;
-- producer endpoint and Qovrion/adapter versions;
+- producer endpoint and Metrora/adapter versions;
 - the full public measurement batch;
 - signer generation, SPKI public key and fingerprint;
 - Ed25519 signature over the RFC 8785 canonical range + digest + batch payload.

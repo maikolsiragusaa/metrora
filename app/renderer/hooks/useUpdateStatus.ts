@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { codeburn } from '../lib/ipc'
 import type { UpdateStatus } from '../lib/types'
 
-export const QOVRION_RELEASES_URL = 'https://github.com/maikolsiragusaa/qovrion/releases'
+export const METRORA_RELEASES_URL = 'https://github.com/maikolsiragusaa/metrora/releases'
 
 /**
  * Reads the compatibility update status. The main process currently always
@@ -24,10 +24,10 @@ export function useUpdateStatus(): UpdateStatus | null {
 }
 
 export function releasePageUrl(_tag: string): string {
-  return QOVRION_RELEASES_URL
+  return METRORA_RELEASES_URL
 }
 
-/** No direct assets exist until Qovrion publishes and verifies its own channel. */
+/** No direct assets exist until Metrora publishes and verifies its own channel. */
 export function directDownloadUrl(_tag: string, _platform: string | undefined, _arch: string | undefined): string | null {
   return null
 }

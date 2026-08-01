@@ -1,4 +1,4 @@
-package io.github.maikolsiragusaa.qovrion.security
+package eu.metrora.app.security
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -19,9 +19,9 @@ class DeviceIdentity {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         if (!keyStore.containsAlias(KEY_ALIAS)) generateKeyPair()
         val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
-            ?: error("Qovrion client identity is unavailable.")
+            ?: error("Metrora client identity is unavailable.")
         val certificate = entry.certificate as? X509Certificate
-            ?: error("Qovrion client certificate is unavailable.")
+            ?: error("Metrora client certificate is unavailable.")
         return IdentityMaterial(
             alias = KEY_ALIAS,
             privateKey = entry.privateKey,
@@ -39,7 +39,7 @@ class DeviceIdentity {
         )
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
             .setDigests(KeyProperties.DIGEST_SHA256)
-            .setCertificateSubject(X500Principal("CN=Qovrion Android"))
+            .setCertificateSubject(X500Principal("CN=Metrora Android"))
             .setCertificateSerialNumber(serial)
             .setCertificateNotBefore(Date(now - ONE_DAY_MS))
             .setCertificateNotAfter(Date(now + TEN_YEARS_MS))
@@ -52,7 +52,7 @@ class DeviceIdentity {
 
     companion object {
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
-        private const val KEY_ALIAS = "qovrion-mobile-client-v1"
+        private const val KEY_ALIAS = "metrora-mobile-client-v1"
         private const val ONE_DAY_MS = 24L * 60L * 60L * 1000L
         private const val TEN_YEARS_MS = 3650L * ONE_DAY_MS
 

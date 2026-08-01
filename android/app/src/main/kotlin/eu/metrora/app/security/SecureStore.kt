@@ -1,4 +1,4 @@
-package io.github.maikolsiragusaa.qovrion.security
+package eu.metrora.app.security
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
@@ -7,8 +7,8 @@ import android.util.Base64
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import io.github.maikolsiragusaa.qovrion.data.PairingCredentials
-import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
+import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.UsageSnapshot
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -16,10 +16,10 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlinx.coroutines.flow.first
 
-private val Context.qovrionDataStore by preferencesDataStore(name = "qovrion_secure_state")
+private val Context.metroraDataStore by preferencesDataStore(name = "metrora_secure_state")
 
 class SecureStore(context: Context) {
-    private val dataStore = context.applicationContext.qovrionDataStore
+    private val dataStore = context.applicationContext.metroraDataStore
 
     suspend fun loadCredentials(): PairingCredentials? =
         dataStore.data.first()[CREDENTIALS_KEY]?.let { PairingCredentials.fromJson(decrypt(it)) }
@@ -82,7 +82,7 @@ class SecureStore(context: Context) {
 
     private companion object {
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
-        const val ENCRYPTION_KEY_ALIAS = "qovrion-mobile-state-v1"
+        const val ENCRYPTION_KEY_ALIAS = "metrora-mobile-state-v1"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val GCM_TAG_BITS = 128
         const val FORMAT_VERSION = "v1"

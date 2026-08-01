@@ -28,11 +28,11 @@ describe('Splash', () => {
     const el = splashEl()
     expect(el).toBeInTheDocument()
     // Static under vitest / the closed motion gate: no ignite/pulse class,
-    // the Qovrion vector mark instead of the inherited loader video.
+    // the Metrora vector mark instead of the inherited loader video.
     expect(el).not.toHaveClass('splash-lit')
     expect(el?.querySelector('video')).toBeNull()
     expect(el?.querySelector('.splash-mark svg')).not.toBeNull()
-    expect(el?.textContent).toContain('Qovrion')
+    expect(el?.textContent).toContain('Metrora')
   })
 
   it('holds the min on-screen time, then crossfades away once data lands', () => {

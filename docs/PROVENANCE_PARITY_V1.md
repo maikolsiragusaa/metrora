@@ -1,4 +1,4 @@
-# Qovrion provenance parity v1
+# Metrora provenance parity v1
 
 Status: **implemented contract tests and fail-closed evidence resolver**.
 

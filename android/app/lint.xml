@@ -8,8 +8,8 @@
         <ignore path="build.gradle.kts" />
     </issue>
 
-    <!-- Qovrion's LAN desktop uses a self-signed identity. This one trust manager validates certificate dates, captures SHA-256, verifies the advertised identity, and pins it for every authenticated request. -->
+    <!-- Metrora's LAN desktop uses a self-signed identity. This one trust manager validates certificate dates, captures SHA-256, verifies the advertised identity, and pins it for every authenticated request. -->
     <issue id="CustomX509TrustManager">
-        <ignore path="src/main/kotlin/io/github/maikolsiragusaa/qovrion/network/QovrionApiClient.kt" />
+        <ignore path="src/main/kotlin/eu/metrora/app/network/MetroraApiClient.kt" />
     </issue>
 </lint>

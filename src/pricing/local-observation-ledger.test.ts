@@ -18,7 +18,7 @@ const temporaryRoots: string[] = []
 const EMPTY_BOOK: HistoricalPriceBookV1 = { schemaVersion: 1, records: [] }
 
 async function temporaryDataDir(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'qovrion-price-observation-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-price-observation-'))
   temporaryRoots.push(root)
   return root
 }

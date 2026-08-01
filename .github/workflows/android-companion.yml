@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: qovrion-android-${{ github.workflow }}-${{ github.ref }}
+  group: metrora-android-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qovrion-android-reports
+          name: metrora-android-reports
           path: |
             android/app/build/reports/**
             android/app/build/test-results/**
@@ -63,7 +63,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: qovrion-android-alpha
+          name: metrora-android-alpha
           path: |
             android/app/build/outputs/apk/github/release/*.apk
             android/app/build/outputs/apk/fdroid/release/*.apk

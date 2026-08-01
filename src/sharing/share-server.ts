@@ -30,7 +30,7 @@ export const SHARE_API_VERSION = 1 as const
 
 /**
  * Keep the inherited unversioned routes working while making `/api/v1` the
- * stable first-party surface for Qovrion companions and integrations.
+ * stable first-party surface for Metrora companions and integrations.
  */
 export function canonicalSharePath(pathname: string): string {
   if (pathname === '/api/v1') return '/api'
@@ -155,7 +155,7 @@ export class ShareServer {
     // legacy PIN pairing is currently open. No usage data here.
     if (pathname === '/api/peer/hello' && req.method === 'GET') {
       json(200, {
-        product: 'qovrion',
+        product: 'metrora',
         apiVersion: SHARE_API_VERSION,
         apiVersions: [SHARE_API_VERSION],
         fingerprint: this.opts.identity.fingerprint,
@@ -166,7 +166,7 @@ export class ShareServer {
       return
     }
 
-    // Compatibility fallback for inherited clients. First-party Qovrion
+    // Compatibility fallback for inherited clients. First-party Metrora
     // companions must use pair-request and compare the SAS on both devices.
     if (pathname === '/api/peer/pair' && req.method === 'POST') {
       const clientFp = this.clientFingerprint(req)

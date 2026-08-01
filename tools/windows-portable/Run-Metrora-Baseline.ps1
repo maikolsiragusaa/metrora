@@ -11,13 +11,13 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
 $bundleRoot = $PSScriptRoot
-$qovrionExe = Join-Path $bundleRoot 'Qovrion.exe'
-$qovrionCli = Join-Path $bundleRoot 'resources\cli\dist\launch.js'
+$metroraExe = Join-Path $bundleRoot 'Metrora.exe'
+$metroraCli = Join-Path $bundleRoot 'resources\cli\dist\launch.js'
 $buildInfoPath = Join-Path $bundleRoot 'BUILD_INFO.txt'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $baselineRoot = Join-Path $bundleRoot 'baseline-output'
 if (-not $OutputDirectory) {
-  $OutputDirectory = Join-Path $baselineRoot "Qovrion-Baseline-$stamp"
+  $OutputDirectory = Join-Path $baselineRoot "Metrora-Baseline-$stamp"
 }
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -68,7 +68,7 @@ function Invoke-CapturedCommand {
 
   try {
     if ($UseElectronAsNode) {
-      # Qovrion.exe is a Windows GUI-subsystem executable. PowerShell's ordinary
+      # Metrora.exe is a Windows GUI-subsystem executable. PowerShell's ordinary
       # invocation can return before its stdout pipe is attached, even when
       # ELECTRON_RUN_AS_NODE is set. ProcessStartInfo gives us explicit pipes and
       # wait semantics on Windows PowerShell 5.1 as well as PowerShell 7.
@@ -164,32 +164,32 @@ function Resolve-CodeBurnExecutable {
   return $command.Name
 }
 
-if (-not (Test-Path -LiteralPath $qovrionExe)) {
-  throw "Portable Qovrion executable not found: $qovrionExe"
+if (-not (Test-Path -LiteralPath $metroraExe)) {
+  throw "Portable Metrora executable not found: $metroraExe"
 }
-if (-not (Test-Path -LiteralPath $qovrionCli)) {
-  throw "Bundled Qovrion CLI not found: $qovrionCli"
+if (-not (Test-Path -LiteralPath $metroraCli)) {
+  throw "Bundled Metrora CLI not found: $metroraCli"
 }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $baselineRoot -Force | Out-Null
 
 Write-Host ''
-Write-Host 'Qovrion Windows baseline'
+Write-Host 'Metrora Windows baseline'
 Write-Host '-------------------------'
 Write-Host "Output: $OutputDirectory"
 Write-Host 'This reads local AI-tool usage records. It does not upload them.'
 Write-Host ''
 
 $results = New-Object System.Collections.ArrayList
-$qPrefix = @($qovrionCli)
+$qPrefix = @($metroraCli)
 
-$null = $results.Add((Invoke-CapturedCommand -Name 'qovrion-version' -Executable $qovrionExe -Arguments ($qPrefix + @('--version')) -OutputFile (Join-Path $OutputDirectory 'qovrion-version.txt') -UseElectronAsNode))
-$null = $results.Add((Invoke-CapturedCommand -Name 'qovrion-doctor' -Executable $qovrionExe -Arguments ($qPrefix + @('doctor', '--json')) -OutputFile (Join-Path $OutputDirectory 'qovrion-doctor.json') -UseElectronAsNode -ExpectJson))
-$null = $results.Add((Invoke-CapturedCommand -Name 'qovrion-report-lifetime' -Executable $qovrionExe -Arguments ($qPrefix + @('report', '--period', 'lifetime', '--format', 'json')) -OutputFile (Join-Path $OutputDirectory 'qovrion-report-lifetime.json') -UseElectronAsNode -ExpectJson))
-$null = $results.Add((Invoke-CapturedCommand -Name 'qovrion-report-month' -Executable $qovrionExe -Arguments ($qPrefix + @('report', '--period', 'month', '--format', 'json')) -OutputFile (Join-Path $OutputDirectory 'qovrion-report-month.json') -UseElectronAsNode -ExpectJson))
-$null = $results.Add((Invoke-CapturedCommand -Name 'qovrion-status' -Executable $qovrionExe -Arguments ($qPrefix + @('status', '--format', 'json', '--period', 'lifetime')) -OutputFile (Join-Path $OutputDirectory 'qovrion-status.json') -UseElectronAsNode -ExpectJson))
-$null = $results.Add((Invoke-CapturedCommand -Name 'qovrion-overview-lifetime' -Executable $qovrionExe -Arguments ($qPrefix + @('overview', '--period', 'lifetime', '--no-color')) -OutputFile (Join-Path $OutputDirectory 'qovrion-overview-lifetime.txt') -UseElectronAsNode))
+$null = $results.Add((Invoke-CapturedCommand -Name 'metrora-version' -Executable $metroraExe -Arguments ($qPrefix + @('--version')) -OutputFile (Join-Path $OutputDirectory 'metrora-version.txt') -UseElectronAsNode))
+$null = $results.Add((Invoke-CapturedCommand -Name 'metrora-doctor' -Executable $metroraExe -Arguments ($qPrefix + @('doctor', '--json')) -OutputFile (Join-Path $OutputDirectory 'metrora-doctor.json') -UseElectronAsNode -ExpectJson))
+$null = $results.Add((Invoke-CapturedCommand -Name 'metrora-report-lifetime' -Executable $metroraExe -Arguments ($qPrefix + @('report', '--period', 'lifetime', '--format', 'json')) -OutputFile (Join-Path $OutputDirectory 'metrora-report-lifetime.json') -UseElectronAsNode -ExpectJson))
+$null = $results.Add((Invoke-CapturedCommand -Name 'metrora-report-month' -Executable $metroraExe -Arguments ($qPrefix + @('report', '--period', 'month', '--format', 'json')) -OutputFile (Join-Path $OutputDirectory 'metrora-report-month.json') -UseElectronAsNode -ExpectJson))
+$null = $results.Add((Invoke-CapturedCommand -Name 'metrora-status' -Executable $metroraExe -Arguments ($qPrefix + @('status', '--format', 'json', '--period', 'lifetime')) -OutputFile (Join-Path $OutputDirectory 'metrora-status.json') -UseElectronAsNode -ExpectJson))
+$null = $results.Add((Invoke-CapturedCommand -Name 'metrora-overview-lifetime' -Executable $metroraExe -Arguments ($qPrefix + @('overview', '--period', 'lifetime', '--no-color')) -OutputFile (Join-Path $OutputDirectory 'metrora-overview-lifetime.txt') -UseElectronAsNode))
 
 $resolvedCodeBurn = $null
 $codeBurnDetectionError = $null
@@ -210,8 +210,8 @@ if (-not $SkipCodeBurn) {
   } else {
     Write-Utf8File -Path (Join-Path $OutputDirectory 'codeburn-not-detected.txt') -Content @"
 CodeBurn was not found in PATH and no -CodeBurnPath was supplied.
-This does not invalidate the Qovrion baseline. Run the script again with:
-  powershell -ExecutionPolicy Bypass -File .\Run-Qovrion-Baseline.ps1 -CodeBurnPath "C:\path\to\codeburn.cmd"
+This does not invalidate the Metrora baseline. Run the script again with:
+  powershell -ExecutionPolicy Bypass -File .\Run-Metrora-Baseline.ps1 -CodeBurnPath "C:\path\to\codeburn.cmd"
 "@
   }
 }
@@ -250,8 +250,8 @@ Write-Utf8File -Path (Join-Path $OutputDirectory 'BUILD_INFO.txt') -Content $bui
 $manifest = [ordered]@{
   schemaVersion = 1
   generatedAt = (Get-Date).ToUniversalTime().ToString('o')
-  qovrion = [ordered]@{
-    executable = 'Qovrion.exe'
+  metrora = [ordered]@{
+    executable = 'Metrora.exe'
     bundledCli = 'resources/cli/dist/launch.js'
     buildInfo = $buildInfo.Trim()
   }
@@ -282,7 +282,7 @@ $manifest = [ordered]@{
 Write-Utf8File -Path (Join-Path $OutputDirectory 'manifest.json') -Content (($manifest | ConvertTo-Json -Depth 12) + [Environment]::NewLine)
 
 Write-Utf8File -Path (Join-Path $OutputDirectory 'README-PRIVACY.txt') -Content @"
-QOVRION BASELINE PRIVACY NOTICE
+METRORA BASELINE PRIVACY NOTICE
 
 No file was uploaded automatically.
 
@@ -302,11 +302,11 @@ session metadata and is deliberately excluded from the shareable archive.
 
 $archivePath = $null
 if (-not $NoArchive) {
-  $archivePath = Join-Path $baselineRoot "Qovrion-Baseline-$stamp.zip"
+  $archivePath = Join-Path $baselineRoot "Metrora-Baseline-$stamp.zip"
   Compress-Archive -Path (Join-Path $OutputDirectory '*') -DestinationPath $archivePath -CompressionLevel Optimal -Force
 }
 
-$qovrionFailures = @($results | Where-Object { $_.name -like 'qovrion-*' -and $_.exitCode -ne 0 })
+$metroraFailures = @($results | Where-Object { $_.name -like 'metrora-*' -and $_.exitCode -ne 0 })
 
 Write-Host ''
 if ($archivePath) {
@@ -321,12 +321,12 @@ if ($privateBackupName) {
 if ($resolvedCodeBurn) {
   Write-Host 'CodeBurn comparison was captured.'
 } elseif (-not $SkipCodeBurn) {
-  Write-Host 'CodeBurn was not detected; Qovrion baseline was still captured.'
+  Write-Host 'CodeBurn was not detected; Metrora baseline was still captured.'
 }
 
-if ($qovrionFailures.Count -gt 0) {
+if ($metroraFailures.Count -gt 0) {
   Write-Host ''
-  Write-Host 'One or more Qovrion commands failed. Keep the generated files for diagnosis.' -ForegroundColor Red
+  Write-Host 'One or more Metrora commands failed. Keep the generated files for diagnosis.' -ForegroundColor Red
   exit 1
 }
 

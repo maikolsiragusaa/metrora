@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { SHARE_API_VERSION, canonicalSharePath } from './share-server.js'
 
-describe('Qovrion sharing API version compatibility', () => {
+describe('Metrora sharing API version compatibility', () => {
   it('keeps inherited unversioned routes unchanged', () => {
     expect(canonicalSharePath('/api/peer/hello')).toBe('/api/peer/hello')
     expect(canonicalSharePath('/api/peer/pair')).toBe('/api/peer/pair')

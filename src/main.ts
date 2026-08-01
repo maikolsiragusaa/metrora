@@ -437,7 +437,7 @@ async function runJsonReport(period: Period, provider: string, project: string[]
 }
 
 const program = new Command()
-  .name('qovrion')
+  .name('metrora')
   .description('See where your AI coding tokens go - by task, tool, model, and project')
   .version(version)
   .option('--verbose', 'print warnings to stderr on read failures and skipped files')

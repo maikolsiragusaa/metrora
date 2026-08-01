@@ -1,52 +1,44 @@
-# Qovrion technical identity compatibility
+# Metrora technical identity compatibility
 
-Qovrion is the canonical product and technical identity. CodeBurn-derived names remain available only as temporary compatibility aliases for existing installations and integrations.
+Metrora is the canonical product identity. `Qovrion` is retained only where it is needed to adopt local state created during the previous development name; `CodeBurn` remains only at inherited integration boundaries that have not yet been safely replaced.
 
 ## Canonical names
 
-- CLI command: `qovrion`
-- Desktop bridge: `window.qovrion`
-- IPC prefix: `qovrion:`
-- Environment variables: `QOVRION_*`
-- Renderer storage prefix: `qovrion.`
-- Desktop CLI pointer directory: `Qovrion`
+- Product and desktop application: `Metrora`
+- Website: `metrora.eu`
+- Repository: `maikolsiragusaa/metrora`
+- CLI command: `metrora`
+- Desktop bridge: `window.metrora`
+- IPC prefix: `metrora:`
+- Environment variables: `METRORA_*`
+- Renderer storage prefix: `metrora.`
+- Desktop CLI pointer directory: `Metrora`
+- Default local data directory: `Metrora` / `metrora`
 
-## Compatibility aliases
+## Temporary aliases
 
-During the compatibility window, Qovrion also accepts:
+Metrora accepts these identities in order:
 
-- CLI command `codeburn`
-- desktop bridge `window.codeburn`
-- IPC prefix `codeburn:`
-- environment variables `CODEBURN_*`
-- renderer storage prefix `codeburn.`
-- the previous CodeBurn CLI pointer location
+1. the canonical Metrora form;
+2. the former Qovrion form;
+3. the inherited CodeBurn form.
 
-The canonical form always has precedence when both are present. An explicitly empty canonical environment value is still authoritative.
+That precedence applies to the CLI (`metrora`, `qovrion`, `codeburn`), environment variables, persisted CLI pointers, IPC channels and preload globals. An explicitly empty canonical environment value remains authoritative.
 
-## Persistence and rollback rules
+## Local-state adoption
 
-- A valid legacy CLI pointer may be copied to the canonical Qovrion location once.
-- The legacy pointer is never changed or deleted automatically.
-- Renderer settings are copied from legacy keys when no canonical value exists.
-- New renderer writes are mirrored to both generations during the compatibility window, so an older binary can still read current settings after a rollback.
-- Automatic migration never overwrites an existing canonical value.
-- Automatic migration never deletes a legacy value.
-- An explicit user action that removes a setting may remove both forms because that mirrors the user's intent.
+- `METRORA_DATA_DIR` wins when defined.
+- `QOVRION_DATA_DIR` is accepted as a deprecated fallback when the canonical variable is absent.
+- When default locations are used and the Metrora directory does not exist, an existing Qovrion directory is copied to Metrora once.
+- Desktop endpoint state is copied from the old Qovrion user-data location without moving, rewriting or deleting the source.
+- A readable legacy state that cannot be copied is surfaced as an error; Metrora must not silently create a replacement identity.
+- Existing canonical files are never overwritten.
+- No migration performs telemetry or uploads data.
+
+## Immutable v1 identifiers
+
+Already-defined v1 evidence and local-state records keep their `qovrion.*`, `dev.qovrion.*`, `urn:qovrion:*` and `schemas.qovrion.dev` identifiers. Those strings are protocol provenance, not visible branding. Rewriting them would invalidate signatures, hashes or stored records. New visible product surfaces use Metrora; a future namespace version can introduce `metrora.*` identifiers through an explicit versioned migration.
 
 ## Removal criteria
 
-A legacy alias can be removed only after all of the following are true:
-
-1. at least one stable Qovrion release has shipped with the migration enabled;
-2. migration telemetry is not required and no user data is transmitted to evaluate adoption;
-3. release notes have announced the deprecation clearly;
-4. rollback no longer requires the legacy name;
-5. tests prove that no supported installation path or local data depends on the alias;
-6. the removal is delivered as a separate, reviewable change rather than bundled with product features.
-
-No alias is removed by QOV-002.
-
-## Privacy boundary
-
-This compatibility layer is local. It does not activate product telemetry, inherited update services, or any new network request.
+A temporary alias can be removed only after a stable Metrora release has shipped with adoption support, rollback no longer depends on it, release notes have announced the removal, and tests prove that supported local state no longer requires the alias. Alias removal must be a separate reviewed change.

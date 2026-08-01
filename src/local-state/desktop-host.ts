@@ -5,7 +5,7 @@ import * as z from 'zod/v4'
 import { TimestampSchema } from '../contracts/v1/common.js'
 import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.js'
 import {
-  defaultQovrionDataDir,
+  defaultMetroraDataDir,
   loadOrCreateLocalEndpointIdentityV1,
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
@@ -150,7 +150,7 @@ export async function initializeDesktopLocalStateV1(
   const options = {
     safeStorage: input.safeStorage,
     backend: DesktopVaultBackendV1Schema.parse(input.backend),
-    dataDir: input.dataDir ?? defaultQovrionDataDir(),
+    dataDir: input.dataDir ?? defaultMetroraDataDir(),
     now: input.now ?? (() => new Date()),
     randomBytes: input.randomBytes ?? randomBytes,
   }

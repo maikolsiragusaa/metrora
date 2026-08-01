@@ -1,4 +1,4 @@
-# Qovrion collector inventory v1
+# Metrora collector inventory v1
 
 Status: **local collector coverage inventory; sharing remains fail-closed**.
 
@@ -65,4 +65,4 @@ This file is generated from `CollectorInventoryV1`. Local support and share elig
 
 A collector can move to `approved` only when its concrete source path has fixture parity, field-level token/model/session/reasoning/cost provenance, privacy review, pricing reconciliation rules, and manual validation where the source depends on a live IDE, RPC process or mutable database.
 
-Approval never replaces the inherited parser. It authorizes a narrow, tested projection of that parser output into Qovrion signed measurements.
+Approval never replaces the inherited parser. It authorizes a narrow, tested projection of that parser output into Metrora signed measurements.

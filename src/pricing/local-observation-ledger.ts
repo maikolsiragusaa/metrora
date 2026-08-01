@@ -22,7 +22,7 @@ import {
   ensurePrivateDirectory,
   readOptionalPrivateFile,
 } from '../local-state/atomic-file.js'
-import { defaultQovrionDataDir } from '../local-state/endpoint-identity.js'
+import { defaultMetroraDataDir } from '../local-state/endpoint-identity.js'
 import { withLocalStateLease } from '../local-state/local-state-lease.js'
 
 export const LOCAL_PRICE_OBSERVATION_KIND = 'qovrion.local-price-observation' as const
@@ -119,7 +119,7 @@ function ledgerPaths(dataDir: string) {
   }
 }
 
-export function localPriceObservationDirectoryV1(dataDir = defaultQovrionDataDir()): string {
+export function localPriceObservationDirectoryV1(dataDir = defaultMetroraDataDir()): string {
   return ledgerPaths(dataDir).observations
 }
 
@@ -178,7 +178,7 @@ function parseObservationFile(bytes: Uint8Array, expectedFile: string): Historic
 export async function scanLocalPriceObservationsV1(
   options: LocalPriceObservationLedgerOptions = {},
 ): Promise<LocalPriceObservationScanV1> {
-  const paths = ledgerPaths(options.dataDir ?? defaultQovrionDataDir())
+  const paths = ledgerPaths(options.dataDir ?? defaultMetroraDataDir())
   await prepare(paths)
   const records: HistoricalPriceRecordV1[] = []
   const invalid: LocalPriceObservationScanV1['invalid'] = []
@@ -245,7 +245,7 @@ export async function observeCurrentPriceV1(
   options: LocalPriceObservationLedgerOptions = {},
 ): Promise<{ status: 'observed' | 'duplicate'; record: HistoricalPriceRecordV1 }> {
   const input = LocalPriceObservationInputV1Schema.parse(inputValue)
-  const paths = ledgerPaths(options.dataDir ?? defaultQovrionDataDir())
+  const paths = ledgerPaths(options.dataDir ?? defaultMetroraDataDir())
   const now = options.now ?? (() => new Date())
   await prepare(paths)
 

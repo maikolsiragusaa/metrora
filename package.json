@@ -1,11 +1,12 @@
 {
-  "name": "qovrion",
+  "name": "metrora",
   "version": "0.9.19",
   "private": true,
-  "description": "Qovrion local-first AI usage intelligence with a temporary codeburn CLI compatibility alias",
+  "description": "Metrora local-first AI usage intelligence with temporary qovrion and codeburn CLI compatibility aliases",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
+    "metrora": "dist/cli.js",
     "qovrion": "dist/cli.js",
     "codeburn": "dist/cli.js"
   },
@@ -24,7 +25,7 @@
     "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "qovrion",
+    "metrora",
     "claude-code",
     "cursor",
     "codex",
@@ -48,12 +49,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/maikolsiragusaa/qovrion.git"
+    "url": "git+https://github.com/maikolsiragusaa/metrora.git"
   },
   "bugs": {
-    "url": "https://github.com/maikolsiragusaa/qovrion/issues"
+    "url": "https://github.com/maikolsiragusaa/metrora/issues"
   },
-  "homepage": "https://github.com/maikolsiragusaa/qovrion#readme",
+  "homepage": "https://metrora.eu",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "bonjour-service": "^1.4.1",

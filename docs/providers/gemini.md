@@ -17,7 +17,7 @@ Gemini CLI stores chats under:
 ~/.gemini/tmp/<project>/chats/session-*.jsonl
 ```
 
-Qovrion discovers both formats automatically. The project directory name is retained as the local project key; local paths are not required by the signed measurement profile.
+Metrora discovers both formats automatically. The project directory name is retained as the local project key; local paths are not required by the signed measurement profile.
 
 ## Storage formats
 
@@ -30,7 +30,7 @@ The parser first attempts a complete JSON document, then falls back to JSONL. Bo
 
 ## Emission model
 
-Qovrion emits one `ParsedProviderCall` for each Gemini message that contains both a model and a non-zero token ledger. It does **not** collapse the complete session to one aggregate call.
+Metrora emits one `ParsedProviderCall` for each Gemini message that contains both a model and a non-zero token ledger. It does **not** collapse the complete session to one aggregate call.
 
 The stable deduplication key is:
 
@@ -49,7 +49,7 @@ Gemini exposes message-level counters for:
 - cached input;
 - thought/reasoning tokens.
 
-Gemini's input counter includes cached input as a subset. Qovrion therefore derives fresh input as:
+Gemini's input counter includes cached input as a subset. Metrora therefore derives fresh input as:
 
 ```text
 fresh input = max(0, total input - cached input)
@@ -72,19 +72,19 @@ Measured thought-token quantity does not imply that Gemini exposed an effort lab
 
 ## Cost
 
-Gemini does not provide a provider-billing receipt in these session files. Qovrion calculates cost locally from the recorded model and token counters using its pricing registry.
+Gemini does not provide a provider-billing receipt in these session files. Metrora calculates cost locally from the recorded model and token counters using its pricing registry.
 
 Thought tokens are priced at the output-token rate. Cached tokens are removed from fresh input before pricing so they are not charged twice. Cost remains marked as locally estimated and is withheld when pricing coverage is missing or the stored cost no longer reconciles with the current token facts.
 
 ## Tools and content
 
-The local parser maps Gemini tool calls to Qovrion's common tool names and extracts shell command names for local analysis. It also associates each Gemini response with the preceding user turn.
+The local parser maps Gemini tool calls to Metrora's common tool names and extracts shell command names for local analysis. It also associates each Gemini response with the preceding user turn.
 
 Prompts, responses, tool arguments, source code, commands and local paths are not required by `gemini-message-usage-v1` and are not included in signed usage measurements.
 
 ## Caching
 
-There is no Gemini-specific cache. Parsed calls participate in Qovrion's shared session cache and normal file-fingerprint invalidation.
+There is no Gemini-specific cache. Parsed calls participate in Metrora's shared session cache and normal file-fingerprint invalidation.
 
 ## Known limits
 

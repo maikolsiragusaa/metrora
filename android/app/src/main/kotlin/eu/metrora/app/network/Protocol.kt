@@ -1,15 +1,16 @@
-package io.github.maikolsiragusaa.qovrion.network
+package eu.metrora.app.network
 
 import java.security.MessageDigest
 
-object QovrionProtocol {
+object MetroraProtocol {
     const val API_VERSION = 1
     const val DEFAULT_PORT = 7777
     const val HELLO_PATH = "/api/v1/peer/hello"
     const val PAIR_REQUEST_PATH = "/api/v1/peer/pair-request"
     const val REVOKE_PATH = "/api/v1/peer/revoke"
     const val USAGE_PATH = "/api/v1/usage"
-    const val USAGE_KIND = "qovrion.companion.usage"
+    const val USAGE_KIND = "metrora.companion.usage"
+    const val LEGACY_USAGE_KIND = "qovrion.companion.usage"
 
     private val allowedPeriods = setOf("today", "week", "30days", "month", "all", "lifetime")
 

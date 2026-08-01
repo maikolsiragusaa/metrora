@@ -1,4 +1,4 @@
-package io.github.maikolsiragusaa.qovrion.ui
+package eu.metrora.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -42,11 +42,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import io.github.maikolsiragusaa.qovrion.QovrionCoordinator
-import io.github.maikolsiragusaa.qovrion.QovrionUiState
-import io.github.maikolsiragusaa.qovrion.R
-import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
-import io.github.maikolsiragusaa.qovrion.network.QovrionProtocol
+import eu.metrora.app.MetroraCoordinator
+import eu.metrora.app.MetroraUiState
+import eu.metrora.app.R
+import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.network.MetroraProtocol
 import java.math.BigDecimal
 import java.text.DateFormat
 import java.text.NumberFormat
@@ -54,7 +54,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun QovrionApp(coordinator: QovrionCoordinator) {
+fun MetroraApp(coordinator: MetroraCoordinator) {
     val state by coordinator.state.collectAsState()
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -108,7 +108,7 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun Feedback(state: QovrionUiState) {
+private fun Feedback(state: MetroraUiState) {
     val text = state.error ?: state.message ?: return
     val error = state.error != null
     Card(
@@ -126,9 +126,9 @@ private fun Feedback(state: QovrionUiState) {
 }
 
 @Composable
-private fun PairingState(state: QovrionUiState, onPair: (String, String) -> Unit) {
+private fun PairingState(state: MetroraUiState, onPair: (String, String) -> Unit) {
     var host by rememberSaveable { mutableStateOf("") }
-    var port by rememberSaveable { mutableStateOf(QovrionProtocol.DEFAULT_PORT.toString()) }
+    var port by rememberSaveable { mutableStateOf(MetroraProtocol.DEFAULT_PORT.toString()) }
 
     Card {
         Column(
@@ -231,7 +231,7 @@ private fun PairingState(state: QovrionUiState, onPair: (String, String) -> Unit
 
 @Composable
 private fun PairedState(
-    state: QovrionUiState,
+    state: MetroraUiState,
     onRefresh: () -> Unit,
     onDisconnect: () -> Unit,
     onForgetLocal: () -> Unit,

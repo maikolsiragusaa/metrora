@@ -1,22 +1,22 @@
-package io.github.maikolsiragusaa.qovrion
+package eu.metrora.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import io.github.maikolsiragusaa.qovrion.ui.QovrionApp
-import io.github.maikolsiragusaa.qovrion.ui.QovrionTheme
+import eu.metrora.app.ui.MetroraApp
+import eu.metrora.app.ui.MetroraTheme
 
 class MainActivity : ComponentActivity() {
-    private lateinit var coordinator: QovrionCoordinator
+    private lateinit var coordinator: MetroraCoordinator
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        coordinator = QovrionCoordinator(applicationContext)
+        coordinator = MetroraCoordinator(applicationContext)
         enableEdgeToEdge()
         setContent {
-            QovrionTheme {
-                QovrionApp(coordinator)
+            MetroraTheme {
+                MetroraApp(coordinator)
             }
         }
     }

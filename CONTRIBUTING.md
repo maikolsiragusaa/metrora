@@ -1,8 +1,8 @@
-# Contributing to Qovrion
+# Contributing to Metrora
 
-Thanks for helping improve Qovrion.
+Thanks for helping improve Metrora.
 
-Qovrion is early in its independent development and still contains CodeBurn-era runtime names. Keep changes focused, evidence-based, and compatible with existing local data.
+Metrora is early in its independent development and still contains CodeBurn-era runtime names. Keep changes focused, evidence-based, and compatible with existing local data.
 
 ## Prerequisites
 
@@ -15,8 +15,8 @@ Qovrion is early in its independent development and still contains CodeBurn-era 
 ## Setup
 
 ```bash
-git clone https://github.com/maikolsiragusaa/qovrion.git
-cd qovrion
+git clone https://github.com/maikolsiragusaa/metrora.git
+cd metrora
 npm ci
 npm run build:cli
 ```
@@ -84,4 +84,4 @@ Do not file vulnerabilities in the public tracker. Follow [`SECURITY.md`](SECURI
 
 ## License
 
-Qovrion is distributed under the MIT License and contains software initially derived from CodeBurn 0.9.19. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`UPSTREAM.md`](UPSTREAM.md).
+Metrora is distributed under the MIT License and contains software initially derived from CodeBurn 0.9.19. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`UPSTREAM.md`](UPSTREAM.md).

@@ -42,9 +42,9 @@ describe('desktop upstream-service boundary', () => {
     expect(matches, `forbidden inherited destination found in: ${matches.join(', ')}`).toEqual([])
   })
 
-  it('keeps the visible desktop identity on Qovrion', () => {
-    expect(readFileSync(join(APP_ROOT, 'renderer', 'index.html'), 'utf8')).toContain('<title>Qovrion</title>')
-    expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'Sidebar.tsx'), 'utf8')).toContain('<b>Qovrion</b>')
-    expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'AboutModal.tsx'), 'utf8')).toContain('>Qovrion</div>')
+  it('keeps the visible desktop identity on Metrora', () => {
+    expect(readFileSync(join(APP_ROOT, 'renderer', 'index.html'), 'utf8')).toContain('<title>Metrora</title>')
+    expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'Sidebar.tsx'), 'utf8')).toContain('<b>Metrora</b>')
+    expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'AboutModal.tsx'), 'utf8')).toContain('>Metrora</div>')
   })
 })

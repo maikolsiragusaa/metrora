@@ -1,6 +1,6 @@
-# Qovrion local companion API v1
+# Metrora local companion API v1
 
-Qovrion exposes a local HTTPS protocol for first-party companion applications and trusted devices. The desktop remains the authority for collection and analysis; companions read a content-minimal versioned summary over the local network.
+Metrora exposes a local HTTPS protocol for first-party companion applications and trusted devices. The desktop remains the authority for collection and analysis; companions read a content-minimal versioned summary over the local network.
 
 ## Compatibility
 
@@ -23,7 +23,7 @@ The unversioned `/api/usage` response remains the inherited desktop payload for 
 
 ```json
 {
-  "product": "qovrion",
+  "product": "metrora",
   "apiVersion": 1,
   "apiVersions": [1],
   "fingerprint": "...",
@@ -72,7 +72,7 @@ The response is `CompanionUsageV1`:
 
 ```json
 {
-  "kind": "qovrion.companion.usage",
+  "kind": "metrora.companion.usage",
   "version": 1,
   "generatedAt": "2026-07-31T10:30:00.000Z",
   "period": {

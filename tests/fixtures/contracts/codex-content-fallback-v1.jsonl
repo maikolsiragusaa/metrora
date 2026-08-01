@@ -1,4 +1,4 @@
-{"timestamp":"2026-07-31T10:20:00.000Z","type":"session_meta","payload":{"originator":"codex_cli_rs","session_id":"codex-fallback-01","cwd":"/repo/qovrion","model":"gpt-5.5","reasoning_effort":"medium"}}
+{"timestamp":"2026-07-31T10:20:00.000Z","type":"session_meta","payload":{"originator":"codex_cli_rs","session_id":"codex-fallback-01","cwd":"/repo/metrora","model":"gpt-5.5","reasoning_effort":"medium"}}
 {"timestamp":"2026-07-31T10:20:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Write a tiny parity test."}]}}
 {"timestamp":"2026-07-31T10:20:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}
 {"timestamp":"2026-07-31T10:20:03.000Z","type":"event_msg","payload":{"type":"token_count"}}

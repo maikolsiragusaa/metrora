@@ -2,7 +2,7 @@
 
 Status: **reviewed historical data; runtime assignment not connected**.
 
-This note records why Qovrion's first real historical price-book entries use conservative first-observation boundaries rather than silently applying today's GPT-5.6 prices to every older call.
+This note records why Metrora's first real historical price-book entries use conservative first-observation boundaries rather than silently applying today's GPT-5.6 prices to every older call.
 
 ## Reviewed sequence
 
@@ -24,7 +24,7 @@ OpenAI announced lower Terra and Luna prices on 2026-07-30. LiteLLM recorded the
 
 ## Boundary policy
 
-The public announcement states that the new prices start on July 30 but does not provide an exact UTC billing boundary in the reviewed material. Qovrion therefore records the exact upstream commit timestamps as `first-observed` boundaries:
+The public announcement states that the new prices start on July 30 but does not provide an exact UTC billing boundary in the reviewed material. Metrora therefore records the exact upstream commit timestamps as `first-observed` boundaries:
 
 - initial reviewed observation: `2026-07-09T18:51:12Z`;
 - reduced-price observation: `2026-07-30T20:08:01Z`.

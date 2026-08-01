@@ -18,7 +18,7 @@ describe('secure companion lifecycle', () => {
   })
 
   it('compares identities, binds the token to mTLS, serves v1 DTOs and revokes access', async () => {
-    const desktop = await generateIdentity('Qovrion desktop')
+    const desktop = await generateIdentity('Metrora desktop')
     const phone = await generateIdentity('Android phone')
     const attacker = await generateIdentity('Other device')
     const peers = new PeerStore()
@@ -60,7 +60,7 @@ describe('secure companion lifecycle', () => {
       expect(discovered.status).toBe(200)
       expect(discovered.serverFingerprint).toBe(desktop.fingerprint)
       expect(discovered.json).toMatchObject({
-        product: 'qovrion',
+        product: 'metrora',
         apiVersion: 1,
         pairingMethods: ['approve-sas'],
       })
@@ -82,7 +82,7 @@ describe('secure companion lifecycle', () => {
       const usage = await fetchCompanionUsage(endpoint, token, { period: 'month' })
       expect(usage.status).toBe(200)
       expect(usage.json).toMatchObject({
-        kind: 'qovrion.companion.usage',
+        kind: 'metrora.companion.usage',
         version: 1,
         totals: { costMicrosUsd: 750_000, calls: 5, sessions: 2 },
       })
@@ -115,7 +115,7 @@ describe('secure companion lifecycle', () => {
   }, 30_000)
 
   it('rolls peer state back when durable persistence fails', async () => {
-    const desktop = await generateIdentity('Qovrion desktop')
+    const desktop = await generateIdentity('Metrora desktop')
     const phone = await generateIdentity('Existing phone')
     const candidate = await generateIdentity('New phone')
     const peers = new PeerStore()

@@ -1,12 +1,12 @@
-package io.github.maikolsiragusaa.qovrion
+package eu.metrora.app
 
 import android.content.Context
 import android.os.Build
-import io.github.maikolsiragusaa.qovrion.data.PairingCredentials
-import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
-import io.github.maikolsiragusaa.qovrion.network.QovrionApiClient
-import io.github.maikolsiragusaa.qovrion.network.QovrionProtocol
-import io.github.maikolsiragusaa.qovrion.security.SecureStore
+import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.network.MetroraApiClient
+import eu.metrora.app.network.MetroraProtocol
+import eu.metrora.app.security.SecureStore
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class QovrionUiState(
+data class MetroraUiState(
     val initializing: Boolean = true,
     val busy: Boolean = false,
     val credentials: PairingCredentials? = null,
@@ -33,13 +33,13 @@ data class QovrionUiState(
         get() = credentials != null
 }
 
-class QovrionCoordinator(context: Context) : Closeable {
+class MetroraCoordinator(context: Context) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val store = SecureStore(context.applicationContext)
-    private val api = QovrionApiClient()
-    private val mutableState = MutableStateFlow(QovrionUiState())
+    private val api = MetroraApiClient()
+    private val mutableState = MutableStateFlow(MetroraUiState())
 
-    val state: StateFlow<QovrionUiState> = mutableState.asStateFlow()
+    val state: StateFlow<MetroraUiState> = mutableState.asStateFlow()
 
     init {
         scope.launch {
@@ -48,7 +48,7 @@ class QovrionCoordinator(context: Context) : Closeable {
                 val snapshot = store.loadSnapshot()?.takeIf { cached ->
                     credentials != null && cached.desktopId == credentials.serverFingerprint
                 }
-                mutableState.value = QovrionUiState(
+                mutableState.value = MetroraUiState(
                     initializing = false,
                     credentials = credentials,
                     snapshot = snapshot,
@@ -56,7 +56,7 @@ class QovrionCoordinator(context: Context) : Closeable {
                 )
             } catch (error: Exception) {
                 runCatching { store.clearPairing() }
-                mutableState.value = QovrionUiState(
+                mutableState.value = MetroraUiState(
                     initializing = false,
                     error = error.safeMessage("Encrypted local state could not be read and was removed."),
                 )
@@ -67,7 +67,7 @@ class QovrionCoordinator(context: Context) : Closeable {
     fun pair(host: String, portText: String) {
         if (mutableState.value.busy || mutableState.value.paired) return
         val port = try {
-            QovrionProtocol.validatePort(portText.trim().toInt())
+            MetroraProtocol.validatePort(portText.trim().toInt())
         } catch (error: Exception) {
             mutableState.update { it.copy(error = error.safeMessage("Enter a valid port."), message = null) }
             return
@@ -89,7 +89,7 @@ class QovrionCoordinator(context: Context) : Closeable {
                     it.copy(
                         pairingCode = code,
                         pairingDesktopName = desktop.name,
-                        message = "Compare the complete code with Qovrion Desktop, then approve there.",
+                        message = "Compare the complete code with Metrora Desktop, then approve there.",
                     )
                 }
                 val credentials = api.pair(desktop, code, androidDeviceName())
@@ -176,7 +176,7 @@ class QovrionCoordinator(context: Context) : Closeable {
             try {
                 api.revoke(credentials)
                 store.clearPairing()
-                mutableState.value = QovrionUiState(
+                mutableState.value = MetroraUiState(
                     initializing = false,
                     message = "Desktop access revoked and local pairing data removed.",
                 )
@@ -200,7 +200,7 @@ class QovrionCoordinator(context: Context) : Closeable {
         scope.launch {
             try {
                 store.clearPairing()
-                mutableState.value = QovrionUiState(
+                mutableState.value = MetroraUiState(
                     initializing = false,
                     message = "Pairing data removed only from this phone. Revoke the old device from the desktop when available.",
                 )

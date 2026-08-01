@@ -1,8 +1,8 @@
-package io.github.maikolsiragusaa.qovrion.network
+package eu.metrora.app.network
 
-import io.github.maikolsiragusaa.qovrion.data.ModelUsage
-import io.github.maikolsiragusaa.qovrion.data.PairingCredentials
-import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
+import eu.metrora.app.data.ModelUsage
+import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.UsageSnapshot
 import java.time.Instant
 import org.json.JSONObject
 
@@ -11,10 +11,10 @@ internal object CompanionUsageV1Parser {
 
     fun parse(raw: String, credentials: PairingCredentials): UsageSnapshot {
         val root = JSONObject(raw)
-        require(root.getString("kind") == QovrionProtocol.USAGE_KIND) {
+        require(root.getString("kind") in setOf(MetroraProtocol.USAGE_KIND, MetroraProtocol.LEGACY_USAGE_KIND)) {
             "The desktop returned an unsupported companion payload."
         }
-        require(root.getInt("version") == QovrionProtocol.API_VERSION) {
+        require(root.getInt("version") == MetroraProtocol.API_VERSION) {
             "The desktop returned an unsupported companion schema version."
         }
 

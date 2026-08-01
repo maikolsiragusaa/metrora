@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.maikolsiragusaa.qovrion"
+    namespace = "eu.metrora.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.maikolsiragusaa.qovrion"
+        applicationId = "eu.metrora.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

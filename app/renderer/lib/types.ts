@@ -1,4 +1,4 @@
-// Types mirrored from the Qovrion CLI (`src/*`). The renderer is a
+// Types mirrored from the Metrora CLI (`src/*`). The renderer is a
 // pure view over CLI JSON, so these shapes must match the emitters exactly.
 // Do not invent fields — copy from the cited source files.
 

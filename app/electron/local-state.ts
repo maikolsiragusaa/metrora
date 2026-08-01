@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { cpSync, existsSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export type ElectronSafeStorageLike = {
@@ -44,6 +45,7 @@ export type InitializeDesktopEndpointStateDeps = {
   resourcesPath: string
   appPath: string
   userDataPath: string
+  legacyUserDataPath?: string
   safeStorage: ElectronSafeStorageLike
   importModule?: (url: string) => Promise<DesktopLocalStateModule>
 }
@@ -62,6 +64,37 @@ export function desktopLocalStateModulePath(
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-local-state.js')
 }
 
+/**
+ * Copy old Qovrion desktop state into Metrora once. The source is never moved,
+ * modified or deleted. A failed readable-state migration is surfaced instead
+ * of silently creating a fresh identity.
+ */
+export function adoptLegacyDesktopLocalState(options: {
+  userDataPath: string
+  legacyUserDataPath?: string
+}): { dataDir: string; adoptedFrom: string | null } {
+  const canonical = join(options.userDataPath, 'metrora-local-state')
+  if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: null }
+
+  const legacyRoot = options.legacyUserDataPath ?? join(dirname(options.userDataPath), 'Qovrion')
+  const candidates = [
+    join(legacyRoot, 'qovrion-local-state'),
+    join(options.userDataPath, 'qovrion-local-state'),
+  ]
+  for (const legacy of candidates) {
+    if (!existsSync(legacy)) continue
+    try {
+      mkdirSync(dirname(canonical), { recursive: true })
+      cpSync(legacy, canonical, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true })
+      return { dataDir: canonical, adoptedFrom: legacy }
+    } catch (error) {
+      if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: legacy }
+      throw new Error(`failed to adopt legacy Qovrion desktop state: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  return { dataDir: canonical, adoptedFrom: null }
+}
+
 export async function initializeDesktopEndpointState(
   deps: InitializeDesktopEndpointStateDeps,
 ): Promise<DesktopLocalStateResult> {
@@ -75,9 +108,13 @@ export async function initializeDesktopEndpointState(
     throw new Error('bundled desktop local-state runtime is invalid')
   }
 
+  const localState = adoptLegacyDesktopLocalState({
+    userDataPath: deps.userDataPath,
+    legacyUserDataPath: deps.legacyUserDataPath,
+  })
   const initialized = await runtime.initializeDesktopLocalStateV1({
     backend,
-    dataDir: join(deps.userDataPath, 'qovrion-local-state'),
+    dataDir: localState.dataDir,
     safeStorage: {
       isAvailable: () => deps.safeStorage.isAsyncEncryptionAvailable(),
       encryptString: plaintext => deps.safeStorage.encryptStringAsync(plaintext),

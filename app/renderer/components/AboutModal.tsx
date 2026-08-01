@@ -3,7 +3,7 @@ import { useEffect, type MouseEvent, type ReactNode } from 'react'
 import { version } from '../../package.json'
 import { BUILD_STAMP } from '../lib/build'
 import { codeburn } from '../lib/ipc'
-import { QovrionMark } from './QovrionMark'
+import { MetroraMark } from './MetroraMark'
 
 export type SocialLink = {
   label: string
@@ -38,8 +38,8 @@ export function AboutModal({ socials, onClose }: { socials: SocialLink[]; onClos
         <button className="about-modal-close" type="button" aria-label="Close About" onClick={onClose}>×</button>
         <div className="about-modal-grid">
           <div className="about-modal-hero">
-            <span className="about-modal-logo" aria-hidden="true"><QovrionMark size={52} /></span>
-            <div className="about-modal-name" id="about-modal-title">Qovrion</div>
+            <span className="about-modal-logo" aria-hidden="true"><MetroraMark size={52} /></span>
+            <div className="about-modal-name" id="about-modal-title">Metrora</div>
             <div className="about-modal-version">v{version}</div>
             <div className="about-modal-build">{BUILD_STAMP}</div>
             <div className="about-modal-tagline">Local-first intelligence for AI usage, cost and efficiency.</div>
@@ -63,13 +63,13 @@ export function AboutModal({ socials, onClose }: { socials: SocialLink[]; onClos
             <div className="about-modal-section about-modal-updates">
               <div className="about-modal-section-title">Updates</div>
               <p className="about-modal-update-note" role="status">
-                Qovrion does not yet publish an automatic update channel. This build never checks or downloads CodeBurn releases.
+                Metrora does not yet publish an automatic update channel. This build never checks or downloads CodeBurn releases.
               </p>
             </div>
           </div>
         </div>
         <div className="about-modal-credit">
-          Independent Qovrion build · Based on CodeBurn 0.9.19 under the MIT License
+          Independent Metrora build · Based on CodeBurn 0.9.19 under the MIT License
         </div>
       </div>
     </div>

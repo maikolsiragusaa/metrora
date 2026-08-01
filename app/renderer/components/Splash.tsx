@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { ProviderLogo } from './ProviderLogo'
-import { QovrionMark } from './QovrionMark'
+import { MetroraMark } from './MetroraMark'
 import { motionClass, reducedMotion } from '../lib/motion'
 import { codeburn } from '../lib/ipc'
 import type { ScanProgressEvent } from '../lib/types'
@@ -73,7 +73,7 @@ function SplashStatus({ progress }: { progress: Progress }) {
   )
 }
 
-/** Full-window Qovrion startup surface over the inherited local scan. */
+/** Full-window Metrora startup surface over the inherited local scan. */
 export function Splash({ hasData, hasError }: { hasData: boolean; hasError: boolean }) {
   const [phase, setPhase] = useState<Phase>('lit')
   const [progress, setProgress] = useState<Progress>(EMPTY)
@@ -114,8 +114,8 @@ export function Splash({ hasData, hasError }: { hasData: boolean; hasError: bool
   const base = phase === 'out' ? 'splash splash-out' : 'splash'
   return createPortal(
     <div className={motionClass(base, 'splash-lit')} aria-hidden="true">
-      <div className="splash-mark"><QovrionMark size={76} /></div>
-      <div className="splash-word">Qovrion</div>
+      <div className="splash-mark"><MetroraMark size={76} /></div>
+      <div className="splash-word">Metrora</div>
       <div className="splash-version">v{version}</div>
       {reveal && phase === 'lit' && <SplashStatus progress={progress} />}
     </div>,

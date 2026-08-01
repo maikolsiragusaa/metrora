@@ -1,8 +1,8 @@
-// Qovrion does not query CodeBurn releases or download channels.
+// Metrora does not query CodeBurn releases or download channels.
 //
 // The inherited Electron main process expects an UpdateChecker-compatible
 // object. This module keeps that interface but deliberately performs no network
-// request until Qovrion owns and publishes a verified release channel.
+// request until Metrora owns and publishes a verified release channel.
 
 export const UPDATES_ENABLED = false
 
@@ -30,7 +30,7 @@ export function compareSemver(a: string, b: string): number {
   return 0
 }
 
-/** Retained as a pure utility for a future Qovrion-owned release channel. */
+/** Retained as a pure utility for a future Metrora-owned release channel. */
 export function pickLatestDesktopVersion(releases: GitHubRelease[]): { version: string; tag: string } | null {
   const tagPattern = /^desktop-v(\d+\.\d+\.\d+)$/
   let best: { version: string; tag: string } | null = null

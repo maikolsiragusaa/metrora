@@ -1,4 +1,4 @@
-export function QovrionMark({ size = 24, className }: { size?: number; className?: string }) {
+export function MetroraMark({ size = 24, className }: { size?: number; className?: string }) {
   return (
     <svg
       aria-hidden="true"

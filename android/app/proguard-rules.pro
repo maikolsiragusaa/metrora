@@ -1,1 +1,1 @@
-# Qovrion uses no reflection-based network model in the Android companion.
+# Metrora uses no reflection-based network model in the Android companion.

@@ -1,18 +1,18 @@
-# Qovrion local pricing observations
+# Metrora local pricing observations
 
 Status: **storage, conditional-rate, and resolution contracts implemented; runtime pricing not connected**.
 
-The reviewed repository price book cannot know about a mutable upstream price change until Qovrion publishes an update. The local observation ledger closes that timing gap without introducing a hosted dependency or rewriting inherited collection behavior.
+The reviewed repository price book cannot know about a mutable upstream price change until Metrora publishes an update. The local observation ledger closes that timing gap without introducing a hosted dependency or rewriting inherited collection behavior.
 
 ## Storage
 
-Each first observation is stored as one immutable private JSON record under the platform Qovrion data directory:
+Each first observation is stored as one immutable private JSON record under the platform Metrora data directory:
 
 ```text
 pricing/v1/observations/<record-id-hash>.json
 ```
 
-The ledger reuses Qovrion's hardened local-state primitives:
+The ledger reuses Metrora's hardened local-state primitives:
 
 - private directories and files;
 - atomic write, file sync, and rename;

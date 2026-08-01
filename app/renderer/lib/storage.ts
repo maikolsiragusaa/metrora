@@ -1,5 +1,6 @@
-export const QOVRION_STORAGE_PREFIX = 'qovrion.'
-export const LEGACY_STORAGE_PREFIX = 'codeburn.'
+export const METRORA_STORAGE_PREFIX = 'metrora.'
+export const LEGACY_QOVRION_STORAGE_PREFIX = 'qovrion.'
+export const LEGACY_CODEBURN_STORAGE_PREFIX = 'codeburn.'
 
 export const KNOWN_STORAGE_SUFFIXES = [
   'defaultPeriod',
@@ -22,14 +23,15 @@ function surface(): StorageSurface | null {
   }
 }
 
-export function storageKeys(suffix: string): { canonical: string; legacy: string } {
+export function storageKeys(suffix: string): { canonical: string; qovrion: string; codeburn: string } {
   return {
-    canonical: `${QOVRION_STORAGE_PREFIX}${suffix}`,
-    legacy: `${LEGACY_STORAGE_PREFIX}${suffix}`,
+    canonical: `${METRORA_STORAGE_PREFIX}${suffix}`,
+    qovrion: `${LEGACY_QOVRION_STORAGE_PREFIX}${suffix}`,
+    codeburn: `${LEGACY_CODEBURN_STORAGE_PREFIX}${suffix}`,
   }
 }
 
-/** Canonical wins. A legacy value is copied forward but never removed. */
+/** Metrora wins, then Qovrion, then CodeBurn. Old values are copied forward only. */
 export function readCompatStorage(suffix: string, storage = surface()): string | null {
   if (!storage) return null
   const keys = storageKeys(suffix)
@@ -37,29 +39,34 @@ export function readCompatStorage(suffix: string, storage = surface()): string |
     const canonical = storage.getItem(keys.canonical)
     if (canonical !== null) return canonical
 
-    const legacy = storage.getItem(keys.legacy)
-    if (legacy === null) return null
-    try { storage.setItem(keys.canonical, legacy) } catch { /* best effort migration */ }
-    return legacy
+    for (const legacyKey of [keys.qovrion, keys.codeburn]) {
+      const legacy = storage.getItem(legacyKey)
+      if (legacy === null) continue
+      try { storage.setItem(keys.canonical, legacy) } catch { /* best effort migration */ }
+      return legacy
+    }
+    return null
   } catch {
     return null
   }
 }
 
-/** Dual-write during the compatibility window so an old binary can roll back. */
+/** Write every supported generation so a rollback can still read current settings. */
 export function writeCompatStorage(suffix: string, value: string, storage = surface()): void {
   if (!storage) return
   const keys = storageKeys(suffix)
-  try { storage.setItem(keys.canonical, value) } catch { /* hardened storage */ }
-  try { storage.setItem(keys.legacy, value) } catch { /* rollback compatibility */ }
+  for (const key of [keys.canonical, keys.qovrion, keys.codeburn]) {
+    try { storage.setItem(key, value) } catch { /* hardened storage */ }
+  }
 }
 
-/** Explicit removal mirrors the user's intent across both generations. */
+/** Explicit removal mirrors the user's intent across every supported generation. */
 export function removeCompatStorage(suffix: string, storage = surface()): void {
   if (!storage) return
   const keys = storageKeys(suffix)
-  try { storage.removeItem(keys.canonical) } catch { /* hardened storage */ }
-  try { storage.removeItem(keys.legacy) } catch { /* rollback compatibility */ }
+  for (const key of [keys.canonical, keys.qovrion, keys.codeburn]) {
+    try { storage.removeItem(key) } catch { /* hardened storage */ }
+  }
 }
 
 export function migrateKnownStorage(storage = surface()): void {

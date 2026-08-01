@@ -1,4 +1,4 @@
-package io.github.maikolsiragusaa.qovrion.ui
+package eu.metrora.app.ui
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -24,7 +24,7 @@ private val DarkColors = darkColorScheme(
 )
 
 @Composable
-fun QovrionTheme(content: @Composable () -> Unit) {
+fun MetroraTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     val context = LocalContext.current
     val colors = when {

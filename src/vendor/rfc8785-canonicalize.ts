@@ -2,7 +2,7 @@
  * RFC 8785 JSON Canonicalization Scheme implementation.
  *
  * Adapted from `erdtman/canonicalize` (`lib/canonicalize.js`), licensed under
- * Apache-2.0. Qovrion modifications: TypeScript types, named export, explicit
+ * Apache-2.0. Metrora modifications: TypeScript types, named export, explicit
  * unsupported-primitive rejection, and project formatting.
  *
  * Upstream: https://github.com/erdtman/canonicalize

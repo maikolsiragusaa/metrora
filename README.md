@@ -1,24 +1,26 @@
 <div align="center">
 
-# Qovrion
+# Metrora
+
+**Website:** [metrora.eu](https://metrora.eu)
 
 ### Local-first intelligence for AI-assisted development
 
 Understand where AI time, tokens, and money go — across tools, models, projects, and sessions — without routing your work through another service.
 
-[![Qovrion CI](https://github.com/maikolsiragusaa/qovrion/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/qovrion/actions/workflows/ci.yml)
+[![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>
 
 > [!IMPORTANT]
-> Qovrion is under active development. The source is usable for development and validation, but there are no official signed Qovrion releases yet.
+> Metrora is under active development. The source is usable for development and validation, but there are no official signed Metrora releases yet.
 
-## Why Qovrion
+## Why Metrora
 
 AI-assisted work is split across editors, desktop apps, CLIs, providers, subscriptions, and models. Each tool exposes a different fragment of the picture.
 
-Qovrion builds one evidence-based view from the usage records already stored on your machine. It helps answer practical questions:
+Metrora builds one evidence-based view from the usage records already stored on your machine. It helps answer practical questions:
 
 - Which tools and models are driving cost?
 - Which models work best for different kinds of tasks?
@@ -52,10 +54,10 @@ Windows is the first release target. Other platforms remain part of the source t
 
 ## Privacy model
 
-Qovrion is local-first by default:
+Metrora is local-first by default:
 
 - no account is required for local use;
-- AI traffic does not pass through Qovrion;
+- AI traffic does not pass through Metrora;
 - prompts, responses, source code, patches, secrets, and full local paths are not exported by default;
 - analytical claims distinguish observed, estimated, and unknown values;
 - networked sharing is being built around explicit scope, revocation, and structured usage data;
@@ -71,8 +73,8 @@ Requirements:
 - npm
 
 ```bash
-git clone https://github.com/maikolsiragusaa/qovrion.git
-cd qovrion
+git clone https://github.com/maikolsiragusaa/metrora.git
+cd metrora
 npm ci
 npm run build:cli
 npm test -- --run
@@ -106,7 +108,7 @@ tests/     core test suite
 docs/      public contracts, principles, and technical documentation
 ```
 
-The canonical command is `qovrion`. `codeburn` remains a temporary compatibility alias while inherited paths and integrations are migrated safely.
+The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases while local state and integrations migrate safely.
 
 ## Contributing
 
@@ -116,6 +118,6 @@ Security issues must be reported privately according to [SECURITY.md](SECURITY.m
 
 ## License and provenance
 
-Qovrion is open source under the MIT License and contains substantial software originally derived from CodeBurn 0.9.19.
+Metrora is open source under the MIT License and contains substantial software originally derived from CodeBurn 0.9.19.
 
-Original copyright, license, and provenance are preserved in [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and [UPSTREAM.md](UPSTREAM.md). Qovrion is an independent project and does not present upstream CodeBurn packages or releases as Qovrion artifacts.
+Original copyright, license, and provenance are preserved in [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and [UPSTREAM.md](UPSTREAM.md). Metrora is an independent project and does not present upstream CodeBurn packages or releases as Metrora artifacts.

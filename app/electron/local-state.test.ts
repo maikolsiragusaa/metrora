@@ -1,7 +1,10 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  adoptLegacyDesktopLocalState,
   desktopLocalStateModulePath,
   desktopVaultBackend,
   initializeDesktopEndpointState,
@@ -42,10 +45,10 @@ describe('desktop local-state Electron host', () => {
 
   it('passes a narrow async safeStorage adapter to the shared runtime', async () => {
     const storage = safeStorage()
-    const userDataPath = 'C:\\Users\\test\\Qovrion'
+    const userDataPath = 'C:\\Users\\test\\Metrora'
     const initialize = vi.fn<DesktopLocalStateModule['initializeDesktopLocalStateV1']>(async options => {
       expect(options.backend).toBe('windows-dpapi')
-      expect(options.dataDir).toBe(join(userDataPath, 'qovrion-local-state'))
+      expect(options.dataDir).toBe(join(userDataPath, 'metrora-local-state'))
       expect(await options.safeStorage.isAvailable()).toBe(true)
       const sealed = await options.safeStorage.encryptString('secret')
       expect(Buffer.from(sealed).toString()).toBe('sealed:secret')
@@ -84,6 +87,27 @@ describe('desktop local-state Electron host', () => {
     expect(initialize).toHaveBeenCalledOnce()
   })
 
+
+  it('copies old Qovrion desktop state without modifying the source', () => {
+    const root = mkdtempSync(join(tmpdir(), 'metrora-desktop-adoption-'))
+    try {
+      const userDataPath = join(root, 'Metrora')
+      const legacyUserDataPath = join(root, 'Qovrion')
+      const legacyState = join(legacyUserDataPath, 'qovrion-local-state')
+      mkdirSync(legacyState, { recursive: true })
+      writeFileSync(join(legacyState, 'identity.bin'), 'legacy-state')
+
+      const adopted = adoptLegacyDesktopLocalState({ userDataPath, legacyUserDataPath })
+      expect(adopted).toEqual({
+        dataDir: join(userDataPath, 'metrora-local-state'),
+        adoptedFrom: legacyState,
+      })
+      expect(readFileSync(join(adopted.dataDir, 'identity.bin'), 'utf8')).toBe('legacy-state')
+      expect(readFileSync(join(legacyState, 'identity.bin'), 'utf8')).toBe('legacy-state')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
   it('fails closed without loading the runtime on unsupported platforms', async () => {
     const importModule = vi.fn()
     const result = await initializeDesktopEndpointState({
@@ -91,7 +115,7 @@ describe('desktop local-state Electron host', () => {
       isPackaged: false,
       resourcesPath: '/resources',
       appPath: '/repo/app',
-      userDataPath: '/home/test/.config/Qovrion',
+      userDataPath: '/home/test/.config/Metrora',
       safeStorage: safeStorage(),
       importModule,
     })

@@ -1,10 +1,10 @@
-# Qovrion product principles
+# Metrora product principles
 
-These principles govern the public Qovrion project. They are intended to remain stable even as interfaces, providers, and packaging evolve.
+These principles govern the public Metrora project. They are intended to remain stable even as interfaces, providers, and packaging evolve.
 
 ## Local-first is the default
 
-A person must be able to install Qovrion, inspect locally available usage, and export their data without creating an account or sending their AI traffic through Qovrion.
+A person must be able to install Metrora, inspect locally available usage, and export their data without creating an account or sending their AI traffic through Metrora.
 
 Networked features are additive. They must never silently convert local analysis into hosted collection.
 
@@ -12,7 +12,7 @@ Networked features are additive. They must never silently convert local analysis
 
 Canonical records, public contracts, local APIs, backup, and ordinary export formats must remain usable without a proprietary service.
 
-Qovrion must not trap users behind an account, a hosted dashboard, or an undocumented database format to access measurements created from their own machines.
+Metrora must not trap users behind an account, a hosted dashboard, or an undocumented database format to access measurements created from their own machines.
 
 ## Content-minimal by default
 
@@ -22,7 +22,7 @@ Prompts, responses, source code, patches, secrets, tool arguments, and unrestric
 
 ## Evidence before inference
 
-Qovrion distinguishes:
+Metrora distinguishes:
 
 - values observed directly from a source;
 - deterministic values derived from observed data;
@@ -33,7 +33,7 @@ Missing evidence must remain visible. Cost, duration, token volume, or task cont
 
 ## Independent across tools
 
-Qovrion exists to provide one coherent view across AI tools and providers. It must not require users to standardize on one editor, one model vendor, one proxy, or one hosted platform.
+Metrora exists to provide one coherent view across AI tools and providers. It must not require users to standardize on one editor, one model vendor, one proxy, or one hosted platform.
 
 Provider-specific integrations may be deep, but canonical reporting should remain provider-neutral.
 
@@ -59,10 +59,10 @@ Public measurement quality, collectors, provenance, core analytics, local access
 
 Pairing, enrollment, synchronization, update delivery, and release signing must be designed as security boundaries, not added after the interface is considered finished.
 
-When a safe workflow is not ready, Qovrion should label the capability experimental rather than overstate its guarantees.
+When a safe workflow is not ready, Metrora should label the capability experimental rather than overstate its guarantees.
 
 ## Product identity should be its own
 
-Qovrion preserves upstream license and provenance while developing an independent product language, visual system, information architecture, release channel, and user experience.
+Metrora preserves upstream license and provenance while developing an independent product language, visual system, information architecture, release channel, and user experience.
 
-Compatibility names may remain internally while migrations are active, but new public interfaces and documentation should use Qovrion terminology.
+Compatibility names may remain internally while migrations are active, but new public interfaces and documentation should use Metrora terminology.

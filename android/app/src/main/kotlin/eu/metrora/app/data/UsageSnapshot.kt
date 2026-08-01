@@ -1,4 +1,4 @@
-package io.github.maikolsiragusaa.qovrion.data
+package eu.metrora.app.data
 
 import org.json.JSONArray
 import org.json.JSONObject

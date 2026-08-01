@@ -1,10 +1,10 @@
-package io.github.maikolsiragusaa.qovrion.network
+package eu.metrora.app.network
 
 import android.annotation.SuppressLint
-import io.github.maikolsiragusaa.qovrion.data.PairingCredentials
-import io.github.maikolsiragusaa.qovrion.data.UsageSnapshot
-import io.github.maikolsiragusaa.qovrion.security.DeviceIdentity
-import io.github.maikolsiragusaa.qovrion.security.IdentityMaterial
+import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.security.DeviceIdentity
+import eu.metrora.app.security.IdentityMaterial
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.Socket
@@ -32,33 +32,33 @@ data class DiscoveredDesktop(
     val fingerprint: String,
 )
 
-class QovrionApiClient(
+class MetroraApiClient(
     private val deviceIdentity: DeviceIdentity = DeviceIdentity(),
 ) {
     suspend fun discover(host: String, port: Int): DiscoveredDesktop = withContext(Dispatchers.IO) {
-        val normalizedHost = QovrionProtocol.normalizeHost(host)
-        val normalizedPort = QovrionProtocol.validatePort(port)
+        val normalizedHost = MetroraProtocol.normalizeHost(host)
+        val normalizedPort = MetroraProtocol.validatePort(port)
         val response = call(
             host = normalizedHost,
             port = normalizedPort,
             method = "GET",
-            path = QovrionProtocol.HELLO_PATH,
+            path = MetroraProtocol.HELLO_PATH,
             expectedFingerprint = null,
         )
-        require(response.status == 200) { "The desktop did not expose the Qovrion companion API." }
+        require(response.status == 200) { "The desktop did not expose the Metrora companion API." }
         val json = JSONObject(response.body)
-        require(json.optString("product") == "qovrion") { "The target is not a Qovrion desktop." }
+        require(json.optString("product") == "metrora") { "The target is not a Metrora desktop." }
         val apiVersion = json.optInt("apiVersion", -1)
-        val supportsV1 = apiVersion == QovrionProtocol.API_VERSION ||
+        val supportsV1 = apiVersion == MetroraProtocol.API_VERSION ||
             (json.optJSONArray("apiVersions")?.let { versions ->
-                (0 until versions.length()).any { index -> versions.optInt(index, -1) == QovrionProtocol.API_VERSION }
+                (0 until versions.length()).any { index -> versions.optInt(index, -1) == MetroraProtocol.API_VERSION }
             } == true)
-        require(supportsV1) { "The desktop does not support Qovrion companion API v1." }
+        require(supportsV1) { "The desktop does not support Metrora companion API v1." }
         val supportsApprovedPairing = json.optJSONArray("pairingMethods")?.let { methods ->
             (0 until methods.length()).any { index -> methods.optString(index) == "approve-sas" }
         } == true
-        require(supportsApprovedPairing) { "Update Qovrion Desktop before pairing this phone." }
-        val advertisedFingerprint = QovrionProtocol.normalizeFingerprint(json.getString("fingerprint"))
+        require(supportsApprovedPairing) { "Update Metrora Desktop before pairing this phone." }
+        val advertisedFingerprint = MetroraProtocol.normalizeFingerprint(json.getString("fingerprint"))
         require(advertisedFingerprint == response.serverFingerprint) { "Desktop certificate identity mismatch." }
         DiscoveredDesktop(
             host = normalizedHost,
@@ -68,7 +68,7 @@ class QovrionApiClient(
         )
     }
 
-    fun pairingCode(desktop: DiscoveredDesktop): String = QovrionProtocol.pairingCode(
+    fun pairingCode(desktop: DiscoveredDesktop): String = MetroraProtocol.pairingCode(
         desktop.fingerprint,
         deviceIdentity.material().fingerprint,
     )
@@ -79,7 +79,7 @@ class QovrionApiClient(
         deviceName: String,
     ): PairingCredentials = withContext(Dispatchers.IO) {
         val identity = deviceIdentity.material()
-        val localCode = QovrionProtocol.pairingCode(desktop.fingerprint, identity.fingerprint)
+        val localCode = MetroraProtocol.pairingCode(desktop.fingerprint, identity.fingerprint)
         require(localCode == expectedCode) { "The local pairing identity changed. Start again." }
         val body = JSONObject()
             .put("name", deviceName.trim().ifBlank { "Android" })
@@ -88,7 +88,7 @@ class QovrionApiClient(
             host = desktop.host,
             port = desktop.port,
             method = "POST",
-            path = QovrionProtocol.PAIR_REQUEST_PATH,
+            path = MetroraProtocol.PAIR_REQUEST_PATH,
             expectedFingerprint = desktop.fingerprint,
             body = body,
             readTimeoutMs = PAIRING_TIMEOUT_MS,
@@ -98,7 +98,7 @@ class QovrionApiClient(
             error(error.ifBlank { "Pairing failed with HTTP ${response.status}." })
         }
         val json = JSONObject(response.body)
-        val returnedFingerprint = QovrionProtocol.normalizeFingerprint(json.getString("fingerprint"))
+        val returnedFingerprint = MetroraProtocol.normalizeFingerprint(json.getString("fingerprint"))
         require(returnedFingerprint == desktop.fingerprint) { "Desktop identity changed during pairing." }
         require(json.getString("code") == expectedCode) { "The pairing confirmation code changed." }
         PairingCredentials(
@@ -119,7 +119,7 @@ class QovrionApiClient(
                 host = credentials.host,
                 port = credentials.port,
                 method = "GET",
-                path = QovrionProtocol.usagePath(period),
+                path = MetroraProtocol.usagePath(period),
                 expectedFingerprint = credentials.serverFingerprint,
                 headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
             )
@@ -136,7 +136,7 @@ class QovrionApiClient(
             host = credentials.host,
             port = credentials.port,
             method = "POST",
-            path = QovrionProtocol.REVOKE_PATH,
+            path = MetroraProtocol.REVOKE_PATH,
             expectedFingerprint = credentials.serverFingerprint,
             headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
         )
@@ -227,7 +227,7 @@ private data class ApiResponse(
 )
 
 private class FingerprintTrustManager(expected: String?) : X509TrustManager {
-    private val expectedFingerprint = expected?.let(QovrionProtocol::normalizeFingerprint)
+    private val expectedFingerprint = expected?.let(MetroraProtocol::normalizeFingerprint)
     var observedFingerprint: String? = null
         private set
 

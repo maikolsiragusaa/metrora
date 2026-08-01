@@ -16,7 +16,7 @@ vi.mock('../lib/ipc', async orig => {
 const SOCIALS: SocialLink[] = [
   {
     label: 'GitHub',
-    url: 'https://github.com/maikolsiragusaa/qovrion',
+    url: 'https://github.com/maikolsiragusaa/metrora',
     icon: <span aria-hidden="true">G</span>,
   },
 ]
@@ -25,17 +25,17 @@ function renderAbout(onClose = vi.fn()) {
   return { onClose, ...render(<AboutModal socials={SOCIALS} onClose={onClose} />) }
 }
 
-describe('Qovrion About modal', () => {
+describe('Metrora About modal', () => {
   beforeEach(() => {
     mocks.openExternal.mockReset().mockResolvedValue(undefined)
   })
 
   afterEach(cleanup)
 
-  it('shows Qovrion identity and the static no-update-channel status', () => {
+  it('shows Metrora identity and the static no-update-channel status', () => {
     renderAbout()
 
-    expect(screen.getByRole('dialog', { name: 'Qovrion' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Metrora' })).toBeInTheDocument()
     expect(screen.getByText('Local-first intelligence for AI usage, cost and efficiency.')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('does not yet publish an automatic update channel')
     expect(screen.getByRole('status')).toHaveTextContent('never checks or downloads CodeBurn releases')
@@ -49,12 +49,12 @@ describe('Qovrion About modal', () => {
     expect(screen.queryByText(/update available/i)).toBeNull()
   })
 
-  it('opens only the explicitly supplied Qovrion link', () => {
+  it('opens only the explicitly supplied Metrora link', () => {
     renderAbout()
 
     fireEvent.click(screen.getByRole('link', { name: /github/i }))
     expect(mocks.openExternal).toHaveBeenCalledTimes(1)
-    expect(mocks.openExternal).toHaveBeenCalledWith('https://github.com/maikolsiragusaa/qovrion')
+    expect(mocks.openExternal).toHaveBeenCalledWith('https://github.com/maikolsiragusaa/metrora')
   })
 
   it('closes from the close button and Escape', () => {
