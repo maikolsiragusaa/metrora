@@ -54,6 +54,12 @@ function sanitizeActionError(error: unknown): { kind: string; message: string } 
   if (name === 'LocalWorkspaceRecoveryRequiredError') {
     return { kind: 'workspace-recovery-required', message: 'Local Workspace state requires recovery.' }
   }
+  if (name === 'LocalWorkspaceProductionLifecycleRecoveryRequiredError') {
+    return { kind: 'workspace-lifecycle-recovery-required', message: 'Local Workspace production state requires recovery.' }
+  }
+  if (name === 'LocalWorkspaceProductionLifecycleWorkspaceRequiredError') {
+    return { kind: 'workspace-required', message: 'Create the local Workspace before changing production state.' }
+  }
   if (name === 'LocalWorkspaceEvidenceBlockedError') {
     return { kind: 'workspace-blocked', message: 'Workspace evidence is blocked or requires review.' }
   }
@@ -123,6 +129,26 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       if ('ok' in state) return state
       try {
         return { ok: true, value: await state.runtime.createWorkspace(parseCreateInput(input)) }
+      } catch (error) {
+        return { ok: false, error: sanitizeActionError(error) }
+      }
+    },
+
+    'codeburn:pauseWorkspaceProduction': async () => {
+      const state = await readyState(deps)
+      if ('ok' in state) return state
+      try {
+        return { ok: true, value: await state.runtime.setProductionMode('paused') }
+      } catch (error) {
+        return { ok: false, error: sanitizeActionError(error) }
+      }
+    },
+
+    'codeburn:resumeWorkspaceProduction': async () => {
+      const state = await readyState(deps)
+      if ('ok' in state) return state
+      try {
+        return { ok: true, value: await state.runtime.setProductionMode('active') }
       } catch (error) {
         return { ok: false, error: sanitizeActionError(error) }
       }
