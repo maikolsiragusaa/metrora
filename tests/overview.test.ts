@@ -239,7 +239,7 @@ describe('renderOverview unpriced models', () => {
     expect(out).toContain('Unpriced')
     expect(out).toContain('1 model at $0')
     expect(out).toContain('zz-mystery-paid-model-999')
-    expect(out).toContain('codeburn model-alias')
+    expect(out).toContain('metrora model-alias')
   })
 
   it('stays silent when every model is priced', () => {

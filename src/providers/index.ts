@@ -243,7 +243,7 @@ export async function safeDiscoverSessions(provider: Provider): Promise<SessionS
       warnedDiscoveryFailures.add(provider.name)
       const msg = err instanceof Error ? err.message : String(err)
       process.stderr.write(
-        `codeburn: skipped ${provider.name} discovery after an error: ${msg}\n`
+        `metrora: skipped ${provider.name} discovery after an error: ${msg}\n`
       )
     }
     return []

@@ -334,7 +334,7 @@ export const claude: Provider = {
     const explicitMulti = process.env['CLAUDE_CONFIG_DIRS']
     if (!anyDirReadable && explicitMulti !== undefined && explicitMulti !== '' && configSources.length > 0) {
       process.stderr.write(
-        `codeburn: CLAUDE_CONFIG_DIRS was set but no listed directory could be read. ` +
+        `metrora: CLAUDE_CONFIG_DIRS was set but no listed directory could be read. ` +
         `Tried: ${configSources.map(s => s.path).join(', ')}. ` +
         `Use "${pathDelimiter}" as the separator on this platform.\n`,
       )

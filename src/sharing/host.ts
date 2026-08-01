@@ -131,7 +131,7 @@ export async function addRemote(
   const { host, port } = parseHostPort(input, opts.defaultPort)
 
   const h = await hello({ identity, host, port })
-  if (h.status !== 200) throw new Error(`could not reach a CodeBurn device at ${host}:${port}`)
+  if (h.status !== 200) throw new Error(`could not reach a Metrora device at ${host}:${port}`)
   const info = h.json as { fingerprint: string; name: string }
 
   const pr = await pair({ identity, host, port, expectedFingerprint: info.fingerprint }, pin, identity.name)

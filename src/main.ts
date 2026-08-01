@@ -735,7 +735,7 @@ function buildJsonReport(projects: ProjectSummary[], period: string, periodKey: 
     // Models with recorded usage that resolve to no pricing data right now
     // (#638). Their calls contribute $0 to every cost figure above, so
     // consumers can tell "cheap" from "uncounted". Empty when all models
-    // priced. Fix entries via `codeburn model-alias` or `price-override`.
+    // priced. Fix entries via `metrora model-alias` or `price-override`.
     unpricedModels: findUnpricedModels(Object.entries(modelMap).map(([model, d]) => ({
       model,
       calls: d.calls,
@@ -1361,7 +1361,7 @@ program
 
 program
   .command('model-alias [from] [to]')
-  .description('Map a provider model name to a canonical one for pricing (e.g. codeburn model-alias my-model claude-opus-4-6)')
+  .description('Map a provider model name to a canonical one for pricing (e.g. metrora model-alias my-model claude-opus-4-6)')
   .option('--remove <from>', 'Remove an alias')
   .option('--list', 'List configured aliases')
   .option('--format <format>', 'Output format: text, json', 'text')
@@ -1404,7 +1404,7 @@ program
     }
 
     if (!from || !to) {
-      console.error('\n  Usage: codeburn model-alias <from> <to>\n')
+      console.error('\n  Usage: metrora model-alias <from> <to>\n')
       process.exitCode = 1
       return
     }
@@ -1504,7 +1504,7 @@ program
 
 program
   .command('model-savings [local] [baseline]')
-  .description('Track a local model as "savings" rather than cost. Maps a local-model name to a paid baseline so the dashboard can show what the same tokens would have cost on the baseline (e.g. codeburn model-savings "llama3.1:8b" gpt-4o). The local call itself still costs $0 — actual cost is left untouched.')
+  .description('Track a local model as "savings" rather than cost. Maps a local-model name to a paid baseline so the dashboard can show what the same tokens would have cost on the baseline (e.g. metrora model-savings "llama3.1:8b" gpt-4o). The local call itself still costs $0 — actual cost is left untouched.')
   .option('--remove <local>', 'Remove a savings mapping for the given local model')
   .option('--list', 'List configured savings mappings')
   .action(async (local?: string, baseline?: string, opts?: { remove?: string; list?: boolean }) => {
@@ -1516,7 +1516,7 @@ program
       if (entries.length === 0) {
         console.log('\n  No local-model savings mappings configured.')
         console.log(`  Config: ${getConfigFilePath()}`)
-        console.log('  Add one with: codeburn model-savings <local-model> <baseline-model>\n')
+        console.log('  Add one with: metrora model-savings <local-model> <baseline-model>\n')
       } else {
         console.log('\n  Local-model savings mappings:')
         for (const [src, dst] of entries) {
@@ -1541,7 +1541,7 @@ program
     }
 
     if (!local || !baseline) {
-      console.error('\n  Usage: codeburn model-savings <local-model> <baseline-model>\n')
+      console.error('\n  Usage: metrora model-savings <local-model> <baseline-model>\n')
       process.exitCode = 1
       return
     }
@@ -2019,7 +2019,7 @@ program
     if (opts.from || opts.to) {
       const customRange = parseDateRangeFlags(opts.from, opts.to)
       if (!customRange) {
-        process.stderr.write('codeburn: --from and --to must be valid YYYY-MM-DD dates\n')
+        process.stderr.write('metrora: --from and --to must be valid YYYY-MM-DD dates\n')
         process.exit(1)
       }
       range = customRange
@@ -2059,7 +2059,7 @@ program
   .action(async (opts) => {
     assertProvider(opts.provider, 'models')
     if (opts.byTask && opts.byAgent) {
-      process.stderr.write('codeburn: --by-task and --by-agent cannot be combined. Pick one breakdown.\n')
+      process.stderr.write('metrora: --by-task and --by-agent cannot be combined. Pick one breakdown.\n')
       process.exit(1)
     }
     const { aggregateModels, renderTable, renderMarkdown, renderJson, renderCsv } = await import('./models-report.js')
@@ -2069,7 +2069,7 @@ program
     if (opts.from || opts.to) {
       const customRange = parseDateRangeFlags(opts.from, opts.to)
       if (!customRange) {
-        process.stderr.write('codeburn: --from and --to must be valid YYYY-MM-DD dates\n')
+        process.stderr.write('metrora: --from and --to must be valid YYYY-MM-DD dates\n')
         process.exit(1)
       }
       range = customRange
@@ -2100,7 +2100,7 @@ program
     } else if (fmt === 'table') {
       process.stdout.write(renderTable(rows, { byTask: !!opts.byTask, byAgent: !!opts.byAgent, showTotals: opts.totals !== false }) + '\n')
     } else {
-      process.stderr.write(`codeburn: unknown --format "${opts.format}". Choose table, markdown, json, or csv.\n`)
+      process.stderr.write(`metrora: unknown --format "${opts.format}". Choose table, markdown, json, or csv.\n`)
       process.exit(1)
     }
   })
@@ -2127,7 +2127,7 @@ program
     if (opts.from || opts.to) {
       const customRange = parseDateRangeFlags(opts.from, opts.to)
       if (!customRange) {
-        process.stderr.write('codeburn: --from and --to must be valid YYYY-MM-DD dates\n')
+        process.stderr.write('metrora: --from and --to must be valid YYYY-MM-DD dates\n')
         process.exit(1)
       }
       range = customRange

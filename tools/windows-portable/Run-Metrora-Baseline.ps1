@@ -79,6 +79,8 @@ function Invoke-CapturedCommand {
       $startInfo.CreateNoWindow = $true
       $startInfo.RedirectStandardOutput = $true
       $startInfo.RedirectStandardError = $true
+      $startInfo.StandardOutputEncoding = $utf8NoBom
+      $startInfo.StandardErrorEncoding = $utf8NoBom
       $startInfo.EnvironmentVariables['ELECTRON_RUN_AS_NODE'] = '1'
       $startInfo.EnvironmentVariables['NO_COLOR'] = '1'
 
@@ -94,6 +96,9 @@ function Invoke-CapturedCommand {
       $process.Dispose()
     } else {
       $stderrTemp = [System.IO.Path]::GetTempFileName()
+      $outputEncodingPrevious = $OutputEncoding
+      $consoleOutputEncodingPrevious = [Console]::OutputEncoding
+      $errorActionPreferencePrevious = $ErrorActionPreference
       $electronWasPresent = Test-Path Env:ELECTRON_RUN_AS_NODE
       $electronPrevious = if ($electronWasPresent) { $env:ELECTRON_RUN_AS_NODE } else { $null }
       $noColorWasPresent = Test-Path Env:NO_COLOR
@@ -101,6 +106,9 @@ function Invoke-CapturedCommand {
       try {
         Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
         $env:NO_COLOR = '1'
+        $OutputEncoding = $utf8NoBom
+        [Console]::OutputEncoding = $utf8NoBom
+        $ErrorActionPreference = 'Continue'
         $lines = & $Executable @Arguments 2> $stderrTemp
         $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
         if ($null -ne $lines) {
@@ -111,6 +119,9 @@ function Invoke-CapturedCommand {
           $stderr = [System.IO.File]::ReadAllText($stderrTemp)
         }
       } finally {
+        $OutputEncoding = $outputEncodingPrevious
+        [Console]::OutputEncoding = $consoleOutputEncodingPrevious
+        $ErrorActionPreference = $errorActionPreferencePrevious
         Restore-EnvironmentValue -Name 'ELECTRON_RUN_AS_NODE' -Value $electronPrevious -WasPresent $electronWasPresent
         Restore-EnvironmentValue -Name 'NO_COLOR' -Value $noColorPrevious -WasPresent $noColorWasPresent
         Remove-Item -LiteralPath $stderrTemp -Force -ErrorAction SilentlyContinue
@@ -159,9 +170,14 @@ function Resolve-CodeBurnExecutable {
 
   $command = Get-Command codeburn -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $command) { return $null }
-  if ($command.Source) { return $command.Source }
-  if ($command.Path) { return $command.Path }
-  return $command.Name
+  $resolved = if ($command.Source) { $command.Source } elseif ($command.Path) { $command.Path } else { $command.Name }
+  if ($resolved -and [System.IO.Path]::GetExtension($resolved) -ieq '.ps1') {
+    $cmdSibling = [System.IO.Path]::ChangeExtension($resolved, '.cmd')
+    if (Test-Path -LiteralPath $cmdSibling) {
+      return (Resolve-Path -LiteralPath $cmdSibling).Path
+    }
+  }
+  return $resolved
 }
 
 if (-not (Test-Path -LiteralPath $metroraExe)) {

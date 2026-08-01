@@ -502,7 +502,7 @@ export function renderCodexThroughput(points: CodexThroughputPoint[], filePath: 
   const latest = points.at(-1)
   if (!latest) return `No token_count checkpoints found in ${filePath}.`
   const lines = [
-    'CodeBurn Codex throughput estimate',
+    'Metrora Codex throughput estimate',
     `Session: ${filePath}`,
     `Latest checkpoint: ${latest.timestamp}`,
     `Latest checkpoint tokens: ${latest.generatedTokens.toLocaleString()} (${latest.outputTokens.toLocaleString()} output + ${latest.reasoningTokens.toLocaleString()} reasoning)`,

@@ -252,7 +252,7 @@ describe('doctor rendering', () => {
     try {
       const report = await collectDoctorReport('all', { providers: [provider], cache: emptyCache() })
       const out = renderDoctorTable(report, { color: false })
-      expect(out).toContain('CodeBurn doctor')
+      expect(out).toContain('Metrora doctor')
       expect(out).toContain('NOTHING FOUND')
       expect(out).toContain('CLAUDE_CONFIG_DIR=/nonexistent')
       expect(out).toContain('/nonexistent/projects')

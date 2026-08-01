@@ -708,7 +708,7 @@ function parseBubbles(
       rows = scan.rows
       if (scan.truncated) {
         process.stderr.write(
-          `codeburn: Cursor database has ${total.toLocaleString()} bubbles and the ` +
+          `metrora: Cursor database has ${total.toLocaleString()} bubbles and the ` +
           `requested range exceeds the ${MAX_BUBBLES.toLocaleString()}-bubble scan budget; ` +
           `the oldest sessions in range may be missing from this report.\n`
         )
@@ -930,7 +930,7 @@ function parseBubbles(
   }
 
   if (skipped > 0) {
-    process.stderr.write(`codeburn: skipped ${skipped} unreadable Cursor entries\n`)
+    process.stderr.write(`metrora: skipped ${skipped} unreadable Cursor entries\n`)
   }
 
   return { calls: results }
@@ -990,12 +990,12 @@ function createParser(
           db = openDatabase(dbPath)
         } catch (err) {
           rethrowBusy(err)
-          process.stderr.write(`codeburn: cannot open Cursor database: ${err instanceof Error ? err.message : err}\n`)
+          process.stderr.write(`metrora: cannot open Cursor database: ${err instanceof Error ? err.message : err}\n`)
           return
         }
         try {
           if (!validateSchema(db)) {
-            process.stderr.write('codeburn: Cursor storage format not recognized. You may need to update CodeBurn.\n')
+            process.stderr.write('metrora: Cursor storage format not recognized. You may need to update Metrora.\n')
             return
           }
           // Use a fresh local Set for intra-parse dedup so the global

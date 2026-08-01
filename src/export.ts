@@ -307,7 +307,7 @@ function buildReadme(periods: PeriodExport[]): string {
   const { code } = getCurrency()
   const generated = new Date().toISOString()
   const lines = [
-    'CodeBurn Usage Export',
+    'Metrora Usage Export',
     '====================',
     '',
     `Generated: ${generated}`,

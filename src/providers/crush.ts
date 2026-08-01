@@ -137,7 +137,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         db = openDatabase(dbPath)
       } catch (err) {
         process.stderr.write(
-          `codeburn: cannot open Crush database: ${err instanceof Error ? err.message : err}\n`,
+          `metrora: cannot open Crush database: ${err instanceof Error ? err.message : err}\n`,
         )
         return
       }

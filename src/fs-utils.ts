@@ -20,13 +20,13 @@ function verbose(): boolean {
 }
 
 function warn(msg: string): void {
-  if (verbose()) process.stderr.write(`codeburn: ${msg}\n`)
+  if (verbose()) process.stderr.write(`metrora: ${msg}\n`)
 }
 
 // Always surfaced (not verbose-gated): dropping an entire session file silently
 // understates reported usage with no signal, so oversize skips use this.
 function notice(msg: string): void {
-  process.stderr.write(`codeburn: ${msg}\n`)
+  process.stderr.write(`metrora: ${msg}\n`)
 }
 
 export async function readSessionFile(

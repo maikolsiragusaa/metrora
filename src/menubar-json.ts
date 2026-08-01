@@ -6,7 +6,7 @@ export type PeriodData = {
   cost: number
   /// Counterfactual USD the same tokens would have cost on the paid
   /// baseline configured for each local model. Stays `0` when no
-  /// `codeburn model-savings` mappings are active. Always shown
+  /// `metrora model-savings` mappings are active. Always shown
   /// separately from `cost` so the two never get summed into a "real
   /// spend" number by accident.
   savingsUSD: number
@@ -224,7 +224,7 @@ export type MenubarPayload = {
     /// optimize savings concepts which describe hypothetical optimization
     /// opportunities. This block tracks counterfactual spend that was
     /// already avoided because the user ran a local model mapped via
-    /// `codeburn model-savings`.
+    /// `metrora model-savings`.
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
     /// Provider identity alongside the `providers` map: `id` is the internal
