@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  desktopReviewedProductionModulePath,
   disposeDesktopWorkspaceRuntime,
   getDesktopWorkspaceRuntimeState,
   initializeDesktopWorkspaceRuntimeState,
   installDesktopWorkspaceRuntimePromise,
   type DesktopLocalStateModule,
+  type DesktopReviewedProductionModule,
   type DesktopWorkspaceRuntime,
   type ElectronSafeStorageLike,
 } from './local-state'
@@ -56,6 +58,7 @@ function runtime(): DesktopWorkspaceRuntime {
     })),
     createWorkspace: vi.fn(),
     setProductionMode: vi.fn(),
+    produceReviewedMeasurements: vi.fn(),
     createNextBatch: vi.fn(),
     exportEvidence: vi.fn(),
     dispose: vi.fn(),
@@ -63,8 +66,9 @@ function runtime(): DesktopWorkspaceRuntime {
 }
 
 describe('Electron private Workspace runtime host', () => {
-  it('passes platform, version and safeStorage only to the staged main-process runtime', async () => {
+  it('passes a lazy main-process scanner without loading parser code at startup', async () => {
     const privateRuntime = runtime()
+    let scanCanonicalCandidates!: Parameters<DesktopLocalStateModule['initializeDesktopWorkspaceRuntimeV1']>[0]['scanCanonicalCandidates']
     const initialize = vi.fn<DesktopLocalStateModule['initializeDesktopWorkspaceRuntimeV1']>(async options => {
       expect(options.backend).toBe('windows-dpapi')
       expect(options.platform).toEqual({ os: 'windows', architecture: 'x64' })
@@ -72,6 +76,7 @@ describe('Electron private Workspace runtime host', () => {
       expect(options.collectorVersion).toBe('0.9.20')
       expect(options.capabilities).toEqual(['collect', 'normalize', 'aggregate', 'serve-local-api'])
       expect(await options.safeStorage.isAvailable()).toBe(true)
+      scanCanonicalCandidates = options.scanCanonicalCandidates
       return {
         endpoint: {
           endpointId: 'endpoint_test',
@@ -87,6 +92,10 @@ describe('Electron private Workspace runtime host', () => {
       initializeDesktopLocalStateV1: vi.fn(),
       initializeDesktopWorkspaceRuntimeV1: initialize,
     }))
+    const scan = vi.fn(async () => ({ candidates: [], withheldCount: 3, failedCount: 1 }))
+    const importReviewedProductionModule = vi.fn(async () => ({
+      scanCanonicalReviewedProductionCandidatesV1: scan,
+    } satisfies DesktopReviewedProductionModule))
 
     const result = await initializeDesktopWorkspaceRuntimeState({
       platform: 'win32',
@@ -98,6 +107,7 @@ describe('Electron private Workspace runtime host', () => {
       userDataPath: 'C:\\Users\\test\\Metrora',
       safeStorage: safeStorage(),
       importModule,
+      importReviewedProductionModule,
     })
 
     expect(result).toMatchObject({
@@ -108,6 +118,30 @@ describe('Electron private Workspace runtime host', () => {
       backend: 'windows-dpapi',
     })
     expect(result.status === 'ready' && result.runtime).toBe(privateRuntime)
+    expect(importReviewedProductionModule).not.toHaveBeenCalled()
+
+    await expect(scanCanonicalCandidates({
+      endpointId: 'endpoint_test',
+      adapterVersion: '0.9.20',
+    })).resolves.toEqual({ candidates: [], withheldCount: 3, failedCount: 1 })
+    await scanCanonicalCandidates({ endpointId: 'endpoint_test', adapterVersion: '0.9.20' })
+
+    expect(importReviewedProductionModule).toHaveBeenCalledTimes(1)
+    expect(importReviewedProductionModule.mock.calls[0]?.[0]).toContain('desktop-reviewed-production.js')
+    expect(scan).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves packaged and development scanner paths independently', () => {
+    expect(desktopReviewedProductionModulePath({
+      isPackaged: true,
+      resourcesPath: 'C:\\app\\resources',
+      appPath: 'C:\\repo\\app',
+    })).toContain('resources')
+    expect(desktopReviewedProductionModulePath({
+      isPackaged: false,
+      resourcesPath: 'C:\\app\\resources',
+      appPath: 'C:\\repo\\app',
+    })).toContain('build')
   })
 
   it('returns bounded unavailable states instead of leaking initialization errors', async () => {
@@ -119,6 +153,7 @@ describe('Electron private Workspace runtime host', () => {
         throw error
       }),
     }))
+    const importReviewedProductionModule = vi.fn()
     await expect(initializeDesktopWorkspaceRuntimeState({
       platform: 'win32',
       isPackaged: false,
@@ -127,11 +162,14 @@ describe('Electron private Workspace runtime host', () => {
       userDataPath: 'C:\\Users\\test\\Metrora',
       safeStorage: safeStorage(false),
       importModule,
+      importReviewedProductionModule,
     })).resolves.toEqual({ status: 'unavailable', reason: 'vault-unavailable' })
+    expect(importReviewedProductionModule).not.toHaveBeenCalled()
   })
 
-  it('does not load signing code on unsupported platforms', async () => {
+  it('does not load signing or parser code on unsupported platforms', async () => {
     const importModule = vi.fn()
+    const importReviewedProductionModule = vi.fn()
     await expect(initializeDesktopWorkspaceRuntimeState({
       platform: 'linux',
       isPackaged: false,
@@ -140,8 +178,10 @@ describe('Electron private Workspace runtime host', () => {
       userDataPath: '/home/test/.config/Metrora',
       safeStorage: safeStorage(),
       importModule,
+      importReviewedProductionModule,
     })).resolves.toEqual({ status: 'unsupported-platform', platform: 'linux' })
     expect(importModule).not.toHaveBeenCalled()
+    expect(importReviewedProductionModule).not.toHaveBeenCalled()
   })
 
   it('shares one initialization promise and disposes the private runtime once', async () => {
