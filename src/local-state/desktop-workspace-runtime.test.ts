@@ -105,6 +105,7 @@ describe.sequential('private desktop Workspace runtime v1', () => {
       kind: 'metrora.desktop-workspace-snapshot',
       localOnly: true,
       workspace: null,
+      productionLifecycle: null,
       evidence: { state: 'workspace-required' },
       privacy: {
         networkRequired: false,
@@ -122,7 +123,7 @@ describe.sequential('private desktop Workspace runtime v1', () => {
     runtime.dispose()
   })
 
-  it('creates the personal workspace explicitly and derives a valid slug', async () => {
+  it('creates the personal workspace explicitly and defaults production to active without a state write', async () => {
     const dataDir = await root()
     const { runtime } = await setup(dataDir)
     const created = await runtime.createWorkspace({
@@ -144,6 +145,12 @@ describe.sequential('private desktop Workspace runtime v1', () => {
         enrollmentState: 'active',
       },
     })
+    expect(created.snapshot.productionLifecycle).toEqual({
+      mode: 'active',
+      revision: 0,
+      persisted: false,
+      updatedAt: null,
+    })
     expect(created.snapshot.evidence.state).toBe('empty')
 
     const reopened = await runtime.createWorkspace({
@@ -152,6 +159,43 @@ describe.sequential('private desktop Workspace runtime v1', () => {
     })
     expect(reopened.outcome).toBe('existing')
     expect(reopened.snapshot.workspace?.workspaceId).toBe(created.snapshot.workspace?.workspaceId)
+    runtime.dispose()
+  })
+
+  it('pauses and resumes only future production through bounded snapshots', async () => {
+    const dataDir = await root()
+    const { runtime } = await setup(dataDir)
+    await runtime.createWorkspace({
+      displayName: 'Local Workspace',
+      endpointDisplayName: 'Primary desktop',
+    })
+
+    const paused = await runtime.setProductionMode('paused')
+    expect(paused).toMatchObject({
+      outcome: 'changed',
+      snapshot: {
+        productionLifecycle: { mode: 'paused', revision: 1, persisted: true },
+        evidence: { state: 'empty', pendingEventCount: 0 },
+      },
+    })
+    const repeated = await runtime.setProductionMode('paused')
+    expect(repeated).toMatchObject({
+      outcome: 'unchanged',
+      snapshot: { productionLifecycle: { mode: 'paused', revision: 1 } },
+    })
+    const resumed = await runtime.setProductionMode('active')
+    expect(resumed).toMatchObject({
+      outcome: 'changed',
+      snapshot: {
+        productionLifecycle: { mode: 'active', revision: 2, persisted: true },
+        evidence: { state: 'empty', pendingEventCount: 0 },
+      },
+    })
+
+    const serialized = JSON.stringify(resumed)
+    expect(serialized).not.toContain(dataDir)
+    expect(serialized).not.toContain('privateKey')
+    expect(serialized).not.toContain('receipt')
     runtime.dispose()
   })
 
@@ -170,7 +214,10 @@ describe.sequential('private desktop Workspace runtime v1', () => {
     expect(batch).toMatchObject({
       outcome: 'created',
       batch: { firstSequence: 1, lastSequence: 1, eventCount: 1, identityGeneration: 1 },
-      snapshot: { evidence: { state: 'ready', unbatchedEventCount: 0, pendingBatchCount: 1 } },
+      snapshot: {
+        productionLifecycle: { mode: 'active' },
+        evidence: { state: 'ready', unbatchedEventCount: 0, pendingBatchCount: 1 },
+      },
     })
 
     const outputPath = join(dataDir, 'user-selected', 'workspace-evidence.json')
