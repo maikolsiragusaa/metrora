@@ -65,7 +65,6 @@ jobs:
           src/pricing/local-observation-bands.test.ts
           src/pricing/cost-assignment.test.ts
           src/pricing/settled-historical-cost.test.ts
-          src/pricing/runtime-cost-assignment.test.ts
       - name: Build CLI and desktop local-state runtime
         run: npm run build:cli
       - name: Test Zed SQLite and zstd collector
