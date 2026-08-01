@@ -80,9 +80,9 @@ jobs:
         run: npm --prefix app ci --no-audit --no-fund
       - name: Stage all desktop runtime bundles
         run: npm --prefix app run stage-cli
-      - name: Verify staged reviewed-production bundle
-        shell: bash
-        run: test -f app/build/cli/dist/desktop-reviewed-production.js
+      - name: Smoke-import staged reviewed-production bundle
+        run: >-
+          node -e "import('./app/build/cli/dist/desktop-reviewed-production.js').then(m => { if (typeof m.scanCanonicalReviewedProductionCandidatesV1 !== 'function') throw new Error('scanner export missing') })"
       - name: Test desktop runtime, IPC, and Workspace renderer
         run: >-
           npm --prefix app test -- --run
