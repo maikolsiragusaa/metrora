@@ -203,6 +203,11 @@ export async function setLocalWorkspaceProductionModeV1(
     }
 
     const updatedAt = timestamp(now)
+    if (existing && updatedAt < existing.updatedAt) {
+      throw new LocalWorkspaceProductionLifecycleRecoveryRequiredError(
+        'local Workspace production lifecycle clock moved backwards',
+      )
+    }
     const next = LocalWorkspaceProductionLifecycleStateV1Schema.parse({
       kind: LOCAL_WORKSPACE_PRODUCTION_LIFECYCLE_KIND,
       version: 1,
