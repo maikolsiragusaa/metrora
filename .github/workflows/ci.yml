@@ -65,6 +65,8 @@ jobs:
           src/pricing/local-observation-bands.test.ts
           src/pricing/cost-assignment.test.ts
           src/pricing/settled-historical-cost.test.ts
+      - name: Test reviewed production receipt semantics
+        run: npm test -- --run --no-file-parallelism src/local-state/measurement-production-receipt.test.ts
       - name: Build CLI and desktop local-state runtime
         run: npm run build:cli
       - name: Test Zed SQLite and zstd collector
@@ -81,6 +83,7 @@ jobs:
           src/local-state/endpoint-identity.test.ts
           src/local-state/local-workspace.test.ts
           src/local-state/reviewed-measurement-producer.test.ts
+          src/local-state/measurement-production-receipt.test.ts
           src/local-state/desktop-host.test.ts
           src/local-state/measurement-outbox.test.ts
           src/local-state/signed-batch.test.ts
@@ -148,6 +151,8 @@ jobs:
             echo "The Zed SQLite/zstd collector ran as an explicit blocking gate on Node 22.15 on Ubuntu and Windows."
             echo
             echo "The reviewed GPT-5.6 intervals, historical calculations, immutable cost assignments, local observation ledger, cross-book resolution and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
+            echo
+            echo "Reviewed production-receipt semantics ran explicitly on Ubuntu and Windows."
             echo
             echo "The refresh-lock lease, local endpoint and workspace state, reviewed measurement production, signed-batch suite and real Electron DPAPI probe also ran on Windows."
             echo
