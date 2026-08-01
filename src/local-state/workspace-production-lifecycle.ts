@@ -33,7 +33,7 @@ export const LocalWorkspaceProductionLifecycleStateV1Schema = z.strictObject({
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 }).superRefine((state, ctx) => {
-  if (state.createdAt > state.updatedAt) {
+  if (Date.parse(state.createdAt) > Date.parse(state.updatedAt)) {
     ctx.addIssue({
       code: 'custom',
       path: ['updatedAt'],
@@ -203,7 +203,7 @@ export async function setLocalWorkspaceProductionModeV1(
     }
 
     const updatedAt = timestamp(now)
-    if (existing && updatedAt < existing.updatedAt) {
+    if (existing && Date.parse(updatedAt) < Date.parse(existing.updatedAt)) {
       throw new LocalWorkspaceProductionLifecycleRecoveryRequiredError(
         'local Workspace production lifecycle clock moved backwards',
       )
