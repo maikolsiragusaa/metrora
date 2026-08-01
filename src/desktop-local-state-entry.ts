@@ -17,12 +17,15 @@ export type {
 
 export {
   DesktopReviewedProductionUnavailableError,
+  DesktopWorkspaceRecoverySummaryV1Schema,
 } from './local-state/desktop-reviewed-production-runtime.js'
 export type {
   DesktopCanonicalReviewedScannerInputV1,
   DesktopCanonicalReviewedScannerV1,
   DesktopReviewedProductionResultV1,
   DesktopReviewedProductionRuntimeV1,
+  DesktopWorkspaceRecoveryResultV1,
+  DesktopWorkspaceRecoverySummaryV1,
 } from './local-state/desktop-reviewed-production-runtime.js'
 
 export {

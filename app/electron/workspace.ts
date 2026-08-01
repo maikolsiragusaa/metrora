@@ -26,6 +26,10 @@ export type WorkspaceBridgeDeps = {
 
 type WorkspaceHandler = (...args: unknown[]) => Promise<Envelope>
 
+type WorkspaceRecoveryRuntime = {
+  recoverLocalState(): Promise<unknown>
+}
+
 function workspaceError(kind: string, message: string): Envelope<never> {
   return { ok: false, error: { kind, message } }
 }
@@ -165,6 +169,23 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       if ('ok' in state) return state
       try {
         return { ok: true, value: await state.runtime.produceReviewedMeasurements() }
+      } catch (error) {
+        return { ok: false, error: sanitizeActionError(error) }
+      }
+    },
+
+    'codeburn:recoverWorkspaceState': async () => {
+      const state = await readyState(deps)
+      if ('ok' in state) return state
+      const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceRecoveryRuntime>
+      if (typeof runtime.recoverLocalState !== 'function') {
+        return workspaceError(
+          'workspace-recovery-unavailable',
+          'Local Workspace recovery is unavailable in this desktop runtime.',
+        )
+      }
+      try {
+        return { ok: true, value: await runtime.recoverLocalState() }
       } catch (error) {
         return { ok: false, error: sanitizeActionError(error) }
       }
