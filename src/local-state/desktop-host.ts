@@ -219,6 +219,8 @@ export async function initializeDesktopWorkspaceRuntimeV1(
   const capabilities = z.array(EndpointCapabilitySchema).min(1).max(8).parse(
     input.capabilities ?? ['collect', 'normalize', 'aggregate', 'serve-local-api'],
   )
+  const metroraVersion = z.string().trim().min(1).max(64).parse(input.metroraVersion)
+  const collectorVersion = z.string().trim().min(1).max(64).parse(input.collectorVersion)
   const master = await loadOrCreateMasterKey(options)
   let identity: LoadedLocalEndpointIdentityV1 | undefined
   try {
@@ -227,27 +229,22 @@ export async function initializeDesktopWorkspaceRuntimeV1(
       protector: new Aes256GcmSecretProtector(master.key),
       now: options.now,
     })
+    const endpoint = identity.metadata
     const runtime = createDesktopWorkspaceRuntimeV1({
       dataDir: options.dataDir,
       identity,
       platform,
-      metroraVersion: z.string().trim().min(1).max(64).parse(input.metroraVersion),
-      collectorVersion: z.string().trim().min(1).max(64).parse(input.collectorVersion),
+      metroraVersion,
+      collectorVersion,
       capabilities,
       ...(input.openTelemetryGenAiVersion !== undefined
         ? { openTelemetryGenAiVersion: input.openTelemetryGenAiVersion }
         : {}),
       now: options.now,
     })
-    identity = undefined // ownership transferred to the private runtime
+    identity = undefined // private buffers are now owned exclusively by runtime.dispose()
     return {
-      endpoint: runtime ? (await runtime.getSnapshot()).identity && {
-        ...((await loadOrCreateLocalEndpointIdentityV1({
-          dataDir: options.dataDir,
-          protector: new Aes256GcmSecretProtector(master.key),
-          now: options.now,
-        })).metadata,
-      } : never,
+      endpoint,
       masterKeyState: master.state,
       backend: options.backend,
       runtime,
