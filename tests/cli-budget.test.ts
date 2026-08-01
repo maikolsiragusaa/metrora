@@ -38,8 +38,11 @@ function timestampFromDate(date: Date, offsetMinutes = 0): string {
 }
 
 function currentMonthTimestamp(offsetMinutes: number): string {
-  const now = new Date()
-  const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0))
+  // Keep both the user line and the assistant line (seeded one minute later)
+  // safely in the past. The previous fixed noon UTC timestamp became a future
+  // event when CI ran before 12:00 UTC on the first day of a month, making this
+  // test depend on wall-clock time and report "No usage found" correctly.
+  const base = new Date(Date.now() - 5 * 60_000)
   return timestampFromDate(base, offsetMinutes)
 }
 
