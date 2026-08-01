@@ -8,6 +8,93 @@ export type ElectronSafeStorageLike = {
   decryptStringAsync(ciphertext: Buffer): Promise<{ result: string; shouldReEncrypt: boolean }>
 }
 
+export type DesktopWorkspaceSnapshot = {
+  kind: 'metrora.desktop-workspace-snapshot'
+  version: 1
+  localOnly: true
+  identity: {
+    endpointId: string
+    generation: number
+    publicKeyFingerprintSha256: string
+  }
+  workspace: null | {
+    workspaceId: string
+    displayName: string
+    slug: string
+    ownership: 'personal'
+    status: 'active'
+    ownerRole: 'owner'
+    endpoint: {
+      endpointId: string
+      displayName: string
+      os: 'windows' | 'macos' | 'linux' | 'android' | 'other'
+      architecture: 'x64' | 'arm64' | 'arm' | 'other'
+      identityGeneration: number
+      publicKeyFingerprintSha256: string
+      metroraVersion: string
+      collectorVersion: string
+      capabilities: Array<'collect' | 'normalize' | 'aggregate' | 'serve-local-api' | 'read-companion-api'>
+      enrollmentState: 'active'
+    }
+  }
+  evidence: {
+    state: 'workspace-required' | 'empty' | 'ready' | 'acknowledged' | 'quarantined' | 'blocked'
+    pendingEventCount: number
+    unbatchedEventCount: number
+    acknowledgedEventCount: number
+    invalidEventCount: number
+    quarantinedEventCount: number
+    pendingBatchCount: number
+    acknowledgedBatchCount: number
+    blockers: string[]
+  }
+  privacy: {
+    networkRequired: false
+    promptsIncluded: false
+    responsesIncluded: false
+    sourceCodeIncluded: false
+    secretsIncluded: false
+    unrestrictedLocalPathsIncluded: false
+  }
+}
+
+export type DesktopWorkspaceRuntime = {
+  getSnapshot(): Promise<DesktopWorkspaceSnapshot>
+  createWorkspace(input: {
+    displayName: string
+    slug?: string
+    endpointDisplayName: string
+  }): Promise<{ outcome: 'created' | 'existing'; snapshot: DesktopWorkspaceSnapshot }>
+  createNextBatch(): Promise<{
+    outcome: 'created' | 'empty'
+    batch?: {
+      batchId: string
+      batchSha256: string
+      firstSequence: number
+      lastSequence: number
+      eventCount: number
+      identityGeneration: number
+    }
+    snapshot: DesktopWorkspaceSnapshot
+  }>
+  exportEvidence(outputPath: string): Promise<{
+    outputPath: string
+    verification: {
+      workspaceId: string
+      endpointId: string
+      endpointIdentityGeneration: number
+      exportedAt: string
+      batchCount: number
+      eventCount: number
+      pendingBatchCount: number
+      acknowledgedBatchCount: number
+      latestBatchSha256?: string
+    }
+    snapshot: DesktopWorkspaceSnapshot
+  }>
+  dispose(): void
+}
+
 export type DesktopLocalStateResult =
   | {
       status: 'ready'
@@ -18,6 +105,19 @@ export type DesktopLocalStateResult =
       backend: 'windows-dpapi' | 'macos-keychain'
     }
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
+
+export type DesktopWorkspaceRuntimeState =
+  | {
+      status: 'ready'
+      endpointId: string
+      publicKeyFingerprintSha256: string
+      identityGeneration: number
+      masterKeyState: 'created' | 'loaded' | 'rewrapped'
+      backend: 'windows-dpapi' | 'macos-keychain'
+      runtime: DesktopWorkspaceRuntime
+    }
+  | { status: 'unsupported-platform'; platform: NodeJS.Platform }
+  | { status: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
 
 export type DesktopLocalStateModule = {
   initializeDesktopLocalStateV1(options: {
@@ -37,10 +137,37 @@ export type DesktopLocalStateModule = {
     masterKeyState: 'created' | 'loaded' | 'rewrapped'
     backend: 'windows-dpapi' | 'macos-keychain'
   }>
+  initializeDesktopWorkspaceRuntimeV1(options: {
+    safeStorage: {
+      isAvailable(): Promise<boolean>
+      encryptString(plaintext: string): Promise<Uint8Array>
+      decryptString(ciphertext: Uint8Array): Promise<{ result: string; shouldReEncrypt: boolean }>
+    }
+    backend: 'windows-dpapi' | 'macos-keychain'
+    dataDir: string
+    platform: {
+      os: 'windows' | 'macos' | 'linux' | 'android' | 'other'
+      architecture: 'x64' | 'arm64' | 'arm' | 'other'
+    }
+    metroraVersion: string
+    collectorVersion: string
+    capabilities: Array<'collect' | 'normalize' | 'aggregate' | 'serve-local-api'>
+  }): Promise<{
+    endpoint: {
+      endpointId: string
+      generation: number
+      publicKeyFingerprintSha256: string
+    }
+    masterKeyState: 'created' | 'loaded' | 'rewrapped'
+    backend: 'windows-dpapi' | 'macos-keychain'
+    runtime: DesktopWorkspaceRuntime
+  }>
 }
 
 export type InitializeDesktopEndpointStateDeps = {
   platform: NodeJS.Platform
+  arch?: string
+  appVersion?: string
   isPackaged: boolean
   resourcesPath: string
   appPath: string
@@ -50,10 +177,42 @@ export type InitializeDesktopEndpointStateDeps = {
   importModule?: (url: string) => Promise<DesktopLocalStateModule>
 }
 
+let workspaceRuntimePromise: Promise<DesktopWorkspaceRuntimeState> = Promise.resolve({
+  status: 'unavailable',
+  reason: 'initialization-failed',
+})
+
+export function installDesktopWorkspaceRuntimePromise(
+  promise: Promise<DesktopWorkspaceRuntimeState>,
+): void {
+  workspaceRuntimePromise = promise
+}
+
+export function getDesktopWorkspaceRuntimeState(): Promise<DesktopWorkspaceRuntimeState> {
+  return workspaceRuntimePromise
+}
+
+export async function disposeDesktopWorkspaceRuntime(): Promise<void> {
+  const state = await workspaceRuntimePromise.catch(() => undefined)
+  if (state?.status === 'ready') state.runtime.dispose()
+}
+
 export function desktopVaultBackend(platform: NodeJS.Platform): 'windows-dpapi' | 'macos-keychain' | undefined {
   if (platform === 'win32') return 'windows-dpapi'
   if (platform === 'darwin') return 'macos-keychain'
   return undefined
+}
+
+function endpointOs(platform: NodeJS.Platform): 'windows' | 'macos' | 'linux' | 'other' {
+  if (platform === 'win32') return 'windows'
+  if (platform === 'darwin') return 'macos'
+  if (platform === 'linux') return 'linux'
+  return 'other'
+}
+
+function endpointArchitecture(arch: string): 'x64' | 'arm64' | 'arm' | 'other' {
+  if (arch === 'x64' || arch === 'arm64' || arch === 'arm') return arch
+  return 'other'
 }
 
 export function desktopLocalStateModulePath(
@@ -95,31 +254,41 @@ export function adoptLegacyDesktopLocalState(options: {
   return { dataDir: canonical, adoptedFrom: null }
 }
 
+function safeStorageAdapter(deps: InitializeDesktopEndpointStateDeps) {
+  return {
+    isAvailable: () => deps.safeStorage.isAsyncEncryptionAvailable(),
+    encryptString: (plaintext: string) => deps.safeStorage.encryptStringAsync(plaintext),
+    decryptString: (ciphertext: Uint8Array) => deps.safeStorage.decryptStringAsync(Buffer.from(ciphertext)),
+  }
+}
+
+async function loadRuntimeModule(deps: InitializeDesktopEndpointStateDeps): Promise<DesktopLocalStateModule> {
+  const importModule = deps.importModule ?? (async url => import(url) as Promise<DesktopLocalStateModule>)
+  const modulePath = desktopLocalStateModulePath(deps)
+  return importModule(pathToFileURL(modulePath).href)
+}
+
+function localStateDataDir(deps: InitializeDesktopEndpointStateDeps): string {
+  return adoptLegacyDesktopLocalState({
+    userDataPath: deps.userDataPath,
+    legacyUserDataPath: deps.legacyUserDataPath,
+  }).dataDir
+}
+
 export async function initializeDesktopEndpointState(
   deps: InitializeDesktopEndpointStateDeps,
 ): Promise<DesktopLocalStateResult> {
   const backend = desktopVaultBackend(deps.platform)
   if (!backend) return { status: 'unsupported-platform', platform: deps.platform }
 
-  const importModule = deps.importModule ?? (async url => import(url) as Promise<DesktopLocalStateModule>)
-  const modulePath = desktopLocalStateModulePath(deps)
-  const runtime = await importModule(pathToFileURL(modulePath).href)
+  const runtime = await loadRuntimeModule(deps)
   if (typeof runtime.initializeDesktopLocalStateV1 !== 'function') {
     throw new Error('bundled desktop local-state runtime is invalid')
   }
-
-  const localState = adoptLegacyDesktopLocalState({
-    userDataPath: deps.userDataPath,
-    legacyUserDataPath: deps.legacyUserDataPath,
-  })
   const initialized = await runtime.initializeDesktopLocalStateV1({
     backend,
-    dataDir: localState.dataDir,
-    safeStorage: {
-      isAvailable: () => deps.safeStorage.isAsyncEncryptionAvailable(),
-      encryptString: plaintext => deps.safeStorage.encryptStringAsync(plaintext),
-      decryptString: ciphertext => deps.safeStorage.decryptStringAsync(Buffer.from(ciphertext)),
-    },
+    dataDir: localStateDataDir(deps),
+    safeStorage: safeStorageAdapter(deps),
   })
 
   return {
@@ -129,5 +298,47 @@ export async function initializeDesktopEndpointState(
     identityGeneration: initialized.endpoint.generation,
     masterKeyState: initialized.masterKeyState,
     backend: initialized.backend,
+  }
+}
+
+export async function initializeDesktopWorkspaceRuntimeState(
+  deps: InitializeDesktopEndpointStateDeps,
+): Promise<DesktopWorkspaceRuntimeState> {
+  const backend = desktopVaultBackend(deps.platform)
+  if (!backend) return { status: 'unsupported-platform', platform: deps.platform }
+
+  try {
+    const module = await loadRuntimeModule(deps)
+    if (typeof module.initializeDesktopWorkspaceRuntimeV1 !== 'function') {
+      throw new Error('bundled desktop Workspace runtime is invalid')
+    }
+    const version = deps.appVersion?.trim() || '0.0.0'
+    const initialized = await module.initializeDesktopWorkspaceRuntimeV1({
+      backend,
+      dataDir: localStateDataDir(deps),
+      safeStorage: safeStorageAdapter(deps),
+      platform: {
+        os: endpointOs(deps.platform),
+        architecture: endpointArchitecture(deps.arch ?? process.arch),
+      },
+      metroraVersion: version,
+      collectorVersion: version,
+      capabilities: ['collect', 'normalize', 'aggregate', 'serve-local-api'],
+    })
+    return {
+      status: 'ready',
+      endpointId: initialized.endpoint.endpointId,
+      publicKeyFingerprintSha256: initialized.endpoint.publicKeyFingerprintSha256,
+      identityGeneration: initialized.endpoint.generation,
+      masterKeyState: initialized.masterKeyState,
+      backend: initialized.backend,
+      runtime: initialized.runtime,
+    }
+  } catch (error) {
+    const name = error instanceof Error ? error.name : ''
+    return {
+      status: 'unavailable',
+      reason: name === 'DesktopVaultUnavailableError' ? 'vault-unavailable' : 'initialization-failed',
+    }
   }
 }
