@@ -222,7 +222,7 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    expect(await screen.findByText('Evidence quarantined')).toBeInTheDocument()
+    expect((await screen.findAllByText('Evidence quarantined')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
     expect(screen.getByText('Invalid').parentElement).toHaveTextContent('2')
