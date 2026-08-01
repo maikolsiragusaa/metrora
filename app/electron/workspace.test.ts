@@ -128,12 +128,12 @@ describe('Workspace IPC bridge', () => {
       getRuntimeState: async () => readyState(privateRuntime),
       chooseExportPath: async () => null,
     })
-    await expect(handlers['codeburn:createWorkspace']!({
-      displayName: '', endpointDisplayName: 'Desktop',
-    })).resolves.toEqual({
-      ok: false,
-      error: { kind: 'bad-args', message: 'Workspace input is invalid.' },
-    })
+    for (const invalid of [null, [], { displayName: '', endpointDisplayName: 'Desktop' }]) {
+      await expect(handlers['codeburn:createWorkspace']!(invalid)).resolves.toEqual({
+        ok: false,
+        error: { kind: 'bad-args', message: 'Workspace input is invalid.' },
+      })
+    }
     expect(privateRuntime.createWorkspace).not.toHaveBeenCalled()
 
     await expect(handlers['codeburn:createWorkspace']!({
