@@ -16,6 +16,16 @@ export type {
 } from './local-state/desktop-host.js'
 
 export {
+  DesktopReviewedProductionUnavailableError,
+} from './local-state/desktop-reviewed-production-runtime.js'
+export type {
+  DesktopCanonicalReviewedScannerInputV1,
+  DesktopCanonicalReviewedScannerV1,
+  DesktopReviewedProductionResultV1,
+  DesktopReviewedProductionRuntimeV1,
+} from './local-state/desktop-reviewed-production-runtime.js'
+
+export {
   CreateDesktopWorkspaceInputV1Schema,
   DesktopWorkspaceSnapshotV1Schema,
 } from './local-state/desktop-workspace-runtime.js'
