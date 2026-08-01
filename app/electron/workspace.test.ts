@@ -19,6 +19,7 @@ function snapshot(): DesktopWorkspaceSnapshot {
       publicKeyFingerprintSha256: 'a'.repeat(64),
     },
     workspace: null,
+    productionLifecycle: null,
     evidence: {
       state: 'workspace-required',
       pendingEventCount: 0,
@@ -46,6 +47,7 @@ function runtime(overrides: Partial<DesktopWorkspaceRuntime> = {}): DesktopWorks
   return {
     getSnapshot: vi.fn(async () => current),
     createWorkspace: vi.fn(async () => ({ outcome: 'created' as const, snapshot: current })),
+    setProductionMode: vi.fn(async () => ({ outcome: 'changed' as const, snapshot: current })),
     createNextBatch: vi.fn(async () => ({ outcome: 'empty' as const, snapshot: current })),
     exportEvidence: vi.fn(async outputPath => ({
       outputPath,
@@ -90,7 +92,7 @@ describe('Workspace IPC bridge', () => {
       value: {
         availability: 'ready',
         vault: { backend: 'windows-dpapi', masterKeyState: 'loaded' },
-        snapshot: { identity: { endpointId: 'endpoint_1' } },
+        snapshot: { identity: { endpointId: 'endpoint_1' }, productionLifecycle: null },
       },
     })
     const serialized = JSON.stringify(result)
@@ -111,6 +113,10 @@ describe('Workspace IPC bridge', () => {
     await expect(unsupported['codeburn:createWorkspace']!({
       displayName: 'Local', endpointDisplayName: 'Desktop',
     })).resolves.toMatchObject({ ok: false, error: { kind: 'workspace-unsupported' } })
+    await expect(unsupported['codeburn:pauseWorkspaceProduction']!()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: 'workspace-unsupported' },
+    })
 
     const unavailable = createWorkspaceBridgeHandlers({
       getRuntimeState: async () => ({ status: 'unavailable', reason: 'vault-unavailable' }),
@@ -148,6 +154,25 @@ describe('Workspace IPC bridge', () => {
     })
   })
 
+  it('maps pause and resume to fixed private runtime modes without renderer input', async () => {
+    const privateRuntime = runtime()
+    const handlers = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => readyState(privateRuntime),
+      chooseExportPath: async () => null,
+    })
+
+    await expect(handlers['codeburn:pauseWorkspaceProduction']!({ arbitrary: 'ignored' })).resolves.toMatchObject({
+      ok: true,
+      value: { outcome: 'changed' },
+    })
+    await expect(handlers['codeburn:resumeWorkspaceProduction']!('ignored')).resolves.toMatchObject({
+      ok: true,
+      value: { outcome: 'changed' },
+    })
+    expect(privateRuntime.setProductionMode).toHaveBeenNthCalledWith(1, 'paused')
+    expect(privateRuntime.setProductionMode).toHaveBeenNthCalledWith(2, 'active')
+  })
+
   it('creates batches through the private runtime', async () => {
     const privateRuntime = runtime()
     const handlers = createWorkspaceBridgeHandlers({
@@ -183,9 +208,14 @@ describe('Workspace IPC bridge', () => {
     expect(JSON.stringify(result)).not.toContain('/private/user/documents')
   })
 
-  it('returns cancellation without writing and sanitizes runtime failures', async () => {
+  it('returns cancellation and sanitizes runtime and lifecycle failures', async () => {
     const privateRuntime = runtime({
       createNextBatch: vi.fn(async () => { throw new Error('/secret/path should not cross IPC') }),
+      setProductionMode: vi.fn(async () => {
+        const error = new Error('/private/lifecycle/path')
+        error.name = 'LocalWorkspaceProductionLifecycleRecoveryRequiredError'
+        throw error
+      }),
     })
     const cancelled = createWorkspaceBridgeHandlers({
       getRuntimeState: async () => readyState(privateRuntime),
@@ -203,5 +233,15 @@ describe('Workspace IPC bridge', () => {
       error: { kind: 'workspace-action-failed', message: 'The local Workspace action failed.' },
     })
     expect(JSON.stringify(failed)).not.toContain('/secret/path')
+
+    const lifecycle = await cancelled['codeburn:pauseWorkspaceProduction']!()
+    expect(lifecycle).toEqual({
+      ok: false,
+      error: {
+        kind: 'workspace-lifecycle-recovery-required',
+        message: 'Local Workspace production state requires recovery.',
+      },
+    })
+    expect(JSON.stringify(lifecycle)).not.toContain('/private/lifecycle/path')
   })
 })
