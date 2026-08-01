@@ -30,6 +30,12 @@ function workspaceError(kind: string, message: string): Envelope<never> {
   return { ok: false, error: { kind, message } }
 }
 
+function invalidWorkspaceInput(message: string): Error {
+  const error = new Error(message)
+  error.name = 'ZodError'
+  return error
+}
+
 function unavailableError(state: Exclude<DesktopWorkspaceRuntimeState, { status: 'ready' }>): Envelope<never> {
   if (state.status === 'unsupported-platform') {
     return workspaceError('workspace-unsupported', 'Workspace signing requires Windows or macOS OS-backed encryption.')
@@ -59,21 +65,19 @@ function parseCreateInput(input: unknown): {
   slug?: string
   endpointDisplayName: string
 } {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('bad input')
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw invalidWorkspaceInput('Workspace create input must be an object')
+  }
   const row = input as Record<string, unknown>
   const displayName = typeof row.displayName === 'string' ? row.displayName.trim() : ''
   const endpointDisplayName = typeof row.endpointDisplayName === 'string' ? row.endpointDisplayName.trim() : ''
   if (!displayName || displayName.length > 120 || !endpointDisplayName || endpointDisplayName.length > 120) {
-    const error = new Error('invalid Workspace create input')
-    error.name = 'ZodError'
-    throw error
+    throw invalidWorkspaceInput('Workspace display names are invalid')
   }
   if (row.slug === undefined) return { displayName, endpointDisplayName }
   const slug = typeof row.slug === 'string' ? row.slug.trim() : ''
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 2 || slug.length > 64) {
-    const error = new Error('invalid Workspace slug')
-    error.name = 'ZodError'
-    throw error
+    throw invalidWorkspaceInput('Workspace slug is invalid')
   }
   return { displayName, endpointDisplayName, slug }
 }
