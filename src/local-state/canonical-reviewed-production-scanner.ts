@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 import * as z from 'zod/v4'
 
 import { collectorProvenanceProfileForCall } from '../contracts/v1/collector-provenance.js'
@@ -40,23 +39,18 @@ export class CanonicalReviewedProductionScannerIntegrityError extends Error {
   }
 }
 
-function normalizedPrivatePath(path: string): string {
-  const absolute = resolve(path).replaceAll('\\', '/')
-  return process.platform === 'win32' ? absolute.toLowerCase() : absolute
-}
-
 /**
  * Public, path-free fingerprint for one canonical source record.
  *
  * The endpoint id scopes the fingerprint so identical local source records on
  * different endpoints do not become a new cross-device correlation handle.
- * The raw path and private deduplication key are hashed and never leave this
- * trusted scanner boundary.
+ * The private deduplication key is hashed and never leaves this trusted scanner
+ * boundary. Provider parsers already enforce this identity globally within a
+ * provider, so no local path is needed in the public digest.
  */
 export function canonicalSourceRecordFingerprintSha256V1(input: {
   endpointId: string
   provider: string
-  sourcePath: string
   privateDeduplicationKey: string
 }): string {
   if (input.privateDeduplicationKey.length === 0) {
@@ -69,8 +63,6 @@ export function canonicalSourceRecordFingerprintSha256V1(input: {
     .update(input.endpointId)
     .update('\0')
     .update(input.provider)
-    .update('\0')
-    .update(normalizedPrivatePath(input.sourcePath))
     .update('\0')
     .update(input.privateDeduplicationKey)
     .digest('hex')
@@ -167,7 +159,6 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
                 sourceFingerprintSha256: canonicalSourceRecordFingerprintSha256V1({
                   endpointId,
                   provider: sectionProvider,
-                  sourcePath,
                   privateDeduplicationKey: cachedCall.deduplicationKey,
                 }),
               },
