@@ -1,0 +1,62 @@
+name: Workspace production scanner
+
+on:
+  pull_request:
+    paths:
+      - 'src/local-state/canonical-reviewed-production-scanner.ts'
+      - 'src/local-state/canonical-reviewed-production-scanner.test.ts'
+      - 'src/local-state/reviewed-production-orchestrator.ts'
+      - 'src/parser.ts'
+      - 'src/session-cache.ts'
+      - 'src/contracts/v1/collector-provenance.ts'
+      - 'src/model-provider.ts'
+      - 'src/providers/**'
+      - 'docs/CANONICAL_REVIEWED_PRODUCTION_SCANNER_V1.md'
+      - '.github/workflows/workspace-production-scanner.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/local-state/canonical-reviewed-production-scanner.ts'
+      - 'src/local-state/canonical-reviewed-production-scanner.test.ts'
+      - 'src/local-state/reviewed-production-orchestrator.ts'
+      - 'src/parser.ts'
+      - 'src/session-cache.ts'
+      - 'src/contracts/v1/collector-provenance.ts'
+      - 'src/model-provider.ts'
+      - 'src/providers/**'
+      - 'docs/CANONICAL_REVIEWED_PRODUCTION_SCANNER_V1.md'
+      - '.github/workflows/workspace-production-scanner.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-production-scanner-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    name: Canonical production scanner (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build canonical runtime entries
+        run: npm run build:cli
+      - name: Run scanner, provenance, cache, and Zed gates
+        run: >-
+          npx vitest --run --no-file-parallelism --testTimeout=15000
+          src/local-state/canonical-reviewed-production-scanner.test.ts
+          src/contracts/v1/collector-provenance.test.ts
+          tests/providers/zed.test.ts
+          tests/cache-refresh-lock.test.ts
