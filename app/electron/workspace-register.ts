@@ -1,17 +1,9 @@
 import { app, dialog, ipcMain } from 'electron'
 import path from 'node:path'
 
+import { ipcChannelAliases } from './identity'
 import { getDesktopWorkspaceRuntimeState } from './local-state'
 import { createWorkspaceBridgeHandlers } from './workspace'
-
-function aliases(channel: string): string[] {
-  if (!channel.startsWith('codeburn:')) return [channel]
-  return [
-    channel.replace(/^codeburn:/, 'metrora:'),
-    channel.replace(/^codeburn:/, 'qovrion:'),
-    channel,
-  ]
-}
 
 let registered = false
 
@@ -32,7 +24,7 @@ export function registerWorkspaceHandlers(): void {
     },
   })
   for (const [channel, handler] of Object.entries(handlers)) {
-    for (const alias of aliases(channel)) {
+    for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (_event, ...args) => handler(...args))
     }
   }
