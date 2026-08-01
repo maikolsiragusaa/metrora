@@ -11,7 +11,10 @@ import {
 import { loadOrCreateLocalEndpointIdentityV1 } from './endpoint-identity.js'
 import { enqueueMeasurementEventV1 } from './measurement-outbox.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
-import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
+import {
+  createDesktopWorkspaceRuntimeV1,
+  DesktopWorkspaceSnapshotV1Schema,
+} from './desktop-workspace-runtime.js'
 
 const roots: string[] = []
 const NOW = '2026-08-01T15:00:00.000Z'
@@ -97,6 +100,39 @@ async function setup(dataDir: string) {
 }
 
 describe.sequential('private desktop Workspace runtime v1', () => {
+  it('accepts a pre-lifecycle snapshot v1 without changing its version', () => {
+    expect(() => DesktopWorkspaceSnapshotV1Schema.parse({
+      kind: 'metrora.desktop-workspace-snapshot',
+      version: 1,
+      localOnly: true,
+      identity: {
+        endpointId: 'endpoint_1',
+        generation: 1,
+        publicKeyFingerprintSha256: 'a'.repeat(64),
+      },
+      workspace: null,
+      evidence: {
+        state: 'workspace-required',
+        pendingEventCount: 0,
+        unbatchedEventCount: 0,
+        acknowledgedEventCount: 0,
+        invalidEventCount: 0,
+        quarantinedEventCount: 0,
+        pendingBatchCount: 0,
+        acknowledgedBatchCount: 0,
+        blockers: [],
+      },
+      privacy: {
+        networkRequired: false,
+        promptsIncluded: false,
+        responsesIncluded: false,
+        sourceCodeIncluded: false,
+        secretsIncluded: false,
+        unrestrictedLocalPathsIncluded: false,
+      },
+    })).not.toThrow()
+  })
+
   it('returns only public local-only state before explicit creation', async () => {
     const dataDir = await root()
     const { runtime } = await setup(dataDir)
