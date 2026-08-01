@@ -1,8 +1,8 @@
 # Workspace v1
 
-**Status:** active product milestone; local state, reviewed production primitives, signed batches, independent export, the secure desktop runtime boundary, the focused desktop Workspace view, and the durable production lifecycle policy are implemented. The canonical desktop production orchestrator, lifecycle UI, and deterministic recovery controls remain before the complete W1.D experience is closed.
+**Status:** active product milestone; local state, canonical reviewed production, signed batches, independent export, the secure desktop runtime, focused Workspace view, and durable pause/resume controls are implemented in this checkpoint. Deterministic non-destructive recovery and final physical/portable validation remain before W1.D and Workspace v1 are closed.
 
-Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns the existing public contracts, endpoint identity, reviewed measurements, outbox, signed batches, and user-owned evidence export into one understandable local workspace experience.
+Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns public contracts, endpoint identity, canonical normalized usage, reviewed provenance, private receipts, outbox records, signed batches, and user-owned evidence export into one understandable local workspace experience.
 
 This milestone is deliberately local-first. It does not require a Metrora account, hosted service, subscription, or remote manager console.
 
@@ -13,9 +13,11 @@ A person can:
 1. create a personal workspace on the current computer;
 2. see that computer enrolled as the first endpoint;
 3. understand the local privacy boundary and current reviewed-evidence state;
-4. generate durable reviewed measurements through the existing explicit producer and create signed batches without duplicating calls;
-5. inspect workspace identity, endpoint status, evidence counts, pricing coverage, and canonical scoped usage in the desktop application;
-6. export a verifiable workspace package before any cloud synchronization exists.
+4. explicitly produce reviewed measurements from source-present canonical local usage;
+5. pause and resume future production without stopping ordinary analytics or changing existing evidence;
+6. create signed batches without duplicating calls;
+7. inspect workspace identity, endpoint status, evidence counts, pricing coverage, and canonical scoped usage in the desktop application;
+8. export a verifiable workspace package before any cloud synchronization exists.
 
 The ordinary local analytics experience remains available without creating a workspace.
 
@@ -24,16 +26,17 @@ The ordinary local analytics experience remains available without creating a wor
 Workspace v1 reuses rather than replaces:
 
 - `WorkspaceV1`, membership, endpoint, repository, sharing, measurement, and evidence contracts;
-- the canonical parser and normalized usage records;
+- the canonical parser, per-source cache, and normalized usage records;
 - reviewed collector provenance profiles;
 - historical per-call cost assignments and desktop/CLI pricing authority;
 - durable endpoint identity protected by the operating-system vault where supported;
+- private rotation-safe production receipts;
 - the append-only reviewed measurement outbox;
 - immutable signed measurement batches and acknowledgements;
 - current cross-process leases and atomic publication primitives;
 - the local companion API where a stable public DTO already exists.
 
-No second collector, pricing engine, workspace schema, signer, or analytics database is introduced.
+No second collector, parser, pricing engine, workspace schema, signer, analytics database, or source cache is introduced.
 
 ## Implementation slices
 
@@ -49,16 +52,32 @@ No second collector, pricing engine, workspace schema, signer, or analytics data
 
 ### 2. Reviewed measurement production primitives — implemented
 
-- only collector paths already approved by the provenance registry can produce Workspace measurements;
+- only collector paths approved by the executable provenance registry can produce Workspace measurements;
 - normalized calls pass through the existing reviewed-event factory;
 - immutable historical cost assignments and evidence quality are preserved;
-- private rotation-safe production receipts prevent duplication and repair interrupted publication;
+- private rotation-safe receipts prevent duplication and repair interrupted publication;
 - prompts, responses, source code, patches, secrets, tool arguments, and full local paths remain excluded;
 - unreviewed or insufficient evidence remains local rather than becoming an invented claim.
 
-The low-level producer operates on one already-normalized call and an explicit reviewed context. The trusted desktop orchestrator that selects canonical calls and supplies source-owned context remains W1.D.C.B; the renderer cannot invoke the low-level producer directly.
+### 3. Canonical production scanner and orchestrator — implemented
 
-### 3. Signed workspace batches and export — implemented
+- the existing `parseAllSessions()` path remains the only discovery, parse, reconciliation, settlement, and cache-publication authority;
+- candidates are derived only from complete per-source cache state whose source still exists;
+- source-less durable analytics history is withheld rather than promoted into new evidence;
+- exact cached calls and immutable assignments are reconstructed through the existing cache conversion;
+- explicit source-recorded model/API provider identity is required;
+- reviewed eligibility comes from the executable provenance registry;
+- source identities are endpoint-scoped digests over provider and private deduplication identity, with no local-path input;
+- provider-section mismatch, malformed cached calls, incomplete cache, or empty private identity fail closed;
+- one production-control lease serializes production, pause, and resume;
+- repeated or concurrent production deduplicates through existing private receipts.
+
+The detailed contracts are documented in:
+
+- `docs/CANONICAL_REVIEWED_PRODUCTION_ORCHESTRATOR_V1.md`;
+- `docs/CANONICAL_REVIEWED_PRODUCTION_SCANNER_V1.md`.
+
+### 4. Signed workspace batches and export — implemented
 
 - only workspace-authorized reviewed events enter the signed chain;
 - workspace, endpoint, sequence range, previous digest, signer generation, and public batch digest are verified;
@@ -70,36 +89,36 @@ The low-level producer operates on one already-normalized call and an explicit r
 
 The export and verification contract is documented in `docs/WORKSPACE_EVIDENCE_EXPORT_V1.md`.
 
-### 4. Secure desktop runtime boundary — implemented
+### 5. Secure desktop runtime and explicit controls — implemented
 
-- one Electron main-process runtime owns the loaded endpoint signing and event-identity material;
-- the existing OS-vault master key is zeroed immediately after initialization;
+- one Electron main-process runtime owns loaded signing and event-identity material;
+- the OS-vault master key is zeroed immediately after initialization;
 - private identity buffers are zeroed on runtime disposal;
-- unsupported platforms or vault failures disable Workspace actions without opening a plaintext fallback or blocking ordinary analytics;
-- strict public DTOs expose only workspace, endpoint, lifecycle, evidence, and privacy state;
-- explicit create, lifecycle, batch, and export actions cross an isolated IPC bridge;
-- native export paths remain inside the main process and the renderer receives only the filename and verification summary;
-- raw exceptions, private paths, and secret material never cross IPC.
+- unsupported platforms or vault failures disable Workspace actions without plaintext fallback or blocking ordinary analytics;
+- the canonical scanner lives in a separate bundle loaded lazily only after explicit production;
+- opening the app or Workspace screen does not trigger scanner loading or evidence production;
+- strict public DTOs expose only Workspace, endpoint, lifecycle, evidence, privacy, and bounded production counts;
+- one zero-argument production action ignores renderer-supplied calls, paths, providers, costs, fingerprints, or evidence claims;
+- pause, resume, production, batch, and export remain separate explicit actions;
+- native export paths remain inside the main process;
+- raw exceptions, private paths, canonical calls, and secret material never cross IPC.
 
-### 5. Focused desktop Workspace view — implemented
+The view shows:
 
-The first desktop view shows:
-
-- workspace name and local-only status;
-- active owner role;
-- enrolled endpoint, identity generation, public fingerprint, platform, and software versions;
-- reviewed evidence and signed-batch counts, state, quarantine, and blockers;
-- usage totals read from the same canonical Overview payload and active period/provider/range/config scope used by the rest of the desktop;
-- pricing coverage from that same payload;
-- a clear explanation of what is excluded from export;
-- explicit workspace creation, status refresh, signed-batch creation, and evidence export actions;
+- workspace identity and local-only status;
+- endpoint identity, generation, platform, and software versions;
+- reviewed evidence and signed-batch counts, quarantine, invalid records, and blockers;
+- exact Overview usage and pricing coverage for the active scope;
+- explicit Produce, Pause/Resume, Create signed batch, and Export actions;
+- the latest bounded production counts;
 - fail-closed unsupported-platform and unavailable-vault states.
 
-The Workspace runtime does not calculate analytics totals. `workspaceUsageFromOverview()` copies only the existing Overview fields displayed by the screen, so calls, sessions, token dimensions, costs, pricing coverage, filters, and periods reconcile by construction.
+`workspaceUsageFromOverview()` remains a field-for-field projection of the current Overview payload. Workspace evidence never recalculates calls, sessions, token dimensions, costs, pricing coverage, filters, or periods.
 
-Opening the Workspace screen never scans, produces measurements, signs, exports, uploads, or publishes automatically. The view does not show empty enterprise concepts, invite flows, billing, cloud synchronization, Advisor, or Bench.
+The runtime and renderer contracts are documented in:
 
-The runtime and renderer contract is documented in `docs/DESKTOP_WORKSPACE_RUNTIME_V1.md`.
+- `docs/DESKTOP_WORKSPACE_RUNTIME_V1.md`;
+- `docs/DESKTOP_REVIEWED_PRODUCTION_V1.md`.
 
 ### 6. Durable production lifecycle policy — implemented
 
@@ -108,18 +127,18 @@ The runtime and renderer contract is documented in `docs/DESKTOP_WORKSPACE_RUNTI
 - transitions are cross-process serialized, idempotent, and revisioned;
 - state binds the stable Workspace and endpoint and survives endpoint-key rotation;
 - malformed, cross-bound, or clock-regressing state fails closed;
-- pause is defined to affect only future explicit Workspace reviewed production;
-- pause never stops collectors or parsing, alters Overview analytics, changes pricing or labels, or deletes/signs/exports/uploads existing evidence;
-- the secure snapshot exposes only mode, revision, persistence, and update time;
-- fixed no-argument IPC actions choose pause or resume inside the main process.
+- pause is checked before canonical scanning and evidence mutation;
+- a pause requested during production waits for that complete atomic pass;
+- pause never stops ordinary collectors/parsing, alters Overview analytics, changes pricing or labels, or deletes/signs/exports existing evidence;
+- resume never deletes lifecycle history or rewrites evidence.
 
 The detailed contract is documented in `docs/WORKSPACE_PRODUCTION_LIFECYCLE_V1.md`.
 
-### 7. Canonical production orchestration and focused controls — remaining
+### 7. Deterministic recovery and closure — remaining
 
-W1.D.C.B must connect the canonical parser/cache authority to the existing reviewed producer without accepting renderer-supplied calls, provider claims, provenance, costs, fingerprints, or paths. It must return only bounded production counts and refreshed public state, and paused mode must perform no evidence mutation.
+The remaining tranche must expose bounded, non-destructive recovery for known local failure states and validate the complete create → produce → pause/resume → batch → export → reopen path on the portable Windows artifact.
 
-W1.D.C.C must expose explicit Produce, Pause, Resume, and deterministic non-destructive Recovery controls. Opening the screen must remain read-only. Recovery must never mean deletion, silent reset, quarantine bypass, or invented repair.
+Recovery may reconcile or retry known state. It must never mean deletion, silent identity/lifecycle reset, quarantine bypass, invented evidence, or weakening of fail-closed checks.
 
 ## Privacy boundary
 
@@ -167,10 +186,10 @@ Workspace v1 is complete only when:
 7. exported workspace evidence verifies independently and contains no prohibited content;
 8. pause affects only future Workspace production and resumes without data loss;
 9. deterministic recovery never discards valid evidence or bypasses quarantine;
-10. Windows and Ubuntu blocking tests pass, including Windows vault and filesystem behavior;
+10. Windows and Ubuntu blocking tests pass, including Windows vault, filesystem, lazy bundle, renderer, and packaging behavior;
 11. no hosted service is required to complete the flow;
-12. the implementation is divided into bounded, reviewable pull requests with rollback points.
+12. the implementation remains divided into bounded, reviewable pull requests with rollback points.
 
 ## After Workspace v1
 
-The next milestones are a trustworthy signed Windows release and a physical desktop-to-Android validation. Managed synchronization, team workspaces, Advisor, and Bench follow only after this local workspace slice proves the contracts and user experience.
+The next milestones are a trustworthy signed Windows release and physical desktop-to-Android validation. Managed synchronization, team workspaces, Advisor, and Bench follow only after this local workspace slice proves the contracts and user experience.
