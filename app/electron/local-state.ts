@@ -37,7 +37,7 @@ export type DesktopWorkspaceSnapshot = {
       enrollmentState: 'active'
     }
   }
-  productionLifecycle: null | {
+  productionLifecycle?: null | {
     mode: 'active' | 'paused'
     revision: number
     persisted: boolean
