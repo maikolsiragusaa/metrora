@@ -93,6 +93,20 @@ export type DesktopWorkspaceProductionResult = {
   snapshot: DesktopWorkspaceSnapshot
 }
 
+export type DesktopWorkspaceRecoverySummary = {
+  kind: 'metrora.desktop-workspace-recovery-summary'
+  version: 1
+  outcome: 'workspace-required' | 'paused' | 'blocked' | 'healthy' | 'reconciled'
+  retryAttempted: boolean
+  blocker: 'invalid-evidence' | 'quarantined-evidence' | 'blocked-evidence' | null
+  production: DesktopReviewedProductionSummary | null
+}
+
+export type DesktopWorkspaceRecoveryResult = {
+  summary: DesktopWorkspaceRecoverySummary
+  snapshot: DesktopWorkspaceSnapshot
+}
+
 export type DesktopWorkspaceBatchResult = {
   outcome: 'created' | 'empty'
   batch?: {
@@ -140,6 +154,7 @@ export interface WorkspaceBridge {
   pauseWorkspaceProduction(): Promise<DesktopWorkspaceProductionLifecycleResult>
   resumeWorkspaceProduction(): Promise<DesktopWorkspaceProductionLifecycleResult>
   produceWorkspaceMeasurements(): Promise<DesktopWorkspaceProductionResult>
+  recoverWorkspaceState(): Promise<DesktopWorkspaceRecoveryResult>
   createWorkspaceBatch(): Promise<DesktopWorkspaceBatchResult>
   exportWorkspaceEvidence(): Promise<DesktopWorkspaceExportResult>
 }
