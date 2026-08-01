@@ -224,6 +224,21 @@ describe('canonical reviewed-production scanner v1', () => {
     }, contradictory)).rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
   })
 
+  it('bounds malformed cached call validation failures', async () => {
+    const malformed = zedCall({
+      costAssignment: { version: 1, kind: 'unavailable' } as CachedCall['costAssignment'],
+    })
+    const deps = dependencies(cache({ [SOURCE_PATH]: cachedFile([malformed]) }))
+
+    await expect(scanCanonicalReviewedProductionCandidatesV1({
+      endpointId: ENDPOINT_ID,
+      adapterVersion: '0.9.19',
+    }, deps)).rejects.toEqual(expect.objectContaining({
+      name: 'CanonicalReviewedProductionScannerIntegrityError',
+      message: 'canonical cached call could not be validated',
+    }))
+  })
+
   it('rejects empty private deduplication identities', async () => {
     const deps = dependencies(cache({
       [SOURCE_PATH]: cachedFile([zedCall({ deduplicationKey: '' })]),
