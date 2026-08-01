@@ -10,6 +10,8 @@ import { WorkspaceContent, workspaceUsageFromOverview } from './Workspace'
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
+  pauseWorkspaceProduction: vi.fn(),
+  resumeWorkspaceProduction: vi.fn(),
   createWorkspaceBatch: vi.fn(),
   exportWorkspaceEvidence: vi.fn(),
 }))
@@ -62,6 +64,12 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
         enrollmentState: 'active',
       },
     } : null,
+    productionLifecycle: withWorkspace ? {
+      mode: 'active',
+      revision: 0,
+      persisted: false,
+      updatedAt: null,
+    } : null,
     evidence: {
       state: withWorkspace ? 'ready' : 'workspace-required',
       pendingEventCount: withWorkspace ? 3 : 0,
@@ -103,6 +111,8 @@ describe('Workspace desktop view', () => {
     setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     bridge.getWorkspaceStatus.mockReset()
     bridge.createWorkspace.mockReset()
+    bridge.pauseWorkspaceProduction.mockReset()
+    bridge.resumeWorkspaceProduction.mockReset()
     bridge.createWorkspaceBatch.mockReset()
     bridge.exportWorkspaceEvidence.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability())
