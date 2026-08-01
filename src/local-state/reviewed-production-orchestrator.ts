@@ -102,13 +102,11 @@ export async function produceCanonicalReviewedMeasurementsV1(
         context: candidate.context,
         now,
       })
-      if (result.status === 'enqueued') {
-        producedCount += 1
-      } else if (result.status === 'duplicate') {
-        existingCount += 1
-      } else {
+      if (result.status === 'withheld') {
         throw new Error(`trusted canonical production candidate was withheld: ${result.reason}`)
       }
+      if (result.status === 'enqueued') producedCount += 1
+      else existingCount += 1
     }
 
     return CanonicalReviewedProductionSummaryV1Schema.parse({
