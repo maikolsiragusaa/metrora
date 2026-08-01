@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, open, readFile, stat, unlink, utimes } from 'fs/promises'
 import { homedir } from 'os'
-import { join } from 'path'
+import { join, resolve } from 'path'
 
 const LOCK_FILE = 'session-refresh.lock'
 const TAKEOVER_FILE = `${LOCK_FILE}.takeover`
@@ -53,7 +53,7 @@ function defaultCacheDir(): string {
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => { setTimeout(resolve, ms) })
+  return new Promise(resolvePromise => { setTimeout(resolvePromise, ms) })
 }
 
 function isBusyError(err: unknown): boolean {
@@ -130,14 +130,28 @@ function sameObservation(a: Observation, b: Observation): boolean {
   return a.record.token === b.record.token && a.mtimeMs === b.mtimeMs
 }
 
-let singleFlightTail: Promise<void> = Promise.resolve()
+const singleFlightTails = new Map<string, Promise<void>>()
 
-async function enterSingleFlight(): Promise<() => void> {
-  const previous = singleFlightTail
-  let leave!: () => void
-  singleFlightTail = new Promise<void>(resolve => { leave = resolve })
+function singleFlightKey(cacheDir: string): string {
+  const absolute = resolve(cacheDir)
+  return process.platform === 'win32' ? absolute.toLowerCase() : absolute
+}
+
+async function enterSingleFlight(cacheDir: string): Promise<() => void> {
+  const key = singleFlightKey(cacheDir)
+  const previous = singleFlightTails.get(key) ?? Promise.resolve()
+  let leaveCurrent!: () => void
+  const current = new Promise<void>(resolveCurrent => { leaveCurrent = resolveCurrent })
+  singleFlightTails.set(key, current)
   await previous
-  return leave
+
+  let left = false
+  return () => {
+    if (left) return
+    left = true
+    leaveCurrent()
+    if (singleFlightTails.get(key) === current) singleFlightTails.delete(key)
+  }
 }
 
 /**
@@ -145,7 +159,8 @@ async function enterSingleFlight(): Promise<() => void> {
  * Lock ordering, when the daily-cache follow-up lands, is daily → session.
  */
 export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}): Promise<RefreshLockOutcome> {
-  const leaveSingleFlight = await enterSingleFlight()
+  const cacheDir = options.cacheDir ?? defaultCacheDir()
+  const leaveSingleFlight = await enterSingleFlight(cacheDir)
   let ownsSingleFlight = true
   const leave = (): void => {
     if (!ownsSingleFlight) return
@@ -153,7 +168,6 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
     leaveSingleFlight()
   }
 
-  const cacheDir = options.cacheDir ?? defaultCacheDir()
   const clock = options.clock ?? defaultClock
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS
   const staleMs = options.staleMs ?? DEFAULT_STALE_MS

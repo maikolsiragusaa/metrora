@@ -80,7 +80,7 @@ jobs:
         # filesystem-heavy cryptographic tests. Keep every test blocking while
         # allowing bounded runner variance instead of quarantining coverage.
         run: >-
-          npm test -- --run --no-file-parallelism --testTimeout=15000
+          npx vitest --run --no-file-parallelism --testTimeout=15000
           src/vendor/rfc8785-canonicalize.test.ts
           src/local-state/secret-protector.test.ts
           src/local-state/endpoint-identity.test.ts

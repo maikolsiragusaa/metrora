@@ -20,6 +20,7 @@ import { withLocalStateLease } from './local-state-lease.js'
 
 export const LOCAL_WORKSPACE_PRODUCTION_LIFECYCLE_KIND = 'metrora.local-workspace-production-lifecycle' as const
 const LOCAL_WORKSPACE_PRODUCTION_LIFECYCLE_FILE = 'workspace-production-lifecycle.v1.json'
+const LOCAL_WORKSPACE_PRODUCTION_CONTROL_DIRECTORY = 'workspace-production-control'
 
 export const LocalWorkspaceProductionModeV1Schema = z.enum(['active', 'paused'])
 
@@ -59,6 +60,10 @@ export type LocalWorkspaceProductionLifecycleOptions = {
   now?: () => Date
 }
 
+export type LocalWorkspaceProductionControlLeaseOptions = {
+  dataDir?: string
+}
+
 export type SetLocalWorkspaceProductionModeV1Options = LocalWorkspaceProductionLifecycleOptions & {
   mode: LocalWorkspaceProductionModeV1
 }
@@ -88,6 +93,19 @@ function lifecyclePaths(dataDir: string): { directory: string; state: string } {
     directory,
     state: join(directory, LOCAL_WORKSPACE_PRODUCTION_LIFECYCLE_FILE),
   }
+}
+
+/**
+ * Serialize explicit reviewed-production passes with pause and resume without
+ * reusing the Workspace state lease that receipt/outbox publication acquires.
+ * Callers must keep the lock order: production-control, then Workspace state.
+ */
+export function withLocalWorkspaceProductionControlLeaseV1<T>(
+  input: LocalWorkspaceProductionControlLeaseOptions,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const dataDir = input.dataDir ?? defaultMetroraDataDir()
+  return withLocalStateLease(join(dataDir, LOCAL_WORKSPACE_PRODUCTION_CONTROL_DIRECTORY), operation)
 }
 
 function timestamp(now: () => Date): string {
@@ -191,34 +209,37 @@ export async function setLocalWorkspaceProductionModeV1(
   const mode = LocalWorkspaceProductionModeV1Schema.parse(input.mode)
   const dataDir = input.dataDir ?? defaultMetroraDataDir()
   const now = input.now ?? (() => new Date())
-  const workspace = await requireWorkspace({ endpointIdentity, dataDir, now })
-  const paths = lifecyclePaths(dataDir)
 
-  return withLocalStateLease(paths.directory, async () => {
-    const existingRaw = await readState(paths.state)
-    const existing = existingRaw ? validateBinding(existingRaw, workspace) : undefined
+  return withLocalWorkspaceProductionControlLeaseV1({ dataDir }, async () => {
+    const workspace = await requireWorkspace({ endpointIdentity, dataDir, now })
+    const paths = lifecyclePaths(dataDir)
 
-    if ((!existing && mode === 'active') || existing?.mode === mode) {
-      return { outcome: 'unchanged', lifecycle: summary(existing) }
-    }
+    return withLocalStateLease(paths.directory, async () => {
+      const existingRaw = await readState(paths.state)
+      const existing = existingRaw ? validateBinding(existingRaw, workspace) : undefined
 
-    const updatedAt = timestamp(now)
-    if (existing && Date.parse(updatedAt) < Date.parse(existing.updatedAt)) {
-      throw new LocalWorkspaceProductionLifecycleRecoveryRequiredError(
-        'local Workspace production lifecycle clock moved backwards',
-      )
-    }
-    const next = LocalWorkspaceProductionLifecycleStateV1Schema.parse({
-      kind: LOCAL_WORKSPACE_PRODUCTION_LIFECYCLE_KIND,
-      version: 1,
-      workspaceId: workspace.workspace.workspaceId,
-      endpointId: workspace.endpoint.endpointId,
-      mode,
-      revision: (existing?.revision ?? 0) + 1,
-      createdAt: existing?.createdAt ?? updatedAt,
-      updatedAt,
+      if ((!existing && mode === 'active') || existing?.mode === mode) {
+        return { outcome: 'unchanged', lifecycle: summary(existing) }
+      }
+
+      const updatedAt = timestamp(now)
+      if (existing && Date.parse(updatedAt) < Date.parse(existing.updatedAt)) {
+        throw new LocalWorkspaceProductionLifecycleRecoveryRequiredError(
+          'local Workspace production lifecycle clock moved backwards',
+        )
+      }
+      const next = LocalWorkspaceProductionLifecycleStateV1Schema.parse({
+        kind: LOCAL_WORKSPACE_PRODUCTION_LIFECYCLE_KIND,
+        version: 1,
+        workspaceId: workspace.workspace.workspaceId,
+        endpointId: workspace.endpoint.endpointId,
+        mode,
+        revision: (existing?.revision ?? 0) + 1,
+        createdAt: existing?.createdAt ?? updatedAt,
+        updatedAt,
+      })
+      await atomicWritePrivateFile(paths.state, JSON.stringify(next))
+      return { outcome: 'changed', lifecycle: summary(next) }
     })
-    await atomicWritePrivateFile(paths.state, JSON.stringify(next))
-    return { outcome: 'changed', lifecycle: summary(next) }
   })
 }

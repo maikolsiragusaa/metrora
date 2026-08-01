@@ -104,7 +104,7 @@ describe('warm session-cache refresh lock', () => {
       settled = true
       return result
     })
-    await new Promise(resolve => { setTimeout(resolve, 20) })
+    await new Promise(resolvePromise => { setTimeout(resolvePromise, 20) })
     expect(settled).toBe(false)
 
     await first.handle.release()
@@ -113,6 +113,22 @@ describe('warm session-cache refresh lock', () => {
     if (second.outcome === 'acquired') {
       expect(second.handle.token).not.toBe(first.handle.token)
       await second.handle.release()
+    }
+  })
+
+  it('allows nested same-process acquisitions for independent lock directories', async () => {
+    const controlDir = await tempDir()
+    const workspaceDir = await tempDir()
+    const control = await acquireCacheRefreshLock({ cacheDir: controlDir })
+    expect(control.outcome).toBe('acquired')
+    if (control.outcome !== 'acquired') return
+
+    try {
+      const workspace = await acquireCacheRefreshLock({ cacheDir: workspaceDir, waitMs: 100 })
+      expect(workspace.outcome).toBe('acquired')
+      if (workspace.outcome === 'acquired') await workspace.handle.release()
+    } finally {
+      await control.handle.release()
     }
   })
 
@@ -150,7 +166,7 @@ describe('warm session-cache refresh lock', () => {
       while (Date.now() < deadline) {
         const raw = await readFile(lockPath(dir), 'utf-8')
         records.push(JSON.parse(raw) as { pid: number; token: string; at: number })
-        await new Promise(resolve => { setTimeout(resolve, 1) })
+        await new Promise(resolvePromise => { setTimeout(resolvePromise, 1) })
       }
 
       expect(records.length).toBeGreaterThan(5)
@@ -210,7 +226,7 @@ describe('warm session-cache refresh lock', () => {
     await writeFile(lockPath(dir), JSON.stringify({ pid: 999, token: 'successor', at: Date.now() }))
     const changed = emptyCache()
     changed.complete = true
-    changed.providers['claude'] = { parseVersion: 'test', envFingerprint: 'test', files: {} }
+    changed.providers['claude'] = { envFingerprint: 'test', files: {} }
     expect(await saveCache(changed, result.handle.verifyStillOwner)).toBe(false)
     expect((await loadCache()).providers['claude']).toBeUndefined()
 
