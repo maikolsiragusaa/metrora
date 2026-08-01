@@ -115,7 +115,7 @@ describe('canonical reviewed-production scanner v1', () => {
     expect(serializedContext).not.toContain('zed:thread-1:request-1')
   })
 
-  it('keeps the source-record fingerprint stable across file append metadata changes', async () => {
+  it('keeps the source-record fingerprint stable and endpoint-scoped', () => {
     const first = canonicalSourceRecordFingerprintSha256V1({
       endpointId: ENDPOINT_ID,
       provider: 'zed',
@@ -157,20 +157,28 @@ describe('canonical reviewed-production scanner v1', () => {
   })
 
   it('withholds calls without explicit provider identity or reviewed provenance', async () => {
-    const file = cachedFile([
-      zedCall({ modelProvider: undefined }),
-      zedCall({ provider: 'cursor', deduplicationKey: 'cursor:call-1' }),
-    ])
+    const cursorPath = '/private/cursor/db'
     const value: SessionCache = {
       version: 8,
       complete: true,
       providers: {
-        zed: { envFingerprint: 'zed-test', files: { [SOURCE_PATH]: cachedFile([zedCall({ modelProvider: undefined })]) } },
-        cursor: { envFingerprint: 'cursor-test', files: { '/private/cursor/db': file } },
+        zed: {
+          envFingerprint: 'zed-test',
+          files: { [SOURCE_PATH]: cachedFile([zedCall({ modelProvider: undefined })]) },
+        },
+        cursor: {
+          envFingerprint: 'cursor-test',
+          files: {
+            [cursorPath]: cachedFile([
+              zedCall({ provider: 'cursor', modelProvider: 'openai', deduplicationKey: 'cursor:call-1' }),
+              zedCall({ provider: 'cursor', modelProvider: undefined, deduplicationKey: 'cursor:call-2' }),
+            ]),
+          },
+        },
       },
     }
     const deps = dependencies(value, {
-      existing: new Set([SOURCE_PATH, '/private/cursor/db']),
+      existing: new Set([SOURCE_PATH, cursorPath]),
       displayNames: { zed: 'Zed', cursor: 'Cursor' },
     })
 
