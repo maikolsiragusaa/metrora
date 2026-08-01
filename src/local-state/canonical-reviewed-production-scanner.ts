@@ -33,7 +33,7 @@ export type CanonicalReviewedProductionScannerDependenciesV1 = {
   loadCanonicalCache(): Promise<SessionCache>
   sourceExists(path: string): boolean
   providerDisplayName(provider: string): Promise<string | undefined>
-  codexModelProvider(path: string): Promise<string | undefined>
+  codexModelProvider?(path: string): Promise<string | undefined>
 }
 
 export class CanonicalReviewedProductionScannerIntegrityError extends Error {
@@ -114,6 +114,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
 ): Promise<CanonicalReviewedProductionScanV1> {
   const endpointId = OpaqueIdSchema.parse(input.endpointId)
   const adapterVersion = AdapterVersionSchema.parse(input.adapterVersion)
+  const readCodexProvider = dependencies.codexModelProvider ?? readCodexSessionModelProvider
 
   await dependencies.refreshCanonicalCache()
   const cache = await dependencies.loadCanonicalCache()
@@ -144,7 +145,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
       }
 
       const codexSourceProvider = sectionProvider === 'codex'
-        ? normalizeExplicitModelProvider(await dependencies.codexModelProvider(sourcePath))
+        ? normalizeExplicitModelProvider(await readCodexProvider(sourcePath))
         : undefined
       if (sectionProvider === 'codex' && !codexSourceProvider) {
         withheldCount += callCount(file)
