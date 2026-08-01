@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import * as z from 'zod/v4'
 
-import { SlugSchema } from '../contracts/v1/common.js'
+import { SlugSchema, TimestampSchema } from '../contracts/v1/common.js'
 import {
   CollectorProvenanceProfilesV1,
 } from '../contracts/v1/collector-provenance.js'
@@ -17,6 +17,12 @@ import {
   createLocalPersonalWorkspaceV1,
   loadLocalPersonalWorkspaceV1,
 } from './local-workspace.js'
+import {
+  inspectLocalWorkspaceProductionLifecycleV1,
+  LocalWorkspaceProductionModeV1Schema,
+  setLocalWorkspaceProductionModeV1,
+  type LocalWorkspaceProductionModeV1,
+} from './workspace-production-lifecycle.js'
 import {
   createLocalWorkspaceEvidenceExportV1,
   createNextLocalWorkspaceSignedBatchV1,
@@ -46,6 +52,13 @@ const DesktopWorkspaceEvidenceSummaryV1Schema = z.strictObject({
   pendingBatchCount: z.number().int().nonnegative(),
   acknowledgedBatchCount: z.number().int().nonnegative(),
   blockers: z.array(z.string().trim().min(1).max(500)).max(32),
+})
+
+const DesktopWorkspaceProductionLifecycleV1Schema = z.strictObject({
+  mode: LocalWorkspaceProductionModeV1Schema,
+  revision: z.number().int().nonnegative(),
+  persisted: z.boolean(),
+  updatedAt: TimestampSchema.nullable(),
 })
 
 const DesktopWorkspaceRecordV1Schema = z.strictObject({
@@ -79,6 +92,7 @@ export const DesktopWorkspaceSnapshotV1Schema = z.strictObject({
     publicKeyFingerprintSha256: z.string().regex(/^[a-f0-9]{64}$/),
   }),
   workspace: DesktopWorkspaceRecordV1Schema.nullable(),
+  productionLifecycle: DesktopWorkspaceProductionLifecycleV1Schema.nullable(),
   evidence: DesktopWorkspaceEvidenceSummaryV1Schema,
   privacy: z.strictObject({
     networkRequired: z.literal(false),
@@ -142,12 +156,18 @@ export type DesktopWorkspaceExportResultV1 = {
   snapshot: DesktopWorkspaceSnapshotV1
 }
 
+export type DesktopWorkspaceProductionLifecycleResultV1 = {
+  outcome: 'changed' | 'unchanged'
+  snapshot: DesktopWorkspaceSnapshotV1
+}
+
 export interface DesktopWorkspaceRuntimeV1 {
   getSnapshot(): Promise<DesktopWorkspaceSnapshotV1>
   createWorkspace(input: CreateDesktopWorkspaceInputV1): Promise<{
     outcome: 'created' | 'existing'
     snapshot: DesktopWorkspaceSnapshotV1
   }>
+  setProductionMode(mode: LocalWorkspaceProductionModeV1): Promise<DesktopWorkspaceProductionLifecycleResultV1>
   createNextBatch(): Promise<DesktopWorkspaceBatchResultV1>
   exportEvidence(outputPath: string): Promise<DesktopWorkspaceExportResultV1>
   dispose(): void
@@ -234,6 +254,7 @@ export function createDesktopWorkspaceRuntimeV1(
           publicKeyFingerprintSha256: options.identity.metadata.publicKeyFingerprintSha256,
         },
         workspace: null,
+        productionLifecycle: null,
         evidence: emptyEvidence(),
         privacy: {
           networkRequired: false,
@@ -246,11 +267,18 @@ export function createDesktopWorkspaceRuntimeV1(
       })
     }
 
-    const evidence = await inspectLocalWorkspaceEvidenceV1({
-      dataDir: options.dataDir,
-      identity: options.identity,
-      now: options.now,
-    })
+    const [productionLifecycle, evidence] = await Promise.all([
+      inspectLocalWorkspaceProductionLifecycleV1({
+        dataDir: options.dataDir,
+        endpointIdentity: options.identity.metadata,
+        now: options.now,
+      }),
+      inspectLocalWorkspaceEvidenceV1({
+        dataDir: options.dataDir,
+        identity: options.identity,
+        now: options.now,
+      }),
+    ])
     return DesktopWorkspaceSnapshotV1Schema.parse({
       kind: 'metrora.desktop-workspace-snapshot',
       version: 1,
@@ -280,6 +308,7 @@ export function createDesktopWorkspaceRuntimeV1(
           enrollmentState: workspace.endpoint.enrollment.state,
         },
       },
+      productionLifecycle,
       evidence: {
         state: evidence.state,
         pendingEventCount: evidence.pendingEventCount,
@@ -327,6 +356,18 @@ export function createDesktopWorkspaceRuntimeV1(
         },
       })
       return { outcome: created.outcome, snapshot: await getSnapshot() }
+    },
+
+    async setProductionMode(rawMode) {
+      requireActive()
+      const mode = LocalWorkspaceProductionModeV1Schema.parse(rawMode)
+      const result = await setLocalWorkspaceProductionModeV1({
+        dataDir: options.dataDir,
+        endpointIdentity: options.identity.metadata,
+        mode,
+        now: options.now,
+      })
+      return { outcome: result.outcome, snapshot: await getSnapshot() }
     },
 
     async createNextBatch() {
