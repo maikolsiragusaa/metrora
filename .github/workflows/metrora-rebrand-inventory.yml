@@ -48,10 +48,13 @@ jobs:
             "$GITHUB_SHA" "$qovrion_count" "$codeburn_count" \
             > rebrand-inventory/summary.json
 
-      - name: Upload inventory
+          git archive --format=zip --output rebrand-inventory/source.zip HEAD
+
+      - name: Upload inventory and source snapshot
         uses: actions/upload-artifact@v4
         with:
           name: metrora-rebrand-inventory-${{ github.sha }}
           path: rebrand-inventory
           if-no-files-found: error
+          compression-level: 6
           retention-days: 14
