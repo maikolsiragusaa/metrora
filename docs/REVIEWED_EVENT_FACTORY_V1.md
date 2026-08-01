@@ -51,12 +51,12 @@ The factory supports two bounded cost-evidence modes:
 
 In immutable-assignment mode:
 
-- a matching `metered` assignment becomes provider/client/billing-export metered cost;
-- a matching `token-price` assignment becomes token-pricing cost;
+- a matching `metered` assignment is accepted only when the reviewed profile declares the same provider/client/billing-export source;
+- a matching `token-price` assignment becomes token-pricing cost only for a profile reviewed as local token pricing;
 - an explicit numeric zero remains different from unavailable cost;
 - a matching legacy-frozen value remains an estimated `other` value;
 - an unavailable assignment produces unavailable cost;
-- a missing, malformed, or contradictory assignment produces unavailable cost rather than current-price fallback.
+- a missing, malformed, contradictory, or profile-incompatible assignment produces unavailable cost rather than current-price fallback.
 
 Reviewed usage is not discarded merely because cost is unavailable. Measurement v1 does not yet expose the full local `priceRecordId`, zero reason, or rate-band detail; those remain authoritative in the endpoint's immutable local assignment and can be carried by a later evidence/export contract without changing the event amount.
 
@@ -78,14 +78,36 @@ A call is withheld when its collector path or reasoning attribution is not revie
 A produced event is written through the existing append-only outbox:
 
 - `enqueued` means the immutable record was published for the first time;
-- `duplicate` means the same deterministic event and payload already exist;
-- the same event ID with different bytes is rejected as a collision.
+- `duplicate` means the same private production identity was already published;
+- reusing one production identity for a different semantic measurement fails closed;
+- the same public event ID with different bytes remains a collision.
 
 Malformed normalized facts, invalid context, foreign workspace identity, corrupted state, or invalid outbox state throw rather than being silently repaired.
 
+## Rotation-safe idempotency
+
+The public event ID is intentionally HMAC-derived from the endpoint event-identity key. Rotating that key breaks future linkability as designed, so the same source call would otherwise receive a different public ID after rotation.
+
+Workspace production therefore creates a separate private receipt key from:
+
+- workspace ID;
+- stable endpoint ID;
+- reviewed provenance profile ID;
+- source fingerprint;
+- the private normalized-call deduplication key.
+
+Only the SHA-256 digest of that composition is stored. The raw deduplication key never enters the receipt, event, or batch.
+
+The receipt stores the original immutable outbox record and its semantic digest. It is published before the public event file. Therefore:
+
+- an interruption between receipt and event publication is repairable on the next identical production;
+- endpoint HMAC-key rotation returns the original event record instead of producing a duplicate;
+- changed tokens, cost, scope, provider, disclosure, or other public semantics under the same production identity are rejected;
+- the private production digest is not exported or signed into a public batch.
+
 ## Privacy boundary
 
-The factory ultimately calls the existing allowlist adapter. The event and outbox record never serialize:
+The factory ultimately calls the existing allowlist adapter. The event, outbox record, and private production receipt never serialize:
 
 - private deduplication keys;
 - prompts or responses;
@@ -95,7 +117,7 @@ The factory ultimately calls the existing allowlist adapter. The event and outbo
 - endpoint HMAC/event-identity keys;
 - endpoint private signing keys.
 
-The event contains only the structured public measurement fields allowed by the v1 contract.
+The public event contains only the structured measurement fields allowed by the v1 contract.
 
 ## Current reviewed paths
 
@@ -123,4 +145,4 @@ A collector being locally supported does not make it eligible for Workspace prod
 
 ## Next safe step
 
-W1.C can bind pending workspace-authorized outbox records into the existing immutable signed-batch chain and add a verifiable local export. It must preserve outbox sequence order, signer generation, previous-digest chaining, acknowledgements, quarantine state, and the same content-minimal boundary without activating an uploader.
+W1.C can bind pending workspace-authorized outbox records into the existing immutable signed-batch chain and add a verifiable local export. It must preserve outbox sequence order, signer generation, previous-digest chaining, acknowledgements, quarantine state, private receipt recovery, and the same content-minimal boundary without activating an uploader.
