@@ -84,6 +84,12 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
   }
 }
 
+function batchedSnapshot(): DesktopWorkspaceSnapshot {
+  const value = snapshot(true)
+  value.evidence.unbatchedEventCount = 0
+  return value
+}
+
 function readyAvailability(withWorkspace = true): DesktopWorkspaceAvailability {
   return {
     availability: 'ready',
@@ -152,7 +158,17 @@ describe('Workspace desktop view', () => {
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
   })
 
+  it('requires reviewed events to enter a signed batch before export', async () => {
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    const exportButton = await screen.findByRole('button', { name: 'Export verifiable evidence' })
+    expect(exportButton).toBeDisabled()
+    expect(screen.getByText(/create a signed batch before export/i)).toBeInTheDocument()
+    expect(bridge.exportWorkspaceEvidence).not.toHaveBeenCalled()
+  })
+
   it('keeps signing and export explicit and refreshes from returned public snapshots', async () => {
+    const afterBatch = batchedSnapshot()
     bridge.createWorkspaceBatch.mockResolvedValue({
       outcome: 'created',
       batch: {
@@ -163,7 +179,7 @@ describe('Workspace desktop view', () => {
         eventCount: 3,
         identityGeneration: 2,
       },
-      snapshot: snapshot(true),
+      snapshot: afterBatch,
     })
     bridge.exportWorkspaceEvidence.mockResolvedValue({
       outcome: 'exported',
@@ -178,7 +194,7 @@ describe('Workspace desktop view', () => {
         pendingBatchCount: 1,
         acknowledgedBatchCount: 2,
       },
-      snapshot: snapshot(true),
+      snapshot: afterBatch,
     })
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
@@ -186,8 +202,30 @@ describe('Workspace desktop view', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Create signed batch' }))
     await waitFor(() => expect(bridge.createWorkspaceBatch).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export verifiable evidence' }))
+    const exportButton = screen.getByRole('button', { name: 'Export verifiable evidence' })
+    await waitFor(() => expect(exportButton).toBeEnabled())
+    fireEvent.click(exportButton)
     await waitFor(() => expect(bridge.exportWorkspaceEvidence).toHaveBeenCalledTimes(1))
+  })
+
+  it('disables signing and export for quarantined evidence and exposes invalid counts', async () => {
+    const quarantined = snapshot(true)
+    quarantined.evidence.state = 'quarantined'
+    quarantined.evidence.invalidEventCount = 2
+    quarantined.evidence.quarantinedEventCount = 1
+    quarantined.evidence.unbatchedEventCount = 0
+    bridge.getWorkspaceStatus.mockResolvedValue({
+      availability: 'ready',
+      vault: { backend: 'windows-dpapi', masterKeyState: 'loaded' },
+      snapshot: quarantined,
+    })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText('Evidence quarantined')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByText('Invalid').parentElement).toHaveTextContent('2')
   })
 
   it('fails closed when the operating-system vault is unavailable', async () => {
