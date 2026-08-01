@@ -9,6 +9,7 @@ import type { MenubarPayload } from '../lib/types'
 import type {
   DesktopReviewedProductionSummary,
   DesktopWorkspaceAvailability,
+  DesktopWorkspaceRecoverySummary,
   DesktopWorkspaceSnapshot,
   WorkspaceBridge,
   WorkspaceEvidenceState,
@@ -16,7 +17,7 @@ import type {
 } from '../lib/workspace'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
-type WorkspaceAction = 'reload' | 'create' | 'produce' | 'pause' | 'resume' | 'batch' | 'export' | null
+type WorkspaceAction = 'reload' | 'create' | 'produce' | 'recover' | 'pause' | 'resume' | 'batch' | 'export' | null
 
 export type WorkspaceUsage = {
   label: string
@@ -91,6 +92,7 @@ function actionErrorMessage(action: Exclude<WorkspaceAction, null>): string {
   if (action === 'reload') return 'Workspace status could not be refreshed.'
   if (action === 'create') return 'The local workspace could not be created.'
   if (action === 'produce') return 'Reviewed measurements could not be produced.'
+  if (action === 'recover') return 'Local Workspace state could not be checked safely.'
   if (action === 'pause') return 'Reviewed production could not be paused.'
   if (action === 'resume') return 'Reviewed production could not be resumed.'
   if (action === 'batch') return 'The next signed batch could not be created.'
@@ -100,6 +102,34 @@ function actionErrorMessage(action: Exclude<WorkspaceAction, null>): string {
 function productionToast(summary: DesktopReviewedProductionSummary): string {
   if (summary.outcome === 'paused') return 'Reviewed production is paused.'
   return `${summary.producedCount} produced · ${summary.existingCount} already present · ${summary.withheldCount} withheld · ${summary.failedCount} failed sources.`
+}
+
+function recoveryLabel(summary: DesktopWorkspaceRecoverySummary): string {
+  if (summary.outcome === 'workspace-required') return 'Recovery: Workspace required · retry skipped'
+  if (summary.outcome === 'paused') return 'Recovery: Paused · retry skipped'
+  if (summary.outcome === 'blocked') return `Recovery: Blocked · ${summary.blocker ?? 'blocked-evidence'}`
+  if (summary.outcome === 'healthy') return 'Recovery: Healthy · no reconciliation needed'
+  return 'Recovery: Reconciled · existing evidence preserved'
+}
+
+function showRecoveryToast(summary: DesktopWorkspaceRecoverySummary): void {
+  if (summary.outcome === 'reconciled') {
+    showToast('Local Workspace state was reconciled through existing private receipts.')
+    return
+  }
+  if (summary.outcome === 'blocked') {
+    showToast('Local evidence remains blocked. Nothing was deleted or reset.', 'error')
+    return
+  }
+  if (summary.outcome === 'paused') {
+    showToast('Reviewed production is paused. Recovery stopped before scanning.')
+    return
+  }
+  if (summary.outcome === 'workspace-required') {
+    showToast('Create the local Workspace before recovery can run.', 'error')
+    return
+  }
+  showToast('Local Workspace state is healthy. No reconciliation was needed.')
 }
 
 export function WorkspaceContent({
@@ -118,6 +148,7 @@ export function WorkspaceContent({
   const [workspaceName, setWorkspaceName] = useState('My workspace')
   const [endpointName, setEndpointName] = useState('This computer')
   const [lastProduction, setLastProduction] = useState<DesktopReviewedProductionSummary | null>(null)
+  const [lastRecovery, setLastRecovery] = useState<DesktopWorkspaceRecoverySummary | null>(null)
   const usage = useMemo(() => workspaceUsageFromOverview(payload), [payload])
 
   const reload = useCallback(async () => {
@@ -151,6 +182,7 @@ export function WorkspaceContent({
       const result = await bridge.createWorkspace({ displayName, endpointDisplayName })
       setAvailability(current => withSnapshot(current, result.snapshot))
       setLastProduction(null)
+      setLastRecovery(null)
       showToast(result.outcome === 'created' ? 'Local workspace created.' : 'Existing local workspace loaded.')
     } catch {
       showToast(actionErrorMessage('create'), 'error')
@@ -166,9 +198,26 @@ export function WorkspaceContent({
       const result = await bridge.produceWorkspaceMeasurements()
       setAvailability(current => withSnapshot(current, result.snapshot))
       setLastProduction(result.summary)
+      setLastRecovery(null)
       showToast(productionToast(result.summary))
     } catch {
       showToast(actionErrorMessage('produce'), 'error')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const recoverLocalState = async () => {
+    setAction('recover')
+    try {
+      if (typeof bridge.recoverWorkspaceState !== 'function') throw new Error('workspace bridge unavailable')
+      const result = await bridge.recoverWorkspaceState()
+      setAvailability(current => withSnapshot(current, result.snapshot))
+      setLastRecovery(result.summary)
+      if (result.summary.production) setLastProduction(result.summary.production)
+      showRecoveryToast(result.summary)
+    } catch {
+      showToast(actionErrorMessage('recover'), 'error')
     } finally {
       setAction(null)
     }
@@ -182,6 +231,7 @@ export function WorkspaceContent({
       if (typeof method !== 'function') throw new Error('workspace bridge unavailable')
       const result = await method.call(bridge)
       setAvailability(current => withSnapshot(current, result.snapshot))
+      setLastRecovery(null)
       showToast(mode === 'paused' ? 'Reviewed production paused.' : 'Reviewed production resumed.')
     } catch {
       showToast(actionErrorMessage(nextAction), 'error')
@@ -271,9 +321,11 @@ export function WorkspaceContent({
       setEndpointName={setEndpointName}
       action={action}
       lastProduction={lastProduction}
+      lastRecovery={lastRecovery}
       onReload={reload}
       onCreate={createWorkspace}
       onProduce={produceMeasurements}
+      onRecover={recoverLocalState}
       onSetProductionMode={setProductionMode}
       onBatch={createBatch}
       onExport={exportEvidence}
@@ -292,9 +344,11 @@ function ReadyWorkspaceView({
   setEndpointName,
   action,
   lastProduction,
+  lastRecovery,
   onReload,
   onCreate,
   onProduce,
+  onRecover,
   onSetProductionMode,
   onBatch,
   onExport,
@@ -309,9 +363,11 @@ function ReadyWorkspaceView({
   setEndpointName: (value: string) => void
   action: WorkspaceAction
   lastProduction: DesktopReviewedProductionSummary | null
+  lastRecovery: DesktopWorkspaceRecoverySummary | null
   onReload: () => Promise<void>
   onCreate: () => Promise<void>
   onProduce: () => Promise<void>
+  onRecover: () => Promise<void>
   onSetProductionMode: (mode: WorkspaceProductionMode) => Promise<void>
   onBatch: () => Promise<void>
   onExport: () => Promise<void>
@@ -478,6 +534,9 @@ function ReadyWorkspaceView({
             <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
               {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
             </button>
+            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy}>
+              {action === 'recover' ? 'Checking…' : 'Check & recover local state'}
+            </button>
             <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceBlocked}>
               {action === 'batch' ? 'Signing…' : 'Create signed batch'}
             </button>
@@ -485,6 +544,14 @@ function ReadyWorkspaceView({
               {action === 'export' ? 'Exporting…' : 'Export verifiable evidence'}
             </button>
           </div>
+          <p className="workspace-action-note">
+            Recovery is explicit and bounded. It never deletes, resets, unblocks, reprices, batches, exports, or uploads evidence automatically.
+          </p>
+          {lastRecovery ? (
+            <div className="workspace-source-line" data-testid="workspace-recovery-summary">
+              {recoveryLabel(lastRecovery)}
+            </div>
+          ) : null}
           <p className="workspace-action-note">
             {evidence.unbatchedEventCount > 0
               ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
