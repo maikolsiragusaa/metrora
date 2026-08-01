@@ -23,7 +23,7 @@ function safeStorage(available = true): ElectronSafeStorageLike {
 
 function runtime(): DesktopWorkspaceRuntime {
   return {
-    getSnapshot: vi.fn(async () => ({
+    getSnapshot: vi.fn<DesktopWorkspaceRuntime['getSnapshot']>(async () => ({
       kind: 'metrora.desktop-workspace-snapshot',
       version: 1,
       localOnly: true,
