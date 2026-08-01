@@ -28,6 +28,11 @@ import {
   saveCache,
 } from './session-cache.js'
 import { acquireCacheRefreshLock, type RefreshLockHandle } from './cache-refresh-lock.js'
+import {
+  assignRuntimeCostV1,
+  runtimeHistoricalPricingCacheKeyV1,
+  withRuntimeHistoricalPricingV1,
+} from './pricing/runtime-cost-assignment.js'
 import type { ParsedProviderCall, SessionSource } from './providers/types.js'
 import type {
   ApiUsageIteration,
@@ -1163,8 +1168,13 @@ function applyLocalModelSavings(call: ParsedApiCall): ParsedApiCall {
     attributed.cacheCreationOneHourTokens ?? 0,
   )
   if (!savings) return attributed
+  // Local-savings is an accounting overlay: the cached API-equivalent value
+  // remains historically assigned, while the normalized call shown as actual
+  // local spend is zero. Drop the assignment from this derived view so a
+  // token-priced assignment never falsely claims to explain the overlaid zero.
+  const { costAssignment: _costAssignment, ...withoutAssignment } = attributed
   return {
-    ...attributed,
+    ...withoutAssignment,
     costUSD: 0,
     savingsUSD: savings.savingsUSD,
     savingsBaselineModel: savings.baselineModel,
@@ -2351,6 +2361,17 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     reasoningTokens: call.reasoningTokens,
     webSearchRequests: call.webSearchRequests,
   }
+  const settlement = assignRuntimeCostV1({
+    provider: call.provider,
+    model: call.model,
+    modelProvider: call.modelProvider,
+    timestamp: call.timestamp,
+    speed: call.speed,
+    usage,
+    legacyCostUSD: call.costUSD,
+    isEstimated: call.costIsEstimated,
+    existingAssignment: call.costAssignment,
+  })
 
   const apiCall: ParsedApiCall = applyLocalModelSavings({
     provider: call.provider,
@@ -2361,7 +2382,8 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
     usage,
-    costUSD: call.costUSD,
+    costUSD: settlement.runtimeCostUSD,
+    costAssignment: settlement.runtimeAssignment,
     tools,
     mcpTools: extractMcpTools(tools),
     skills: call.skills ?? [],
@@ -2388,6 +2410,27 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
 // ── Cache Conversion ───────────────────────────────────────────────────
 
 export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
+  const usage = {
+    inputTokens: call.inputTokens,
+    outputTokens: call.outputTokens,
+    cacheCreationInputTokens: call.cacheCreationInputTokens,
+    cacheReadInputTokens: call.cacheReadInputTokens,
+    cachedInputTokens: call.cachedInputTokens,
+    reasoningTokens: call.reasoningTokens,
+    webSearchRequests: call.webSearchRequests,
+    cacheCreationOneHourTokens: 0,
+  }
+  const settlement = assignRuntimeCostV1({
+    provider: call.provider,
+    model: call.model,
+    modelProvider: call.modelProvider,
+    timestamp: call.timestamp,
+    speed: call.speed,
+    usage,
+    legacyCostUSD: call.costUSD,
+    isEstimated: call.costIsEstimated,
+    existingAssignment: call.costAssignment,
+  })
   return {
     provider: call.provider,
     model: call.model,
@@ -2396,17 +2439,10 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
-    usage: {
-      inputTokens: call.inputTokens,
-      outputTokens: call.outputTokens,
-      cacheCreationInputTokens: call.cacheCreationInputTokens,
-      cacheReadInputTokens: call.cacheReadInputTokens,
-      cachedInputTokens: call.cachedInputTokens,
-      reasoningTokens: call.reasoningTokens,
-      webSearchRequests: call.webSearchRequests,
-      cacheCreationOneHourTokens: 0,
-    },
-    costUSD: (call.provider === 'mistral-vibe' || call.provider === 'antigravity' || call.provider === 'devin' || call.provider === 'vercel-gateway' || call.provider === 'hermes' || call.provider === 'kiro' || call.provider === 'codewhale' || call.provider === 'quickdesk') ? call.costUSD : undefined,
+    usage,
+    ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
+    costAssignment: settlement.storedAssignment,
+    ...(settlement.storedLegacyCostUSD !== undefined ? { legacyCostUSD: settlement.storedLegacyCostUSD } : {}),
     isEstimated: call.costIsEstimated || undefined,
     speed: call.speed,
     timestamp: call.timestamp,
@@ -2443,6 +2479,23 @@ async function canonicalizeProviderCallProject(call: ParsedProviderCall): Promis
 }
 
 export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
+  // A local-savings normalized call displays actual cost 0, but its savingsUSD
+  // is the API-equivalent amount that must be historically assigned in cache.
+  const legacyApiEquivalentCost = call.isLocalSavings
+    ? (call.savingsUSD ?? 0)
+    : call.costUSD
+  const usage = { ...call.usage, cacheCreationOneHourTokens: call.cacheCreationOneHourTokens ?? 0 }
+  const settlement = assignRuntimeCostV1({
+    provider: call.provider,
+    model: call.model,
+    modelProvider: call.modelProvider,
+    timestamp: call.timestamp,
+    speed: call.speed,
+    usage,
+    legacyCostUSD: legacyApiEquivalentCost,
+    isEstimated: call.isEstimated,
+    existingAssignment: call.isLocalSavings ? undefined : call.costAssignment,
+  })
   return {
     provider: call.provider,
     model: call.model,
@@ -2451,7 +2504,10 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
-    usage: { ...call.usage, cacheCreationOneHourTokens: call.cacheCreationOneHourTokens ?? 0 },
+    usage,
+    ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
+    costAssignment: settlement.storedAssignment,
+    ...(settlement.storedLegacyCostUSD !== undefined ? { legacyCostUSD: settlement.storedLegacyCostUSD } : {}),
     isEstimated: call.isEstimated || undefined,
     speed: call.speed,
     timestamp: call.timestamp,
@@ -2545,16 +2601,69 @@ function providerCallsToCachedTurns(calls: ParsedProviderCall[]): CachedTurn[] {
   return turns
 }
 
-export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
+function currentCostForCachedCall(call: CachedCall): number {
   const u = call.usage
   const outputForCost = call.provider === 'claude'
     ? u.outputTokens
     : u.outputTokens + u.reasoningTokens
-  const costUSD = calculateCost(
+  return calculateCost(
     call.model, u.inputTokens, outputForCost,
     u.cacheCreationInputTokens, u.cacheReadInputTokens,
     u.webSearchRequests, call.speed, u.cacheCreationOneHourTokens,
   )
+}
+
+function settledCachedCall(call: CachedCall) {
+  return assignRuntimeCostV1({
+    provider: call.provider,
+    model: call.model,
+    modelProvider: call.modelProvider,
+    timestamp: call.timestamp,
+    speed: call.speed,
+    usage: call.usage,
+    legacyCostUSD: call.legacyCostUSD ?? call.costUSD ?? currentCostForCachedCall(call),
+    isEstimated: call.isEstimated,
+    existingAssignment: call.costAssignment,
+    existingStoredCostUSD: call.costUSD,
+    existingLegacyCostUSD: call.legacyCostUSD,
+  })
+}
+
+export function settleSessionCacheCostsForRuntimeV1(cache: SessionCache): boolean {
+  let changed = false
+  for (const section of Object.values(cache.providers)) {
+    for (const file of Object.values(section.files)) {
+      for (const turn of file.turns) {
+        for (const call of turn.calls) {
+          const settlement = settledCachedCall(call)
+          const nextCost = settlement.storedCostUSD
+          if (nextCost === undefined) {
+            if (call.costUSD !== undefined) { delete call.costUSD; changed = true }
+          } else if (call.costUSD !== nextCost) {
+            call.costUSD = nextCost
+            changed = true
+          }
+          const nextAssignment = JSON.stringify(settlement.storedAssignment)
+          if (JSON.stringify(call.costAssignment) !== nextAssignment) {
+            call.costAssignment = settlement.storedAssignment
+            changed = true
+          }
+          if (settlement.storedLegacyCostUSD === undefined) {
+            if (call.legacyCostUSD !== undefined) { delete call.legacyCostUSD; changed = true }
+          } else if (call.legacyCostUSD !== settlement.storedLegacyCostUSD) {
+            call.legacyCostUSD = settlement.storedLegacyCostUSD
+            changed = true
+          }
+        }
+      }
+    }
+  }
+  return changed
+}
+
+export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
+  const u = call.usage
+  const settlement = settledCachedCall(call)
   return applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
@@ -2572,7 +2681,8 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
       reasoningTokens: u.reasoningTokens,
       webSearchRequests: u.webSearchRequests,
     },
-    costUSD: call.costUSD ?? costUSD,
+    costUSD: settlement.runtimeCostUSD,
+    costAssignment: settlement.runtimeAssignment,
     isEstimated: call.isEstimated,
     tools: call.tools,
     mcpTools: extractMcpTools(call.tools),
@@ -3157,7 +3267,7 @@ function cacheKey(dateRange?: DateRange, providerFilter?: string): string {
   const claudeEnv = (process.env['CLAUDE_CONFIG_DIRS'] ?? '') + '|' + (process.env['CLAUDE_CONFIG_DIR'] ?? '')
   // Proxy attribution (totalProxiedCostUSD) is computed live from proxyPaths and
   // then cached, so the key must change when that config changes.
-  return `${s}:${providerFilter ?? 'all'}:${claudeEnv}:${getProxyPathsConfigHash()}`
+  return `${s}:${providerFilter ?? 'all'}:${claudeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
 }
 
 export function clearSessionCache(): void {
@@ -3574,6 +3684,10 @@ export function isSessionHydrationComplete(): boolean {
 }
 
 export async function parseAllSessions(dateRange?: DateRange, providerFilter?: string): Promise<ProjectSummary[]> {
+  return withRuntimeHistoricalPricingV1(() => parseAllSessionsWithHistoricalContext(dateRange, providerFilter))
+}
+
+async function parseAllSessionsWithHistoricalContext(dateRange?: DateRange, providerFilter?: string): Promise<ProjectSummary[]> {
   const key = cacheKey(dateRange, providerFilter)
   const cached = sessionCache.get(key)
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data
@@ -3727,6 +3841,12 @@ async function runParse(
     if (!section.durable && !DURABLE_PROVIDER_NAMES.has(providerName)) continue
     const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly)
     otherProjects.push(...projects)
+  }
+
+  // Every published v8 call carries an explicit valuation basis. This also
+  // settles carried v7 PR/durable orphans that can no longer be re-parsed.
+  if (!readOnly && settleSessionCacheCostsForRuntimeV1(diskCache)) {
+    ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
   // The full scan reached the end: this cache is now complete. Mark it and

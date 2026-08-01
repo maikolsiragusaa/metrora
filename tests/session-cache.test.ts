@@ -162,6 +162,77 @@ describe('loadCache / saveCache', () => {
     expect(calls?.[1]?.isEstimated).toBeUndefined()
   })
 
+  it('round-trips settled and unavailable cost assignments without conflating zero', async () => {
+    const cache: SessionCache = {
+      version: CACHE_VERSION,
+      providers: {
+        codex: {
+          envFingerprint: 'pricing-v8',
+          files: {
+            '/path/to/costs.jsonl': makeCachedFile({
+              turns: [makeTurn({ calls: [
+                makeCall({
+                  deduplicationKey: 'priced',
+                  costUSD: 0.32,
+                  legacyCostUSD: 1.6,
+                  costAssignment: {
+                    version: 1,
+                    kind: 'token-price',
+                    amountMicrosUsd: 320_000,
+                    priceRecordId: 'openai:gpt-5.6-luna:standard:litellm-f1b781d',
+                    priceOrigin: 'reviewed-book',
+                    rateSelection: { kind: 'base' },
+                  },
+                }),
+                makeCall({
+                  deduplicationKey: 'unknown',
+                  costUSD: undefined,
+                  costAssignment: { version: 1, kind: 'unavailable', reason: 'no-price-record' },
+                }),
+              ] })],
+            }),
+          },
+        },
+      },
+    }
+
+    await saveCache(cache)
+    const calls = (await loadCache()).providers['codex']?.files['/path/to/costs.jsonl']?.turns[0]?.calls
+    expect(calls?.[0]?.costAssignment?.kind).toBe('token-price')
+    expect(calls?.[0]?.legacyCostUSD).toBe(1.6)
+    expect(calls?.[1]?.costUSD).toBeUndefined()
+    expect(calls?.[1]?.costAssignment?.kind).toBe('unavailable')
+  })
+
+  it('fails closed when a settled assignment disagrees with cached cost', async () => {
+    await mkdir(TMP_DIR, { recursive: true })
+    const invalid = {
+      version: CACHE_VERSION,
+      providers: {
+        codex: {
+          envFingerprint: 'pricing-v8',
+          files: {
+            '/path/to/bad.jsonl': makeCachedFile({
+              turns: [makeTurn({ calls: [makeCall({
+                costUSD: 0.31,
+                costAssignment: {
+                  version: 1,
+                  kind: 'token-price',
+                  amountMicrosUsd: 320_000,
+                  priceRecordId: 'record',
+                  priceOrigin: 'reviewed-book',
+                  rateSelection: { kind: 'base' },
+                },
+              })] })],
+            }),
+          },
+        },
+      },
+    }
+    await writeFile(sessionCachePath(), JSON.stringify(invalid))
+    expect((await loadCache()).providers).toEqual({})
+  })
+
   it('returns empty cache on version mismatch', async () => {
     const bad: SessionCache = { version: 999, providers: { claude: { envFingerprint: 'x', files: {} } } }
     await mkdir(TMP_DIR, { recursive: true })

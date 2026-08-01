@@ -595,6 +595,14 @@ function getCanonicalName(model: string): string {
     .replace(/^[^/]+\//, '') // strip provider prefix: anthropic/foo -> foo
 }
 
+/// Internal pricing key only. Observed model labels remain unchanged in every
+/// report and cache record; this helper applies the same alias/canonicalization
+/// path as the current-price registry so the historical book can resolve an
+/// exact reviewed key without renaming user-visible usage.
+export function getHistoricalPricingModelKey(model: string): string {
+  return resolveAlias(getCanonicalName(model))
+}
+
 function stripKnownPricingVariantSuffix(model: string): string | null {
   const withoutColonSuffix = model.replace(/:(thinking|cloud)$/i, '')
   if (withoutColonSuffix !== model) return withoutColonSuffix
@@ -742,6 +750,18 @@ export function isExpectedFreeModel(model: string): boolean {
   const costs = getModelCosts(model)
   if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return true
   return false
+}
+
+/// Evidence strong enough to classify a zero value as intentional at the
+/// per-call pricing boundary. A local-savings mapping is deliberately excluded:
+/// that mapping is a presentation/accounting overlay whose API-equivalent
+/// baseline remains separately priced and may change without rewriting settled
+/// history.
+export function explicitZeroReasonForModel(model: string): 'local-inference' | 'manual-reviewed' | undefined {
+  if (looksLikeLocalModel(model)) return 'local-inference'
+  const costs = getModelCosts(model)
+  if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return 'manual-reviewed'
+  return undefined
 }
 
 export function findUnpricedModels(

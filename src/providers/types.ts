@@ -1,5 +1,6 @@
 import type { DateRange, ToolCall } from '../types.js'
 import type { ReasoningLevel, ReasoningLevelSource } from '../reasoning-level.js'
+import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 
 export type SessionSource = {
   path: string
@@ -37,6 +38,9 @@ export type ParsedProviderCall = {
   webSearchRequests: number
   costUSD: number
   costIsEstimated?: boolean
+  /// Optional source-bound valuation evidence. Existing collectors may omit it;
+  /// the runtime boundary then classifies exact metered sources conservatively.
+  costAssignment?: CostAssignmentV1
   tools: string[]
   bashCommands: string[]
   // Subagent types spawned in this call (e.g. 'general-purpose'). Feeds the

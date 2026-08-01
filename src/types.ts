@@ -1,4 +1,5 @@
 import type { ReasoningLevel, ReasoningLevelSource, ReasoningMix } from './reasoning-level.js'
+import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
 
 export type TokenUsage = {
   inputTokens: number
@@ -118,6 +119,10 @@ export type ParsedApiCall = {
   reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage
   costUSD: number
+  /// Immutable evidence for this call's API-equivalent valuation. An
+  /// `unavailable` assignment deliberately coexists with display cost 0 without
+  /// claiming that zero is intentional.
+  costAssignment?: CostAssignmentV1
   tools: string[]
   mcpTools: string[]
   skills: string[]
