@@ -4,7 +4,7 @@ import type { ParsedApiCall } from '../types.js'
 import {
   defaultMetroraDataDir,
   LocalEndpointIdentityMetadataV1Schema,
-  type LocalEndpointIdentityMetadataV1,
+  type LoadedLocalEndpointIdentityV1,
 } from './endpoint-identity.js'
 import {
   produceLocalReviewedMeasurementV1,
@@ -47,8 +47,7 @@ export type CanonicalReviewedProductionSummaryV1 = z.infer<typeof CanonicalRevie
 
 export type ProduceCanonicalReviewedMeasurementsV1Options = {
   dataDir?: string
-  endpointIdentity: LocalEndpointIdentityMetadataV1
-  eventIdentityKey: Uint8Array
+  identity: LoadedLocalEndpointIdentityV1
   scanCanonicalCandidates(): Promise<CanonicalReviewedProductionScanV1>
   now?: () => Date
 }
@@ -75,7 +74,7 @@ function pausedSummary(): CanonicalReviewedProductionSummaryV1 {
 export async function produceCanonicalReviewedMeasurementsV1(
   input: ProduceCanonicalReviewedMeasurementsV1Options,
 ): Promise<CanonicalReviewedProductionSummaryV1> {
-  const endpointIdentity = LocalEndpointIdentityMetadataV1Schema.parse(input.endpointIdentity)
+  const endpointIdentity = LocalEndpointIdentityMetadataV1Schema.parse(input.identity.metadata)
   const dataDir = input.dataDir ?? defaultMetroraDataDir()
   const now = input.now ?? (() => new Date())
 
@@ -98,14 +97,18 @@ export async function produceCanonicalReviewedMeasurementsV1(
     for (const candidate of scan.candidates) {
       const result = await produceLocalReviewedMeasurementV1({
         dataDir,
-        endpointIdentity,
-        eventIdentityKey: input.eventIdentityKey,
+        identity: input.identity,
         call: candidate.call,
         context: candidate.context,
         now,
       })
-      if (result.outcome === 'produced') producedCount += 1
-      else existingCount += 1
+      if (result.status === 'enqueued') {
+        producedCount += 1
+      } else if (result.status === 'duplicate') {
+        existingCount += 1
+      } else {
+        throw new Error(`trusted canonical production candidate was withheld: ${result.reason}`)
+      }
     }
 
     return CanonicalReviewedProductionSummaryV1Schema.parse({
