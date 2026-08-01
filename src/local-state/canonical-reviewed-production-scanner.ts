@@ -6,6 +6,7 @@ import { collectorProvenanceProfileForCall } from '../contracts/v1/collector-pro
 import { OpaqueIdSchema } from '../contracts/v1/common.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { cachedCallToApiCall, clearSessionCache, parseAllSessions } from '../parser.js'
+import { readCodexSessionModelProvider } from '../providers/codex-model-provider.js'
 import { getProvider } from '../providers/index.js'
 import {
   isCacheComplete,
@@ -32,6 +33,7 @@ export type CanonicalReviewedProductionScannerDependenciesV1 = {
   loadCanonicalCache(): Promise<SessionCache>
   sourceExists(path: string): boolean
   providerDisplayName(provider: string): Promise<string | undefined>
+  codexModelProvider(path: string): Promise<string | undefined>
 }
 
 export class CanonicalReviewedProductionScannerIntegrityError extends Error {
@@ -96,6 +98,7 @@ function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1
     loadCanonicalCache: loadCache,
     sourceExists: existsSync,
     providerDisplayName: async provider => (await getProvider(provider))?.displayName,
+    codexModelProvider: readCodexSessionModelProvider,
   }
 }
 
@@ -140,6 +143,14 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
         continue
       }
 
+      const codexSourceProvider = sectionProvider === 'codex'
+        ? normalizeExplicitModelProvider(await dependencies.codexModelProvider(sourcePath))
+        : undefined
+      if (sectionProvider === 'codex' && !codexSourceProvider) {
+        withheldCount += callCount(file)
+        continue
+      }
+
       for (const turn of file.turns) {
         for (const cachedCall of turn.calls) {
           if (cachedCall.provider !== sectionProvider) {
@@ -153,8 +164,21 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
             )
           }
 
-          const call = canonicalApiCall(cachedCall)
-          const explicitProvider = normalizeExplicitModelProvider(call.modelProvider)
+          let call = canonicalApiCall(cachedCall)
+          let explicitProvider = normalizeExplicitModelProvider(call.modelProvider)
+
+          if (sectionProvider === 'codex' && codexSourceProvider) {
+            if (explicitProvider && explicitProvider !== codexSourceProvider) {
+              throw new CanonicalReviewedProductionScannerIntegrityError(
+                'canonical Codex call provider disagrees with source metadata',
+              )
+            }
+            if (!call.modelProvider) {
+              call = { ...call, modelProvider: codexSourceProvider }
+              explicitProvider = codexSourceProvider
+            }
+          }
+
           const profile = collectorProvenanceProfileForCall(call)
           if (!displayName || !explicitProvider || explicitProvider !== call.modelProvider || !profile) {
             withheldCount += 1
