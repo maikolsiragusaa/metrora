@@ -122,8 +122,31 @@ function eventDigest(event: UsageMeasurementEventV1): string {
 }
 
 function semanticEventDigest(event: UsageMeasurementEventV1): string {
-  const { id: _eventId, ...withoutRotatingId } = event
-  return sha256(canonicalJson(withoutRotatingId))
+  const {
+    id: _eventId,
+    data: {
+      collector: {
+        adapterVersion: _adapterVersion,
+        ...collectorWithoutReleaseVersion
+      },
+      ...dataWithoutCollector
+    },
+    ...eventWithoutRotatingIdAndData
+  } = event
+
+  // The endpoint HMAC key and the Metrora release may rotate while the source
+  // measurement remains identical. Both public event ID and adapterVersion are
+  // therefore excluded from the private receipt's semantic collision check.
+  // Evidence profile, source kind/fingerprint, token/cost facts, scope,
+  // provider/model identity, disclosure and every other public field remain
+  // strictly bound.
+  return sha256(canonicalJson({
+    ...eventWithoutRotatingIdAndData,
+    data: {
+      ...dataWithoutCollector,
+      collector: collectorWithoutReleaseVersion,
+    },
+  }))
 }
 
 function eventFileName(eventId: string): string {
