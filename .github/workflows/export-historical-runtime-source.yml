@@ -5,6 +5,10 @@ on:
     branches: [feat/historical-runtime-v8]
     paths:
       - '.github/workflows/export-historical-runtime-source.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-historical-runtime-source.yml'
   workflow_dispatch:
 
 permissions:
