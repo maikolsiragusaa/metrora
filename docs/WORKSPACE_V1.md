@@ -1,6 +1,6 @@
 # Workspace v1
 
-**Status:** active product milestone; local state, reviewed production, signed batches, independent export, and the secure desktop runtime boundary are implemented. The focused desktop view and exact analytics reconciliation remain.
+**Status:** active product milestone; local state, reviewed production, signed batches, independent export, the secure desktop runtime boundary, and the focused desktop Workspace view are implemented. Explicit reviewed-production and lifecycle controls remain before the complete W1.D experience is closed.
 
 Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns the existing public contracts, endpoint identity, reviewed measurements, outbox, signed batches, and user-owned evidence export into one understandable local workspace experience.
 
@@ -12,9 +12,9 @@ A person can:
 
 1. create a personal workspace on the current computer;
 2. see that computer enrolled as the first endpoint;
-3. understand which structured usage evidence is eligible for the workspace;
-4. generate durable reviewed measurements and signed batches without duplicating calls;
-5. inspect workspace usage, endpoint status, evidence coverage, and synchronization readiness in the desktop application;
+3. understand the local privacy boundary and current reviewed-evidence state;
+4. generate durable reviewed measurements through the existing explicit producer and create signed batches without duplicating calls;
+5. inspect workspace identity, endpoint status, evidence counts, pricing coverage, and canonical scoped usage in the desktop application;
 6. export a verifiable workspace package before any cloud synchronization exists.
 
 The ordinary local analytics experience remains available without creating a workspace.
@@ -79,24 +79,29 @@ The export and verification contract is documented in `docs/WORKSPACE_EVIDENCE_E
 - native export paths remain inside the main process and the renderer receives only the filename and verification summary;
 - raw exceptions, private paths, and secret material never cross IPC.
 
-The runtime contract is documented in `docs/DESKTOP_WORKSPACE_RUNTIME_V1.md`.
+### 5. Focused desktop Workspace view — implemented
 
-### 5. Focused desktop Workspace view — next tranche
-
-The first desktop view must show:
+The first desktop view shows:
 
 - workspace name and local-only status;
-- owner membership;
-- enrolled endpoint and identity health;
-- reviewed evidence and signed-batch state;
-- usage totals read from the same canonical Overview payload and active period/filter scope used by the rest of the desktop;
-- provenance and coverage summary;
-- clear explanation of what would and would not be shared;
-- explicit creation, batching, export, and recovery actions.
+- active owner role;
+- enrolled endpoint, identity generation, public fingerprint, platform, and software versions;
+- reviewed evidence and signed-batch counts, state, quarantine, and blockers;
+- usage totals read from the same canonical Overview payload and active period/provider/range/config scope used by the rest of the desktop;
+- pricing coverage from that same payload;
+- a clear explanation of what is excluded from export;
+- explicit workspace creation, status refresh, signed-batch creation, and evidence export actions;
+- fail-closed unsupported-platform and unavailable-vault states.
 
-The Workspace runtime does not calculate analytics totals. The renderer must reuse the existing desktop analytics read model so calls, sessions, token dimensions, costs, models, sources, projects, filters, and periods reconcile by construction.
+The Workspace runtime does not calculate analytics totals. `workspaceUsageFromOverview()` copies only the existing Overview fields displayed by the screen, so calls, sessions, token dimensions, costs, pricing coverage, filters, and periods reconcile by construction.
 
-The UI must not show empty enterprise concepts, invite flows, billing, cloud synchronization, Advisor, or Bench before they exist.
+Opening the Workspace screen never scans, produces measurements, signs, exports, uploads, or publishes automatically. The view does not show empty enterprise concepts, invite flows, billing, cloud synchronization, Advisor, or Bench.
+
+The runtime and renderer contract is documented in `docs/DESKTOP_WORKSPACE_RUNTIME_V1.md`.
+
+### 6. Explicit production and lifecycle controls — remaining
+
+The focused view does not yet expose the existing reviewed-measurement producer or a complete pause/recovery lifecycle. Those controls must remain explicit, bounded, and main-process owned. They must not create a second scan, analytics, pricing, or persistence path and must not imply hosted synchronization.
 
 ## Privacy boundary
 
