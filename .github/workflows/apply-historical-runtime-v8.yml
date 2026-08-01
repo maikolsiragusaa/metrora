@@ -1,0 +1,53 @@
+name: Apply historical runtime v8
+
+on:
+  push:
+    branches: [feat/historical-runtime-v8]
+    paths:
+      - '.github/workflows/apply-historical-runtime-v8.yml'
+      - '.metrora-staging/historical-runtime.patch.gz.b64'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-historical-runtime-v8
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/historical-runtime-v8
+          fetch-depth: 0
+      - name: Apply verified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .metrora-staging/historical-runtime.patch.gz.b64 | gzip --decompress > /tmp/historical-runtime.patch
+          echo '65058173423e92d5d25f592061a807957b02ac313c3e1d766e719a64a60384bd  /tmp/historical-runtime.patch' | sha256sum --check --strict
+          git apply --check /tmp/historical-runtime.patch
+          git apply /tmp/historical-runtime.patch
+
+          # Workflow files require a token scope unavailable to Actions. Keep the
+          # focused CI-list edit out of the bot commit; the authenticated GitHub
+          # connector applies that one-line change after this commit lands.
+          git restore --source=HEAD --staged --worktree .github/workflows/ci.yml
+          rm -f .metrora-staging/historical-runtime.patch.gz.b64
+          node scripts/check-brand-boundary.mjs
+          git diff --check
+      - name: Commit runtime integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests
+          git add -u .metrora-staging
+          git commit -m 'feat: activate historical per-call cost assignments'
+          git push origin HEAD:feat/historical-runtime-v8
