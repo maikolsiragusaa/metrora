@@ -73,7 +73,7 @@ export type DoctorReport = {
   providers: DoctorProviderReport[]
   /// Present when the Claude provider is in the report and a config dir was
   /// found. Surfaced because deleted transcripts are unrecoverable: daily
-  /// totals survive in CodeBurn's cache, but per-session detail does not.
+  /// totals survive in Metrora's cache, but per-session detail does not.
   claudeRetention?: ClaudeRetentionNote
 }
 
@@ -99,7 +99,7 @@ const PARSE_CALL_CAP = 500
 // (readdir/stat only) still runs, so session counts stay meaningful.
 const PARSE_SPAWNS = new Set(['antigravity'])
 
-// CodeBurn's own cache location: listed in PROVIDER_ENV_VARS for cache
+// Metrora's own cache location: listed in PROVIDER_ENV_VARS for cache
 // fingerprinting, but it is not a discovery path, so it must never be blamed
 // in a NOTHING FOUND hint.
 const NON_DISCOVERY_ENV_VARS = new Set(['CODEBURN_CACHE_DIR'])
@@ -313,7 +313,7 @@ export async function collectDoctorReport(
 
 // Claude Code's documented default when cleanupPeriodDays is absent.
 const CLAUDE_DEFAULT_CLEANUP_DAYS = 30
-// Below this, long-horizon views depend entirely on CodeBurn's daily cache;
+// Below this, long-horizon views depend entirely on Metrora's daily cache;
 // the doctor line turns into a warning.
 const CLAUDE_RETENTION_WARN_DAYS = 365
 
@@ -355,7 +355,7 @@ export function renderDoctorTable(
   const out: string[] = []
 
   const n = report.providers.length
-  out.push(c.bold('CodeBurn doctor') + c.dim(`   ${n} provider${n === 1 ? '' : 's'}   ${report.generatedAt.slice(0, 19).replace('T', ' ')} UTC`))
+  out.push(c.bold('Metrora doctor') + c.dim(`   ${n} provider${n === 1 ? '' : 's'}   ${report.generatedAt.slice(0, 19).replace('T', ' ')} UTC`))
   out.push('')
 
   const colorVerdict = (r: DoctorProviderReport): string => {
@@ -423,7 +423,7 @@ export function renderDoctorTable(
     if (r.effectiveDays < CLAUDE_RETENTION_WARN_DAYS) {
       out.push(
         c.yellow(line) + ' ' +
-        `Daily totals survive in CodeBurn's cache, but per-session detail older than that is gone for good. ` +
+        `Daily totals survive in Metrora's cache, but per-session detail older than that is gone for good. ` +
         `To keep it, set "cleanupPeriodDays": 3650 in ${r.settingsPath}.`,
       )
     } else {

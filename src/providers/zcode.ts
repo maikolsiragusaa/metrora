@@ -105,7 +105,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         db = openDatabase(dbPath)
       } catch (err) {
         process.stderr.write(
-          `codeburn: cannot open ZCode database: ${err instanceof Error ? err.message : err}\n`,
+          `metrora: cannot open ZCode database: ${err instanceof Error ? err.message : err}\n`,
         )
         return
       }

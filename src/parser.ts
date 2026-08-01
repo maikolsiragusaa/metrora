@@ -1142,7 +1142,7 @@ function extractClaudeCacheCreation(usage: {
 }
 
 /// Apply local-model savings accounting to a call. If the raw model name is
-/// mapped via `codeburn model-savings`, the call's actual cost is forced
+/// mapped via `metrora model-savings`, the call's actual cost is forced
 /// to $0 and the hypothetical baseline cost is recorded as `savingsUSD`.
 /// Returns the input unchanged when no mapping is configured for the
 /// model — keeps the hot path branch-free for the common paid-only case.
@@ -2721,7 +2721,7 @@ function warnProviderReadFailureOnce(providerName: string, err: unknown): void {
   warnedProviderReadFailures.add(key)
   if (isSqliteBusyError(err)) {
     process.stderr.write(
-      `codeburn: skipped ${providerName} data because its SQLite database is temporarily locked; will retry on the next refresh.\n`
+      `metrora: skipped ${providerName} data because its SQLite database is temporarily locked; will retry on the next refresh.\n`
     )
   }
 }
@@ -2742,7 +2742,7 @@ function warnProviderParseFailure(providerName: string, sourcePath: string, err:
     ? ` (further ${providerName} parse failures this run are suppressed)`
     : ''
   process.stderr.write(
-    `codeburn: skipped ${providerName} session that failed to parse: ${sourcePath} (${msg})${tail}\n`
+    `metrora: skipped ${providerName} session that failed to parse: ${sourcePath} (${msg})${tail}\n`
   )
 }
 
@@ -2825,7 +2825,7 @@ export function createScanProgress(label: string, total: number) {
       const now = Date.now()
       if (done !== total && now - lastWrite < 100) return
       lastWrite = now
-      process.stderr.write(`\rcodeburn: ${label} ${done}/${total}…`)
+      process.stderr.write(`\rmetrora: ${label} ${done}/${total}…`)
     },
     finish(): void {
       if (!show) return
@@ -3688,7 +3688,7 @@ async function runParse(
     if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
   } catch (err) {
     if (!isPermissionError(err)) throw err
-    process.stderr.write(`codeburn: skipped claude data (permission denied; grant Full Disk Access to include it)\n`)
+    process.stderr.write(`metrora: skipped claude data (permission denied; grant Full Disk Access to include it)\n`)
     emitScanProgress({ kind: 'provider', provider: 'claude', state: 'skipped' })
   }
 
@@ -3703,7 +3703,7 @@ async function runParse(
       // A permission-locked provider skips-and-continues; any other error is a
       // real bug and still aborts (per-file/DB-lock cases are handled deeper).
       if (!isPermissionError(err)) throw err
-      process.stderr.write(`codeburn: skipped ${providerName} data (permission denied; grant Full Disk Access to include it)\n`)
+      process.stderr.write(`metrora: skipped ${providerName} data (permission denied; grant Full Disk Access to include it)\n`)
       emitScanProgress({ kind: 'provider', provider: providerName, state: 'skipped' })
     }
     await saveProgress()

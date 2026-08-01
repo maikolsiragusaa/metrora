@@ -434,7 +434,7 @@ function createParser(
         if (!parsed.recognized) {
           if (!warnedUnrecognizedTranscripts.has(source.path)) {
             warnedUnrecognizedTranscripts.add(source.path)
-            process.stderr.write(`codeburn: skipped ${basename(source.path)}: unrecognized cursor-agent transcript format\n`)
+            process.stderr.write(`metrora: skipped ${basename(source.path)}: unrecognized cursor-agent transcript format\n`)
           }
           return
         }

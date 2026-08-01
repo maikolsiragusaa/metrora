@@ -26,7 +26,7 @@ function readConfig(home: string): Promise<Record<string, unknown>> {
     .then(raw => JSON.parse(raw) as Record<string, unknown>)
 }
 
-describe('codeburn model-savings command', () => {
+describe('metrora model-savings command', () => {
   it('saves, lists, and removes a local-model savings mapping', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-savings-'))
     try {

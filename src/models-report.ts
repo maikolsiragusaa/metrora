@@ -306,7 +306,7 @@ function defaultColumns(byTask: boolean, byAgent: boolean, showSaved: boolean): 
   // Higher priority numbers drop FIRST when the terminal is narrow.
   // Cache columns are the cheapest to lose, then input/output, then top-task.
   // Provider/Model/Total/Cost stay regardless. The Saved column only appears
-  // when local-model savings actually exist (a `codeburn model-savings`
+  // when local-model savings actually exist (a `metrora model-savings`
   // mapping produced nonzero avoided spend); otherwise it would be a column of
   // dashes for the majority of users, so it is omitted entirely.
   // Widths are MINIMUMS; sizeColumnsToContent() expands them to fit cell text.

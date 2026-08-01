@@ -52,7 +52,7 @@ export function toPeriod(s: string): Period {
     // like `-p mounth` produced a quiet 7-day report and the user thought
     // they were viewing the month.
     process.stderr.write(
-      `codeburn: unknown period "${s}". Valid values: ${VALID_PERIODS.join(', ')}.\n`
+      `metrora: unknown period "${s}". Valid values: ${VALID_PERIODS.join(', ')}.\n`
     )
     process.exit(1)
   }
@@ -192,7 +192,7 @@ export function getDateRange(period: string): { range: DateRange; label: string 
     }
     default: {
       process.stderr.write(
-        `codeburn: unknown period "${period}". Valid values: today, week, 30days, month, all, lifetime.\n`
+        `metrora: unknown period "${period}". Valid values: today, week, 30days, month, all, lifetime.\n`
       )
       process.exit(1)
     }

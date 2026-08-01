@@ -770,7 +770,7 @@ function shouldWarnAboutUnknownModel(name: string): boolean {
   if (warnedUnknownModels.has(name)) return false
   // Suppress for local/quantized models — the "update codeburn" hint is
   // actively misleading there. Users who need cost visibility for local
-  // inference can still set an alias via `codeburn model-alias`.
+  // inference can still set an alias via `metrora model-alias`.
   if (looksLikeLocalModel(name)) return false
   // The warning fired on every CLI invocation (including the default
   // dashboard) which made first launches look broken — three "no pricing
@@ -799,10 +799,10 @@ export function calculateCost(
       // payloads written by external tools, so a hostile or corrupt file
       // could embed terminal escape sequences here.
       const safeName = model.replace(/[\x00-\x1F\x7F-\x9F]/g, '?').slice(0, 200)
-      const aliasHint = `Map it with: codeburn model-alias "${safeName}" <known-model>, or track local-model savings with: codeburn model-savings "${safeName}" <baseline-model>`
+      const aliasHint = `Map it with: metrora model-alias "${safeName}" <known-model>, or track local-model savings with: metrora model-savings "${safeName}" <baseline-model>`
       process.stderr.write(
-        `codeburn: no pricing data for model "${safeName}" — costs for this model will show $0. ` +
-        `${aliasHint}, or update with: npx codeburn@latest.\n`
+        `metrora: no pricing data for model "${safeName}" — costs for this model will show $0. ` +
+        `${aliasHint}, or update with: npx metrora@latest.\n`
       )
     }
     return 0

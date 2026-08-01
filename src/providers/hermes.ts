@@ -296,7 +296,7 @@ async function discoverFromDb(dbPath: string, profile: string): Promise<SessionS
     }))
   } catch (err) {
     if (isSqliteBusyError(err)) throw err
-    process.stderr.write(`codeburn: error querying Hermes database: ${err instanceof Error ? err.message : err}\n`)
+    process.stderr.write(`metrora: error querying Hermes database: ${err instanceof Error ? err.message : err}\n`)
     return []
   } finally {
     db.close()
@@ -319,7 +319,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
       try {
         db = openDatabase(decoded.dbPath)
       } catch (err) {
-        process.stderr.write(`codeburn: cannot open Hermes database: ${err instanceof Error ? err.message : err}\n`)
+        process.stderr.write(`metrora: cannot open Hermes database: ${err instanceof Error ? err.message : err}\n`)
         return
       }
 
@@ -437,7 +437,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         // A transient lock on the live state.db must propagate so the caller
         // retries, not get swallowed into an empty (negatively cached) result.
         if (isSqliteBusyError(err)) throw err
-        process.stderr.write(`codeburn: error querying Hermes database: ${err instanceof Error ? err.message : err}\n`)
+        process.stderr.write(`metrora: error querying Hermes database: ${err instanceof Error ? err.message : err}\n`)
         return
       } finally {
         db.close()

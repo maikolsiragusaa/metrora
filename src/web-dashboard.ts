@@ -398,7 +398,7 @@ export async function runWebDashboard(opts: {
   if (!dashDir) {
     process.stdout.write(`\n  Dashboard UI is not built. Run: cd dash && npm install && npm run build\n`)
   }
-  process.stdout.write(`\n  CodeBurn dashboard at ${url}\n  Press Ctrl+C to stop.\n\n`)
+  process.stdout.write(`\n  Metrora dashboard at ${url}\n  Press Ctrl+C to stop.\n\n`)
   if (opts.open) openBrowser(url)
 
   // Withdraw the mDNS advertisement and close the share server cleanly on exit.

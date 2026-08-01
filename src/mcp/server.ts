@@ -15,7 +15,7 @@ const periodSchema = z.enum(['today', 'last_7_days', 'last_30_days', 'month_to_d
 type Aggregate = (periodInfo: PeriodInfo, opts: { provider?: string; optimize?: boolean }) => Promise<MenubarPayload>
 
 const INSTRUCTIONS =
-  'CodeBurn exposes local AI-coding spend data. Use get_usage for spend/usage and breakdowns (fast); ' +
+  'Metrora exposes local AI-coding spend data. Use get_usage for spend/usage and breakdowns (fast); ' +
   'use get_savings to find cost reductions (slower — runs a deeper analysis). Project names are pseudonymized ' +
   'unless include_project_names is true. All data is read locally from this machine; last_6_months is the widest ' +
   'window. Numbers reflect the most recent scan and may lag the current session by up to a few minutes.'
@@ -47,7 +47,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
   server.registerTool(
     'get_usage',
     {
-      title: 'CodeBurn — usage & cost',
+      title: 'Metrora — usage & cost',
       description:
         'Show AI coding token spend and usage for a period. Omit `by` for a headline summary; set `by` to break ' +
         'it down by project, model, task, or provider (Claude Code / Cursor / Codex). Fast. Local to this machine.',
@@ -63,7 +63,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
         totals: z.object({ costUSD: z.number(), estimatedCostUSD: z.number(), calls: z.number(), sessions: z.number(), cacheHitPercent: z.number(), oneShotRate: z.number().nullable() }),
         breakdown: z.array(z.object({ name: z.string(), costUSD: z.number(), estimatedCostUSD: z.number().optional() })).nullable(),
       },
-      annotations: { title: 'CodeBurn — usage & cost', readOnlyHint: true, openWorldHint: false, idempotentHint: true },
+      annotations: { title: 'Metrora — usage & cost', readOnlyHint: true, openWorldHint: false, idempotentHint: true },
     },
     async ({ period, by, limit, include_project_names }) => {
       try {
@@ -84,7 +84,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
         }
       } catch (err) {
         return {
-          content: [{ type: 'text' as const, text: `codeburn: failed to read usage — ${err instanceof Error ? err.message : String(err)}` }],
+          content: [{ type: 'text' as const, text: `metrora: failed to read usage — ${err instanceof Error ? err.message : String(err)}` }],
           structuredContent: { period: 'unknown', empty: true, totals: { costUSD: 0, estimatedCostUSD: 0, calls: 0, sessions: 0, cacheHitPercent: 0, oneShotRate: null }, breakdown: null },
           isError: true,
         }
@@ -95,7 +95,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
   server.registerTool(
     'get_savings',
     {
-      title: 'CodeBurn — savings opportunities',
+      title: 'Metrora — savings opportunities',
       description:
         'Find ways to reduce AI coding cost for a period: optimization findings, retry tax (money spent re-doing ' +
         'work), and routing waste (what you would have saved on a cheaper model). Slower than get_usage.',
@@ -106,7 +106,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
         retryTaxUSD: z.number(),
         routingWasteUSD: z.number(),
       },
-      annotations: { title: 'CodeBurn — savings opportunities', readOnlyHint: true, openWorldHint: false, idempotentHint: true },
+      annotations: { title: 'Metrora — savings opportunities', readOnlyHint: true, openWorldHint: false, idempotentHint: true },
     },
     async ({ period, include_project_names }) => {
       try {
@@ -118,7 +118,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
         }
       } catch (err) {
         return {
-          content: [{ type: 'text' as const, text: `codeburn: failed to compute savings — ${err instanceof Error ? err.message : String(err)}` }],
+          content: [{ type: 'text' as const, text: `metrora: failed to compute savings — ${err instanceof Error ? err.message : String(err)}` }],
           structuredContent: { period: 'unknown', optimize: { findingCount: 0, savingsUSD: 0, topFindings: [] }, retryTaxUSD: 0, routingWasteUSD: 0 },
           isError: true,
         }

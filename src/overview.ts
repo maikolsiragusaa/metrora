@@ -108,7 +108,7 @@ export function renderOverview(
   const out: string[] = []
   const durable = opts.durable
 
-  out.push(c.bold('CodeBurn') + c.dim('  ' + opts.label))
+  out.push(c.bold('Metrora') + c.dim('  ' + opts.label))
   out.push('')
 
   if (projects.length === 0 && !(durable && durable.cost > 0)) {
@@ -221,7 +221,7 @@ export function renderOverview(
       .join(', ')
     const more = unpriced.length > 3 ? ` +${unpriced.length - 3} more` : ''
     out.push(kv('Unpriced', c.yellow(`${unpriced.length} model${unpriced.length === 1 ? '' : 's'} at $0: `) + shown + more))
-    out.push(kv('', c.dim('Fix: codeburn model-alias "<model>" <known-model>')))
+    out.push(kv('', c.dim('Fix: metrora model-alias "<model>" <known-model>')))
   }
   if (opts.budget) {
     const label = opts.budget.tier === 'daily'

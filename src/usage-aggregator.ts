@@ -102,7 +102,7 @@ async function hydrateCache(): Promise<DailyCache> {
     // longer reach here (they're isolated in parseProviderSources), so anything
     // that does is exceptional and worth surfacing.
     process.stderr.write(
-      `codeburn: daily history backfill failed; the trend chart may be incomplete. ` +
+      `metrora: daily history backfill failed; the trend chart may be incomplete. ` +
       `${err instanceof Error ? err.message : String(err)}\n`
     )
     return emptyCache()

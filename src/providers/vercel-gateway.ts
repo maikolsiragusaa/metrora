@@ -53,7 +53,7 @@ export async function fetchVercelGatewayReport(
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       process.stderr.write(
-        `codeburn: Vercel AI Gateway report failed (HTTP ${res.status}). ` +
+        `metrora: Vercel AI Gateway report failed (HTTP ${res.status}). ` +
           'Requires AI_GATEWAY_API_KEY or VERCEL_OIDC_TOKEN (Pro/Enterprise for /v1/report). ' +
           `${detail.slice(0, 200)}\n`,
       )
@@ -64,7 +64,7 @@ export async function fetchVercelGatewayReport(
     return body.results ?? []
   } catch (err) {
     process.stderr.write(
-      `codeburn: Vercel AI Gateway report unreachable (${err instanceof Error ? err.message : String(err)}).\n`,
+      `metrora: Vercel AI Gateway report unreachable (${err instanceof Error ? err.message : String(err)}).\n`,
     )
     return []
   }
