@@ -162,8 +162,18 @@ function locallyCalculatedCostMatches(
   return expectedMicros === actualMicros
 }
 
+function expectedMeteredSource(
+  profile: CollectorProvenanceProfileV1,
+): 'provider' | 'client' | 'billing-export' | undefined {
+  if (profile.facts.cost.basis === 'provider-metered') return 'provider'
+  if (profile.facts.cost.basis === 'client-metered') return 'client'
+  if (profile.facts.cost.basis === 'billing-export') return 'billing-export'
+  return undefined
+}
+
 function assignmentCostEvidence(
   call: ParsedApiCall,
+  profile: CollectorProvenanceProfileV1,
   assignmentValue: CostAssignmentV1 | unknown,
 ): MeasurementCostEvidenceV1 {
   const parsed = CostAssignmentV1Schema.safeParse(assignmentValue)
@@ -173,7 +183,18 @@ function assignmentCostEvidence(
   if (!costAssignmentMatchesUsdV1(assignment, call.costUSD)) return { kind: 'unavailable' }
 
   if (assignment.kind === 'metered') {
+    const expectedSource = expectedMeteredSource(profile)
+    if (expectedSource === undefined || expectedSource !== assignment.source) {
+      return { kind: 'unavailable' }
+    }
     return { kind: 'metered', source: assignment.source }
+  }
+
+  // A token-price, explicit-zero, or legacy-frozen assignment can explain only
+  // a profile reviewed as local token pricing. This prevents an assignment from
+  // laundering an incompatible collector path into a stronger public claim.
+  if (profile.facts.cost.basis !== 'local-token-pricing') {
+    return { kind: 'unavailable' }
   }
   if (assignment.kind === 'token-price') {
     return { kind: 'estimated', method: 'token-pricing' }
@@ -232,7 +253,7 @@ function resolveCostEvidence(
   // cost authority for public measurement projection. Current catalogs are not
   // allowed to re-validate or reinterpret settled historical amounts.
   if (call.costAssignment !== undefined) {
-    return assignmentCostEvidence(call, call.costAssignment)
+    return assignmentCostEvidence(call, profile, call.costAssignment)
   }
   if (options.costEvidenceMode === 'immutable-assignment') {
     return { kind: 'unavailable' }
