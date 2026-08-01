@@ -114,7 +114,7 @@ function recoveryLabel(summary: DesktopWorkspaceRecoverySummary): string {
 
 function showRecoveryToast(summary: DesktopWorkspaceRecoverySummary): void {
   if (summary.outcome === 'reconciled') {
-    showToast('Local Workspace state was reconciled through existing private receipts.')
+    showToast('Local Workspace state was reconciled through existing private receipts.', undefined)
     return
   }
   if (summary.outcome === 'blocked') {
