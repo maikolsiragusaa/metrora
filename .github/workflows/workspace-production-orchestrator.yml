@@ -64,7 +64,7 @@ jobs:
           src/local-state/workspace-production-lifecycle.test.ts
       - name: Run lifecycle, receipt, producer, and orchestrator gates
         run: >-
-          npm test -- --run --no-file-parallelism --testTimeout=15000
+          npx vitest --run --no-file-parallelism --testTimeout=15000
           src/local-state/workspace-production-lifecycle.test.ts
           src/local-state/measurement-production-receipt.test.ts
           src/local-state/reviewed-measurement-producer.test.ts
