@@ -120,12 +120,42 @@ jobs:
         # Desktop tests have their own blocking cross-platform job above.
         # Three files with named inherited quarantines are executed separately
         # below so every other test in those files remains blocking.
-        run: >-
-          npm test -- --run --no-file-parallelism
-          --exclude 'app/**'
-          --exclude 'tests/parser.test.ts'
-          --exclude 'tests/parser-incremental-append.test.ts'
-          --exclude 'tests/cli-durable-totals.test.ts'
+        shell: bash
+        run: |
+          set +e
+          npm test -- --run --no-file-parallelism \
+            --reporter=json --outputFile=vitest-ordinary.json \
+            --exclude 'app/**' \
+            --exclude 'tests/parser.test.ts' \
+            --exclude 'tests/parser-incremental-append.test.ts' \
+            --exclude 'tests/cli-durable-totals.test.ts'
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            node <<'NODE'
+          const fs = require('node:fs')
+          const report = JSON.parse(fs.readFileSync('vitest-ordinary.json', 'utf8'))
+          const failed = []
+          for (const file of report.testResults ?? []) {
+            const assertions = file.assertionResults ?? []
+            for (const assertion of assertions) {
+              if (assertion.status !== 'failed') continue
+              failed.push({
+                file: file.name ?? file.testFilePath ?? 'unknown file',
+                test: [...(assertion.ancestorTitles ?? []), assertion.title].filter(Boolean).join(' > '),
+                messages: assertion.failureMessages ?? [],
+              })
+            }
+          }
+          console.error(`Ordinary core gate failed: ${report.numFailedTestSuites ?? '?'} suite(s), ${report.numFailedTests ?? failed.length} test(s).`)
+          for (const item of failed) {
+            console.error(`\nFILE: ${item.file}\nTEST: ${item.test}`)
+            for (const message of item.messages) console.error(message)
+          }
+          if (failed.length === 0) console.error('No failed assertion was present in the JSON report.')
+          NODE
+            exit "$status"
+          fi
       - name: Run non-quarantined durable parser tests
         run: >-
           npm test -- --run --no-file-parallelism tests/parser.test.ts
