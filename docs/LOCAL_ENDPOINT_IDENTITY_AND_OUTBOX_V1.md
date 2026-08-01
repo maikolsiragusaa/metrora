@@ -131,6 +131,8 @@ The event ID is HMAC-derived and intentionally changes after event-key rotation.
 
 The raw private deduplication key is never stored. The production receipt contains the digest, the semantic event digest excluding the rotating public event ID, and the original immutable outbox record.
 
+The semantic comparison also excludes the Metrora adapter release version. A normal application upgrade is not a new measurement. Evidence profile, source identity, scope, disclosure, provider/model facts, token facts and cost remain bound.
+
 The receipt is published before the public event file. Therefore:
 
 - an interruption between receipt and event publication can be repaired;
@@ -144,9 +146,9 @@ The counter is atomically advanced before an event is published. A crash may lea
 
 ### Event digest
 
-The outbox still uses the narrow `metrora-sorted-json-v1` digest for local event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
+The outbox still uses the narrow Metrora local v1 canonicalization contract for event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
 
-The frozen public/local v1 field currently carries the earlier literal `qovrion-sorted-json-v1`; changing an already-issued identifier requires a future contract version rather than an in-place rename.
+The frozen v1 identifier retains its historical value. Changing an already-issued identifier requires a future contract version rather than an in-place rename.
 
 ## Signed measurement batches
 
