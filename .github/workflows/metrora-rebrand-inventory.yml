@@ -31,7 +31,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat scripts/rebrand/apply/part-* | base64 -d | gzip -d > /tmp/metrora.patch
+          parts=(
+            scripts/rebrand/apply/part-00
+            scripts/rebrand/apply/part-01
+            scripts/rebrand/apply/part-02
+            scripts/rebrand/apply/part-03
+            scripts/rebrand/apply/part-04
+            scripts/rebrand/apply/part-05
+            scripts/rebrand/apply/part-06-00
+            scripts/rebrand/apply/part-06-01
+            scripts/rebrand/apply/part-06-02
+            scripts/rebrand/apply/part-06-03
+            scripts/rebrand/apply/part-06-04
+            scripts/rebrand/apply/part-06-05
+            scripts/rebrand/apply/part-06-06
+            scripts/rebrand/apply/part-06-07
+            scripts/rebrand/apply/part-06-08
+          )
+          for part in "${parts[@]}"; do
+            test -f "$part"
+            wc -c "$part"
+            sha256sum "$part"
+          done
+          cat "${parts[@]}" > /tmp/metrora.patch.gz.b64
+          test "$(wc -c < /tmp/metrora.patch.gz.b64)" -eq 76056
+          echo '99f779d14dda52a7350dda67ee8b58903673ffdfccdff088cb2f8162aaaac964  /tmp/metrora.patch.gz.b64' | sha256sum --check
+          base64 --decode /tmp/metrora.patch.gz.b64 | gzip --decompress > /tmp/metrora.patch
+          echo '9a33d1e6c1206e5301aba35c980d43a8f3e9bb2291543579ae4ad9683c80e706  /tmp/metrora.patch' | sha256sum --check
           git apply --check /tmp/metrora.patch
           git apply /tmp/metrora.patch
           rm -rf scripts/rebrand
