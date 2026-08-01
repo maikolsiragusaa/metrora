@@ -113,7 +113,7 @@ describe('canonical scanner Codex provider compatibility', () => {
     await expect(scanCanonicalReviewedProductionCandidatesV1({
       endpointId: ENDPOINT_ID,
       adapterVersion: '0.9.19',
-    }, deps([codexCall({ modelProvider: 'anthropic' })], 'openai'))
+    }, deps([codexCall({ modelProvider: 'anthropic' })], 'openai')))
       .rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
   })
 })
