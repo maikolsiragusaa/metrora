@@ -66,11 +66,17 @@ jobs:
           node scripts/check-brand-boundary.mjs
           git diff --cached --check
 
-      - name: Commit completed rebrand
+          # GitHub Actions tokens cannot update workflow files. Restore only
+          # that directory for the bot push; the connector applies the already
+          # validated workflow changes immediately afterward.
+          git restore --source=HEAD --staged --worktree .github/workflows
+          git add -A
+
+      - name: Commit completed product rebrand
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "brand: complete Metrora rebrand with compatibility migration"
+          git commit -m "brand: complete Metrora product rebrand with compatibility migration"
           git push origin HEAD:brand/metrora-rebrand
