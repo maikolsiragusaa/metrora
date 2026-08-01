@@ -61,12 +61,11 @@ Each candidate receives a SHA-256 source-record fingerprint over a domain-separa
 
 - stable endpoint ID;
 - collector/provider section;
-- normalized private source path;
 - private per-call deduplication key.
 
-Only the digest crosses into the public event. The path and private deduplication key never leave the scanner.
+The local source path is used only for the source-presence check and is not an input to the public digest. The private deduplication key also never leaves the scanner; only the digest crosses into the reviewed event.
 
-Including the endpoint ID prevents an identical local record on different endpoints from becoming a new cross-device correlation handle. Excluding mutable file size and mtime keeps the same call stable when an append-only source grows. Endpoint-key rotation does not change the fingerprint.
+Provider parsers already enforce the private deduplication identity globally within their provider, so adding a local path would not improve record identity. Excluding it also avoids creating a path-derived public correlation value. Including the endpoint ID prevents an identical local record on different endpoints from becoming a cross-device correlation handle. Endpoint-key rotation does not change the fingerprint.
 
 ## Counts
 
