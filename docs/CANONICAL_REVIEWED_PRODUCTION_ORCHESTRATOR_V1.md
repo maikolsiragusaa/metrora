@@ -53,7 +53,9 @@ Every operation uses the same lock order:
 1. production-control lease;
 2. Workspace state, receipt, and outbox operations.
 
-This prevents a pause from racing between lifecycle inspection and evidence publication without introducing a nested-lock deadlock.
+The underlying local lock keeps its same-directory same-process serialization and cross-process lock-file fencing. Its in-process queue is keyed by the resolved lock directory, so an operation may safely hold the production-control domain while entering the distinct Workspace, receipt, or outbox domains. This fixes the previous over-broad global queue without allowing two owners for the same lock directory.
+
+This ordering prevents a pause from racing between lifecycle inspection and evidence publication without introducing a nested-lock deadlock.
 
 ## Pause enforcement
 
@@ -122,9 +124,10 @@ Blocking tests cover:
 - pause waiting behind an in-flight pass;
 - later passes blocked after pause;
 - concurrent production serialization and deduplication;
+- same-directory serialization and independent-directory nested local locks;
 - an ineligible trusted candidate rejecting rather than being hidden in a count;
 - malformed scanner counts rejecting before evidence production;
-- focused TypeScript checking of the lifecycle and orchestration boundary;
+- focused TypeScript checking of the lock, lifecycle, and orchestration boundary;
 - focused Ubuntu and Windows filesystem/locking execution.
 
 ## Non-goals
