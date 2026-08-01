@@ -1,4 +1,4 @@
-name: Qovrion CI
+name: Metrora CI
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: qovrion-ci-${{ github.workflow }}-${{ github.ref }}
+  group: metrora-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
