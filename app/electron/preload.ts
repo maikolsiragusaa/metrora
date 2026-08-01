@@ -52,6 +52,7 @@ const bridge = {
   createWorkspace: (input: CreateWorkspaceInput) => invoke('metrora:createWorkspace', input),
   pauseWorkspaceProduction: () => invoke('metrora:pauseWorkspaceProduction'),
   resumeWorkspaceProduction: () => invoke('metrora:resumeWorkspaceProduction'),
+  produceWorkspaceMeasurements: () => invoke('metrora:produceWorkspaceMeasurements'),
   createWorkspaceBatch: () => invoke('metrora:createWorkspaceBatch'),
   exportWorkspaceEvidence: () => invoke('metrora:exportWorkspaceEvidence'),
 

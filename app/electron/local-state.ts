@@ -64,6 +64,18 @@ export type DesktopWorkspaceSnapshot = {
   }
 }
 
+export type DesktopReviewedProductionSummary = {
+  kind: 'metrora.canonical-reviewed-production-summary'
+  version: 1
+  outcome: 'paused' | 'completed'
+  scanned: boolean
+  eligibleCount: number
+  producedCount: number
+  existingCount: number
+  withheldCount: number
+  failedCount: number
+}
+
 export type DesktopWorkspaceRuntime = {
   getSnapshot(): Promise<DesktopWorkspaceSnapshot>
   createWorkspace(input: {
@@ -73,6 +85,10 @@ export type DesktopWorkspaceRuntime = {
   }): Promise<{ outcome: 'created' | 'existing'; snapshot: DesktopWorkspaceSnapshot }>
   setProductionMode(mode: 'active' | 'paused'): Promise<{
     outcome: 'changed' | 'unchanged'
+    snapshot: DesktopWorkspaceSnapshot
+  }>
+  produceReviewedMeasurements(): Promise<{
+    summary: DesktopReviewedProductionSummary
     snapshot: DesktopWorkspaceSnapshot
   }>
   createNextBatch(): Promise<{
@@ -129,6 +145,19 @@ export type DesktopWorkspaceRuntimeState =
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
   | { status: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
 
+type DesktopCanonicalReviewedProductionScan = {
+  candidates: readonly unknown[]
+  withheldCount: number
+  failedCount: number
+}
+
+export type DesktopReviewedProductionModule = {
+  scanCanonicalReviewedProductionCandidatesV1(input: {
+    endpointId: string
+    adapterVersion: string
+  }): Promise<DesktopCanonicalReviewedProductionScan>
+}
+
 export type DesktopLocalStateModule = {
   initializeDesktopLocalStateV1(options: {
     safeStorage: {
@@ -162,6 +191,10 @@ export type DesktopLocalStateModule = {
     metroraVersion: string
     collectorVersion: string
     capabilities: Array<'collect' | 'normalize' | 'aggregate' | 'serve-local-api'>
+    scanCanonicalCandidates(input: {
+      endpointId: string
+      adapterVersion: string
+    }): Promise<DesktopCanonicalReviewedProductionScan>
   }): Promise<{
     endpoint: {
       endpointId: string
@@ -185,6 +218,7 @@ export type InitializeDesktopEndpointStateDeps = {
   legacyUserDataPath?: string
   safeStorage: ElectronSafeStorageLike
   importModule?: (url: string) => Promise<DesktopLocalStateModule>
+  importReviewedProductionModule?: (url: string) => Promise<DesktopReviewedProductionModule>
 }
 
 let workspaceRuntimePromise: Promise<DesktopWorkspaceRuntimeState> = Promise.resolve({
@@ -233,6 +267,14 @@ export function desktopLocalStateModulePath(
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-local-state.js')
 }
 
+export function desktopReviewedProductionModulePath(
+  deps: Pick<InitializeDesktopEndpointStateDeps, 'isPackaged' | 'resourcesPath' | 'appPath'>,
+): string {
+  return deps.isPackaged
+    ? join(deps.resourcesPath, 'cli', 'dist', 'desktop-reviewed-production.js')
+    : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-reviewed-production.js')
+}
+
 /**
  * Copy old Qovrion desktop state into Metrora once. The source is never moved,
  * modified or deleted. A failed readable-state migration is surfaced instead
@@ -274,8 +316,19 @@ function safeStorageAdapter(deps: InitializeDesktopEndpointStateDeps) {
 
 async function loadRuntimeModule(deps: InitializeDesktopEndpointStateDeps): Promise<DesktopLocalStateModule> {
   const importModule = deps.importModule ?? (async url => import(url) as Promise<DesktopLocalStateModule>)
-  const modulePath = desktopLocalStateModulePath(deps)
-  return importModule(pathToFileURL(modulePath).href)
+  return importModule(pathToFileURL(desktopLocalStateModulePath(deps)).href)
+}
+
+async function loadReviewedProductionModule(
+  deps: InitializeDesktopEndpointStateDeps,
+): Promise<DesktopReviewedProductionModule> {
+  const importModule = deps.importReviewedProductionModule
+    ?? (async url => import(url) as Promise<DesktopReviewedProductionModule>)
+  const loaded = await importModule(pathToFileURL(desktopReviewedProductionModulePath(deps)).href)
+  if (typeof loaded.scanCanonicalReviewedProductionCandidatesV1 !== 'function') {
+    throw new Error('bundled desktop reviewed-production runtime is invalid')
+  }
+  return loaded
 }
 
 function localStateDataDir(deps: InitializeDesktopEndpointStateDeps): string {
@@ -323,6 +376,16 @@ export async function initializeDesktopWorkspaceRuntimeState(
       throw new Error('bundled desktop Workspace runtime is invalid')
     }
     const version = deps.appVersion?.trim() || '0.0.0'
+    let reviewedProductionModulePromise: Promise<DesktopReviewedProductionModule> | undefined
+    const scanCanonicalCandidates = async (input: {
+      endpointId: string
+      adapterVersion: string
+    }): Promise<DesktopCanonicalReviewedProductionScan> => {
+      reviewedProductionModulePromise ??= loadReviewedProductionModule(deps)
+      const reviewedProduction = await reviewedProductionModulePromise
+      return reviewedProduction.scanCanonicalReviewedProductionCandidatesV1(input)
+    }
+
     const initialized = await module.initializeDesktopWorkspaceRuntimeV1({
       backend,
       dataDir: localStateDataDir(deps),
@@ -334,6 +397,7 @@ export async function initializeDesktopWorkspaceRuntimeState(
       metroraVersion: version,
       collectorVersion: version,
       capabilities: ['collect', 'normalize', 'aggregate', 'serve-local-api'],
+      scanCanonicalCandidates,
     })
     return {
       status: 'ready',

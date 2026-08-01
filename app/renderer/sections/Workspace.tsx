@@ -7,14 +7,16 @@ import { metrora } from '../lib/ipc'
 import { showToast } from '../lib/toast'
 import type { MenubarPayload } from '../lib/types'
 import type {
+  DesktopReviewedProductionSummary,
   DesktopWorkspaceAvailability,
   DesktopWorkspaceSnapshot,
   WorkspaceBridge,
   WorkspaceEvidenceState,
+  WorkspaceProductionMode,
 } from '../lib/workspace'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
-type WorkspaceAction = 'reload' | 'create' | 'batch' | 'export' | null
+type WorkspaceAction = 'reload' | 'create' | 'produce' | 'pause' | 'resume' | 'batch' | 'export' | null
 
 export type WorkspaceUsage = {
   label: string
@@ -88,8 +90,16 @@ function platformLabel(value: string): string {
 function actionErrorMessage(action: Exclude<WorkspaceAction, null>): string {
   if (action === 'reload') return 'Workspace status could not be refreshed.'
   if (action === 'create') return 'The local workspace could not be created.'
+  if (action === 'produce') return 'Reviewed measurements could not be produced.'
+  if (action === 'pause') return 'Reviewed production could not be paused.'
+  if (action === 'resume') return 'Reviewed production could not be resumed.'
   if (action === 'batch') return 'The next signed batch could not be created.'
   return 'The Workspace evidence package could not be exported.'
+}
+
+function productionToast(summary: DesktopReviewedProductionSummary): string {
+  if (summary.outcome === 'paused') return 'Reviewed production is paused.'
+  return `${summary.producedCount} produced · ${summary.existingCount} already present · ${summary.withheldCount} withheld · ${summary.failedCount} failed sources.`
 }
 
 export function WorkspaceContent({
@@ -107,6 +117,7 @@ export function WorkspaceContent({
   const [action, setAction] = useState<WorkspaceAction>('reload')
   const [workspaceName, setWorkspaceName] = useState('My workspace')
   const [endpointName, setEndpointName] = useState('This computer')
+  const [lastProduction, setLastProduction] = useState<DesktopReviewedProductionSummary | null>(null)
   const usage = useMemo(() => workspaceUsageFromOverview(payload), [payload])
 
   const reload = useCallback(async () => {
@@ -139,9 +150,41 @@ export function WorkspaceContent({
       if (typeof bridge.createWorkspace !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.createWorkspace({ displayName, endpointDisplayName })
       setAvailability(current => withSnapshot(current, result.snapshot))
+      setLastProduction(null)
       showToast(result.outcome === 'created' ? 'Local workspace created.' : 'Existing local workspace loaded.')
     } catch {
       showToast(actionErrorMessage('create'), 'error')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const produceMeasurements = async () => {
+    setAction('produce')
+    try {
+      if (typeof bridge.produceWorkspaceMeasurements !== 'function') throw new Error('workspace bridge unavailable')
+      const result = await bridge.produceWorkspaceMeasurements()
+      setAvailability(current => withSnapshot(current, result.snapshot))
+      setLastProduction(result.summary)
+      showToast(productionToast(result.summary))
+    } catch {
+      showToast(actionErrorMessage('produce'), 'error')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  const setProductionMode = async (mode: WorkspaceProductionMode) => {
+    const nextAction: WorkspaceAction = mode === 'paused' ? 'pause' : 'resume'
+    setAction(nextAction)
+    try {
+      const method = mode === 'paused' ? bridge.pauseWorkspaceProduction : bridge.resumeWorkspaceProduction
+      if (typeof method !== 'function') throw new Error('workspace bridge unavailable')
+      const result = await method.call(bridge)
+      setAvailability(current => withSnapshot(current, result.snapshot))
+      showToast(mode === 'paused' ? 'Reviewed production paused.' : 'Reviewed production resumed.')
+    } catch {
+      showToast(actionErrorMessage(nextAction), 'error')
     } finally {
       setAction(null)
     }
@@ -227,8 +270,11 @@ export function WorkspaceContent({
       setWorkspaceName={setWorkspaceName}
       setEndpointName={setEndpointName}
       action={action}
+      lastProduction={lastProduction}
       onReload={reload}
       onCreate={createWorkspace}
+      onProduce={produceMeasurements}
+      onSetProductionMode={setProductionMode}
       onBatch={createBatch}
       onExport={exportEvidence}
     />
@@ -245,8 +291,11 @@ function ReadyWorkspaceView({
   setWorkspaceName,
   setEndpointName,
   action,
+  lastProduction,
   onReload,
   onCreate,
+  onProduce,
+  onSetProductionMode,
   onBatch,
   onExport,
 }: {
@@ -259,14 +308,21 @@ function ReadyWorkspaceView({
   setWorkspaceName: (value: string) => void
   setEndpointName: (value: string) => void
   action: WorkspaceAction
+  lastProduction: DesktopReviewedProductionSummary | null
   onReload: () => Promise<void>
   onCreate: () => Promise<void>
+  onProduce: () => Promise<void>
+  onSetProductionMode: (mode: WorkspaceProductionMode) => Promise<void>
   onBatch: () => Promise<void>
   onExport: () => Promise<void>
 }) {
   const { snapshot } = availability
   const workspace = snapshot.workspace
   const evidence = snapshot.evidence
+  const lifecycle = workspace
+    ? (snapshot.productionLifecycle ?? { mode: 'active' as const, revision: 0, persisted: false, updatedAt: null })
+    : null
+  const productionPaused = lifecycle?.mode === 'paused'
   const busy = action !== null
   const evidenceBlocked = evidence.state === 'blocked' || evidence.state === 'quarantined'
   const exportBlocked = evidenceBlocked || evidence.unbatchedEventCount > 0
@@ -338,6 +394,44 @@ function ReadyWorkspaceView({
       </Panel>
 
       {workspace ? (
+        <Panel title="Reviewed production" right={productionPaused ? 'Paused' : 'Active'}>
+          <p className="workspace-evidence-copy">
+            Scan the canonical local parser/cache and add only source-present, reviewed calls to the private outbox. Opening this screen never performs this action.
+          </p>
+          <div className="workspace-actions">
+            <button
+              type="button"
+              className="btn btn-p"
+              onClick={() => void onProduce()}
+              disabled={busy || evidenceBlocked || productionPaused}
+            >
+              {action === 'produce' ? 'Producing…' : 'Produce reviewed measurements'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-s"
+              onClick={() => void onSetProductionMode(productionPaused ? 'active' : 'paused')}
+              disabled={busy}
+            >
+              {productionPaused
+                ? (action === 'resume' ? 'Resuming…' : 'Resume production')
+                : (action === 'pause' ? 'Pausing…' : 'Pause production')}
+            </button>
+          </div>
+          <p className="workspace-action-note">
+            {productionPaused
+              ? 'Production is paused before scanning. Overview, collectors, existing evidence, batches, and exports remain unchanged.'
+              : 'Only explicit source-recorded provider identity and reviewed provenance are eligible. Unsupported or source-less history is withheld.'}
+          </p>
+          {lastProduction ? (
+            <div className="workspace-source-line" data-testid="workspace-production-summary">
+              Last pass: {lastProduction.producedCount} produced · {lastProduction.existingCount} existing · {lastProduction.withheldCount} withheld · {lastProduction.failedCount} failed sources
+            </div>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      {workspace ? (
         <div className="workspace-grid">
           <Panel title="Workspace and endpoint" right={workspace.ownerRole === 'owner' ? 'Owner' : workspace.ownerRole}>
             <dl className="workspace-details">
@@ -379,7 +473,7 @@ function ReadyWorkspaceView({
           </ul>
         </Panel>
 
-        <Panel title="Actions" right={availability.vault.backend === 'windows-dpapi' ? 'Windows DPAPI' : 'macOS Keychain'}>
+        <Panel title="Evidence actions" right={availability.vault.backend === 'windows-dpapi' ? 'Windows DPAPI' : 'macOS Keychain'}>
           <div className="workspace-actions">
             <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
               {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
@@ -393,8 +487,8 @@ function ReadyWorkspaceView({
           </div>
           <p className="workspace-action-note">
             {evidence.unbatchedEventCount > 0
-              ? 'Create a signed batch before export. Batching and export are always explicit.'
-              : 'Batching and export are always explicit. Opening this screen never scans, signs, uploads, or publishes data automatically.'}
+              ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
+              : 'Production, batching, and export are always explicit. Nothing is uploaded or published automatically.'}
           </p>
         </Panel>
       </div>

@@ -48,6 +48,20 @@ function runtime(overrides: Partial<DesktopWorkspaceRuntime> = {}): DesktopWorks
     getSnapshot: vi.fn(async () => current),
     createWorkspace: vi.fn(async () => ({ outcome: 'created' as const, snapshot: current })),
     setProductionMode: vi.fn(async () => ({ outcome: 'changed' as const, snapshot: current })),
+    produceReviewedMeasurements: vi.fn(async () => ({
+      summary: {
+        kind: 'metrora.canonical-reviewed-production-summary' as const,
+        version: 1 as const,
+        outcome: 'completed' as const,
+        scanned: true,
+        eligibleCount: 4,
+        producedCount: 2,
+        existingCount: 1,
+        withheldCount: 1,
+        failedCount: 0,
+      },
+      snapshot: current,
+    })),
     createNextBatch: vi.fn(async () => ({ outcome: 'empty' as const, snapshot: current })),
     exportEvidence: vi.fn(async outputPath => ({
       outputPath,
@@ -113,7 +127,7 @@ describe('Workspace IPC bridge', () => {
     await expect(unsupported['codeburn:createWorkspace']!({
       displayName: 'Local', endpointDisplayName: 'Desktop',
     })).resolves.toMatchObject({ ok: false, error: { kind: 'workspace-unsupported' } })
-    await expect(unsupported['codeburn:pauseWorkspaceProduction']!()).resolves.toMatchObject({
+    await expect(unsupported['codeburn:produceWorkspaceMeasurements']!()).resolves.toMatchObject({
       ok: false,
       error: { kind: 'workspace-unsupported' },
     })
@@ -173,6 +187,39 @@ describe('Workspace IPC bridge', () => {
     expect(privateRuntime.setProductionMode).toHaveBeenNthCalledWith(2, 'active')
   })
 
+  it('invokes reviewed production without accepting renderer evidence inputs', async () => {
+    const privateRuntime = runtime()
+    const handlers = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => readyState(privateRuntime),
+      chooseExportPath: async () => null,
+    })
+
+    const result = await handlers['codeburn:produceWorkspaceMeasurements']!({
+      calls: [{ private: true }],
+      sourcePath: '/private/path',
+      provider: 'invented',
+    })
+
+    expect(privateRuntime.produceReviewedMeasurements).toHaveBeenCalledWith()
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        summary: {
+          outcome: 'completed',
+          eligibleCount: 4,
+          producedCount: 2,
+          existingCount: 1,
+          withheldCount: 1,
+          failedCount: 0,
+        },
+      },
+    })
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('/private/path')
+    expect(serialized).not.toContain('invented')
+    expect(serialized).not.toContain('calls')
+  })
+
   it('creates batches through the private runtime', async () => {
     const privateRuntime = runtime()
     const handlers = createWorkspaceBridgeHandlers({
@@ -208,12 +255,17 @@ describe('Workspace IPC bridge', () => {
     expect(JSON.stringify(result)).not.toContain('/private/user/documents')
   })
 
-  it('returns cancellation and sanitizes runtime and lifecycle failures', async () => {
+  it('returns cancellation and sanitizes runtime, lifecycle, and scanner failures', async () => {
     const privateRuntime = runtime({
       createNextBatch: vi.fn(async () => { throw new Error('/secret/path should not cross IPC') }),
       setProductionMode: vi.fn(async () => {
         const error = new Error('/private/lifecycle/path')
         error.name = 'LocalWorkspaceProductionLifecycleRecoveryRequiredError'
+        throw error
+      }),
+      produceReviewedMeasurements: vi.fn(async () => {
+        const error = new Error('/private/cache/path')
+        error.name = 'CanonicalReviewedProductionScannerIntegrityError'
         throw error
       }),
     })
@@ -243,5 +295,15 @@ describe('Workspace IPC bridge', () => {
       },
     })
     expect(JSON.stringify(lifecycle)).not.toContain('/private/lifecycle/path')
+
+    const scanner = await cancelled['codeburn:produceWorkspaceMeasurements']!()
+    expect(scanner).toEqual({
+      ok: false,
+      error: {
+        kind: 'workspace-production-scan-failed',
+        message: 'Canonical local usage could not be validated for reviewed production.',
+      },
+    })
+    expect(JSON.stringify(scanner)).not.toContain('/private/cache/path')
   })
 })

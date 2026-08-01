@@ -12,6 +12,7 @@ const bridge = vi.hoisted(() => ({
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
   resumeWorkspaceProduction: vi.fn(),
+  produceWorkspaceMeasurements: vi.fn(),
   createWorkspaceBatch: vi.fn(),
   exportWorkspaceEvidence: vi.fn(),
 }))
@@ -113,6 +114,7 @@ describe('Workspace desktop view', () => {
     bridge.createWorkspace.mockReset()
     bridge.pauseWorkspaceProduction.mockReset()
     bridge.resumeWorkspaceProduction.mockReset()
+    bridge.produceWorkspaceMeasurements.mockReset()
     bridge.createWorkspaceBatch.mockReset()
     bridge.exportWorkspaceEvidence.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability())
@@ -133,7 +135,7 @@ describe('Workspace desktop view', () => {
     expect(workspaceUsageFromOverview(null)).toBeNull()
   })
 
-  it('renders the active Overview scope and exact usage values beside local Workspace state', async () => {
+  it('renders canonical usage and never produces measurements while opening', async () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
@@ -147,6 +149,8 @@ describe('Workspace desktop view', () => {
     expect(screen.getByTestId('workspace-cache-write')).toHaveTextContent('321')
     expect(screen.getByTestId('workspace-pricing-coverage')).toHaveTextContent('98.7%')
     expect(screen.getByText(/never recalculate them/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeEnabled()
+    expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
   })
 
   it('creates the explicit personal Workspace and reuses the runtime result', async () => {
@@ -166,6 +170,60 @@ describe('Workspace desktop view', () => {
       endpointDisplayName: 'Windows workstation',
     }))
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+  })
+
+  it('produces only after an explicit zero-argument action and shows bounded counts', async () => {
+    const afterProduction = snapshot(true)
+    afterProduction.evidence.pendingEventCount = 5
+    afterProduction.evidence.unbatchedEventCount = 5
+    bridge.produceWorkspaceMeasurements.mockResolvedValue({
+      summary: {
+        kind: 'metrora.canonical-reviewed-production-summary',
+        version: 1,
+        outcome: 'completed',
+        scanned: true,
+        eligibleCount: 6,
+        producedCount: 2,
+        existingCount: 3,
+        withheldCount: 4,
+        failedCount: 1,
+      },
+      snapshot: afterProduction,
+    })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Produce reviewed measurements' }))
+
+    await waitFor(() => expect(bridge.produceWorkspaceMeasurements).toHaveBeenCalledWith())
+    expect(await screen.findByTestId('workspace-production-summary')).toHaveTextContent(
+      'Last pass: 2 produced · 3 existing · 4 withheld · 1 failed sources',
+    )
+    expect(screen.getByText('Pending events').parentElement).toHaveTextContent('5')
+  })
+
+  it('pauses before scanning and resumes without touching evidence actions', async () => {
+    const paused = snapshot(true)
+    paused.productionLifecycle = {
+      mode: 'paused', revision: 1, persisted: true, updatedAt: '2026-08-01T22:00:00.000Z',
+    }
+    const active = snapshot(true)
+    active.productionLifecycle = {
+      mode: 'active', revision: 2, persisted: true, updatedAt: '2026-08-01T23:00:00.000Z',
+    }
+    bridge.pauseWorkspaceProduction.mockResolvedValue({ outcome: 'changed', snapshot: paused })
+    bridge.resumeWorkspaceProduction.mockResolvedValue({ outcome: 'changed', snapshot: active })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause production' }))
+
+    await waitFor(() => expect(bridge.pauseWorkspaceProduction).toHaveBeenCalledWith())
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeEnabled()
+    expect(screen.getByText(/paused before scanning/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume production' }))
+    await waitFor(() => expect(bridge.resumeWorkspaceProduction).toHaveBeenCalledWith())
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeEnabled()
   })
 
   it('requires reviewed events to enter a signed batch before export', async () => {
@@ -218,7 +276,7 @@ describe('Workspace desktop view', () => {
     await waitFor(() => expect(bridge.exportWorkspaceEvidence).toHaveBeenCalledTimes(1))
   })
 
-  it('disables signing and export for quarantined evidence and exposes invalid counts', async () => {
+  it('disables production, signing and export for quarantined evidence and exposes invalid counts', async () => {
     const quarantined = snapshot(true)
     quarantined.evidence.state = 'quarantined'
     quarantined.evidence.invalidEventCount = 2
@@ -233,6 +291,7 @@ describe('Workspace desktop view', () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
     expect((await screen.findAllByText('Evidence quarantined')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
     expect(screen.getByText('Invalid').parentElement).toHaveTextContent('2')
@@ -245,6 +304,7 @@ describe('Workspace desktop view', () => {
 
     expect(await screen.findByText(/will not open a plaintext fallback/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create local Workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Produce reviewed measurements' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Export verifiable evidence' })).not.toBeInTheDocument()
   })
 })

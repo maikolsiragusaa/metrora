@@ -1,0 +1,96 @@
+name: Desktop reviewed production
+
+on:
+  pull_request:
+    paths:
+      - 'src/desktop-reviewed-production-entry.ts'
+      - 'src/desktop-local-state-entry.ts'
+      - 'src/local-state/desktop-reviewed-production-runtime.ts'
+      - 'src/local-state/desktop-reviewed-production-runtime.test.ts'
+      - 'src/local-state/desktop-host.ts'
+      - 'src/local-state/canonical-reviewed-production-scanner.ts'
+      - 'src/local-state/reviewed-production-orchestrator.ts'
+      - 'app/electron/local-state.ts'
+      - 'app/electron/workspace.ts'
+      - 'app/electron/preload.ts'
+      - 'app/electron/workspace-runtime-host.test.ts'
+      - 'app/electron/workspace.test.ts'
+      - 'app/renderer/lib/workspace.ts'
+      - 'app/renderer/sections/Workspace.tsx'
+      - 'app/renderer/sections/Workspace.test.tsx'
+      - 'app/scripts/stage-cli.mjs'
+      - 'tsup.config.ts'
+      - '.github/workflows/desktop-reviewed-production.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/desktop-reviewed-production-entry.ts'
+      - 'src/desktop-local-state-entry.ts'
+      - 'src/local-state/desktop-reviewed-production-runtime.ts'
+      - 'src/local-state/desktop-reviewed-production-runtime.test.ts'
+      - 'src/local-state/desktop-host.ts'
+      - 'src/local-state/canonical-reviewed-production-scanner.ts'
+      - 'src/local-state/reviewed-production-orchestrator.ts'
+      - 'app/electron/local-state.ts'
+      - 'app/electron/workspace.ts'
+      - 'app/electron/preload.ts'
+      - 'app/electron/workspace-runtime-host.test.ts'
+      - 'app/electron/workspace.test.ts'
+      - 'app/renderer/lib/workspace.ts'
+      - 'app/renderer/sections/Workspace.tsx'
+      - 'app/renderer/sections/Workspace.test.tsx'
+      - 'app/scripts/stage-cli.mjs'
+      - 'tsup.config.ts'
+      - '.github/workflows/desktop-reviewed-production.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-reviewed-production-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    name: Desktop reviewed production (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Install core dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build CLI and lazy desktop runtimes
+        run: npm run build:cli
+      - name: Run core scanner, orchestrator, and desktop controller gates
+        run: >-
+          npx vitest --run --no-file-parallelism --testTimeout=15000
+          src/local-state/canonical-reviewed-production-scanner.test.ts
+          src/local-state/reviewed-production-orchestrator.test.ts
+          src/local-state/desktop-reviewed-production-runtime.test.ts
+          src/local-state/desktop-workspace-runtime.test.ts
+      - name: Install desktop dependencies
+        run: npm --prefix app ci --no-audit --no-fund
+      - name: Stage all desktop runtime bundles
+        run: npm --prefix app run stage-cli
+      - name: Smoke-import staged reviewed-production bundle
+        run: >-
+          node -e "import('./app/build/cli/dist/desktop-reviewed-production.js').then(m => { if (typeof m.scanCanonicalReviewedProductionCandidatesV1 !== 'function') throw new Error('scanner export missing') })"
+      - name: Test desktop runtime, IPC, and Workspace renderer
+        run: >-
+          npm --prefix app test -- --run
+          electron/local-state.test.ts
+          electron/workspace-runtime-host.test.ts
+          electron/workspace.test.ts
+          renderer/sections/Workspace.test.tsx
+      - name: Typecheck desktop
+        run: npm --prefix app run typecheck
+      - name: Build desktop
+        run: npm --prefix app run build

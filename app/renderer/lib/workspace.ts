@@ -76,6 +76,23 @@ export type DesktopWorkspaceAvailability =
   | { availability: 'unsupported-platform'; platform: string }
   | { availability: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
 
+export type DesktopReviewedProductionSummary = {
+  kind: 'metrora.canonical-reviewed-production-summary'
+  version: 1
+  outcome: 'paused' | 'completed'
+  scanned: boolean
+  eligibleCount: number
+  producedCount: number
+  existingCount: number
+  withheldCount: number
+  failedCount: number
+}
+
+export type DesktopWorkspaceProductionResult = {
+  summary: DesktopReviewedProductionSummary
+  snapshot: DesktopWorkspaceSnapshot
+}
+
 export type DesktopWorkspaceBatchResult = {
   outcome: 'created' | 'empty'
   batch?: {
@@ -122,6 +139,7 @@ export interface WorkspaceBridge {
   }): Promise<{ outcome: 'created' | 'existing'; snapshot: DesktopWorkspaceSnapshot }>
   pauseWorkspaceProduction(): Promise<DesktopWorkspaceProductionLifecycleResult>
   resumeWorkspaceProduction(): Promise<DesktopWorkspaceProductionLifecycleResult>
+  produceWorkspaceMeasurements(): Promise<DesktopWorkspaceProductionResult>
   createWorkspaceBatch(): Promise<DesktopWorkspaceBatchResult>
   exportWorkspaceEvidence(): Promise<DesktopWorkspaceExportResult>
 }

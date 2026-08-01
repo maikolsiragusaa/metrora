@@ -17,11 +17,13 @@ import {
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
-import { Aes256GcmSecretProtector } from './secret-protector.js'
 import {
-  createDesktopWorkspaceRuntimeV1,
-  type DesktopWorkspaceRuntimeV1,
-} from './desktop-workspace-runtime.js'
+  attachDesktopReviewedProductionV1,
+  type DesktopCanonicalReviewedScannerV1,
+  type DesktopReviewedProductionRuntimeV1,
+} from './desktop-reviewed-production-runtime.js'
+import { Aes256GcmSecretProtector } from './secret-protector.js'
+import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
 
 export const DESKTOP_MASTER_KEY_KIND = 'qovrion.desktop-master-key' as const
 const MASTER_KEY_FILE = 'desktop-master-key.v1.json'
@@ -63,6 +65,7 @@ export type InitializeDesktopWorkspaceRuntimeV1Options = InitializeDesktopLocalS
   collectorVersion: string
   capabilities?: EndpointCapabilityV1[]
   openTelemetryGenAiVersion?: string
+  scanCanonicalCandidates?: DesktopCanonicalReviewedScannerV1
 }
 
 export type InitializedDesktopLocalStateV1 = {
@@ -72,7 +75,7 @@ export type InitializedDesktopLocalStateV1 = {
 }
 
 export type InitializedDesktopWorkspaceRuntimeV1 = InitializedDesktopLocalStateV1 & {
-  runtime: DesktopWorkspaceRuntimeV1
+  runtime: DesktopReviewedProductionRuntimeV1
 }
 
 export class DesktopVaultUnavailableError extends Error {
@@ -230,7 +233,7 @@ export async function initializeDesktopWorkspaceRuntimeV1(
       now: options.now,
     })
     const endpoint = identity.metadata
-    const runtime = createDesktopWorkspaceRuntimeV1({
+    const workspaceRuntime = createDesktopWorkspaceRuntimeV1({
       dataDir: options.dataDir,
       identity,
       platform,
@@ -239,6 +242,16 @@ export async function initializeDesktopWorkspaceRuntimeV1(
       capabilities,
       ...(input.openTelemetryGenAiVersion !== undefined
         ? { openTelemetryGenAiVersion: input.openTelemetryGenAiVersion }
+        : {}),
+      now: options.now,
+    })
+    const runtime = attachDesktopReviewedProductionV1({
+      runtime: workspaceRuntime,
+      dataDir: options.dataDir,
+      identity,
+      adapterVersion: metroraVersion,
+      ...(input.scanCanonicalCandidates !== undefined
+        ? { scanCanonicalCandidates: input.scanCanonicalCandidates }
         : {}),
       now: options.now,
     })
