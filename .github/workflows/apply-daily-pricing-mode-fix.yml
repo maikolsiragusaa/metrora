@@ -1,0 +1,121 @@
+name: Apply daily pricing mode cache fix
+
+on:
+  push:
+    branches: [feat/historical-runtime-v8]
+    paths:
+      - '.github/workflows/apply-daily-pricing-mode-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-daily-pricing-mode-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/historical-runtime-v8
+          fetch-depth: 0
+      - name: Apply focused cache-key remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/usage-aggregator.ts')
+          text = path.read_text(encoding='utf-8')
+          import_anchor = "import { getDaysInRange, ensureCacheHydrated, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'\n"
+          import_line = "import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'\n"
+          if import_line not in text:
+              if import_anchor not in text:
+                  raise SystemExit('usage-aggregator import anchor missing')
+              text = text.replace(import_anchor, import_anchor + import_line, 1)
+
+          old = """export function getDailyCacheConfigHash(): string {
+            const savingsHash = getLocalModelSavingsConfigHash()
+            const overridesHash = getPriceOverridesConfigHash()
+            if (!overridesHash) return savingsHash
+            return `localModelSavings=${savingsHash}\\u0002priceOverrides=${overridesHash}`
+          }
+          """
+          new = """export function getDailyCacheConfigHash(): string {
+            const savingsHash = getLocalModelSavingsConfigHash()
+            const overridesHash = getPriceOverridesConfigHash()
+            const accountingHash = overridesHash
+              ? `localModelSavings=${savingsHash}\\u0002priceOverrides=${overridesHash}`
+              : savingsHash
+            // Daily entries store the runtime-visible cost, not only immutable
+            // per-call assignments. Switching historical/compare/legacy must
+            // therefore re-derive surviving source slices; otherwise a daily
+            // headline from one mode can be combined with model/project rows
+            // from another. Sourceless slices are still carried forward by the
+            // v14+ merge contract and remain conservatively legacy-frozen.
+            return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\\u0002${accountingHash}`
+          }
+          """
+          if old not in text:
+              raise SystemExit('getDailyCacheConfigHash anchor missing')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+
+          test = Path('tests/daily-cache-pricing-mode.test.ts')
+          test.write_text("""import { afterEach, describe, expect, it } from 'vitest'
+
+          import { getDailyCacheConfigHash } from '../src/usage-aggregator.js'
+
+          const originalMode = process.env['METRORA_HISTORICAL_PRICING']
+
+          afterEach(() => {
+            if (originalMode === undefined) delete process.env['METRORA_HISTORICAL_PRICING']
+            else process.env['METRORA_HISTORICAL_PRICING'] = originalMode
+          })
+
+          describe('daily cache historical-pricing boundary', () => {
+            it('uses distinct cache keys for historical, comparison, and legacy runtime views', () => {
+              process.env['METRORA_HISTORICAL_PRICING'] = 'historical'
+              const historical = getDailyCacheConfigHash()
+              process.env['METRORA_HISTORICAL_PRICING'] = 'compare'
+              const compare = getDailyCacheConfigHash()
+              process.env['METRORA_HISTORICAL_PRICING'] = 'legacy'
+              const legacy = getDailyCacheConfigHash()
+
+              expect(new Set([historical, compare, legacy]).size).toBe(3)
+              expect(historical).toContain('historicalPricing=historical')
+              expect(compare).toContain('historicalPricing=compare')
+              expect(legacy).toContain('historicalPricing=legacy')
+            })
+
+            it('normalizes compatibility aliases before they reach the cache key', () => {
+              process.env['METRORA_HISTORICAL_PRICING'] = 'shadow'
+              const shadow = getDailyCacheConfigHash()
+              process.env['METRORA_HISTORICAL_PRICING'] = 'compare'
+              expect(getDailyCacheConfigHash()).toBe(shadow)
+
+              process.env['METRORA_HISTORICAL_PRICING'] = 'off'
+              const off = getDailyCacheConfigHash()
+              process.env['METRORA_HISTORICAL_PRICING'] = 'legacy'
+              expect(getDailyCacheConfigHash()).toBe(off)
+            })
+          })
+          """.replace('          ', ''), encoding='utf-8')
+          PY
+          node scripts/check-brand-boundary.mjs
+          git diff --check
+      - name: Commit remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/usage-aggregator.ts tests/daily-cache-pricing-mode.test.ts
+          git commit -m 'fix: invalidate daily totals across pricing modes'
+          git push origin HEAD:feat/historical-runtime-v8
