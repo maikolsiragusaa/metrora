@@ -11,6 +11,7 @@ import type { LocalEndpointIdentityMetadataV1 } from './endpoint-identity.js'
 import {
   inspectLocalWorkspaceProductionLifecycleV1,
   LocalWorkspaceProductionLifecycleRecoveryRequiredError,
+  LocalWorkspaceProductionLifecycleStateV1Schema,
   LocalWorkspaceProductionLifecycleWorkspaceRequiredError,
   setLocalWorkspaceProductionModeV1,
 } from './workspace-production-lifecycle.js'
@@ -129,6 +130,19 @@ describe.sequential('local Workspace production lifecycle v1', () => {
     await expect(access(lifecyclePath(dataDir))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('orders valid ISO timestamps by instant rather than textual offset', () => {
+    expect(() => LocalWorkspaceProductionLifecycleStateV1Schema.parse({
+      kind: 'metrora.local-workspace-production-lifecycle',
+      version: 1,
+      workspaceId: 'workspace_00000000-0000-4000-8000-000000000001',
+      endpointId: identity().endpointId,
+      mode: 'paused',
+      revision: 1,
+      createdAt: '2026-08-01T20:00:00+02:00',
+      updatedAt: '2026-08-01T18:30:00Z',
+    })).not.toThrow()
+  })
+
   it('pauses only future Workspace production through one private atomic state file', async () => {
     const dataDir = await root()
     await createWorkspace(dataDir)
@@ -229,6 +243,36 @@ describe.sequential('local Workspace production lifecycle v1', () => {
       revision: 2,
       createdAt: LATER,
       updatedAt: LATEST,
+    })
+  })
+
+  it('rejects clock rollback without mutating the persisted lifecycle', async () => {
+    const dataDir = await root()
+    await createWorkspace(dataDir)
+    await setLocalWorkspaceProductionModeV1({
+      dataDir,
+      endpointIdentity: identity(),
+      mode: 'paused',
+      now: () => new Date(LATER),
+    })
+    const before = await readFile(lifecyclePath(dataDir), 'utf-8')
+
+    await expect(setLocalWorkspaceProductionModeV1({
+      dataDir,
+      endpointIdentity: identity(),
+      mode: 'active',
+      now: () => new Date('2026-08-01T18:59:59.999Z'),
+    })).rejects.toBeInstanceOf(LocalWorkspaceProductionLifecycleRecoveryRequiredError)
+
+    expect(await readFile(lifecyclePath(dataDir), 'utf-8')).toBe(before)
+    expect(await inspectLocalWorkspaceProductionLifecycleV1({
+      dataDir,
+      endpointIdentity: identity(),
+    })).toEqual({
+      mode: 'paused',
+      revision: 1,
+      persisted: true,
+      updatedAt: LATER,
     })
   })
 
