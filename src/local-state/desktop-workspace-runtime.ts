@@ -92,7 +92,7 @@ export const DesktopWorkspaceSnapshotV1Schema = z.strictObject({
     publicKeyFingerprintSha256: z.string().regex(/^[a-f0-9]{64}$/),
   }),
   workspace: DesktopWorkspaceRecordV1Schema.nullable(),
-  productionLifecycle: DesktopWorkspaceProductionLifecycleV1Schema.nullable(),
+  productionLifecycle: DesktopWorkspaceProductionLifecycleV1Schema.nullable().optional(),
   evidence: DesktopWorkspaceEvidenceSummaryV1Schema,
   privacy: z.strictObject({
     networkRequired: z.literal(false),
