@@ -15,7 +15,7 @@ The implementation does not introduce a second signer, event format, workspace s
 - per-batch public keys, identity generations, sequence ranges, and previous-digest chain;
 - immutable batch acknowledgements, with private receipt identifiers removed from exports.
 
-Frozen public contract v1 field names and identifiers may still contain the historical Qovrion namespace. Their values and semantics remain authoritative and are not rewritten.
+Frozen public contract v1 field names and identifiers remain authoritative compatibility data and are not rewritten.
 
 ## Workspace authorization
 
