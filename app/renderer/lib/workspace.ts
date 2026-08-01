@@ -85,7 +85,7 @@ export type DesktopWorkspaceExportResult =
   | { outcome: 'cancelled' }
   | {
       outcome: 'exported'
-      outputPath: string
+      fileName: string
       verification: {
         workspaceId: string
         endpointId: string
