@@ -10,17 +10,33 @@ The orchestrator accepts candidates only from an injected trusted scanner owned 
 
 The scanner, not the renderer, must provide:
 
-- the exact normalized call;
-- reviewed collector adapter and source-kind identity;
-- source-owned fingerprint;
+- the exact normalized call, including its immutable historical cost assignment;
+- a source-state fingerprint derived by the canonical parser/cache authority;
 - source-recorded API/model provider identity where available;
-- immutable historical cost assignment already attached to the call;
-- allowed opaque session, project, and repository references;
-- tool, Metrora, and OpenTelemetry versions.
+- an explicit session disclosure decision;
+- allowed opaque project, repository, and account references, when a later policy permits them;
+- tool and Metrora adapter versions;
+- the GenAI operation and request-model context when those facts are source-backed.
 
-The future renderer action will pass no calls, providers, provenance, costs, fingerprints, paths, receipts, or evidence claims.
+The scanner does **not** select the public reviewed profile ID or source kind. The existing reviewed event factory derives those fields from the executable provenance registry and the normalized call. A scanner candidate that the low-level factory still withholds is treated as a trusted-scanner contradiction and rejects the action.
+
+The future renderer action will pass no calls, providers, provenance, costs, fingerprints, paths, receipts, keys, or evidence claims.
 
 W1.D.C.B.A deliberately does not implement the canonical scanner, IPC action, or user interface. Those belong to W1.D.C.B.B after this mutation boundary is proven independently.
+
+## Identity and secret ownership
+
+The orchestrator receives the already-loaded `LoadedLocalEndpointIdentityV1` from the trusted local runtime. It does not accept separate renderer-controlled endpoint metadata or event keys.
+
+The same protected identity object is passed to `produceLocalReviewedMeasurementV1`, which remains authoritative for:
+
+- loading the enrolled local Workspace;
+- binding the stable endpoint;
+- using the private event-identity key;
+- creating or repairing private production receipts;
+- appending reviewed events to the durable outbox.
+
+No key or private identity material appears in the summary.
 
 ## Production-control lease
 
@@ -30,12 +46,12 @@ One dedicated production-control lease serializes:
 - pause;
 - resume.
 
-The lease is separate from the existing Workspace state lease because the low-level producer already uses the Workspace lease while publishing private receipts and outbox events.
+The lease is separate from the existing Workspace state lease because the low-level producer and receipt/outbox path acquire local-state leases of their own.
 
 Every operation uses the same lock order:
 
 1. production-control lease;
-2. Workspace state/receipt/outbox operations.
+2. Workspace state, receipt, and outbox operations.
 
 This prevents a pause from racing between lifecycle inspection and evidence publication without introducing a nested-lock deadlock.
 
@@ -62,21 +78,23 @@ When mode is `active`:
 1. the trusted scanner runs once;
 2. scanner-owned nonnegative `withheld` and `failed` counts are validated;
 3. eligible candidates are processed sequentially through `produceLocalReviewedMeasurementV1`;
-4. existing private receipts make repeated or concurrent passes idempotent;
-5. the bounded result reports eligible, newly produced, already existing, withheld, and scanner-failed counts.
+4. `enqueued` increments the newly produced count;
+5. `duplicate` increments the already-existing count;
+6. a low-level `withheld` result rejects the action because an eligible candidate contradicted the reviewed registry;
+7. existing private receipts make repeated or concurrent passes idempotent.
 
 Sequential processing preserves deterministic local outbox order. Repeated candidates do not duplicate events because the existing private receipt and semantic-collision checks remain authoritative.
 
 ## Failure semantics
 
-`withheldCount` and `failedCount` describe source-level outcomes already classified by the trusted scanner.
+`withheldCount` and `failedCount` describe source-level outcomes already classified by the trusted scanner before it emits eligible candidates.
 
-The orchestrator does not catch and downgrade integrity failures from the low-level producer. Contradictory provider identity, invalid reviewed provenance, semantic collisions, corrupt receipts, outbox corruption, Workspace mismatch, or other fail-closed conditions reject the entire action.
+The orchestrator does not catch and downgrade integrity failures from the low-level producer. Ineligible candidates, contradictory provider identity, invalid reviewed provenance, semantic collisions, corrupt receipts, outbox corruption, Workspace mismatch, or other fail-closed conditions reject the action.
 
 A later retry uses the existing receipt repair protocol. This preserves the distinction between:
 
 - unsupported or unreadable source data that the scanner can count honestly;
-- local evidence corruption or contradiction that requires explicit recovery.
+- a contradiction or local evidence failure that requires explicit recovery.
 
 ## Public summary
 
@@ -87,7 +105,7 @@ The core result contains only:
 - eligible candidate count;
 - newly produced count;
 - already-existing count;
-- withheld count;
+- scanner-withheld count;
 - scanner-failed count.
 
 It contains no normalized calls, tokens, costs, provider names, model names, paths, fingerprints, session IDs, project/repository references, receipts, keys, prompts, responses, source code, patches, secrets, or tool arguments.
@@ -104,8 +122,9 @@ Blocking tests cover:
 - pause waiting behind an in-flight pass;
 - later passes blocked after pause;
 - concurrent production serialization and deduplication;
-- contradictory trusted evidence rejecting rather than being hidden in a count;
+- an ineligible trusted candidate rejecting rather than being hidden in a count;
 - malformed scanner counts rejecting before evidence production;
+- focused TypeScript checking of the lifecycle and orchestration boundary;
 - focused Ubuntu and Windows filesystem/locking execution.
 
 ## Non-goals
