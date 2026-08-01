@@ -29,7 +29,7 @@ function input(timestamp: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe('runtime historical cost assignment', () => {
-  it('settles equal token usage on different sides of the Luna boundary to different immutable records', () => {
+  it('settles equal long-context usage on different sides of the Luna boundary to different immutable records', () => {
     process.env['METRORA_HISTORICAL_PRICING'] = 'historical'
     const before = assignRuntimeCostV1(input('2026-07-30T20:08:00Z'))
     const after = assignRuntimeCostV1(input('2026-07-30T20:08:01Z'))
@@ -39,8 +39,8 @@ describe('runtime historical cost assignment', () => {
     if (before.storedAssignment.kind !== 'token-price' || after.storedAssignment.kind !== 'token-price') return
     expect(before.storedAssignment.priceRecordId).toContain('litellm-a874de6')
     expect(after.storedAssignment.priceRecordId).toContain('litellm-f1b781d')
-    expect(before.storedCostUSD).toBeCloseTo(1.6, 12)
-    expect(after.storedCostUSD).toBeCloseTo(0.32, 12)
+    expect(before.storedCostUSD).toBeCloseTo(2.9, 12)
+    expect(after.storedCostUSD).toBeCloseTo(0.58, 12)
     expect(after.storedLegacyCostUSD).toBeCloseTo(1.6, 12)
   })
 
@@ -79,7 +79,7 @@ describe('runtime historical cost assignment', () => {
   it('supports compare and rollback views without mutating the stored historical settlement', () => {
     process.env['METRORA_HISTORICAL_PRICING'] = 'compare'
     const compared = assignRuntimeCostV1(input('2026-07-31T00:00:00Z'))
-    expect(compared.storedCostUSD).toBeCloseTo(0.32, 12)
+    expect(compared.storedCostUSD).toBeCloseTo(0.58, 12)
     expect(compared.runtimeCostUSD).toBeCloseTo(1.6, 12)
     expect(compared.storedAssignment.kind).toBe('token-price')
     expect(compared.runtimeAssignment.kind).toBe('legacy-frozen')
@@ -91,7 +91,7 @@ describe('runtime historical cost assignment', () => {
       existingStoredCostUSD: compared.storedCostUSD,
       existingLegacyCostUSD: compared.storedLegacyCostUSD,
     })
-    expect(rolledBack.storedCostUSD).toBeCloseTo(0.32, 12)
+    expect(rolledBack.storedCostUSD).toBeCloseTo(0.58, 12)
     expect(rolledBack.runtimeCostUSD).toBeCloseTo(1.6, 12)
     expect(rolledBack.runtimeAssignment.kind).toBe('legacy-frozen')
   })
