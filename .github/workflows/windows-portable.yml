@@ -129,6 +129,18 @@ jobs:
           Get-Content -LiteralPath (Join-Path $smokeOutput 'metrora-report-lifetime.json') -Raw | ConvertFrom-Json | Out-Null
           Get-Content -LiteralPath (Join-Path $smokeOutput 'metrora-doctor.json') -Raw | ConvertFrom-Json | Out-Null
 
+          $overviewPath = Join-Path $smokeOutput 'metrora-overview-lifetime.txt'
+          $overview = [System.IO.File]::ReadAllText($overviewPath, [System.Text.Encoding]::UTF8)
+          if ($overview -notmatch '^Metrora\s+Lifetime') {
+            throw 'portable overview does not expose the canonical Metrora heading'
+          }
+          if ($overview -match '\bCodeBurn\b') {
+            throw 'portable overview leaked legacy CodeBurn branding'
+          }
+          if ($overview.Contains('Ô')) {
+            throw 'portable overview contains Windows encoding mojibake'
+          }
+
       - name: Upload portable Windows artifact
         uses: actions/upload-artifact@v4
         with:
