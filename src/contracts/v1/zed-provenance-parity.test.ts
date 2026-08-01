@@ -96,6 +96,11 @@ sqliteDescribe('Zed fixture parity and evidence resolution v1', () => {
         cacheReadInputTokens: 30,
         reasoningTokens: 0,
       },
+      costAssignment: {
+        version: 1,
+        kind: 'legacy-frozen',
+        reason: 'inherited-token-pricing',
+      },
     })
     expect(remainder).toMatchObject({
       provider: 'zed',
@@ -108,6 +113,11 @@ sqliteDescribe('Zed fixture parity and evidence resolution v1', () => {
         cacheReadInputTokens: 10,
         reasoningTokens: 0,
       },
+      costAssignment: {
+        version: 1,
+        kind: 'legacy-frozen',
+        reason: 'inherited-token-pricing',
+      },
     })
 
     const requestEvidence = resolveMeasurementEvidenceV1(request!, { sessionId: 'thread-1' })
@@ -117,7 +127,7 @@ sqliteDescribe('Zed fixture parity and evidence resolution v1', () => {
       modelIdentity: 'exact',
       sessionIdentity: 'exact',
     })
-    expect(requestEvidence?.costEvidence).toEqual({ kind: 'estimated', method: 'token-pricing' })
+    expect(requestEvidence?.costEvidence).toEqual({ kind: 'estimated', method: 'other' })
 
     const remainderEvidence = resolveMeasurementEvidenceV1(remainder!, { sessionId: 'thread-1' })
     expect(remainderEvidence?.profile).toBe(ZED_CUMULATIVE_REMAINDER_PROFILE_V1)
@@ -126,7 +136,7 @@ sqliteDescribe('Zed fixture parity and evidence resolution v1', () => {
       modelIdentity: 'exact',
       sessionIdentity: 'exact',
     })
-    expect(remainderEvidence?.costEvidence).toEqual({ kind: 'estimated', method: 'token-pricing' })
+    expect(remainderEvidence?.costEvidence).toEqual({ kind: 'estimated', method: 'other' })
   })
 
   it('withholds both paths when Zed did not record the underlying model provider', async () => {
