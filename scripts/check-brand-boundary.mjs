@@ -61,7 +61,9 @@ const runtimeBrandViolations = []
 for (const path of files.filter(path => path.startsWith('src/') && /\.(?:ts|tsx)$/.test(path))) {
   const content = readFileSync(path, 'utf8')
   content.split(/\r?\n/).forEach((line, index) => {
-    if (/codeburn:\s/i.test(line)) runtimeBrandViolations.push(`${path}:${index + 1}:${line.trim()}`)
+    if (/codeburn:\s/i.test(line) || /codeburn model-(?:alias|savings)/i.test(line) || /npx codeburn@latest/i.test(line)) {
+      runtimeBrandViolations.push(`${path}:${index + 1}:${line.trim()}`)
+    }
   })
 }
 for (const path of runtimeVisibleFiles) {
