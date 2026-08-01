@@ -72,13 +72,14 @@ jobs:
       - name: Test refresh lock lease on Windows
         if: runner.os == 'Windows'
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
-      - name: Test local endpoint state and signed batches on Windows
+      - name: Test local endpoint, workspace, outbox, and signed batches on Windows
         if: runner.os == 'Windows'
         run: >-
           npm test -- --run --no-file-parallelism
           src/vendor/rfc8785-canonicalize.test.ts
           src/local-state/secret-protector.test.ts
           src/local-state/endpoint-identity.test.ts
+          src/local-state/local-workspace.test.ts
           src/local-state/desktop-host.test.ts
           src/local-state/measurement-outbox.test.ts
           src/local-state/signed-batch.test.ts
@@ -147,7 +148,7 @@ jobs:
             echo
             echo "The reviewed GPT-5.6 intervals, historical calculations, immutable cost assignments, local observation ledger, cross-book resolution and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
             echo
-            echo "The refresh-lock lease, local endpoint state, signed-batch suite and real Electron DPAPI probe also ran on Windows."
+            echo "The refresh-lock lease, local endpoint and workspace state, signed-batch suite and real Electron DPAPI probe also ran on Windows."
             echo
             echo "Four exact inherited cases remain quarantined in \`docs/TEST_QUARANTINE.md\`; no wildcard file or subsystem quarantine is active."
           } >> "$GITHUB_STEP_SUMMARY"
