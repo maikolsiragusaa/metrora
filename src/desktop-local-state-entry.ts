@@ -42,6 +42,24 @@ export type {
 } from './local-state/local-workspace.js'
 
 export {
+  inspectLocalWorkspaceProductionLifecycleV1,
+  LocalWorkspaceProductionLifecycleRecoveryRequiredError,
+  LocalWorkspaceProductionLifecycleStateV1Schema,
+  LocalWorkspaceProductionLifecycleSummaryV1Schema,
+  LocalWorkspaceProductionLifecycleWorkspaceRequiredError,
+  LocalWorkspaceProductionModeV1Schema,
+  setLocalWorkspaceProductionModeV1,
+} from './local-state/workspace-production-lifecycle.js'
+export type {
+  LocalWorkspaceProductionLifecycleOptions,
+  LocalWorkspaceProductionLifecycleStateV1,
+  LocalWorkspaceProductionLifecycleSummaryV1,
+  LocalWorkspaceProductionModeV1,
+  SetLocalWorkspaceProductionModeV1Options,
+  SetLocalWorkspaceProductionModeV1Result,
+} from './local-state/workspace-production-lifecycle.js'
+
+export {
   LocalWorkspaceRequiredError,
   produceLocalReviewedMeasurementV1,
 } from './local-state/reviewed-measurement-producer.js'
