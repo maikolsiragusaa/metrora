@@ -1,0 +1,112 @@
+export type WorkspaceEvidenceState =
+  | 'workspace-required'
+  | 'empty'
+  | 'ready'
+  | 'acknowledged'
+  | 'quarantined'
+  | 'blocked'
+
+export type DesktopWorkspaceSnapshot = {
+  kind: 'metrora.desktop-workspace-snapshot'
+  version: 1
+  localOnly: true
+  identity: {
+    endpointId: string
+    generation: number
+    publicKeyFingerprintSha256: string
+  }
+  workspace: null | {
+    workspaceId: string
+    displayName: string
+    slug: string
+    ownership: 'personal'
+    status: 'active'
+    ownerRole: 'owner'
+    endpoint: {
+      endpointId: string
+      displayName: string
+      os: 'windows' | 'macos' | 'linux' | 'android' | 'other'
+      architecture: 'x64' | 'arm64' | 'arm' | 'other'
+      identityGeneration: number
+      publicKeyFingerprintSha256: string
+      metroraVersion: string
+      collectorVersion: string
+      capabilities: Array<'collect' | 'normalize' | 'aggregate' | 'serve-local-api' | 'read-companion-api'>
+      enrollmentState: 'active'
+    }
+  }
+  evidence: {
+    state: WorkspaceEvidenceState
+    pendingEventCount: number
+    unbatchedEventCount: number
+    acknowledgedEventCount: number
+    invalidEventCount: number
+    quarantinedEventCount: number
+    pendingBatchCount: number
+    acknowledgedBatchCount: number
+    blockers: string[]
+  }
+  privacy: {
+    networkRequired: false
+    promptsIncluded: false
+    responsesIncluded: false
+    sourceCodeIncluded: false
+    secretsIncluded: false
+    unrestrictedLocalPathsIncluded: false
+  }
+}
+
+export type DesktopWorkspaceAvailability =
+  | {
+      availability: 'ready'
+      vault: {
+        backend: 'windows-dpapi' | 'macos-keychain'
+        masterKeyState: 'created' | 'loaded' | 'rewrapped'
+      }
+      snapshot: DesktopWorkspaceSnapshot
+    }
+  | { availability: 'unsupported-platform'; platform: string }
+  | { availability: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+
+export type DesktopWorkspaceBatchResult = {
+  outcome: 'created' | 'empty'
+  batch?: {
+    batchId: string
+    batchSha256: string
+    firstSequence: number
+    lastSequence: number
+    eventCount: number
+    identityGeneration: number
+  }
+  snapshot: DesktopWorkspaceSnapshot
+}
+
+export type DesktopWorkspaceExportResult =
+  | { outcome: 'cancelled' }
+  | {
+      outcome: 'exported'
+      fileName: string
+      verification: {
+        workspaceId: string
+        endpointId: string
+        endpointIdentityGeneration: number
+        exportedAt: string
+        batchCount: number
+        eventCount: number
+        pendingBatchCount: number
+        acknowledgedBatchCount: number
+        latestBatchSha256?: string
+      }
+      snapshot: DesktopWorkspaceSnapshot
+    }
+
+export interface WorkspaceBridge {
+  getWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
+  createWorkspace(input: {
+    displayName: string
+    slug?: string
+    endpointDisplayName: string
+  }): Promise<{ outcome: 'created' | 'existing'; snapshot: DesktopWorkspaceSnapshot }>
+  createWorkspaceBatch(): Promise<DesktopWorkspaceBatchResult>
+  exportWorkspaceEvidence(): Promise<DesktopWorkspaceExportResult>
+}

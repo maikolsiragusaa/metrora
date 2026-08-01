@@ -1,8 +1,8 @@
 # Workspace v1
 
-**Status:** active product milestone; local state, reviewed production, signed batches, and independent export are implemented. Desktop experience remains.
+**Status:** active product milestone; local state, reviewed production, signed batches, independent export, and the secure desktop runtime boundary are implemented. The focused desktop view and exact analytics reconciliation remain.
 
-Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns the existing public contracts, endpoint identity, reviewed measurements, outbox, and signed batches into one understandable local workspace experience.
+Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns the existing public contracts, endpoint identity, reviewed measurements, outbox, signed batches, and user-owned evidence export into one understandable local workspace experience.
 
 This milestone is deliberately local-first. It does not require a Metrora account, hosted service, subscription, or remote manager console.
 
@@ -56,7 +56,7 @@ No second collector, pricing engine, workspace schema, signer, or analytics data
 - prompts, responses, source code, patches, secrets, tool arguments, and full local paths remain excluded;
 - unreviewed or insufficient evidence remains local rather than becoming an invented claim.
 
-### 3. Signed workspace batches and export — implemented in the local runtime
+### 3. Signed workspace batches and export — implemented
 
 - only workspace-authorized reviewed events enter the signed chain;
 - workspace, endpoint, sequence range, previous digest, signer generation, and public batch digest are verified;
@@ -68,20 +68,35 @@ No second collector, pricing engine, workspace schema, signer, or analytics data
 
 The export and verification contract is documented in `docs/WORKSPACE_EVIDENCE_EXPORT_V1.md`.
 
-### 4. Desktop workspace experience — next tranche
+### 4. Secure desktop runtime boundary — implemented
 
-The first desktop view should show:
+- one Electron main-process runtime owns the loaded endpoint signing and event-identity material;
+- the existing OS-vault master key is zeroed immediately after initialization;
+- private identity buffers are zeroed on runtime disposal;
+- unsupported platforms or vault failures disable Workspace actions without opening a plaintext fallback or blocking ordinary analytics;
+- strict public DTOs expose only workspace, endpoint, evidence, and privacy state;
+- explicit create, batch, and export actions cross an isolated IPC bridge;
+- native export paths remain inside the main process and the renderer receives only the filename and verification summary;
+- raw exceptions, private paths, and secret material never cross IPC.
+
+The runtime contract is documented in `docs/DESKTOP_WORKSPACE_RUNTIME_V1.md`.
+
+### 5. Focused desktop Workspace view — next tranche
+
+The first desktop view must show:
 
 - workspace name and local-only status;
 - owner membership;
 - enrolled endpoint and identity health;
-- latest reviewed measurement and signed-batch state;
-- usage totals derived from the same canonical local records;
+- reviewed evidence and signed-batch state;
+- usage totals read from the same canonical Overview payload and active period/filter scope used by the rest of the desktop;
 - provenance and coverage summary;
 - clear explanation of what would and would not be shared;
-- explicit creation, batching, export, pause, and recovery actions.
+- explicit creation, batching, export, and recovery actions.
 
-The UI must not show empty enterprise concepts, invite flows, billing, or team administration before they exist.
+The Workspace runtime does not calculate analytics totals. The renderer must reuse the existing desktop analytics read model so calls, sessions, token dimensions, costs, models, sources, projects, filters, and periods reconcile by construction.
+
+The UI must not show empty enterprise concepts, invite flows, billing, cloud synchronization, Advisor, or Bench before they exist.
 
 ## Privacy boundary
 
@@ -124,7 +139,7 @@ Workspace v1 is complete only when:
 2. the existing endpoint identity is enrolled without generating a competing identity;
 3. repeated scans cannot duplicate reviewed events or signed batches;
 4. unsupported collectors and insufficient evidence fail closed;
-5. historical pricing, calls, sessions, token counts, model labels, and project labels remain unchanged;
+5. historical pricing, calls, sessions, token counts, model labels, source labels, and project labels remain unchanged;
 6. the desktop view reconciles exactly with CLI/local analytics for the same scope;
 7. exported workspace evidence verifies independently and contains no prohibited content;
 8. Windows and Ubuntu blocking tests pass, including Windows vault and filesystem behavior;

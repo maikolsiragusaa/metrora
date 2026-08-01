@@ -1,16 +1,31 @@
 // Narrow runtime entry loaded by Electron's main process. It deliberately
-// exposes desktop-host initialization and public local-workspace/outbox records;
+// exposes desktop-host initialization and public Workspace DTOs/actions;
 // raw private identity material never crosses into the renderer or an IPC response.
 export {
   DesktopVaultUnavailableError,
   initializeDesktopLocalStateV1,
+  initializeDesktopWorkspaceRuntimeV1,
 } from './local-state/desktop-host.js'
 export type {
   DesktopSafeStorageProvider,
   DesktopVaultBackendV1,
   InitializedDesktopLocalStateV1,
+  InitializedDesktopWorkspaceRuntimeV1,
   InitializeDesktopLocalStateV1Options,
+  InitializeDesktopWorkspaceRuntimeV1Options,
 } from './local-state/desktop-host.js'
+
+export {
+  CreateDesktopWorkspaceInputV1Schema,
+  DesktopWorkspaceSnapshotV1Schema,
+} from './local-state/desktop-workspace-runtime.js'
+export type {
+  CreateDesktopWorkspaceInputV1,
+  DesktopWorkspaceBatchResultV1,
+  DesktopWorkspaceExportResultV1,
+  DesktopWorkspaceRuntimeV1,
+  DesktopWorkspaceSnapshotV1,
+} from './local-state/desktop-workspace-runtime.js'
 
 export {
   createLocalPersonalWorkspaceV1,

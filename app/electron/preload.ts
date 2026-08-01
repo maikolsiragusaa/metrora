@@ -4,6 +4,7 @@ import type { Envelope } from './main'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
+type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
@@ -46,6 +47,11 @@ const bridge = {
   exportData: (format: string, provider: string, outPath: string) => invoke('metrora:exportData', format, provider, outPath),
   chooseDirectory: () => invoke('metrora:chooseDirectory'),
   cliStatus: () => invoke('metrora:cliStatus'),
+
+  getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
+  createWorkspace: (input: CreateWorkspaceInput) => invoke('metrora:createWorkspace', input),
+  createWorkspaceBatch: () => invoke('metrora:createWorkspaceBatch'),
+  exportWorkspaceEvidence: () => invoke('metrora:exportWorkspaceEvidence'),
 
   // Metrora performs no product telemetry. Compatibility calls settle locally.
   telemetryStatus: async () => null,

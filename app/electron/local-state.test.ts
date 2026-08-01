@@ -63,7 +63,13 @@ describe('desktop local-state Electron host', () => {
         backend: 'windows-dpapi',
       }
     })
-    const importModule = vi.fn(async () => ({ initializeDesktopLocalStateV1: initialize }))
+    const initializeWorkspace = vi.fn<DesktopLocalStateModule['initializeDesktopWorkspaceRuntimeV1']>(async () => {
+      throw new Error('not used by endpoint-only initialization')
+    })
+    const importModule = vi.fn(async () => ({
+      initializeDesktopLocalStateV1: initialize,
+      initializeDesktopWorkspaceRuntimeV1: initializeWorkspace,
+    }))
 
     const result = await initializeDesktopEndpointState({
       platform: 'win32',
@@ -85,8 +91,8 @@ describe('desktop local-state Electron host', () => {
     })
     expect(importModule).toHaveBeenCalledOnce()
     expect(initialize).toHaveBeenCalledOnce()
+    expect(initializeWorkspace).not.toHaveBeenCalled()
   })
-
 
   it('copies old Qovrion desktop state without modifying the source', () => {
     const root = mkdtempSync(join(tmpdir(), 'metrora-desktop-adoption-'))
@@ -108,6 +114,7 @@ describe('desktop local-state Electron host', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
   it('fails closed without loading the runtime on unsupported platforms', async () => {
     const importModule = vi.fn()
     const result = await initializeDesktopEndpointState({

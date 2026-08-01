@@ -45,6 +45,16 @@ export function cliExecutableNames(platformName: NodeJS.Platform = platform()): 
   return bases.flatMap(name => [`${name}.cmd`, `${name}.exe`, name])
 }
 
+/** Keep all historical IPC prefixes inside the explicit identity/compatibility boundary. */
+export function ipcChannelAliases(channel: string): string[] {
+  if (!channel.startsWith('codeburn:')) return [channel]
+  return [
+    channel.replace(/^codeburn:/, 'metrora:'),
+    channel.replace(/^codeburn:/, 'qovrion:'),
+    channel,
+  ]
+}
+
 export type CliPathFiles = {
   canonical: string
   legacy: readonly string[]
