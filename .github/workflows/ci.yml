@@ -76,8 +76,11 @@ jobs:
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
       - name: Test local endpoint, workspace, reviewed production, outbox, signed batches, exports, and desktop runtime on Windows
         if: runner.os == 'Windows'
+        # Windows Server 2025 hosted runners can exceed Vitest's 5s default on
+        # filesystem-heavy cryptographic tests. Keep every test blocking while
+        # allowing bounded runner variance instead of quarantining coverage.
         run: >-
-          npm test -- --run --no-file-parallelism
+          npm test -- --run --no-file-parallelism --testTimeout=15000
           src/vendor/rfc8785-canonicalize.test.ts
           src/local-state/secret-protector.test.ts
           src/local-state/endpoint-identity.test.ts
