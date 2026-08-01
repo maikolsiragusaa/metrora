@@ -120,7 +120,7 @@ describe('Workspace desktop view', () => {
   it('renders the active Overview scope and exact usage values beside local Workspace state', async () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    expect(await screen.findByText('Maikol Workspace')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
     expect(screen.getByText('Last 7 days · All providers')).toBeInTheDocument()
     expect(screen.getByTestId('workspace-cost')).toHaveTextContent('$12.34')
     expect(screen.getByTestId('workspace-calls')).toHaveTextContent('56')
@@ -149,7 +149,7 @@ describe('Workspace desktop view', () => {
       displayName: 'Teamless Local',
       endpointDisplayName: 'Windows workstation',
     }))
-    expect(await screen.findByText('Maikol Workspace')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
   })
 
   it('keeps signing and export explicit and refreshes from returned public snapshots', async () => {
