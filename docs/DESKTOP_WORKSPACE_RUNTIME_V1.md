@@ -1,6 +1,6 @@
 # Desktop Workspace runtime v1
 
-**Status:** implemented as the W1.D.A main-process boundary; the Workspace screen follows in a separate tranche.
+**Status:** W1.D.A secure main-process boundary and W1.D.B focused desktop view are implemented. Explicit reviewed-production and lifecycle controls remain separate work before the complete W1.D experience is closed.
 
 The desktop Workspace runtime exposes the already implemented local Workspace, reviewed evidence, signed-batch, and export capabilities to Electron without creating a second analytics engine or exposing endpoint secrets to the renderer.
 
@@ -8,10 +8,10 @@ The desktop Workspace runtime exposes the already implemented local Workspace, r
 
 The desktop keeps two explicit authorities:
 
-- the existing CLI/menubar analytics payload remains authoritative for calls, sessions, token dimensions, costs, model labels, source labels, project labels, filters, and periods;
+- the existing CLI/menubar Overview payload remains authoritative for calls, sessions, token dimensions, costs, pricing coverage, model labels, source labels, project labels, filters, and periods;
 - the private Workspace runtime is authoritative only for local Workspace identity, enrollment, evidence state, batch creation, and signed export.
 
-The Workspace renderer must combine those two read models. It must never recalculate analytics totals from outbox events or signed batches.
+The Workspace renderer combines those two read models. It never recalculates analytics totals from outbox events or signed batches.
 
 ## Main-process secret boundary
 
@@ -47,6 +47,24 @@ It contains no analytics totals. It also excludes:
 - raw deduplication keys or production receipts;
 - prompts, responses, source code, patches, secrets, and tool arguments.
 
+## Focused desktop view
+
+The W1.D.B renderer adds a dedicated **Workspace** section and `Command-9` navigation without changing ordinary analytics behavior.
+
+The view presents:
+
+- local personal-Workspace identity and local-only status;
+- active owner role and enrolled endpoint details;
+- endpoint platform, software versions, identity generation, and public fingerprint;
+- honest reviewed-evidence state, pending/acknowledged/quarantined counts, and blockers;
+- the explicit privacy boundary;
+- current cost, calls, sessions, input/output tokens, cache-read/cache-write tokens, and pricing coverage;
+- the exact active period, provider, custom-range, and Claude-config scope already selected in the desktop shell.
+
+`workspaceUsageFromOverview()` is intentionally a field-for-field projection of the current Overview payload. It performs no aggregation, repricing, relabeling, event reconstruction, or batch reconstruction. Focused tests lock every displayed analytics field to the corresponding Overview field.
+
+Opening the view performs only a public Workspace-status read. It does not scan collectors, produce reviewed measurements, sign a batch, open a save dialog, upload data, or publish anything automatically.
+
 ## Actions
 
 The renderer may request:
@@ -59,6 +77,8 @@ The renderer may request:
 Creation remains explicit. The runtime derives a valid slug only when the user does not supply one and reuses the enrolled endpoint identity.
 
 The reviewed adapter-set digest placed in new batches is derived deterministically from the executable provenance profile registry. It is not an arbitrary UI or Electron constant.
+
+The renderer disables signing and export when the public evidence state reports a blocking or quarantined condition. Runtime failures are shown as bounded user-facing outcomes rather than raw exception text.
 
 ## Export path privacy
 
@@ -83,13 +103,13 @@ All handlers:
 
 ## Non-goals
 
-- no Workspace screen in this tranche;
-- no analytics calculation or alternative total store;
+- no alternate analytics calculation or total store;
 - no automatic collector scan or reviewed measurement production;
+- no automatic batch creation, export, upload, or publication;
 - no uploader, synchronization, network, account, team, invitation, entitlement, billing, or retention service;
 - no Android, Advisor, or Bench behavior;
 - no collector, parser, pricing, label, session-cache, or aggregation mutation.
 
-## Next tranche
+## Remaining W1.D work
 
-W1.D.B adds one focused desktop Workspace view and explicit create, batch, and export interactions. Usage cards must reuse the same canonical Overview payload and active period/filter scope as the rest of the desktop, with tests proving exact field-by-field reconciliation.
+The focused W1.D.B screen does not by itself close the complete desktop Workspace experience. A later bounded tranche must expose reviewed-measurement production explicitly and settle honest pause/recovery controls without weakening the main-process secret boundary, duplicating analytics, or introducing hosted dependencies.

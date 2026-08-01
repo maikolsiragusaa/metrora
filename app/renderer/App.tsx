@@ -28,6 +28,7 @@ import { Compare } from './sections/Compare'
 import { Plans } from './sections/Plans'
 import { Settings, type SettingsPane } from './sections/Settings'
 import { SpendContent } from './sections/Spend'
+import { WorkspaceContent } from './sections/Workspace'
 import type { DateRange, MenubarPayload, ModelReportRow, Period, TelemetryStatus } from './lib/types'
 
 // Bucket raw dollar amounts before they leave the machine: telemetry carries
@@ -114,6 +115,7 @@ const SECTION_TITLES: Record<Section, string> = {
   models: 'Models',
   compare: 'Compare',
   plans: 'Plans',
+  workspace: 'Workspace',
   settings: 'Settings',
 }
 
@@ -429,6 +431,7 @@ function AppMain() {
       else if (key === '6') navigate('models')
       else if (key === '7') navigate('compare')
       else if (key === '8') navigate('plans')
+      else if (key === '9') navigate('workspace')
       else if (key === ',') navigate('settings')
       else if (key === 'r') refreshVisible()
       else return
@@ -524,6 +527,8 @@ function AppMain() {
                 <Models period={period} provider={provider} range={customRange} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
               ) : section === 'compare' ? (
                 <Compare period={period} provider={provider} range={customRange} refreshToken={refreshToken} ready={ready} />
+              ) : section === 'workspace' ? (
+                <WorkspaceContent payload={overview.data ?? null} scope={scope} analyticsLoading={overview.loading} />
               ) : (
                 <SectionPlaceholder title={SECTION_TITLES[section]} />
               )}
@@ -534,7 +539,7 @@ function AppMain() {
         {section !== 'settings' && (
           <Hint
             items={[
-              { k: '⌘1-8', label: 'Navigate' },
+              { k: '⌘1-9', label: 'Navigate' },
               { k: '⌘,', label: 'Settings' },
               { k: '⌘R', label: 'Refresh' },
             ]}
