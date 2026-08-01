@@ -1,0 +1,57 @@
+name: Metrora Rebrand Inventory
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '**'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Inventory legacy Qovrion identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build complete tracked-file inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rebrand-inventory
+          {
+            echo '# Metrora rebrand inventory'
+            echo
+            echo "commit=${GITHUB_SHA}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo '## Paths containing qovrion'
+            git ls-files | grep -i 'qovrion' || true
+            echo
+            echo '## Content references'
+            git grep -n -I -i -E 'qovrion|QOVRION' -- . || true
+          } | tee rebrand-inventory/qovrion-references.txt
+
+          {
+            echo '# Compatibility references'
+            echo
+            echo '## codeburn aliases and local state'
+            git grep -n -I -i -E 'codeburn|CODEBURN' -- . || true
+          } > rebrand-inventory/codeburn-compatibility.txt
+
+          qovrion_count=$(grep -c -i 'qovrion' rebrand-inventory/qovrion-references.txt || true)
+          codeburn_count=$(grep -c -i 'codeburn' rebrand-inventory/codeburn-compatibility.txt || true)
+          printf '{\n  "schemaVersion": 1,\n  "commit": "%s",\n  "qovrionReferenceLines": %s,\n  "codeburnCompatibilityLines": %s\n}\n' \
+            "$GITHUB_SHA" "$qovrion_count" "$codeburn_count" \
+            > rebrand-inventory/summary.json
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrora-rebrand-inventory-${{ github.sha }}
+          path: rebrand-inventory
+          if-no-files-found: error
+          retention-days: 14
