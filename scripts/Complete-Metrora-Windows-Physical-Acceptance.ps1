@@ -8,26 +8,19 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-. (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 
 function Read-ProfileResult([string]$Path, $Fallback) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $Fallback }
   return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 }
 
-$acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
-if (
-  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
-  $context.version -ne 1 -or
-  $context.candidate.directory -ne 'downloaded-candidate'
-) {
-  throw 'physical acceptance context is invalid'
-}
-$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
+$state = Get-MetroraPhysicalAcceptanceState $AcceptanceDirectory $RepositoryRoot
+$acceptance = $state.Acceptance
+$repository = $state.Repository
+$sentinelPath = $state.SentinelPath
+$context = $state.Context
 
-$sentinelPath = Join-Path $acceptance $context.sentinel.file
-Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
 $defaults = New-MetroraNotRunProfiles
 $profiles = [ordered]@{
   existing = Read-ProfileResult (Join-Path $acceptance 'P1_EXISTING_RESULT.json') $defaults.existing
