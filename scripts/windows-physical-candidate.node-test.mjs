@@ -8,6 +8,7 @@ import { sha256Text } from './windows-release-manifest-lib.mjs'
 import {
   materializePhysicalCanonicalPayload,
   parsePhysicalCandidateInventory,
+  verifyPhysicalCanonicalPayload,
 } from './windows-physical-candidate.mjs'
 
 async function fixture() {
@@ -82,6 +83,26 @@ test('rejects a portable file that no longer matches inventory', async () => {
         outputDirectory: current.output,
       }),
       /does not match inventory/,
+    )
+  } finally {
+    await rm(current.root, { recursive: true, force: true })
+  }
+})
+
+test('rejects a canonical payload modified after preparation', async () => {
+  const current = await fixture()
+  try {
+    await materializePhysicalCanonicalPayload({
+      candidateDirectory: current.candidate,
+      outputDirectory: current.output,
+    })
+    await writeFile(join(current.output, 'Metrora.exe'), 'mutated-after-preparation')
+    await assert.rejects(
+      verifyPhysicalCanonicalPayload({
+        candidateDirectory: current.candidate,
+        canonicalDirectory: current.output,
+      }),
+      /does not match its candidate inventory/,
     )
   } finally {
     await rm(current.root, { recursive: true, force: true })
