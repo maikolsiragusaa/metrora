@@ -70,7 +70,12 @@ if ($platform.architecture -ne 'x64') {
 $sentinelName = 'METRORA-PHYSICAL-ACCEPTANCE-SENTINEL.bin'
 $sentinelPath = Join-Path $output $sentinelName
 $sentinelBytes = [byte[]]::new(64)
-[Security.Cryptography.RandomNumberGenerator]::Fill($sentinelBytes)
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+try {
+  $rng.GetBytes($sentinelBytes)
+} finally {
+  $rng.Dispose()
+}
 [IO.File]::WriteAllBytes($sentinelPath, $sentinelBytes)
 $sentinelSha256 = Get-MetroraFileSha256 $sentinelPath
 
