@@ -79,6 +79,38 @@ function validReport() {
   }
 }
 
+function setNotRunProfiles(report) {
+  report.profiles.existing = {
+    status: 'not-run',
+    portableVerified: false,
+    identityPreserved: false,
+    workspacePreserved: false,
+    lifecyclePreserved: false,
+    evidencePreserved: false,
+    reopenPassed: false,
+    recoveryMode: 'not-run',
+    duplicateProductionCount: 0,
+    duplicateBatchCount: 0,
+    invalidCount: 0,
+    quarantinedCount: 0,
+  }
+  report.profiles.clean = {
+    status: 'not-run',
+    registrationCount: 0,
+    shortcutCount: 0,
+    cliVersion: null,
+    firstLaunchPassed: false,
+    uninstallPassed: false,
+    sentinelPreserved: false,
+  }
+  report.profiles.migration = {
+    status: 'not-run',
+    transitions: [],
+    sentinelPreserved: false,
+    fixtureRemoved: false,
+  }
+}
+
 test('accepts the complete sanitized physical acceptance report', () => {
   const report = validReport()
   assert.equal(validateWindowsPhysicalAcceptanceReport(report, { expectedCommit: commit }), report)
@@ -90,6 +122,15 @@ test('rejects a report bound to another source commit', () => {
     () => validateWindowsPhysicalAcceptanceReport(report, { expectedCommit: 'b'.repeat(40) }),
     /source commit/,
   )
+})
+
+test('requires a concrete ZIP artifact name and digest', () => {
+  const report = validReport()
+  report.candidate.artifactName = 'metrora-windows-candidate'
+  assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /ZIP name/)
+  report.candidate.artifactName = `metrora-windows-candidate-${commit}.zip`
+  report.candidate.artifactSha256 = null
+  assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /artifact digest/)
 })
 
 test('rejects path-shaped platform text', () => {
@@ -128,38 +169,25 @@ test('rejects an incomplete passing migration sequence', () => {
   assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /complete declared transition/)
 })
 
-test('allows explicitly not-run profiles without manufacturing PASS evidence', () => {
+test('allows explicitly not-run profiles without manufacturing evidence', () => {
   const report = validReport()
-  report.profiles.existing = {
-    status: 'not-run',
-    portableVerified: false,
-    identityPreserved: false,
-    workspacePreserved: false,
-    lifecyclePreserved: false,
-    evidencePreserved: false,
-    reopenPassed: false,
-    recoveryMode: 'not-run',
-    duplicateProductionCount: 0,
-    duplicateBatchCount: 0,
-    invalidCount: 0,
-    quarantinedCount: 0,
-  }
-  report.profiles.clean = {
-    status: 'not-run',
-    registrationCount: 0,
-    shortcutCount: 0,
-    cliVersion: null,
-    firstLaunchPassed: false,
-    uninstallPassed: false,
-    sentinelPreserved: false,
-  }
-  report.profiles.migration = {
-    status: 'not-run',
-    transitions: [],
-    sentinelPreserved: false,
-    fixtureRemoved: false,
-  }
+  setNotRunProfiles(report)
   assert.equal(validateWindowsPhysicalAcceptanceReport(report), report)
+})
+
+test('rejects evidence claims on not-run profiles', () => {
+  const report = validReport()
+  setNotRunProfiles(report)
+  report.profiles.existing.portableVerified = true
+  assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /not-run forbids portable evidence/)
+
+  setNotRunProfiles(report)
+  report.profiles.clean.registrationCount = 1
+  assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /not-run requires zero registrations/)
+
+  setNotRunProfiles(report)
+  report.profiles.migration.transitions = ['installed-0.9.18']
+  assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /not-run forbids transitions/)
 })
 
 test('rejects unknown fields rather than accepting future private content', () => {
