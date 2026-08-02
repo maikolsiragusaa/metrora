@@ -25,23 +25,6 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-installed-app-test-lib.ps1')
 
-function Invoke-MetroraInstall([string]$Installer, [string]$InstallDirectory, [string]$Stage) {
-  $process = Start-Process -FilePath $Installer -ArgumentList @('/S', "/D=$InstallDirectory") -Wait -PassThru
-  if ($process.ExitCode -ne 0) {
-    throw "$Stage installer exited with code $($process.ExitCode)"
-  }
-}
-
-function Invoke-MetroraUninstall($Installed, [string]$InstallDirectory, [string]$Stage) {
-  $process = Start-Process -FilePath $Installed.Uninstaller -ArgumentList '/S' -Wait -PassThru
-  if ($process.ExitCode -ne 0) {
-    throw "$Stage uninstaller exited with code $($process.ExitCode)"
-  }
-  Wait-MetroraCondition { -not (Test-Path -LiteralPath $Installed.Executable) } 60 "$Stage did not remove the application executable"
-  Wait-MetroraCondition { @(Get-MetroraUninstallEntries $InstallDirectory $Installed.Uninstaller).Count -eq 0 } 30 "$Stage did not remove its registry entry"
-  Wait-MetroraCondition { @(Get-MetroraShortcuts $Installed.Executable).Count -eq 0 } 30 "$Stage did not remove the Metrora shortcut"
-}
-
 function Get-SingleCandidateInstaller([string]$Directory) {
   $installers = @(Get-ChildItem -LiteralPath (Join-Path $Directory 'installer') -Filter 'Metrora-Setup-*.exe' -File)
   if ($installers.Count -ne 1) {
@@ -83,7 +66,7 @@ try {
   New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
   $sentinel = New-MetroraStateSentinel $roamingDirectory 'r1bca-user-owned-state.txt'
 
-  Invoke-MetroraInstall $baselineInstallerPath $installDirectory 'baseline install'
+  Invoke-MetroraSilentInstall $baselineInstallerPath $installDirectory 'baseline install'
   $baseline = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $baselinePayload `
@@ -93,7 +76,7 @@ try {
   Assert-MetroraStateSentinel $sentinel 'baseline install and launch'
   $stages += "installed-$($baseline.FileVersion)"
 
-  Invoke-MetroraInstall $candidateInstaller $installDirectory 'candidate upgrade'
+  Invoke-MetroraSilentInstall $candidateInstaller $installDirectory 'candidate upgrade'
   $upgraded = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $candidatePayload `
@@ -103,7 +86,7 @@ try {
   Assert-MetroraStateSentinel $sentinel 'candidate upgrade and launch'
   $stages += "upgraded-$($upgraded.FileVersion)"
 
-  Invoke-MetroraInstall $candidateInstaller $installDirectory 'candidate reinstall'
+  Invoke-MetroraSilentInstall $candidateInstaller $installDirectory 'candidate reinstall'
   $reinstalled = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $candidatePayload `
@@ -112,11 +95,11 @@ try {
   Assert-MetroraStateSentinel $sentinel 'candidate reinstall'
   $stages += "reinstalled-$($reinstalled.FileVersion)"
 
-  Invoke-MetroraUninstall $reinstalled $installDirectory 'pre-rollback uninstall'
+  Invoke-MetroraSilentUninstall $reinstalled $installDirectory 'pre-rollback uninstall'
   Assert-MetroraStateSentinel $sentinel 'pre-rollback uninstall'
   $stages += 'uninstalled-for-rollback'
 
-  Invoke-MetroraInstall $baselineInstallerPath $installDirectory 'baseline rollback'
+  Invoke-MetroraSilentInstall $baselineInstallerPath $installDirectory 'baseline rollback'
   $rolledBack = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $baselinePayload `
@@ -126,7 +109,7 @@ try {
   Assert-MetroraStateSentinel $sentinel 'baseline rollback and launch'
   $stages += "rolled-back-$($rolledBack.FileVersion)"
 
-  Invoke-MetroraInstall $candidateInstaller $installDirectory 'candidate re-upgrade'
+  Invoke-MetroraSilentInstall $candidateInstaller $installDirectory 'candidate re-upgrade'
   $reupgraded = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $candidatePayload `
@@ -136,7 +119,7 @@ try {
   Assert-MetroraStateSentinel $sentinel 'candidate re-upgrade and launch'
   $stages += "re-upgraded-$($reupgraded.FileVersion)"
 
-  Invoke-MetroraUninstall $reupgraded $installDirectory 'final uninstall'
+  Invoke-MetroraSilentUninstall $reupgraded $installDirectory 'final uninstall'
   Assert-MetroraStateSentinel $sentinel 'final uninstall'
   $stages += 'uninstalled'
 
