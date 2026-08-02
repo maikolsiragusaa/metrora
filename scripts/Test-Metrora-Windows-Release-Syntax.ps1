@@ -16,6 +16,7 @@ $paths = @(
   'scripts\Test-Metrora-Windows-Migration.ps1',
   'scripts\Test-Metrora-Windows-Interrupted-Migration.ps1',
   'scripts\Prepare-Metrora-Windows-Physical-Acceptance.ps1',
+  'scripts\Start-Metrora-Windows-Physical-Existing-Profile.ps1',
   'scripts\Record-Metrora-Windows-Physical-Existing-Profile.ps1',
   'scripts\Test-Metrora-Windows-Physical-Clean.ps1',
   'scripts\Test-Metrora-Windows-Physical-Migration.ps1',
