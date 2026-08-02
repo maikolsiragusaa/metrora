@@ -139,39 +139,13 @@ jobs:
       - name: Build NSIS from an isolated copy of the canonical payload
         shell: pwsh
         run: |
-          $release = Join-Path $PWD 'app\release'
-          $payload = Join-Path $release 'win-unpacked'
-          $installerSource = Join-Path $release 'nsis-prepackaged'
-          Remove-Item -LiteralPath $installerSource -Recurse -Force -ErrorAction SilentlyContinue
-          node -e "require('node:fs').cpSync(process.argv[1], process.argv[2], { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true })" $payload $installerSource
-
-          Get-ChildItem -LiteralPath $release -File -ErrorAction SilentlyContinue | Where-Object {
-            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
-          } | Remove-Item -Force
-
-          Push-Location app
-          npx --no-install electron-builder `
-            --win nsis `
-            --x64 `
-            --prepackaged release/nsis-prepackaged `
-            --publish never
-          Pop-Location
-
-          node scripts/verify-windows-installer-source.mjs `
-            --canonical $payload `
-            --installer-source $installerSource
-
-          $installerTarget = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\installer'
-          $outputs = @(Get-ChildItem -LiteralPath $release -File | Where-Object {
-            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
-          })
-          $executables = @($outputs | Where-Object { $_.Extension -eq '.exe' })
-          if ($executables.Count -ne 1) {
-            throw "expected exactly one NSIS executable, found $($executables.Count)"
-          }
-          foreach ($file in $outputs) {
-            Copy-Item -LiteralPath $file.FullName -Destination $installerTarget -Force
-          }
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          ./scripts/Build-Metrora-Windows-Installer.ps1 `
+            -AppDirectory app `
+            -CanonicalPayloadDirectory app\release\win-unpacked `
+            -OutputDirectory app\release\Metrora-Windows-Candidate\installer `
+            -ExpectedVersion $candidateVersion `
+            -RepositoryRoot $PWD
 
       - name: Finalize and verify format derivation
         shell: pwsh
@@ -255,32 +229,12 @@ jobs:
           npx --no-install electron-builder --win --x64 --dir --publish never
           Pop-Location
 
-          $release = Join-Path $PWD 'migration-baseline\app\release'
-          $payload = Join-Path $release 'win-unpacked'
-          $installerSource = Join-Path $release 'nsis-prepackaged'
-          Remove-Item -LiteralPath $installerSource -Recurse -Force -ErrorAction SilentlyContinue
-          node -e "require('node:fs').cpSync(process.argv[1], process.argv[2], { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true })" $payload $installerSource
-
-          Get-ChildItem -LiteralPath $release -File -ErrorAction SilentlyContinue | Where-Object {
-            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
-          } | Remove-Item -Force
-
-          Push-Location migration-baseline/app
-          npx --no-install electron-builder `
-            --win nsis `
-            --x64 `
-            --prepackaged release/nsis-prepackaged `
-            --publish never
-          Pop-Location
-
-          node scripts/verify-windows-installer-source.mjs `
-            --canonical $payload `
-            --installer-source $installerSource
-
-          $expectedInstaller = Join-Path $release "Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe"
-          if (-not (Test-Path -LiteralPath $expectedInstaller)) {
-            throw "historical fixture installer was not produced: $expectedInstaller"
-          }
+          ./scripts/Build-Metrora-Windows-Installer.ps1 `
+            -AppDirectory migration-baseline\app `
+            -CanonicalPayloadDirectory migration-baseline\app\release\win-unpacked `
+            -OutputDirectory migration-baseline\app\release\migration-installer `
+            -ExpectedVersion $env:MIGRATION_BASELINE_VERSION `
+            -RepositoryRoot $PWD
 
       - name: Validate upgrade, reinstall, rollback, and re-upgrade
         shell: pwsh
@@ -288,7 +242,7 @@ jobs:
           $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
           & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
             -File scripts\Test-Metrora-Windows-Migration.ps1 `
-            -BaselineInstaller "migration-baseline\app\release\Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe" `
+            -BaselineInstaller "migration-baseline\app\release\migration-installer\Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe" `
             -BaselinePayloadDirectory migration-baseline\app\release\win-unpacked `
             -CandidateDirectory app\release\Metrora-Windows-Candidate `
             -CandidatePayloadDirectory app\release\win-unpacked `
