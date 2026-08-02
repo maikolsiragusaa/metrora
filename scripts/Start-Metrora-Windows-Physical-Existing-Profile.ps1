@@ -54,10 +54,17 @@ $executable = Join-Path $candidate 'portable\Metrora.exe'
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
   throw 'verified physical candidate portable executable is missing'
 }
+if (@(Get-Process -Name 'Metrora' -ErrorAction SilentlyContinue).Count -gt 0) {
+  throw 'close every running Metrora process before starting a physical portable launch'
+}
 
 $process = Start-Process -FilePath $executable -PassThru -Wait
 if ($process.ExitCode -ne 0) {
   throw "physical existing-profile portable exited with code $($process.ExitCode)"
+}
+Start-Sleep -Seconds 1
+if (@(Get-Process -Name 'Metrora' -ErrorAction SilentlyContinue).Count -gt 0) {
+  throw 'a Metrora process remained after the verified portable was closed'
 }
 Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
 
