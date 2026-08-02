@@ -99,6 +99,7 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
+      "deleteAppDataOnUninstall": false,
       "artifactName": "Metrora-Setup-${version}.${ext}"
     },
     "linux": {

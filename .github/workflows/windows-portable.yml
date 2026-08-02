@@ -42,9 +42,9 @@ concurrency:
 
 jobs:
   candidate:
-    name: Build one payload and derive portable plus NSIS
+    name: Build, derive, install, and uninstall Windows candidate
     runs-on: windows-latest
-    timeout-minutes: 70
+    timeout-minutes: 75
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
@@ -61,6 +61,7 @@ jobs:
           scripts/windows-release-manifest.node-test.mjs
           scripts/windows-release-layout.node-test.mjs
           scripts/windows-installer-source.node-test.mjs
+          scripts/windows-installed-layout.node-test.mjs
 
       - name: Require Node zstd support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
@@ -206,6 +207,16 @@ jobs:
           if ($overview.Contains('Ô')) {
             throw 'portable overview contains Windows encoding mojibake'
           }
+
+      - name: Clean-install, launch, and uninstall NSIS candidate
+        shell: pwsh
+        run: |
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\Test-Metrora-Windows-Install.ps1 `
+            -CandidateDirectory app\release\Metrora-Windows-Candidate `
+            -CanonicalPayloadDirectory app\release\win-unpacked `
+            -RepositoryRoot $PWD
+          if ($LASTEXITCODE -ne 0) { throw 'Windows clean-install acceptance failed' }
 
       - name: Upload Windows installer and portable candidate
         uses: actions/upload-artifact@v4
