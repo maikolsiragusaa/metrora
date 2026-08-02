@@ -60,13 +60,28 @@ function snapshot(): DesktopWorkspaceSnapshot {
   }
 }
 
+function inspectedSnapshot(): DesktopWorkspaceSnapshot {
+  const value = snapshot()
+  value.evidence = {
+    state: 'ready',
+    pendingEventCount: 12,
+    unbatchedEventCount: 8,
+    acknowledgedEventCount: 0,
+    invalidEventCount: 0,
+    quarantinedEventCount: 0,
+    pendingBatchCount: 1,
+    acknowledgedBatchCount: 0,
+    blockers: [],
+  }
+  return value
+}
+
 function runtime(): DesktopWorkspaceRuntime & {
   getBootstrapSnapshot(): Promise<DesktopWorkspaceSnapshot>
 } {
-  const value = snapshot()
   return {
-    getBootstrapSnapshot: vi.fn(async () => value),
-    getSnapshot: vi.fn(async () => new Promise<DesktopWorkspaceSnapshot>(() => undefined)),
+    getBootstrapSnapshot: vi.fn(async () => snapshot()),
+    getSnapshot: vi.fn(async () => inspectedSnapshot()),
     createWorkspace: vi.fn(),
     setProductionMode: vi.fn(),
     produceReviewedMeasurements: vi.fn(),
@@ -100,6 +115,7 @@ describe('Workspace bootstrap status', () => {
       ok: true,
       value: {
         availability: 'ready',
+        inspection: 'pending',
         snapshot: {
           workspace: { displayName: 'My workspace' },
           evidence: { state: 'blocked' },
@@ -108,5 +124,31 @@ describe('Workspace bootstrap status', () => {
     })
     expect(privateRuntime.getBootstrapSnapshot).toHaveBeenCalledTimes(1)
     expect(privateRuntime.getSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('runs the complete evidence inspection only through the read-only inspection channel', async () => {
+    const privateRuntime = runtime()
+    const handlers = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => ready(privateRuntime),
+      chooseExportPath: async () => null,
+    })
+
+    await expect(handlers['codeburn:inspectWorkspaceStatus']!()).resolves.toMatchObject({
+      ok: true,
+      value: {
+        availability: 'ready',
+        inspection: 'complete',
+        snapshot: {
+          evidence: {
+            state: 'ready',
+            pendingEventCount: 12,
+            unbatchedEventCount: 8,
+          },
+        },
+      },
+    })
+    expect(privateRuntime.getSnapshot).toHaveBeenCalledTimes(1)
+    expect(privateRuntime.getBootstrapSnapshot).not.toHaveBeenCalled()
+    expect(privateRuntime.produceReviewedMeasurements).not.toHaveBeenCalled()
   })
 })
