@@ -3,7 +3,7 @@ const gitSha1Pattern = /^[a-f0-9]{40}$/
 const semverPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
 const safeTextPattern = /^[^\\/\r\n\0]{1,160}$/
-const artifactNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/
+const artifactNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,195}\.zip$/
 const statuses = new Set(['pass', 'fail', 'not-run'])
 const recoveryModes = new Set(['not-required', 'explicit-only', 'failed', 'not-run'])
 const limitationValues = new Set([
@@ -113,6 +113,20 @@ function validateExistingProfile(profile) {
     assertPassCondition(profile.invalidCount === 0, 'existing-profile PASS requires zero invalid records')
     assertPassCondition(profile.quarantinedCount === 0, 'existing-profile PASS requires zero quarantined records')
   }
+
+  if (profile.status === 'not-run') {
+    assertPassCondition(!profile.portableVerified, 'existing-profile not-run forbids portable evidence')
+    assertPassCondition(!profile.identityPreserved, 'existing-profile not-run forbids identity evidence')
+    assertPassCondition(!profile.workspacePreserved, 'existing-profile not-run forbids Workspace evidence')
+    assertPassCondition(!profile.lifecyclePreserved, 'existing-profile not-run forbids lifecycle evidence')
+    assertPassCondition(!profile.evidencePreserved, 'existing-profile not-run forbids evidence-state claims')
+    assertPassCondition(!profile.reopenPassed, 'existing-profile not-run forbids reopen evidence')
+    assertPassCondition(profile.recoveryMode === 'not-run', 'existing-profile not-run requires not-run recovery')
+    assertPassCondition(profile.duplicateProductionCount === 0, 'existing-profile not-run requires zero duplicate production')
+    assertPassCondition(profile.duplicateBatchCount === 0, 'existing-profile not-run requires zero duplicate batches')
+    assertPassCondition(profile.invalidCount === 0, 'existing-profile not-run requires zero invalid records')
+    assertPassCondition(profile.quarantinedCount === 0, 'existing-profile not-run requires zero quarantined records')
+  }
 }
 
 function validateCleanProfile(profile, candidateVersion) {
@@ -142,6 +156,15 @@ function validateCleanProfile(profile, candidateVersion) {
     assertPassCondition(profile.uninstallPassed, 'clean-profile PASS requires uninstall')
     assertPassCondition(profile.sentinelPreserved, 'clean-profile PASS requires preserved sentinel')
   }
+
+  if (profile.status === 'not-run') {
+    assertPassCondition(profile.registrationCount === 0, 'clean-profile not-run requires zero registrations')
+    assertPassCondition(profile.shortcutCount === 0, 'clean-profile not-run requires zero shortcuts')
+    assertPassCondition(profile.cliVersion === null, 'clean-profile not-run forbids a CLI version claim')
+    assertPassCondition(!profile.firstLaunchPassed, 'clean-profile not-run forbids launch evidence')
+    assertPassCondition(!profile.uninstallPassed, 'clean-profile not-run forbids uninstall evidence')
+    assertPassCondition(!profile.sentinelPreserved, 'clean-profile not-run forbids sentinel evidence')
+  }
 }
 
 function validateMigrationProfile(profile) {
@@ -164,6 +187,12 @@ function validateMigrationProfile(profile) {
     )
     assertPassCondition(profile.sentinelPreserved, 'migration-profile PASS requires preserved sentinel')
     assertPassCondition(profile.fixtureRemoved, 'migration-profile PASS requires fixture removal')
+  }
+
+  if (profile.status === 'not-run') {
+    assertPassCondition(profile.transitions.length === 0, 'migration-profile not-run forbids transitions')
+    assertPassCondition(!profile.sentinelPreserved, 'migration-profile not-run forbids sentinel evidence')
+    assertPassCondition(!profile.fixtureRemoved, 'migration-profile not-run forbids fixture evidence')
   }
 }
 
@@ -202,9 +231,9 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     'formatManifestSha256',
   ], 'candidate')
   if (!artifactNamePattern.test(report.candidate.artifactName)) {
-    throw new Error('candidate artifact name is invalid')
+    throw new Error('candidate artifact name must be a bounded ZIP name')
   }
-  if (report.candidate.artifactSha256 !== null && !sha256Pattern.test(report.candidate.artifactSha256)) {
+  if (!sha256Pattern.test(report.candidate.artifactSha256)) {
     throw new Error('candidate artifact digest is invalid')
   }
   if (!semverPattern.test(report.candidate.productVersion)) {
