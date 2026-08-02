@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-. (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 . (Join-Path $PSScriptRoot 'windows-physical-artifact-lib.ps1')
 
 if ($ExpectedCommit -notmatch '^[a-f0-9]{40}$') {
@@ -106,6 +106,7 @@ $context = [ordered]@{
 }
 $contextPath = Join-Path $output 'ACCEPTANCE_CONTEXT.json'
 Write-MetroraUtf8Json $contextPath $context
+Get-MetroraPhysicalAcceptanceState $output $repository | Out-Null
 
 $report = [ordered]@{
   kind = 'metrora.windows-physical-acceptance-report'
