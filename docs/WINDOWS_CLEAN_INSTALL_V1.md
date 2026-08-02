@@ -50,8 +50,10 @@ The installed candidate must expose:
 
 - executable `ProductName` equal to `Metrora`;
 - executable file description containing `Metrora`;
-- one per-user Windows uninstall entry named `Metrora`;
-- an uninstall command targeting `Uninstall Metrora.exe`;
+- one logical per-user Windows uninstall registration in HKCU, even when the same key is visible through both registry views;
+- uninstall `DisplayName` beginning with `Metrora` and including the packaged version;
+- publisher `Maikol Siragusa`;
+- an uninstall command targeting `Uninstall Metrora.exe` in the disposable installation directory;
 - at least one Start Menu shortcut named `Metrora.lnk` targeting the installed `Metrora.exe`.
 
 The public `appId` remains `eu.metrora.desktop` and is already bound by the R1.A/R1.B.A source and manifest checks.
@@ -91,7 +93,8 @@ The gate fails on:
 - missing executable or uninstaller;
 - installed payload drift;
 - incorrect product identity;
-- missing or inconsistent uninstall metadata;
+- missing, duplicated or inconsistent uninstall metadata;
+- per-user installation registered outside HKCU;
 - missing canonical shortcut;
 - CLI failure;
 - early Electron exit;
