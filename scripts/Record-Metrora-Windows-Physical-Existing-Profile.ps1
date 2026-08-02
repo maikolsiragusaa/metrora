@@ -8,20 +8,12 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-. (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 
-$acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
-if (
-  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
-  $context.version -ne 1 -or
-  $context.candidate.directory -ne 'downloaded-candidate'
-) {
-  throw 'physical acceptance context is invalid'
-}
-Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit) | Out-Null
-$sentinelPath = Join-Path $acceptance $context.sentinel.file
-Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
+$state = Get-MetroraPhysicalAcceptanceState $AcceptanceDirectory $RepositoryRoot
+$acceptance = $state.Acceptance
+$context = $state.Context
+$sentinelPath = $state.SentinelPath
 
 $markerPath = Join-Path $acceptance 'P1_PORTABLE_LAUNCH.json'
 $portableVerified = $false
