@@ -6,8 +6,10 @@ import {
   LocalEndpointIdentityMetadataV1Schema,
   type LoadedLocalEndpointIdentityV1,
 } from './endpoint-identity.js'
+import { loadLocalPersonalWorkspaceV1 } from './local-workspace.js'
 import {
   produceLocalReviewedMeasurementV1,
+  LocalWorkspaceRequiredError,
   type LocalReviewedMeasurementContextV1,
 } from './reviewed-measurement-producer.js'
 import {
@@ -48,7 +50,7 @@ export type CanonicalReviewedProductionSummaryV1 = z.infer<typeof CanonicalRevie
 export type ProduceCanonicalReviewedMeasurementsV1Options = {
   dataDir?: string
   identity: LoadedLocalEndpointIdentityV1
-  scanCanonicalCandidates(): Promise<CanonicalReviewedProductionScanV1>
+  scanCanonicalCandidates(input: { notBefore: string }): Promise<CanonicalReviewedProductionScanV1>
   now?: () => Date
 }
 
@@ -69,7 +71,13 @@ function pausedSummary(): CanonicalReviewedProductionSummaryV1 {
 /**
  * Runs one explicit reviewed-production pass from candidates supplied by the
  * trusted canonical parser/cache authority. The renderer never supplies calls,
- * contexts, fingerprints, providers, costs, paths, or deduplication material.
+ * contexts, fingerprints, providers, costs, paths, deduplication material, or
+ * the production time boundary.
+ *
+ * Ordinary Workspace production starts at the trusted local Workspace
+ * `createdAt` timestamp. Historical backfill is intentionally not part of this
+ * action; if introduced later it must be a separate bounded workflow with
+ * progress and cancellation.
  */
 export async function produceCanonicalReviewedMeasurementsV1(
   input: ProduceCanonicalReviewedMeasurementsV1Options,
@@ -86,7 +94,16 @@ export async function produceCanonicalReviewedMeasurementsV1(
     })
     if (lifecycle.mode === 'paused') return pausedSummary()
 
-    const scan = await input.scanCanonicalCandidates()
+    const workspace = await loadLocalPersonalWorkspaceV1({
+      dataDir,
+      endpointIdentity,
+      now,
+    })
+    if (!workspace) throw new LocalWorkspaceRequiredError()
+
+    const scan = await input.scanCanonicalCandidates({
+      notBefore: workspace.createdAt,
+    })
     const scanCounts = CanonicalReviewedProductionScanCountsV1Schema.parse({
       withheldCount: scan.withheldCount,
       failedCount: scan.failedCount,
