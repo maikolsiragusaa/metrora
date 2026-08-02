@@ -10,7 +10,6 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
 
-$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
 $context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
 if (
@@ -20,6 +19,7 @@ if (
 ) {
   throw 'physical acceptance context is invalid'
 }
+$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
 
 $candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
 $sentinelPath = Join-Path $acceptance $context.sentinel.file
