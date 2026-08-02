@@ -68,7 +68,7 @@ function Get-UninstallEntries {
 function Get-MetroraUninstallEntries([string]$ExpectedInstallDirectory, [string]$ExpectedUninstaller) {
   $expectedDirectory = [IO.Path]::GetFullPath($ExpectedInstallDirectory).TrimEnd('\')
   $expectedUninstallerPath = [IO.Path]::GetFullPath($ExpectedUninstaller)
-  return @(Get-UninstallEntries | Where-Object {
+  $matches = @(Get-UninstallEntries | Where-Object {
     $installLocation = $_.InstallLocation.Trim().Trim('"').TrimEnd('\')
     $uninstallString = $_.UninstallString
     $quietUninstallString = $_.QuietUninstallString
@@ -77,6 +77,24 @@ function Get-MetroraUninstallEntries([string]$ExpectedInstallDirectory, [string]
       $uninstallString.IndexOf($expectedUninstallerPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
       $quietUninstallString.IndexOf($expectedUninstallerPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
   })
+
+  $deduplicated = @($matches | Group-Object {
+    "$($_.Hive)|$($_.KeyName)|$($_.UninstallString)|$($_.QuietUninstallString)"
+  } | ForEach-Object {
+    $first = $_.Group[0]
+    [pscustomobject]@{
+      Hive = $first.Hive
+      View = (@($_.Group.View | Sort-Object -Unique) -join ',')
+      KeyName = $first.KeyName
+      DisplayName = $first.DisplayName
+      DisplayVersion = $first.DisplayVersion
+      Publisher = $first.Publisher
+      InstallLocation = $first.InstallLocation
+      UninstallString = $first.UninstallString
+      QuietUninstallString = $first.QuietUninstallString
+    }
+  })
+  return $deduplicated
 }
 
 function Get-MetroraShortcuts([string]$ExpectedExecutable) {
