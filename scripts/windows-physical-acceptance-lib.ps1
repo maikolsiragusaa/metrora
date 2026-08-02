@@ -10,7 +10,7 @@ function Write-MetroraUtf8Json([string]$Path, $Value) {
 }
 
 function Get-MetroraWindowsPlatform {
-  if (-not $IsWindows) {
+  if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'physical Windows acceptance must run on Windows'
   }
   $operatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem
