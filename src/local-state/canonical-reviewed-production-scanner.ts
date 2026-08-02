@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import * as z from 'zod/v4'
 
 import { collectorProvenanceProfileForCall } from '../contracts/v1/collector-provenance.js'
-import { OpaqueIdSchema } from '../contracts/v1/common.js'
+import { OpaqueIdSchema, TimestampSchema } from '../contracts/v1/common.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { cachedCallToApiCall, clearSessionCache, parseAllSessions } from '../parser.js'
 import { readCodexSessionModelProvider } from '../providers/codex-model-provider.js'
@@ -26,6 +26,7 @@ const AdapterVersionSchema = z.string().trim().min(1).max(64)
 export type CanonicalReviewedProductionScannerOptionsV1 = {
   endpointId: string
   adapterVersion: string
+  notBefore: string
 }
 
 export type CanonicalReviewedProductionScannerDependenciesV1 = {
@@ -72,8 +73,20 @@ export function canonicalSourceRecordFingerprintSha256V1(input: {
     .digest('hex')
 }
 
-function callCount(file: CachedFile): number {
-  return file.turns.reduce((sum, turn) => sum + turn.calls.length, 0)
+function inScopeCalls(file: CachedFile, notBeforeMs: number): CachedCall[] {
+  const calls: CachedCall[] = []
+  for (const turn of file.turns) {
+    for (const call of turn.calls) {
+      const timestamp = TimestampSchema.safeParse(call.timestamp)
+      if (!timestamp.success) {
+        throw new CanonicalReviewedProductionScannerIntegrityError(
+          'canonical cached call has an invalid timestamp',
+        )
+      }
+      if (Date.parse(timestamp.data) >= notBeforeMs) calls.push(call)
+    }
+  }
+  return calls
 }
 
 function canonicalApiCall(cachedCall: CachedCall): ParsedApiCall {
@@ -104,9 +117,13 @@ function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1
 
 /**
  * Refresh and inspect the canonical per-source cache without accepting paths,
- * calls, providers, costs, fingerprints, or disclosure choices from Electron's
- * renderer. Only source-present, explicitly attributed, reviewed calls become
- * candidates for the protected production orchestrator.
+ * calls, providers, costs, fingerprints, disclosure choices, or time bounds
+ * from Electron's renderer. Only source-present calls recorded at or after the
+ * trusted Workspace creation timestamp can become candidates.
+ *
+ * Pre-Workspace history remains canonical analytics history but is not silently
+ * converted into evidence by the normal Produce action. A future historical
+ * backfill must be a separate bounded workflow with progress and cancellation.
  */
 export async function scanCanonicalReviewedProductionCandidatesV1(
   input: CanonicalReviewedProductionScannerOptionsV1,
@@ -114,6 +131,8 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
 ): Promise<CanonicalReviewedProductionScanV1> {
   const endpointId = OpaqueIdSchema.parse(input.endpointId)
   const adapterVersion = AdapterVersionSchema.parse(input.adapterVersion)
+  const notBefore = TimestampSchema.parse(input.notBefore)
+  const notBeforeMs = Date.parse(notBefore)
   const readCodexProvider = dependencies.codexModelProvider ?? readCodexSessionModelProvider
 
   await dependencies.refreshCanonicalCache()
@@ -129,7 +148,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
   let failedCount = 0
 
   for (const [sectionProvider, section] of Object.entries(cache.providers).sort(([a], [b]) => a.localeCompare(b))) {
-    const displayName = await dependencies.providerDisplayName(sectionProvider)
+    let displayName: string | undefined
 
     for (const [sourcePath, file] of Object.entries(section.files).sort(([a], [b]) => a.localeCompare(b))) {
       if (file.failed) {
@@ -137,10 +156,13 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
         continue
       }
 
+      const scopedCalls = inScopeCalls(file, notBeforeMs)
+      if (scopedCalls.length === 0) continue
+
       if (!dependencies.sourceExists(sourcePath)) {
         // Durable/source-less history remains valid for analytics but cannot be
         // promoted into fresh endpoint evidence after its source disappeared.
-        withheldCount += callCount(file)
+        withheldCount += scopedCalls.length
         continue
       }
 
@@ -148,64 +170,64 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
         ? normalizeExplicitModelProvider(await readCodexProvider(sourcePath))
         : undefined
       if (sectionProvider === 'codex' && !codexSourceProvider) {
-        withheldCount += callCount(file)
+        withheldCount += scopedCalls.length
         continue
       }
 
-      for (const turn of file.turns) {
-        for (const cachedCall of turn.calls) {
-          if (cachedCall.provider !== sectionProvider) {
-            throw new CanonicalReviewedProductionScannerIntegrityError(
-              'canonical cached call provider disagrees with its provider section',
-            )
-          }
-          if (!cachedCall.deduplicationKey) {
-            throw new CanonicalReviewedProductionScannerIntegrityError(
-              'canonical cached call has an empty private deduplication key',
-            )
-          }
+      displayName ??= await dependencies.providerDisplayName(sectionProvider)
 
-          let call = canonicalApiCall(cachedCall)
-          let explicitProvider = normalizeExplicitModelProvider(call.modelProvider)
-
-          if (sectionProvider === 'codex' && codexSourceProvider) {
-            if (explicitProvider && explicitProvider !== codexSourceProvider) {
-              throw new CanonicalReviewedProductionScannerIntegrityError(
-                'canonical Codex call provider disagrees with source metadata',
-              )
-            }
-            if (!call.modelProvider) {
-              call = { ...call, modelProvider: codexSourceProvider }
-              explicitProvider = codexSourceProvider
-            }
-          }
-
-          const profile = collectorProvenanceProfileForCall(call)
-          if (!displayName || !explicitProvider || explicitProvider !== call.modelProvider || !profile) {
-            withheldCount += 1
-            continue
-          }
-
-          candidates.push({
-            call,
-            context: {
-              session: { mode: 'omit' },
-              tool: { name: displayName },
-              collector: {
-                adapterVersion,
-                sourceFingerprintSha256: canonicalSourceRecordFingerprintSha256V1({
-                  endpointId,
-                  provider: sectionProvider,
-                  privateDeduplicationKey: cachedCall.deduplicationKey,
-                }),
-              },
-              genAi: {
-                operationName: 'other',
-                providerName: explicitProvider,
-              },
-            },
-          })
+      for (const cachedCall of scopedCalls) {
+        if (cachedCall.provider !== sectionProvider) {
+          throw new CanonicalReviewedProductionScannerIntegrityError(
+            'canonical cached call provider disagrees with its provider section',
+          )
         }
+        if (!cachedCall.deduplicationKey) {
+          throw new CanonicalReviewedProductionScannerIntegrityError(
+            'canonical cached call has an empty private deduplication key',
+          )
+        }
+
+        let call = canonicalApiCall(cachedCall)
+        let explicitProvider = normalizeExplicitModelProvider(call.modelProvider)
+
+        if (sectionProvider === 'codex' && codexSourceProvider) {
+          if (explicitProvider && explicitProvider !== codexSourceProvider) {
+            throw new CanonicalReviewedProductionScannerIntegrityError(
+              'canonical Codex call provider disagrees with source metadata',
+            )
+          }
+          if (!call.modelProvider) {
+            call = { ...call, modelProvider: codexSourceProvider }
+            explicitProvider = codexSourceProvider
+          }
+        }
+
+        const profile = collectorProvenanceProfileForCall(call)
+        if (!displayName || !explicitProvider || explicitProvider !== call.modelProvider || !profile) {
+          withheldCount += 1
+          continue
+        }
+
+        candidates.push({
+          call,
+          context: {
+            session: { mode: 'omit' },
+            tool: { name: displayName },
+            collector: {
+              adapterVersion,
+              sourceFingerprintSha256: canonicalSourceRecordFingerprintSha256V1({
+                endpointId,
+                provider: sectionProvider,
+                privateDeduplicationKey: cachedCall.deduplicationKey,
+              }),
+            },
+            genAi: {
+              operationName: 'other',
+              providerName: explicitProvider,
+            },
+          },
+        })
       }
     }
   }
