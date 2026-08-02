@@ -55,14 +55,14 @@ async function fixture() {
   await write(join(bundleDirectory, 'resources', 'app.asar'), 'renderer-fixture')
   await write(join(bundleDirectory, 'resources', 'cli', 'dist', 'main.js'), 'cli-fixture')
 
-  return { root, repositoryRoot, bundleDirectory, schemaPath }
+  return { root, repositoryRoot, bundleDirectory }
 }
 
 function metadataOptions(fx, builtAt = '2026-08-02T10:00:00.000Z') {
   return {
     repositoryRoot: fx.repositoryRoot,
     bundleDirectory: fx.bundleDirectory,
-    schemaPath: fx.schemaPath,
+    sourceFileMode: 'working-tree',
     sourceCommit,
     sourceTree,
     sourceDateEpoch: '1785664800',
@@ -82,7 +82,11 @@ function metadataOptions(fx, builtAt = '2026-08-02T10:00:00.000Z') {
 }
 
 function verificationOptions(fx, extra = {}) {
-  return { repositoryRoot: fx.repositoryRoot, ...extra }
+  return {
+    repositoryRoot: fx.repositoryRoot,
+    sourceFileMode: 'working-tree',
+    ...extra,
+  }
 }
 
 test('writes and independently verifies a complete candidate', async t => {
@@ -174,6 +178,6 @@ test('rejects a candidate verified against different source inputs', async t => 
 
   await assert.rejects(
     verifyReleaseCandidate(fx.bundleDirectory, verificationOptions(fx)),
-    /build inputs do not match/,
+    /build input does not match source commit/,
   )
 })
