@@ -6,6 +6,18 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-artifact-lib.ps1')
+
+function Add-TestZipEntry($Archive, [string]$Name, [string]$Content) {
+  $entry = $Archive.CreateEntry($Name)
+  $stream = $entry.Open()
+  $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
+  try {
+    $writer.Write($Content)
+  } finally {
+    $writer.Dispose()
+  }
+}
 
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $rootBase = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
@@ -13,6 +25,40 @@ $root = Join-Path $rootBase "metrora-physical-report-runtime-$PID"
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 
 try {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $validArchivePath = Join-Path $root 'valid-artifact.zip'
+  $validArchive = [IO.Compression.ZipFile]::Open($validArchivePath, [IO.Compression.ZipArchiveMode]::Create)
+  try {
+    Add-TestZipEntry $validArchive 'portable/Metrora.exe' 'bounded-payload'
+  } finally {
+    $validArchive.Dispose()
+  }
+  $validDestination = Join-Path $root 'valid-extraction'
+  $validExtraction = Expand-MetroraBoundedArtifactArchive $validArchivePath $validDestination
+  if (
+    $validExtraction.EntryCount -ne 1 -or
+    (Get-Content -LiteralPath (Join-Path $validDestination 'portable\Metrora.exe') -Raw) -ne 'bounded-payload'
+  ) {
+    throw 'bounded artifact extraction did not preserve the valid archive entry'
+  }
+
+  $maliciousArchivePath = Join-Path $root 'malicious-artifact.zip'
+  $maliciousArchive = [IO.Compression.ZipFile]::Open($maliciousArchivePath, [IO.Compression.ZipArchiveMode]::Create)
+  try {
+    Add-TestZipEntry $maliciousArchive '../escape.txt' 'must-not-escape'
+  } finally {
+    $maliciousArchive.Dispose()
+  }
+  $maliciousRejected = $false
+  try {
+    Expand-MetroraBoundedArtifactArchive $maliciousArchivePath (Join-Path $root 'malicious-extraction') | Out-Null
+  } catch {
+    $maliciousRejected = $true
+  }
+  if (-not $maliciousRejected -or (Test-Path -LiteralPath (Join-Path $root 'escape.txt'))) {
+    throw 'bounded artifact extraction did not reject traversal'
+  }
+
   $commit = (& git -C $repository rev-parse HEAD 2>&1 | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[a-f0-9]{40}$') {
     throw 'unable to resolve runtime report source commit'
@@ -31,6 +77,7 @@ try {
       commit = $commit
     }
     candidate = [ordered]@{
+      directory = 'downloaded-candidate'
       artifactName = "metrora-windows-candidate-$commit.zip"
       artifactSha256 = $digest
       productVersion = '0.9.19'
@@ -98,18 +145,20 @@ try {
   }
 
   [IO.File]::WriteAllBytes($sentinelPath, [Text.Encoding]::UTF8.GetBytes('mutated'))
-  $rejected = $false
+  $sentinelRejected = $false
   try {
     Assert-MetroraPhysicalSentinel $sentinelPath $sentinelDigest
   } catch {
-    $rejected = $true
+    $sentinelRejected = $true
   }
-  if (-not $rejected) {
+  if (-not $sentinelRejected) {
     throw 'physical sentinel mutation was not rejected'
   }
 
   [ordered]@{
     status = 'pass'
+    validArchiveExtracted = $true
+    traversalArchiveRejected = $true
     reportVerified = $true
     sentinelMutationRejected = $true
     privateDataIncluded = $false
