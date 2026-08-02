@@ -4,9 +4,12 @@ on:
   pull_request:
     paths:
       - 'src/local-state/desktop-reviewed-production-runtime.ts'
+      - 'src/local-state/desktop-workspace-recovery-contract.test.ts'
       - 'src/local-state/desktop-workspace-recovery.test.ts'
       - 'src/local-state/desktop-workspace-portable-flow.test.ts'
-      - 'src/local-state/measurement-production-receipt.ts'
+      - 'src/local-state/measurement-production-receipt.test.ts'
+      - 'src/local-state/measurement-production-recovery.ts'
+      - 'src/local-state/measurement-production-recovery.test.ts'
       - 'src/local-state/reviewed-production-orchestrator.ts'
       - 'src/desktop-local-state-entry.ts'
       - 'app/electron/workspace.ts'
@@ -16,14 +19,18 @@ on:
       - 'app/renderer/sections/Workspace.tsx'
       - 'app/renderer/sections/WorkspaceRecovery.test.tsx'
       - 'docs/WORKSPACE_RECOVERY_V1.md'
+      - 'docs/WORKSPACE_PRODUCTION_SCOPE_V1.md'
       - '.github/workflows/workspace-recovery.yml'
   push:
     branches: [main]
     paths:
       - 'src/local-state/desktop-reviewed-production-runtime.ts'
+      - 'src/local-state/desktop-workspace-recovery-contract.test.ts'
       - 'src/local-state/desktop-workspace-recovery.test.ts'
       - 'src/local-state/desktop-workspace-portable-flow.test.ts'
-      - 'src/local-state/measurement-production-receipt.ts'
+      - 'src/local-state/measurement-production-receipt.test.ts'
+      - 'src/local-state/measurement-production-recovery.ts'
+      - 'src/local-state/measurement-production-recovery.test.ts'
       - 'src/local-state/reviewed-production-orchestrator.ts'
       - 'src/desktop-local-state-entry.ts'
       - 'app/electron/workspace.ts'
@@ -33,6 +40,7 @@ on:
       - 'app/renderer/sections/Workspace.tsx'
       - 'app/renderer/sections/WorkspaceRecovery.test.tsx'
       - 'docs/WORKSPACE_RECOVERY_V1.md'
+      - 'docs/WORKSPACE_PRODUCTION_SCOPE_V1.md'
       - '.github/workflows/workspace-recovery.yml'
 
 permissions:
@@ -61,12 +69,14 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build CLI and desktop runtimes
         run: npm run build:cli
-      - name: Run receipt, recovery, and complete local-flow gates
+      - name: Run receipt, recovery, contract, and complete local-flow gates
         run: >-
           npx vitest --run --no-file-parallelism --testTimeout=20000
           src/local-state/measurement-production-receipt.test.ts
+          src/local-state/measurement-production-recovery.test.ts
           src/local-state/reviewed-production-orchestrator.test.ts
           src/local-state/desktop-reviewed-production-runtime.test.ts
+          src/local-state/desktop-workspace-recovery-contract.test.ts
           src/local-state/desktop-workspace-recovery.test.ts
           src/local-state/desktop-workspace-portable-flow.test.ts
       - name: Install desktop dependencies
