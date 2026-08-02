@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { DesktopWorkspaceAvailability, WorkspaceBridge } from '../lib/workspace'
+import type {
+  DesktopWorkspaceAvailability,
+  DesktopWorkspaceSnapshot,
+  WorkspaceBridge,
+} from '../lib/workspace'
 
 export type WorkspaceAction =
   | 'reload'
@@ -23,6 +27,14 @@ export function useWorkspaceStatus(bridge: Partial<WorkspaceBridge>) {
   const [statusError, setStatusError] = useState(false)
   const [inspectionError, setInspectionError] = useState(false)
   const [action, setAction] = useState<WorkspaceAction>('reload')
+
+  const acceptSnapshot = useCallback((snapshot: DesktopWorkspaceSnapshot) => {
+    setInspectionError(false)
+    setAvailability(current => {
+      if (!current || current.availability !== 'ready') return current
+      return { ...current, inspection: 'complete', snapshot }
+    })
+  }, [])
 
   const loadBootstrap = useCallback(async () => {
     setAction('reload')
@@ -86,7 +98,7 @@ export function useWorkspaceStatus(bridge: Partial<WorkspaceBridge>) {
 
   return {
     availability,
-    setAvailability,
+    acceptSnapshot,
     statusError,
     inspectionError,
     action,
