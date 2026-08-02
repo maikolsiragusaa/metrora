@@ -1,4 +1,4 @@
-name: Metrora Windows Portable
+name: Metrora Windows Candidate
 
 on:
   workflow_dispatch:
@@ -37,14 +37,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: metrora-windows-portable-${{ github.workflow }}-${{ github.ref }}
+  group: metrora-windows-candidate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  portable:
-    name: Build, inventory, and smoke-test portable bundle
+  candidate:
+    name: Build one payload and derive portable plus NSIS
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 70
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
@@ -55,8 +55,12 @@ jobs:
           node-version: '22.15.0'
           cache: npm
 
-      - name: Test release manifest integrity library
-        run: node --test scripts/windows-release-manifest.node-test.mjs
+      - name: Test release candidate integrity libraries
+        run: >-
+          node --test
+          scripts/windows-release-manifest.node-test.mjs
+          scripts/windows-release-layout.node-test.mjs
+          scripts/windows-installer-source.node-test.mjs
 
       - name: Require Node zstd support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
@@ -73,33 +77,35 @@ jobs:
       - name: Build desktop application
         run: npm --prefix app run build
 
-      - name: Build unpacked Windows application
+      - name: Build canonical unpacked Windows payload once
         shell: pwsh
         run: |
           Push-Location app
           npx --no-install electron-builder --win --x64 --dir --publish never
           Pop-Location
-
-      - name: Assemble portable candidate payload
-        shell: pwsh
-        run: |
-          $source = Join-Path $PWD 'app\release\win-unpacked'
-          $destination = Join-Path $PWD 'app\release\Metrora-Windows-Portable'
-          if (-not (Test-Path -LiteralPath (Join-Path $source 'Metrora.exe'))) {
-            throw "electron-builder did not produce $source\Metrora.exe"
+          $payload = Join-Path $PWD 'app\release\win-unpacked'
+          if (-not (Test-Path -LiteralPath (Join-Path $payload 'Metrora.exe'))) {
+            throw "electron-builder did not produce $payload\Metrora.exe"
           }
 
-          Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $destination -Force | Out-Null
-          Copy-Item -Path (Join-Path $source '*') -Destination $destination -Recurse -Force
-          Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.ps1' -Destination $destination -Force
-          Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.cmd' -Destination $destination -Force
-          Copy-Item -LiteralPath 'tools\windows-portable\README.txt' -Destination $destination -Force
-
-      - name: Generate deterministic payload manifest and build attestation
+      - name: Prepare canonical candidate layout and portable copy
         shell: pwsh
         run: |
-          $destination = Join-Path $PWD 'app\release\Metrora-Windows-Portable'
+          $payload = Join-Path $PWD 'app\release\win-unpacked'
+          $candidate = Join-Path $PWD 'app\release\Metrora-Windows-Candidate'
+          node scripts/prepare-windows-candidate-layout.mjs `
+            --payload $payload `
+            --candidate $candidate
+
+          $portable = Join-Path $candidate 'portable'
+          Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.ps1' -Destination $portable -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.cmd' -Destination $portable -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\README.txt' -Destination $portable -Force
+
+      - name: Generate portable payload manifest and build attestation
+        shell: pwsh
+        run: |
+          $portable = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\portable'
           $sourceTree = (git rev-parse "$env:GITHUB_SHA^{tree}").Trim()
           $sourceEpoch = (git show -s --format=%ct $env:GITHUB_SHA).Trim()
           $distribution = '${{ inputs.distribution }}'
@@ -108,7 +114,7 @@ jobs:
           $builtAt = [DateTime]::UtcNow.ToString('o')
 
           node scripts/create-windows-release-manifest.mjs `
-            --bundle $destination `
+            --bundle $portable `
             --source-commit $env:GITHUB_SHA `
             --source-tree $sourceTree `
             --source-date-epoch $sourceEpoch `
@@ -122,14 +128,58 @@ jobs:
             --runner-os windows `
             --runner-image $runnerImage
 
-      - name: Verify candidate locally before upload
-        shell: pwsh
-        run: node scripts/verify-windows-release-manifest.mjs app/release/Metrora-Windows-Portable --expected-commit $env:GITHUB_SHA
-
-      - name: Smoke-test bundled CLI and baseline runner
+      - name: Build NSIS from an isolated copy of the canonical payload
         shell: pwsh
         run: |
-          $bundle = Join-Path $PWD 'app\release\Metrora-Windows-Portable'
+          $release = Join-Path $PWD 'app\release'
+          $payload = Join-Path $release 'win-unpacked'
+          $installerSource = Join-Path $release 'nsis-prepackaged'
+          Remove-Item -LiteralPath $installerSource -Recurse -Force -ErrorAction SilentlyContinue
+          node -e "require('node:fs').cpSync(process.argv[1], process.argv[2], { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true })" $payload $installerSource
+
+          Get-ChildItem -LiteralPath $release -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
+          } | Remove-Item -Force
+
+          Push-Location app
+          npx --no-install electron-builder `
+            --win nsis `
+            --x64 `
+            --prepackaged release/nsis-prepackaged `
+            --publish never
+          Pop-Location
+
+          node scripts/verify-windows-installer-source.mjs `
+            --canonical $payload `
+            --installer-source $installerSource
+
+          $installerTarget = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\installer'
+          $outputs = @(Get-ChildItem -LiteralPath $release -File | Where-Object {
+            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
+          })
+          $executables = @($outputs | Where-Object { $_.Extension -eq '.exe' })
+          if ($executables.Count -ne 1) {
+            throw "expected exactly one NSIS executable, found $($executables.Count)"
+          }
+          foreach ($file in $outputs) {
+            Copy-Item -LiteralPath $file.FullName -Destination $installerTarget -Force
+          }
+
+      - name: Finalize and verify format derivation
+        shell: pwsh
+        run: |
+          node scripts/finalize-windows-candidate-layout.mjs `
+            --payload app/release/win-unpacked `
+            --candidate app/release/Metrora-Windows-Candidate `
+            --source-commit $env:GITHUB_SHA
+          node scripts/verify-windows-candidate-layout.mjs `
+            app/release/Metrora-Windows-Candidate `
+            --expected-commit $env:GITHUB_SHA
+
+      - name: Smoke-test portable CLI and baseline runner
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\portable'
           $smokeOutput = Join-Path $env:RUNNER_TEMP 'metrora-baseline-smoke'
           & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $bundle 'Run-Metrora-Baseline.ps1') `
             -OutputDirectory $smokeOutput `
@@ -157,19 +207,19 @@ jobs:
             throw 'portable overview contains Windows encoding mojibake'
           }
 
-      - name: Upload portable Windows candidate
+      - name: Upload Windows installer and portable candidate
         uses: actions/upload-artifact@v4
         with:
-          name: metrora-windows-portable-${{ github.sha }}
-          path: app/release/Metrora-Windows-Portable
+          name: metrora-windows-candidate-${{ github.sha }}
+          path: app/release/Metrora-Windows-Candidate
           if-no-files-found: error
           include-hidden-files: true
           compression-level: 6
           retention-days: 14
 
   independent-verification:
-    name: Independently verify downloaded candidate
-    needs: portable
+    name: Independently verify downloaded Windows formats
+    needs: candidate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -181,8 +231,8 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: metrora-windows-portable-${{ github.sha }}
+          name: metrora-windows-candidate-${{ github.sha }}
           path: candidate
 
-      - name: Verify every downloaded payload and metadata file
-        run: node scripts/verify-windows-release-manifest.mjs candidate --expected-commit ${{ github.sha }}
+      - name: Verify canonical payload, portable, installer, and metadata
+        run: node scripts/verify-windows-candidate-layout.mjs candidate --expected-commit ${{ github.sha }}
