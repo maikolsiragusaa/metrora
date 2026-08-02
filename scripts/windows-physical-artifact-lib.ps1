@@ -1,5 +1,20 @@
 Set-StrictMode -Version Latest
 
+function Test-MetroraWindowsArchiveSegment([string]$Segment) {
+  if (
+    -not $Segment -or
+    $Segment -eq '.' -or
+    $Segment -eq '..' -or
+    $Segment.EndsWith('.') -or
+    $Segment.EndsWith(' ') -or
+    $Segment.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0
+  ) {
+    return $false
+  }
+  $baseName = $Segment.Split('.')[0]
+  return $baseName -notmatch '^(?i:con|prn|aux|nul|com[1-9]|lpt[1-9])$'
+}
+
 function Expand-MetroraBoundedArtifactArchive([string]$ArchivePath, [string]$DestinationDirectory) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -44,8 +59,8 @@ function Expand-MetroraBoundedArtifactArchive([string]$ArchivePath, [string]$Des
         throw 'artifact archive contains an invalid entry path'
       }
       $segments = @($normalized.Split('/'))
-      if ($segments | Where-Object { -not $_ -or $_ -eq '.' -or $_ -eq '..' }) {
-        throw 'artifact archive contains an invalid entry segment'
+      if ($segments | Where-Object { -not (Test-MetroraWindowsArchiveSegment $_) }) {
+        throw 'artifact archive contains an invalid or ambiguous Windows entry segment'
       }
 
       $unixType = (($entry.ExternalAttributes -shr 16) -band 0xF000)
