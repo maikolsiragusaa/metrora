@@ -3,9 +3,6 @@ param(
   [string]$AcceptanceDirectory,
 
   [Parameter(Mandatory = $true)]
-  [string]$CandidateDirectory,
-
-  [Parameter(Mandatory = $true)]
   [string]$WorkingDirectory,
 
   [Parameter(Mandatory = $true)]
@@ -27,12 +24,16 @@ $baselineCommit = '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
 $baselineVersion = '0.9.18'
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$candidate = (Resolve-Path -LiteralPath $CandidateDirectory).Path
 $canonical = (Resolve-Path -LiteralPath (Join-Path $acceptance 'canonical-payload')).Path
 $context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
-if ($context.kind -ne 'metrora.windows-physical-acceptance-context' -or $context.version -ne 1) {
+if (
+  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
+  $context.version -ne 1 -or
+  $context.candidate.directory -ne 'downloaded-candidate'
+) {
   throw 'physical acceptance context is invalid'
 }
+$candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
 
 $currentHead = (& git -C $repository rev-parse HEAD 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $currentHead -ne $context.source.commit) {
@@ -110,8 +111,11 @@ try {
     -BaselineVersion $baselineVersion `
     -CandidateVersion $context.candidate.productVersion 2>&1 | Out-String).Trim()
   if ($LASTEXITCODE -ne 0) { throw "physical migration lifecycle failed: $migrationText" }
-  $jsonLine = @($migrationText -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') })[-1]
-  $migration = $jsonLine | ConvertFrom-Json
+  $jsonLines = @($migrationText -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') })
+  if ($jsonLines.Count -eq 0) {
+    throw 'physical migration lifecycle returned no result object'
+  }
+  $migration = $jsonLines[-1] | ConvertFrom-Json
   if ($migration.status -ne 'pass' -or -not $migration.userOwnedStatePreserved) {
     throw 'physical migration lifecycle returned an invalid result'
   }
