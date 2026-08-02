@@ -15,28 +15,19 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-installed-app-test-lib.ps1')
-. (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 
 if (-not $DedicatedProfileAcknowledged) {
   throw 'P2 requires an explicitly acknowledged dedicated Windows user profile'
 }
 
-$acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$canonical = (Resolve-Path -LiteralPath (Join-Path $acceptance 'canonical-payload')).Path
-$contextPath = Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json'
-$context = Get-Content -LiteralPath $contextPath -Raw | ConvertFrom-Json
-if (
-  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
-  $context.version -ne 1 -or
-  $context.candidate.directory -ne 'downloaded-candidate'
-) {
-  throw 'physical acceptance context is invalid'
-}
-$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
-$candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
-
-$sentinelPath = Join-Path $acceptance $context.sentinel.file
-Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
+$state = Get-MetroraPhysicalAcceptanceState $AcceptanceDirectory $RepositoryRoot
+$acceptance = $state.Acceptance
+$repository = $state.Repository
+$candidate = $state.Candidate
+$canonical = $state.Canonical
+$sentinelPath = $state.SentinelPath
+$context = $state.Context
 
 $install = [IO.Path]::GetFullPath($InstallDirectory)
 if ($install.Contains(' ')) {
