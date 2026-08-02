@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 export const RELEASE_MANIFEST_KIND = 'metrora.windows-release-candidate-manifest'
@@ -17,7 +17,16 @@ export const RELEASE_METADATA_FILES = Object.freeze([
 ])
 
 const metadataFileSet = new Set(RELEASE_METADATA_FILES)
+const allowedDistributions = new Set([
+  'unsigned-development-artifact',
+  'unsigned-release-candidate',
+])
 const sha256Pattern = /^[a-f0-9]{64}$/
+const gitSha1Pattern = /^[a-f0-9]{40}$/
+
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
 
 export function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`
@@ -54,7 +63,7 @@ export function sha256Text(value) {
 
 async function walkFiles(root, directory = root) {
   const entries = await readdir(directory, { withFileTypes: true })
-  entries.sort((left, right) => left.name.localeCompare(right.name, 'en'))
+  entries.sort((left, right) => compareText(left.name, right.name))
   const files = []
 
   for (const entry of entries) {
@@ -90,7 +99,7 @@ export async function collectPayloadInventory(bundleDirectory) {
       sha256: await sha256File(file.absolute),
     })
   }
-  inventory.sort((left, right) => left.path.localeCompare(right.path, 'en'))
+  inventory.sort((left, right) => compareText(left.path, right.path))
   return inventory
 }
 
@@ -112,7 +121,7 @@ export async function readJsonFile(path) {
 
 export async function hashInputFiles(repositoryRoot, paths) {
   const result = {}
-  for (const input of [...paths].sort((left, right) => left.localeCompare(right, 'en'))) {
+  for (const input of [...paths].sort(compareText)) {
     const normalized = normalizeManifestPath(input)
     result[normalized] = await sha256File(join(repositoryRoot, ...normalized.split('/')))
   }
@@ -127,6 +136,13 @@ function packageVersion(lock, packageName) {
   return version
 }
 
+function requireCanonicalDistribution(value) {
+  if (!allowedDistributions.has(value)) {
+    throw new Error(`unsupported Windows candidate distribution: ${value}`)
+  }
+  return value
+}
+
 export async function buildReleaseManifest(options) {
   const repositoryRoot = resolve(options.repositoryRoot)
   const appPackagePath = join(repositoryRoot, 'app', 'package.json')
@@ -135,16 +151,21 @@ export async function buildReleaseManifest(options) {
   const appLock = await readJsonFile(appLockPath)
   const sourceDateEpoch = Number(options.sourceDateEpoch)
 
-  if (!/^[a-f0-9]{40}$/.test(options.sourceCommit)) {
+  if (!gitSha1Pattern.test(options.sourceCommit)) {
     throw new Error('source commit must be a lowercase 40-character SHA-1')
   }
-  if (!/^[a-f0-9]{40}$/.test(options.sourceTree)) {
+  if (!gitSha1Pattern.test(options.sourceTree)) {
     throw new Error('source tree must be a lowercase 40-character SHA-1')
   }
   if (!Number.isSafeInteger(sourceDateEpoch) || sourceDateEpoch < 0) {
     throw new Error('source date epoch must be a non-negative safe integer')
   }
-  if (appPackage.name !== 'metrora-desktop' || appPackage.build?.appId !== 'eu.metrora.desktop') {
+  if (
+    appPackage.name !== 'metrora-desktop'
+    || appPackage.build?.appId !== 'eu.metrora.desktop'
+    || appPackage.build?.productName !== 'Metrora'
+    || appPackage.homepage !== 'https://metrora.eu'
+  ) {
     throw new Error('desktop package identity is not canonical Metrora')
   }
 
@@ -180,7 +201,7 @@ export async function buildReleaseManifest(options) {
     build: {
       target: 'windows-x64',
       artifactType: 'portable-directory',
-      distribution: options.distribution,
+      distribution: requireCanonicalDistribution(options.distribution),
       node: process.version,
       electron: packageVersion(appLock, 'electron'),
       electronBuilder: packageVersion(appLock, 'electron-builder'),
@@ -203,6 +224,19 @@ export function buildAttestation(options) {
   if (!sha256Pattern.test(options.manifestSha256)) {
     throw new Error('manifest SHA-256 is invalid')
   }
+  for (const [name, value] of Object.entries({
+    provider: options.provider,
+    workflow: options.workflow,
+    runId: String(options.runId),
+    runAttempt: String(options.runAttempt),
+    ref: options.ref,
+    runnerOs: options.runnerOs,
+    runnerImage: options.runnerImage,
+  })) {
+    if (typeof value !== 'string' || !value.trim() || /[\r\n\0]/.test(value)) {
+      throw new Error(`build attestation ${name} is invalid`)
+    }
+  }
   return {
     kind: RELEASE_ATTESTATION_KIND,
     version: RELEASE_ATTESTATION_VERSION,
@@ -222,7 +256,7 @@ export function buildAttestation(options) {
 
 export async function writeChecksums(bundleDirectory, fileNames) {
   const lines = []
-  for (const fileName of [...fileNames].sort((left, right) => left.localeCompare(right, 'en'))) {
+  for (const fileName of [...fileNames].sort(compareText)) {
     const normalized = normalizeManifestPath(fileName)
     lines.push(`${await sha256File(join(bundleDirectory, normalized))}  ${normalized}`)
   }
@@ -272,21 +306,11 @@ function parseInventory(text) {
     seen.add(path)
     entries.push({ path, size: entry.size, sha256: entry.sha256 })
   }
-  const sorted = [...entries].sort((left, right) => left.path.localeCompare(right.path, 'en'))
+  const sorted = [...entries].sort((left, right) => compareText(left.path, right.path))
   if (JSON.stringify(entries) !== JSON.stringify(sorted)) {
     throw new Error('payload inventory is not sorted canonically')
   }
   return entries
-}
-
-function assertBundlePath(bundleDirectory, manifestPath) {
-  const root = resolve(bundleDirectory)
-  const absolute = resolve(root, ...manifestPath.split('/'))
-  const traversal = relative(root, absolute)
-  if (traversal.startsWith('..') || isAbsolute(traversal)) {
-    throw new Error(`payload inventory escapes bundle: ${manifestPath}`)
-  }
-  return absolute
 }
 
 async function verifyChecksums(bundleDirectory) {
@@ -310,6 +334,76 @@ async function verifyChecksums(bundleDirectory) {
   }
 }
 
+function requireManifestShape(manifest) {
+  if (manifest.kind !== RELEASE_MANIFEST_KIND || manifest.version !== RELEASE_MANIFEST_VERSION) {
+    throw new Error('release manifest kind or version is unsupported')
+  }
+  if (
+    manifest.product?.name !== 'Metrora'
+    || manifest.product?.packageName !== 'metrora-desktop'
+    || manifest.product?.appId !== 'eu.metrora.desktop'
+    || manifest.product?.homepage !== 'https://metrora.eu'
+    || manifest.product?.visualIdentity?.name !== 'Signal Grid'
+    || manifest.product?.visualIdentity?.version !== '1.0'
+  ) {
+    throw new Error('release manifest product identity is not canonical Metrora')
+  }
+  if (
+    manifest.source?.repository !== 'maikolsiragusaa/metrora'
+    || !gitSha1Pattern.test(manifest.source?.commit)
+    || !gitSha1Pattern.test(manifest.source?.tree)
+    || !Number.isSafeInteger(manifest.source?.sourceDateEpoch)
+    || manifest.source.sourceDateEpoch < 0
+  ) {
+    throw new Error('release manifest source identity is invalid')
+  }
+  if (
+    manifest.build?.target !== 'windows-x64'
+    || manifest.build?.artifactType !== 'portable-directory'
+    || !allowedDistributions.has(manifest.build?.distribution)
+    || typeof manifest.build?.inputFiles !== 'object'
+    || manifest.build.inputFiles === null
+  ) {
+    throw new Error('release manifest build identity is invalid')
+  }
+  if (
+    manifest.reproducibility?.level !== 'content-addressed-candidate'
+    || manifest.reproducibility?.payloadFullyInventoried !== true
+    || manifest.reproducibility?.byteForByteArchiveProven !== false
+  ) {
+    throw new Error('release manifest makes an unsupported reproducibility claim')
+  }
+  if (
+    manifest.schema?.file !== 'RELEASE_MANIFEST.schema.json'
+    || !sha256Pattern.test(manifest.schema?.sha256)
+    || manifest.payload?.inventoryFile !== 'PAYLOAD_MANIFEST.jsonl'
+    || !Number.isSafeInteger(manifest.payload?.fileCount)
+    || manifest.payload.fileCount < 1
+    || !Number.isSafeInteger(manifest.payload?.totalBytes)
+    || manifest.payload.totalBytes < 1
+    || !sha256Pattern.test(manifest.payload?.inventorySha256)
+  ) {
+    throw new Error('release manifest payload metadata is invalid')
+  }
+}
+
+async function verifySourceInputs(manifest, repositoryRoot) {
+  const root = resolve(repositoryRoot)
+  const declared = manifest.build.inputFiles
+  const paths = Object.keys(declared)
+  if (paths.length === 0 || paths.some(path => !sha256Pattern.test(declared[path]))) {
+    throw new Error('release manifest build input inventory is invalid')
+  }
+  const actual = await hashInputFiles(root, paths)
+  if (JSON.stringify(actual) !== JSON.stringify(declared)) {
+    throw new Error('release manifest build inputs do not match the checked-out source')
+  }
+  const sourceSchema = join(root, 'release', 'windows-release-candidate-manifest.v1.schema.json')
+  if (await sha256File(sourceSchema) !== manifest.schema.sha256) {
+    throw new Error('release manifest schema does not match the checked-out source')
+  }
+}
+
 export async function verifyReleaseCandidate(bundleDirectory, options = {}) {
   const root = resolve(bundleDirectory)
   const manifestText = await readFile(join(root, 'RELEASE_MANIFEST.json'), 'utf8')
@@ -318,28 +412,21 @@ export async function verifyReleaseCandidate(bundleDirectory, options = {}) {
   const inventoryText = await readFile(join(root, 'PAYLOAD_MANIFEST.jsonl'), 'utf8')
   const inventory = parseInventory(inventoryText)
 
-  if (manifest.kind !== RELEASE_MANIFEST_KIND || manifest.version !== RELEASE_MANIFEST_VERSION) {
-    throw new Error('release manifest kind or version is unsupported')
-  }
-  if (manifest.product?.name !== 'Metrora' || manifest.product?.appId !== 'eu.metrora.desktop') {
-    throw new Error('release manifest product identity is not canonical Metrora')
-  }
-  if (options.expectedCommit && manifest.source?.commit !== options.expectedCommit) {
+  requireManifestShape(manifest)
+  if (options.expectedCommit && manifest.source.commit !== options.expectedCommit) {
     throw new Error('release manifest source commit does not match the expected commit')
   }
-  if (manifest.reproducibility?.byteForByteArchiveProven !== false) {
-    throw new Error('release manifest makes an unsupported byte-reproducibility claim')
-  }
-  if (await sha256File(join(root, 'RELEASE_MANIFEST.schema.json')) !== manifest.schema?.sha256) {
+  await verifySourceInputs(manifest, options.repositoryRoot ?? process.cwd())
+  if (await sha256File(join(root, 'RELEASE_MANIFEST.schema.json')) !== manifest.schema.sha256) {
     throw new Error('release manifest schema checksum mismatch')
   }
-  if (sha256Text(inventoryText) !== manifest.payload?.inventorySha256) {
+  if (sha256Text(inventoryText) !== manifest.payload.inventorySha256) {
     throw new Error('payload inventory checksum mismatch')
   }
-  if (inventory.length !== manifest.payload?.fileCount) {
+  if (inventory.length !== manifest.payload.fileCount) {
     throw new Error('payload inventory file count mismatch')
   }
-  if (inventory.reduce((sum, entry) => sum + entry.size, 0) !== manifest.payload?.totalBytes) {
+  if (inventory.reduce((sum, entry) => sum + entry.size, 0) !== manifest.payload.totalBytes) {
     throw new Error('payload inventory byte count mismatch')
   }
   if (attestation.kind !== RELEASE_ATTESTATION_KIND || attestation.version !== RELEASE_ATTESTATION_VERSION) {
@@ -350,14 +437,17 @@ export async function verifyReleaseCandidate(bundleDirectory, options = {}) {
   }
 
   const actualInventory = await collectPayloadInventory(root)
-  if (JSON.stringify(actualInventory.map(entry => entry.path)) !== JSON.stringify(inventory.map(entry => entry.path))) {
+  if (actualInventory.length !== inventory.length) {
     throw new Error('release candidate contains missing or unlisted payload files')
   }
-  for (const entry of inventory) {
-    const absolute = assertBundlePath(root, entry.path)
-    const fileInfo = await lstat(absolute)
-    if (!fileInfo.isFile() || fileInfo.size !== entry.size || await sha256File(absolute) !== entry.sha256) {
-      throw new Error(`payload verification failed: ${entry.path}`)
+  for (let index = 0; index < inventory.length; index += 1) {
+    const expected = inventory[index]
+    const actual = actualInventory[index]
+    if (actual.path !== expected.path) {
+      throw new Error('release candidate contains missing or unlisted payload files')
+    }
+    if (actual.size !== expected.size || actual.sha256 !== expected.sha256) {
+      throw new Error(`payload verification failed: ${expected.path}`)
     }
   }
 
