@@ -1,5 +1,5 @@
 import { copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import {
   collectPayloadInventory,
@@ -50,17 +50,25 @@ export function parsePhysicalCandidateInventory(text) {
   return entries
 }
 
+function isInsideOrEqual(root, target) {
+  const bounded = relative(root, target)
+  return bounded === '' || (
+    bounded !== '..'
+    && !bounded.startsWith(`..${sep}`)
+    && !isAbsolute(bounded)
+  )
+}
+
 function assertInside(root, target, label) {
-  const relative = target.slice(root.length)
-  if (target === root || !target.startsWith(`${root}/`) || relative.includes('\0')) {
+  if (target === root || !isInsideOrEqual(root, target)) {
     throw new Error(`${label} escapes its bounded root`)
   }
 }
 
 export async function materializePhysicalCanonicalPayload(options) {
-  const candidate = resolve(options.candidateDirectory).replaceAll('\\', '/')
-  const output = resolve(options.outputDirectory).replaceAll('\\', '/')
-  if (output === candidate || output.startsWith(`${candidate}/`)) {
+  const candidate = resolve(options.candidateDirectory)
+  const output = resolve(options.outputDirectory)
+  if (isInsideOrEqual(candidate, output)) {
     throw new Error('physical canonical output must remain outside the candidate directory')
   }
 
@@ -73,8 +81,8 @@ export async function materializePhysicalCanonicalPayload(options) {
   await mkdir(output, { recursive: true })
 
   for (const entry of entries) {
-    const source = resolve(portable, entry.path).replaceAll('\\', '/')
-    const destination = resolve(output, entry.path).replaceAll('\\', '/')
+    const source = resolve(portable, entry.path)
+    const destination = resolve(output, entry.path)
     assertInside(portable, source, 'portable source')
     assertInside(output, destination, 'canonical destination')
 
