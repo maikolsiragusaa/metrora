@@ -1,8 +1,5 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$CandidateDirectory,
-
-  [Parameter(Mandatory = $true)]
   [string]$ArtifactArchive,
 
   [Parameter(Mandatory = $true)]
@@ -18,26 +15,19 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-artifact-lib.ps1')
 
 if ($ExpectedCommit -notmatch '^[a-f0-9]{40}$') {
   throw 'ExpectedCommit must be a full lowercase Git SHA-1'
 }
 
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-$candidate = (Resolve-Path -LiteralPath $CandidateDirectory).Path
 $archive = (Resolve-Path -LiteralPath $ArtifactArchive).Path
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
   throw 'ArtifactArchive must be a file'
 }
 
 $output = [IO.Path]::GetFullPath($OutputDirectory)
-$candidateRoot = [IO.Path]::GetFullPath($candidate)
-if (
-  $output.Equals($candidateRoot, [StringComparison]::OrdinalIgnoreCase) -or
-  $output.StartsWith("$candidateRoot$([IO.Path]::DirectorySeparatorChar)", [StringComparison]::OrdinalIgnoreCase)
-) {
-  throw 'physical acceptance output must remain outside the downloaded candidate'
-}
 if (Test-Path -LiteralPath $output) {
   $existing = @(Get-ChildItem -LiteralPath $output -Force -ErrorAction Stop)
   if ($existing.Count -gt 0) {
@@ -46,6 +36,10 @@ if (Test-Path -LiteralPath $output) {
 }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 
+$artifactName = [IO.Path]::GetFileName($archive)
+$artifactSha256 = Get-MetroraFileSha256 $archive
+$candidate = Join-Path $output 'downloaded-candidate'
+$extraction = Expand-MetroraBoundedArtifactArchive $archive $candidate
 $canonical = Join-Path $output 'canonical-payload'
 $preparationText = (& node (Join-Path $repository 'scripts\prepare-windows-physical-candidate.mjs') `
   $candidate `
@@ -60,8 +54,6 @@ if ($preparation.status -ne 'pass' -or $preparation.sourceCommit -ne $ExpectedCo
   throw 'physical candidate preparation returned an invalid authority'
 }
 
-$artifactName = [IO.Path]::GetFileName($archive)
-$artifactSha256 = Get-MetroraFileSha256 $archive
 $platform = Get-MetroraWindowsPlatform
 if ($platform.architecture -ne 'x64') {
   throw "physical acceptance requires Windows x64, found $($platform.architecture)"
@@ -87,8 +79,11 @@ $context = [ordered]@{
     commit = $ExpectedCommit
   }
   candidate = [ordered]@{
+    directory = 'downloaded-candidate'
     artifactName = $artifactName
     artifactSha256 = $artifactSha256
+    archiveEntryCount = [int]$extraction.EntryCount
+    archiveUncompressedBytes = [int64]$extraction.UncompressedBytes
     productVersion = [string]$preparation.productVersion
     releaseManifestSha256 = [string]$preparation.releaseManifestSha256
     formatManifestSha256 = [string]$preparation.formatManifestSha256
@@ -148,7 +143,8 @@ if ($LASTEXITCODE -ne 0) {
   sourceCommit = $ExpectedCommit
   productVersion = $context.candidate.productVersion
   canonicalFileCount = $context.candidate.canonicalFileCount
+  archiveEntryCount = $context.candidate.archiveEntryCount
   artifactSha256 = $artifactSha256
   sentinelSha256 = $sentinelSha256
-  next = 'Run the declared P1, P2 and P3 checks, then complete the bounded report.'
+  next = 'Use only the extracted downloaded-candidate directory for P1, P2 and P3.'
 } | ConvertTo-Json -Compress
