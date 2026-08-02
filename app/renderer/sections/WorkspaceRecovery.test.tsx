@@ -102,6 +102,27 @@ function availability(value = snapshot()): DesktopWorkspaceAvailability {
   }
 }
 
+function pendingAvailability(): DesktopWorkspaceAvailability {
+  const value = snapshot()
+  value.evidence = {
+    state: 'blocked',
+    pendingEventCount: 0,
+    unbatchedEventCount: 0,
+    acknowledgedEventCount: 0,
+    invalidEventCount: 0,
+    quarantinedEventCount: 0,
+    pendingBatchCount: 0,
+    acknowledgedBatchCount: 0,
+    blockers: ['Full local evidence inspection is pending.'],
+  }
+  return {
+    availability: 'ready',
+    inspection: 'pending',
+    vault: { backend: 'windows-dpapi', masterKeyState: 'loaded' },
+    snapshot: value,
+  }
+}
+
 describe('Workspace recovery controls', () => {
   beforeEach(() => {
     for (const mock of Object.values(bridge)) mock.mockReset()
@@ -152,6 +173,45 @@ describe('Workspace recovery controls', () => {
       'Local Workspace state was reconciled through existing private receipts.',
       undefined,
     )
+  })
+
+  it('clears a failed inspection state when explicit recovery returns a valid snapshot', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue(pendingAvailability())
+    bridge.inspectWorkspaceStatus.mockRejectedValue(new Error('inspection failed'))
+    bridge.recoverWorkspaceState.mockResolvedValue({
+      summary: {
+        kind: 'metrora.desktop-workspace-recovery-summary',
+        version: 1,
+        outcome: 'healthy',
+        retryAttempted: true,
+        blocker: null,
+        receiptRepairCount: 0,
+        production: {
+          kind: 'metrora.canonical-reviewed-production-summary',
+          version: 1,
+          outcome: 'completed',
+          scanned: true,
+          eligibleCount: 0,
+          producedCount: 0,
+          existingCount: 0,
+          withheldCount: 0,
+          failedCount: 0,
+        },
+      },
+      snapshot: snapshot(),
+    })
+
+    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByTestId('workspace-evidence-inspection-error')).toBeInTheDocument()
+    const recover = screen.getByRole('button', { name: 'Check & recover local state' })
+    expect(recover).toBeEnabled()
+    fireEvent.click(recover)
+
+    await waitFor(() => expect(bridge.recoverWorkspaceState).toHaveBeenCalledWith())
+    await waitFor(() => expect(screen.queryByTestId('workspace-evidence-inspection-error')).not.toBeInTheDocument())
+    expect((await screen.findAllByText('Ready to sign')).length).toBeGreaterThan(0)
+    expect(screen.getByText('Pending events').parentElement).toHaveTextContent('0')
   })
 
   it('keeps recovery available for quarantined evidence without producing or unblocking it', async () => {
