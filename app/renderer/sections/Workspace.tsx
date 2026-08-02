@@ -72,7 +72,7 @@ const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
 
 function withSnapshot(current: DesktopWorkspaceAvailability | null, snapshot: DesktopWorkspaceSnapshot): DesktopWorkspaceAvailability | null {
   if (!current || current.availability !== 'ready') return current
-  return { ...current, snapshot }
+  return { ...current, inspection: 'complete', snapshot }
 }
 
 function shortFingerprint(value: string): string {
@@ -144,6 +144,7 @@ export function WorkspaceContent({
   const bridge = metrora as Partial<WorkspaceBridge>
   const [availability, setAvailability] = useState<DesktopWorkspaceAvailability | null>(null)
   const [statusError, setStatusError] = useState(false)
+  const [inspectionError, setInspectionError] = useState(false)
   const [action, setAction] = useState<WorkspaceAction>('reload')
   const [workspaceName, setWorkspaceName] = useState('My workspace')
   const [endpointName, setEndpointName] = useState('This computer')
@@ -151,9 +152,10 @@ export function WorkspaceContent({
   const [lastRecovery, setLastRecovery] = useState<DesktopWorkspaceRecoverySummary | null>(null)
   const usage = useMemo(() => workspaceUsageFromOverview(payload), [payload])
 
-  const reload = useCallback(async () => {
+  const loadBootstrap = useCallback(async () => {
     setAction('reload')
     setStatusError(false)
+    setInspectionError(false)
     try {
       if (typeof bridge.getWorkspaceStatus !== 'function') throw new Error('workspace bridge unavailable')
       setAvailability(await bridge.getWorkspaceStatus())
@@ -164,9 +166,51 @@ export function WorkspaceContent({
     }
   }, [bridge])
 
+  const reload = useCallback(async () => {
+    setAction('reload')
+    setStatusError(false)
+    setInspectionError(false)
+    try {
+      if (typeof bridge.inspectWorkspaceStatus === 'function') {
+        setAvailability(await bridge.inspectWorkspaceStatus())
+      } else if (typeof bridge.getWorkspaceStatus === 'function') {
+        setAvailability(await bridge.getWorkspaceStatus())
+      } else {
+        throw new Error('workspace bridge unavailable')
+      }
+    } catch {
+      setStatusError(true)
+    } finally {
+      setAction(null)
+    }
+  }, [bridge])
+
   useEffect(() => {
-    void reload()
-  }, [reload])
+    void loadBootstrap()
+  }, [loadBootstrap])
+
+  useEffect(() => {
+    if (
+      availability?.availability !== 'ready'
+      || availability.inspection !== 'pending'
+      || inspectionError
+    ) return
+
+    let cancelled = false
+    const inspect = async () => {
+      try {
+        if (typeof bridge.inspectWorkspaceStatus !== 'function') {
+          throw new Error('workspace inspection bridge unavailable')
+        }
+        const inspected = await bridge.inspectWorkspaceStatus()
+        if (!cancelled) setAvailability(inspected)
+      } catch {
+        if (!cancelled) setInspectionError(true)
+      }
+    }
+    void inspect()
+    return () => { cancelled = true }
+  }, [availability, bridge, inspectionError])
 
   const createWorkspace = async () => {
     const displayName = workspaceName.trim()
@@ -276,7 +320,7 @@ export function WorkspaceContent({
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
           <EmptyNote>The secure Workspace runtime did not return a public status. Ordinary local analytics remain available.</EmptyNote>
-          <button type="button" className="btn btn-s" onClick={() => void reload()} disabled={action !== null}>Retry status</button>
+          <button type="button" className="btn btn-s" onClick={() => void loadBootstrap()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>
     )
@@ -303,7 +347,7 @@ export function WorkspaceContent({
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
           <EmptyNote>The operating-system vault is unavailable, so Metrora will not open a plaintext fallback.</EmptyNote>
-          <button type="button" className="btn btn-s" onClick={() => void reload()} disabled={action !== null}>Retry status</button>
+          <button type="button" className="btn btn-s" onClick={() => void loadBootstrap()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>
     )
@@ -320,6 +364,7 @@ export function WorkspaceContent({
       setWorkspaceName={setWorkspaceName}
       setEndpointName={setEndpointName}
       action={action}
+      inspectionError={inspectionError}
       lastProduction={lastProduction}
       lastRecovery={lastRecovery}
       onReload={reload}
@@ -343,6 +388,7 @@ function ReadyWorkspaceView({
   setWorkspaceName,
   setEndpointName,
   action,
+  inspectionError,
   lastProduction,
   lastRecovery,
   onReload,
@@ -362,6 +408,7 @@ function ReadyWorkspaceView({
   setWorkspaceName: (value: string) => void
   setEndpointName: (value: string) => void
   action: WorkspaceAction
+  inspectionError: boolean
   lastProduction: DesktopReviewedProductionSummary | null
   lastRecovery: DesktopWorkspaceRecoverySummary | null
   onReload: () => Promise<void>
@@ -380,8 +427,21 @@ function ReadyWorkspaceView({
     : null
   const productionPaused = lifecycle?.mode === 'paused'
   const busy = action !== null
-  const evidenceBlocked = evidence.state === 'blocked' || evidence.state === 'quarantined'
+  const inspectionPending = availability.inspection === 'pending' && !inspectionError
+  const inspectionComplete = availability.inspection === 'complete'
+  const evidenceLabel = inspectionError
+    ? 'Verification unavailable'
+    : inspectionPending
+      ? 'Checking local data'
+      : EVIDENCE_LABELS[evidence.state]
+  const evidenceDescription = inspectionError
+    ? 'The read-only evidence inspection could not complete. Existing files were not changed.'
+    : inspectionPending
+      ? 'Metrora is verifying local evidence in the background. Counts will appear after the read-only inspection finishes.'
+      : EVIDENCE_DESCRIPTIONS[evidence.state]
+  const evidenceBlocked = !inspectionComplete || evidence.state === 'blocked' || evidence.state === 'quarantined'
   const exportBlocked = evidenceBlocked || evidence.unbatchedEventCount > 0
+  const evidenceStateClass = inspectionComplete ? evidence.state : 'blocked'
 
   return (
     <>
@@ -395,7 +455,7 @@ function ReadyWorkspaceView({
         </div>
         <div className="workspace-hero-state">
           <span className="workspace-local-badge">Local only</span>
-          <span className={`workspace-state workspace-state-${evidence.state}`}>{EVIDENCE_LABELS[evidence.state]}</span>
+          <span className={`workspace-state workspace-state-${evidenceStateClass}`}>{evidenceLabel}</span>
         </div>
       </section>
 
@@ -500,18 +560,28 @@ function ReadyWorkspaceView({
             </dl>
           </Panel>
 
-          <Panel title="Reviewed evidence" right={EVIDENCE_LABELS[evidence.state]}>
-            <p className="workspace-evidence-copy">{EVIDENCE_DESCRIPTIONS[evidence.state]}</p>
-            <div className="workspace-counts">
-              <EvidenceCount label="Pending events" value={evidence.pendingEventCount} />
-              <EvidenceCount label="Unbatched events" value={evidence.unbatchedEventCount} />
-              <EvidenceCount label="Acknowledged events" value={evidence.acknowledgedEventCount} />
-              <EvidenceCount label="Pending batches" value={evidence.pendingBatchCount} />
-              <EvidenceCount label="Acknowledged batches" value={evidence.acknowledgedBatchCount} />
-              <EvidenceCount label="Quarantined" value={evidence.quarantinedEventCount} />
-              <EvidenceCount label="Invalid" value={evidence.invalidEventCount} />
+          <Panel title="Reviewed evidence" right={evidenceLabel}>
+            <p className="workspace-evidence-copy">{evidenceDescription}</p>
+            <div className="workspace-counts" aria-busy={inspectionPending}>
+              <EvidenceCount label="Pending events" value={inspectionComplete ? evidence.pendingEventCount : null} />
+              <EvidenceCount label="Unbatched events" value={inspectionComplete ? evidence.unbatchedEventCount : null} />
+              <EvidenceCount label="Acknowledged events" value={inspectionComplete ? evidence.acknowledgedEventCount : null} />
+              <EvidenceCount label="Pending batches" value={inspectionComplete ? evidence.pendingBatchCount : null} />
+              <EvidenceCount label="Acknowledged batches" value={inspectionComplete ? evidence.acknowledgedBatchCount : null} />
+              <EvidenceCount label="Quarantined" value={inspectionComplete ? evidence.quarantinedEventCount : null} />
+              <EvidenceCount label="Invalid" value={inspectionComplete ? evidence.invalidEventCount : null} />
             </div>
-            {evidence.blockers.length > 0 ? (
+            {inspectionPending ? (
+              <div className="workspace-source-line" role="status" data-testid="workspace-evidence-inspection">
+                Read-only evidence verification in progress…
+              </div>
+            ) : null}
+            {inspectionError ? (
+              <div className="workspace-source-line" role="alert" data-testid="workspace-evidence-inspection-error">
+                Verification could not complete. Use the bounded recovery action for an explicit retry; no files were deleted or reset.
+              </div>
+            ) : null}
+            {inspectionComplete && evidence.blockers.length > 0 ? (
               <ul className="workspace-blockers">
                 {evidence.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
               </ul>
@@ -534,7 +604,7 @@ function ReadyWorkspaceView({
             <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
               {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
             </button>
-            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy}>
+            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy || inspectionPending}>
               {action === 'recover' ? 'Checking…' : 'Check & recover local state'}
             </button>
             <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceBlocked}>
@@ -545,7 +615,7 @@ function ReadyWorkspaceView({
             </button>
           </div>
           <p className="workspace-action-note">
-            Recovery is explicit and bounded. It never deletes, resets, unblocks, reprices, batches, exports, or uploads evidence automatically.
+            Evidence verification is automatic and read-only. Recovery remains explicit and bounded; it never deletes, resets, unblocks, reprices, batches, exports, or uploads evidence automatically.
           </p>
           {lastRecovery ? (
             <div className="workspace-source-line" data-testid="workspace-recovery-summary">
@@ -553,9 +623,11 @@ function ReadyWorkspaceView({
             </div>
           ) : null}
           <p className="workspace-action-note">
-            {evidence.unbatchedEventCount > 0
-              ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
-              : 'Production, batching, and export are always explicit. Nothing is uploaded or published automatically.'}
+            {inspectionPending
+              ? 'Wait for local verification before producing, signing, or exporting.'
+              : evidence.unbatchedEventCount > 0
+                ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
+                : 'Production, batching, and export are always explicit. Nothing is uploaded or published automatically.'}
           </p>
         </Panel>
       </div>
@@ -572,11 +644,11 @@ function UsageStat({ label, value, testId }: { label: string; value: string; tes
   )
 }
 
-function EvidenceCount({ label, value }: { label: string; value: number }) {
+function EvidenceCount({ label, value }: { label: string; value: number | null }) {
   return (
     <div>
       <span>{label}</span>
-      <b>{formatCompact(value)}</b>
+      <b>{value === null ? '—' : formatCompact(value)}</b>
     </div>
   )
 }
