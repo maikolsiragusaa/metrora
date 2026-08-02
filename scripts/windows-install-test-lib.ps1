@@ -144,3 +144,20 @@ function Stop-MetroraProcess($Process) {
   & taskkill.exe /PID $Process.Id /T /F | Out-Null
   Wait-MetroraCondition { $Process.HasExited } 20 'Metrora process did not stop after launch smoke test'
 }
+
+function Invoke-MetroraSilentInstall([string]$Installer, [string]$InstallDirectory, [string]$Stage) {
+  $process = Start-Process -FilePath $Installer -ArgumentList @('/S', "/D=$InstallDirectory") -Wait -PassThru
+  if ($process.ExitCode -ne 0) {
+    throw "$Stage installer exited with code $($process.ExitCode)"
+  }
+}
+
+function Invoke-MetroraSilentUninstall($Installed, [string]$InstallDirectory, [string]$Stage) {
+  $process = Start-Process -FilePath $Installed.Uninstaller -ArgumentList '/S' -Wait -PassThru
+  if ($process.ExitCode -ne 0) {
+    throw "$Stage uninstaller exited with code $($process.ExitCode)"
+  }
+  Wait-MetroraCondition { -not (Test-Path -LiteralPath $Installed.Executable) } 60 "$Stage did not remove the application executable"
+  Wait-MetroraCondition { @(Get-MetroraUninstallEntries $InstallDirectory $Installed.Uninstaller).Count -eq 0 } 30 "$Stage did not remove its registry entry"
+  Wait-MetroraCondition { @(Get-MetroraShortcuts $Installed.Executable).Count -eq 0 } 30 "$Stage did not remove the Metrora shortcut"
+}
