@@ -1,189 +1,194 @@
-# CodeBurn Architecture
+# Metrora architecture
 
-A map of the codebase. Read this once before opening a non-trivial PR.
+A responsibility map for the public Metrora codebase. Read this before opening a non-trivial pull request.
 
-## Three Surfaces
+## Product authority
 
-CodeBurn is one Node.js CLI plus two GUI clients that shell out to it.
+The public repository is authoritative for local collection, parsing, normalization, pricing, analytics, evidence, Workspace contracts and user-owned export.
 
-```
-+----------------------+      +-----------------+
-| mac/  (Swift)        | ---> |                 |
-+----------------------+      |  src/cli.ts     |
-| gnome/ (JavaScript)  | ---> |  (the CLI)      |
-+----------------------+      |                 |
-                              |  status         |
-                              |  --format       |
-                              |  menubar-json   |
-                              +-----------------+
-                                       |
-                                       v
-                          +----------------------------+
-                          | session files on disk      |
-                          | (JSONL, SQLite, protobuf)  |
-                          +----------------------------+
-```
+Metrora is local-first:
 
-The macOS menubar (`mac/`) and the GNOME extension (`gnome/`) both invoke `codeburn status --format menubar-json --period <p>` and parse the JSON. They do not share code with the CLI; they only depend on its output contract.
+- AI traffic does not pass through Metrora;
+- ordinary local use requires no account or hosted service;
+- prompts, responses, source code, patches, secrets and unrestricted local paths are not exported by default;
+- settled historical cost assignments remain immutable;
+- unavailable or uninspected evidence remains explicit rather than becoming a false zero.
 
-## CLI (`src/`)
+Private commercial and infrastructure repositories may extend public contracts through versioned artifacts and services. They may not fork or redefine canonical local product semantics.
 
-`src/cli.ts` is the Commander.js entry point. The bin field in `package.json` points at `dist/cli.js`. Twelve commands are registered:
+## Surfaces
 
-| Command | Line | Purpose |
-|---|---|---|
-| `report` | 274 | Default. Interactive Ink TUI dashboard. |
-| `status` | 358 | Compact text status, plus `--format menubar-json` for clients. |
-| `today` | 524 | Today-only view of `report`. |
-| `month` | 542 | Month-only view of `report`. |
-| `export` | 560 | CSV or JSON dump of usage data. |
-| `menubar` | 621 | Downloads and launches the macOS menubar bundle. |
-| `currency` | 636 | Sets display currency. |
-| `model-alias` | 687 | Maps an unknown model name to a known one for pricing. |
-| `plan` | 737 | Configures a subscription plan for overage tracking. |
-| `optimize` | 857 | Runs all 14 waste detectors. |
-| `compare` | 870 | Compares two models side by side. |
-| `yield` | 882 | Tracks which sessions shipped to main vs. were reverted (experimental). |
-
-### Pipeline
-
-```
-provider.discoverSessions()
-        |
-        v
-provider.createSessionParser(source, seenKeys)
-        |
-        v   yields ParsedProviderCall (see src/providers/types.ts)
-        |
-        v
-src/parser.ts: parseAllSessions()
-        |
-        v   aggregates into ProjectSummary[]
-        |
-        v
-src/daily-cache.ts: aggregate per day, persist
-        |
-        v
-output formatter (Ink TUI, JSON, or menubar-json)
+```text
+local AI-tool session stores
+            ↓
+collectors and provider parsers
+            ↓
+canonical normalized records, cache and pricing
+            ↓
+analytics, evidence and Workspace runtime
+            ↓
+CLI / Electron desktop / local web dashboard
+            ↓
+optional native companions and explicit exports
 ```
 
-`src/parser.ts` is the central aggregator. Public exports: `parseAllSessions`, `filterProjectsByName`, `extractMcpInventory`. It owns the dedup `Set` (`seenKeys`) that is passed into every provider parser so a turn that surfaces in two providers (Claude logs vs. Cursor mirror, for instance) is counted once.
+### CLI — `src/`
 
-### Cache Layers
+The canonical command is `metrora`.
 
-Three caches under `~/.cache/codeburn/` (override with `CODEBURN_CACHE_DIR`):
+The CLI owns command routing and invokes shared domain modules for:
 
-| File | Owner | Invalidation |
-|---|---|---|
-| `codex-results.json` | `src/codex-cache.ts` | `mtimeMs + sizeBytes` per Codex `.jsonl`. |
-| `cursor-results.json` | `src/cursor-cache.ts` | `mtimeMs + sizeBytes` of the Cursor SQLite db. |
-| `daily-cache.json` | `src/daily-cache.ts` | Tracks `lastComputedDate`; new days are backfilled, old days are reused. |
+- provider discovery and parsing;
+- canonical aggregation and date filtering;
+- historical pricing and evidence classification;
+- reports, exports and optimization findings;
+- MCP stdio tools;
+- endpoint, Workspace, batching and verification operations where applicable.
 
-All three use atomic write (temp file + `rename`) and write with mode `0o600`. All three carry a numeric `version` field; bumping it forces a recompute next run.
+Temporary inherited command aliases remain compatibility entry points only. New documentation, artifacts and user-facing text use Metrora.
 
-### Optimize Detectors
+### Electron desktop — `app/`
 
-`src/optimize.ts` exports 14 detectors. Each returns a `WasteFinding | null`. They are composed by `runOptimize()` which collects findings, ranks them by impact, and returns them with `WasteAction` objects (paste-to-CLAUDE.md, paste-to-session-opener, prompt-now, edit shell config).
+The desktop application is the primary local graphical surface.
 
-| Detector | Line | What it catches |
-|---|---|---|
-| `detectJunkReads` | 428 | Reads into `node_modules`, `.git`, `dist`, etc. |
-| `detectDuplicateReads` | 477 | Re-reads of the same file in a session. |
-| `detectMcpToolCoverage` | 795 | MCP servers with many tools but low usage. |
-| `detectUnusedMcp` | 855 | MCP servers configured but never invoked. |
-| `detectBloatedClaudeMd` | 944 | `CLAUDE.md` files past a healthy size. |
-| `detectLowReadEditRatio` | 987 | Edit-heavy sessions with too few prior reads. |
-| `detectCacheBloat` | 1048 | High `cache_creation_input_tokens`. |
-| `detectGhostAgents` | 1124 | Defined but never-invoked Claude agents. |
-| `detectGhostSkills` | 1154 | Defined but never-invoked skills. |
-| `detectGhostCommands` | 1184 | Defined but never-invoked slash commands. |
-| `detectBashBloat` | 1228 | Shell output limit set above the recommended 15K chars. |
-| `detectLowWorthSessions` | 1405 | Sessions with cost but no edits or git delivery. |
-| `detectContextBloat` | 1512 | Input:output token ratio above 25:1. |
-| `detectSessionOutliers` | 1558 | Sessions costing more than 2x the project average. |
+The Electron main process owns privileged work:
 
-### Output Formats
+- execution of the bundled compatibility CLI;
+- local filesystem and OS-vault access;
+- endpoint and Workspace runtime authority;
+- bounded inspection, production, recovery, batching and export actions;
+- validation of external URLs and export destinations.
 
-| Command | `--format` choices | Default |
-|---|---|---|
-| `report`, `today`, `month` | `tui`, `json` | `tui` |
-| `status` | `terminal`, `menubar-json`, `json` | `terminal` |
-| `export` | `csv`, `json` | `csv` |
-| `plan` | `text`, `json` | `text` |
+The preload bridge exposes a narrow typed API. The renderer runs with context isolation and no Node integration, consumes public DTOs and must not implement its own parser, pricing engine or evidence authority.
 
-The macOS menubar and GNOME extension consume `menubar-json`. `src/menubar-json.ts` defines the contract; `tests/menubar-json.test.ts` pins it.
+State orchestration, domain formatting and presentation must be split before a component or main-process module becomes a GOD FILE.
 
-## Providers (`src/providers/`)
+### Local web dashboard — `dash/`
 
-Every provider implements the `Provider` interface in `src/providers/types.ts`:
+The dashboard renders canonical local analytical payloads in a browser surface served from the user's machine. It does not become a hosted control plane or a second data model.
 
-```ts
-type Provider = {
-  name: string
-  displayName: string
-  modelDisplayName(model: string): string
-  toolDisplayName(rawTool: string): string
-  discoverSessions(): Promise<SessionSource[]>
-  createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser
-}
+### Native companions — `mac/`, `gnome/`, `android/`
+
+- macOS and GNOME surfaces are lightweight local companions over the canonical CLI/runtime.
+- Android is a companion foundation and does not own collection, pricing or evidence authority.
+- inherited module names, UUIDs and storage paths may remain where migration would otherwise break installed state.
+
+Compatibility identifiers are governed by `TECHNICAL_IDENTITY_COMPATIBILITY.md`, not treated as current product branding.
+
+## Collection and parsing
+
+Provider adapters discover source records and emit normalized calls through shared parser contracts.
+
+Key rules:
+
+- source-present provider/model metadata is preferred over inference;
+- deduplication occurs through canonical identities shared across providers;
+- parser caches accelerate repeated reads but do not become independent truth;
+- cache reconciliation must preserve provenance and fail closed on contradictory records;
+- provider-specific parsing remains isolated from product presentation.
+
+New or changed provider adapters require fixtures, focused tests, provenance review and validation against representative real records where possible.
+
+## Pricing authority
+
+Historical API-equivalent pricing is date-effective and evidence-aware.
+
+- provider/client metered values are authoritative when available;
+- explicit zero is distinct from unavailable pricing;
+- subscription or proxy coverage is an overlay, not a rewrite of historical API-equivalent value;
+- a later catalog update cannot silently change an already settled call;
+- legacy fallback remains explicit and conservative.
+
+Pricing logic belongs in shared domain modules, never in renderer components or deployment configuration.
+
+## Local Workspace and evidence
+
+Workspace v1 is endpoint-owned and useful without cloud services.
+
+The local runtime owns:
+
+- protected endpoint identity and OS-vault material;
+- local personal Workspace state and membership;
+- reviewed measurement production;
+- private receipts and append-only outbox publication;
+- active/paused production lifecycle;
+- truthful read-only evidence inspection;
+- deterministic non-destructive recovery;
+- workspace-authorized signed batches;
+- independently verifiable user-owned exports.
+
+Opening the application may inspect evidence automatically, but recovery remains explicit and mutation-capable only when reconciliation is actually needed.
+
+Managed synchronization, billing, remote lifecycle control, hosted scanning and cloud recovery require separate contracts, threat models and implementation tranches.
+
+## Public contracts
+
+Versioned public contracts under `src/contracts/` define stable boundaries for endpoints, Workspaces, repositories, sharing, measurements and evidence.
+
+Contract evolution requires:
+
+- explicit versioning or compatible extension;
+- validation at trust boundaries;
+- migration and rollback analysis;
+- privacy review;
+- fixtures and conformance tests;
+- no silent reinterpretation by infrastructure.
+
+## Distribution
+
+Windows uses two parallel channels:
+
+```text
+Microsoft Store
+└── AppX/MSIX signed and hosted by Microsoft after certification
+
+GitHub Releases / metrora.eu
+├── verified portable ZIP
+├── explicitly unsigned NSIS installer
+├── SHA-256 checksums
+└── manifests and provenance
 ```
 
-`src/providers/index.ts` registers providers across two tiers:
+The Store package receives its own identity, build and physical-acceptance boundary. Store product identifiers are supplied by Partner Center and must never be guessed or copied from another project.
 
-- **Eager**: `claude`, `cline`, `codewhale`, `codebuff`, `codex`, `copilot`, `devin`, `droid`, `gemini`, `hermes`, `ibm-bob`, `kilo-code`, `kiro`, `kimi`, `lingtai-tui`, `mistral-vibe`, `mux`, `openclaw`, `open-design`, `pi`, `omp`, `qwen`, `roo-code`, `zerostack`, `grok`. Imported at module load.
-- **Lazy**: `antigravity`, `forge`, `goose`, `cursor`, `opencode`, `cursor-agent`, `crush`, `warp`, `vercel-gateway`, `zcode`, `zed`. Imported via dynamic `import()` so the heavy dependencies (SQLite, protobuf, network clients) do not touch users who do not have those tools installed.
+Build, format packaging, independent verification, physical acceptance, Store submission, GitHub publication, update rollout and rollback remain separate responsibilities.
 
-Both lists hit the same `getAllProviders()` aggregator. A failed lazy import is silent and excludes that provider from the run.
+See `WINDOWS_STORE_DISTRIBUTION.md`, `WINDOWS_FORMAT_DERIVATION_V1.md` and the related Windows acceptance contracts.
 
-`src/providers/vscode-cline-parser.ts` is a shared helper consumed by `cline`, `ibm-bob`, `kilo-code`, and `roo-code`. It is not registered as a provider on its own.
+## Security boundaries
 
-For the per-provider data location, storage format, parser quirks, and test coverage, see `docs/providers/`.
+- no shell interpolation for untrusted command arguments;
+- no Node integration in the renderer;
+- no remote content in privileged windows;
+- no signing, Store or deployment credentials in untrusted pull requests;
+- no raw customer content or secret material in logs or reports;
+- no destructive reset disguised as recovery;
+- no public/private source copying as a synchronization mechanism;
+- no deployment-time patching of product semantics or visual identity.
 
-## macOS Menubar (`mac/`)
+## Repository map
 
-Swift package (`mac/Package.swift`), targets macOS 14, strict concurrency on. Layout under `mac/Sources/CodeBurnMenubar/`:
+```text
+src/       canonical collection, parsing, pricing, analytics, evidence and CLI
+app/       Electron desktop application
+ dash/      local browser dashboard
+android/   companion application foundation
+mac/       native macOS menubar companion
+gnome/     GNOME Shell companion
+tests/     canonical core and integration tests
+docs/      public contracts, architecture and release boundaries
+scripts/   bounded build, validation, migration and release utilities
+```
 
-- `CodeBurnApp.swift` boots the SwiftUI `App` and the `NSStatusItem`.
-- `AppStore.swift` is the single source of truth for UI state.
-- `Data/` holds models, the CLI client, credential stores, and subscription services.
-  - `DataClient.swift` spawns the CLI and decodes `MenubarPayload`. See file-level comment for why we never route through `/bin/zsh -c`.
-  - `MenubarPayload.swift` mirrors the JSON the CLI emits; keep it in sync with `src/menubar-json.ts`.
-- `Security/CodeburnCLI.swift` resolves the CLI binary (env override `CODEBURN_BIN`, fallback `codeburn`), validates each argv entry against an allowlist regex, and augments PATH for Homebrew and npm-global installs. The Process is launched via `/usr/bin/env`, never via a shell.
-- `Theme/` holds color and typography constants and the dark/light state.
-- `Views/` are the SwiftUI components rendered inside `NSPopover`.
+## Change discipline
 
-Tests live in `mac/Tests/CodeBurnMenubarTests/` (currently `CapacityEstimatorTests.swift`).
+Every substantial change should identify:
 
-The build artifact is a zipped `.app` bundle produced by `mac/Scripts/package-app.sh`. See `RELEASING.md` for how the GitHub Actions workflow uses it.
+- the authority it modifies;
+- the public contract or compatibility boundary involved;
+- focused and full validation required;
+- migration and rollback behavior;
+- privacy and provenance impact;
+- whether documentation belongs in the public, commercial or infrastructure repository.
 
-## GNOME Extension (`gnome/`)
-
-Plain JavaScript, no bundler. Targets GNOME Shell 45-50 (`metadata.json`).
-
-- `extension.js` is the entry point. On `enable()` it constructs a `CodeBurnIndicator` and adds it to the panel.
-- `indicator.js` is the popover. It owns the period selector, the insight tabs, and the provider filter.
-- `dataClient.js` wraps `Gio.Subprocess` to call the CLI. It validates argv against the same allowlist pattern as the macOS client and augments PATH with `~/.local/bin`, `~/.npm-global/bin`, `~/.volta/bin`, `~/.bun/bin`, `~/.cargo/bin`, `~/.asdf/shims`, and a few others. Results are cached for 300 seconds.
-- `prefs.js` is the settings dialog backed by `schemas/org.gnome.shell.extensions.codeburn.gschema.xml`.
-- `install.sh` copies the extension into `~/.local/share/gnome-shell/extensions/`.
-
-## Build (`scripts/`, `tsup.config.ts`)
-
-`npm run build` is two steps:
-
-1. `node scripts/bundle-litellm.mjs` fetches the latest litellm pricing JSON and writes `src/data/litellm-snapshot.json`. The bundle script keeps a manual override for MiniMax variants. Direct (un-prefixed) entries win over prefixed ones. The result is checked in so the build is reproducible.
-2. `tsup` reads `tsup.config.ts` and emits a single ESM bundle at `dist/cli.js` with a Node shebang banner. No source maps in publish builds; sourcemaps on for development.
-
-The `prepublishOnly` hook in `package.json` runs `npm run build` so `npm publish` always ships fresh code.
-
-## Tests
-
-`npm test` runs vitest. Forty-two test files live under `tests/`:
-
-- `tests/` root (27 files) covers CLI, parser, optimize, cache, format, models, plans.
-- `tests/security/` (1 file) covers prototype-pollution guards.
-- `tests/providers/` (15 files) covers per-provider parsing.
-- `tests/fixtures/` holds redacted real-world session data.
-
-Five providers ship without dedicated test files today: `antigravity`, `claude`, `gemini`, `goose`, `qwen`. Closing this gap is a standing good-first-issue.
-
-CI runs Semgrep against `.semgrep/rules/no-bracket-assign-hot-paths.yml` over `src/providers/` and `src/parser.ts` (`.github/workflows/ci.yml`). It does not run vitest in CI today; tests run locally before publish.
+Prefer small independently revertible modules and pull requests. Do not solve architectural growth by raising size limits or moving unrelated responsibilities into another oversized file.

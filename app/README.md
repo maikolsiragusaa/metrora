@@ -1,6 +1,8 @@
-# CodeBurn Desktop
+# Metrora Desktop
 
-Electron desktop shell for CodeBurn's local-first usage views. M1 runs as a developer app and reads data by spawning the installed `codeburn` CLI; it does not run a daemon or HTTP server.
+Electron desktop application for Metrora's local-first AI usage intelligence and Workspace surfaces.
+
+Metrora Desktop reads structured data produced by the bundled compatibility CLI. It does not require a separate Node.js installation, run an analytics daemon, proxy AI traffic or send prompts/source code to Metrora services.
 
 ## Development
 
@@ -14,56 +16,73 @@ Validation:
 ```sh
 npm --prefix app run test
 npm --prefix app run typecheck
+npm --prefix app run build
 ```
 
-## CLI Dependency
+## Runtime boundary
 
-Packaged builds ship their own version-matched copy of the `codeburn` CLI and require nothing installed — the app spawns the bundled CLI with Electron's own binary as Node (`ELECTRON_RUN_AS_NODE`). In development (Vite dev server) the app uses the repo's freshly-built CLI, and either can be overridden with `CODEBURN_BIN` or a persisted path file. See `DISTRIBUTION.md` for the bundling and resolution details. Electron resolves and spawns the CLI from the main process, then sends decoded JSON through the secure preload bridge into the renderer.
+The packaged application ships a version-matched CLI bundle under Electron resources and executes it with Electron's own runtime.
 
-This follows the menubar pattern:
+The main process owns:
 
-- `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`.
-- Renderer code calls `window.codeburn` only through `app/renderer/lib/ipc.ts`.
-- Main process handlers return JSON envelopes so structured CLI errors survive IPC.
-- Missing CLI, bad JSON, timeout, and nonzero exits are surfaced as honest UI states.
-- The renderer never imports CodeBurn engine code from `src/`; the data contract is spawn CLI, decode JSON, poll.
+- CLI resolution and execution;
+- local filesystem and OS-vault access;
+- bounded IPC handlers;
+- Workspace identity, lifecycle, inspection and recovery authority;
+- export-path validation and private-buffer handling.
 
-## Data Contract
+The renderer runs with context isolation and no Node integration. It receives public JSON/DTO payloads only through the preload bridge.
 
-Current bridge calls:
+## Compatibility identifiers
 
-- Overview: `codeburn status --format menubar-json --period <period> [--provider <provider>]`
-- Plans: `codeburn status --format json --period <period>`
-- Models: `codeburn models --format json --period <period> [--provider <provider>] [--by-task]`
-- Optimize: `codeburn yield --format json --period <period>`
-- Spend flow: `codeburn spend --format flow-json --period <period> [--provider <provider>]`
-- Devices: `codeburn devices --format json --period <period>`
-- Device scan: `codeburn devices scan --format json`
-- Share status: `codeburn share status --format json`
-- Identity: `codeburn identity --format json`
+Some internal names such as `window.codeburn`, `CODEBURN_BIN`, inherited storage paths and compatibility command aliases remain intentionally stable while migrations are reviewed. They are technical compatibility boundaries, not Metrora product branding.
 
-Supported M1 periods are `today`, `week`, `30days`, `month`, and `all`. Provider filtering is passed through where the CLI command supports it.
+New user-facing text, artifact names, documentation and release metadata must use **Metrora**.
 
-## Sections
+See `../docs/TECHNICAL_IDENTITY_COMPATIBILITY.md` for the canonical migration boundary.
 
-- Overview: daily spend, spend stats, waste summary, and expensive sessions from `menubar-json`.
-- Spend: project/activity/tool/MCP/subagent lenses plus model-to-project flow.
-- Optimize: waste findings from `menubar-json` and reverted/abandoned yield data.
-- Models: model and task tables from `models --format json`.
-- Plans: plan pacing from `status --format json`.
-- Settings: device identity, nearby scan results, paired-device usage, and M2 visual affordances.
+## Product surfaces
+
+Current desktop surfaces include:
+
+- Overview and period/provider filters;
+- session, project, tool, model, cost and token analysis;
+- optimization and model-comparison views;
+- plans, pricing overrides and exports;
+- local device/identity foundations;
+- the local personal Workspace with truthful evidence inspection, production lifecycle, batching, export and recovery.
+
+The public CLI and desktop share canonical parsing, aggregation, pricing and evidence semantics. The renderer must never create a second analytics authority or invent data for incomplete states.
+
+## Windows distribution
+
+Two parallel Windows channels are planned:
+
+- Microsoft Store AppX/MSIX for ordinary users, signed and hosted by Microsoft after certification;
+- GitHub Releases and `metrora.eu` for the verified portable ZIP and explicitly unsigned NSIS installer used by technical users.
+
+Store identity values are added only after the Metrora product is reserved in Partner Center. They must never be guessed or copied from another project.
+
+See `DISTRIBUTION.md` and `../docs/WINDOWS_STORE_DISTRIBUTION.md`.
 
 ## Packaging
 
-`npm run package` produces an ad-hoc-signed macOS `.dmg`/`.zip` (arm64 and x64) via `electron-builder`, no paid Apple Developer account required. Packaging rebuilds the root CLI and bundles it into the app (`Resources/cli`), so installs need nothing on the target machine. See `DISTRIBUTION.md` for build instructions, the bundled-CLI mechanism, artifact locations, and the Gatekeeper first-open story.
+Current commands:
 
-## M2 Backlog
+```sh
+npm --prefix app run package          # macOS
+npm --prefix app run package:arm64    # macOS arm64
+npm --prefix app run package:x64      # macOS x64
+npm --prefix app run package:win      # Windows NSIS x64
+npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
+```
 
-- Add Electron `autoUpdater` (the app already bundles its own version-matched CLI, so end-user installs need nothing on the machine; auto-update is the remaining piece).
-- Keep npm as a separate CLI-user channel at the same version as the desktop app.
-- Add macOS code signing with a paid Developer ID and notarization (ad-hoc packaging exists today; see `DISTRIBUTION.md`).
-- Add a `codeburn desktop` launcher subcommand.
-- Implement in-app pairing, approve, pull, and visibility mutations currently shown as M2 affordances.
-- Build the Models Compare sheet.
-- Add light theme support.
-- Expand `codeburn optimize --format json` with evidence and fix commands so Optimize can show richer actionable fixes.
+A separate `package:store` target will be introduced only after exact Partner Center identity values exist and the Store-specific acceptance contract is ready.
+
+## Engineering rules
+
+- Keep build, packaging, Store submission, GitHub publication and rollback separate.
+- Do not expose signing or publication authority to untrusted pull requests.
+- Do not grow renderer or main-process GOD FILES; extract domain state, orchestration and presentation by responsibility.
+- Preserve local state and compatibility boundaries through reviewed migrations.
+- Keep unsupported or uninspected data visibly indeterminate rather than showing false zeroes.
