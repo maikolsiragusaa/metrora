@@ -314,7 +314,7 @@ private struct BurnLoadingOverlay: View {
                 .fill(.ultraThinMaterial)
 
             VStack(spacing: 14) {
-                BurnFlame(size: flameSize, fillProgress: fillProgress, glowing: glowing)
+                SignalGridLoadingMark(size: flameSize, fillProgress: fillProgress, glowing: glowing)
                 Text("Loading \(periodLabel)…")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -331,48 +331,27 @@ private struct BurnLoadingOverlay: View {
     }
 }
 
-private struct BurnFlame: View {
+private struct SignalGridLoadingMark: View {
     let size: CGFloat
     let fillProgress: CGFloat
     let glowing: Bool
 
+    private let heights: [CGFloat] = [1.0, 0.78, 0.56, 0.56, 0.78, 1.0]
+
     var body: some View {
-        ZStack {
-            // Soft outer glow that pulses, matching the brand terracotta palette.
-            Image(systemName: "flame.fill")
-                .font(.system(size: size, weight: .regular))
-                .foregroundStyle(Theme.brandAccentGlow.opacity(glowing ? 0.55 : 0.20))
-                .blur(radius: glowing ? 14 : 6)
-
-            // Empty (cool) flame as base
-            Image(systemName: "flame")
-                .font(.system(size: size, weight: .regular))
-                .foregroundStyle(Theme.brandAccent.opacity(0.25))
-
-            // Burning gradient (brand orange) masked by an animated bottom-up rectangle
-            Image(systemName: "flame.fill")
-                .font(.system(size: size, weight: .regular))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            Theme.brandAccentGlow,
-                            Theme.brandAccentLight,
-                            Theme.brandAccent,
-                            Theme.brandAccentDeep
-                        ],
-                        startPoint: .bottom,
-                        endPoint: .top
+        HStack(alignment: .bottom, spacing: size * 0.07) {
+            ForEach(Array(heights.enumerated()), id: .offset) { index, ratio in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(
+                        fillProgress >= CGFloat(index + 1) / CGFloat(heights.count)
+                            ? Theme.brandAccent
+                            : Theme.brandAccent.opacity(0.18)
                     )
-                )
-                .mask(
-                    GeometryReader { geo in
-                        Rectangle()
-                            .frame(height: geo.size.height * fillProgress)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
-                    }
-                )
+                    .frame(width: size * 0.085, height: size * ratio)
+            }
         }
-        .frame(width: size, height: size)
+        .frame(width: size * 1.3, height: size)
+        .shadow(color: Theme.brandAccentGlow.opacity(glowing ? 0.45 : 0.15), radius: glowing ? 14 : 5)
     }
 }
 
@@ -383,13 +362,11 @@ private struct Header: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    (
-                        Text("Code").foregroundStyle(.primary)
-                        + Text("Burn").foregroundStyle(Theme.brandEmber)
-                    )
+                    Text("Metrora")
+                    .foregroundStyle(.primary)
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(-0.15)
-                    Text("AI Coding Cost Tracker")
+                    Text("Local AI usage intelligence")
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                 }

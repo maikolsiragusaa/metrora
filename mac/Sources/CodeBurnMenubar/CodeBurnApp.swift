@@ -914,11 +914,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         // Set a simple SF Symbol image immediately to ensure the status item renders.
         // On macOS Tahoe, status items may fail to appear if only an attributed title
         // is set during initial setup.
-        let flameConfig = NSImage.SymbolConfiguration(pointSize: menubarTitleFontSize, weight: .medium)
-        let flame = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "CodeBurn")?
-            .withSymbolConfiguration(flameConfig)
-        flame?.isTemplate = true
-        button.image = flame
+        button.image = Self.signalGridImage(size: menubarTitleFontSize, tint: nil)
         button.imagePosition = .imageLeading
 
         button.target = self
@@ -963,7 +959,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
     /// stubborn gap between icon and text on some macOS releases (the icon hugs the left edge
     /// of the status item, the title starts at its own baseline), so we inline both so they
     /// flow as one typographic unit with a single, controllable gap.
-    private static func flameTint(for severity: QuotaSummary.Severity) -> NSColor? {
+    private static func signalGridImage(size: CGFloat, tint: NSColor?) -> NSImage? {
+        let width = size * 1.28
+        let image = NSImage(size: NSSize(width: width, height: size), flipped: false) { rect in
+            let heights: [CGFloat] = [1.0, 0.78, 0.56, 0.56, 0.78, 1.0]
+            let barWidth = rect.width * 0.085
+            let gap = (rect.width - barWidth * CGFloat(heights.count)) / CGFloat(heights.count - 1)
+            (tint ?? NSColor.labelColor).setFill()
+            for (index, ratio) in heights.enumerated() {
+                let height = rect.height * ratio
+                let x = CGFloat(index) * (barWidth + gap)
+                let y = index < 3 ? rect.height - height : 0
+                NSBezierPath(roundedRect: NSRect(x: x, y: y, width: barWidth, height: height), xRadius: 1.2, yRadius: 1.2).fill()
+            }
+            return true
+        }
+        image.isTemplate = (tint == nil)
+        image.accessibilityDescription = "Metrora"
+        return image
+    }
+
+    private static func markTint(for severity: QuotaSummary.Severity) -> NSColor? {
         switch severity {
         case .normal:   return nil                              // template, auto-adapt
         case .warning:  return NSColor.systemYellow            // 70-90%
@@ -987,29 +1003,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         button.imagePosition = .noImage
 
         let font = NSFont.monospacedDigitSystemFont(ofSize: menubarTitleFontSize, weight: .medium)
-        let baseConfig = NSImage.SymbolConfiguration(pointSize: menubarTitleFontSize, weight: .medium)
-        // Tint the flame based on the worst-affected connected provider's quota.
-        // Normal (<70%) keeps the template (auto white-on-dark / black-on-light);
-        // warning/critical/danger override with a fixed palette color so the
-        // user gets a glanceable signal even when the menu bar is busy.
+        // Tint Signal Grid based on the worst-affected connected provider's quota.
         let aggregate = store.aggregateQuotaStatus
-        var tint = Self.flameTint(for: aggregate.severity)
+        var tint = Self.markTint(for: aggregate.severity)
         if tint == nil, store.isOverDailyBudget {
             tint = NSColor.systemYellow
         }
-        let flameConfig: NSImage.SymbolConfiguration
-        if let tint {
-            flameConfig = baseConfig.applying(.init(paletteColors: [tint]))
-        } else {
-            flameConfig = baseConfig
-        }
-        let flame = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "CodeBurn")?
-            .withSymbolConfiguration(flameConfig)
-        flame?.isTemplate = (tint == nil)
+        let mark = Self.signalGridImage(size: menubarTitleFontSize, tint: tint)
 
         let attachment = NSTextAttachment()
-        attachment.image = flame
-        if let size = flame?.size {
+        attachment.image = mark
+        if let size = mark?.size {
             attachment.bounds = CGRect(x: 0, y: -3, width: size.width, height: size.height)
         }
 
@@ -1050,7 +1054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         }
 
         button.attributedTitle = composed
-        button.toolTip = "CodeBurn \(menubarPeriod.menubarMetricLabel)"
+        button.toolTip = "Metrora \(menubarPeriod.menubarMetricLabel)"
 
         persistBadgeStatusFile()
     }
@@ -1190,11 +1194,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         updateItem.target = self
         menu.addItem(updateItem)
 
-        let aboutItem = NSMenuItem(title: "About CodeBurn", action: #selector(openAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Metrora", action: #selector(openAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
 
-        let quitItem = NSMenuItem(title: "Quit CodeBurn", action: #selector(quitApp), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "Quit Metrora", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -1267,7 +1271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
             backing: .buffered,
             defer: false
         )
-        window.title = "CodeBurn Settings"
+        window.title = "Metrora Settings"
         window.contentViewController = hosting
         window.center()
         window.isReleasedWhenClosed = false
@@ -1282,19 +1286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
     }
 
     private func codeburnAlertIcon() -> NSImage? {
-        let config = NSImage.SymbolConfiguration(pointSize: 32, weight: .medium)
-        guard let symbol = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "CodeBurn")?
-            .withSymbolConfiguration(config) else { return nil }
-        let size = NSSize(width: 64, height: 64)
-        let img = NSImage(size: size, flipped: false) { rect in
-            let symbolSize = symbol.size
-            let x = (rect.width - symbolSize.width) / 2
-            let y = (rect.height - symbolSize.height) / 2
-            symbol.draw(in: NSRect(x: x, y: y, width: symbolSize.width, height: symbolSize.height))
-            return true
-        }
-        img.isTemplate = false
-        return img
+        Self.signalGridImage(size: 32, tint: NSColor.systemBlue)
     }
 
     @objc private func checkForUpdates() {
@@ -1310,9 +1302,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
                 alert.messageText = "Update Available"
                 let header = "\(AppVersion.display(latest)) is available (you have \(AppVersion.display(updateChecker.currentVersion)))."
                 if updateChecker.cliTooOldForUpdate {
-                    alert.informativeText = "\(header) Your codeburn CLI is too old to install it. First run:\n\n\(updateChecker.cliUpdateCommand)\n\nthen:\n\ncodeburn menubar --force"
+                    alert.informativeText = "\(header) Your Metrora CLI is too old to install it. First run:\n\n\(updateChecker.cliUpdateCommand)\n\nthen:\n\nmetrora menubar --force"
                 } else {
-                    alert.informativeText = "\(header) Run:\n\ncodeburn menubar --force"
+                    alert.informativeText = "\(header) Run:\n\nmetrora menubar --force"
                 }
                 alert.alertStyle = .informational
             } else {
