@@ -38,8 +38,15 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 
 $artifactName = [IO.Path]::GetFileName($archive)
 $artifactSha256 = Get-MetroraFileSha256 $archive
+$declaredArchiveName = 'declared-artifact.zip'
+$declaredArchive = Join-Path $output $declaredArchiveName
+Copy-Item -LiteralPath $archive -Destination $declaredArchive -Force
+if ((Get-MetroraFileSha256 $declaredArchive) -ne $artifactSha256) {
+  throw 'copied physical artifact digest does not match the downloaded ZIP'
+}
+
 $candidate = Join-Path $output 'downloaded-candidate'
-$extraction = Expand-MetroraBoundedArtifactArchive $archive $candidate
+$extraction = Expand-MetroraBoundedArtifactArchive $declaredArchive $candidate
 $canonical = Join-Path $output 'canonical-payload'
 $preparationText = (& node (Join-Path $repository 'scripts\prepare-windows-physical-candidate.mjs') `
   $candidate `
@@ -80,6 +87,7 @@ $context = [ordered]@{
   }
   candidate = [ordered]@{
     directory = 'downloaded-candidate'
+    archive = $declaredArchiveName
     artifactName = $artifactName
     artifactSha256 = $artifactSha256
     archiveEntryCount = [int]$extraction.EntryCount
@@ -146,5 +154,5 @@ if ($LASTEXITCODE -ne 0) {
   archiveEntryCount = $context.candidate.archiveEntryCount
   artifactSha256 = $artifactSha256
   sentinelSha256 = $sentinelSha256
-  next = 'Use only the extracted downloaded-candidate directory for P1, P2 and P3.'
+  next = 'Use only the prepared acceptance workspace for P1, P2 and P3.'
 } | ConvertTo-Json -Compress
