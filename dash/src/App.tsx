@@ -480,11 +480,9 @@ export function App() {
             </svg>
           </button>
           <div className="flex items-center gap-2 max-md:shrink-0">
-            <img src="/codeburn-logo.png" alt="CodeBurn" className="h-6 w-6" />
-            <span className="text-lg font-semibold tracking-[-0.02em] text-foreground">
-              Code<span className="text-[#e8553a]">Burn</span>
-            </span>
-            <span className="ml-1 text-[11px] font-light uppercase tracking-[0.14em] text-tertiary-foreground max-sm:hidden">usage</span>
+            <img src="/metrora-mark.svg" alt="" aria-hidden="true" className="h-6 w-7 object-contain" />
+            <span className="text-lg font-semibold tracking-[-0.02em] text-foreground">Metrora</span>
+            <span className="ml-1 text-[11px] font-light uppercase tracking-[0.14em] text-tertiary-foreground max-sm:hidden">local usage</span>
           </div>
 
           <div className="ml-6 flex rounded-md border border-border bg-interactive-secondary p-0.5 max-md:ml-2 max-md:shrink-0">
@@ -638,7 +636,7 @@ export function App() {
                       type="checkbox"
                       checked={shareInfo.always}
                       onChange={() => void toggleAlways()}
-                      className="h-3.5 w-3.5 accent-[#1f8a5b]"
+                      className="h-3.5 w-3.5 accent-[#2563EB]"
                     />
                     Keep sharing always
                   </label>
@@ -652,10 +650,10 @@ export function App() {
               </p>
               <div className="mt-3 flex items-center gap-1">
                 <a
-                  href="https://codeburn.app/"
+                  href="https://metrora.eu"
                   target="_blank"
                   rel="noreferrer"
-                  title="codeburn.app"
+                  title="metrora.eu"
                   className="flex h-7 w-7 items-center justify-center rounded-md text-tertiary-foreground transition-colors hover:bg-interactive-secondary hover:text-foreground"
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -665,25 +663,14 @@ export function App() {
                   </svg>
                 </a>
                 <a
-                  href="https://discord.com/invite/w2sw8mCqep"
+                  href="https://github.com/maikolsiragusaa/metrora"
                   target="_blank"
                   rel="noreferrer"
-                  title="Discord"
+                  title="GitHub"
                   className="flex h-7 w-7 items-center justify-center rounded-md text-tertiary-foreground transition-colors hover:bg-interactive-secondary hover:text-foreground"
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M20.317 4.369A19.79 19.79 0 0 0 16.558 3c-.2.36-.43.85-.59 1.23a18.27 18.27 0 0 0-5.93 0A12.6 12.6 0 0 0 9.44 3 19.7 19.7 0 0 0 5.68 4.37C2.9 8.46 2.14 12.45 2.52 16.38a19.9 19.9 0 0 0 6.07 3.08c.49-.67.93-1.38 1.3-2.13-.71-.27-1.4-.6-2.04-.99.17-.13.34-.26.5-.4 3.93 1.84 8.18 1.84 12.06 0 .17.14.33.27.5.4-.65.39-1.33.72-2.05.99.38.75.81 1.46 1.3 2.13a19.9 19.9 0 0 0 6.07-3.08c.45-4.55-.77-8.5-3.2-12.01zM9.69 14.5c-1.18 0-2.15-1.08-2.15-2.42 0-1.33.95-2.42 2.15-2.42 1.2 0 2.17 1.09 2.15 2.42 0 1.34-.95 2.42-2.15 2.42zm4.62 0c-1.18 0-2.15-1.08-2.15-2.42 0-1.33.95-2.42 2.15-2.42 1.2 0 2.17 1.09 2.15 2.42 0 1.34-.94 2.42-2.15 2.42z" />
-                  </svg>
-                </a>
-                <a
-                  href="https://x.com/_codeburn"
-                  target="_blank"
-                  rel="noreferrer"
-                  title="X"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-tertiary-foreground transition-colors hover:bg-interactive-secondary hover:text-foreground"
-                >
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.65l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    <path d="M12 .7a11.3 11.3 0 0 0-3.57 22.02c.57.1.77-.25.77-.55v-2.16c-3.16.69-3.83-1.34-3.83-1.34-.52-1.31-1.26-1.66-1.26-1.66-1.03-.71.08-.7.08-.7 1.14.08 1.74 1.17 1.74 1.17 1.01 1.73 2.66 1.23 3.31.94.1-.73.4-1.23.72-1.51-2.52-.29-5.17-1.26-5.17-5.62 0-1.24.44-2.25 1.17-3.05-.12-.29-.51-1.44.11-3 0 0 .96-.31 3.11 1.16a10.8 10.8 0 0 1 5.67 0c2.16-1.47 3.11-1.16 3.11-1.16.63 1.56.24 2.71.12 3 .73.8 1.17 1.81 1.17 3.05 0 4.37-2.66 5.32-5.19 5.61.41.35.77 1.05.77 2.1v3.16c0 .3.2.66.78.55A11.3 11.3 0 0 0 12 .7Z" />
                   </svg>
                 </a>
               </div>
