@@ -2,8 +2,8 @@ import SwiftUI
 import Observation
 
 enum AccentPreset: String, CaseIterable, Identifiable {
-    case ember    = "Ember"
-    case blue     = "Blue"
+    case ember    = "Signal Blue"
+    case blue     = "System Blue"
     case purple   = "Purple"
     case pink     = "Pink"
     case red      = "Red"
@@ -14,10 +14,9 @@ enum AccentPreset: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Apple macOS dark-mode system accent colors (NSColor.system*).
     var base: Color {
         switch self {
-        case .ember:    Color(red: 0xC9/255, green: 0x52/255, blue: 0x1D/255)
+        case .ember:    Color(red: 0x25/255, green: 0x63/255, blue: 0xEB/255)
         case .blue:     Color(red: 0x0A/255, green: 0x84/255, blue: 0xFF/255)
         case .purple:   Color(red: 0xBF/255, green: 0x5A/255, blue: 0xF2/255)
         case .pink:     Color(red: 0xFF/255, green: 0x37/255, blue: 0x5F/255)
@@ -31,7 +30,7 @@ enum AccentPreset: String, CaseIterable, Identifiable {
 
     var light: Color {
         switch self {
-        case .ember:    Color(red: 0xE8/255, green: 0x77/255, blue: 0x4A/255)
+        case .ember:    Color(red: 0x60/255, green: 0xA5/255, blue: 0xFA/255)
         case .blue:     Color(red: 0x40/255, green: 0x9C/255, blue: 0xFF/255)
         case .purple:   Color(red: 0xDA/255, green: 0x8F/255, blue: 0xF7/255)
         case .pink:     Color(red: 0xFF/255, green: 0x6E/255, blue: 0x8C/255)
@@ -45,7 +44,7 @@ enum AccentPreset: String, CaseIterable, Identifiable {
 
     var deep: Color {
         switch self {
-        case .ember:    Color(red: 0x8B/255, green: 0x3E/255, blue: 0x13/255)
+        case .ember:    Color(red: 0x1D/255, green: 0x4E/255, blue: 0xD8/255)
         case .blue:     Color(red: 0x06/255, green: 0x52/255, blue: 0xB3/255)
         case .purple:   Color(red: 0x7C/255, green: 0x38/255, blue: 0xA8/255)
         case .pink:     Color(red: 0xB3/255, green: 0x26/255, blue: 0x42/255)
@@ -59,7 +58,7 @@ enum AccentPreset: String, CaseIterable, Identifiable {
 
     var glow: Color {
         switch self {
-        case .ember:    Color(red: 0xF0/255, green: 0xA0/255, blue: 0x70/255)
+        case .ember:    Color(red: 0x93/255, green: 0xC5/255, blue: 0xFD/255)
         case .blue:     Color(red: 0x80/255, green: 0xC0/255, blue: 0xFF/255)
         case .purple:   Color(red: 0xE0/255, green: 0xB8/255, blue: 0xFA/255)
         case .pink:     Color(red: 0xFF/255, green: 0x99/255, blue: 0xB0/255)
@@ -83,6 +82,6 @@ final class ThemeState {
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: "CodeBurnAccentPreset") ?? ""
-        self.preset = AccentPreset(rawValue: saved) ?? .ember
+        self.preset = saved == "Ember" ? .ember : (AccentPreset(rawValue: saved) ?? .ember)
     }
 }
