@@ -8,30 +8,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-. (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 
-$acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
-if (
-  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
-  $context.version -ne 1 -or
-  $context.candidate.directory -ne 'downloaded-candidate'
-) {
-  throw 'physical acceptance context is invalid'
-}
-$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
-
-$candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
-$sentinelPath = Join-Path $acceptance $context.sentinel.file
-Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
-
-$verificationText = (& node (Join-Path $repository 'scripts\verify-windows-candidate-layout.mjs') `
-  $candidate `
-  --expected-commit $context.source.commit `
-  --repository-root $repository 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) {
-  throw "existing-profile portable verification failed: $verificationText"
-}
+$state = Get-MetroraPhysicalAcceptanceState $AcceptanceDirectory $RepositoryRoot
+$acceptance = $state.Acceptance
+$context = $state.Context
+$candidate = $state.Candidate
+$sentinelPath = $state.SentinelPath
 
 $markerPath = Join-Path $acceptance 'P1_PORTABLE_LAUNCH.json'
 $priorLaunchCount = 0
