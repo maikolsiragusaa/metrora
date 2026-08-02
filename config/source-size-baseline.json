@@ -1,0 +1,30 @@
+{
+  "defaultMaxLines": 600,
+  "frozenFiles": {
+    "src/parser.ts": 3912,
+    "src/optimize.ts": 3333,
+    "src/providers/copilot.ts": 2428,
+    "src/main.ts": 2328,
+    "src/providers/antigravity.ts": 1446,
+    "src/dashboard.tsx": 1274,
+    "src/providers/kiro.ts": 1164,
+    "src/providers/cursor.ts": 1084,
+    "src/providers/codex.ts": 1054,
+    "gnome/indicator.js": 1021,
+    "src/models.ts": 987,
+    "src/sessions-report.ts": 919,
+    "src/session-cache.ts": 900,
+    "app/renderer/sections/Overview.tsx": 794,
+    "src/usage-aggregator.ts": 784,
+    "src/daily-cache.ts": 757,
+    "src/models-report.ts": 755,
+    "src/context-tree.ts": 745,
+    "dash/src/App.tsx": 743,
+    "src/act/plans.ts": 719,
+    "app/renderer/lib/types.ts": 700,
+    "src/act/report.ts": 672,
+    "app/renderer/App.tsx": 618,
+    "app/electron/main.ts": 612,
+    "app/renderer/sections/Workspace.tsx": 582
+  }
+}
