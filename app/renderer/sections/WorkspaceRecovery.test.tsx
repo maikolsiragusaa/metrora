@@ -8,6 +8,7 @@ import { WorkspaceContent } from './Workspace'
 
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
+  inspectWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
   resumeWorkspaceProduction: vi.fn(),
@@ -95,6 +96,7 @@ function snapshot(state: 'ready' | 'quarantined' = 'ready'): DesktopWorkspaceSna
 function availability(value = snapshot()): DesktopWorkspaceAvailability {
   return {
     availability: 'ready',
+    inspection: 'complete',
     vault: { backend: 'windows-dpapi', masterKeyState: 'loaded' },
     snapshot: value,
   }
@@ -105,6 +107,7 @@ describe('Workspace recovery controls', () => {
     for (const mock of Object.values(bridge)) mock.mockReset()
     showToast.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(availability())
+    bridge.inspectWorkspaceStatus.mockResolvedValue(availability())
   })
 
   it('does not recover automatically and invokes one zero-argument action explicitly', async () => {
