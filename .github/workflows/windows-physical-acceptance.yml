@@ -4,24 +4,30 @@ on:
   pull_request:
     paths:
       - '.github/workflows/windows-physical-acceptance.yml'
+      - 'AVVIA-TEST-FISICO-METRORA.cmd'
       - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md'
+      - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md'
       - 'scripts/*Physical-Acceptance*.ps1'
       - 'scripts/*Physical-Existing-Profile.ps1'
       - 'scripts/*Physical-Clean.ps1'
       - 'scripts/*Physical-Migration.ps1'
       - 'scripts/*Physical-Report-Runtime.ps1'
+      - 'scripts/*Physical-Guide-Runtime.ps1'
       - 'scripts/windows-physical-*'
       - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
   push:
     branches: [main]
     paths:
       - '.github/workflows/windows-physical-acceptance.yml'
+      - 'AVVIA-TEST-FISICO-METRORA.cmd'
       - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md'
+      - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md'
       - 'scripts/*Physical-Acceptance*.ps1'
       - 'scripts/*Physical-Existing-Profile.ps1'
       - 'scripts/*Physical-Clean.ps1'
       - 'scripts/*Physical-Migration.ps1'
       - 'scripts/*Physical-Report-Runtime.ps1'
+      - 'scripts/*Physical-Guide-Runtime.ps1'
       - 'scripts/windows-physical-*'
       - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
 
@@ -72,3 +78,7 @@ jobs:
       - name: Exercise bounded context, report and sentinel runtime
         shell: pwsh
         run: ./scripts/Test-Metrora-Windows-Physical-Report-Runtime.ps1 -RepositoryRoot $PWD
+
+      - name: Exercise guided phase and profile-boundary runtime
+        shell: pwsh
+        run: ./scripts/Test-Metrora-Windows-Physical-Guide-Runtime.ps1 -RepositoryRoot $PWD
