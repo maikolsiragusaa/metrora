@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
@@ -10,14 +10,16 @@ import type {
   DesktopReviewedProductionSummary,
   DesktopWorkspaceAvailability,
   DesktopWorkspaceRecoverySummary,
-  DesktopWorkspaceSnapshot,
   WorkspaceBridge,
-  WorkspaceEvidenceState,
   WorkspaceProductionMode,
 } from '../lib/workspace'
+import {
+  WorkspaceEvidencePanel,
+  workspaceEvidenceViewState,
+} from './WorkspaceEvidencePanel'
+import { useWorkspaceStatus, type WorkspaceAction } from './useWorkspaceStatus'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
-type WorkspaceAction = 'reload' | 'create' | 'produce' | 'recover' | 'pause' | 'resume' | 'batch' | 'export' | null
 
 export type WorkspaceUsage = {
   label: string
@@ -50,29 +52,6 @@ export function workspaceUsageFromOverview(payload: MenubarPayload | null): Work
     cacheWriteTokens: current.cacheWriteTokens,
     pricingCoverage: current.pricingCoverage ?? null,
   }
-}
-
-const EVIDENCE_LABELS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Workspace required',
-  empty: 'No reviewed evidence yet',
-  ready: 'Ready to sign',
-  acknowledged: 'Evidence acknowledged',
-  quarantined: 'Evidence quarantined',
-  blocked: 'Action required',
-}
-
-const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Create the local personal workspace before producing signed evidence.',
-  empty: 'No reviewed measurements are waiting in the local outbox.',
-  ready: 'Reviewed measurements are available for the next signed batch.',
-  acknowledged: 'All currently signed evidence has been acknowledged locally.',
-  quarantined: 'Some evidence was isolated and will not enter a signed batch.',
-  blocked: 'The runtime found a condition that must be resolved before signing or export.',
-}
-
-function withSnapshot(current: DesktopWorkspaceAvailability | null, snapshot: DesktopWorkspaceSnapshot): DesktopWorkspaceAvailability | null {
-  if (!current || current.availability !== 'ready') return current
-  return { ...current, snapshot }
 }
 
 function shortFingerprint(value: string): string {
@@ -142,31 +121,21 @@ export function WorkspaceContent({
   analyticsLoading?: boolean
 }) {
   const bridge = metrora as Partial<WorkspaceBridge>
-  const [availability, setAvailability] = useState<DesktopWorkspaceAvailability | null>(null)
-  const [statusError, setStatusError] = useState(false)
-  const [action, setAction] = useState<WorkspaceAction>('reload')
+  const {
+    availability,
+    acceptSnapshot,
+    statusError,
+    inspectionError,
+    action,
+    setAction,
+    loadBootstrap,
+    reload,
+  } = useWorkspaceStatus(bridge)
   const [workspaceName, setWorkspaceName] = useState('My workspace')
   const [endpointName, setEndpointName] = useState('This computer')
   const [lastProduction, setLastProduction] = useState<DesktopReviewedProductionSummary | null>(null)
   const [lastRecovery, setLastRecovery] = useState<DesktopWorkspaceRecoverySummary | null>(null)
   const usage = useMemo(() => workspaceUsageFromOverview(payload), [payload])
-
-  const reload = useCallback(async () => {
-    setAction('reload')
-    setStatusError(false)
-    try {
-      if (typeof bridge.getWorkspaceStatus !== 'function') throw new Error('workspace bridge unavailable')
-      setAvailability(await bridge.getWorkspaceStatus())
-    } catch {
-      setStatusError(true)
-    } finally {
-      setAction(null)
-    }
-  }, [bridge])
-
-  useEffect(() => {
-    void reload()
-  }, [reload])
 
   const createWorkspace = async () => {
     const displayName = workspaceName.trim()
@@ -180,7 +149,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.createWorkspace !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.createWorkspace({ displayName, endpointDisplayName })
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastProduction(null)
       setLastRecovery(null)
       showToast(result.outcome === 'created' ? 'Local workspace created.' : 'Existing local workspace loaded.')
@@ -196,7 +165,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.produceWorkspaceMeasurements !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.produceWorkspaceMeasurements()
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastProduction(result.summary)
       setLastRecovery(null)
       showToast(productionToast(result.summary))
@@ -212,7 +181,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.recoverWorkspaceState !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.recoverWorkspaceState()
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastRecovery(result.summary)
       if (result.summary.production) setLastProduction(result.summary.production)
       showRecoveryToast(result.summary)
@@ -230,7 +199,7 @@ export function WorkspaceContent({
       const method = mode === 'paused' ? bridge.pauseWorkspaceProduction : bridge.resumeWorkspaceProduction
       if (typeof method !== 'function') throw new Error('workspace bridge unavailable')
       const result = await method.call(bridge)
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastRecovery(null)
       showToast(mode === 'paused' ? 'Reviewed production paused.' : 'Reviewed production resumed.')
     } catch {
@@ -245,7 +214,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.createWorkspaceBatch !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.createWorkspaceBatch()
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       showToast(result.outcome === 'created'
         ? `Signed ${result.batch?.eventCount ?? 0} reviewed measurements.`
         : 'No reviewed measurements are waiting to be signed.')
@@ -262,7 +231,7 @@ export function WorkspaceContent({
       if (typeof bridge.exportWorkspaceEvidence !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.exportWorkspaceEvidence()
       if (result.outcome === 'cancelled') return
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       showToast(`Exported ${result.fileName}.`)
     } catch {
       showToast(actionErrorMessage('export'), 'error')
@@ -276,7 +245,7 @@ export function WorkspaceContent({
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
           <EmptyNote>The secure Workspace runtime did not return a public status. Ordinary local analytics remain available.</EmptyNote>
-          <button type="button" className="btn btn-s" onClick={() => void reload()} disabled={action !== null}>Retry status</button>
+          <button type="button" className="btn btn-s" onClick={() => void loadBootstrap()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>
     )
@@ -303,7 +272,7 @@ export function WorkspaceContent({
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
           <EmptyNote>The operating-system vault is unavailable, so Metrora will not open a plaintext fallback.</EmptyNote>
-          <button type="button" className="btn btn-s" onClick={() => void reload()} disabled={action !== null}>Retry status</button>
+          <button type="button" className="btn btn-s" onClick={() => void loadBootstrap()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>
     )
@@ -320,6 +289,7 @@ export function WorkspaceContent({
       setWorkspaceName={setWorkspaceName}
       setEndpointName={setEndpointName}
       action={action}
+      inspectionError={inspectionError}
       lastProduction={lastProduction}
       lastRecovery={lastRecovery}
       onReload={reload}
@@ -343,6 +313,7 @@ function ReadyWorkspaceView({
   setWorkspaceName,
   setEndpointName,
   action,
+  inspectionError,
   lastProduction,
   lastRecovery,
   onReload,
@@ -362,6 +333,7 @@ function ReadyWorkspaceView({
   setWorkspaceName: (value: string) => void
   setEndpointName: (value: string) => void
   action: WorkspaceAction
+  inspectionError: boolean
   lastProduction: DesktopReviewedProductionSummary | null
   lastRecovery: DesktopWorkspaceRecoverySummary | null
   onReload: () => Promise<void>
@@ -380,8 +352,8 @@ function ReadyWorkspaceView({
     : null
   const productionPaused = lifecycle?.mode === 'paused'
   const busy = action !== null
-  const evidenceBlocked = evidence.state === 'blocked' || evidence.state === 'quarantined'
-  const exportBlocked = evidenceBlocked || evidence.unbatchedEventCount > 0
+  const evidenceView = workspaceEvidenceViewState(evidence, availability.inspection, inspectionError)
+  const exportBlocked = evidenceView.blocked || evidence.unbatchedEventCount > 0
 
   return (
     <>
@@ -395,7 +367,7 @@ function ReadyWorkspaceView({
         </div>
         <div className="workspace-hero-state">
           <span className="workspace-local-badge">Local only</span>
-          <span className={`workspace-state workspace-state-${evidence.state}`}>{EVIDENCE_LABELS[evidence.state]}</span>
+          <span className={`workspace-state workspace-state-${evidenceView.stateClass}`}>{evidenceView.label}</span>
         </div>
       </section>
 
@@ -459,7 +431,7 @@ function ReadyWorkspaceView({
               type="button"
               className="btn btn-p"
               onClick={() => void onProduce()}
-              disabled={busy || evidenceBlocked || productionPaused}
+              disabled={busy || evidenceView.blocked || productionPaused}
             >
               {action === 'produce' ? 'Producing…' : 'Produce reviewed measurements'}
             </button>
@@ -499,24 +471,7 @@ function ReadyWorkspaceView({
               <div><dt>Software</dt><dd>Metrora {workspace.endpoint.metroraVersion} · collector {workspace.endpoint.collectorVersion}</dd></div>
             </dl>
           </Panel>
-
-          <Panel title="Reviewed evidence" right={EVIDENCE_LABELS[evidence.state]}>
-            <p className="workspace-evidence-copy">{EVIDENCE_DESCRIPTIONS[evidence.state]}</p>
-            <div className="workspace-counts">
-              <EvidenceCount label="Pending events" value={evidence.pendingEventCount} />
-              <EvidenceCount label="Unbatched events" value={evidence.unbatchedEventCount} />
-              <EvidenceCount label="Acknowledged events" value={evidence.acknowledgedEventCount} />
-              <EvidenceCount label="Pending batches" value={evidence.pendingBatchCount} />
-              <EvidenceCount label="Acknowledged batches" value={evidence.acknowledgedBatchCount} />
-              <EvidenceCount label="Quarantined" value={evidence.quarantinedEventCount} />
-              <EvidenceCount label="Invalid" value={evidence.invalidEventCount} />
-            </div>
-            {evidence.blockers.length > 0 ? (
-              <ul className="workspace-blockers">
-                {evidence.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
-              </ul>
-            ) : null}
-          </Panel>
+          <WorkspaceEvidencePanel evidence={evidence} view={evidenceView} inspectionError={inspectionError} />
         </div>
       ) : null}
 
@@ -534,10 +489,10 @@ function ReadyWorkspaceView({
             <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
               {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
             </button>
-            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy}>
+            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy || evidenceView.inspectionPending}>
               {action === 'recover' ? 'Checking…' : 'Check & recover local state'}
             </button>
-            <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceBlocked}>
+            <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceView.blocked}>
               {action === 'batch' ? 'Signing…' : 'Create signed batch'}
             </button>
             <button type="button" className="btn btn-p" onClick={() => void onExport()} disabled={busy || !workspace || exportBlocked}>
@@ -545,7 +500,7 @@ function ReadyWorkspaceView({
             </button>
           </div>
           <p className="workspace-action-note">
-            Recovery is explicit and bounded. It never deletes, resets, unblocks, reprices, batches, exports, or uploads evidence automatically.
+            Evidence verification is automatic and read-only. Recovery remains explicit and bounded; it never deletes, resets, unblocks, reprices, batches, exports, or uploads evidence automatically.
           </p>
           {lastRecovery ? (
             <div className="workspace-source-line" data-testid="workspace-recovery-summary">
@@ -553,9 +508,11 @@ function ReadyWorkspaceView({
             </div>
           ) : null}
           <p className="workspace-action-note">
-            {evidence.unbatchedEventCount > 0
-              ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
-              : 'Production, batching, and export are always explicit. Nothing is uploaded or published automatically.'}
+            {evidenceView.inspectionPending
+              ? 'Wait for local verification before producing, signing, or exporting.'
+              : evidence.unbatchedEventCount > 0
+                ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
+                : 'Production, batching, and export are always explicit. Nothing is uploaded or published automatically.'}
           </p>
         </Panel>
       </div>
@@ -568,15 +525,6 @@ function UsageStat({ label, value, testId }: { label: string; value: string; tes
     <div className="workspace-stat">
       <span>{label}</span>
       <b data-testid={testId}>{value}</b>
-    </div>
-  )
-}
-
-function EvidenceCount({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <b>{formatCompact(value)}</b>
     </div>
   )
 }

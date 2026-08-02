@@ -29,6 +29,8 @@ From the repository root, double-click:
 AVVIA-TEST-FISICO-METRORA.cmd
 ```
 
+The launcher normalizes the repository root before passing it to PowerShell, so a trailing directory separator cannot corrupt the quoted path.
+
 The guide:
 
 - finds the only matching ZIP in `Downloads`, or opens a file selector;
@@ -41,7 +43,18 @@ The guide:
 - records P1 through the existing bounded recorder;
 - writes a continuation launcher inside the shared acceptance directory.
 
-During each portable launch, inspect only the previously accepted state. Do not create, sign, export, delete or reset anything merely to make the test pass.
+During each portable launch:
+
+1. wait until `Checking local data` disappears;
+2. confirm that Workspace and endpoint are unchanged;
+3. confirm that evidence counts are displayed rather than indeterminate dashes;
+4. confirm invalid and quarantined counts are zero;
+5. confirm the second launch presents the same persisted evidence state without requiring recovery;
+6. do not create, sign, export, delete, reset or run recovery merely to make the test pass.
+
+The automatic evidence inspection is read-only. `Check & recover local state` remains a separate explicit repair path and must not be used during ordinary P1 unless the completed inspection reports a real bounded condition requiring it.
+
+A zero shown only before inspection completes is not an observation. A completed inspection must expose the persisted counts or fail visibly.
 
 ## Dedicated profile — second double click
 

@@ -9,6 +9,7 @@ import type {
 export type DesktopWorkspaceAvailability =
   | {
       availability: 'ready'
+      inspection: 'pending' | 'complete'
       vault: {
         backend: 'windows-dpapi' | 'macos-keychain'
         masterKeyState: 'created' | 'loaded' | 'rewrapped'
@@ -114,6 +115,19 @@ async function readyState(deps: WorkspaceBridgeDeps): Promise<
   return state.status === 'ready' ? state : unavailableError(state)
 }
 
+function readyAvailability(
+  state: Extract<DesktopWorkspaceRuntimeState, { status: 'ready' }>,
+  snapshot: DesktopWorkspaceSnapshot,
+  inspection: 'pending' | 'complete',
+): DesktopWorkspaceAvailability {
+  return {
+    availability: 'ready',
+    inspection,
+    vault: { backend: state.backend, masterKeyState: state.masterKeyState },
+    snapshot,
+  }
+}
+
 export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record<string, WorkspaceHandler> {
   return {
     'codeburn:getWorkspaceStatus': async () => {
@@ -126,16 +140,33 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
       try {
         const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceBootstrapRuntime>
-        const snapshot = typeof runtime.getBootstrapSnapshot === 'function'
-          ? await runtime.getBootstrapSnapshot()
-          : await runtime.getSnapshot()
+        if (typeof runtime.getBootstrapSnapshot === 'function') {
+          return {
+            ok: true,
+            value: readyAvailability(state, await runtime.getBootstrapSnapshot(), 'pending'),
+          }
+        }
         return {
           ok: true,
-          value: {
-            availability: 'ready',
-            vault: { backend: state.backend, masterKeyState: state.masterKeyState },
-            snapshot,
-          } satisfies DesktopWorkspaceAvailability,
+          value: readyAvailability(state, await runtime.getSnapshot(), 'complete'),
+        }
+      } catch (error) {
+        return { ok: false, error: sanitizeActionError(error) }
+      }
+    },
+
+    'codeburn:inspectWorkspaceStatus': async () => {
+      const state = await deps.getRuntimeState()
+      if (state.status === 'unsupported-platform') {
+        return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
+      }
+      if (state.status === 'unavailable') {
+        return { ok: true, value: { availability: 'unavailable', reason: state.reason } satisfies DesktopWorkspaceAvailability }
+      }
+      try {
+        return {
+          ok: true,
+          value: readyAvailability(state, await state.runtime.getSnapshot(), 'complete'),
         }
       } catch (error) {
         return { ok: false, error: sanitizeActionError(error) }
