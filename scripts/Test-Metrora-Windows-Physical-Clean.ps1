@@ -3,9 +3,6 @@ param(
   [string]$AcceptanceDirectory,
 
   [Parameter(Mandatory = $true)]
-  [string]$CandidateDirectory,
-
-  [Parameter(Mandatory = $true)]
   [string]$InstallDirectory,
 
   [Parameter(Mandatory = $true)]
@@ -26,13 +23,17 @@ if (-not $DedicatedProfileAcknowledged) {
 
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$candidate = (Resolve-Path -LiteralPath $CandidateDirectory).Path
 $canonical = (Resolve-Path -LiteralPath (Join-Path $acceptance 'canonical-payload')).Path
 $contextPath = Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json'
 $context = Get-Content -LiteralPath $contextPath -Raw | ConvertFrom-Json
-if ($context.kind -ne 'metrora.windows-physical-acceptance-context' -or $context.version -ne 1) {
+if (
+  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
+  $context.version -ne 1 -or
+  $context.candidate.directory -ne 'downloaded-candidate'
+) {
   throw 'physical acceptance context is invalid'
 }
+$candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
 
 $sentinelPath = Join-Path $acceptance $context.sentinel.file
 Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
