@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $paths = @(
+  'scripts\Build-Metrora-Windows-Installer.ps1',
   'scripts\windows-install-test-lib.ps1',
   'scripts\windows-installed-app-test-lib.ps1',
   'scripts\Test-Metrora-Windows-Install.ps1',
