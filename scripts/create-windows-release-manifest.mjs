@@ -28,13 +28,11 @@ function required(values, name) {
 const args = parseArguments(process.argv.slice(2))
 const repositoryRoot = resolve(args.get('--repository-root') ?? process.cwd())
 const bundleDirectory = resolve(required(args, '--bundle'))
-const schemaPath = resolve(repositoryRoot, 'release', 'windows-release-candidate-manifest.v1.schema.json')
 const builtAt = args.get('--built-at') ?? new Date().toISOString()
 
 const { manifest, attestation } = await writeReleaseMetadata({
   repositoryRoot,
   bundleDirectory,
-  schemaPath,
   sourceCommit: required(args, '--source-commit'),
   sourceTree: required(args, '--source-tree'),
   sourceDateEpoch: required(args, '--source-date-epoch'),
