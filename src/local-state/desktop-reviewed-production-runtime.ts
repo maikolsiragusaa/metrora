@@ -8,6 +8,7 @@ import {
   type CanonicalReviewedProductionScanV1,
   type CanonicalReviewedProductionSummaryV1,
 } from './reviewed-production-orchestrator.js'
+import { createDesktopWorkspaceBootstrapSnapshotV1 } from './desktop-workspace-bootstrap-snapshot.js'
 import type {
   DesktopWorkspaceRuntimeV1,
   DesktopWorkspaceSnapshotV1,
@@ -82,6 +83,7 @@ export type DesktopWorkspaceRecoveryResultV1 = {
 }
 
 export interface DesktopReviewedProductionRuntimeV1 extends DesktopWorkspaceRuntimeV1 {
+  getBootstrapSnapshot(): Promise<DesktopWorkspaceSnapshotV1>
   produceReviewedMeasurements(): Promise<DesktopReviewedProductionResultV1>
   recoverLocalState(): Promise<DesktopWorkspaceRecoveryResultV1>
 }
@@ -145,6 +147,14 @@ export function attachDesktopReviewedProductionV1(
 
   return {
     ...input.runtime,
+
+    async getBootstrapSnapshot() {
+      return createDesktopWorkspaceBootstrapSnapshotV1({
+        dataDir: input.dataDir,
+        identity: input.identity,
+        now,
+      })
+    },
 
     async produceReviewedMeasurements() {
       if (!input.scanCanonicalCandidates) {
