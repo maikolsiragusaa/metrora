@@ -1,6 +1,6 @@
 <div align="center">
 
-# Metrora
+<img src="./assets/brand/metrora-lockup.svg" alt="Metrora" width="520" />
 
 **Website:** [metrora.eu](https://metrora.eu)
 
@@ -9,7 +9,7 @@
 Understand where AI time, tokens, and money go — across tools, models, projects, and sessions — without routing your work through another service.
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2563EB.svg)](LICENSE)
 
 </div>
 
@@ -119,6 +119,10 @@ docs/      public contracts, principles, and technical documentation
 ```
 
 The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases while local state and integrations migrate safely.
+
+## Visual identity
+
+The canonical Metrora identity is **Signal Grid**: six measured bars forming an abstract `M`. Product and repository surfaces use the assets and palette documented in [`assets/brand`](assets/brand/README.md). Compatibility names inherited from upstream may remain internally where changing them would break existing state or integrations, but they are not the product-facing brand.
 
 ## Contributing
 
