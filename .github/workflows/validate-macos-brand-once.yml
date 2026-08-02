@@ -1,0 +1,19 @@
+name: Validate macOS brand rollout
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  swift-build:
+    if: github.head_ref == 'feat/brand-rollout-v1'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native menubar target
+        working-directory: mac
+        run: swift build
