@@ -76,10 +76,7 @@ try {
 
   if ($phase -eq 'p1') {
     $guideState = Read-MetroraGuideLocalState $acceptance $expectedCommit
-    $currentFingerprint = Get-MetroraCurrentProfileFingerprint
-    if ($currentFingerprint -ne $guideState.primaryProfileFingerprint) {
-      throw 'P1 deve essere completata dallo stesso profilo Windows che ha preparato il test.'
-    }
+    Assert-MetroraGuideProfileRole $guideState.primaryProfileFingerprint 'primary' | Out-Null
 
     Show-MetroraP1Instructions
     $launchCount = Get-MetroraGuideLaunchCount $acceptance
@@ -96,6 +93,7 @@ try {
     if ((Read-MetroraGuideResultStatus (Join-Path $acceptance 'P1_EXISTING_RESULT.json')) -ne 'pass') {
       Write-Host ''
       Write-Host 'Ora registra soltanto le osservazioni richieste.'
+      Write-Host 'Alla prima domanda scrivi pass se tutti i controlli sono riusciti, altrimenti fail.'
       Write-Host 'Per le domande booleane usa yes oppure no; i conteggi normali devono essere 0.'
       Invoke-MetroraGuideScript 'Record-Metrora-Windows-Physical-Existing-Profile.ps1' @{
         AcceptanceDirectory = $acceptance
@@ -124,10 +122,7 @@ try {
 
   if ($phase -eq 'dedicated') {
     $guideState = Read-MetroraGuideLocalState $acceptance $expectedCommit
-    $currentFingerprint = Get-MetroraCurrentProfileFingerprint
-    if ($currentFingerprint -eq $guideState.primaryProfileFingerprint) {
-      throw 'Sei ancora nel profilo Windows principale. Accedi a un utente locale separato e rilancia il file di continuazione.'
-    }
+    Assert-MetroraGuideProfileRole $guideState.primaryProfileFingerprint 'dedicated' | Out-Null
 
     Show-MetroraDedicatedInstructions
     Confirm-MetroraGuideWord 'Conferma che questo account Windows e dedicato al test e non contiene lo stato Metrora principale.' 'DEDICATO'
