@@ -21,7 +21,7 @@ function Assert-MetroraInstalledApplication(
   $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
   if ($versionInfo.ProductName -ne 'Metrora') { throw "installed ProductName is not Metrora: $($versionInfo.ProductName)" }
   if ($versionInfo.FileDescription -notmatch 'Metrora') { throw "installed FileDescription is not canonical: $($versionInfo.FileDescription)" }
-  if ($versionInfo.FileVersion -ne $ExpectedVersion) { throw "installed FileVersion is not $ExpectedVersion: $($versionInfo.FileVersion)" }
+  if ($versionInfo.FileVersion -ne $ExpectedVersion) { throw "installed FileVersion is not ${ExpectedVersion}: $($versionInfo.FileVersion)" }
 
   $registration = Assert-MetroraUninstallRegistration $InstallDirectory $uninstaller $ExpectedVersion
   $shortcuts = @(Get-MetroraShortcuts $executable)
@@ -31,7 +31,7 @@ function Assert-MetroraInstalledApplication(
   if (-not (Test-Path -LiteralPath $cli)) { throw 'installed compatibility CLI is missing' }
   $cliVersion = (& node $cli --version 2>&1 | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $cliVersion -ne $ExpectedVersion) {
-    throw "installed compatibility CLI version is not $ExpectedVersion: $cliVersion"
+    throw "installed compatibility CLI version is not ${ExpectedVersion}: $cliVersion"
   }
 
   if ($Launch) {
