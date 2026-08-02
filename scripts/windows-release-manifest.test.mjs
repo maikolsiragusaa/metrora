@@ -81,12 +81,19 @@ function metadataOptions(fx, builtAt = '2026-08-02T10:00:00.000Z') {
   }
 }
 
+function verificationOptions(fx, extra = {}) {
+  return { repositoryRoot: fx.repositoryRoot, ...extra }
+}
+
 test('writes and independently verifies a complete candidate', async t => {
   const fx = await fixture()
   t.after(() => rm(fx.root, { recursive: true, force: true }))
 
   const created = await writeReleaseMetadata(metadataOptions(fx))
-  const verified = await verifyReleaseCandidate(fx.bundleDirectory, { expectedCommit: sourceCommit })
+  const verified = await verifyReleaseCandidate(
+    fx.bundleDirectory,
+    verificationOptions(fx, { expectedCommit: sourceCommit }),
+  )
 
   assert.equal(created.manifest.payload.fileCount, 3)
   assert.equal(verified.fileCount, 3)
@@ -127,7 +134,7 @@ test('rejects payload tampering', async t => {
   await writeFile(join(fx.bundleDirectory, 'Metrora.exe'), 'tampered')
 
   await assert.rejects(
-    verifyReleaseCandidate(fx.bundleDirectory),
+    verifyReleaseCandidate(fx.bundleDirectory, verificationOptions(fx)),
     /payload verification failed/,
   )
 })
@@ -140,7 +147,7 @@ test('rejects unlisted payload files', async t => {
   await writeFile(join(fx.bundleDirectory, 'unexpected.txt'), 'not inventoried')
 
   await assert.rejects(
-    verifyReleaseCandidate(fx.bundleDirectory),
+    verifyReleaseCandidate(fx.bundleDirectory, verificationOptions(fx)),
     /missing or unlisted payload files/,
   )
 })
@@ -153,7 +160,20 @@ test('rejects metadata tampering', async t => {
   await writeFile(join(fx.bundleDirectory, 'BUILD_ATTESTATION.json'), '{}\n')
 
   await assert.rejects(
-    verifyReleaseCandidate(fx.bundleDirectory),
+    verifyReleaseCandidate(fx.bundleDirectory, verificationOptions(fx)),
     /build attestation kind or version|metadata checksum mismatch/,
+  )
+})
+
+test('rejects a candidate verified against different source inputs', async t => {
+  const fx = await fixture()
+  t.after(() => rm(fx.root, { recursive: true, force: true }))
+
+  await writeReleaseMetadata(metadataOptions(fx))
+  await writeFile(join(fx.repositoryRoot, 'assets', 'brand', 'README.md'), '# changed identity\n')
+
+  await assert.rejects(
+    verifyReleaseCandidate(fx.bundleDirectory, verificationOptions(fx)),
+    /build inputs do not match/,
   )
 })
