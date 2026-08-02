@@ -1,6 +1,8 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$AcceptanceDirectory
+  [string]$AcceptanceDirectory,
+
+  [string]$RepositoryRoot = (Get-Location).Path
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +19,7 @@ if (
 ) {
   throw 'physical acceptance context is invalid'
 }
+Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit) | Out-Null
 $sentinelPath = Join-Path $acceptance $context.sentinel.file
 Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
 
