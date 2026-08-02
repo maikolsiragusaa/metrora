@@ -20,8 +20,8 @@ Set-StrictMode -Version Latest
 if ($ExpectedCommit -notmatch '^[a-f0-9]{40}$') {
   throw 'ExpectedCommit must be a full lowercase Git SHA-1'
 }
+$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot $ExpectedCommit
 
-$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $archive = (Resolve-Path -LiteralPath $ArtifactArchive).Path
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
   throw 'ArtifactArchive must be a file'
