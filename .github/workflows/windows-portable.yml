@@ -66,6 +66,10 @@ jobs:
           scripts/windows-installed-layout.node-test.mjs
           scripts/windows-migration-fixture.node-test.mjs
 
+      - name: Validate Windows release PowerShell syntax
+        shell: pwsh
+        run: ./scripts/Test-Metrora-Windows-Release-Syntax.ps1 -RepositoryRoot $PWD
+
       - name: Require Node zstd support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
 
