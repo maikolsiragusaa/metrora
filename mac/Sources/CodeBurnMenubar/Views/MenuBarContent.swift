@@ -298,14 +298,13 @@ private struct FetchErrorOverlay: View {
 }
 
 /// Translucent overlay that blurs whatever's behind it (the previous tab/period content)
-/// and centers an animated burning flame -- the brand mark filling up bottom-to-top in
-/// yellow→orange→red, looping.
+/// and centers an animated Signal Grid mark that fills one measured bar at a time.
 private struct BurnLoadingOverlay: View {
     let periodLabel: String
     @State private var fillProgress: CGFloat = 0
     @State private var glowing: Bool = false
 
-    private let flameSize: CGFloat = 64
+    private let markSize: CGFloat = 64
 
     var body: some View {
         ZStack {
@@ -314,7 +313,7 @@ private struct BurnLoadingOverlay: View {
                 .fill(.ultraThinMaterial)
 
             VStack(spacing: 14) {
-                SignalGridLoadingMark(size: flameSize, fillProgress: fillProgress, glowing: glowing)
+                SignalGridLoadingMark(size: markSize, fillProgress: fillProgress, glowing: glowing)
                 Text("Loading \(periodLabel)…")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -340,7 +339,7 @@ private struct SignalGridLoadingMark: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: size * 0.07) {
-            ForEach(Array(heights.enumerated()), id: .offset) { index, ratio in
+            ForEach(Array(heights.enumerated()), id: \.offset) { index, ratio in
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(
                         fillProgress >= CGFloat(index + 1) / CGFloat(heights.count)
