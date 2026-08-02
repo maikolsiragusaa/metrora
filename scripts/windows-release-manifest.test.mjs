@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 
 import {
@@ -22,7 +22,7 @@ const inputFiles = [
 ]
 
 async function write(path, content) {
-  await mkdir(join(path, '..'), { recursive: true })
+  await mkdir(dirname(path), { recursive: true })
   await writeFile(path, content)
 }
 
