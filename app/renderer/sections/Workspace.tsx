@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
@@ -15,9 +15,9 @@ import type {
   WorkspaceEvidenceState,
   WorkspaceProductionMode,
 } from '../lib/workspace'
+import { useWorkspaceStatus, type WorkspaceAction } from './useWorkspaceStatus'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
-type WorkspaceAction = 'reload' | 'create' | 'produce' | 'recover' | 'pause' | 'resume' | 'batch' | 'export' | null
 
 export type WorkspaceUsage = {
   label: string
@@ -142,75 +142,21 @@ export function WorkspaceContent({
   analyticsLoading?: boolean
 }) {
   const bridge = metrora as Partial<WorkspaceBridge>
-  const [availability, setAvailability] = useState<DesktopWorkspaceAvailability | null>(null)
-  const [statusError, setStatusError] = useState(false)
-  const [inspectionError, setInspectionError] = useState(false)
-  const [action, setAction] = useState<WorkspaceAction>('reload')
+  const {
+    availability,
+    setAvailability,
+    statusError,
+    inspectionError,
+    action,
+    setAction,
+    loadBootstrap,
+    reload,
+  } = useWorkspaceStatus(bridge)
   const [workspaceName, setWorkspaceName] = useState('My workspace')
   const [endpointName, setEndpointName] = useState('This computer')
   const [lastProduction, setLastProduction] = useState<DesktopReviewedProductionSummary | null>(null)
   const [lastRecovery, setLastRecovery] = useState<DesktopWorkspaceRecoverySummary | null>(null)
   const usage = useMemo(() => workspaceUsageFromOverview(payload), [payload])
-
-  const loadBootstrap = useCallback(async () => {
-    setAction('reload')
-    setStatusError(false)
-    setInspectionError(false)
-    try {
-      if (typeof bridge.getWorkspaceStatus !== 'function') throw new Error('workspace bridge unavailable')
-      setAvailability(await bridge.getWorkspaceStatus())
-    } catch {
-      setStatusError(true)
-    } finally {
-      setAction(null)
-    }
-  }, [bridge])
-
-  const reload = useCallback(async () => {
-    setAction('reload')
-    setStatusError(false)
-    setInspectionError(false)
-    try {
-      if (typeof bridge.inspectWorkspaceStatus === 'function') {
-        setAvailability(await bridge.inspectWorkspaceStatus())
-      } else if (typeof bridge.getWorkspaceStatus === 'function') {
-        setAvailability(await bridge.getWorkspaceStatus())
-      } else {
-        throw new Error('workspace bridge unavailable')
-      }
-    } catch {
-      setStatusError(true)
-    } finally {
-      setAction(null)
-    }
-  }, [bridge])
-
-  useEffect(() => {
-    void loadBootstrap()
-  }, [loadBootstrap])
-
-  useEffect(() => {
-    if (
-      availability?.availability !== 'ready'
-      || availability.inspection !== 'pending'
-      || inspectionError
-    ) return
-
-    let cancelled = false
-    const inspect = async () => {
-      try {
-        if (typeof bridge.inspectWorkspaceStatus !== 'function') {
-          throw new Error('workspace inspection bridge unavailable')
-        }
-        const inspected = await bridge.inspectWorkspaceStatus()
-        if (!cancelled) setAvailability(inspected)
-      } catch {
-        if (!cancelled) setInspectionError(true)
-      }
-    }
-    void inspect()
-    return () => { cancelled = true }
-  }, [availability, bridge, inspectionError])
 
   const createWorkspace = async () => {
     const displayName = workspaceName.trim()
