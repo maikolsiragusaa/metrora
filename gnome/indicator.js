@@ -108,7 +108,7 @@ function formatTime(date) {
 export const CodeBurnIndicator = GObject.registerClass(
 class CodeBurnIndicator extends PanelMenu.Button {
   _init(extension) {
-    super._init(0.0, 'CodeBurn');
+    super._init(0.0, 'Metrora');
 
     this._extension = extension;
     this._settings = extension.getSettings();
@@ -149,10 +149,11 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _buildPanelButton() {
     const box = new St.BoxLayout({ style_class: 'panel-status-menu-box codeburn-panel' });
-    this._panelIcon = new St.Label({
-      text: '🔥',
+    this._panelIcon = new St.Icon({
+      gicon: Gio.icon_new_for_string(`${this._extension.path}/icons/metrora-symbolic.svg`),
+      icon_size: 16,
       y_align: Clutter.ActorAlign.CENTER,
-      style_class: 'codeburn-flame',
+      style_class: 'system-status-icon codeburn-flame',
     });
     this._panelLabel = new St.Label({
       text: '...',
@@ -207,10 +208,9 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _buildBrandHeader() {
     const header = new St.BoxLayout({ vertical: true, style_class: 'codeburn-brand-header' });
     const title = new St.BoxLayout({ style_class: 'codeburn-brand-row' });
-    title.add_child(new St.Label({ text: 'Code', style_class: 'codeburn-brand-primary' }));
-    title.add_child(new St.Label({ text: 'Burn', style_class: 'codeburn-brand-accent' }));
+    title.add_child(new St.Label({ text: 'Metrora', style_class: 'codeburn-brand-primary' }));
     header.add_child(title);
-    header.add_child(new St.Label({ text: 'AI Coding Cost Tracker', style_class: 'codeburn-brand-subhead' }));
+    header.add_child(new St.Label({ text: 'Local AI usage intelligence', style_class: 'codeburn-brand-subhead' }));
     this._root.add_child(header);
   }
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Builds a universal CodeBurnMenubar.app bundle from the SwiftPM target and drops a
-# distributable zip alongside. Used by the GitHub release workflow; also runnable locally.
+# Builds the Metrora-branded universal menubar bundle from the inherited
+# CodeBurnMenubar SwiftPM target and drops a distributable zip alongside.
+# The internal target, process and artifact identifiers remain stable until the
+# release/install compatibility path is migrated separately.
 #
 # Usage:
 #   mac/Scripts/package-app.sh [<version>]
@@ -25,6 +27,8 @@ MAC_DIR="${ROOT}/mac"
 DIST_DIR="${MAC_DIR}/.build/dist"
 ICON_SOURCE="${ROOT}/assets/menubar-logo.png"
 
+node "${ROOT}/scripts/generate-brand-assets.mjs"
+
 cd "${MAC_DIR}"
 
 echo "▸ Cleaning previous dist..."
@@ -41,7 +45,7 @@ if [[ ! -x "${BUILT_BINARY}" ]]; then
   exit 1
 fi
 
-echo "▸ Assembling ${BUNDLE_NAME}..."
+echo "▸ Assembling Metrora Menubar (${BUNDLE_NAME})..."
 BUNDLE="${DIST_DIR}/${BUNDLE_NAME}"
 mkdir -p "${BUNDLE}/Contents/MacOS"
 mkdir -p "${BUNDLE}/Contents/Resources"
@@ -72,7 +76,7 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>CodeBurn Menubar</string>
+    <string>Metrora Menubar</string>
     <key>CFBundleExecutable</key>
     <string>${EXECUTABLE_NAME}</string>
     <key>CFBundleIconFile</key>
@@ -82,7 +86,7 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>${EXECUTABLE_NAME}</string>
+    <string>Metrora Menubar</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -96,7 +100,7 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>© AgentSeal</string>
+    <string>© Maikol Siragusa</string>
 </dict>
 </plist>
 PLIST
@@ -107,9 +111,7 @@ PKG
 
 # Sign so macOS treats the bundle as internally consistent. Set CODESIGN_IDENTITY
 # to a stable identity (Developer ID Application for distribution, or an Apple
-# Development cert for local testing) so the TCC "access data from other apps"
-# grant persists across rebuilds. Falls back to ad-hoc when unset (e.g. CI), which
-# re-prompts on every build because each ad-hoc build has a fresh code identity.
+# Development cert for local testing) so the TCC grant persists across rebuilds.
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 if [[ -n "${CODESIGN_IDENTITY}" ]]; then
   echo "▸ Signing with identity: ${CODESIGN_IDENTITY}"
@@ -139,6 +141,9 @@ if otool -L "${BUILT_EXE}" | grep libswift_errno | grep -qv 'weak'; then
 fi
 echo "  minos 14.0 confirmed, no libswift_errno dependency."
 
+# Keep the inherited asset filename until the legacy installer/update contract is
+# replaced by an official Metrora release channel. The bundle shown to users is
+# branded Metrora through Info.plist and the canonical Signal Grid icon.
 ZIP_NAME="CodeBurnMenubar-${ASSET_VERSION}.zip"
 ZIP_PATH="${DIST_DIR}/${ZIP_NAME}"
 echo "▸ Packaging ${ZIP_NAME}..."

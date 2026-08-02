@@ -2,16 +2,19 @@ export function MetroraMark({ size = 24, className }: { size?: number; className
   return (
     <svg
       aria-hidden="true"
-      className={className}
+      className={['metrora-mark', className].filter(Boolean).join(' ')}
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="none"
+      viewBox="0 0 180 152"
+      fill="currentColor"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <circle cx="11.5" cy="11.5" r="7.25" stroke="currentColor" strokeWidth="2.1" />
-      <path d="M15.8 15.8 20 20" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
-      <path d="M15.9 6.4c1.2 1.25 1.9 2.9 1.9 4.7" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+      <rect x="8" y="8" width="14" height="104" rx="2" />
+      <rect x="38" y="40" width="14" height="88" rx="2" />
+      <rect x="68" y="68" width="14" height="76" rx="2" />
+      <rect x="98" y="68" width="14" height="76" rx="2" />
+      <rect x="128" y="40" width="14" height="88" rx="2" />
+      <rect x="158" y="8" width="14" height="104" rx="2" />
     </svg>
   )
 }

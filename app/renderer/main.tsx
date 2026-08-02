@@ -6,6 +6,7 @@ import { installPageHiddenClass } from './lib/pageVisibility'
 import { migrateKnownStorage } from './lib/storage'
 import './styles/indigo.css'
 import './styles/plain.css'
+import './styles/brand.css'
 import './styles/workspace.css'
 
 const root = document.getElementById('root')

@@ -43,7 +43,7 @@ export default class CodeBurnPreferences extends ExtensionPreferences {
 
     const displayGroup = new Adw.PreferencesGroup({
       title: 'Display',
-      description: 'Configure how CodeBurn appears in the panel',
+      description: 'Configure how Metrora appears in the panel',
     });
     displayPage.add(displayGroup);
 
@@ -88,7 +88,7 @@ export default class CodeBurnPreferences extends ExtensionPreferences {
 
     const periodRow = new Adw.ComboRow({
       title: 'Default Period',
-      subtitle: 'Time period shown when extension opens',
+      subtitle: 'Time period shown when the extension opens',
       model: periodModel,
     });
     const currentPeriod = settings.get_string('default-period');
@@ -146,9 +146,8 @@ export default class CodeBurnPreferences extends ExtensionPreferences {
         const current = settings.get_strv('disabled-providers');
         if (row.get_active()) {
           settings.set_strv('disabled-providers', current.filter(p => p !== provider.id));
-        } else {
-          if (!current.includes(provider.id))
-            settings.set_strv('disabled-providers', [...current, provider.id]);
+        } else if (!current.includes(provider.id)) {
+          settings.set_strv('disabled-providers', [...current, provider.id]);
         }
       });
       providersGroup.add(row);
@@ -156,11 +155,12 @@ export default class CodeBurnPreferences extends ExtensionPreferences {
 
     const advancedGroup = new Adw.PreferencesGroup({
       title: 'Advanced',
+      description: 'Compatibility settings retained for existing installations',
     });
     displayPage.add(advancedGroup);
 
     const pathRow = new Adw.EntryRow({
-      title: 'CodeBurn CLI Path',
+      title: 'Local CLI Path',
       text: settings.get_string('codeburn-path'),
     });
     pathRow.connect('changed', () => {
