@@ -1,17 +1,15 @@
 name: One-time macOS brand migration
 
 on:
-  push:
-    branches:
-      - feat/brand-rollout-v1
-    paths:
-      - .github/workflows/macos-brand-rollout-once.yml
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   migrate:
+    if: github.head_ref == 'feat/brand-rollout-v1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
