@@ -23,14 +23,9 @@ const DERIVATION_MANIFEST_FILE = 'FORMAT_DERIVATION.json'
 const DERIVATION_CHECKSUM_FILE = 'FORMAT_SHA256SUMS.txt'
 
 const portableExtraFiles = Object.freeze([
-  'BUILD_ATTESTATION.json',
-  'PAYLOAD_MANIFEST.jsonl',
   'README.txt',
-  'RELEASE_MANIFEST.json',
-  'RELEASE_MANIFEST.schema.json',
   'Run-Metrora-Baseline.cmd',
   'Run-Metrora-Baseline.ps1',
-  'SHA256SUMS.txt',
 ])
 
 const sha256Pattern = /^[a-f0-9]{64}$/
