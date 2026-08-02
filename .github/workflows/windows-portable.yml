@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   candidate:
-    name: Build, derive, install, migrate, and uninstall Windows candidate
+    name: Build, derive, install, migrate, interrupt, and recover Windows candidate
     runs-on: windows-latest
     timeout-minutes: 120
     env:
@@ -64,6 +64,7 @@ jobs:
           scripts/windows-release-layout.node-test.mjs
           scripts/windows-installer-source.node-test.mjs
           scripts/windows-installed-layout.node-test.mjs
+          scripts/windows-installed-state-classifier.node-test.mjs
           scripts/windows-migration-fixture.node-test.mjs
 
       - name: Validate Windows release PowerShell syntax
@@ -250,6 +251,45 @@ jobs:
             -BaselineVersion $env:MIGRATION_BASELINE_VERSION `
             -CandidateVersion $candidateVersion
           if ($LASTEXITCODE -ne 0) { throw 'Windows migration acceptance failed' }
+
+      - name: Build non-publishable interruption fixture
+        shell: pwsh
+        run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          ./scripts/Build-Metrora-Windows-Installer.ps1 `
+            -AppDirectory app `
+            -CanonicalPayloadDirectory app\release\win-unpacked `
+            -OutputDirectory app\release\r1bcb-interruption-installer `
+            -ExpectedVersion $candidateVersion `
+            -RepositoryRoot $PWD `
+            -NsisInclude app\build\r1bcb-interrupt.nsh
+
+          $ordinary = "app\release\Metrora-Windows-Candidate\installer\Metrora-Setup-$candidateVersion.exe"
+          $fixture = "app\release\r1bcb-interruption-installer\Metrora-Setup-$candidateVersion.exe"
+          if ((Get-FileHash -LiteralPath $ordinary -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash) {
+            throw 'interruption fixture is not distinct from the ordinary candidate installer'
+          }
+
+      - name: Validate controlled interruption and deterministic recovery
+        shell: pwsh
+        run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\Test-Metrora-Windows-Interrupted-Migration.ps1 `
+            -BaselineInstaller "migration-baseline\app\release\migration-installer\Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe" `
+            -BaselinePayloadDirectory migration-baseline\app\release\win-unpacked `
+            -InterruptionInstaller "app\release\r1bcb-interruption-installer\Metrora-Setup-$candidateVersion.exe" `
+            -CandidateDirectory app\release\Metrora-Windows-Candidate `
+            -CandidatePayloadDirectory app\release\win-unpacked `
+            -RepositoryRoot $PWD `
+            -BaselineVersion $env:MIGRATION_BASELINE_VERSION `
+            -CandidateVersion $candidateVersion
+          if ($LASTEXITCODE -ne 0) { throw 'Windows interrupted-upgrade recovery acceptance failed' }
+
+          Remove-Item -LiteralPath app\release\r1bcb-interruption-installer -Recurse -Force
+          if (Test-Path -LiteralPath app\release\r1bcb-interruption-installer) {
+            throw 'interruption fixture remained after acceptance'
+          }
 
       - name: Upload Windows installer and portable candidate
         uses: actions/upload-artifact@v4
