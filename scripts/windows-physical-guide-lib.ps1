@@ -135,7 +135,7 @@ function Select-MetroraGuideArtifact([string]$ArtifactArchive) {
     Write-Host 'Selettore grafico non disponibile; incolla il percorso dello ZIP.'
   }
 
-  $manual = (Read-Host 'Percorso completo dello ZIP candidato').Trim().Trim('"')
+  $manual = (Read-Host 'Percorso completo dello ZIP candidato').Trim().Trim([char]'"')
   if (-not $manual) { throw 'Nessun ZIP selezionato.' }
   return (Resolve-Path -LiteralPath $manual).Path
 }
@@ -172,7 +172,15 @@ function Write-MetroraGuideContinuation([string]$AcceptanceDirectory, [string]$R
 exit `$LASTEXITCODE
 "@
   [IO.File]::WriteAllText($scriptPath, $ps1, [Text.UTF8Encoding]::new($false))
-  $cmd = "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"%~dp0CONTINUA-TEST-METRORA.ps1\"`r`nset EXITCODE=%ERRORLEVEL%`r`necho.`r`npause`r`nexit /b %EXITCODE%`r`n"
+  $cmd = @'
+@echo off
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0CONTINUA-TEST-METRORA.ps1"
+set "EXITCODE=%ERRORLEVEL%"
+echo.
+pause
+exit /b %EXITCODE%
+'@
+  $cmd = $cmd.Replace("`n", "`r`n")
   [IO.File]::WriteAllText($cmdPath, $cmd, [Text.ASCIIEncoding]::new())
   return $cmdPath
 }
