@@ -101,14 +101,15 @@ describe('Workspace recovery IPC', () => {
         outcome: 'reconciled' as const,
         retryAttempted: true,
         blocker: null,
+        receiptRepairCount: 1,
         production: {
           kind: 'metrora.canonical-reviewed-production-summary' as const,
           version: 1 as const,
           outcome: 'completed' as const,
           scanned: true,
-          eligibleCount: 1,
+          eligibleCount: 0,
           producedCount: 0,
-          existingCount: 1,
+          existingCount: 0,
           withheldCount: 0,
           failedCount: 0,
         },
@@ -135,7 +136,8 @@ describe('Workspace recovery IPC', () => {
         summary: {
           outcome: 'reconciled',
           retryAttempted: true,
-          production: { existingCount: 1 },
+          receiptRepairCount: 1,
+          production: { existingCount: 0 },
         },
       },
     })
