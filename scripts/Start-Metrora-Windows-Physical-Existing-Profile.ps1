@@ -27,7 +27,8 @@ Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
 
 $verificationText = (& node (Join-Path $repository 'scripts\verify-windows-candidate-layout.mjs') `
   $candidate `
-  --expected-commit $context.source.commit 2>&1 | Out-String).Trim()
+  --expected-commit $context.source.commit `
+  --repository-root $repository 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) {
   throw "existing-profile portable verification failed: $verificationText"
 }
