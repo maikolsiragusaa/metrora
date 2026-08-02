@@ -67,6 +67,7 @@ export type DesktopWorkspaceSnapshot = {
 export type DesktopWorkspaceAvailability =
   | {
       availability: 'ready'
+      inspection: 'pending' | 'complete'
       vault: {
         backend: 'windows-dpapi' | 'macos-keychain'
         masterKeyState: 'created' | 'loaded' | 'rewrapped'
@@ -147,6 +148,7 @@ export type DesktopWorkspaceExportResult =
 
 export interface WorkspaceBridge {
   getWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
+  inspectWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
   createWorkspace(input: {
     displayName: string
     slug?: string
