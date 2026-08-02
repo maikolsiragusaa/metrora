@@ -1,0 +1,62 @@
+name: Metrora Physical Acceptance Guard
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-physical-acceptance.yml'
+      - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md'
+      - 'scripts/*Physical-Acceptance*.ps1'
+      - 'scripts/*Physical-Clean.ps1'
+      - 'scripts/*Physical-Migration.ps1'
+      - 'scripts/windows-physical-*'
+      - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-physical-acceptance.yml'
+      - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md'
+      - 'scripts/*Physical-Acceptance*.ps1'
+      - 'scripts/*Physical-Clean.ps1'
+      - 'scripts/*Physical-Migration.ps1'
+      - 'scripts/windows-physical-*'
+      - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrora-physical-acceptance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report-and-candidate:
+    name: Validate physical acceptance boundaries (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+
+      - name: Run physical acceptance native tests
+        run: >-
+          node --test
+          scripts/windows-physical-acceptance-report.node-test.mjs
+          scripts/windows-physical-candidate.node-test.mjs
+
+  powershell-syntax:
+    name: Validate physical acceptance PowerShell syntax
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse all Windows release and physical acceptance scripts
+        shell: pwsh
+        run: ./scripts/Test-Metrora-Windows-Release-Syntax.ps1 -RepositoryRoot $PWD
