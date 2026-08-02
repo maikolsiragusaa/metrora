@@ -1,12 +1,14 @@
-# CodeBurn GNOME Extension
+# Metrora GNOME Extension
 
-Monitor AI coding assistant token usage and costs from your GNOME desktop panel.
+Monitor local AI coding usage, tokens and costs from the GNOME desktop panel.
 
 ## Requirements
 
 - GNOME Shell 45 or later
-- CodeBurn CLI installed (`npm i -g codeburn`)
+- Metrora CLI installed from this repository
 - `glib-compile-schemas` (usually part of `glib2-devel` or `libglib2.0-dev`)
+
+The extension currently retains the inherited UUID `codeburn@codeburn.dev`, settings schema and `codeburn` CLI fallback so existing GNOME installations and local state continue to work. Its product-facing identity is Metrora.
 
 ## Install
 
@@ -17,8 +19,8 @@ chmod +x install.sh
 ```
 
 Then restart GNOME Shell:
-- **Wayland:** Log out and back in
-- **X11:** Press `Alt+F2`, type `r`, press Enter
+- **Wayland:** log out and back in
+- **X11:** press `Alt+F2`, type `r`, press Enter
 
 Enable the extension:
 
@@ -40,12 +42,12 @@ Or use the GNOME Extensions app.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Refresh Interval | 30s | How often to poll CodeBurn CLI |
+| Refresh Interval | 30s | How often to poll the local compatibility CLI |
 | Default Period | Today | Period shown on open |
 | Compact Mode | Off | Hide cost label, show icon only |
 | Budget Threshold | $0 | Daily budget alert (0 = disabled) |
 | Budget Alerts | Off | Show warning when budget exceeded |
-| CLI Path | (auto) | Custom path to `codeburn` binary |
+| CLI Path | (auto) | Custom path to the local Metrora/compatibility binary |
 
 ## Uninstall
 
@@ -55,8 +57,6 @@ rm -r ~/.local/share/gnome-shell/extensions/codeburn@codeburn.dev
 ```
 
 ## Development
-
-Test changes without installing:
 
 ```bash
 # Compile schemas locally
