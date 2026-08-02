@@ -63,85 +63,91 @@ try {
   if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[a-f0-9]{40}$') {
     throw 'unable to resolve runtime report source commit'
   }
+  Assert-MetroraPhysicalRepositoryAuthority $repository $commit | Out-Null
+
   $digest = 'a' * 64
-  $sentinelName = 'METRORA-PHYSICAL-ACCEPTANCE-SENTINEL.bin'
-  $sentinelPath = Join-Path $root $sentinelName
+  $sentinelPath = Join-Path $root 'METRORA-PHYSICAL-ACCEPTANCE-SENTINEL.bin'
   [IO.File]::WriteAllBytes($sentinelPath, [Text.Encoding]::UTF8.GetBytes('physical-runtime-sentinel'))
   $sentinelDigest = Get-MetroraFileSha256 $sentinelPath
+  Assert-MetroraPhysicalSentinel $sentinelPath $sentinelDigest
 
-  $context = [ordered]@{
-    kind = 'metrora.windows-physical-acceptance-context'
+  $report = [ordered]@{
+    kind = 'metrora.windows-physical-acceptance-report'
     version = 1
+    generatedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
     source = [ordered]@{
       repository = 'maikolsiragusaa/metrora'
       commit = $commit
     }
     candidate = [ordered]@{
-      directory = 'downloaded-candidate'
       artifactName = "metrora-windows-candidate-$commit.zip"
       artifactSha256 = $digest
       productVersion = '0.9.19'
       releaseManifestSha256 = $digest
       formatManifestSha256 = $digest
-      canonicalFileCount = 1
-      canonicalInventorySha256 = $digest
     }
     platform = Get-MetroraWindowsPlatform
-    sentinel = [ordered]@{
-      file = $sentinelName
-      sha256 = $sentinelDigest
+    profiles = [ordered]@{
+      existing = [ordered]@{
+        status = 'pass'
+        portableVerified = $true
+        identityPreserved = $true
+        workspacePreserved = $true
+        lifecyclePreserved = $true
+        evidencePreserved = $true
+        reopenPassed = $true
+        recoveryMode = 'not-required'
+        duplicateProductionCount = 0
+        duplicateBatchCount = 0
+        invalidCount = 0
+        quarantinedCount = 0
+      }
+      clean = [ordered]@{
+        status = 'pass'
+        registrationCount = 1
+        shortcutCount = 1
+        cliVersion = '0.9.19'
+        firstLaunchPassed = $true
+        uninstallPassed = $true
+        sentinelPreserved = $true
+      }
+      migration = [ordered]@{
+        status = 'pass'
+        transitions = @(
+          'installed-0.9.18'
+          'upgraded-0.9.19'
+          'reinstalled-0.9.19'
+          'uninstalled-for-rollback'
+          'rolled-back-0.9.18'
+          're-upgraded-0.9.19'
+          'uninstalled'
+        )
+        sentinelPreserved = $true
+        fixtureRemoved = $true
+      }
     }
-  }
-  Write-MetroraUtf8Json (Join-Path $root 'ACCEPTANCE_CONTEXT.json') $context
-
-  Write-MetroraUtf8Json (Join-Path $root 'P1_EXISTING_RESULT.json') ([ordered]@{
-    status = 'pass'
-    portableVerified = $true
-    identityPreserved = $true
-    workspacePreserved = $true
-    lifecyclePreserved = $true
-    evidencePreserved = $true
-    reopenPassed = $true
-    recoveryMode = 'not-required'
-    duplicateProductionCount = 0
-    duplicateBatchCount = 0
-    invalidCount = 0
-    quarantinedCount = 0
-  })
-  Write-MetroraUtf8Json (Join-Path $root 'P2_CLEAN_RESULT.json') ([ordered]@{
-    status = 'pass'
-    registrationCount = 1
-    shortcutCount = 1
-    cliVersion = '0.9.19'
-    firstLaunchPassed = $true
-    uninstallPassed = $true
-    sentinelPreserved = $true
-  })
-  Write-MetroraUtf8Json (Join-Path $root 'P3_MIGRATION_RESULT.json') ([ordered]@{
-    status = 'pass'
-    transitions = @(
-      'installed-0.9.18'
-      'upgraded-0.9.19'
-      'reinstalled-0.9.19'
-      'uninstalled-for-rollback'
-      'rolled-back-0.9.18'
-      're-upgraded-0.9.19'
-      'uninstalled'
+    privacy = [ordered]@{
+      containsPrivatePaths = $false
+      containsUsernames = $false
+      containsPromptsOrResponses = $false
+      containsWorkspaceIdentifiers = $false
+      containsKeysOrEvidence = $false
+    }
+    limitations = @(
+      'unsigned-candidate'
+      'no-official-release'
+      'no-update-channel'
+      'single-windows-host'
+      'historical-fixture-local-only'
     )
-    sentinelPreserved = $true
-    fixtureRemoved = $true
-  })
-
-  $completionText = (& (Join-Path $repository 'scripts\Complete-Metrora-Windows-Physical-Acceptance.ps1') `
-    -AcceptanceDirectory $root `
-    -RepositoryRoot $repository 2>&1 | Out-String).Trim()
-  $completion = $completionText | ConvertFrom-Json
-  if ($completion.status -ne 'pass' -or -not $completion.reportVerified) {
-    throw 'physical report runtime did not produce a verified PASS'
   }
   $reportPath = Join-Path $root 'METRORA-WINDOWS-PHYSICAL-ACCEPTANCE.json'
-  if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
-    throw 'physical report runtime did not write its final report'
+  Write-MetroraUtf8Json $reportPath $report
+  $verification = (& node (Join-Path $repository 'scripts\verify-windows-physical-acceptance-report.mjs') `
+    $reportPath `
+    --expected-commit $commit 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0) {
+    throw "physical runtime report verification failed: $verification"
   }
 
   [IO.File]::WriteAllBytes($sentinelPath, [Text.Encoding]::UTF8.GetBytes('mutated'))
@@ -159,6 +165,7 @@ try {
     status = 'pass'
     validArchiveExtracted = $true
     traversalArchiveRejected = $true
+    repositoryAuthorityVerified = $true
     reportVerified = $true
     sentinelMutationRejected = $true
     privateDataIncluded = $false
