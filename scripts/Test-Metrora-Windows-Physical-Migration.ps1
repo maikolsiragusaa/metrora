@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-. (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
+. (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 
 if (-not $DedicatedProfileAcknowledged) {
   throw 'P3 requires an explicitly acknowledged dedicated Windows user profile'
@@ -22,26 +22,18 @@ if (-not $DedicatedProfileAcknowledged) {
 
 $baselineCommit = '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
 $baselineVersion = '0.9.18'
-$acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
-$canonical = (Resolve-Path -LiteralPath (Join-Path $acceptance 'canonical-payload')).Path
-$context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
-if (
-  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
-  $context.version -ne 1 -or
-  $context.candidate.directory -ne 'downloaded-candidate'
-) {
-  throw 'physical acceptance context is invalid'
-}
-$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
-$candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
+$state = Get-MetroraPhysicalAcceptanceState $AcceptanceDirectory $RepositoryRoot
+$acceptance = $state.Acceptance
+$repository = $state.Repository
+$candidate = $state.Candidate
+$canonical = $state.Canonical
+$sentinelPath = $state.SentinelPath
+$context = $state.Context
 
 & git -C $repository cat-file -e "$baselineCommit`^{commit}"
 if ($LASTEXITCODE -ne 0) {
   throw 'historical migration baseline commit is unavailable locally'
 }
-
-$sentinelPath = Join-Path $acceptance $context.sentinel.file
-Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
 
 $working = [IO.Path]::GetFullPath($WorkingDirectory)
 if ($working.Contains(' ')) {
