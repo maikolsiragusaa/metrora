@@ -22,7 +22,6 @@ if (-not $DedicatedProfileAcknowledged) {
 
 $baselineCommit = '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
 $baselineVersion = '0.9.18'
-$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
 $canonical = (Resolve-Path -LiteralPath (Join-Path $acceptance 'canonical-payload')).Path
 $context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
@@ -33,12 +32,9 @@ if (
 ) {
   throw 'physical acceptance context is invalid'
 }
+$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
 $candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
 
-$currentHead = (& git -C $repository rev-parse HEAD 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $currentHead -ne $context.source.commit) {
-  throw 'physical migration harness must run from the exact accepted candidate source commit'
-}
 & git -C $repository cat-file -e "$baselineCommit`^{commit}"
 if ($LASTEXITCODE -ne 0) {
   throw 'historical migration baseline commit is unavailable locally'
