@@ -19,9 +19,16 @@ function Assert-Equal($Actual, $Expected, [string]$Message) {
   }
 }
 
+function Assert-Throws([scriptblock]$Action, [string]$Message) {
+  $threw = $false
+  try { & $Action } catch { $threw = $true }
+  if (-not $threw) { throw "$Message`: expected an exception" }
+}
+
 $root = Join-Path $env:RUNNER_TEMP "metrora-physical-guide-$PID"
 $acceptance = Join-Path $root 'acceptance'
 $failedAcceptance = Join-Path $root 'failed'
+$invalidAcceptance = Join-Path $root 'invalid'
 $commit = '0123456789abcdef0123456789abcdef01234567'
 
 try {
@@ -35,6 +42,14 @@ try {
   if ($fingerprint -notmatch '^[a-f0-9]{64}$') {
     throw 'current profile fingerprint is invalid'
   }
+  $differentFingerprint = 'f' * 64
+  if ($differentFingerprint -eq $fingerprint) { $differentFingerprint = 'e' * 64 }
+
+  Assert-MetroraGuideProfileRole $fingerprint 'primary' $fingerprint | Out-Null
+  Assert-MetroraGuideProfileRole $fingerprint 'dedicated' $differentFingerprint | Out-Null
+  Assert-Throws { Assert-MetroraGuideProfileRole $fingerprint 'dedicated' $fingerprint | Out-Null } 'same profile dedicated refusal'
+  Assert-Throws { Assert-MetroraGuideProfileRole $fingerprint 'primary' $differentFingerprint | Out-Null } 'different profile primary refusal'
+
   Write-MetroraGuideLocalState $acceptance $commit $fingerprint | Out-Null
   $state = Read-MetroraGuideLocalState $acceptance $commit
   Assert-Equal ([string]$state.primaryProfileFingerprint) $fingerprint 'guide state fingerprint'
@@ -53,14 +68,24 @@ try {
   if (-not (Test-Path -LiteralPath $continuation -PathType Leaf)) {
     throw 'continuation CMD was not created'
   }
-  if (-not (Test-Path -LiteralPath (Join-Path $acceptance 'CONTINUA-TEST-METRORA.ps1') -PathType Leaf)) {
+  $continuationScript = Join-Path $acceptance 'CONTINUA-TEST-METRORA.ps1'
+  if (-not (Test-Path -LiteralPath $continuationScript -PathType Leaf)) {
     throw 'continuation PowerShell script was not created'
+  }
+  $cmdText = Get-Content -LiteralPath $continuation -Raw
+  if ($cmdText -notmatch 'CONTINUA-TEST-METRORA\.ps1' -or $cmdText -notmatch 'exit /b %EXITCODE%') {
+    throw 'continuation CMD content is invalid'
   }
 
   New-Item -ItemType Directory -Path $failedAcceptance -Force | Out-Null
   Write-TestJson (Join-Path $failedAcceptance 'ACCEPTANCE_CONTEXT.json') ([ordered]@{ kind = 'test' })
   Write-TestJson (Join-Path $failedAcceptance 'P1_EXISTING_RESULT.json') ([ordered]@{ status = 'fail' })
   Assert-Equal (Get-MetroraPhysicalGuidePhase $failedAcceptance) 'stopped' 'failed phase'
+
+  New-Item -ItemType Directory -Path $invalidAcceptance -Force | Out-Null
+  Write-TestJson (Join-Path $invalidAcceptance 'ACCEPTANCE_CONTEXT.json') ([ordered]@{ kind = 'test' })
+  Write-TestJson (Join-Path $invalidAcceptance 'P1_EXISTING_RESULT.json') ([ordered]@{ status = 'unknown' })
+  Assert-Throws { Get-MetroraPhysicalGuidePhase $invalidAcceptance | Out-Null } 'unknown status refusal'
 
   Write-Host 'Physical acceptance guide runtime verified.'
 } finally {
