@@ -40,7 +40,11 @@ try {
   if ($NsisInclude) {
     $includePath = (Resolve-Path -LiteralPath $NsisInclude).Path
     $relativeInclude = [IO.Path]::GetRelativePath($app, $includePath).Replace('\', '/')
-    if ($relativeInclude.StartsWith('../')) {
+    if (
+      [IO.Path]::IsPathFullyQualified($relativeInclude) -or
+      $relativeInclude -eq '..' -or
+      $relativeInclude.StartsWith('../')
+    ) {
       throw 'NSIS include must be located inside the desktop application directory'
     }
     if ($null -eq $package.build -or $null -eq $package.build.nsis) {
@@ -52,8 +56,8 @@ try {
       $package.build.nsis | Add-Member -NotePropertyName include -NotePropertyValue $relativeInclude
     }
     $temporaryJson = "$($package | ConvertTo-Json -Depth 32)`n"
-    [IO.File]::WriteAllText($packagePath, $temporaryJson, [Text.UTF8Encoding]::new($false))
     $temporaryPackageConfiguration = $true
+    [IO.File]::WriteAllText($packagePath, $temporaryJson, [Text.UTF8Encoding]::new($false))
   }
 
   Remove-Item -LiteralPath $installerSource -Recurse -Force -ErrorAction SilentlyContinue
@@ -120,5 +124,14 @@ try {
 } finally {
   if ($temporaryPackageConfiguration) {
     [IO.File]::WriteAllBytes($packagePath, $packageBytes)
+    $restoredBytes = [IO.File]::ReadAllBytes($packagePath)
+    if ($restoredBytes.Length -ne $packageBytes.Length) {
+      throw 'desktop package configuration restoration changed the byte length'
+    }
+    for ($index = 0; $index -lt $packageBytes.Length; $index += 1) {
+      if ($restoredBytes[$index] -ne $packageBytes[$index]) {
+        throw "desktop package configuration restoration changed byte $index"
+      }
+    }
   }
 }
