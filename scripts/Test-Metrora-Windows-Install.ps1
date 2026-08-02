@@ -20,12 +20,63 @@ function Wait-Until([scriptblock]$Condition, [int]$TimeoutSeconds, [string]$Fail
   throw $FailureMessage
 }
 
-function Get-MetroraUninstallEntries {
-  $root = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
-  if (-not (Test-Path -LiteralPath $root)) { return @() }
-  return @(Get-ChildItem -LiteralPath $root | ForEach-Object {
-    Get-ItemProperty -LiteralPath $_.PSPath
-  } | Where-Object { $_.DisplayName -eq 'Metrora' })
+function Get-UninstallEntries {
+  $locations = @(
+    @{ Hive = [Microsoft.Win32.RegistryHive]::CurrentUser; HiveName = 'HKCU'; View = [Microsoft.Win32.RegistryView]::Registry64; ViewName = '64' },
+    @{ Hive = [Microsoft.Win32.RegistryHive]::CurrentUser; HiveName = 'HKCU'; View = [Microsoft.Win32.RegistryView]::Registry32; ViewName = '32' },
+    @{ Hive = [Microsoft.Win32.RegistryHive]::LocalMachine; HiveName = 'HKLM'; View = [Microsoft.Win32.RegistryView]::Registry64; ViewName = '64' },
+    @{ Hive = [Microsoft.Win32.RegistryHive]::LocalMachine; HiveName = 'HKLM'; View = [Microsoft.Win32.RegistryView]::Registry32; ViewName = '32' }
+  )
+  $subkeyPath = 'Software\Microsoft\Windows\CurrentVersion\Uninstall'
+  $entries = @()
+
+  foreach ($location in $locations) {
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey($location.Hive, $location.View)
+    try {
+      $root = $base.OpenSubKey($subkeyPath)
+      if ($null -eq $root) { continue }
+      try {
+        foreach ($name in $root.GetSubKeyNames()) {
+          $key = $root.OpenSubKey($name)
+          if ($null -eq $key) { continue }
+          try {
+            $entries += [pscustomobject]@{
+              Hive = $location.HiveName
+              View = $location.ViewName
+              KeyName = $name
+              DisplayName = [string]$key.GetValue('DisplayName', '')
+              DisplayVersion = [string]$key.GetValue('DisplayVersion', '')
+              Publisher = [string]$key.GetValue('Publisher', '')
+              InstallLocation = [string]$key.GetValue('InstallLocation', '')
+              UninstallString = [string]$key.GetValue('UninstallString', '')
+              QuietUninstallString = [string]$key.GetValue('QuietUninstallString', '')
+            }
+          } finally {
+            $key.Dispose()
+          }
+        }
+      } finally {
+        $root.Dispose()
+      }
+    } finally {
+      $base.Dispose()
+    }
+  }
+  return $entries
+}
+
+function Get-MetroraUninstallEntries([string]$ExpectedInstallDirectory, [string]$ExpectedUninstaller) {
+  $expectedDirectory = [IO.Path]::GetFullPath($ExpectedInstallDirectory).TrimEnd('\')
+  $expectedUninstallerPath = [IO.Path]::GetFullPath($ExpectedUninstaller)
+  return @(Get-UninstallEntries | Where-Object {
+    $installLocation = $_.InstallLocation.Trim().Trim('"').TrimEnd('\')
+    $uninstallString = $_.UninstallString
+    $quietUninstallString = $_.QuietUninstallString
+    $_.DisplayName -like 'Metrora*' -or
+      ($installLocation -and [string]::Equals($installLocation, $expectedDirectory, [StringComparison]::OrdinalIgnoreCase)) -or
+      $uninstallString.IndexOf($expectedUninstallerPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+      $quietUninstallString.IndexOf($expectedUninstallerPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+  })
 }
 
 function Get-MetroraShortcuts([string]$ExpectedExecutable) {
@@ -103,11 +154,20 @@ try {
     throw "installed executable FileDescription is not canonical: $($versionInfo.FileDescription)"
   }
 
-  $registryEntries = @(Get-MetroraUninstallEntries)
+  $registryEntries = @(Get-MetroraUninstallEntries $installDirectory $uninstaller)
+  $registryDiagnostic = $registryEntries | Select-Object Hive, View, KeyName, DisplayName, DisplayVersion, Publisher, InstallLocation, UninstallString, QuietUninstallString
+  Write-Host "Metrora uninstall registration candidates: $($registryDiagnostic | ConvertTo-Json -Compress)"
   if ($registryEntries.Count -ne 1) {
-    throw "expected one per-user Metrora uninstall entry, found $($registryEntries.Count)"
+    throw "expected one Metrora uninstall registration, found $($registryEntries.Count)"
   }
-  if ($registryEntries[0].UninstallString -notmatch 'Uninstall Metrora\.exe') {
+  $registration = $registryEntries[0]
+  if ($registration.Hive -ne 'HKCU') {
+    throw "per-user installer registered Metrora outside HKCU: $($registration.Hive)/$($registration.View)"
+  }
+  if ($registration.DisplayName -notlike 'Metrora*') {
+    throw "uninstall DisplayName is not canonical: $($registration.DisplayName)"
+  }
+  if ($registration.UninstallString.IndexOf($uninstaller, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
     throw 'uninstall registry entry does not point to the canonical uninstaller'
   }
 
@@ -145,7 +205,7 @@ try {
   }
 
   Wait-Until { -not (Test-Path -LiteralPath $executable) } 60 'silent uninstall did not remove the application executable'
-  Wait-Until { @(Get-MetroraUninstallEntries).Count -eq 0 } 30 'silent uninstall did not remove its registry entry'
+  Wait-Until { @(Get-MetroraUninstallEntries $installDirectory $uninstaller).Count -eq 0 } 30 'silent uninstall did not remove its registry entry'
   Wait-Until { @(Get-MetroraShortcuts $executable).Count -eq 0 } 30 'silent uninstall did not remove the Metrora shortcut'
 
   if (-not (Test-Path -LiteralPath $sentinelPath)) {
@@ -163,6 +223,9 @@ try {
     fileVersion = $versionInfo.FileVersion
     cliVersion = $cliVersion
     shortcutCount = $shortcuts.Count
+    uninstallRegistryHive = $registration.Hive
+    uninstallRegistryView = $registration.View
+    uninstallDisplayName = $registration.DisplayName
     userOwnedStatePreserved = $true
   } | ConvertTo-Json -Compress
 }
