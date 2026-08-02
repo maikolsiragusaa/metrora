@@ -60,6 +60,7 @@ jobs:
           node --test
           scripts/windows-release-manifest.node-test.mjs
           scripts/windows-release-layout.node-test.mjs
+          scripts/windows-installer-source.node-test.mjs
 
       - name: Require Node zstd support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
@@ -127,10 +128,15 @@ jobs:
             --runner-os windows `
             --runner-image $runnerImage
 
-      - name: Build NSIS from the same prepackaged payload
+      - name: Build NSIS from an isolated copy of the canonical payload
         shell: pwsh
         run: |
           $release = Join-Path $PWD 'app\release'
+          $payload = Join-Path $release 'win-unpacked'
+          $installerSource = Join-Path $release 'nsis-prepackaged'
+          Remove-Item -LiteralPath $installerSource -Recurse -Force -ErrorAction SilentlyContinue
+          node -e "require('node:fs').cpSync(process.argv[1], process.argv[2], { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true })" $payload $installerSource
+
           Get-ChildItem -LiteralPath $release -File -ErrorAction SilentlyContinue | Where-Object {
             $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
           } | Remove-Item -Force
@@ -139,9 +145,13 @@ jobs:
           npx --no-install electron-builder `
             --win nsis `
             --x64 `
-            --prepackaged release/win-unpacked `
+            --prepackaged release/nsis-prepackaged `
             --publish never
           Pop-Location
+
+          node scripts/verify-windows-installer-source.mjs `
+            --canonical $payload `
+            --installer-source $installerSource
 
           $installerTarget = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\installer'
           $outputs = @(Get-ChildItem -LiteralPath $release -File | Where-Object {
