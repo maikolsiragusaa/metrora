@@ -1,6 +1,7 @@
 import * as z from 'zod/v4'
 
 import type { LoadedLocalEndpointIdentityV1 } from './endpoint-identity.js'
+import { reconcileMeasurementProductionReceiptsV1 } from './measurement-production-recovery.js'
 import {
   CanonicalReviewedProductionSummaryV1Schema,
   produceCanonicalReviewedMeasurementsV1,
@@ -33,16 +34,27 @@ export const DesktopWorkspaceRecoverySummaryV1Schema = z.strictObject({
   outcome: z.enum(['workspace-required', 'paused', 'blocked', 'healthy', 'reconciled']),
   retryAttempted: z.boolean(),
   blocker: z.enum(['invalid-evidence', 'quarantined-evidence', 'blocked-evidence']).nullable(),
+  receiptRepairCount: z.number().int().nonnegative(),
   production: CanonicalReviewedProductionSummaryV1Schema.nullable(),
 }).superRefine((value, context) => {
   const passive = value.outcome === 'workspace-required' || value.outcome === 'paused'
-  if (passive && (value.retryAttempted || value.blocker !== null || value.production !== null)) {
-    context.addIssue({ code: 'custom', message: `${value.outcome} recovery must not retry, block, or produce` })
+  if (passive && (
+    value.retryAttempted
+    || value.blocker !== null
+    || value.receiptRepairCount !== 0
+    || value.production !== null
+  )) {
+    context.addIssue({ code: 'custom', message: `${value.outcome} recovery must not retry, repair, block, or produce` })
   }
 
   if (value.outcome === 'blocked') {
-    if (value.retryAttempted || value.blocker === null || value.production !== null) {
-      context.addIssue({ code: 'custom', message: 'blocked recovery requires one bounded blocker and no retry' })
+    if (
+      value.retryAttempted
+      || value.blocker === null
+      || value.receiptRepairCount !== 0
+      || value.production !== null
+    ) {
+      context.addIssue({ code: 'custom', message: 'blocked recovery requires one bounded blocker and no repair or retry' })
     }
     return
   }
@@ -52,11 +64,12 @@ export const DesktopWorkspaceRecoverySummaryV1Schema = z.strictObject({
       context.addIssue({ code: 'custom', message: `${value.outcome} recovery requires one completed bounded retry` })
       return
     }
-    if (value.outcome === 'healthy' && value.production.existingCount !== 0) {
-      context.addIssue({ code: 'custom', message: 'healthy recovery cannot report reconciled existing production' })
+    const reconciled = value.receiptRepairCount > 0 || value.production.existingCount > 0
+    if (value.outcome === 'healthy' && reconciled) {
+      context.addIssue({ code: 'custom', message: 'healthy recovery cannot report reconciled receipt or production state' })
     }
-    if (value.outcome === 'reconciled' && value.production.existingCount === 0) {
-      context.addIssue({ code: 'custom', message: 'reconciled recovery requires existing production state' })
+    if (value.outcome === 'reconciled' && !reconciled) {
+      context.addIssue({ code: 'custom', message: 'reconciled recovery requires a repaired receipt or existing production state' })
     }
   }
 })
@@ -167,6 +180,7 @@ export function attachDesktopReviewedProductionV1(
           outcome: 'workspace-required',
           retryAttempted: false,
           blocker: null,
+          receiptRepairCount: 0,
           production: null,
         }, snapshot)
       }
@@ -176,6 +190,7 @@ export function attachDesktopReviewedProductionV1(
           outcome: 'paused',
           retryAttempted: false,
           blocker: null,
+          receiptRepairCount: 0,
           production: null,
         }, snapshot)
       }
@@ -186,24 +201,51 @@ export function attachDesktopReviewedProductionV1(
           outcome: 'blocked',
           retryAttempted: false,
           blocker,
+          receiptRepairCount: 0,
           production: null,
         }, snapshot)
       }
 
+      // Repair already-authorized receipt publication independently of the
+      // normal post-Workspace scanner scope. This can heal a receipt left by an
+      // interrupted pre-fix historical pass without restarting that backfill.
+      const receiptRecovery = await reconcileMeasurementProductionReceiptsV1({
+        dataDir: input.dataDir,
+        now,
+      })
+
       const retried = await this.produceReviewedMeasurements()
       if (retried.summary.outcome === 'paused') {
+        // A concurrent pause may win after receipt reconciliation but before the
+        // bounded production retry. Preserve the repair result honestly rather
+        // than claiming a passive no-mutation outcome.
         return recoveryResult({
-          outcome: 'paused',
-          retryAttempted: false,
+          outcome: receiptRecovery.repairedEventCount > 0 ? 'reconciled' : 'paused',
+          retryAttempted: receiptRecovery.repairedEventCount > 0,
           blocker: null,
-          production: null,
+          receiptRepairCount: receiptRecovery.repairedEventCount,
+          production: receiptRecovery.repairedEventCount > 0
+            ? {
+                kind: 'metrora.canonical-reviewed-production-summary',
+                version: 1,
+                outcome: 'completed',
+                scanned: false,
+                eligibleCount: 0,
+                producedCount: 0,
+                existingCount: 0,
+                withheldCount: 0,
+                failedCount: 0,
+              }
+            : null,
         }, retried.snapshot)
       }
 
+      const reconciled = receiptRecovery.repairedEventCount > 0 || retried.summary.existingCount > 0
       return recoveryResult({
-        outcome: retried.summary.existingCount > 0 ? 'reconciled' : 'healthy',
+        outcome: reconciled ? 'reconciled' : 'healthy',
         retryAttempted: true,
         blocker: null,
+        receiptRepairCount: receiptRecovery.repairedEventCount,
         production: retried.summary,
       }, retried.snapshot)
     },
