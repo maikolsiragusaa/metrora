@@ -130,19 +130,23 @@ jobs:
       - name: Build NSIS from the same prepackaged payload
         shell: pwsh
         run: |
-          $output = Join-Path $PWD 'app\release\nsis-output'
-          Remove-Item -LiteralPath $output -Recurse -Force -ErrorAction SilentlyContinue
+          $release = Join-Path $PWD 'app\release'
+          Get-ChildItem -LiteralPath $release -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
+          } | Remove-Item -Force
+
           Push-Location app
           npx --no-install electron-builder `
             --win nsis `
             --x64 `
             --prepackaged release/win-unpacked `
-            --publish never `
-            -c.directories.output=release/nsis-output
+            --publish never
           Pop-Location
 
           $installerTarget = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\installer'
-          $outputs = @(Get-ChildItem -LiteralPath $output -File | Where-Object { $_.Extension -in '.exe', '.blockmap' })
+          $outputs = @(Get-ChildItem -LiteralPath $release -File | Where-Object {
+            $_.Name -like 'Metrora-Setup-*' -or $_.Extension -eq '.blockmap'
+          })
           $executables = @($outputs | Where-Object { $_.Extension -eq '.exe' })
           if ($executables.Count -ne 1) {
             throw "expected exactly one NSIS executable, found $($executables.Count)"
