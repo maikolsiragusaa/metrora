@@ -18,7 +18,8 @@ $paths = @(
   'scripts\Record-Metrora-Windows-Physical-Existing-Profile.ps1',
   'scripts\Test-Metrora-Windows-Physical-Clean.ps1',
   'scripts\Test-Metrora-Windows-Physical-Migration.ps1',
-  'scripts\Complete-Metrora-Windows-Physical-Acceptance.ps1'
+  'scripts\Complete-Metrora-Windows-Physical-Acceptance.ps1',
+  'scripts\Test-Metrora-Windows-Physical-Report-Runtime.ps1'
 )
 
 $failures = @()
