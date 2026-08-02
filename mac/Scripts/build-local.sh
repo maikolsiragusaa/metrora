@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
-# build-local.sh, Build CodeBurnMenubar.app on a macOS 14 (Sonoma) machine.
+# build-local.sh — build the Metrora-branded menubar app on macOS 14.
+# The inherited Swift target/process remains CodeBurnMenubar for compatibility.
 # ============================================================================
 # Why this exists
 # ---------------
@@ -12,16 +13,12 @@
 # It exists for the narrower case of building on a Sonoma machine that only
 # has the Command Line Tools (macOS 14 SDK). That SDK's SwiftUI does NOT carry
 # the @MainActor annotations the macOS 15 SDK added to the `View` protocol, so
-# a plain `swift build` there fails with ~80 `main actor-isolated ... from a
-# nonisolated context` errors. This script copies the sources to a scratch
-# dir, gives every `View`/`App` conformance an explicit `@MainActor` there
-# (repo sources stay untouched), and builds a universal bundle with a
-# swift.org Swift 6.2 toolchain against the local macOS 14 SDK.
+# a plain `swift build` there fails with actor-isolation errors. This script
+# patches only a scratch copy and leaves repository sources untouched.
 #
 # Prerequisites
 #   - Command Line Tools (provides the macOS 14 SDK + sips/iconutil/codesign)
 #   - A swift.org Swift 6.x toolchain in ~/Library/Developer/Toolchains/
-#       download: https://www.swift.org/install/macos/  (Swift 6.2 recommended)
 #
 # Usage: mac/Scripts/build-local.sh [<version>]   (defaults to "dev")
 # ----------------------------------------------------------------------------
@@ -35,11 +32,13 @@ MIN_MACOS="14.0"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MAC_DIR="${ROOT}/mac"
 ICON_SOURCE="${ROOT}/assets/menubar-logo.png"
-SCRATCH="$(mktemp -d /tmp/codeburn-local-build.XXXXXX)"
+SCRATCH="$(mktemp -d /tmp/metrora-menubar-local-build.XXXXXX)"
 APPS="${HOME}/Applications"
-BUNDLE="${APPS}/${EXE}.app"
+BUNDLE="${APPS}/CodeBurnMenubar.app"
 
 trap 'rm -rf "${SCRATCH}"' EXIT
+
+node "${ROOT}/scripts/generate-brand-assets.mjs"
 
 # --- locate a Swift 6.x toolchain -------------------------------------------
 TC=""
@@ -70,13 +69,8 @@ echo "▸ SDK       : ${SDKROOT} (${SDK_VERSION})"
 
 # --- copy sources and add explicit @MainActor to SwiftUI views --------------
 echo "▸ Staging sources in ${SCRATCH}..."
-# Tests/ is copied only so the manifest's testTarget path resolves; `swift build`
-# (product only) never compiles it, so it needs no @MainActor patching.
 cp -R "${MAC_DIR}/Sources" "${MAC_DIR}/Tests" "${MAC_DIR}/Package.swift" "${SCRATCH}/"
 find "${SCRATCH}/Sources" -name "*.swift" -print0 | while IFS= read -r -d '' f; do
-  # Slurp mode ([^{]* spans newlines) so this also catches multi-line generic
-  # struct headers and `extension X: View` conformances, not just the
-  # single-line `struct X: View {` shape the current sources happen to use.
   perl -0777 -i -pe '
     s/^((?:private |public |fileprivate |internal )?(?:struct|extension)\s+\w+(?:<[^{]*?>)?\s*:[^{]*\bView\b[^{]*\{)/\@MainActor\n$1/gm;
     s/^(struct\s+\w+\s*:[^{]*\bApp\b[^{]*\{)/\@MainActor\n$1/gm;
@@ -85,9 +79,6 @@ find "${SCRATCH}/Sources" -name "*.swift" -print0 | while IFS= read -r -d '' f; 
 done
 
 # --- build each arch separately, then lipo into one universal binary --------
-# `swift build --arch arm64 --arch x86_64` together shells out to xcbuild,
-# which the Command Line Tools doesn't ship, each arch alone stays on the
-# plain SwiftPM build path, so build twice and merge with lipo instead.
 BINS=()
 for arch in arm64 x86_64; do
   echo "▸ Building ${arch} release..."
@@ -100,7 +91,7 @@ BIN="${SCRATCH}/${EXE}-universal"
 lipo -create -output "${BIN}" "${BINS[@]}"
 
 # --- assemble the .app bundle ------------------------------------------------
-echo "▸ Assembling ${BUNDLE}..."
+echo "▸ Assembling Metrora Menubar (${BUNDLE})..."
 pkill -x "${EXE}" 2>/dev/null || true; sleep 1
 rm -rf "${BUNDLE}"
 mkdir -p "${BUNDLE}/Contents/MacOS" "${BUNDLE}/Contents/Resources"
@@ -121,19 +112,19 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleDisplayName</key><string>CodeBurn Menubar</string>
+    <key>CFBundleDisplayName</key><string>Metrora Menubar</string>
     <key>CFBundleExecutable</key><string>${EXE}</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>${EXE}</string>
+    <key>CFBundleName</key><string>Metrora Menubar</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>${MIN_MACOS}</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>© AgentSeal</string>
+    <key>NSHumanReadableCopyright</key><string>© Maikol Siragusa</string>
 </dict>
 </plist>
 PLIST
@@ -144,7 +135,7 @@ codesign --force --sign - --timestamp=none --deep "${BUNDLE}"
 codesign --verify --deep --strict "${BUNDLE}"
 
 echo ""
-echo "✓ Installed ${BUNDLE}"
+echo "✓ Installed Metrora Menubar at ${BUNDLE}"
 lipo -info "${BUNDLE}/Contents/MacOS/${EXE}" | sed 's/^/  /'
 vtool -show-build "${BUNDLE}/Contents/MacOS/${EXE}" 2>/dev/null | grep -iE "minos|sdk" | sed 's/^/  /'
-echo "  Launch with: codeburn menubar   (or: open '${BUNDLE}')"
+echo "  Launch with: metrora menubar   (or: open '${BUNDLE}')"
