@@ -65,18 +65,35 @@ function assertInside(root, target, label) {
   }
 }
 
+async function readPhysicalInventory(candidateDirectory) {
+  const candidate = resolve(candidateDirectory)
+  const text = await readFile(join(candidate, inventoryFile), 'utf8')
+  const entries = parsePhysicalCandidateInventory(text)
+  const summary = summarizeInventory(entries, text)
+  if (summary.inventorySha256 !== sha256Text(text)) {
+    throw new Error('physical candidate inventory digest is inconsistent')
+  }
+  return { candidate, text, entries, summary }
+}
+
+export async function verifyPhysicalCanonicalPayload(options) {
+  const { entries, summary } = await readPhysicalInventory(options.candidateDirectory)
+  const canonical = resolve(options.canonicalDirectory)
+  const actual = await collectPayloadInventory(canonical)
+  if (serializeInventory(actual) !== serializeInventory(entries)) {
+    throw new Error('physical canonical payload does not match its candidate inventory')
+  }
+  return summary
+}
+
 export async function materializePhysicalCanonicalPayload(options) {
-  const candidate = resolve(options.candidateDirectory)
+  const { candidate, entries } = await readPhysicalInventory(options.candidateDirectory)
   const output = resolve(options.outputDirectory)
   if (isInsideOrEqual(candidate, output)) {
     throw new Error('physical canonical output must remain outside the candidate directory')
   }
 
-  const inventoryPath = join(candidate, inventoryFile)
   const portable = join(candidate, 'portable')
-  const text = await readFile(inventoryPath, 'utf8')
-  const entries = parsePhysicalCandidateInventory(text)
-
   await rm(output, { recursive: true, force: true })
   await mkdir(output, { recursive: true })
 
@@ -94,13 +111,8 @@ export async function materializePhysicalCanonicalPayload(options) {
     await copyFile(source, destination)
   }
 
-  const actual = await collectPayloadInventory(output)
-  if (serializeInventory(actual) !== serializeInventory(entries)) {
-    throw new Error('materialized physical canonical payload does not match its inventory')
-  }
-  const summary = summarizeInventory(entries, text)
-  if (summary.inventorySha256 !== sha256Text(text)) {
-    throw new Error('physical candidate inventory digest is inconsistent')
-  }
-  return summary
+  return verifyPhysicalCanonicalPayload({
+    candidateDirectory: candidate,
+    canonicalDirectory: output,
+  })
 }
