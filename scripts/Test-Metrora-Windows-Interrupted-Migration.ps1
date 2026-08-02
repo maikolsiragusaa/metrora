@@ -49,14 +49,15 @@ function Get-BoundedWindowsAuthority([string]$InstallDirectory) {
   $executable = Join-Path $InstallDirectory 'Metrora.exe'
   $uninstaller = Join-Path $InstallDirectory 'Uninstall Metrora.exe'
   $entries = @(Get-MetroraUninstallEntries $InstallDirectory $uninstaller)
-  $shortcuts = if (Test-Path -LiteralPath $executable) { @(Get-MetroraShortcuts $executable) } else { @() }
+  $shortcuts = @(if (Test-Path -LiteralPath $executable) { Get-MetroraShortcuts $executable })
+  $registrationVersions = @($entries | ForEach-Object { $_.DisplayVersion } | Sort-Object -Unique)
   $fileVersion = if (Test-Path -LiteralPath $executable) { (Get-Item -LiteralPath $executable).VersionInfo.FileVersion } else { $null }
   return [pscustomobject]@{
     executablePresent = Test-Path -LiteralPath $executable
     uninstallerPresent = Test-Path -LiteralPath $uninstaller
     fileVersion = $fileVersion
     registrationCount = $entries.Count
-    registrationVersions = @($entries.DisplayVersion | Sort-Object -Unique)
+    registrationVersions = $registrationVersions
     shortcutCount = $shortcuts.Count
   }
 }
@@ -99,12 +100,12 @@ try {
   $sentinel = New-MetroraStateSentinel $roamingDirectory 'r1bcb-user-owned-state.txt'
 
   Invoke-MetroraSilentInstall $baselineInstallerPath $installDirectory 'interruption baseline install'
-  $baselineInstalled = Assert-MetroraInstalledApplication `
+  Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $baselinePayload `
     -RepositoryRoot $repository `
     -ExpectedVersion $BaselineVersion `
-    -Launch
+    -Launch | Out-Null
   Assert-MetroraStateSentinel $sentinel 'baseline before interruption'
 
   Remove-Item -LiteralPath $readyMarker, $releaseMarker -Force -ErrorAction SilentlyContinue
@@ -115,16 +116,19 @@ try {
     }
     Test-Path -LiteralPath $readyMarker
   } 90 'interruption installer did not reach the deterministic checkpoint'
+  Write-Host "R1.B.C.B checkpoint observed: $readyMarker"
   Assert-MetroraStateSentinel $sentinel 'interruption checkpoint'
 
   & taskkill.exe /PID $interruptProcess.Id /T /F | Out-Null
   Wait-MetroraCondition { $interruptProcess.HasExited } 30 'interruption installer process tree did not stop'
+  Write-Host "R1.B.C.B installer process tree terminated after checkpoint."
   $interruptProcess = $null
   Start-Sleep -Seconds 2
   Assert-MetroraStateSentinel $sentinel 'installer termination'
 
   $interruptedState = Get-InstalledState $baselinePayload $candidatePayload $installDirectory $repository
   $interruptedAuthority = Get-BoundedWindowsAuthority $installDirectory
+  Write-Host "R1.B.C.B interrupted state: $([ordered]@{ classification = $interruptedState.classification; authority = $interruptedAuthority } | ConvertTo-Json -Depth 5 -Compress)"
   Assert-MetroraStateSentinel $sentinel 'interrupted-state classification'
 
   if ($interruptedState.classification -eq 'mixed') {
