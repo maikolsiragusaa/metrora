@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metrora.eu/schemas/windows-release-candidate-manifest.v1.schema.json",
+  "title": "Metrora Windows Release Candidate Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "version",
+    "schema",
+    "product",
+    "source",
+    "build",
+    "reproducibility",
+    "payload"
+  ],
+  "properties": {
+    "kind": {
+      "const": "metrora.windows-release-candidate-manifest"
+    },
+    "version": {
+      "const": 1
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "const": "RELEASE_MANIFEST.schema.json" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "packageName", "appId", "version", "homepage", "visualIdentity"],
+      "properties": {
+        "name": { "const": "Metrora" },
+        "packageName": { "const": "metrora-desktop" },
+        "appId": { "const": "eu.metrora.desktop" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "homepage": { "const": "https://metrora.eu" },
+        "visualIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "const": "Signal Grid" },
+            "version": { "const": "1.0" }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "tree", "sourceDateEpoch"],
+      "properties": {
+        "repository": { "const": "maikolsiragusaa/metrora" },
+        "commit": { "$ref": "#/$defs/gitSha1" },
+        "tree": { "$ref": "#/$defs/gitSha1" },
+        "sourceDateEpoch": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "artifactType",
+        "distribution",
+        "node",
+        "electron",
+        "electronBuilder",
+        "inputFiles"
+      ],
+      "properties": {
+        "target": { "const": "windows-x64" },
+        "artifactType": { "const": "portable-directory" },
+        "distribution": {
+          "enum": ["unsigned-development-artifact", "unsigned-release-candidate"]
+        },
+        "node": { "type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "electron": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "electronBuilder": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "inputFiles": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "payloadFullyInventoried", "byteForByteArchiveProven", "note"],
+      "properties": {
+        "level": { "const": "content-addressed-candidate" },
+        "payloadFullyInventoried": { "const": true },
+        "byteForByteArchiveProven": { "const": false },
+        "note": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventoryFile", "fileCount", "totalBytes", "inventorySha256"],
+      "properties": {
+        "inventoryFile": { "const": "PAYLOAD_MANIFEST.jsonl" },
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 1 },
+        "inventorySha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gitSha1": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    }
+  }
+}

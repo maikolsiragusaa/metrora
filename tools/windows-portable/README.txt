@@ -1,43 +1,51 @@
-METRORA WINDOWS PORTABLE BASELINE
-=================================
+METRORA WINDOWS PORTABLE VALIDATION CANDIDATE
+=============================================
 
-This is an unsigned development artifact for controlled validation before
-Metrora's historical price engine is connected to visible runtime totals.
+This is an unsigned Metrora artifact for controlled Windows validation. It is
+not an official signed release.
 
 USAGE
 -----
 
 1. Extract the whole GitHub Actions artifact ZIP.
 2. Keep every file in the extracted folder together.
-3. Double-click Run-Metrora-Baseline.cmd.
-4. Leave the window open until it reports completion.
-5. Open the new baseline-output folder.
+3. Verify the release metadata described below.
+4. Open Metrora.exe for normal desktop validation.
+5. Use Run-Metrora-Baseline.cmd only when a diagnostic baseline package is
+   specifically required.
 
-The script produces:
+The optional baseline script produces:
 
 - a shareable Metrora-Baseline-*.zip containing Metrora reports;
-- CodeBurn comparison reports when a `codeburn` command is found in PATH;
-- a separate PRIVATE-DO-NOT-UPLOAD-codeburn-cache-*.zip when the inherited
-  cache exists.
+- compatibility comparison reports when the legacy comparison CLI is available;
+- a separate PRIVATE-DO-NOT-UPLOAD cache backup when the inherited cache exists.
 
-The PRIVATE cache backup is for rollback and forensic comparison only. It is
+The private cache backup is for rollback and forensic comparison only. It is
 never included in the shareable ZIP and must be kept locally.
 
 NO REPOSITORY OR NODE INSTALLATION IS REQUIRED
 -----------------------------------------------
 
 The portable folder contains Electron, the Metrora desktop application and the
-self-contained compatibility CLI runtime. The baseline launcher invokes that
-bundled runtime directly.
+self-contained compatibility CLI runtime.
 
-CODEBURN NOT DETECTED
----------------------
+RELEASE METADATA
+----------------
 
-The Metrora baseline remains valid. To add a CodeBurn comparison, open
-PowerShell in this folder and run:
+Verify these files before running the candidate:
 
-  powershell -ExecutionPolicy Bypass -File .\Run-Metrora-Baseline.ps1 `
-    -CodeBurnPath "C:\path\to\codeburn.cmd"
+- RELEASE_MANIFEST.json — deterministic product, source, build-input and payload
+  summary;
+- RELEASE_MANIFEST.schema.json — versioned public manifest schema;
+- PAYLOAD_MANIFEST.jsonl — sorted SHA-256 and size inventory for every payload
+  file;
+- BUILD_ATTESTATION.json — variable GitHub Actions run metadata bound to the
+  deterministic manifest;
+- SHA256SUMS.txt — checksums for the release metadata files.
+
+The candidate claims content-addressed verification only. Byte-for-byte
+reproduction of the Electron directory or downloaded artifact ZIP is not yet
+claimed.
 
 PRIVACY
 -------
@@ -45,11 +53,12 @@ PRIVACY
 Nothing is uploaded automatically. Baseline reports do not intentionally export
 prompts, responses, source code, patches or credentials, but they can contain
 project labels, local probe paths, model/provider names and session identifiers.
-Review the shareable ZIP before sending it anywhere.
+Review a diagnostic ZIP before sending it anywhere.
 
 UNSIGNED BUILD
 --------------
 
-Windows SmartScreen may warn because this development artifact is not yet code
-signed. Verify BUILD_INFO.txt and SHA256SUMS.txt from the same artifact before
-running it. Official signed Metrora releases do not exist yet.
+Windows SmartScreen may warn because this validation artifact is not code
+signed. Official signed Metrora releases do not exist yet. Development and
+unsigned release-candidate artifacts must remain separate from future official
+signed downloads.

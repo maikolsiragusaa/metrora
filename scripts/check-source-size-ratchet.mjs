@@ -20,6 +20,7 @@ function normalized(path) {
 function isTestFile(path) {
   return /(^|\/)(__tests__|test|tests)(\/|$)/.test(path)
     || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path)
+    || /\.node-test\.[cm]?[jt]s$/.test(path)
 }
 
 async function collect(directory) {
