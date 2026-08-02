@@ -4,6 +4,7 @@ import process from 'node:process'
 import { resolve } from 'node:path'
 
 import { materializePhysicalCanonicalPayload } from './windows-physical-candidate.mjs'
+import { sha256File } from './windows-release-manifest-lib.mjs'
 import { verifyWindowsCandidateLayout } from './windows-release-layout.mjs'
 
 function parse(argv) {
@@ -52,6 +53,9 @@ const canonical = await materializePhysicalCanonicalPayload({
   candidateDirectory,
   outputDirectory: resolve(args.output),
 })
+const releaseManifestSha256 = await sha256File(
+  resolve(candidateDirectory, 'portable', 'RELEASE_MANIFEST.json'),
+)
 
 process.stdout.write(`${JSON.stringify({
   status: 'pass',
@@ -60,9 +64,7 @@ process.stdout.write(`${JSON.stringify({
   canonicalFileCount: canonical.fileCount,
   canonicalTotalBytes: canonical.totalBytes,
   canonicalInventorySha256: canonical.inventorySha256,
-  releaseManifestSha256: (await import('./windows-release-manifest-lib.mjs')).sha256File(
-    resolve(candidateDirectory, 'portable', 'RELEASE_MANIFEST.json'),
-  ),
+  releaseManifestSha256,
   formatManifestSha256: verification.formatManifestSha256,
   installerFiles: verification.installerFiles,
 })}\n`)
