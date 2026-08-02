@@ -89,13 +89,20 @@ app = replaceOnce(
   'attributed status mark',
 )
 
-const alertPattern = /    private func codeburnAlertIcon\(\) -> NSImage\? \{[\s\S]*?\n    \}\n\n    private /m
+const alertPattern = /    private func codeburnAlertIcon\(\) -> NSImage\? \{[\s\S]*?\n    \}\n\n    @objc private func checkForUpdates/m
 if (!alertPattern.test(app)) throw new Error('alert icon function not found')
 app = app.replace(alertPattern, `    private func codeburnAlertIcon() -> NSImage? {
         Self.signalGridImage(size: 32, tint: NSColor.systemBlue)
     }
 
-    private `)
+    @objc private func checkForUpdates`)
+
+app = app
+  .replaceAll('About CodeBurn', 'About Metrora')
+  .replaceAll('Quit CodeBurn', 'Quit Metrora')
+  .replaceAll('window.title = "CodeBurn Settings"', 'window.title = "Metrora Settings"')
+  .replaceAll('Your codeburn CLI is too old', 'Your Metrora CLI is too old')
+  .replaceAll('codeburn menubar --force', 'metrora menubar --force')
 
 await writeFile(appPath, app)
 
@@ -120,7 +127,7 @@ content = content.replace(loadingPattern, `private struct SignalGridLoadingMark:
 
     var body: some View {
         HStack(alignment: .bottom, spacing: size * 0.07) {
-            ForEach(Array(heights.enumerated()), id: \\.offset) { index, ratio in
+            ForEach(Array(heights.enumerated()), id: \.offset) { index, ratio in
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(
                         fillProgress >= CGFloat(index + 1) / CGFloat(heights.count)
