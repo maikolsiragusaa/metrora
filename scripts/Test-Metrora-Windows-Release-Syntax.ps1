@@ -11,7 +11,8 @@ $paths = @(
   'scripts\windows-install-test-lib.ps1',
   'scripts\windows-installed-app-test-lib.ps1',
   'scripts\Test-Metrora-Windows-Install.ps1',
-  'scripts\Test-Metrora-Windows-Migration.ps1'
+  'scripts\Test-Metrora-Windows-Migration.ps1',
+  'scripts\Test-Metrora-Windows-Interrupted-Migration.ps1'
 )
 
 $failures = @()
