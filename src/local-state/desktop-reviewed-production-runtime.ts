@@ -15,6 +15,7 @@ import type {
 export type DesktopCanonicalReviewedScannerInputV1 = {
   endpointId: string
   adapterVersion: string
+  notBefore: string
 }
 
 export type DesktopCanonicalReviewedScannerV1 = (
@@ -121,8 +122,8 @@ function recoveryResult(
 /**
  * Extend the private desktop Workspace runtime without exposing identity or
  * canonical calls. Electron receives zero-argument actions; the trusted scanner
- * receives only public endpoint/version inputs and its candidates stay inside
- * the main process.
+ * receives only public endpoint/version inputs plus the Workspace creation
+ * boundary derived inside the protected runtime.
  */
 export function attachDesktopReviewedProductionV1(
   input: AttachDesktopReviewedProductionV1Options,
@@ -140,11 +141,12 @@ export function attachDesktopReviewedProductionV1(
       const summary = await produceCanonicalReviewedMeasurementsV1({
         dataDir: input.dataDir,
         identity: input.identity,
-        scanCanonicalCandidates: async () => {
+        scanCanonicalCandidates: async ({ notBefore }) => {
           try {
             return await input.scanCanonicalCandidates!({
               endpointId: input.identity.metadata.endpointId,
               adapterVersion: input.adapterVersion,
+              notBefore,
             })
           } catch (error) {
             throw scannerError(error)
