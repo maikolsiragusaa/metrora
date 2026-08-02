@@ -9,6 +9,26 @@ function Write-MetroraUtf8Json([string]$Path, $Value) {
   [IO.File]::WriteAllText($Path, $json, [Text.UTF8Encoding]::new($false))
 }
 
+function Assert-MetroraPhysicalRepositoryAuthority([string]$RepositoryRoot, [string]$ExpectedCommit) {
+  if ($ExpectedCommit -notmatch '^[a-f0-9]{40}$') {
+    throw 'physical acceptance expected commit is invalid'
+  }
+  $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
+  $head = (& git -C $repository rev-parse HEAD 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $head -ne $ExpectedCommit) {
+    throw 'physical acceptance repository HEAD does not match the candidate source commit'
+  }
+  & git -C $repository diff --quiet -- .
+  if ($LASTEXITCODE -ne 0) {
+    throw 'physical acceptance repository has modified tracked files'
+  }
+  & git -C $repository diff --cached --quiet -- .
+  if ($LASTEXITCODE -ne 0) {
+    throw 'physical acceptance repository has staged tracked changes'
+  }
+  return $repository
+}
+
 function Get-MetroraWindowsPlatform {
   if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'physical Windows acceptance must run on Windows'
