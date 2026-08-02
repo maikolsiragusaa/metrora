@@ -28,7 +28,11 @@ function Get-MetroraGuideSiblingDirectory([string]$AcceptanceDirectory, [string]
 function Read-MetroraGuideResultStatus([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
   $value = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-  return [string]$value.status
+  $status = [string]$value.status
+  if (@('pass', 'fail', 'not-run') -notcontains $status) {
+    throw "Risultato guidato con stato non valido: $Path"
+  }
+  return $status
 }
 
 function Get-MetroraPhysicalGuidePhase([string]$AcceptanceDirectory) {
@@ -64,6 +68,29 @@ function Get-MetroraCurrentProfileFingerprint {
   } finally {
     $sha.Dispose()
   }
+}
+
+function Assert-MetroraGuideProfileRole(
+  [string]$PrimaryProfileFingerprint,
+  [ValidateSet('primary', 'dedicated')]
+  [string]$RequiredRole,
+  [string]$CurrentProfileFingerprint = (Get-MetroraCurrentProfileFingerprint)
+) {
+  if (
+    $PrimaryProfileFingerprint -notmatch '^[a-f0-9]{64}$' -or
+    $CurrentProfileFingerprint -notmatch '^[a-f0-9]{64}$'
+  ) {
+    throw 'Fingerprint del profilo Windows non valido.'
+  }
+
+  $sameProfile = $CurrentProfileFingerprint -eq $PrimaryProfileFingerprint
+  if ($RequiredRole -eq 'primary' -and -not $sameProfile) {
+    throw 'P1 deve essere completata dallo stesso profilo Windows che ha preparato il test.'
+  }
+  if ($RequiredRole -eq 'dedicated' -and $sameProfile) {
+    throw 'Sei ancora nel profilo Windows principale. Accedi a un utente locale separato e rilancia il file di continuazione.'
+  }
+  return $CurrentProfileFingerprint
 }
 
 function Write-MetroraGuideLocalState(
