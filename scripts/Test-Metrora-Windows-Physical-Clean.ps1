@@ -21,7 +21,6 @@ if (-not $DedicatedProfileAcknowledged) {
   throw 'P2 requires an explicitly acknowledged dedicated Windows user profile'
 }
 
-$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
 $canonical = (Resolve-Path -LiteralPath (Join-Path $acceptance 'canonical-payload')).Path
 $contextPath = Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json'
@@ -33,6 +32,7 @@ if (
 ) {
   throw 'physical acceptance context is invalid'
 }
+$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
 $candidate = (Resolve-Path -LiteralPath (Join-Path $acceptance $context.candidate.directory)).Path
 
 $sentinelPath = Join-Path $acceptance $context.sentinel.file
