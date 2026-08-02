@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { sha256Text, stableJson } from './windows-release-manifest-lib.mjs'
+import { sha256Text } from './windows-release-manifest-lib.mjs'
 import {
   materializePhysicalCanonicalPayload,
   parsePhysicalCandidateInventory,
@@ -26,17 +26,15 @@ async function fixture() {
     await writeFile(destination, content)
     entries.push({ path, size: Buffer.byteLength(content), sha256: sha256Text(content) })
   }
-  entries.sort((left, right) => left.path.localeCompare(right.path, 'en'))
+  entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
   const inventory = `${entries.map(entry => JSON.stringify(entry)).join('\n')}\n`
   await writeFile(join(candidate, 'CANONICAL_PRODUCT_PAYLOAD.jsonl'), inventory)
-  return { root, candidate, output, entries, inventory }
+  return { root, candidate, output, entries }
 }
 
 test('parses a canonical sorted physical inventory', () => {
-  const text = `${stableJson({ path: 'a.txt', size: 1, sha256: 'a'.repeat(64) }).trim()}\n`
-  assert.deepEqual(parsePhysicalCandidateInventory(text), [
-    { path: 'a.txt', size: 1, sha256: 'a'.repeat(64) },
-  ])
+  const entry = { path: 'a.txt', size: 1, sha256: 'a'.repeat(64) }
+  assert.deepEqual(parsePhysicalCandidateInventory(`${JSON.stringify(entry)}\n`), [entry])
 })
 
 test('rejects traversal and duplicate inventory entries', () => {
@@ -47,6 +45,15 @@ test('rejects traversal and duplicate inventory entries', () => {
   )
   const duplicate = JSON.stringify({ path: 'same', size: 1, sha256: digest })
   assert.throws(() => parsePhysicalCandidateInventory(`${duplicate}\n${duplicate}\n`), /duplicate path/)
+})
+
+test('rejects unsorted inventory entries', () => {
+  const digest = 'a'.repeat(64)
+  const text = [
+    { path: 'z.txt', size: 1, sha256: digest },
+    { path: 'a.txt', size: 1, sha256: digest },
+  ].map(entry => JSON.stringify(entry)).join('\n')
+  assert.throws(() => parsePhysicalCandidateInventory(`${text}\n`), /not sorted canonically/)
 })
 
 test('materializes only canonical inventoried files', async () => {
