@@ -10,6 +10,15 @@ import {
 
 const ENDPOINT_ID = 'ep_11111111-2222-4333-8444-555555555555'
 const SOURCE_PATH = '/private/zed/db/threads.sqlite'
+const NOT_BEFORE = '2026-08-01T20:00:00.000Z'
+
+function scanInput(notBefore = NOT_BEFORE) {
+  return {
+    endpointId: ENDPOINT_ID,
+    adapterVersion: '0.9.19',
+    notBefore,
+  }
+}
 
 function zedCall(overrides: Partial<CachedCall> = {}): CachedCall {
   return {
@@ -89,10 +98,7 @@ describe('canonical reviewed-production scanner v1', () => {
   it('derives one path-free reviewed candidate from a present canonical source', async () => {
     const deps = dependencies(cache({ [SOURCE_PATH]: cachedFile([zedCall()]) }))
 
-    const result = await scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps)
+    const result = await scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)
 
     expect(deps.refresh).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ withheldCount: 0, failedCount: 0 })
@@ -119,6 +125,48 @@ describe('canonical reviewed-production scanner v1', () => {
     expect(serializedContext).not.toContain('zed:thread-1:request-1')
   })
 
+  it('ignores pre-Workspace history without treating it as withheld evidence', async () => {
+    const deps = dependencies(cache({
+      [SOURCE_PATH]: cachedFile([
+        zedCall({
+          timestamp: '2026-08-01T19:59:59.999Z',
+          deduplicationKey: 'zed:before-workspace',
+        }),
+        zedCall({
+          timestamp: NOT_BEFORE,
+          deduplicationKey: 'zed:at-workspace-boundary',
+        }),
+        zedCall({
+          timestamp: '2026-08-01T20:00:00.001Z',
+          deduplicationKey: 'zed:after-workspace',
+        }),
+      ]),
+    }))
+
+    const result = await scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)
+
+    expect(result).toMatchObject({ withheldCount: 0, failedCount: 0 })
+    expect(result.candidates.map(candidate => candidate.call.deduplicationKey)).toEqual([
+      'zed:at-workspace-boundary',
+      'zed:after-workspace',
+    ])
+  })
+
+  it('does not inspect source/provider metadata when a file contains only pre-Workspace calls', async () => {
+    const deps = dependencies(cache({
+      [SOURCE_PATH]: cachedFile([
+        zedCall({ timestamp: '2026-07-01T00:00:00.000Z' }),
+      ]),
+    }))
+
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)).resolves.toEqual({
+      candidates: [],
+      withheldCount: 0,
+      failedCount: 0,
+    })
+    expect(deps.providerDisplayName).not.toHaveBeenCalled()
+  })
+
   it('keeps the source-record fingerprint stable, path-independent, and endpoint-scoped', () => {
     const first = canonicalSourceRecordFingerprintSha256V1({
       endpointId: ENDPOINT_ID,
@@ -141,16 +189,13 @@ describe('canonical reviewed-production scanner v1', () => {
     expect(anotherEndpoint).not.toBe(first)
   })
 
-  it('withholds source-less durable history instead of promoting cached analytics', async () => {
+  it('withholds source-less in-scope history instead of promoting cached analytics', async () => {
     const deps = dependencies(
       cache({ [SOURCE_PATH]: cachedFile([zedCall(), zedCall({ deduplicationKey: 'zed:thread-1:request-2' })]) }),
       { existing: new Set() },
     )
 
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps)).resolves.toEqual({
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)).resolves.toEqual({
       candidates: [],
       withheldCount: 2,
       failedCount: 0,
@@ -183,10 +228,7 @@ describe('canonical reviewed-production scanner v1', () => {
       displayNames: { zed: 'Zed', cursor: 'Cursor' },
     })
 
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps)).resolves.toEqual({
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)).resolves.toEqual({
       candidates: [],
       withheldCount: 3,
       failedCount: 0,
@@ -198,10 +240,7 @@ describe('canonical reviewed-production scanner v1', () => {
       [SOURCE_PATH]: cachedFile([], { failed: true }),
     }))
 
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps)).resolves.toEqual({
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)).resolves.toEqual({
       candidates: [],
       withheldCount: 0,
       failedCount: 1,
@@ -210,18 +249,14 @@ describe('canonical reviewed-production scanner v1', () => {
 
   it('fails closed on incomplete cache or provider-section contradictions', async () => {
     const incomplete = dependencies(cache({}, false))
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, incomplete)).rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), incomplete))
+      .rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
 
     const contradictory = dependencies(cache({
       [SOURCE_PATH]: cachedFile([zedCall({ provider: 'codex' })]),
     }))
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, contradictory)).rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), contradictory))
+      .rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
   })
 
   it('bounds malformed cached call validation failures', async () => {
@@ -230,10 +265,7 @@ describe('canonical reviewed-production scanner v1', () => {
     })
     const deps = dependencies(cache({ [SOURCE_PATH]: cachedFile([malformed]) }))
 
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps)).rejects.toEqual(expect.objectContaining({
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps)).rejects.toEqual(expect.objectContaining({
       name: 'CanonicalReviewedProductionScannerIntegrityError',
       message: 'canonical cached call could not be validated',
     }))
@@ -243,9 +275,21 @@ describe('canonical reviewed-production scanner v1', () => {
     const deps = dependencies(cache({
       [SOURCE_PATH]: cachedFile([zedCall({ deduplicationKey: '' })]),
     }))
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps)).rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), deps))
+      .rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
+  })
+
+  it('rejects malformed trusted time boundaries and cached timestamps', async () => {
+    const deps = dependencies(cache({ [SOURCE_PATH]: cachedFile([zedCall()]) }))
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput('not-a-time'), deps)).rejects.toThrow()
+
+    const malformedCallDeps = dependencies(cache({
+      [SOURCE_PATH]: cachedFile([zedCall({ timestamp: 'not-a-time' })]),
+    }))
+    await expect(scanCanonicalReviewedProductionCandidatesV1(scanInput(), malformedCallDeps))
+      .rejects.toEqual(expect.objectContaining({
+        name: 'CanonicalReviewedProductionScannerIntegrityError',
+        message: 'canonical cached call has an invalid timestamp',
+      }))
   })
 })
