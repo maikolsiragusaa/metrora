@@ -49,7 +49,6 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       MIGRATION_BASELINE_COMMIT: '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
       MIGRATION_BASELINE_VERSION: '0.9.18'
-      CURRENT_CANDIDATE_VERSION: '0.9.19'
     steps:
       - uses: actions/checkout@v4
 
@@ -282,6 +281,7 @@ jobs:
       - name: Validate upgrade, reinstall, rollback, and re-upgrade
         shell: pwsh
         run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
           & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
             -File scripts\Test-Metrora-Windows-Migration.ps1 `
             -BaselineInstaller "migration-baseline\app\release\Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe" `
@@ -290,7 +290,7 @@ jobs:
             -CandidatePayloadDirectory app\release\win-unpacked `
             -RepositoryRoot $PWD `
             -BaselineVersion $env:MIGRATION_BASELINE_VERSION `
-            -CandidateVersion $env:CURRENT_CANDIDATE_VERSION
+            -CandidateVersion $candidateVersion
           if ($LASTEXITCODE -ne 0) { throw 'Windows migration acceptance failed' }
 
       - name: Upload Windows installer and portable candidate
