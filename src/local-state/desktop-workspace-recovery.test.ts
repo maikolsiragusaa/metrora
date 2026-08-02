@@ -7,6 +7,7 @@ import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 import type { ParsedApiCall } from '../types.js'
 import {
   attachDesktopReviewedProductionV1,
+  type DesktopCanonicalReviewedScannerV1,
   type DesktopReviewedProductionRuntimeV1,
 } from './desktop-reviewed-production-runtime.js'
 import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
@@ -80,7 +81,18 @@ function context(): LocalReviewedMeasurementContextV1 {
   }
 }
 
-async function setup(dataDir: string): Promise<DesktopReviewedProductionRuntimeV1> {
+function candidateScan() {
+  return {
+    candidates: [{ call: call(), context: context() }],
+    withheldCount: 0,
+    failedCount: 0,
+  }
+}
+
+async function setup(
+  dataDir: string,
+  scanCanonicalCandidates: DesktopCanonicalReviewedScannerV1 = async () => candidateScan(),
+): Promise<DesktopReviewedProductionRuntimeV1> {
   const identity = await loadOrCreateLocalEndpointIdentityV1({
     dataDir,
     protector: new Aes256GcmSecretProtector(Buffer.alloc(32, 7)),
@@ -101,11 +113,7 @@ async function setup(dataDir: string): Promise<DesktopReviewedProductionRuntimeV
     dataDir,
     identity,
     adapterVersion: '0.9.19',
-    scanCanonicalCandidates: async () => ({
-      candidates: [{ call: call(), context: context() }],
-      withheldCount: 0,
-      failedCount: 0,
-    }),
+    scanCanonicalCandidates,
     now: () => new Date(NOW),
   })
 }
@@ -115,9 +123,12 @@ afterEach(async () => {
 })
 
 describe.sequential('desktop Workspace recovery v1', () => {
-  it('repairs interrupted event publication from the existing private receipt', async () => {
+  it('repairs an interrupted receipt even when the bounded retry no longer returns that call', async () => {
     const dataDir = await root()
-    const runtime = await setup(dataDir)
+    const scan = vi.fn<DesktopCanonicalReviewedScannerV1>()
+      .mockResolvedValueOnce(candidateScan())
+      .mockResolvedValue({ candidates: [], withheldCount: 0, failedCount: 0 })
+    const runtime = await setup(dataDir, scan)
     await runtime.createWorkspace({
       displayName: 'Local Workspace',
       endpointDisplayName: 'Primary desktop',
@@ -139,19 +150,30 @@ describe.sequential('desktop Workspace recovery v1', () => {
         outcome: 'reconciled',
         retryAttempted: true,
         blocker: null,
-        production: { producedCount: 0, existingCount: 1 },
+        receiptRepairCount: 1,
+        production: { producedCount: 0, existingCount: 0 },
       },
       snapshot: {
         evidence: { pendingEventCount: 1, unbatchedEventCount: 1, invalidEventCount: 0 },
       },
     })
+    expect(scan).toHaveBeenCalledTimes(2)
+    expect(await readdir(eventDir)).toHaveLength(1)
+
+    const second = await runtime.recoverLocalState()
+    expect(second.summary).toMatchObject({
+      outcome: 'healthy',
+      receiptRepairCount: 0,
+      production: { producedCount: 0, existingCount: 0 },
+    })
     expect(await readdir(eventDir)).toHaveLength(1)
     runtime.dispose()
   })
 
-  it('stops before scanning when production is paused', async () => {
+  it('stops before receipt repair or scanning when production is paused', async () => {
     const dataDir = await root()
-    const runtime = await setup(dataDir)
+    const scan = vi.fn<DesktopCanonicalReviewedScannerV1>(async () => candidateScan())
+    const runtime = await setup(dataDir, scan)
     await runtime.createWorkspace({
       displayName: 'Local Workspace',
       endpointDisplayName: 'Primary desktop',
@@ -164,30 +186,35 @@ describe.sequential('desktop Workspace recovery v1', () => {
         outcome: 'paused',
         retryAttempted: false,
         blocker: null,
+        receiptRepairCount: 0,
         production: null,
       },
       snapshot: { productionLifecycle: { mode: 'paused' } },
     })
+    expect(scan).not.toHaveBeenCalled()
     runtime.dispose()
   })
 
   it('returns workspace-required without creating state or scanning', async () => {
     const dataDir = await root()
-    const runtime = await setup(dataDir)
+    const scan = vi.fn<DesktopCanonicalReviewedScannerV1>(async () => candidateScan())
+    const runtime = await setup(dataDir, scan)
     const recovered = await runtime.recoverLocalState()
     expect(recovered).toMatchObject({
       summary: {
         outcome: 'workspace-required',
         retryAttempted: false,
         blocker: null,
+        receiptRepairCount: 0,
         production: null,
       },
       snapshot: { workspace: null, evidence: { state: 'workspace-required' } },
     })
+    expect(scan).not.toHaveBeenCalled()
     runtime.dispose()
   })
 
-  it('does not retry when public evidence is already quarantined or invalid', async () => {
+  it('does not repair or retry when public evidence is already quarantined or invalid', async () => {
     const dataDir = await root()
     const base = await setup(dataDir)
     await base.createWorkspace({
@@ -195,7 +222,6 @@ describe.sequential('desktop Workspace recovery v1', () => {
       endpointDisplayName: 'Primary desktop',
     })
     const healthy = await base.getSnapshot()
-    const scan = vi.fn(async () => ({ candidates: [], withheldCount: 0, failedCount: 0 }))
     const runtime: DesktopReviewedProductionRuntimeV1 = {
       ...base,
       getSnapshot: async () => ({
@@ -216,9 +242,9 @@ describe.sequential('desktop Workspace recovery v1', () => {
       outcome: 'blocked',
       retryAttempted: false,
       blocker: 'invalid-evidence',
+      receiptRepairCount: 0,
       production: null,
     })
-    expect(scan).not.toHaveBeenCalled()
     runtime.dispose()
   })
 })

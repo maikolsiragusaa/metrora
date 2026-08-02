@@ -145,6 +145,12 @@ export type DesktopWorkspaceRuntimeState =
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
   | { status: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
 
+type DesktopCanonicalReviewedProductionInput = {
+  endpointId: string
+  adapterVersion: string
+  notBefore: string
+}
+
 type DesktopCanonicalReviewedProductionScan = {
   candidates: readonly unknown[]
   withheldCount: number
@@ -152,10 +158,9 @@ type DesktopCanonicalReviewedProductionScan = {
 }
 
 export type DesktopReviewedProductionModule = {
-  scanCanonicalReviewedProductionCandidatesV1(input: {
-    endpointId: string
-    adapterVersion: string
-  }): Promise<DesktopCanonicalReviewedProductionScan>
+  scanCanonicalReviewedProductionCandidatesV1(
+    input: DesktopCanonicalReviewedProductionInput,
+  ): Promise<DesktopCanonicalReviewedProductionScan>
 }
 
 export type DesktopLocalStateModule = {
@@ -191,10 +196,7 @@ export type DesktopLocalStateModule = {
     metroraVersion: string
     collectorVersion: string
     capabilities: Array<'collect' | 'normalize' | 'aggregate' | 'serve-local-api'>
-    scanCanonicalCandidates(input: {
-      endpointId: string
-      adapterVersion: string
-    }): Promise<DesktopCanonicalReviewedProductionScan>
+    scanCanonicalCandidates(input: DesktopCanonicalReviewedProductionInput): Promise<DesktopCanonicalReviewedProductionScan>
   }): Promise<{
     endpoint: {
       endpointId: string
@@ -377,10 +379,9 @@ export async function initializeDesktopWorkspaceRuntimeState(
     }
     const version = deps.appVersion?.trim() || '0.0.0'
     let reviewedProductionModulePromise: Promise<DesktopReviewedProductionModule> | undefined
-    const scanCanonicalCandidates = async (input: {
-      endpointId: string
-      adapterVersion: string
-    }): Promise<DesktopCanonicalReviewedProductionScan> => {
+    const scanCanonicalCandidates = async (
+      input: DesktopCanonicalReviewedProductionInput,
+    ): Promise<DesktopCanonicalReviewedProductionScan> => {
       reviewedProductionModulePromise ??= loadReviewedProductionModule(deps)
       const reviewedProduction = await reviewedProductionModulePromise
       return reviewedProduction.scanCanonicalReviewedProductionCandidatesV1(input)

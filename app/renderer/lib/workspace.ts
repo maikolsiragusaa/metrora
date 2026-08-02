@@ -99,6 +99,7 @@ export type DesktopWorkspaceRecoverySummary = {
   outcome: 'workspace-required' | 'paused' | 'blocked' | 'healthy' | 'reconciled'
   retryAttempted: boolean
   blocker: 'invalid-evidence' | 'quarantined-evidence' | 'blocked-evidence' | null
+  receiptRepairCount: number
   production: DesktopReviewedProductionSummary | null
 }
 

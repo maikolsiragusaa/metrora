@@ -30,6 +30,10 @@ type WorkspaceRecoveryRuntime = {
   recoverLocalState(): Promise<unknown>
 }
 
+type WorkspaceBootstrapRuntime = {
+  getBootstrapSnapshot(): Promise<DesktopWorkspaceSnapshot>
+}
+
 function workspaceError(kind: string, message: string): Envelope<never> {
   return { ok: false, error: { kind, message } }
 }
@@ -121,12 +125,16 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
         return { ok: true, value: { availability: 'unavailable', reason: state.reason } satisfies DesktopWorkspaceAvailability }
       }
       try {
+        const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceBootstrapRuntime>
+        const snapshot = typeof runtime.getBootstrapSnapshot === 'function'
+          ? await runtime.getBootstrapSnapshot()
+          : await runtime.getSnapshot()
         return {
           ok: true,
           value: {
             availability: 'ready',
             vault: { backend: state.backend, masterKeyState: state.masterKeyState },
-            snapshot: await state.runtime.getSnapshot(),
+            snapshot,
           } satisfies DesktopWorkspaceAvailability,
         }
       } catch (error) {

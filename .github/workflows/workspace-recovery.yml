@@ -3,36 +3,50 @@ name: Workspace recovery
 on:
   pull_request:
     paths:
+      - 'src/local-state/desktop-workspace-bootstrap-snapshot.ts'
+      - 'src/local-state/desktop-workspace-bootstrap-snapshot.test.ts'
       - 'src/local-state/desktop-reviewed-production-runtime.ts'
+      - 'src/local-state/desktop-workspace-recovery-contract.test.ts'
       - 'src/local-state/desktop-workspace-recovery.test.ts'
       - 'src/local-state/desktop-workspace-portable-flow.test.ts'
-      - 'src/local-state/measurement-production-receipt.ts'
+      - 'src/local-state/measurement-production-receipt.test.ts'
+      - 'src/local-state/measurement-production-recovery.ts'
+      - 'src/local-state/measurement-production-recovery.test.ts'
       - 'src/local-state/reviewed-production-orchestrator.ts'
       - 'src/desktop-local-state-entry.ts'
       - 'app/electron/workspace.ts'
       - 'app/electron/preload.ts'
+      - 'app/electron/workspace-bootstrap.test.ts'
       - 'app/electron/workspace-recovery.test.ts'
       - 'app/renderer/lib/workspace.ts'
       - 'app/renderer/sections/Workspace.tsx'
       - 'app/renderer/sections/WorkspaceRecovery.test.tsx'
       - 'docs/WORKSPACE_RECOVERY_V1.md'
+      - 'docs/WORKSPACE_PRODUCTION_SCOPE_V1.md'
       - '.github/workflows/workspace-recovery.yml'
   push:
     branches: [main]
     paths:
+      - 'src/local-state/desktop-workspace-bootstrap-snapshot.ts'
+      - 'src/local-state/desktop-workspace-bootstrap-snapshot.test.ts'
       - 'src/local-state/desktop-reviewed-production-runtime.ts'
+      - 'src/local-state/desktop-workspace-recovery-contract.test.ts'
       - 'src/local-state/desktop-workspace-recovery.test.ts'
       - 'src/local-state/desktop-workspace-portable-flow.test.ts'
-      - 'src/local-state/measurement-production-receipt.ts'
+      - 'src/local-state/measurement-production-receipt.test.ts'
+      - 'src/local-state/measurement-production-recovery.ts'
+      - 'src/local-state/measurement-production-recovery.test.ts'
       - 'src/local-state/reviewed-production-orchestrator.ts'
       - 'src/desktop-local-state-entry.ts'
       - 'app/electron/workspace.ts'
       - 'app/electron/preload.ts'
+      - 'app/electron/workspace-bootstrap.test.ts'
       - 'app/electron/workspace-recovery.test.ts'
       - 'app/renderer/lib/workspace.ts'
       - 'app/renderer/sections/Workspace.tsx'
       - 'app/renderer/sections/WorkspaceRecovery.test.tsx'
       - 'docs/WORKSPACE_RECOVERY_V1.md'
+      - 'docs/WORKSPACE_PRODUCTION_SCOPE_V1.md'
       - '.github/workflows/workspace-recovery.yml'
 
 permissions:
@@ -61,12 +75,15 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Build CLI and desktop runtimes
         run: npm run build:cli
-      - name: Run receipt, recovery, and complete local-flow gates
+      - name: Run bootstrap, receipt, recovery, contract, and complete local-flow gates
         run: >-
           npx vitest --run --no-file-parallelism --testTimeout=20000
+          src/local-state/desktop-workspace-bootstrap-snapshot.test.ts
           src/local-state/measurement-production-receipt.test.ts
+          src/local-state/measurement-production-recovery.test.ts
           src/local-state/reviewed-production-orchestrator.test.ts
           src/local-state/desktop-reviewed-production-runtime.test.ts
+          src/local-state/desktop-workspace-recovery-contract.test.ts
           src/local-state/desktop-workspace-recovery.test.ts
           src/local-state/desktop-workspace-portable-flow.test.ts
       - name: Install desktop dependencies
@@ -76,9 +93,10 @@ jobs:
       - name: Smoke-import staged runtime bundles
         run: >-
           node -e "Promise.all([import('./app/build/cli/dist/desktop-local-state.js'), import('./app/build/cli/dist/desktop-reviewed-production.js')]).then(([local, scanner]) => { if (typeof local.initializeDesktopWorkspaceRuntimeV1 !== 'function') throw new Error('local runtime export missing'); if (typeof scanner.scanCanonicalReviewedProductionCandidatesV1 !== 'function') throw new Error('scanner export missing') })"
-      - name: Test recovery IPC and renderer controls
+      - name: Test bootstrap, recovery IPC, and renderer controls
         run: >-
           npm --prefix app test -- --run
+          electron/workspace-bootstrap.test.ts
           electron/workspace-recovery.test.ts
           electron/workspace.test.ts
           renderer/sections/WorkspaceRecovery.test.tsx

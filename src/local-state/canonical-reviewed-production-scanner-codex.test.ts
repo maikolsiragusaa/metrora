@@ -9,6 +9,15 @@ import {
 
 const SOURCE_PATH = '/private/codex/rollout.jsonl'
 const ENDPOINT_ID = 'ep_11111111-2222-4333-8444-555555555555'
+const NOT_BEFORE = '2026-08-01T21:00:00.000Z'
+
+function input() {
+  return {
+    endpointId: ENDPOINT_ID,
+    adapterVersion: '0.9.19',
+    notBefore: NOT_BEFORE,
+  }
+}
 
 function codexCall(overrides: Partial<CachedCall> = {}): CachedCall {
   return {
@@ -80,11 +89,11 @@ function deps(
 }
 
 describe('canonical scanner Codex provider compatibility', () => {
-  it('enriches a pre-upgrade cached call from explicit session metadata', async () => {
-    const result = await scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps([codexCall()], 'openai'))
+  it('enriches a post-creation cached call from explicit session metadata', async () => {
+    const result = await scanCanonicalReviewedProductionCandidatesV1(
+      input(),
+      deps([codexCall()], 'openai'),
+    )
 
     expect(result).toMatchObject({ withheldCount: 0, failedCount: 0 })
     expect(result.candidates).toHaveLength(1)
@@ -98,11 +107,24 @@ describe('canonical scanner Codex provider compatibility', () => {
     })
   })
 
-  it('withholds legacy Codex calls when session metadata has no provider', async () => {
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps([codexCall()], undefined))).resolves.toEqual({
+  it('does not read provider metadata for pre-Workspace Codex history', async () => {
+    const dependencies = deps([
+      codexCall({ timestamp: '2026-08-01T20:59:59.999Z' }),
+    ], 'openai')
+
+    await expect(scanCanonicalReviewedProductionCandidatesV1(input(), dependencies)).resolves.toEqual({
+      candidates: [],
+      withheldCount: 0,
+      failedCount: 0,
+    })
+    expect(dependencies.codexModelProvider).not.toHaveBeenCalled()
+  })
+
+  it('withholds legacy in-scope Codex calls when session metadata has no provider', async () => {
+    await expect(scanCanonicalReviewedProductionCandidatesV1(
+      input(),
+      deps([codexCall()], undefined),
+    )).resolves.toEqual({
       candidates: [],
       withheldCount: 1,
       failedCount: 0,
@@ -110,10 +132,9 @@ describe('canonical scanner Codex provider compatibility', () => {
   })
 
   it('fails closed when cached and source-recorded providers disagree', async () => {
-    await expect(scanCanonicalReviewedProductionCandidatesV1({
-      endpointId: ENDPOINT_ID,
-      adapterVersion: '0.9.19',
-    }, deps([codexCall({ modelProvider: 'anthropic' })], 'openai')))
-      .rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
+    await expect(scanCanonicalReviewedProductionCandidatesV1(
+      input(),
+      deps([codexCall({ modelProvider: 'anthropic' })], 'openai'),
+    )).rejects.toBeInstanceOf(CanonicalReviewedProductionScannerIntegrityError)
   })
 })

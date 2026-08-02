@@ -120,15 +120,22 @@ describe('Electron private Workspace runtime host', () => {
     expect(result.status === 'ready' && result.runtime).toBe(privateRuntime)
     expect(importReviewedProductionModule).not.toHaveBeenCalled()
 
-    await expect(scanCanonicalCandidates({
+    const input = {
       endpointId: 'endpoint_test',
       adapterVersion: '0.9.20',
-    })).resolves.toEqual({ candidates: [], withheldCount: 3, failedCount: 1 })
-    await scanCanonicalCandidates({ endpointId: 'endpoint_test', adapterVersion: '0.9.20' })
+      notBefore: '2026-08-02T00:00:00.000Z',
+    }
+    await expect(scanCanonicalCandidates(input)).resolves.toEqual({
+      candidates: [],
+      withheldCount: 3,
+      failedCount: 1,
+    })
+    await scanCanonicalCandidates(input)
 
     expect(importReviewedProductionModule).toHaveBeenCalledTimes(1)
     expect(importReviewedProductionModule.mock.calls[0]?.[0]).toContain('desktop-reviewed-production.js')
     expect(scan).toHaveBeenCalledTimes(2)
+    expect(scan).toHaveBeenNthCalledWith(1, input)
   })
 
   it('resolves packaged and development scanner paths independently', () => {

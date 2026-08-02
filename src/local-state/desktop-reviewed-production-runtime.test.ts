@@ -85,7 +85,7 @@ afterEach(async () => {
 })
 
 describe.sequential('desktop reviewed-production runtime', () => {
-  it('produces, deduplicates, pauses before scanning, and refreshes public evidence', async () => {
+  it('produces from Workspace creation, deduplicates, pauses before scanning, and refreshes evidence', async () => {
     const dataDir = await root()
     const identity = await loadOrCreateLocalEndpointIdentityV1({
       dataDir,
@@ -106,6 +106,7 @@ describe.sequential('desktop reviewed-production runtime', () => {
       expect(input).toEqual({
         endpointId: identity.metadata.endpointId,
         adapterVersion: '0.9.19',
+        notBefore: NOW,
       })
       return {
         candidates: [{ call: call(), context: context() }],
