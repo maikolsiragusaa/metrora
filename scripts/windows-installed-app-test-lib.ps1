@@ -12,10 +12,11 @@ function Assert-MetroraInstalledApplication(
   if (-not (Test-Path -LiteralPath $executable)) { throw 'installed Metrora.exe is missing' }
   if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'installed Metrora uninstaller is missing' }
 
-  & node (Join-Path $RepositoryRoot 'scripts\verify-windows-installed-layout.mjs') `
+  $layoutReport = (& node (Join-Path $RepositoryRoot 'scripts\verify-windows-installed-layout.mjs') `
     --canonical $CanonicalDirectory `
-    --installed $InstallDirectory
-  if ($LASTEXITCODE -ne 0) { throw 'installed layout verification failed' }
+    --installed $InstallDirectory 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0) { throw "installed layout verification failed: $layoutReport" }
+  Write-Host $layoutReport
 
   $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
   if ($versionInfo.ProductName -ne 'Metrora') { throw "installed ProductName is not Metrora: $($versionInfo.ProductName)" }
