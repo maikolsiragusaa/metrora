@@ -22,6 +22,7 @@ describe('desktop Workspace recovery summary v1', () => {
       outcome: 'paused',
       retryAttempted: false,
       blocker: null,
+      receiptRepairCount: 0,
       production: null,
     }).outcome).toBe('paused')
 
@@ -31,6 +32,7 @@ describe('desktop Workspace recovery summary v1', () => {
       outcome: 'blocked',
       retryAttempted: false,
       blocker: 'invalid-evidence',
+      receiptRepairCount: 0,
       production: null,
     }).outcome).toBe('blocked')
 
@@ -40,23 +42,43 @@ describe('desktop Workspace recovery summary v1', () => {
       outcome: 'healthy',
       retryAttempted: true,
       blocker: null,
+      receiptRepairCount: 0,
       production,
     }).outcome).toBe('healthy')
+
+    expect(DesktopWorkspaceRecoverySummaryV1Schema.parse({
+      kind: 'metrora.desktop-workspace-recovery-summary',
+      version: 1,
+      outcome: 'reconciled',
+      retryAttempted: true,
+      blocker: null,
+      receiptRepairCount: 1,
+      production,
+    }).outcome).toBe('reconciled')
   })
 
-  it('rejects contradictory retry, blocker, and production combinations', () => {
+  it('rejects contradictory retry, repair, blocker, and production combinations', () => {
     for (const invalid of [
       {
-        outcome: 'blocked', retryAttempted: false, blocker: null, production: null,
+        outcome: 'blocked', retryAttempted: false, blocker: null, receiptRepairCount: 0, production: null,
       },
       {
-        outcome: 'healthy', retryAttempted: false, blocker: null, production: null,
+        outcome: 'blocked', retryAttempted: false, blocker: 'invalid-evidence', receiptRepairCount: 1, production: null,
       },
       {
-        outcome: 'paused', retryAttempted: false, blocker: null, production,
+        outcome: 'healthy', retryAttempted: false, blocker: null, receiptRepairCount: 0, production: null,
       },
       {
-        outcome: 'reconciled', retryAttempted: true, blocker: 'blocked-evidence', production,
+        outcome: 'healthy', retryAttempted: true, blocker: null, receiptRepairCount: 1, production,
+      },
+      {
+        outcome: 'paused', retryAttempted: false, blocker: null, receiptRepairCount: 0, production,
+      },
+      {
+        outcome: 'reconciled', retryAttempted: true, blocker: 'blocked-evidence', receiptRepairCount: 0, production,
+      },
+      {
+        outcome: 'reconciled', retryAttempted: true, blocker: null, receiptRepairCount: 0, production,
       },
     ]) {
       expect(() => DesktopWorkspaceRecoverySummaryV1Schema.parse({
