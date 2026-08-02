@@ -1,6 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 export const RELEASE_MANIFEST_KIND = 'metrora.windows-release-candidate-manifest'
@@ -16,6 +17,7 @@ export const RELEASE_METADATA_FILES = Object.freeze([
   'SHA256SUMS.txt',
 ])
 
+const SOURCE_SCHEMA_PATH = 'release/windows-release-candidate-manifest.v1.schema.json'
 const metadataFileSet = new Set(RELEASE_METADATA_FILES)
 const allowedDistributions = new Set([
   'unsigned-development-artifact',
@@ -46,6 +48,10 @@ export function normalizeManifestPath(value) {
   return normalized
 }
 
+export function sha256Bytes(value) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
 export async function sha256File(path) {
   const hash = createHash('sha256')
   await new Promise((accept, reject) => {
@@ -58,7 +64,7 @@ export async function sha256File(path) {
 }
 
 export function sha256Text(value) {
-  return createHash('sha256').update(value, 'utf8').digest('hex')
+  return sha256Bytes(Buffer.from(value, 'utf8'))
 }
 
 async function walkFiles(root, directory = root) {
@@ -119,11 +125,45 @@ export async function readJsonFile(path) {
   return JSON.parse(await readFile(path, 'utf8'))
 }
 
-export async function hashInputFiles(repositoryRoot, paths) {
+function requireGitCommit(value) {
+  if (!gitSha1Pattern.test(value)) {
+    throw new Error('source commit must be a lowercase 40-character SHA-1')
+  }
+  return value
+}
+
+async function readSourceBytes(options, path) {
+  const repositoryRoot = resolve(options.repositoryRoot)
+  const normalized = normalizeManifestPath(path)
+  if (options.sourceFileMode === 'working-tree') {
+    return readFile(join(repositoryRoot, ...normalized.split('/')))
+  }
+  if (options.sourceFileMode && options.sourceFileMode !== 'git') {
+    throw new Error(`unsupported source file mode: ${options.sourceFileMode}`)
+  }
+  const sourceCommit = requireGitCommit(options.sourceCommit)
+  try {
+    return execFileSync('git', ['show', `${sourceCommit}:${normalized}`], {
+      cwd: repositoryRoot,
+      encoding: null,
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    const detail = error?.stderr ? Buffer.from(error.stderr).toString('utf8').trim() : ''
+    throw new Error(`could not read ${normalized} from source commit${detail ? `: ${detail}` : ''}`)
+  }
+}
+
+export async function hashInputFiles(repositoryRoot, paths, options) {
   const result = {}
   for (const input of [...paths].sort(compareText)) {
     const normalized = normalizeManifestPath(input)
-    result[normalized] = await sha256File(join(repositoryRoot, ...normalized.split('/')))
+    result[normalized] = sha256Bytes(await readSourceBytes({
+      repositoryRoot,
+      sourceCommit: options.sourceCommit,
+      sourceFileMode: options.sourceFileMode,
+    }, normalized))
   }
   return result
 }
@@ -151,9 +191,7 @@ export async function buildReleaseManifest(options) {
   const appLock = await readJsonFile(appLockPath)
   const sourceDateEpoch = Number(options.sourceDateEpoch)
 
-  if (!gitSha1Pattern.test(options.sourceCommit)) {
-    throw new Error('source commit must be a lowercase 40-character SHA-1')
-  }
+  requireGitCommit(options.sourceCommit)
   if (!gitSha1Pattern.test(options.sourceTree)) {
     throw new Error('source tree must be a lowercase 40-character SHA-1')
   }
@@ -171,15 +209,17 @@ export async function buildReleaseManifest(options) {
 
   const inventoryText = serializeInventory(options.inventory)
   const inventorySummary = summarizeInventory(options.inventory, inventoryText)
-  const schemaSha256 = await sha256File(options.schemaPath)
-  const inputFiles = await hashInputFiles(repositoryRoot, options.inputFiles)
+  const inputFiles = await hashInputFiles(repositoryRoot, options.inputFiles, {
+    sourceCommit: options.sourceCommit,
+    sourceFileMode: options.sourceFileMode,
+  })
 
   return {
     kind: RELEASE_MANIFEST_KIND,
     version: RELEASE_MANIFEST_VERSION,
     schema: {
       file: 'RELEASE_MANIFEST.schema.json',
-      sha256: schemaSha256,
+      sha256: options.schemaSha256,
     },
     product: {
       name: appPackage.build.productName,
@@ -266,12 +306,19 @@ export async function writeChecksums(bundleDirectory, fileNames) {
 export async function writeReleaseMetadata(options) {
   const bundleDirectory = resolve(options.bundleDirectory)
   const schemaDestination = join(bundleDirectory, 'RELEASE_MANIFEST.schema.json')
+  const sourceSchema = await readSourceBytes({
+    repositoryRoot: options.repositoryRoot,
+    sourceCommit: options.sourceCommit,
+    sourceFileMode: options.sourceFileMode,
+  }, SOURCE_SCHEMA_PATH)
+  const schemaSha256 = sha256Bytes(sourceSchema)
+
   await mkdir(dirname(schemaDestination), { recursive: true })
-  await copyFile(options.schemaPath, schemaDestination)
+  await writeFile(schemaDestination, sourceSchema)
 
   const inventory = await collectPayloadInventory(bundleDirectory)
   const inventoryText = serializeInventory(inventory)
-  const manifest = await buildReleaseManifest({ ...options, inventory })
+  const manifest = await buildReleaseManifest({ ...options, inventory, schemaSha256 })
   const manifestText = stableJson(manifest)
 
   await writeFile(join(bundleDirectory, 'PAYLOAD_MANIFEST.jsonl'), inventoryText, 'utf8')
@@ -387,20 +434,29 @@ function requireManifestShape(manifest) {
   }
 }
 
-async function verifySourceInputs(manifest, repositoryRoot) {
+async function verifySourceInputs(manifest, repositoryRoot, sourceFileMode) {
   const root = resolve(repositoryRoot)
   const declared = manifest.build.inputFiles
   const paths = Object.keys(declared)
   if (paths.length === 0 || paths.some(path => !sha256Pattern.test(declared[path]))) {
     throw new Error('release manifest build input inventory is invalid')
   }
-  const actual = await hashInputFiles(root, paths)
-  if (JSON.stringify(actual) !== JSON.stringify(declared)) {
-    throw new Error('release manifest build inputs do not match the checked-out source')
+  const actual = await hashInputFiles(root, paths, {
+    sourceCommit: manifest.source.commit,
+    sourceFileMode,
+  })
+  for (const path of paths) {
+    if (actual[path] !== declared[path]) {
+      throw new Error(`release manifest build input does not match source commit: ${path}`)
+    }
   }
-  const sourceSchema = join(root, 'release', 'windows-release-candidate-manifest.v1.schema.json')
-  if (await sha256File(sourceSchema) !== manifest.schema.sha256) {
-    throw new Error('release manifest schema does not match the checked-out source')
+  const sourceSchema = await readSourceBytes({
+    repositoryRoot: root,
+    sourceCommit: manifest.source.commit,
+    sourceFileMode,
+  }, SOURCE_SCHEMA_PATH)
+  if (sha256Bytes(sourceSchema) !== manifest.schema.sha256) {
+    throw new Error('release manifest schema does not match the source commit')
   }
 }
 
@@ -416,7 +472,11 @@ export async function verifyReleaseCandidate(bundleDirectory, options = {}) {
   if (options.expectedCommit && manifest.source.commit !== options.expectedCommit) {
     throw new Error('release manifest source commit does not match the expected commit')
   }
-  await verifySourceInputs(manifest, options.repositoryRoot ?? process.cwd())
+  await verifySourceInputs(
+    manifest,
+    options.repositoryRoot ?? process.cwd(),
+    options.sourceFileMode,
+  )
   if (await sha256File(join(root, 'RELEASE_MANIFEST.schema.json')) !== manifest.schema.sha256) {
     throw new Error('release manifest schema checksum mismatch')
   }
