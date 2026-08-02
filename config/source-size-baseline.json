@@ -1,0 +1,7 @@
+{
+  "defaultMaxLines": 600,
+  "frozenFiles": {
+    "src/parser.ts": 3911,
+    "app/renderer/sections/Workspace.tsx": 582
+  }
+}
