@@ -9,10 +9,12 @@ import { WorkspaceContent, workspaceUsageFromOverview } from './Workspace'
 
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
+  inspectWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
   resumeWorkspaceProduction: vi.fn(),
   produceWorkspaceMeasurements: vi.fn(),
+  recoverWorkspaceState: vi.fn(),
   createWorkspaceBatch: vi.fn(),
   exportWorkspaceEvidence: vi.fn(),
 }))
@@ -93,17 +95,38 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
   }
 }
 
+function bootstrapSnapshot(): DesktopWorkspaceSnapshot {
+  const value = snapshot(true)
+  value.evidence = {
+    state: 'blocked',
+    pendingEventCount: 0,
+    unbatchedEventCount: 0,
+    acknowledgedEventCount: 0,
+    invalidEventCount: 0,
+    quarantinedEventCount: 0,
+    pendingBatchCount: 0,
+    acknowledgedBatchCount: 0,
+    blockers: ['Full local evidence inspection is pending.'],
+  }
+  return value
+}
+
 function batchedSnapshot(): DesktopWorkspaceSnapshot {
   const value = snapshot(true)
   value.evidence.unbatchedEventCount = 0
   return value
 }
 
-function readyAvailability(withWorkspace = true): DesktopWorkspaceAvailability {
+function readyAvailability(
+  withWorkspace = true,
+  inspection: 'pending' | 'complete' = 'complete',
+  value = snapshot(withWorkspace),
+): DesktopWorkspaceAvailability {
   return {
     availability: 'ready',
+    inspection,
     vault: { backend: 'windows-dpapi', masterKeyState: 'loaded' },
-    snapshot: snapshot(withWorkspace),
+    snapshot: value,
   }
 }
 
@@ -111,13 +134,16 @@ describe('Workspace desktop view', () => {
   beforeEach(() => {
     setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     bridge.getWorkspaceStatus.mockReset()
+    bridge.inspectWorkspaceStatus.mockReset()
     bridge.createWorkspace.mockReset()
     bridge.pauseWorkspaceProduction.mockReset()
     bridge.resumeWorkspaceProduction.mockReset()
     bridge.produceWorkspaceMeasurements.mockReset()
+    bridge.recoverWorkspaceState.mockReset()
     bridge.createWorkspaceBatch.mockReset()
     bridge.exportWorkspaceEvidence.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability())
+    bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability())
   })
 
   it('projects exact canonical Overview fields without alternate aggregation', () => {
@@ -151,6 +177,37 @@ describe('Workspace desktop view', () => {
     expect(screen.getByText(/never recalculate them/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeEnabled()
     expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
+    expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
+  })
+
+  it('replaces bootstrap zeroes with a background read-only evidence inspection', async () => {
+    let resolveInspection!: (value: DesktopWorkspaceAvailability) => void
+    bridge.getWorkspaceStatus.mockResolvedValue(
+      readyAvailability(true, 'pending', bootstrapSnapshot()),
+    )
+    bridge.inspectWorkspaceStatus.mockReturnValue(new Promise(resolve => {
+      resolveInspection = resolve
+    }))
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByTestId('workspace-evidence-inspection')).toHaveTextContent(
+      'Read-only evidence verification in progress',
+    )
+    expect(screen.getByText('Pending events').parentElement).toHaveTextContent('—')
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeDisabled()
+    expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
+    expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
+
+    resolveInspection(readyAvailability())
+
+    await waitFor(() => expect(screen.queryByTestId('workspace-evidence-inspection')).not.toBeInTheDocument())
+    expect(screen.getByText('Pending events').parentElement).toHaveTextContent('3')
+    expect(screen.getByText('Unbatched events').parentElement).toHaveTextContent('3')
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeEnabled()
+    expect(bridge.inspectWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
   })
 
   it('creates the explicit personal Workspace and reuses the runtime result', async () => {
@@ -284,6 +341,7 @@ describe('Workspace desktop view', () => {
     quarantined.evidence.unbatchedEventCount = 0
     bridge.getWorkspaceStatus.mockResolvedValue({
       availability: 'ready',
+      inspection: 'complete',
       vault: { backend: 'windows-dpapi', masterKeyState: 'loaded' },
       snapshot: quarantined,
     })
