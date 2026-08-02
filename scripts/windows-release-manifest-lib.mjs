@@ -1,8 +1,12 @@
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+
+import {
+  loadCanonicalReleaseSource,
+  verifyCanonicalReleaseSource,
+} from './windows-release-source.mjs'
 
 export const RELEASE_MANIFEST_KIND = 'metrora.windows-release-candidate-manifest'
 export const RELEASE_MANIFEST_VERSION = 1
@@ -17,7 +21,6 @@ export const RELEASE_METADATA_FILES = Object.freeze([
   'SHA256SUMS.txt',
 ])
 
-const SOURCE_SCHEMA_PATH = 'release/windows-release-candidate-manifest.v1.schema.json'
 const metadataFileSet = new Set(RELEASE_METADATA_FILES)
 const allowedDistributions = new Set([
   'unsigned-development-artifact',
@@ -125,57 +128,6 @@ export async function readJsonFile(path) {
   return JSON.parse(await readFile(path, 'utf8'))
 }
 
-function requireGitCommit(value) {
-  if (!gitSha1Pattern.test(value)) {
-    throw new Error('source commit must be a lowercase 40-character SHA-1')
-  }
-  return value
-}
-
-async function readSourceBytes(options, path) {
-  const repositoryRoot = resolve(options.repositoryRoot)
-  const normalized = normalizeManifestPath(path)
-  if (options.sourceFileMode === 'working-tree') {
-    return readFile(join(repositoryRoot, ...normalized.split('/')))
-  }
-  if (options.sourceFileMode && options.sourceFileMode !== 'git') {
-    throw new Error(`unsupported source file mode: ${options.sourceFileMode}`)
-  }
-  const sourceCommit = requireGitCommit(options.sourceCommit)
-  try {
-    return execFileSync('git', ['show', `${sourceCommit}:${normalized}`], {
-      cwd: repositoryRoot,
-      encoding: null,
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-  } catch (error) {
-    const detail = error?.stderr ? Buffer.from(error.stderr).toString('utf8').trim() : ''
-    throw new Error(`could not read ${normalized} from source commit${detail ? `: ${detail}` : ''}`)
-  }
-}
-
-export async function hashInputFiles(repositoryRoot, paths, options) {
-  const result = {}
-  for (const input of [...paths].sort(compareText)) {
-    const normalized = normalizeManifestPath(input)
-    result[normalized] = sha256Bytes(await readSourceBytes({
-      repositoryRoot,
-      sourceCommit: options.sourceCommit,
-      sourceFileMode: options.sourceFileMode,
-    }, normalized))
-  }
-  return result
-}
-
-function packageVersion(lock, packageName) {
-  const version = lock?.packages?.[`node_modules/${packageName}`]?.version
-  if (typeof version !== 'string' || !version) {
-    throw new Error(`package-lock is missing an exact ${packageName} version`)
-  }
-  return version
-}
-
 function requireCanonicalDistribution(value) {
   if (!allowedDistributions.has(value)) {
     throw new Error(`unsupported Windows candidate distribution: ${value}`)
@@ -184,49 +136,38 @@ function requireCanonicalDistribution(value) {
 }
 
 export async function buildReleaseManifest(options) {
-  const repositoryRoot = resolve(options.repositoryRoot)
-  const appPackagePath = join(repositoryRoot, 'app', 'package.json')
-  const appLockPath = join(repositoryRoot, 'app', 'package-lock.json')
-  const appPackage = await readJsonFile(appPackagePath)
-  const appLock = await readJsonFile(appLockPath)
   const sourceDateEpoch = Number(options.sourceDateEpoch)
-
-  requireGitCommit(options.sourceCommit)
+  if (!gitSha1Pattern.test(options.sourceCommit)) {
+    throw new Error('source commit must be a lowercase 40-character SHA-1')
+  }
   if (!gitSha1Pattern.test(options.sourceTree)) {
     throw new Error('source tree must be a lowercase 40-character SHA-1')
   }
   if (!Number.isSafeInteger(sourceDateEpoch) || sourceDateEpoch < 0) {
     throw new Error('source date epoch must be a non-negative safe integer')
   }
-  if (
-    appPackage.name !== 'metrora-desktop'
-    || appPackage.build?.appId !== 'eu.metrora.desktop'
-    || appPackage.build?.productName !== 'Metrora'
-    || appPackage.homepage !== 'https://metrora.eu'
-  ) {
-    throw new Error('desktop package identity is not canonical Metrora')
-  }
 
-  const inventoryText = serializeInventory(options.inventory)
-  const inventorySummary = summarizeInventory(options.inventory, inventoryText)
-  const inputFiles = await hashInputFiles(repositoryRoot, options.inputFiles, {
+  const source = await loadCanonicalReleaseSource({
+    repositoryRoot: options.repositoryRoot,
     sourceCommit: options.sourceCommit,
     sourceFileMode: options.sourceFileMode,
   })
+  const inventoryText = serializeInventory(options.inventory)
+  const inventorySummary = summarizeInventory(options.inventory, inventoryText)
 
   return {
     kind: RELEASE_MANIFEST_KIND,
     version: RELEASE_MANIFEST_VERSION,
     schema: {
       file: 'RELEASE_MANIFEST.schema.json',
-      sha256: options.schemaSha256,
+      sha256: source.schemaSha256,
     },
     product: {
-      name: appPackage.build.productName,
-      packageName: appPackage.name,
-      appId: appPackage.build.appId,
-      version: appPackage.version,
-      homepage: appPackage.homepage,
+      name: source.appPackage.build.productName,
+      packageName: source.appPackage.name,
+      appId: source.appPackage.build.appId,
+      version: source.appPackage.version,
+      homepage: source.appPackage.homepage,
       visualIdentity: {
         name: 'Signal Grid',
         version: '1.0',
@@ -243,9 +184,9 @@ export async function buildReleaseManifest(options) {
       artifactType: 'portable-directory',
       distribution: requireCanonicalDistribution(options.distribution),
       node: process.version,
-      electron: packageVersion(appLock, 'electron'),
-      electronBuilder: packageVersion(appLock, 'electron-builder'),
-      inputFiles,
+      electron: source.electron,
+      electronBuilder: source.electronBuilder,
+      inputFiles: source.inputFiles,
     },
     reproducibility: {
       level: 'content-addressed-candidate',
@@ -277,6 +218,9 @@ export function buildAttestation(options) {
       throw new Error(`build attestation ${name} is invalid`)
     }
   }
+  const builtAt = new Date(options.builtAt)
+  if (Number.isNaN(builtAt.getTime())) throw new Error('build attestation timestamp is invalid')
+
   return {
     kind: RELEASE_ATTESTATION_KIND,
     version: RELEASE_ATTESTATION_VERSION,
@@ -286,7 +230,7 @@ export function buildAttestation(options) {
     runId: String(options.runId),
     runAttempt: String(options.runAttempt),
     ref: options.ref,
-    builtAt: new Date(options.builtAt).toISOString(),
+    builtAt: builtAt.toISOString(),
     runner: {
       os: options.runnerOs,
       image: options.runnerImage,
@@ -305,20 +249,18 @@ export async function writeChecksums(bundleDirectory, fileNames) {
 
 export async function writeReleaseMetadata(options) {
   const bundleDirectory = resolve(options.bundleDirectory)
-  const schemaDestination = join(bundleDirectory, 'RELEASE_MANIFEST.schema.json')
-  const sourceSchema = await readSourceBytes({
+  const source = await loadCanonicalReleaseSource({
     repositoryRoot: options.repositoryRoot,
     sourceCommit: options.sourceCommit,
     sourceFileMode: options.sourceFileMode,
-  }, SOURCE_SCHEMA_PATH)
-  const schemaSha256 = sha256Bytes(sourceSchema)
-
+  })
+  const schemaDestination = join(bundleDirectory, 'RELEASE_MANIFEST.schema.json')
   await mkdir(dirname(schemaDestination), { recursive: true })
-  await writeFile(schemaDestination, sourceSchema)
+  await writeFile(schemaDestination, source.schemaBytes)
 
   const inventory = await collectPayloadInventory(bundleDirectory)
   const inventoryText = serializeInventory(inventory)
-  const manifest = await buildReleaseManifest({ ...options, inventory, schemaSha256 })
+  const manifest = await buildReleaseManifest({ ...options, inventory })
   const manifestText = stableJson(manifest)
 
   await writeFile(join(bundleDirectory, 'PAYLOAD_MANIFEST.jsonl'), inventoryText, 'utf8')
@@ -386,14 +328,10 @@ function requireManifestShape(manifest) {
     throw new Error('release manifest kind or version is unsupported')
   }
   if (
-    manifest.product?.name !== 'Metrora'
-    || manifest.product?.packageName !== 'metrora-desktop'
-    || manifest.product?.appId !== 'eu.metrora.desktop'
-    || manifest.product?.homepage !== 'https://metrora.eu'
-    || manifest.product?.visualIdentity?.name !== 'Signal Grid'
+    manifest.product?.visualIdentity?.name !== 'Signal Grid'
     || manifest.product?.visualIdentity?.version !== '1.0'
   ) {
-    throw new Error('release manifest product identity is not canonical Metrora')
+    throw new Error('release manifest visual identity is not canonical Signal Grid')
   }
   if (
     manifest.source?.repository !== 'maikolsiragusaa/metrora'
@@ -408,8 +346,8 @@ function requireManifestShape(manifest) {
     manifest.build?.target !== 'windows-x64'
     || manifest.build?.artifactType !== 'portable-directory'
     || !allowedDistributions.has(manifest.build?.distribution)
-    || typeof manifest.build?.inputFiles !== 'object'
-    || manifest.build.inputFiles === null
+    || typeof manifest.build?.node !== 'string'
+    || !/^v\d+\.\d+\.\d+$/.test(manifest.build.node)
   ) {
     throw new Error('release manifest build identity is invalid')
   }
@@ -434,29 +372,28 @@ function requireManifestShape(manifest) {
   }
 }
 
-async function verifySourceInputs(manifest, repositoryRoot, sourceFileMode) {
-  const root = resolve(repositoryRoot)
-  const declared = manifest.build.inputFiles
-  const paths = Object.keys(declared)
-  if (paths.length === 0 || paths.some(path => !sha256Pattern.test(declared[path]))) {
-    throw new Error('release manifest build input inventory is invalid')
-  }
-  const actual = await hashInputFiles(root, paths, {
-    sourceCommit: manifest.source.commit,
-    sourceFileMode,
-  })
-  for (const path of paths) {
-    if (actual[path] !== declared[path]) {
-      throw new Error(`release manifest build input does not match source commit: ${path}`)
-    }
-  }
-  const sourceSchema = await readSourceBytes({
-    repositoryRoot: root,
-    sourceCommit: manifest.source.commit,
-    sourceFileMode,
-  }, SOURCE_SCHEMA_PATH)
-  if (sha256Bytes(sourceSchema) !== manifest.schema.sha256) {
-    throw new Error('release manifest schema does not match the source commit')
+function requireAttestationShape(attestation, manifestSha256) {
+  if (
+    attestation.kind !== RELEASE_ATTESTATION_KIND
+    || attestation.version !== RELEASE_ATTESTATION_VERSION
+    || attestation.manifestSha256 !== manifestSha256
+    || typeof attestation.provider !== 'string'
+    || !attestation.provider
+    || typeof attestation.workflow !== 'string'
+    || !attestation.workflow
+    || typeof attestation.runId !== 'string'
+    || !attestation.runId
+    || typeof attestation.runAttempt !== 'string'
+    || !attestation.runAttempt
+    || typeof attestation.ref !== 'string'
+    || !attestation.ref
+    || Number.isNaN(new Date(attestation.builtAt).getTime())
+    || typeof attestation.runner?.os !== 'string'
+    || !attestation.runner.os
+    || typeof attestation.runner?.image !== 'string'
+    || !attestation.runner.image
+  ) {
+    throw new Error('build attestation is invalid or does not bind the release manifest')
   }
 }
 
@@ -472,11 +409,10 @@ export async function verifyReleaseCandidate(bundleDirectory, options = {}) {
   if (options.expectedCommit && manifest.source.commit !== options.expectedCommit) {
     throw new Error('release manifest source commit does not match the expected commit')
   }
-  await verifySourceInputs(
-    manifest,
-    options.repositoryRoot ?? process.cwd(),
-    options.sourceFileMode,
-  )
+  await verifyCanonicalReleaseSource(manifest, {
+    repositoryRoot: options.repositoryRoot ?? process.cwd(),
+    sourceFileMode: options.sourceFileMode,
+  })
   if (await sha256File(join(root, 'RELEASE_MANIFEST.schema.json')) !== manifest.schema.sha256) {
     throw new Error('release manifest schema checksum mismatch')
   }
@@ -489,12 +425,7 @@ export async function verifyReleaseCandidate(bundleDirectory, options = {}) {
   if (inventory.reduce((sum, entry) => sum + entry.size, 0) !== manifest.payload.totalBytes) {
     throw new Error('payload inventory byte count mismatch')
   }
-  if (attestation.kind !== RELEASE_ATTESTATION_KIND || attestation.version !== RELEASE_ATTESTATION_VERSION) {
-    throw new Error('build attestation kind or version is unsupported')
-  }
-  if (attestation.manifestSha256 !== sha256Text(manifestText)) {
-    throw new Error('build attestation does not bind the release manifest')
-  }
+  requireAttestationShape(attestation, sha256Text(manifestText))
 
   const actualInventory = await collectPayloadInventory(root)
   if (actualInventory.length !== inventory.length) {
