@@ -1,5 +1,7 @@
 # Metrora visual identity — v1.0
 
+**Status:** canonical for product-facing Metrora surfaces.
+
 Metrora uses the **Signal Grid** mark: six measured vertical bars arranged as an abstract `M`. It represents local usage signals, sessions, model activity and cost being transformed into structured intelligence.
 
 ## Canonical assets
