@@ -63,6 +63,9 @@ try {
     -RepositoryRoot $repository `
     -ExpectedVersion $context.candidate.productVersion `
     -Launch
+  if ($installed.ShortcutCount -ne 1) {
+    throw "physical clean PASS requires exactly one canonical shortcut, found $($installed.ShortcutCount)"
+  }
   Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
 
   Invoke-MetroraSilentUninstall $installed $install 'physical clean uninstall'
