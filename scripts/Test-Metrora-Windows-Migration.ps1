@@ -11,9 +11,13 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$CandidatePayloadDirectory,
 
-  [string]$RepositoryRoot = (Get-Location).Path,
-  [string]$BaselineVersion = '0.9.18',
-  [string]$CandidateVersion = '0.9.19'
+  [Parameter(Mandatory = $true)]
+  [string]$BaselineVersion,
+
+  [Parameter(Mandatory = $true)]
+  [string]$CandidateVersion,
+
+  [string]$RepositoryRoot = (Get-Location).Path
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +48,12 @@ function Get-SingleCandidateInstaller([string]$Directory) {
     throw "expected exactly one current Metrora setup executable, found $($installers.Count)"
   }
   return $installers[0].FullName
+}
+
+$baselineSemver = [version]$BaselineVersion
+$candidateSemver = [version]$CandidateVersion
+if ($baselineSemver -ge $candidateSemver) {
+  throw "migration baseline must be older than the candidate: $BaselineVersion -> $CandidateVersion"
 }
 
 $baselineInstallerPath = (Resolve-Path -LiteralPath $BaselineInstaller).Path
