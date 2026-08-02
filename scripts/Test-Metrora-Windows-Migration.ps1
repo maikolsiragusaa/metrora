@@ -28,6 +28,16 @@ function Invoke-MetroraInstall([string]$Installer, [string]$InstallDirectory, [s
   }
 }
 
+function Invoke-MetroraUninstall($Installed, [string]$InstallDirectory, [string]$Stage) {
+  $process = Start-Process -FilePath $Installed.Uninstaller -ArgumentList '/S' -Wait -PassThru
+  if ($process.ExitCode -ne 0) {
+    throw "$Stage uninstaller exited with code $($process.ExitCode)"
+  }
+  Wait-MetroraCondition { -not (Test-Path -LiteralPath $Installed.Executable) } 60 "$Stage did not remove the application executable"
+  Wait-MetroraCondition { @(Get-MetroraUninstallEntries $InstallDirectory $Installed.Uninstaller).Count -eq 0 } 30 "$Stage did not remove its registry entry"
+  Wait-MetroraCondition { @(Get-MetroraShortcuts $Installed.Executable).Count -eq 0 } 30 "$Stage did not remove the Metrora shortcut"
+}
+
 function Get-SingleCandidateInstaller([string]$Directory) {
   $installers = @(Get-ChildItem -LiteralPath (Join-Path $Directory 'installer') -Filter 'Metrora-Setup-*.exe' -File)
   if ($installers.Count -ne 1) {
@@ -92,6 +102,10 @@ try {
   Assert-MetroraStateSentinel $sentinel 'candidate reinstall'
   $stages += "reinstalled-$($reinstalled.FileVersion)"
 
+  Invoke-MetroraUninstall $reinstalled $installDirectory 'pre-rollback uninstall'
+  Assert-MetroraStateSentinel $sentinel 'pre-rollback uninstall'
+  $stages += 'uninstalled-for-rollback'
+
   Invoke-MetroraInstall $baselineInstallerPath $installDirectory 'baseline rollback'
   $rolledBack = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
@@ -112,13 +126,7 @@ try {
   Assert-MetroraStateSentinel $sentinel 'candidate re-upgrade and launch'
   $stages += "re-upgraded-$($reupgraded.FileVersion)"
 
-  $uninstall = Start-Process -FilePath $reupgraded.Uninstaller -ArgumentList '/S' -Wait -PassThru
-  if ($uninstall.ExitCode -ne 0) {
-    throw "final silent uninstaller exited with code $($uninstall.ExitCode)"
-  }
-  Wait-MetroraCondition { -not (Test-Path -LiteralPath $reupgraded.Executable) } 60 'final uninstall did not remove the application executable'
-  Wait-MetroraCondition { @(Get-MetroraUninstallEntries $installDirectory $reupgraded.Uninstaller).Count -eq 0 } 30 'final uninstall did not remove its registry entry'
-  Wait-MetroraCondition { @(Get-MetroraShortcuts $reupgraded.Executable).Count -eq 0 } 30 'final uninstall did not remove the Metrora shortcut'
+  Invoke-MetroraUninstall $reupgraded $installDirectory 'final uninstall'
   Assert-MetroraStateSentinel $sentinel 'final uninstall'
   $stages += 'uninstalled'
 
