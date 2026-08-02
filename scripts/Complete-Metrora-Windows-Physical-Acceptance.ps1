@@ -15,12 +15,16 @@ function Read-ProfileResult([string]$Path, $Fallback) {
   return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 }
 
-$repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $acceptance = (Resolve-Path -LiteralPath $AcceptanceDirectory).Path
 $context = Get-Content -LiteralPath (Join-Path $acceptance 'ACCEPTANCE_CONTEXT.json') -Raw | ConvertFrom-Json
-if ($context.kind -ne 'metrora.windows-physical-acceptance-context' -or $context.version -ne 1) {
+if (
+  $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
+  $context.version -ne 1 -or
+  $context.candidate.directory -ne 'downloaded-candidate'
+) {
   throw 'physical acceptance context is invalid'
 }
+$repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot ([string]$context.source.commit)
 
 $sentinelPath = Join-Path $acceptance $context.sentinel.file
 Assert-MetroraPhysicalSentinel $sentinelPath $context.sentinel.sha256
