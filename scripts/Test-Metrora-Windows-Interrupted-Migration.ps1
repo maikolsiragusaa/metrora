@@ -62,6 +62,16 @@ function Get-BoundedWindowsAuthority([string]$InstallDirectory) {
   }
 }
 
+function Test-MetroraUninstallerAuthority($Entry, [string]$ExpectedUninstaller, [string[]]$ExpectedVersions) {
+  return (
+    $Entry.Hive -eq 'HKCU' -and
+    $Entry.Publisher -eq 'Maikol Siragusa' -and
+    $ExpectedVersions -contains $Entry.DisplayVersion -and
+    $Entry.UninstallString.IndexOf($ExpectedUninstaller, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+    $Entry.QuietUninstallString.IndexOf($ExpectedUninstaller, [StringComparison]::OrdinalIgnoreCase) -ge 0
+  )
+}
+
 $baselineInstallerPath = (Resolve-Path -LiteralPath $BaselineInstaller).Path
 $baselinePayload = (Resolve-Path -LiteralPath $BaselinePayloadDirectory).Path
 $interruptInstallerPath = (Resolve-Path -LiteralPath $InterruptionInstaller).Path
@@ -133,7 +143,12 @@ try {
 
   if ($interruptedState.classification -eq 'mixed') {
     $entries = @(Get-MetroraUninstallEntries $installDirectory $finalUninstaller)
-    if (-not (Test-Path -LiteralPath $finalUninstaller) -or $entries.Count -ne 1 -or $entries[0].Hive -ne 'HKCU') {
+    $hasSafeAuthority = (
+      (Test-Path -LiteralPath $finalUninstaller) -and
+      $entries.Count -eq 1 -and
+      (Test-MetroraUninstallerAuthority $entries[0] $finalUninstaller @($BaselineVersion, $CandidateVersion))
+    )
+    if (-not $hasSafeAuthority) {
       throw 'mixed interrupted state has no single safe disposable uninstaller authority'
     }
     $partial = [pscustomobject]@{
