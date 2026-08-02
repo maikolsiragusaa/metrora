@@ -9,7 +9,7 @@ Metrora Windows candidates must be traceable to one reviewed public source and i
 This contract separates three different claims:
 
 1. **Payload integrity** — every file in the candidate directory is inventoried by path, size and SHA-256.
-2. **Source/input binding** — the manifest records the public source commit, tree, source timestamp and hashes of release-critical build inputs.
+2. **Source/input binding** — the manifest records the public source commit, tree, source timestamp and hashes of release-critical Git blobs.
 3. **Build-run attestation** — variable CI metadata is bound to the deterministic manifest without becoming part of it.
 
 R1.A does not claim byte-for-byte reproduction of Electron output, NSIS output or the GitHub artifact ZIP. That claim requires separate evidence and remains future work.
@@ -19,7 +19,7 @@ R1.A does not claim byte-for-byte reproduction of Electron output, NSIS output o
 A candidate directory contains:
 
 - `RELEASE_MANIFEST.json` — deterministic product, source, build-input and payload summary;
-- `RELEASE_MANIFEST.schema.json` — the exact public v1 schema copied from the source;
+- `RELEASE_MANIFEST.schema.json` — the exact public v1 schema copied from the declared Git commit;
 - `PAYLOAD_MANIFEST.jsonl` — one canonically sorted JSON record per payload file;
 - `BUILD_ATTESTATION.json` — variable CI run metadata bound to the manifest digest;
 - `SHA256SUMS.txt` — checksums for the four metadata files above;
@@ -33,17 +33,34 @@ Release metadata files are excluded from the payload inventory to avoid circular
 
 - canonical Metrora product name, package name, application ID, version and homepage;
 - Signal Grid identity name and version;
-- public repository, source commit, Git tree and `SOURCE_DATE_EPOCH` equivalent;
+- public repository, source commit, Git tree and commit timestamp;
 - Windows target and candidate classification;
 - exact Node, Electron and electron-builder versions;
-- hashes of root/app lockfiles, package definitions, workflow and brand identity source;
+- hashes of the exact Git blobs for root/app lockfiles, package definitions, workflow and brand identity source;
 - manifest-schema hash;
 - payload inventory hash, file count and total bytes;
 - an explicit reproducibility statement.
 
 The manifest does not include workflow run IDs, mutable timestamps, runner image labels or branch names.
 
-Two builds with identical source, declared tool versions, build-input files and payload bytes produce the same release manifest and payload inventory even when the CI run metadata differs.
+Two builds with identical source, declared tool versions, build-input blobs and payload bytes produce the same release manifest and payload inventory even when CI run metadata differs.
+
+## Canonical source authority
+
+Release-critical source files are read as bytes directly from the declared Git commit, not from the operating system's materialized working tree.
+
+This prevents platform checkout behavior such as CRLF/LF conversion from changing source-input hashes between Windows and Linux.
+
+The verifier also proves that:
+
+- the declared tree belongs to the declared commit;
+- the declared source timestamp is the commit timestamp;
+- the input set is complete and cannot be shortened;
+- product version, package name, application ID, homepage and Signal Grid metadata agree with the source package;
+- Electron and electron-builder versions agree with the source lockfile;
+- the bundled manifest schema is byte-identical to the schema blob in the source commit.
+
+A working-tree mode exists only for isolated unit fixtures. Production creation and verification use Git-blob authority.
 
 ## Build attestation
 
@@ -87,12 +104,14 @@ The canonical verifier:
 
 1. validates the manifest identity and supported version;
 2. checks the expected source commit when supplied;
-3. re-hashes the release-critical files in the checked-out source;
-4. verifies the source schema matches the bundled schema;
-5. validates metadata checksums;
-6. verifies the attestation binds the manifest;
-7. re-inventories every downloaded payload file;
-8. rejects missing, extra, resized or modified files.
+3. verifies commit tree and timestamp;
+4. re-hashes the fixed release-input set from canonical Git blobs;
+5. verifies product and toolchain metadata against the same commit;
+6. verifies the source schema matches the bundled schema;
+7. validates metadata checksums;
+8. verifies the attestation binds the manifest;
+9. re-inventories every downloaded payload file;
+10. rejects missing, extra, resized or modified files.
 
 The Windows workflow verifies before upload. A separate Ubuntu job downloads the uploaded artifact and repeats verification against the same source commit.
 
