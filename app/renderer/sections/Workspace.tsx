@@ -12,9 +12,12 @@ import type {
   DesktopWorkspaceRecoverySummary,
   DesktopWorkspaceSnapshot,
   WorkspaceBridge,
-  WorkspaceEvidenceState,
   WorkspaceProductionMode,
 } from '../lib/workspace'
+import {
+  WorkspaceEvidencePanel,
+  workspaceEvidenceViewState,
+} from './WorkspaceEvidencePanel'
 import { useWorkspaceStatus, type WorkspaceAction } from './useWorkspaceStatus'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
@@ -50,24 +53,6 @@ export function workspaceUsageFromOverview(payload: MenubarPayload | null): Work
     cacheWriteTokens: current.cacheWriteTokens,
     pricingCoverage: current.pricingCoverage ?? null,
   }
-}
-
-const EVIDENCE_LABELS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Workspace required',
-  empty: 'No reviewed evidence yet',
-  ready: 'Ready to sign',
-  acknowledged: 'Evidence acknowledged',
-  quarantined: 'Evidence quarantined',
-  blocked: 'Action required',
-}
-
-const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Create the local personal workspace before producing signed evidence.',
-  empty: 'No reviewed measurements are waiting in the local outbox.',
-  ready: 'Reviewed measurements are available for the next signed batch.',
-  acknowledged: 'All currently signed evidence has been acknowledged locally.',
-  quarantined: 'Some evidence was isolated and will not enter a signed batch.',
-  blocked: 'The runtime found a condition that must be resolved before signing or export.',
 }
 
 function withSnapshot(current: DesktopWorkspaceAvailability | null, snapshot: DesktopWorkspaceSnapshot): DesktopWorkspaceAvailability | null {
@@ -373,21 +358,8 @@ function ReadyWorkspaceView({
     : null
   const productionPaused = lifecycle?.mode === 'paused'
   const busy = action !== null
-  const inspectionPending = availability.inspection === 'pending' && !inspectionError
-  const inspectionComplete = availability.inspection === 'complete'
-  const evidenceLabel = inspectionError
-    ? 'Verification unavailable'
-    : inspectionPending
-      ? 'Checking local data'
-      : EVIDENCE_LABELS[evidence.state]
-  const evidenceDescription = inspectionError
-    ? 'The read-only evidence inspection could not complete. Existing files were not changed.'
-    : inspectionPending
-      ? 'Metrora is verifying local evidence in the background. Counts will appear after the read-only inspection finishes.'
-      : EVIDENCE_DESCRIPTIONS[evidence.state]
-  const evidenceBlocked = !inspectionComplete || evidence.state === 'blocked' || evidence.state === 'quarantined'
-  const exportBlocked = evidenceBlocked || evidence.unbatchedEventCount > 0
-  const evidenceStateClass = inspectionComplete ? evidence.state : 'blocked'
+  const evidenceView = workspaceEvidenceViewState(evidence, availability.inspection, inspectionError)
+  const exportBlocked = evidenceView.blocked || evidence.unbatchedEventCount > 0
 
   return (
     <>
@@ -401,7 +373,7 @@ function ReadyWorkspaceView({
         </div>
         <div className="workspace-hero-state">
           <span className="workspace-local-badge">Local only</span>
-          <span className={`workspace-state workspace-state-${evidenceStateClass}`}>{evidenceLabel}</span>
+          <span className={`workspace-state workspace-state-${evidenceView.stateClass}`}>{evidenceView.label}</span>
         </div>
       </section>
 
@@ -465,7 +437,7 @@ function ReadyWorkspaceView({
               type="button"
               className="btn btn-p"
               onClick={() => void onProduce()}
-              disabled={busy || evidenceBlocked || productionPaused}
+              disabled={busy || evidenceView.blocked || productionPaused}
             >
               {action === 'produce' ? 'Producing…' : 'Produce reviewed measurements'}
             </button>
@@ -505,34 +477,7 @@ function ReadyWorkspaceView({
               <div><dt>Software</dt><dd>Metrora {workspace.endpoint.metroraVersion} · collector {workspace.endpoint.collectorVersion}</dd></div>
             </dl>
           </Panel>
-
-          <Panel title="Reviewed evidence" right={evidenceLabel}>
-            <p className="workspace-evidence-copy">{evidenceDescription}</p>
-            <div className="workspace-counts" aria-busy={inspectionPending}>
-              <EvidenceCount label="Pending events" value={inspectionComplete ? evidence.pendingEventCount : null} />
-              <EvidenceCount label="Unbatched events" value={inspectionComplete ? evidence.unbatchedEventCount : null} />
-              <EvidenceCount label="Acknowledged events" value={inspectionComplete ? evidence.acknowledgedEventCount : null} />
-              <EvidenceCount label="Pending batches" value={inspectionComplete ? evidence.pendingBatchCount : null} />
-              <EvidenceCount label="Acknowledged batches" value={inspectionComplete ? evidence.acknowledgedBatchCount : null} />
-              <EvidenceCount label="Quarantined" value={inspectionComplete ? evidence.quarantinedEventCount : null} />
-              <EvidenceCount label="Invalid" value={inspectionComplete ? evidence.invalidEventCount : null} />
-            </div>
-            {inspectionPending ? (
-              <div className="workspace-source-line" role="status" data-testid="workspace-evidence-inspection">
-                Read-only evidence verification in progress…
-              </div>
-            ) : null}
-            {inspectionError ? (
-              <div className="workspace-source-line" role="alert" data-testid="workspace-evidence-inspection-error">
-                Verification could not complete. Use the bounded recovery action for an explicit retry; no files were deleted or reset.
-              </div>
-            ) : null}
-            {inspectionComplete && evidence.blockers.length > 0 ? (
-              <ul className="workspace-blockers">
-                {evidence.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
-              </ul>
-            ) : null}
-          </Panel>
+          <WorkspaceEvidencePanel evidence={evidence} view={evidenceView} inspectionError={inspectionError} />
         </div>
       ) : null}
 
@@ -550,10 +495,10 @@ function ReadyWorkspaceView({
             <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
               {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
             </button>
-            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy || inspectionPending}>
+            <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy || evidenceView.inspectionPending}>
               {action === 'recover' ? 'Checking…' : 'Check & recover local state'}
             </button>
-            <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceBlocked}>
+            <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceView.blocked}>
               {action === 'batch' ? 'Signing…' : 'Create signed batch'}
             </button>
             <button type="button" className="btn btn-p" onClick={() => void onExport()} disabled={busy || !workspace || exportBlocked}>
@@ -569,7 +514,7 @@ function ReadyWorkspaceView({
             </div>
           ) : null}
           <p className="workspace-action-note">
-            {inspectionPending
+            {evidenceView.inspectionPending
               ? 'Wait for local verification before producing, signing, or exporting.'
               : evidence.unbatchedEventCount > 0
                 ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
@@ -586,15 +531,6 @@ function UsageStat({ label, value, testId }: { label: string; value: string; tes
     <div className="workspace-stat">
       <span>{label}</span>
       <b data-testid={testId}>{value}</b>
-    </div>
-  )
-}
-
-function EvidenceCount({ label, value }: { label: string; value: number | null }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <b>{value === null ? '—' : formatCompact(value)}</b>
     </div>
   )
 }
