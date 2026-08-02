@@ -1,195 +1,124 @@
-# Releasing CodeBurn
+# Releasing Metrora
 
-This document describes the actual steps a maintainer takes to cut a CLI or macOS menubar release. CLI releases are run by hand with `npm publish`; macOS menubar releases are automated by `.github/workflows/release-menubar.yml` when a `mac-v*` tag is pushed.
+Metrora does not yet have an official stable desktop release. This document defines the current release boundary and replaces inherited upstream publication instructions.
 
-The Electron desktop app (`app/`) has no CI automation yet, but it is released manually under `desktop-v<version>` tags: build the artifacts on a macOS host (see `app/DISTRIBUTION.md`) and `gh release upload desktop-v<version> … --clobber` them onto the release. See `app/DISTRIBUTION.md` for how to build and distribute it as an ad-hoc-signed, non-notarized macOS build (plus unsigned Windows and Linux builds).
+## Canonical identity
 
-## Versioning
+- Product: **Metrora**
+- Domain: **metrora.eu**
+- Repository: `maikolsiragusaa/metrora`
+- Canonical command: `metrora`
+- Current development version: `0.9.19`
 
-CodeBurn uses semantic versioning (major.minor.patch). The CLI and macOS menubar share the same version number for clarity.
+The `qovrion` and `codeburn` commands are temporary compatibility aliases. They are not release brands, package names to advertise or names for new artifacts.
 
-## Before Every Release
+The root npm package is private and must not be published from this repository.
 
-Run the test suite to catch any regressions:
+## Current release authority
 
-```bash
-npm test
-```
+The accepted Windows development authority is the R1.B candidate bound to:
 
-Verify that the build completes without errors:
+- source commit `28095e7f4cea5df5a3f87d34defcd8d2789252e5`;
+- candidate ZIP SHA-256 `8c72bb317321a5a78db9ca3245660084d726577a5de239500adfc6e9b9fcaa77`;
+- exact physical-acceptance report SHA-256 `aa1e8c16d1a12e1f24bf360a047e75c692d7ab858d8134ef9c61f4f6132ed85d`.
 
-```bash
-npm run build
-```
+That candidate passed the existing-profile, clean-profile and migration physical checks. It remains unsigned and is not an official stable release.
 
-## CLI Release Process
+## Windows distribution model
 
-### 1. Update the Version
+Metrora uses two parallel channels.
 
-Edit `package.json` to bump the version number. Update both the `version` field at the top and the `package-lock.json` lockfile to match (npm handles this automatically):
+### Microsoft Store
 
-```bash
-npm version <version>
-```
+The recommended ordinary-user channel will be an AppX/MSIX package:
 
-For example, `npm version 0.9.8` updates both files and creates a commit.
+- built separately on Windows from reviewed public source;
+- left unsigned before Partner Center submission;
+- signed, hosted and updated by Microsoft after certification;
+- configured with exact Metrora product identity values issued by Partner Center;
+- physically accepted under a Store-specific install/update/uninstall matrix.
 
-Alternatively, edit `package.json` by hand and run `npm install` to regenerate the lockfile with the new version.
+Store identity values must never be guessed or copied from another application.
 
-### 2. Update the Changelog
+### GitHub Releases and metrora.eu
 
-Edit `CHANGELOG.md`. Move all changes from the "Unreleased" section into a new section with the version number and today's date:
+The technical-user channel may publish:
 
-```markdown
-## Unreleased
+- a verified portable ZIP;
+- an explicitly unsigned NSIS installer;
+- SHA-256 checksums;
+- release and format manifests;
+- provenance and clear SmartScreen instructions.
 
-### ...
+Unsigned GitHub artifacts must never be described as Microsoft-signed or equivalent to the Store package.
 
-## 0.9.8 - 2026-05-10
+## Release sequence
 
-### Added
-- Feature X
+A Windows release proceeds through separate responsibilities:
 
-### Fixed
-- Bug Y
-```
+1. freeze the public source commit and version;
+2. run public tests, architecture gates and security checks;
+3. assemble the canonical unsigned Windows payload;
+4. derive portable and NSIS formats and emit manifests;
+5. verify artifact inventory and digests independently;
+6. run the required physical acceptance;
+7. build and verify the Store package as a separate format;
+8. submit manually to Partner Center only after explicit approval;
+9. publish GitHub artifacts, checksums and notes separately;
+10. update `metrora.eu` only after the relevant channel is accepted;
+11. preserve rollback authority and prior accepted artifacts.
 
-Commit these changes:
+Build, packaging, Store submission, GitHub publication and rollback must not be collapsed into one all-purpose workflow.
 
-```bash
-git add CHANGELOG.md package.json package-lock.json
-git commit -m "chore: bump to 0.9.8"
-```
+## Required validation
 
-### 3. Publish to npm
-
-There is no GitHub Actions workflow for the CLI; the maintainer runs `npm publish` from a clean working tree:
-
-```bash
-npm publish
-```
-
-The `prepublishOnly` script in `package.json` runs `npm run build` first, which bundles the litellm pricing snapshot and then runs `tsup` to emit `dist/cli.js`.
-
-If publishing for the first time on a new machine, run `npm login` first.
-
-### 4. Tag the Release
-
-After npm accepts the publish, tag the commit and push:
+Before publication, run the checks owned by the affected surface, including:
 
 ```bash
-git tag v0.9.8
-git push origin v0.9.8
+npm ci
+npm run build:cli
+npm test -- --run
+npm --prefix app ci
+npm --prefix app test
+npm --prefix app run typecheck
+npm --prefix app run build
 ```
 
-The tag is for human reference and to anchor the GitHub Release. No workflow runs on `v*` tags for the CLI today.
+Windows candidate and Store-package workflows add their own manifest, payload, installation, update, rollback and state-preservation checks.
 
-### 5. Verify npm Publication
+## Versioning and notes
 
-```bash
-npm view codeburn version
-```
+Metrora uses semantic versioning. A release change must update all version-bearing packages and generated metadata deliberately; do not assume one package file is the only authority.
 
-### 5b. Bump the Homebrew Tap
+Every public release note must state:
 
-The tap at `getagentseal/homebrew-codeburn` does not update itself — bump it
-every CLI release or it drifts (issue #716 sat six versions behind):
-
-```bash
-curl -sLO "https://registry.npmjs.org/codeburn/-/codeburn-<version>.tgz"
-shasum -a 256 codeburn-<version>.tgz
-# edit Formula/codeburn.rb in the tap: url version + sha256, commit, push
-```
-
-### 6. Create a GitHub Release
-
-Use the GitHub CLI to create a release with notes from the changelog:
-
-```bash
-gh release create v0.9.8 --title v0.9.8 --notes "$(sed -n '/^## 0.9.8/,/^## /p' CHANGELOG.md | head -n -1)"
-```
-
-Or use the web interface to draft a release and copy the changelog section into the body.
-
-## macOS Menubar Release Process
-
-The macOS menubar is released separately with its own GitHub Release, but shares the same version number as the CLI.
-
-### 1. Same Version Bump
-
-Follow the same version bumping process as the CLI. Both `package.json` and `CHANGELOG.md` reflect the shared version.
-
-### 2. Tag the macOS Release
-
-After the CLI tag is published, create a separate tag for the menubar:
-
-```bash
-git tag mac-v0.9.8
-git push origin mac-v0.9.8
-```
-
-### 3. GitHub Actions Builds the Bundle
-
-The `.github/workflows/release-menubar.yml` workflow automatically detects the `mac-v*` tag and:
-
-1. Checks out the repo
-2. Runs `mac/Scripts/package-app.sh v0.9.8`
-3. Signs the app bundle (ad-hoc signing)
-4. Creates a zip file: `CodeBurnMenubar-v0.9.8.zip`
-5. Computes a SHA-256 checksum: `CodeBurnMenubar-v0.9.8.zip.sha256`
-6. Uploads both to a GitHub Release named "Menubar v0.9.8"
-
-The script output on the build machine shows:
-
-```
-✓ Built /path/mac/.build/dist/CodeBurnMenubar-v0.9.8.zip
-✓ Checksum /path/mac/.build/dist/CodeBurnMenubar-v0.9.8.zip.sha256
-<sha256-hash>  CodeBurnMenubar-v0.9.8.zip
-```
-
-No manual action is needed; the workflow handles everything.
-
-### 4. Verify the Release
-
-After the workflow completes, the GitHub Release page shows the zip and sha256 files. The installed CLI command `codeburn menubar --force` fetches the newest `mac-v*` menubar release that includes both assets, verifies the checksum and bundle identity, and installs it into `~/Applications`.
-
-## Homebrew Core
-
-CodeBurn is in homebrew-core. After publishing a new CLI version to npm, the homebrew-core formula is updated automatically by Homebrew's bot or can be bumped manually:
-
-```bash
-brew bump-formula-pr codeburn --url "https://registry.npmjs.org/codeburn/-/codeburn-<VERSION>.tgz"
-```
-
-Users install with `brew install codeburn` and upgrade with `brew upgrade codeburn`.
-
-## Replacing Assets on an Existing Release
-
-If a release is published with broken assets (e.g., a menubar zip with a build error), re-run the build and upload the fixed assets without creating a new tag.
-
-Use `gh release upload` with the `--clobber` flag to overwrite existing files:
-
-```bash
-# After re-running mac/Scripts/package-app.sh v0.9.8 to regenerate the zip and sha256
-gh release upload mac-v0.9.8 mac/.build/dist/CodeBurnMenubar-v0.9.8.zip --clobber
-gh release upload mac-v0.9.8 mac/.build/dist/CodeBurnMenubar-v0.9.8.zip.sha256 --clobber
-```
-
-The GitHub Release page will now serve the fixed assets. The menubar installer selects the newest `mac-v*` release with `CodeBurnMenubar-v*.zip` plus its checksum, so users who run `codeburn menubar --force` after the replacement get the fixed version automatically.
+- version and source commit;
+- distribution channel and format;
+- signed/unsigned status;
+- supported operating-system scope;
+- checksums and provenance location;
+- migration or rollback constraints;
+- known limitations;
+- privacy-impacting changes, if any.
 
 ## Rollback
 
-If a released version has a critical bug, the fastest path is to fix the bug and cut a new patch release (e.g., 0.9.8 -> 0.9.9). Delete the broken tag locally and on GitHub if it has not yet been widely distributed:
+Do not rewrite or replace a broadly distributed release under the same version. Publish a new patch version and retain the previous accepted artifact long enough to support rollback.
 
-```bash
-git tag -d v0.9.8
-git push origin --delete v0.9.8
-```
+Rollback must preserve endpoint identity, OS-vault material, analytics, Workspace state, evidence, exports and user-owned local files according to the accepted migration contract.
 
-npm does not allow republishing to the same version. If you must unpublish from npm, use `npm unpublish codeburn@0.9.8 --force` (requires Owner role), but this is discouraged and all users who installed that version retain it.
+## macOS, Linux and Android
 
-For the menubar, tag a new mac-v0.9.9 and let the workflow build and upload it. Users will see the update pill in the menubar settings and upgrade automatically (or manually via `codeburn menubar --force`).
+- macOS development builds remain ad-hoc signed and unnotarized until a separate trusted-distribution tranche is approved.
+- Linux formats require their own packaging and support acceptance before official publication.
+- Android uses a separate mobile-store signing and release boundary and remains a companion to desktop/Workspace authority.
 
-## Summary
+## Prohibitions
 
-The CLI release is manual: bump the version, update `CHANGELOG.md`, commit, run `npm publish`, then tag and create a GitHub Release. The macOS menubar release is automated: pushing a `mac-v*` tag fires `.github/workflows/release-menubar.yml`, which builds, signs, zips, and publishes the bundle. The homebrew-core formula is updated automatically or via `brew bump-formula-pr`.
+- no `npm publish` from the private root package;
+- no inherited upstream package, tap or release instructions presented as Metrora;
+- no paid Windows signing purchase under the current zero-cost decision;
+- no secrets or Store credentials in untrusted pull requests;
+- no publication from an unverified local build;
+- no silent replacement of accepted artifacts;
+- no claim of an official release before the relevant channel passes acceptance.
