@@ -1,18 +1,25 @@
 # Workspace recovery v1
 
-**Status:** W1.D.C.D local recovery checkpoint, amended by physical Windows acceptance.
+**Status:** W1.D.C.D local recovery checkpoint, amended by physical Windows acceptance and the read-only bootstrap inspection remediation.
 
 Workspace recovery validates protected local state, reconciles already-authorized private production receipts, and may retry one bounded canonical production path. It is not a reset, cleanup command, historical backfill, quarantine bypass, or evidence editor.
 
-## User action
+## Bootstrap inspection versus recovery
 
-The desktop exposes one explicit zero-argument action:
+Opening Metrora or the Workspace screen performs two distinct read paths:
+
+1. a fast bootstrap reads only protected Workspace identity and production lifecycle so the screen can open without enumerating evidence directories;
+2. an automatic read-only inspection then loads the complete public evidence summary in the background.
+
+While the read-only inspection is pending, the desktop shows an indeterminate verification state and does not present zero counts as if no evidence existed. Production, signing, export, and recovery remain disabled until that first inspection settles. The inspection never scans canonical usage, repairs receipts, produces events, creates batches, exports, uploads, deletes, resets, or changes lifecycle state.
+
+A completed read-only inspection survives at the product level because every new desktop session repeats the same non-mutating inspection and presents the persisted evidence counts again. It does not persist a shortcut or trust a previous in-memory result.
+
+Recovery remains a separate explicit zero-argument action:
 
 ```text
 Check & recover local state
 ```
-
-Opening Metrora or the Workspace screen never runs recovery automatically.
 
 The renderer cannot request deletion, reset, source selection, receipt selection, provider changes, lifecycle changes, time boundaries, historical backfill, or evidence replacement. Unexpected IPC arguments are ignored.
 
@@ -55,6 +62,8 @@ It contains no calls, token values, model/provider details, paths, fingerprints,
 
 ## Fail-closed states
 
+The automatic read-only inspection reports failure without mutation when evidence cannot be parsed or verified. It never falls back to zero counts and never starts recovery automatically.
+
 Recovery stops before receipt reconciliation and scanning when:
 
 - the Workspace does not exist;
@@ -87,9 +96,13 @@ A scanner, receipt, outbox, Workspace, lifecycle, or evidence integrity error re
 
 ## Desktop boundary
 
-The protected main-process runtime owns recovery. Electron exposes only the zero-argument action and returns the bounded recovery summary plus refreshed public snapshot.
+The protected main-process runtime owns both paths. Electron exposes:
 
-Older staged runtimes without the capability return `workspace-recovery-unavailable`. Raw exceptions and local paths never cross IPC.
+- a fast bootstrap status read;
+- a separate complete read-only inspection;
+- the explicit zero-argument recovery action.
+
+The renderer receives only public snapshots and bounded summaries. Older staged runtimes without the recovery capability return `workspace-recovery-unavailable`. Raw exceptions and local paths never cross IPC.
 
 ## Complete local flow
 
@@ -105,8 +118,9 @@ Blocking tests validate the persisted local sequence:
 8. export one independently verifiable package;
 9. dispose and zero private identity buffers;
 10. reopen the same endpoint and Workspace;
-11. recover/deduplicate without a second event or batch;
-12. export the same one-event chain again.
+11. run the automatic read-only inspection and expose the same persisted evidence counts;
+12. recover/deduplicate without a second event or batch;
+13. export the same one-event chain again.
 
 A separate interruption test removes only the public event file after its private receipt commits, then makes the bounded source retry return no candidate. Recovery still restores the original event and sequence directly from the receipt. A second recovery performs zero repairs.
 
@@ -119,7 +133,7 @@ A future historical evidence import, if approved, must be a separate explicit ac
 ## Non-goals
 
 - no destructive repair or reset;
-- no automatic startup recovery;
+- no automatic recovery or production at startup;
 - no normal-action historical backfill;
 - no remote recovery service, support backdoor, hosted queue, or cloud receipt;
 - no account, team, entitlement, billing, Android, Advisor, or Bench behavior;
