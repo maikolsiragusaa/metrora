@@ -41,11 +41,7 @@ try {
   New-Item -ItemType Directory -Path $env:LOCALAPPDATA -Force | Out-Null
   $sentinel = New-MetroraStateSentinel $roamingDirectory 'r1bb-user-owned-state.txt'
 
-  $install = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
-  if ($install.ExitCode -ne 0) {
-    throw "silent installer exited with code $($install.ExitCode)"
-  }
-
+  Invoke-MetroraSilentInstall $installers[0].FullName $installDirectory 'clean install'
   $installed = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $canonical `
@@ -54,14 +50,7 @@ try {
     -Launch
   Assert-MetroraStateSentinel $sentinel 'installation or launch'
 
-  $uninstall = Start-Process -FilePath $installed.Uninstaller -ArgumentList '/S' -Wait -PassThru
-  if ($uninstall.ExitCode -ne 0) {
-    throw "silent uninstaller exited with code $($uninstall.ExitCode)"
-  }
-
-  Wait-MetroraCondition { -not (Test-Path -LiteralPath $installed.Executable) } 60 'silent uninstall did not remove the application executable'
-  Wait-MetroraCondition { @(Get-MetroraUninstallEntries $installDirectory $installed.Uninstaller).Count -eq 0 } 30 'silent uninstall did not remove its registry entry'
-  Wait-MetroraCondition { @(Get-MetroraShortcuts $installed.Executable).Count -eq 0 } 30 'silent uninstall did not remove the Metrora shortcut'
+  Invoke-MetroraSilentUninstall $installed $installDirectory 'clean uninstall'
   Assert-MetroraStateSentinel $sentinel 'uninstall'
 
   [ordered]@{
