@@ -12,14 +12,6 @@ import {
 
 const sourceCommit = '1'.repeat(40)
 const sourceTree = '2'.repeat(40)
-const inputFiles = [
-  '.github/workflows/windows-portable.yml',
-  'app/package-lock.json',
-  'app/package.json',
-  'assets/brand/README.md',
-  'package-lock.json',
-  'package.json',
-]
 
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true })
@@ -67,7 +59,6 @@ function metadataOptions(fx, builtAt = '2026-08-02T10:00:00.000Z') {
     sourceTree,
     sourceDateEpoch: '1785664800',
     distribution: 'unsigned-development-artifact',
-    inputFiles,
     attestation: {
       provider: 'test',
       workflow: 'fixture',
@@ -165,7 +156,7 @@ test('rejects metadata tampering', async t => {
 
   await assert.rejects(
     verifyReleaseCandidate(fx.bundleDirectory, verificationOptions(fx)),
-    /build attestation kind or version|metadata checksum mismatch/,
+    /build attestation is invalid or does not bind the release manifest/,
   )
 })
 
