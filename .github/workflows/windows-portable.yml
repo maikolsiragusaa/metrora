@@ -2,12 +2,22 @@ name: Metrora Windows Portable
 
 on:
   workflow_dispatch:
+    inputs:
+      distribution:
+        description: Candidate classification
+        required: true
+        default: unsigned-development-artifact
+        type: choice
+        options:
+          - unsigned-development-artifact
+          - unsigned-release-candidate
   pull_request:
     paths:
       - '.github/workflows/windows-portable.yml'
       - 'app/**'
       - 'src/**'
       - 'scripts/**'
+      - 'release/**'
       - 'tools/windows-portable/**'
       - 'package.json'
       - 'package-lock.json'
@@ -18,6 +28,7 @@ on:
       - 'app/**'
       - 'src/**'
       - 'scripts/**'
+      - 'release/**'
       - 'tools/windows-portable/**'
       - 'package.json'
       - 'package-lock.json'
@@ -31,7 +42,7 @@ concurrency:
 
 jobs:
   portable:
-    name: Build and smoke-test portable bundle
+    name: Build, inventory, and smoke-test portable bundle
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -43,6 +54,9 @@ jobs:
         with:
           node-version: '22.15.0'
           cache: npm
+
+      - name: Test release manifest integrity library
+        run: node --test scripts/windows-release-manifest.test.mjs
 
       - name: Require Node zstd support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
@@ -66,7 +80,7 @@ jobs:
           npx --no-install electron-builder --win --x64 --dir --publish never
           Pop-Location
 
-      - name: Assemble portable baseline bundle
+      - name: Assemble portable candidate payload
         shell: pwsh
         run: |
           $source = Join-Path $PWD 'app\release\win-unpacked'
@@ -82,33 +96,35 @@ jobs:
           Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.cmd' -Destination $destination -Force
           Copy-Item -LiteralPath 'tools\windows-portable\README.txt' -Destination $destination -Force
 
-          @(
-            'artifact=metrora-windows-portable'
-            "commit=${{ github.sha }}"
-            "ref=${{ github.ref }}"
-            "run_id=${{ github.run_id }}"
-            "run_attempt=${{ github.run_attempt }}"
-            "built_at=$([DateTime]::UtcNow.ToString('o'))"
-            'platform=windows-x64'
-            'distribution=unsigned-development-artifact'
-          ) | Set-Content -LiteralPath (Join-Path $destination 'BUILD_INFO.txt') -Encoding utf8
+      - name: Generate deterministic payload manifest and build attestation
+        shell: pwsh
+        run: |
+          $destination = Join-Path $PWD 'app\release\Metrora-Windows-Portable'
+          $sourceTree = (git rev-parse "$env:GITHUB_SHA^{tree}").Trim()
+          $sourceEpoch = (git show -s --format=%ct $env:GITHUB_SHA).Trim()
+          $distribution = '${{ inputs.distribution }}'
+          if (-not $distribution) { $distribution = 'unsigned-development-artifact' }
+          $runnerImage = "$env:ImageOS/$env:ImageVersion"
+          $builtAt = [DateTime]::UtcNow.ToString('o')
 
-          $hashTargets = @(
-            'Metrora.exe'
-            'resources\app.asar'
-            'resources\cli\dist\main.js'
-            'resources\cli\dist\launch.js'
-            'Run-Metrora-Baseline.ps1'
-            'Run-Metrora-Baseline.cmd'
-            'BUILD_INFO.txt'
-          )
-          $hashLines = foreach ($relative in $hashTargets) {
-            $path = Join-Path $destination $relative
-            if (-not (Test-Path -LiteralPath $path)) { throw "portable hash target missing: $relative" }
-            $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($relative.Replace('\', '/'))"
-          }
-          $hashLines | Set-Content -LiteralPath (Join-Path $destination 'SHA256SUMS.txt') -Encoding ascii
+          node scripts/create-windows-release-manifest.mjs `
+            --bundle $destination `
+            --source-commit $env:GITHUB_SHA `
+            --source-tree $sourceTree `
+            --source-date-epoch $sourceEpoch `
+            --distribution $distribution `
+            --provider github-actions `
+            --workflow $env:GITHUB_WORKFLOW `
+            --run-id $env:GITHUB_RUN_ID `
+            --run-attempt $env:GITHUB_RUN_ATTEMPT `
+            --ref $env:GITHUB_REF `
+            --built-at $builtAt `
+            --runner-os windows `
+            --runner-image $runnerImage
+
+      - name: Verify candidate locally before upload
+        shell: pwsh
+        run: node scripts/verify-windows-release-manifest.mjs app/release/Metrora-Windows-Portable --expected-commit $env:GITHUB_SHA
 
       - name: Smoke-test bundled CLI and baseline runner
         shell: pwsh
@@ -141,7 +157,7 @@ jobs:
             throw 'portable overview contains Windows encoding mojibake'
           }
 
-      - name: Upload portable Windows artifact
+      - name: Upload portable Windows candidate
         uses: actions/upload-artifact@v4
         with:
           name: metrora-windows-portable-${{ github.sha }}
@@ -149,3 +165,23 @@ jobs:
           if-no-files-found: error
           compression-level: 6
           retention-days: 14
+
+  independent-verification:
+    name: Independently verify downloaded candidate
+    needs: portable
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: metrora-windows-portable-${{ github.sha }}
+          path: candidate
+
+      - name: Verify every downloaded payload and metadata file
+        run: node scripts/verify-windows-release-manifest.mjs candidate --expected-commit ${{ github.sha }}
