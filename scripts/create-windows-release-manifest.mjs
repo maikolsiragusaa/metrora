@@ -37,14 +37,6 @@ const { manifest, attestation } = await writeReleaseMetadata({
   sourceTree: required(args, '--source-tree'),
   sourceDateEpoch: required(args, '--source-date-epoch'),
   distribution: args.get('--distribution') ?? 'unsigned-development-artifact',
-  inputFiles: [
-    '.github/workflows/windows-portable.yml',
-    'app/package-lock.json',
-    'app/package.json',
-    'assets/brand/README.md',
-    'package-lock.json',
-    'package.json',
-  ],
   attestation: {
     provider: args.get('--provider') ?? 'local',
     workflow: args.get('--workflow') ?? 'local',
