@@ -6,7 +6,7 @@
 
 Metrora must not build the portable application and NSIS installer as two independent product payloads.
 
-The Windows candidate workflow builds one canonical unpacked application directory, records its complete inventory, copies it into the portable format and passes the same directory to electron-builder through `--prepackaged` for NSIS creation.
+The Windows candidate workflow builds one canonical unpacked application directory, records its complete inventory, copies it into the portable format and creates an isolated installer-source copy for electron-builder `--prepackaged` NSIS creation.
 
 This contract proves the relationship between those formats without claiming that NSIS bytes are reproducible or that an unsigned installer is an official release.
 
@@ -44,7 +44,7 @@ The canonical product payload is the one `win-unpacked` directory produced after
 
 `CANONICAL_PRODUCT_PAYLOAD.jsonl` records every file in that directory by canonical path, size and SHA-256.
 
-The source directory is re-inventoried after NSIS creation. Any mutation causes the workflow to fail.
+The canonical directory is not passed to NSIS. It remains unchanged and is re-inventoried after installer creation. Any mutation causes the workflow to fail.
 
 ## Portable derivation
 
@@ -63,9 +63,15 @@ The R1.A verifier remains authoritative for the portable release manifest and so
 
 ## Installer derivation
 
-The NSIS installer is created by electron-builder using the same canonical unpacked directory through its `--prepackaged` option.
+The workflow creates a separate recursive copy of the canonical unpacked payload and passes only that copy to electron-builder through `--prepackaged`.
 
-The workflow does not run a second application build for the installer.
+The workflow does not run a second application build for the installer. Every canonical product file in the installer-source copy must remain byte-identical.
+
+Electron-builder NSIS may add exactly one packaging helper:
+
+- `resources/elevate.exe`.
+
+The helper must be non-empty. A missing helper, changed canonical file, removed canonical file or any other addition fails the dedicated installer-source gate. The canonical `win-unpacked` directory remains untouched.
 
 Accepted installer outputs are:
 
@@ -103,18 +109,20 @@ The public source commit remains authoritative. The format manifest is evidence 
 
 The Windows workflow:
 
-1. runs native manifest and derivation tests;
+1. runs native manifest, derivation and installer-source tests;
 2. builds the canonical unpacked payload once;
 3. prepares the portable copy and canonical inventory;
 4. adds only documented portable helpers;
 5. generates and verifies the R1.A portable manifest;
-6. builds NSIS from the original unpacked directory with `--prepackaged`;
-7. proves the original unpacked directory did not change;
-8. proves the portable copy still contains identical canonical files;
-9. inventories installer outputs;
-10. writes and verifies the derivation manifest;
-11. smoke-tests the portable CLI;
-12. uploads the complete combined candidate.
+6. copies the canonical payload into an isolated NSIS source directory;
+7. builds NSIS from that copy with `--prepackaged`;
+8. proves every canonical file in the NSIS copy remains byte-identical and only the documented elevation helper was added;
+9. proves the original canonical directory did not change;
+10. proves the portable copy still contains identical canonical files;
+11. inventories installer outputs;
+12. writes and verifies the derivation manifest;
+13. smoke-tests the portable CLI;
+14. uploads the complete combined candidate.
 
 A separate Ubuntu job downloads the candidate and repeats:
 
