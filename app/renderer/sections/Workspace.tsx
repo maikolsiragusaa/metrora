@@ -10,7 +10,6 @@ import type {
   DesktopReviewedProductionSummary,
   DesktopWorkspaceAvailability,
   DesktopWorkspaceRecoverySummary,
-  DesktopWorkspaceSnapshot,
   WorkspaceBridge,
   WorkspaceProductionMode,
 } from '../lib/workspace'
@@ -53,11 +52,6 @@ export function workspaceUsageFromOverview(payload: MenubarPayload | null): Work
     cacheWriteTokens: current.cacheWriteTokens,
     pricingCoverage: current.pricingCoverage ?? null,
   }
-}
-
-function withSnapshot(current: DesktopWorkspaceAvailability | null, snapshot: DesktopWorkspaceSnapshot): DesktopWorkspaceAvailability | null {
-  if (!current || current.availability !== 'ready') return current
-  return { ...current, inspection: 'complete', snapshot }
 }
 
 function shortFingerprint(value: string): string {
@@ -129,7 +123,7 @@ export function WorkspaceContent({
   const bridge = metrora as Partial<WorkspaceBridge>
   const {
     availability,
-    setAvailability,
+    acceptSnapshot,
     statusError,
     inspectionError,
     action,
@@ -155,7 +149,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.createWorkspace !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.createWorkspace({ displayName, endpointDisplayName })
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastProduction(null)
       setLastRecovery(null)
       showToast(result.outcome === 'created' ? 'Local workspace created.' : 'Existing local workspace loaded.')
@@ -171,7 +165,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.produceWorkspaceMeasurements !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.produceWorkspaceMeasurements()
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastProduction(result.summary)
       setLastRecovery(null)
       showToast(productionToast(result.summary))
@@ -187,7 +181,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.recoverWorkspaceState !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.recoverWorkspaceState()
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastRecovery(result.summary)
       if (result.summary.production) setLastProduction(result.summary.production)
       showRecoveryToast(result.summary)
@@ -205,7 +199,7 @@ export function WorkspaceContent({
       const method = mode === 'paused' ? bridge.pauseWorkspaceProduction : bridge.resumeWorkspaceProduction
       if (typeof method !== 'function') throw new Error('workspace bridge unavailable')
       const result = await method.call(bridge)
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       setLastRecovery(null)
       showToast(mode === 'paused' ? 'Reviewed production paused.' : 'Reviewed production resumed.')
     } catch {
@@ -220,7 +214,7 @@ export function WorkspaceContent({
     try {
       if (typeof bridge.createWorkspaceBatch !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.createWorkspaceBatch()
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       showToast(result.outcome === 'created'
         ? `Signed ${result.batch?.eventCount ?? 0} reviewed measurements.`
         : 'No reviewed measurements are waiting to be signed.')
@@ -237,7 +231,7 @@ export function WorkspaceContent({
       if (typeof bridge.exportWorkspaceEvidence !== 'function') throw new Error('workspace bridge unavailable')
       const result = await bridge.exportWorkspaceEvidence()
       if (result.outcome === 'cancelled') return
-      setAvailability(current => withSnapshot(current, result.snapshot))
+      acceptSnapshot(result.snapshot)
       showToast(`Exported ${result.fileName}.`)
     } catch {
       showToast(actionErrorMessage('export'), 'error')
