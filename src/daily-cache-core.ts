@@ -261,7 +261,7 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
   if (!isRecord(raw)) return {}
   const out: NonNullable<DailyEntry['projects']> = {}
   for (const [name, p] of Object.entries(raw)) {
-    if (name in Object.prototype || !isRecord(p)) continue
+    if (!isRecord(p)) continue // Object.entries + setOwn safely preserve prototype-property names
     setOwn(out, name, {
       cost: num(p.cost),
       calls: num(p.calls),

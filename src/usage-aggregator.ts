@@ -7,6 +7,12 @@ import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
 import { stat } from 'node:fs/promises'
 import { aggregateProjectsIntoDays, buildPeriodDataFromDays } from './day-aggregator.js'
+import {
+  durableProjectDisplayName,
+  hasDurableProjectFilter,
+  reconcileDurableProjectDay,
+  sliceDayToProvider,
+} from './durable-project-reconciliation.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
 import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
@@ -200,41 +206,6 @@ function dailyEntriesToHistory(days: ReturnType<typeof aggregateProjectsIntoDays
   })
 }
 
-/// Collapse a day to a single provider's slice, promoting the slice's totals to
-/// the day-level fields buildPeriodDataFromDays reads. A day with no slice for
-/// the provider becomes a zero day (so the date is still present but contributes
-/// nothing). The `carried` flag is inherited so a per-provider total can still
-/// account for expired-source days.
-function sliceDayToProvider(day: DailyEntry, provider: string): DailyEntry {
-  const s = Object.hasOwn(day.providers, provider) ? day.providers[provider] : undefined
-  if (!s) {
-    return {
-      date: day.date, cost: 0, savingsUSD: 0, calls: 0, sessions: 0,
-      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
-      editTurns: 0, oneShotTurns: 0, models: {}, categories: {}, providers: {},
-      ...(day.carried ? { carried: true as const } : {}),
-    }
-  }
-  return {
-    date: day.date,
-    cost: s.cost,
-    savingsUSD: s.savingsUSD ?? 0,
-    calls: s.calls,
-    sessions: s.sessions ?? 0,
-    inputTokens: s.inputTokens ?? 0,
-    outputTokens: s.outputTokens ?? 0,
-    cacheReadTokens: s.cacheReadTokens ?? 0,
-    cacheWriteTokens: s.cacheWriteTokens ?? 0,
-    editTurns: s.editTurns ?? 0,
-    oneShotTurns: s.oneShotTurns ?? 0,
-    models: s.models ?? {},
-    categories: s.categories ?? {},
-    providers: { [provider]: s },
-    ...(s.projects ? { projects: s.projects } : {}),
-    ...(day.carried ? { carried: true as const } : {}),
-  }
-}
-
 /// The durable day set behind a period's headline: historical days from the
 /// carry-forward cache (up to yesterday, INCLUDING days whose session files have
 /// expired) unioned with today parsed live, then narrowed to the requested range
@@ -291,6 +262,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
   const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
+  const projectFilter = { include: opts.project, exclude: opts.exclude }
 
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -335,7 +307,13 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   }
 
   const allDays = unionDaysForPeriod(cache, todayAllDays, periodInfo, daysSelection?.days ?? null)
-  const days = pf === 'all' ? allDays : allDays.map(d => sliceDayToProvider(d, pf))
+  const projectFilterActive = hasDurableProjectFilter(projectFilter)
+  const days = allDays.map(day => {
+    const providerDay = pf === 'all' ? day : sliceDayToProvider(day, pf)
+    return reconcileDurableProjectDay(providerDay, projectFilter, {
+      preserveDetailedBreakdown: projectFilterActive && day.date === todayStr,
+    })
+  })
   const data = buildPeriodDataFromDays(days, periodInfo.label)
 
   // Enrich the cache-authoritative headline with fields DailyEntry cannot carry.
@@ -373,6 +351,8 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
   const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
+  const projectFilter = { include: opts.project, exclude: opts.exclude }
+  const projectFilterActive = hasDurableProjectFilter(projectFilter)
 
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -486,11 +466,10 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       providers.push({ name: 'claude', displayName: displayNameByName.get('claude') ?? 'Claude', cost: 0 })
     }
   } else if (isAllProviders) {
-    const unfilteredProviderDays = [
-      ...(rangeStartStr <= historicalRangeEndStr ? getDaysInRange(cache, rangeStartStr, historicalRangeEndStr) : []),
-      ...(await getTodayAllDays()).filter(d => d.date >= rangeStartStr && d.date <= rangeEndStr),
-    ]
-    const allDaysForProviders = daysSelection ? unfilteredProviderDays.filter(d => daysSelection.days.has(d.date)) : unfilteredProviderDays
+    // The durable builder already applied period, day, provider and project
+    // scopes. Reusing its exact day projection keeps provider totals aligned
+    // with the headline instead of reading the unfiltered cache again.
+    const allDaysForProviders = cacheDaysForPeriod ?? []
     const providerTotals: Record<string, number> = {}
     for (const d of allDaysForProviders) {
       for (const [name, p] of Object.entries(d.providers)) {
@@ -527,6 +506,23 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       claudeConfigs.selectedId,
     )
     dailyHistory = dailyEntriesToHistory(aggregateProjectsIntoDays(historyProjects))
+  } else if (projectFilterActive) {
+    // Historical project rollups own cost/calls/savings/session splits,
+    // but not token/model/category splits. Keep those unavailable details empty
+    // instead of assigning the whole day to every selected project. Today's
+    // project-filtered live parse can preserve its detailed breakdown safely.
+    const historyFromCache = allCacheDays.map(day => reconcileDurableProjectDay(
+      isAllProviders ? day : sliceDayToProvider(day, pf),
+      projectFilter,
+    ))
+    const todayFromParse = (await getTodayAllDays())
+      .filter(day => day.date === todayStr)
+      .map(day => reconcileDurableProjectDay(
+        isAllProviders ? day : sliceDayToProvider(day, pf),
+        projectFilter,
+        { preserveDetailedBreakdown: true },
+      ))
+    dailyHistory = dailyEntriesToHistory([...historyFromCache, ...todayFromParse])
   } else if (isAllProviders) {
     const todayDays = (await getTodayAllDays()).filter(d => d.date === todayStr)
     const fullHistory = [...allCacheDays, ...todayDays]
@@ -593,9 +589,8 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     // Project totals come from the SAME day set as the headline, so carried
     // days count here too. The surviving-session parse contributes only what
     // day entries cannot: the per-session drill-down and a fresher project
-    // path. Days recorded before the projects rollup existed have totals but
-    // no project split, so this list can sum to less than the headline — an
-    // honest gap, not a bug.
+    // path. Legacy residuals without a project split are represented by the
+    // synthetic Unattributed bucket, never assigned to a real project.
     type CachedProjectTotal = { cost: number; savingsUSD: number; sessions: number; path?: string }
     const cachedTotals = new Map<string, CachedProjectTotal>()
     for (const d of cacheDaysForPeriod) {
@@ -614,7 +609,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       const cached = cachedTotals.get(name)
       const live = liveByName.get(name)
       return {
-        name: live ? friendlyProject(live) : friendlyFromPath(cached?.path, name),
+        name: live ? friendlyProject(live) : friendlyFromPath(cached?.path, durableProjectDisplayName(name)),
         cost: cached?.cost ?? live!.totalCostUSD,
         savingsUSD: cached?.savingsUSD ?? live!.totalSavingsUSD,
         // max for the same reason as the headline: start-day bucketing vs

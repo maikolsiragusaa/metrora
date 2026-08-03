@@ -8,6 +8,7 @@ import { findUnpricedModels, getShortModelName } from './models.js'
 import { markEstimated } from './format.js'
 import { dateKey } from './day-aggregator.js'
 import type { DailyEntry } from './daily-cache.js'
+import { durableProjectDisplayName } from './durable-project-reconciliation.js'
 import type { BudgetStatus, BudgetTier } from './budget.js'
 
 // Display-only helpers. The shared formatters omit thousands separators and
@@ -42,6 +43,17 @@ function projectName(p: ProjectSummary): string {
     if (base) return base
   }
   return p.project.split('-').filter(Boolean).pop() || p.project
+}
+function durableProjectName(project: string, path?: string): string {
+  const displayName = durableProjectDisplayName(project)
+  if (path) {
+    if (path === homedir()) return 'Home'
+    if (isAbsoluteProjectPath(path)) {
+      const base = path.replace(/[/\\]+$/, '').split(/[/\\]/).filter(Boolean).pop()
+      if (base) return base
+    }
+  }
+  return displayName.split('-').filter(Boolean).pop() || displayName
 }
 
 type Col = { header: string; right?: boolean }
@@ -191,11 +203,29 @@ export function renderOverview(
     cacheR = durable.cacheReadTokens
     cacheW = durable.cacheWriteTokens
     byDay.clear()
+    byProvider.clear()
+    byProject.clear()
     for (const d of durable.days) {
+      const providers = new Set<string>()
+      for (const [name, provider] of Object.entries(d.providers)) {
+        providers.add(name)
+        const entry = byProvider.get(name) ?? { cost: 0, tokens: 0 }
+        entry.cost += provider.cost
+        entry.tokens += (provider.inputTokens ?? 0) + (provider.outputTokens ?? 0)
+          + (provider.cacheReadTokens ?? 0) + (provider.cacheWriteTokens ?? 0)
+        byProvider.set(name, entry)
+      }
+      for (const [name, project] of Object.entries(d.projects ?? {})) {
+        const displayName = durableProjectName(name, project.path)
+        const entry = byProject.get(displayName) ?? { cost: 0, sessions: 0 }
+        entry.cost += project.cost
+        entry.sessions += project.sessions
+        byProject.set(displayName, entry)
+      }
       byDay.set(d.date, {
         cost: d.cost,
         tokens: d.inputTokens + d.outputTokens + d.cacheReadTokens + d.cacheWriteTokens,
-        providers: new Set(Object.keys(d.providers)),
+        providers,
       })
     }
   }
