@@ -1,6 +1,6 @@
 # Metrora product principles
 
-These principles govern the public Metrora project. They are intended to remain stable even as interfaces, providers, and packaging evolve.
+These principles govern the public Metrora project. They are intended to remain stable even as interfaces, providers, packaging and optional deployment modes evolve.
 
 ## Local-first is the default
 
@@ -13,6 +13,8 @@ Networked features are additive. They must never silently convert local analysis
 Canonical records, public contracts, local APIs, backup, and ordinary export formats must remain usable without a proprietary service.
 
 Metrora must not trap users behind an account, a hosted dashboard, or an undocumented database format to access measurements created from their own machines.
+
+Service failure, subscription expiry or a change of deployment mode must not remove access to local user-owned history.
 
 ## Content-minimal by default
 
@@ -37,29 +39,43 @@ Metrora exists to provide one coherent view across AI tools and providers. It mu
 
 Provider-specific integrations may be deep, but canonical reporting should remain provider-neutral.
 
+## One canonical core across deployment modes
+
+Local, future managed and future customer-operated modes must use the same public authority for collection, canonical history, historical pricing, provenance, evidence and deterministic analytics.
+
+A remote service may validate, accept, authorize, retain and aggregate evidence produced by that authority. It must not reparse local tool data, invent missing facts, reprice settled history or introduce a second measurement engine.
+
+Deployment location may change operational ownership. It must not change the meaning of the user's history.
+
+The existence of public contracts does not imply that a hosted service, account system, enterprise deployment or complete self-hosted server is available.
+
 ## Sharing is explicit and inspectable
 
 Every device or workspace connection must state what is shared, with whom, for what purpose, and how access can be revoked.
 
 Aggregate views should not silently expose prompts, code, personal file paths, or unrelated activity. Network protocols and shared schemas must be versioned and testable.
 
+Offline or failed delivery must not corrupt the local source of truth. Repeated delivery must be idempotent before a remote mode can be considered trustworthy.
+
 ## The CLI remains first-class
 
 The desktop application, local web interface, and companion clients are views over the same trustworthy core. The CLI and public contracts must remain suitable for automation, inspection, migration, and independent tooling.
 
-A graphical feature should not require a separate measurement implementation when the public core can own the semantics once.
+A graphical or remote feature should not require a separate measurement implementation when the public core can own the semantics once.
 
 ## The open-source edition must remain genuinely useful
 
 The public project should provide a complete local experience for individual developers and a practical foundation for privacy-conscious shared use.
 
-Public measurement quality, collectors, provenance, core analytics, local access, and data portability must not be intentionally degraded to manufacture a paid limitation.
+Public measurement quality, collectors, canonical history, provenance, core analytics, local access, and data portability must not be intentionally degraded to manufacture a paid limitation.
+
+Commercial value may come from operating services, remote access, coordination, retention, governance, support and other capabilities that require continuing operational responsibility.
 
 ## Security and privacy outrank convenience
 
 Pairing, enrollment, synchronization, update delivery, and release signing must be designed as security boundaries, not added after the interface is considered finished.
 
-When a safe workflow is not ready, Metrora should label the capability experimental rather than overstate its guarantees.
+When a safe workflow is not ready, Metrora should label the capability experimental, planned or unavailable rather than overstate its guarantees.
 
 ## Product identity should be its own
 
