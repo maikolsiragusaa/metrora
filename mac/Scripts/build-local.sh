@@ -124,7 +124,7 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>${MIN_MACOS}</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>© Maikol Siragusa</string>
+    <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Metrora contributors</string>
 </dict>
 </plist>
 PLIST
