@@ -26,7 +26,10 @@ function renderTopBar(capabilities: DesktopSectionCapabilities) {
       providerLabel="All providers"
       providerOptions={[{ value: 'all', label: 'All providers' }]}
       onProviderSelect={vi.fn()}
-      claudeConfigs={{ activeId: null, options: [{ id: 'default', label: 'Default' }] }}
+      claudeConfigs={{
+        selectedId: null,
+        options: [{ id: 'default', label: 'Default', path: '/config/default' }],
+      }}
       configSource={null}
       onConfigSelect={vi.fn()}
       capabilities={capabilities}
