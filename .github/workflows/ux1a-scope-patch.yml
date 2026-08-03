@@ -1,0 +1,31 @@
+name: UX1A Scope Patch
+
+on:
+  push:
+    branches: [feat/desktop-truthful-scope-shortcuts]
+    paths:
+      - scripts/ux1a-scope-patch.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/desktop-truthful-scope-shortcuts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/ux1a-scope-patch.mjs
+      - run: git diff --check
+      - name: Commit bounded patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/renderer/App.tsx scripts/ux1a-scope-patch.mjs .github/workflows/ux1a-scope-patch.yml
+          git commit -m "fix: keep unsupported sections outside Claude config scope"
+          git push origin HEAD:feat/desktop-truthful-scope-shortcuts
