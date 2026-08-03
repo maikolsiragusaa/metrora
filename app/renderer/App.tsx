@@ -11,17 +11,18 @@ import { ToastHost } from './components/ToastHost'
 import { UpdateBanner } from './components/UpdateBanner'
 import { rangeLabel, TopBar } from './components/TopBar'
 import { Window } from './components/Window'
+import { providerName, useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { clearPolledMemo, hasPolledMemo, primePolledMemo, setPolledMemoMax, usePolled } from './hooks/usePolled'
 import { readDailyBudget } from './lib/budget'
-import { DESKTOP_SECTION_CAPABILITIES, PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
+import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { formatCompact, formatUsd, setActiveCurrency } from './lib/format'
 import { motionClass } from './lib/motion'
 import { codeburn } from './lib/ipc'
 import { localDateKey } from './lib/period'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
-import { readCompatStorage, removeCompatStorage, writeCompatStorage } from './lib/storage'
+import { readCompatStorage, writeCompatStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
 import { Models } from './sections/Models'
@@ -109,8 +110,6 @@ export function usageSnapshotProps(payload: MenubarPayload, modelCategories?: Ma
   }
 }
 
-const STANDARD_PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all', 'lifetime']
-
 // Instant-switch memo key for an overview result. Shared by the overview poll
 // and the provider prefetcher so the two never drift out of sync. Exported so
 // the prefetch-storm test can assert warmed keys survive between polls.
@@ -132,35 +131,6 @@ const PREFETCH_STAGGER_MS = 2000
 // never LRU-evict between polls (which would blank the overview and re-arm the
 // prefetch every cycle).
 const BASE_MEMO_KEYS = 4
-
-function isPeriod(value: string): value is Period {
-  return (STANDARD_PERIODS as string[]).includes(value)
-}
-
-/** Boot period = the persisted "Default period" Settings writes, else today. */
-function initialPeriod(): Period {
-  const saved = readCompatStorage('defaultPeriod')
-  return saved && isPeriod(saved) ? saved : 'today'
-}
-
-/** Persisted Claude config override (empty/absent = aggregate all configs). */
-function initialConfigSource(): string | null {
-  return readCompatStorage('claudeConfigSource') || null
-}
-
-function persistConfigSource(id: string | null): void {
-  if (id) writeCompatStorage('claudeConfigSource', id)
-  else removeCompatStorage('claudeConfigSource')
-}
-
-function providerName(provider: string): string {
-  if (provider === 'all') return 'All providers'
-  return provider
-    .split(/[-\s]+/)
-    .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
 
 function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
   if (loading && lastSuccessAt === null) return 'refreshing…'
@@ -194,16 +164,24 @@ export function App() {
 function AppMain() {
   const [section, setSection] = useState<Section>('overview')
   const [settingsPane, setSettingsPane] = useState<SettingsPane>('general')
-  const [period, setPeriod] = useState<Period>(initialPeriod)
-  const [provider, setProvider] = useState<string>('all')
   const [detectedProviders, setDetectedProviders] = useState<Array<{ id: string; label: string }>>([])
-  const [customRange, setCustomRange] = useState<DateRange | null>(null)
-  const [claudeConfigSource, setClaudeConfigSource] = useState<string | null>(initialConfigSource)
+  const {
+    period,
+    provider,
+    customRange,
+    claudeConfigSource,
+    sectionCapabilities,
+    scopedClaudeConfigSource,
+    providerOptions,
+    providerLabel,
+    onPeriodChange,
+    onRangeSelect,
+    onProviderSelect,
+    onConfigSelect,
+  } = useDesktopScope({ section, detectedProviders })
   const [refreshToken, setRefreshToken] = useState(0)
   const [now, setNow] = useState(() => Date.now())
   const [, setCurrencyTick] = useState(0)
-  const sectionCapabilities = DESKTOP_SECTION_CAPABILITIES[section]
-  const scopedClaudeConfigSource = sectionCapabilities.claudeConfig ? claudeConfigSource : null
 
   // Preserve the 2/3-arg call shapes when no config is scoped so the CLI argv
   // stays flag-free; only add --claude-config-source once a config is picked.
@@ -404,39 +382,7 @@ function AppMain() {
 
   useDesktopShortcuts({ navigate, refresh: refreshVisible })
 
-  const onPeriodChange = (value: string) => {
-    if (isPeriod(value)) {
-      setCustomRange(null)
-      setPeriod(value)
-    }
-  }
-
-  // A Claude config scopes Claude usage only, so a non-Claude provider filter
-  // would make the CLI reject the flag: reset it to 'all' first (a 'claude'
-  // filter is already compatible and is left alone).
-  const onConfigSelect = (id: string) => {
-    const next = id || null
-    if (next && provider !== 'all' && provider !== 'claude') setProvider('all')
-    setClaudeConfigSource(next)
-    persistConfigSource(next)
-  }
-
-  // Symmetric direction: picking a non-Claude provider while a config is
-  // scoped would hit the same CLI rejection, so drop the config scope.
-  const onProviderSelect = (value: string) => {
-    if (claudeConfigSource && value !== 'all' && value !== 'claude') {
-      setClaudeConfigSource(null)
-      persistConfigSource(null)
-    }
-    setProvider(value)
-  }
-
   const claudeConfigs = overview.data?.claudeConfigs
-  const providerOptions = [
-    { value: 'all', label: 'All providers' },
-    ...detectedProviders.map(entry => ({ value: entry.id, label: entry.label })),
-  ]
-  const providerLabel = detectedProviders.find(entry => entry.id === provider)?.label ?? providerName(provider)
   const activeConfigLabel = scopedClaudeConfigSource
     ? claudeConfigs?.options.find(option => option.id === scopedClaudeConfigSource)?.label ?? null
     : null
@@ -465,7 +411,7 @@ function AppMain() {
               period={period}
               onPeriodChange={onPeriodChange}
               customRange={customRange}
-              onRangeSelect={setCustomRange}
+              onRangeSelect={onRangeSelect}
               provider={provider}
               providerLabel={providerLabel}
               providerOptions={providerOptions}
