@@ -1,6 +1,6 @@
 # Workspace evidence export v1
 
-**Status:** implemented as an explicit local runtime boundary; no uploader or desktop UI is active.
+**Status:** implemented and accepted as an explicit local runtime and desktop Workspace UI action; no uploader or network synchronization is active.
 
 Workspace evidence export v1 turns the existing reviewed outbox and immutable signed-batch chain into a user-owned JSON artifact that can be verified without Metrora, an account, or a server.
 
@@ -99,7 +99,12 @@ Only the already allowlisted structured measurement fields inside signed public 
 - no network uploader, synchronization, retry worker, or hosted ingestion;
 - no account, invitation, team, entitlement, or billing behavior;
 - no Android-side signing, pricing, or collection;
-- no collector, parser, token, historical-price, label, or aggregation change;
-- no desktop Workspace screens in this tranche.
+- no collector, parser, token, historical-price, label, or aggregation change.
 
-The next bounded tranche is the desktop Workspace experience: creation, state, coverage, batch/export actions, recovery guidance, and exact reconciliation with canonical local analytics.
+## Workspace v1 closure
+
+Local desktop export is implemented and accepted as a separate explicit Workspace action in both the private runtime and desktop UI.
+
+The accepted Workspace v1 flow creates signed batches, opens the native save boundary, publishes the export atomically, returns only bounded public results to the renderer, and independently verifies the resulting user-owned package.
+
+No uploader, network synchronization, retry worker, hosted ingestion path or server acknowledgement issuer is implemented. Network upload and server acknowledgements remain subject to separate future product, security, authorization, retention and operational gates.
