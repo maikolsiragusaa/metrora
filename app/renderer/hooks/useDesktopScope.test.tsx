@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import type { Section } from '../components/Sidebar'
 import { storageKeys } from '../lib/storage'
 import { useDesktopScope } from './useDesktopScope'
 
@@ -65,8 +66,8 @@ describe('useDesktopScope', () => {
   it('keeps the persisted config while removing it from unsupported section scope', () => {
     localStorage.setItem(storageKeys('claudeConfigSource').canonical, 'claude-config:default')
     const { result, rerender } = renderHook(
-      ({ section }) => useDesktopScope({ section, detectedProviders: providers }),
-      { initialProps: { section: 'overview' as const } },
+      ({ section }: { section: Section }) => useDesktopScope({ section, detectedProviders: providers }),
+      { initialProps: { section: 'overview' as Section } },
     )
 
     expect(result.current.scopedClaudeConfigSource).toBe('claude-config:default')
