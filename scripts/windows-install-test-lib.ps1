@@ -84,7 +84,9 @@ function Get-MetroraUninstallEntries([string]$ExpectedInstallDirectory, [string]
 function Assert-MetroraUninstallRegistration(
   [string]$InstallDirectory,
   [string]$Uninstaller,
-  [string]$ExpectedVersion
+  [string]$ExpectedVersion,
+  [string]$ExpectedPublisher = 'Vensent',
+  [switch]$AllowHistoricalPublisher
 ) {
   $entries = @(Get-MetroraUninstallEntries $InstallDirectory $Uninstaller)
   $diagnostic = $entries | Select-Object Hive, View, KeyName, DisplayName, DisplayVersion, Publisher, InstallLocation, UninstallString, QuietUninstallString
@@ -96,7 +98,11 @@ function Assert-MetroraUninstallRegistration(
   if ($entry.Hive -ne 'HKCU') { throw "per-user Metrora registration is outside HKCU: $($entry.Hive)/$($entry.View)" }
   if ($entry.DisplayName -ne "Metrora $ExpectedVersion") { throw "unexpected uninstall DisplayName: $($entry.DisplayName)" }
   if ($entry.DisplayVersion -ne $ExpectedVersion) { throw "unexpected uninstall DisplayVersion: $($entry.DisplayVersion)" }
-  if ($entry.Publisher -ne 'Vensent') { throw "unexpected uninstall Publisher: $($entry.Publisher)" }
+  if ($AllowHistoricalPublisher) {
+    if ([string]::IsNullOrWhiteSpace($entry.Publisher)) { throw 'historical uninstall Publisher is empty' }
+  } elseif ($entry.Publisher -ne $ExpectedPublisher) {
+    throw "unexpected uninstall Publisher: $($entry.Publisher)"
+  }
   if ($entry.UninstallString.IndexOf($Uninstaller, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
     throw 'uninstall registration does not target the expected uninstaller'
   }
