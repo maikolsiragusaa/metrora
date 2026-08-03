@@ -11,13 +11,16 @@ import { ToastHost } from './components/ToastHost'
 import { UpdateBanner } from './components/UpdateBanner'
 import { rangeLabel, TopBar } from './components/TopBar'
 import { Window } from './components/Window'
+import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { clearPolledMemo, hasPolledMemo, primePolledMemo, setPolledMemoMax, usePolled } from './hooks/usePolled'
 import { readDailyBudget } from './lib/budget'
+import { DESKTOP_SECTION_CAPABILITIES, PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { formatCompact, formatUsd, setActiveCurrency } from './lib/format'
 import { motionClass } from './lib/motion'
 import { codeburn } from './lib/ipc'
 import { localDateKey } from './lib/period'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
+import { shortcutLabel } from './lib/shortcuts'
 import { readCompatStorage, removeCompatStorage, writeCompatStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
@@ -104,28 +107,6 @@ export function usageSnapshotProps(payload: MenubarPayload, modelCategories?: Ma
       callBucket: countBucket(skill.turns),
     })),
   }
-}
-
-const SECTION_TITLES: Record<Section, string> = {
-  overview: 'Overview',
-  sessions: 'Sessions',
-  pullRequests: 'Pull requests',
-  spend: 'Spend',
-  optimize: 'Optimize',
-  models: 'Models',
-  compare: 'Compare',
-  plans: 'Plans',
-  workspace: 'Workspace',
-  settings: 'Settings',
-}
-
-const PERIOD_LABELS: Record<Period, string> = {
-  today: 'Today',
-  week: 'Last 7 days',
-  month: 'This month',
-  '30days': 'Last 30 days',
-  all: 'Last 6 months',
-  lifetime: 'Lifetime',
 }
 
 const STANDARD_PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all', 'lifetime']
@@ -419,28 +400,7 @@ function AppMain() {
     trackEvent('section_view', { section: next })
   }, [trackEvent])
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return
-      const key = event.key.toLowerCase()
-      if (key === '1') navigate('overview')
-      else if (key === '2') navigate('sessions')
-      else if (key === '3') navigate('pullRequests')
-      else if (key === '4') navigate('spend')
-      else if (key === '5') navigate('optimize')
-      else if (key === '6') navigate('models')
-      else if (key === '7') navigate('compare')
-      else if (key === '8') navigate('plans')
-      else if (key === '9') navigate('workspace')
-      else if (key === ',') navigate('settings')
-      else if (key === 'r') refreshVisible()
-      else return
-      event.preventDefault()
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [refreshVisible, navigate])
+  useDesktopShortcuts({ navigate, refresh: refreshVisible })
 
   const onPeriodChange = (value: string) => {
     if (isPeriod(value)) {
@@ -479,6 +439,7 @@ function AppMain() {
     ? claudeConfigs?.options.find(option => option.id === claudeConfigSource)?.label ?? null
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
+  const sectionCapabilities = DESKTOP_SECTION_CAPABILITIES[section]
 
   return (
     <Window>
@@ -511,6 +472,7 @@ function AppMain() {
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}
               onConfigSelect={onConfigSelect}
+              capabilities={sectionCapabilities}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
@@ -539,9 +501,9 @@ function AppMain() {
         {section !== 'settings' && (
           <Hint
             items={[
-              { k: '⌘1-9', label: 'Navigate' },
-              { k: '⌘,', label: 'Settings' },
-              { k: '⌘R', label: 'Refresh' },
+              { k: `${shortcutLabel('1')}-${shortcutLabel('9').replace(/^.*?(?=9$)/, '')}`, label: 'Navigate' },
+              { k: shortcutLabel(','), label: 'Settings' },
+              { k: shortcutLabel('R'), label: 'Refresh' },
             ]}
             right={refreshedLabel(overview.lastSuccessAt, overview.loading, now)}
           />
