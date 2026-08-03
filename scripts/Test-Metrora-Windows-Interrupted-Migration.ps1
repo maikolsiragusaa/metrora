@@ -65,7 +65,7 @@ function Get-BoundedWindowsAuthority([string]$InstallDirectory) {
 function Test-MetroraUninstallerAuthority($Entry, [string]$ExpectedUninstaller, [string[]]$ExpectedVersions) {
   return (
     $Entry.Hive -eq 'HKCU' -and
-    $Entry.Publisher -eq 'Maikol Siragusa' -and
+    $Entry.Publisher -eq 'Vensent' -and
     $ExpectedVersions -contains $Entry.DisplayVersion -and
     $Entry.UninstallString.IndexOf($ExpectedUninstaller, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
     $Entry.QuietUninstallString.IndexOf($ExpectedUninstaller, [StringComparison]::OrdinalIgnoreCase) -ge 0
