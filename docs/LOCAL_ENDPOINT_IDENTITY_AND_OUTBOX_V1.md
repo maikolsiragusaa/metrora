@@ -1,6 +1,6 @@
 # Metrora local endpoint identity, outbox and signed batches v1
 
-Status: **desktop vault, local Workspace identity, explicit reviewed production, outbox and signed-batch primitives implemented; automatic collection and network sync remain disabled**.
+Status: **desktop vault, local Workspace identity, explicit reviewed production, outbox, signed-batch chain and independently verifiable export implemented; automatic collection and network sync remain disabled**.
 
 This layer gives one Metrora installation a durable cryptographic identity, a local personal workspace, a crash-recoverable queue for reviewed usage events and a locally verifiable signed-batch chain.
 
@@ -14,7 +14,7 @@ Metrora does not introduce custom cryptographic algorithms or a private JSON can
 - Filesystem durability reuses the temp-file, file-fsync, rename and refresh-lease patterns already proven by the inherited cache.
 - No plaintext secret fallback is allowed.
 
-Electron `safeStorage` remains a host concern rather than a dependency of the core. This keeps the future CLI and server hosts free to use another mature OS credential backend without changing endpoint or batch formats.
+Electron `safeStorage` remains a host concern rather than a dependency of the core. This keeps future CLI and server hosts free to use another mature credential backend without changing endpoint or batch formats.
 
 ## Desktop OS vault
 
@@ -89,9 +89,11 @@ Loading does not create a workspace implicitly. No server, account or network pa
 - withholds unreviewed evidence or source-provider conflicts;
 - publishes only validated content-minimal `UsageMeasurementEventV1` records;
 - returns `enqueued` or `duplicate` through the local outbox;
-- performs no scan, automatic hook, signing, upload or retry scheduling.
+- performs no scan, automatic hook, upload or retry scheduling by itself.
 
 A supported collector is not automatically eligible. Only an exact reviewed evidence path can produce an event.
+
+The accepted desktop Workspace uses the separate canonical scanner and orchestrator to invoke this producer explicitly from complete source-present state. Opening the app or Workspace screen does not produce events.
 
 ## Local measurement outbox
 
@@ -146,7 +148,7 @@ The counter is atomically advanced before an event is published. A crash may lea
 
 ### Event digest
 
-The outbox still uses the narrow Metrora local v1 canonicalization contract for event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
+The outbox uses the narrow Metrora local v1 canonicalization contract for event idempotency. It is not advertised as RFC 8785. Interoperable RFC 8785 canonicalization begins at the signed-batch boundary.
 
 The frozen v1 identifier retains its historical value. Changing an already-issued identifier requires a future contract version rather than an in-place rename.
 
@@ -184,7 +186,25 @@ Batch acknowledgements are immutable side records. Acknowledging one batch:
 - rejects a conflicting receipt;
 - never deletes the signed batch or source events.
 
-No server currently issues these receipts. The API is a local contract for the future sync protocol.
+No server currently issues these receipts. The API is a local contract for a separately authorized future synchronization protocol.
+
+## User-owned evidence export
+
+The accepted Workspace runtime can export a bounded signed package containing the public Workspace, endpoint and complete included signed-batch chain.
+
+The verifier checks:
+
+- public contract validity;
+- batch payload digests;
+- sequence ranges and previous-digest links;
+- embedded signer fingerprints and public keys;
+- Ed25519 signatures;
+- Workspace and endpoint binding;
+- export-level integrity.
+
+The export excludes private production receipts, acknowledgement receipt IDs, endpoint private keys, local paths, prompts, responses, source code, patches, secrets and raw tool arguments.
+
+The package is user-owned. Creating it does not authorize upload, retention, indexing or remote processing.
 
 ## Durability and concurrency
 
@@ -196,21 +216,49 @@ No server currently issues these receipts. The API is a local contract for the f
 - stale temp files are cleaned without touching canonical records;
 - Windows CI runs identity, workspace, reviewed production, outbox and signed-batch tests plus a real Electron DPAPI probe.
 
+## Deployment-neutral future boundary
+
+Any future managed or customer-operated Workspace mode may validate public contracts, endpoint and batch signatures, sequence ranges, digest chains and duplicate delivery.
+
+It must not:
+
+- receive private production identities or endpoint key material;
+- reparse source data;
+- reconstruct canonical calls from a remote copy;
+- infer missing providers or labels;
+- recalculate tokens or settled historical prices;
+- silently repair rejected evidence;
+- override local recovery, quarantine or lifecycle state;
+- become required for local analytics or export.
+
+Network outage or service failure must leave endpoint collection and local history usable. Repeated delivery must be idempotent before synchronization can be considered trustworthy.
+
 ## Explicit non-goals
 
-This tranche does not add:
+This layer does not add:
 
-- automatic event creation during scans;
+- automatic event creation during every scan;
 - CLI keyring setup;
 - network transport or hosted sync;
 - a retry scheduler;
 - a server acknowledgement implementation;
-- team enrollment or hosted workspace authentication;
+- account or tenant provisioning;
+- team enrollment or hosted Workspace authentication;
+- enterprise private deployment;
 - DSSE/Sigstore packaging;
 - compaction or retention deletion;
 - repository-path derivation;
-- new collector provenance profiles.
+- new collector provenance profiles;
+- billing, entitlement, SSO/SCIM, Kubernetes or remote lifecycle control.
 
-## Next safe step
+## Current boundary and sequence
 
-W1.C can bind pending workspace-authorized outbox records into the existing signed-batch chain and create an independently verifiable local export package. Network upload still waits for managed workspace authorization, transport idempotency and server acknowledgement contracts.
+The local identity, reviewed production, outbox, signed-batch chain and independently verifiable export are implemented and accepted as part of Workspace v1.
+
+The active product milestone is MTR-R1.C trustworthy Windows distribution. It does not authorize a network uploader or server.
+
+C3-P0 — Canonical Observation, Activity and History Authority is ratified as the next public core authority milestone after Windows distribution and before physical Android validation.
+
+This document does not define or anticipate C3 storage, SQLite use, schemas, observation/activity/history identity, cache/live reconciliation, timezone behavior or migration mechanics.
+
+Managed synchronization, accounts, billing, private deployment and remote management remain separate future decisions and are not authorized by this documentation alignment.
