@@ -13,7 +13,17 @@ export type DailyCache = core.DailyCache & {
 }
 
 function withTrust(cache: core.DailyCache, watermarkTrusted: boolean): DailyCache {
-  return { ...cache, watermarkTrusted }
+  const trustedCache = { ...cache } as DailyCache
+  // Only positive trust is durable authority. Runtime callers still receive an
+  // explicit false value, but false remains structurally equivalent to the
+  // legacy absence of a stamp for object equality, spreads, and JSON storage.
+  Object.defineProperty(trustedCache, 'watermarkTrusted', {
+    configurable: true,
+    enumerable: watermarkTrusted,
+    value: watermarkTrusted,
+    writable: true,
+  })
+  return trustedCache
 }
 
 async function readTrust(path: string): Promise<{ version: number; trusted: boolean } | null> {
@@ -77,7 +87,13 @@ export async function loadDailyCache(): Promise<DailyCache> {
 }
 
 export async function saveDailyCache(cache: DailyCache): Promise<void> {
-  await core.saveDailyCache(cache)
+  const persisted = { ...cache } as DailyCache
+  if (cache.watermarkTrusted === true) {
+    persisted.watermarkTrusted = true
+  } else {
+    delete persisted.watermarkTrusted
+  }
+  await core.saveDailyCache(persisted)
 }
 
 export function addNewDays(cache: DailyCache, incoming: core.DailyEntry[], newestDate: string): DailyCache {
@@ -152,15 +168,14 @@ export async function ensureCacheHydrated(
         ? core.mergeDayEntries(freshDays, baseline, true)
         : core.mergeDayEntries(baseline, freshDays, false)
 
-      cache = {
+      cache = withTrust({
         version: core.DAILY_CACHE_VERSION,
         savingsConfigHash,
         tzKey,
         lastComputedDate: parseWasComplete ? yesterdayStr : priorWatermark,
         days: applyRetention(days, yesterdayStr),
         complete: parseWasComplete,
-        watermarkTrusted: parseWasComplete,
-      }
+      }, parseWasComplete)
       await saveDailyCache(cache)
       return cache
     }
@@ -180,15 +195,14 @@ export async function ensureCacheHydrated(
       const projects = await parseSessions({ start: gapStart, end: yesterdayEnd })
       const parseWasComplete = await parseIsAuthoritative(sessionComplete)
       cache = addNewDays(cache, aggregateDays(projects), yesterdayStr)
-      cache = {
+      cache = withTrust({
         ...cache,
         lastComputedDate: parseWasComplete ? cache.lastComputedDate : priorWatermark,
         complete: parseWasComplete,
-        watermarkTrusted: parseWasComplete,
-      }
+      }, parseWasComplete)
       await saveDailyCache(cache)
     } else if (cache.complete !== true && await parseIsAuthoritative(sessionComplete)) {
-      cache = { ...cache, complete: true, watermarkTrusted: true }
+      cache = withTrust({ ...cache, complete: true }, true)
       await saveDailyCache(cache)
     }
 
