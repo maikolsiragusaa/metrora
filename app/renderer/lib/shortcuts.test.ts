@@ -5,6 +5,7 @@ import {
   isPrimaryShortcut,
   shortcutLabel,
   shortcutModifierLabel,
+  shortcutRangeLabel,
 } from './shortcuts'
 
 describe('desktop shortcut helpers', () => {
@@ -18,8 +19,10 @@ describe('desktop shortcut helpers', () => {
   it('uses Command labels only on macOS', () => {
     expect(shortcutModifierLabel('macos')).toBe('⌘')
     expect(shortcutLabel('1', 'macos')).toBe('⌘1')
+    expect(shortcutRangeLabel('1', '9', 'macos')).toBe('⌘1-9')
     expect(shortcutModifierLabel('windows')).toBe('Ctrl+')
     expect(shortcutLabel('R', 'windows')).toBe('Ctrl+R')
+    expect(shortcutRangeLabel('1', '9', 'windows')).toBe('Ctrl+1-9')
     expect(shortcutLabel(',', 'linux')).toBe('Ctrl+,')
   })
 
