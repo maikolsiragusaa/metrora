@@ -1,3 +1,4 @@
+// One-shot branch maintenance script; deletes itself after applying the patch.
 import fs from 'node:fs'
 
 const testPath = 'app/renderer/App.test.tsx'
