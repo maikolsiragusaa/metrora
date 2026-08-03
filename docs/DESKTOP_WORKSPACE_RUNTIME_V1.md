@@ -1,8 +1,8 @@
 # Desktop Workspace runtime v1
 
-**Status:** W1.D.A secure main-process boundary, W1.D.B focused desktop view, W1.D.C.A durable production lifecycle, W1.D.C.B.A trusted orchestration, W1.D.C.B.B.A canonical scanner, and W1.D.C.B.B.B explicit desktop production are implemented in this checkpoint. Deterministic non-destructive recovery and final physical/portable validation remain before the complete W1.D experience is closed.
+**Status:** Workspace v1 desktop runtime implemented and accepted. Secure main-process isolation, focused desktop view, durable production lifecycle, trusted orchestration, canonical scanning, explicit production, deterministic non-destructive recovery, signed batching, local export, reopen persistence, and final physical/portable validation are complete for this milestone.
 
-The desktop Workspace runtime exposes local Workspace identity, reviewed production, evidence state, signed batches, export, and production policy to Electron without creating a second analytics engine or exposing endpoint secrets or canonical source records to the renderer.
+The desktop Workspace runtime exposes local Workspace identity, reviewed production, evidence state, signed batches, export, recovery, and production policy to Electron without creating a second analytics engine or exposing endpoint secrets or canonical source records to the renderer.
 
 ## Authority split
 
@@ -10,7 +10,7 @@ The desktop keeps three explicit authorities:
 
 - the existing CLI/menubar Overview payload remains authoritative for calls, sessions, token dimensions, costs, pricing coverage, model labels, source labels, project labels, filters, and periods;
 - the canonical parser/cache scanner is authoritative only for source-present reviewed-production candidates and bounded withheld/failed counts;
-- the private Workspace runtime is authoritative for local identity, lifecycle policy, receipts, outbox publication, evidence state, batch creation, and signed export.
+- the private Workspace runtime is authoritative for local identity, lifecycle policy, receipts, outbox publication, evidence state, recovery, batch creation, and signed export.
 
 The Workspace renderer combines public read models. It never recalculates analytics totals, reconstructs canonical calls, or derives evidence from outbox events or signed batches.
 
@@ -59,18 +59,20 @@ Neither DTO contains analytics totals, normalized calls, private deduplication i
 
 ## Focused desktop view
 
-The Workspace section preserves exact Overview reconciliation and now presents four separate explicit steps:
+The Workspace section preserves exact Overview reconciliation and presents separate explicit actions for:
 
-1. create the local Workspace;
-2. produce reviewed measurements;
-3. create a signed batch;
-4. export independently verifiable evidence.
+1. creating the local Workspace;
+2. producing reviewed measurements;
+3. pausing or resuming future production;
+4. checking and recovering known interrupted local state;
+5. creating a signed batch;
+6. exporting independently verifiable evidence.
 
-It also exposes pause and resume for future production only. No step triggers another automatically.
+No step triggers another automatically.
 
 `workspaceUsageFromOverview()` remains a field-for-field projection of the current Overview payload. It performs no aggregation, repricing, relabeling, event reconstruction, or batch reconstruction.
 
-Opening the view performs only a public Workspace-status read. It does not scan, produce, sign, export, upload, or publish.
+Opening the view performs only a public Workspace-status read. It does not scan, produce, recover, sign, export, upload, or publish.
 
 ## Explicit reviewed production
 
@@ -102,6 +104,23 @@ Pause is enforced before the canonical scan. A pause requested during an active 
 
 Pause has no effect on collectors, ordinary parser use, Overview analytics, historical pricing, labels, existing outbox events, batches, or exports. Resume never deletes state or rewrites existing evidence.
 
+## Deterministic non-destructive recovery
+
+Recovery is an explicit local action and is never triggered by opening the application or Workspace view.
+
+The runtime may reconcile known interrupted receipt or publication state while preserving valid identity, lifecycle, events, batches and exports. It fails closed on malformed, conflicting, foreign, invalid, quarantined or unsupported state.
+
+Recovery must never:
+
+- delete valid evidence;
+- silently reset Workspace or endpoint identity;
+- reset or bypass the production lifecycle;
+- bypass quarantine;
+- fabricate measurements, acknowledgements or batches;
+- weaken canonical scanner, receipt or signature checks.
+
+A successful recovery returns only bounded public outcome counts and a refreshed Workspace snapshot. Private receipts, paths and recovery internals remain in the main-process boundary.
+
 ## Evidence actions
 
 The renderer may explicitly request:
@@ -110,10 +129,11 @@ The renderer may explicitly request:
 - creation of the personal Workspace;
 - reviewed-measurement production;
 - pause or resume of future production;
+- deterministic check and recovery;
 - creation of the next workspace-authorized signed batch;
 - export of the independently verifiable Workspace evidence package.
 
-Production, batching, and export remain separate actions. Blocked or quarantined evidence disables unsafe actions. Pausing production does not disable valid existing batch or export operations.
+Production, recovery, batching, and export remain separate actions. Blocked or quarantined evidence disables unsafe actions. Pausing production does not disable valid existing recovery, batch or export operations where their own preconditions are satisfied.
 
 ## Export path privacy
 
@@ -127,10 +147,10 @@ All handlers return structured envelopes rather than raw exceptions.
 
 - scanner/cache integrity failures map to a bounded production-scan error;
 - missing or unloadable lazy production runtime maps to production unavailable;
-- lifecycle, Workspace, receipt, outbox, quarantine, and evidence failures remain fail-closed;
+- lifecycle, Workspace, receipt, outbox, recovery, quarantine, and evidence failures remain fail-closed;
 - raw exception text, local paths, canonical calls, and private state never cross IPC.
 
-Ordinary local analytics remain usable when Workspace production is unavailable.
+Ordinary local analytics remain usable when Workspace production or recovery is unavailable.
 
 ## Packaging and validation
 
@@ -139,18 +159,24 @@ The root build emits:
 - `desktop-local-state.js`;
 - `desktop-reviewed-production.js`.
 
-Desktop staging and portable packaging must include both. Blocking Ubuntu and Windows gates verify core production, lazy import, staged bundle presence, IPC, renderer behavior, desktop typecheck, and desktop build.
+Desktop staging and portable packaging include both. Blocking Ubuntu and Windows gates verify core production, recovery, lazy import, staged bundle presence, IPC, renderer behavior, desktop typecheck, and desktop build.
+
+The complete create → produce → pause/resume → recover → batch → export → close/reopen flow passed the Workspace v1 blocking tests and final physical Windows portable acceptance. Existing-profile, clean-install, upgrade, repair, rollback and re-upgrade validation preserved user-owned local state for the bounded accepted candidate.
 
 ## Non-goals
 
 - no alternate analytics calculation or total store;
 - no automatic/background production;
-- no automatic batch creation, export, upload, or publication;
+- no automatic recovery, batch creation, export, upload, or publication;
 - no destructive reset or invented recovery;
 - no uploader, synchronization, network, account, team, invitation, entitlement, billing, or retention service;
 - no Android, Advisor, or Bench behavior;
 - no collector, parser, pricing, label, session-cache, or aggregation redesign.
 
-## Remaining W1.D work
+## Workspace v1 closure
 
-The remaining checkpoint must expose deterministic, non-destructive recovery for known local failure states and validate the complete create → produce → pause/resume → batch → export → reopen flow on the portable Windows artifact. Recovery may reconcile or retry known state; it must never delete valid evidence, silently reset identity or lifecycle state, bypass quarantine, or weaken fail-closed checks.
+Workspace v1 desktop runtime is closed for the accepted local milestone.
+
+The explicit create → produce → pause/resume → recover → batch → export → reopen journey is implemented, tested and physically accepted on the Windows portable boundary. Deterministic recovery is non-destructive, valid local evidence remains user-owned, and Overview analytics continue to use the existing canonical authority.
+
+Hosted synchronization, network upload, server acknowledgements, accounts, teams, billing, remote lifecycle control and cloud recovery remain outside Workspace v1 and require separate future gates.
