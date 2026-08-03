@@ -59,6 +59,15 @@ describe('trusted watermark envelope propagation', () => {
     expect(loaded.watermarkTrusted).toBe(true)
   })
 
+  it('never transfers trust from an unsupported active envelope to an adopted cache', async () => {
+    await writeFile(dailyCachePath(), JSON.stringify(envelope({ version: DAILY_CACHE_VERSION - 2 })), 'utf-8')
+    await writeFile(join(root, 'daily-cache.json'), JSON.stringify(envelope({ watermarkTrusted: false })), 'utf-8')
+
+    const loaded = await loadDailyCache()
+    expect(loaded.version).toBe(DAILY_CACHE_VERSION)
+    expect(loaded.watermarkTrusted).toBe(false)
+  })
+
   it('keeps an empty new cache explicitly untrusted until a complete parse finalizes it', () => {
     expect(emptyCache().watermarkTrusted).toBe(false)
   })
