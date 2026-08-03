@@ -16,7 +16,7 @@
     "src/session-cache.ts": 900,
     "app/renderer/sections/Overview.tsx": 794,
     "src/usage-aggregator.ts": 784,
-    "src/daily-cache.ts": 757,
+    "src/daily-cache-core.ts": 757,
     "src/models-report.ts": 755,
     "src/context-tree.ts": 745,
     "dash/src/App.tsx": 743,
