@@ -47,9 +47,11 @@ Historical pricing is the default runtime behavior. A later catalog refresh cann
 
 ## Current product milestone
 
-[Workspace v1](docs/WORKSPACE_V1.md) is implemented and physically accepted on Windows. The active product milestone is a trustworthy Windows distribution: consistent publisher identity, independently verifiable artifacts, protected signing, authenticated update metadata, rollback, and an official publication boundary.
+[Workspace v1](docs/WORKSPACE_V1.md) is implemented and physically accepted on Windows. The active product milestone is a trustworthy Windows distribution: consistent publisher identity, independently verifiable artifacts, protected release authority, authenticated update metadata, rollback, and an official publication boundary.
 
-This milestone does not authorize hosted synchronization, billing, team administration, Advisor, Bench, or prompt/code collection.
+This milestone does not authorize hosted synchronization, accounts, billing, team administration, enterprise deployment, Advisor, Bench, or prompt/code collection.
+
+A future networked or customer-operated mode must remain optional and reuse the same public measurement, historical-pricing, provenance and evidence authority. No managed service or private deployment is currently available.
 
 ## Surfaces
 
@@ -71,7 +73,8 @@ Metrora is local-first by default:
 - prompts, responses, source code, patches, secrets, and full local paths are not exported by default;
 - analytical claims distinguish observed, derived, estimated, metered, explicit-zero, legacy-frozen, and unavailable evidence where relevant;
 - networked sharing requires explicit scope, revocation, and structured usage data;
-- user-owned data remains exportable through open formats.
+- user-owned data remains exportable through open formats;
+- service availability or subscription state must not remove access to local user-owned history.
 
 Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1 boundary](docs/WORKSPACE_V1.md), and [security policy](SECURITY.md).
 
