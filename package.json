@@ -46,7 +46,7 @@
   "engines": {
     "node": ">=22.13.0"
   },
-  "author": "Maikol Siragusa",
+  "author": "Vensent (https://metrora.eu)",
   "license": "MIT",
   "repository": {
     "type": "git",
