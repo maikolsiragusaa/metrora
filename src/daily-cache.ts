@@ -30,11 +30,15 @@ async function readTrust(path: string): Promise<{ version: number; trusted: bool
   }
 }
 
+function supportsActiveTrust(version: number): boolean {
+  return version === core.DAILY_CACHE_VERSION || version === core.DAILY_CACHE_VERSION - 1
+}
+
 async function readPersistedTrust(): Promise<boolean> {
   const activePath = core.dailyCachePath()
   if (existsSync(activePath)) {
     const active = await readTrust(activePath)
-    if (active) return active.trusted
+    if (active && supportsActiveTrust(active.version)) return active.trusted
   }
 
   const dir = dirname(activePath)
@@ -45,7 +49,9 @@ async function readPersistedTrust(): Promise<boolean> {
     if (path === activePath) continue
     const parsed = await readTrust(path)
     if (!parsed) continue
-    candidates.push({ ...parsed, mtimeMs: (await stat(path)).mtimeMs })
+    const mtimeMs = await stat(path).then(value => value.mtimeMs).catch(() => null)
+    if (mtimeMs === null) continue
+    candidates.push({ ...parsed, mtimeMs })
   }
   candidates.sort((left, right) => (right.version - left.version) || (right.mtimeMs - left.mtimeMs))
   const base = candidates[0]
