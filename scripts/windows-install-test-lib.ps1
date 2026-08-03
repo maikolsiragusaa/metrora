@@ -96,7 +96,7 @@ function Assert-MetroraUninstallRegistration(
   if ($entry.Hive -ne 'HKCU') { throw "per-user Metrora registration is outside HKCU: $($entry.Hive)/$($entry.View)" }
   if ($entry.DisplayName -ne "Metrora $ExpectedVersion") { throw "unexpected uninstall DisplayName: $($entry.DisplayName)" }
   if ($entry.DisplayVersion -ne $ExpectedVersion) { throw "unexpected uninstall DisplayVersion: $($entry.DisplayVersion)" }
-  if ($entry.Publisher -ne 'Maikol Siragusa') { throw "unexpected uninstall Publisher: $($entry.Publisher)" }
+  if ($entry.Publisher -ne 'Vensent') { throw "unexpected uninstall Publisher: $($entry.Publisher)" }
   if ($entry.UninstallString.IndexOf($Uninstaller, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
     throw 'uninstall registration does not target the expected uninstaller'
   }
