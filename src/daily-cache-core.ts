@@ -261,7 +261,10 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
   if (!isRecord(raw)) return {}
   const out: NonNullable<DailyEntry['projects']> = {}
   for (const [name, p] of Object.entries(raw)) {
-    if (name in Object.prototype || !isRecord(p)) continue
+    // Object.entries exposes own enumerable keys only, and setOwn defines
+    // them without invoking Object.prototype setters. Prototype-property
+    // project names are safe data and must survive persistence + reload.
+    if (!isRecord(p)) continue
     setOwn(out, name, {
       cost: num(p.cost),
       calls: num(p.calls),
