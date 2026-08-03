@@ -5,6 +5,8 @@ function Assert-MetroraInstalledApplication(
   [string]$CanonicalDirectory,
   [string]$RepositoryRoot,
   [string]$ExpectedVersion,
+  [string]$ExpectedPublisher = 'Vensent',
+  [switch]$AllowHistoricalPublisher,
   [switch]$Launch
 ) {
   $executable = Join-Path $InstallDirectory 'Metrora.exe'
@@ -23,7 +25,12 @@ function Assert-MetroraInstalledApplication(
   if ($versionInfo.FileDescription -notmatch 'Metrora') { throw "installed FileDescription is not canonical: $($versionInfo.FileDescription)" }
   if ($versionInfo.FileVersion -ne $ExpectedVersion) { throw "installed FileVersion is not ${ExpectedVersion}: $($versionInfo.FileVersion)" }
 
-  $registration = Assert-MetroraUninstallRegistration $InstallDirectory $uninstaller $ExpectedVersion
+  $registration = Assert-MetroraUninstallRegistration `
+    -InstallDirectory $InstallDirectory `
+    -Uninstaller $uninstaller `
+    -ExpectedVersion $ExpectedVersion `
+    -ExpectedPublisher $ExpectedPublisher `
+    -AllowHistoricalPublisher:$AllowHistoricalPublisher
   $shortcuts = @(Get-MetroraShortcuts $executable)
   if ($shortcuts.Count -lt 1) { throw 'canonical Metrora Start Menu shortcut was not created' }
 
