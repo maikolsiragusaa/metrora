@@ -40,6 +40,22 @@ Workspace v1 reuses rather than replaces:
 
 No second collector, parser, pricing engine, workspace schema, signer, analytics database, or source cache is introduced.
 
+## Deployment-neutral future boundary
+
+Workspace v1 is not a deliberately incomplete local edition of a different future Workspace.
+
+Any future networked or customer-operated Workspace mode must:
+
+- consume evidence produced by the same public canonical core;
+- preserve endpoint historical pricing, provenance and evidence quality;
+- validate and acknowledge signed batches rather than reparse local tool data;
+- keep local collection, analytics, recovery and export usable without an account or service;
+- treat remote retention, authorization and aggregate views as additive responsibilities;
+- avoid remote commands that silently rewrite local production, history or quarantine state;
+- use versioned public contracts and portable export formats.
+
+No hosted service, account system, billing path, remote administration or enterprise deployment is implemented or authorized by Workspace v1.
+
 ## Implementation slices
 
 ### 1. Local workspace state — implemented
@@ -63,7 +79,7 @@ No second collector, parser, pricing engine, workspace schema, signer, analytics
 
 ### 3. Canonical production scanner and orchestrator — implemented
 
-- the existing `parseAllSessions()` path remains the only discovery, parse, reconciliation, settlement, and cache-publication authority;
+- the existing `parseAllSessions()` path remains the only discovery, parse, reconciliation, settlement, and cache-publication authority for this accepted v1 implementation;
 - candidates are derived only from complete per-source cache state whose source still exists;
 - source-less durable analytics history is withheld rather than promoted into new evidence;
 - exact cached calls and immutable assignments are reconstructed through the existing cache conversion;
@@ -78,6 +94,8 @@ The detailed contracts are documented in:
 
 - `docs/CANONICAL_REVIEWED_PRODUCTION_ORCHESTRATOR_V1.md`;
 - `docs/CANONICAL_REVIEWED_PRODUCTION_SCANNER_V1.md`.
+
+C3-P0 — Canonical Observation, Activity and History Authority is a separately ratified future milestone. Workspace v1 does not define or anticipate its storage schema, identity algorithm or migration mechanics.
 
 ### 4. Signed workspace batches and export — implemented
 
@@ -175,6 +193,7 @@ It must not require or export:
 - hosted synchronization or account creation;
 - invitations, team roles, organization administration, or browser manager console;
 - entitlement, billing, licensing, or commercial packaging;
+- customer-operated server deployment;
 - Android-side collection or pricing;
 - remote command execution;
 - Advisor or Bench implementation;
@@ -200,6 +219,8 @@ Workspace v1 passed its defined gates:
 
 ## After Workspace v1
 
-The active milestone is a trustworthy Windows distribution with a consistent publisher identity, protected signing, independently verifiable artifacts, authenticated update metadata, rollback, and official publication boundaries.
+The active milestone is a trustworthy Windows distribution with a consistent publisher identity, independently verifiable artifacts, authenticated update metadata, rollback, and official publication boundaries.
 
-Managed synchronization, team workspaces, Advisor, Bench, billing, and broader platform distribution remain separate future decisions and are not authorized by Workspace v1 closure.
+C3-P0 — Canonical Observation, Activity and History Authority is ratified as the next core authority milestone after Windows distribution and before physical Android validation.
+
+Managed synchronization, accounts, team workspaces, enterprise private deployment, Advisor, Bench, billing, and broader platform distribution remain separate future decisions and are not authorized by Workspace v1 closure.
