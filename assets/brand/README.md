@@ -4,6 +4,8 @@
 
 Metrora uses the **Signal Grid** mark: six measured vertical bars arranged as an abstract `M`. It represents local usage signals, sessions, model activity and cost being transformed into structured intelligence.
 
+Metrora is the product brand. Vensent is the publisher name used for official Metrora distribution where a publisher identity is useful or required.
+
 ## Canonical assets
 
 - `metrora-mark.svg` — Graphite mark for light surfaces.
@@ -29,5 +31,8 @@ Metrora uses the **Signal Grid** mark: six measured vertical bars arranged as an
 - Do not rotate, skew, outline, add gradients or recolor individual bars.
 - Minimum standalone size is 16 px; 24–32 px is preferred in product UI.
 - Use Signal Blue for interaction and data, not as a mandatory fill inside the primary logo.
+- Do not add the `®` symbol unless a relevant registration has been completed and verified.
 
 The public website and product surfaces must derive their visual identity from these files. Compatibility identifiers inherited from upstream may remain internally where changing them would break state, packaging or integrations; they must not appear as the product-facing identity.
+
+The MIT licence does not grant permission to impersonate the official project or imply endorsement by Metrora or Vensent. See [`BRAND_POLICY.md`](../../BRAND_POLICY.md).
