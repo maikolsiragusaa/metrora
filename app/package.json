@@ -47,6 +47,7 @@
   "build": {
     "appId": "eu.metrora.desktop",
     "productName": "Metrora",
+    "copyright": "Copyright © 2026 Metrora contributors",
     "directories": {
       "output": "release"
     },
@@ -125,10 +126,11 @@
       ],
       "category": "Development",
       "icon": "build/icon.png",
-      "maintainer": "Maikol Siragusa",
+      "maintainer": "Vensent (https://metrora.eu)",
       "executableName": "metrora"
     }
   },
   "homepage": "https://metrora.eu",
-  "author": "Maikol Siragusa"
+  "publisher": "Vensent",
+  "author": "Vensent (https://metrora.eu)"
 }

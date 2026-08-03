@@ -100,7 +100,7 @@ cat > "${BUNDLE}/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>© Maikol Siragusa</string>
+    <string>Copyright © 2026 Metrora contributors</string>
 </dict>
 </plist>
 PLIST

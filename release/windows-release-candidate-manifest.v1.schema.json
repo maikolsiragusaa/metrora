@@ -33,9 +33,10 @@
     "product": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "packageName", "appId", "version", "homepage", "visualIdentity"],
+      "required": ["name", "publisher", "packageName", "appId", "version", "homepage", "visualIdentity"],
       "properties": {
         "name": { "const": "Metrora" },
+        "publisher": { "const": "Vensent" },
         "packageName": { "const": "metrora-desktop" },
         "appId": { "const": "eu.metrora.desktop" },
         "version": { "type": "string", "minLength": 1, "maxLength": 64 },

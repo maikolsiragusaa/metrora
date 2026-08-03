@@ -161,6 +161,7 @@ function requireManifestShape(manifest) {
   }
   if (
     manifest.product?.name !== 'Metrora'
+    || manifest.product?.publisher !== 'Vensent'
     || manifest.product?.appId !== 'eu.metrora.desktop'
     || typeof manifest.product?.version !== 'string'
     || !manifest.product.version
@@ -296,6 +297,7 @@ export async function finalizeWindowsCandidateLayout(options) {
     },
     product: {
       name: 'Metrora',
+      publisher: 'Vensent',
       appId: 'eu.metrora.desktop',
       version: portableVerification.productVersion,
       visualIdentity: 'Signal Grid v1',

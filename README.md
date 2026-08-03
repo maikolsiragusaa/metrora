@@ -14,7 +14,7 @@ Understand where AI time, tokens, and money go — across tools, models, project
 </div>
 
 > [!IMPORTANT]
-> Metrora is under active development. The source is usable for development and validation, but there are no official signed Metrora releases yet.
+> Metrora is under active development. The source and unsigned engineering candidates are usable for development and validation, but there are no official signed Metrora releases yet.
 
 ## Why Metrora
 
@@ -40,27 +40,27 @@ Metrora builds one evidence-based view from the usage records already stored on 
 - **Optimization findings** for waste, reverts, abandoned work, and actionable savings opportunities.
 - **Budgets, plans, pricing overrides, token audit, and CSV/JSON export.**
 - **Private device linking** and combined local usage across machines.
+- **Local personal Workspace** with protected endpoint identity, explicit reviewed production, pause/resume, deterministic non-destructive recovery, signed batches, and independently verifiable evidence export.
 - **Public v1 contracts** for workspaces, endpoints, sharing, normalized measurements, and evidence.
-- **Durable local endpoint identity, reviewed measurement outbox, and signed batch foundations** for future workspace synchronization.
 
 Historical pricing is the default runtime behavior. A later catalog refresh cannot silently rewrite already settled historical costs. Provider- or client-metered values remain authoritative, explicit zero remains different from unavailable pricing, and subscription coverage stays separate from API-equivalent valuation. See [Pricing history](docs/PRICING_HISTORY.md).
 
 ## Current product milestone
 
-The next vertical slice is [Workspace v1](docs/WORKSPACE_V1.md): a local-first personal workspace that binds the current computer, reviewed measurements, signed batches, and an understandable desktop workspace view without requiring an account or hosted service.
+[Workspace v1](docs/WORKSPACE_V1.md) is implemented and physically accepted on Windows. The active product milestone is a trustworthy Windows distribution: consistent publisher identity, independently verifiable artifacts, protected signing, authenticated update metadata, rollback, and an official publication boundary.
 
-Workspace v1 does not introduce cloud synchronization, billing, team administration, or prompt/code collection. Those capabilities require separate contracts and explicit product work after the local slice is proven.
+This milestone does not authorize hosted synchronization, billing, team administration, Advisor, Bench, or prompt/code collection.
 
 ## Surfaces
 
 | Surface | Role | Status |
 | --- | --- | --- |
-| Desktop | Primary local analysis and configuration | Active development |
+| Desktop | Primary local analysis and configuration | Active development; Windows first release target |
 | CLI | First-class automation, inspection, and export | Active development |
 | Local web dashboard | Browser view served from the local machine | Available |
 | Android companion | Read-only local-network companion foundation | Experimental |
 
-Windows is the first release target. Other platforms remain part of the source tree, but signed distribution will follow only after the release pipeline is ready.
+Other platforms remain part of the source tree, but official distribution follows only after their release and signing boundaries are proven.
 
 ## Privacy model
 
@@ -70,7 +70,7 @@ Metrora is local-first by default:
 - AI traffic does not pass through Metrora;
 - prompts, responses, source code, patches, secrets, and full local paths are not exported by default;
 - analytical claims distinguish observed, derived, estimated, metered, explicit-zero, legacy-frozen, and unavailable evidence where relevant;
-- networked sharing is being built around explicit scope, revocation, and structured usage data;
+- networked sharing requires explicit scope, revocation, and structured usage data;
 - user-owned data remains exportable through open formats.
 
 Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1 boundary](docs/WORKSPACE_V1.md), and [security policy](SECURITY.md).
@@ -120,9 +120,13 @@ docs/      public contracts, principles, and technical documentation
 
 The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases while local state and integrations migrate safely.
 
-## Visual identity
+## Product identity
 
-The canonical Metrora identity is **Signal Grid**: six measured bars forming an abstract `M`. Product and repository surfaces use the assets and palette documented in [`assets/brand`](assets/brand/README.md). Compatibility names inherited from upstream may remain internally where changing them would break existing state or integrations, but they are not the product-facing brand.
+Metrora is the product and user-facing brand. Vensent is the publisher name used for official Metrora distribution where a publisher identity is useful or required.
+
+The canonical visual identity is **Signal Grid**: six measured bars forming an abstract `M`. Product and repository surfaces use the assets and palette documented in [`assets/brand`](assets/brand/README.md). Compatibility names inherited from upstream may remain internally where changing them would break existing state or integrations, but they are not the product-facing brand.
+
+See the [project notices](NOTICE.md) and [brand policy](BRAND_POLICY.md).
 
 ## Contributing
 
@@ -134,4 +138,4 @@ Security issues must be reported privately according to [SECURITY.md](SECURITY.m
 
 Metrora is open source under the MIT License and contains substantial software originally derived from CodeBurn 0.9.19.
 
-Original copyright, license, and provenance are preserved in [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and [UPSTREAM.md](UPSTREAM.md). Metrora is an independent project and does not present upstream CodeBurn packages or releases as Metrora artifacts.
+Original copyright, license, and provenance are preserved in [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and [UPSTREAM.md](UPSTREAM.md). Metrora-originated contributions are identified in [NOTICE.md](NOTICE.md). Metrora is an independent project and does not present upstream CodeBurn packages or releases as Metrora artifacts.

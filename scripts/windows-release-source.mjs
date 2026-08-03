@@ -105,9 +105,11 @@ export async function loadCanonicalReleaseSource(options) {
     appPackage.name !== 'metrora-desktop'
     || appPackage.build?.appId !== 'eu.metrora.desktop'
     || appPackage.build?.productName !== 'Metrora'
+    || appPackage.publisher !== 'Vensent'
+    || appPackage.author !== 'Vensent (https://metrora.eu)'
     || appPackage.homepage !== 'https://metrora.eu'
   ) {
-    throw new Error('desktop package identity is not canonical Metrora')
+    throw new Error('desktop package identity is not canonical Metrora/Vensent')
   }
 
   return {
@@ -164,6 +166,7 @@ export async function verifyCanonicalReleaseSource(manifest, options) {
   }
   if (
     manifest.product?.name !== canonical.appPackage.build.productName
+    || manifest.product?.publisher !== canonical.appPackage.publisher
     || manifest.product?.packageName !== canonical.appPackage.name
     || manifest.product?.appId !== canonical.appPackage.build.appId
     || manifest.product?.version !== canonical.appPackage.version

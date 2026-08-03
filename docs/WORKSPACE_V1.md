@@ -1,6 +1,6 @@
 # Workspace v1
 
-**Status:** active product milestone; local state, canonical reviewed production, signed batches, independent export, the secure desktop runtime, focused Workspace view, and durable pause/resume controls are implemented in this checkpoint. Deterministic non-destructive recovery and final physical/portable validation remain before W1.D and Workspace v1 are closed.
+**Status:** implemented and physically accepted on Windows. Local state, canonical reviewed production, signed batches, independent export, the secure desktop runtime, focused Workspace view, durable pause/resume, deterministic non-destructive recovery, and portable/installer validation are complete for this milestone.
 
 Workspace v1 is the first usable layer above Metrora's device-centric local analytics. It turns public contracts, endpoint identity, canonical normalized usage, reviewed provenance, private receipts, outbox records, signed batches, and user-owned evidence export into one understandable local workspace experience.
 
@@ -17,7 +17,9 @@ A person can:
 5. pause and resume future production without stopping ordinary analytics or changing existing evidence;
 6. create signed batches without duplicating calls;
 7. inspect workspace identity, endpoint status, evidence counts, pricing coverage, and canonical scoped usage in the desktop application;
-8. export a verifiable workspace package before any cloud synchronization exists.
+8. recover known interrupted local state without destructive reset;
+9. export a verifiable workspace package before any cloud synchronization exists;
+10. close and reopen the application while preserving identity, lifecycle, evidence, and signed-batch state.
 
 The ordinary local analytics experience remains available without creating a workspace.
 
@@ -96,10 +98,11 @@ The export and verification contract is documented in `docs/WORKSPACE_EVIDENCE_E
 - private identity buffers are zeroed on runtime disposal;
 - unsupported platforms or vault failures disable Workspace actions without plaintext fallback or blocking ordinary analytics;
 - the canonical scanner lives in a separate bundle loaded lazily only after explicit production;
-- opening the app or Workspace screen does not trigger scanner loading or evidence production;
+- opening the app or Workspace screen does not trigger evidence production;
+- opening performs a separate read-only inspection before evidence counts or actions become authoritative;
 - strict public DTOs expose only Workspace, endpoint, lifecycle, evidence, privacy, and bounded production counts;
 - one zero-argument production action ignores renderer-supplied calls, paths, providers, costs, fingerprints, or evidence claims;
-- pause, resume, production, batch, and export remain separate explicit actions;
+- pause, resume, production, recovery, batch, and export remain separate explicit actions;
 - native export paths remain inside the main process;
 - raw exceptions, private paths, canonical calls, and secret material never cross IPC.
 
@@ -109,8 +112,8 @@ The view shows:
 - endpoint identity, generation, platform, and software versions;
 - reviewed evidence and signed-batch counts, quarantine, invalid records, and blockers;
 - exact Overview usage and pricing coverage for the active scope;
-- explicit Produce, Pause/Resume, Create signed batch, and Export actions;
-- the latest bounded production counts;
+- explicit Produce, Pause/Resume, Check & recover, Create signed batch, and Export actions;
+- the latest bounded production and recovery outcomes;
 - fail-closed unsupported-platform and unavailable-vault states.
 
 `workspaceUsageFromOverview()` remains a field-for-field projection of the current Overview payload. Workspace evidence never recalculates calls, sessions, token dimensions, costs, pricing coverage, filters, or periods.
@@ -134,11 +137,16 @@ The runtime and renderer contracts are documented in:
 
 The detailed contract is documented in `docs/WORKSPACE_PRODUCTION_LIFECYCLE_V1.md`.
 
-### 7. Deterministic recovery and closure — remaining
+### 7. Deterministic recovery and physical closure — implemented
 
-The remaining tranche must expose bounded, non-destructive recovery for known local failure states and validate the complete create → produce → pause/resume → batch → export → reopen path on the portable Windows artifact.
-
-Recovery may reconcile or retry known state. It must never mean deletion, silent identity/lifecycle reset, quarantine bypass, invented evidence, or weakening of fail-closed checks.
+- recovery is explicit and mutation-capable; automatic opening and inspection remain read-only;
+- known interrupted receipt publication is reconciled without restarting historical production;
+- malformed, conflicting, invalid, quarantined, or blocked state fails closed;
+- recovery never deletes valid evidence, resets identity/lifecycle, bypasses quarantine, or invents measurements;
+- the complete create → produce → pause/resume → recover → batch → export → close/reopen path is covered by blocking tests;
+- an ordinary Windows candidate was independently verified and accepted on physical profiles;
+- existing-profile portable reopen, clean install/uninstall, upgrade, repair, rollback, re-upgrade, and user-owned state preservation passed;
+- public acceptance evidence contains only bounded status, version, platform, and integrity information.
 
 ## Privacy boundary
 
@@ -173,9 +181,9 @@ It must not require or export:
 - collector rewrites, model-label cleanup, or aggregation redesign;
 - automatic publication of private data.
 
-## Acceptance gates
+## Acceptance result
 
-Workspace v1 is complete only when:
+Workspace v1 passed its defined gates:
 
 1. creating and reopening the local workspace is deterministic and crash-safe;
 2. the existing endpoint identity is enrolled without generating a competing identity;
@@ -185,11 +193,13 @@ Workspace v1 is complete only when:
 6. the desktop view reconciles exactly with CLI/local analytics for the same scope;
 7. exported workspace evidence verifies independently and contains no prohibited content;
 8. pause affects only future Workspace production and resumes without data loss;
-9. deterministic recovery never discards valid evidence or bypasses quarantine;
+9. deterministic recovery does not discard valid evidence or bypass quarantine;
 10. Windows and Ubuntu blocking tests pass, including Windows vault, filesystem, lazy bundle, renderer, and packaging behavior;
-11. no hosted service is required to complete the flow;
-12. the implementation remains divided into bounded, reviewable pull requests with rollback points.
+11. the flow works without a hosted service;
+12. physical Windows acceptance passed for the bounded unsigned engineering candidate.
 
 ## After Workspace v1
 
-The next milestones are a trustworthy signed Windows release and physical desktop-to-Android validation. Managed synchronization, team workspaces, Advisor, and Bench follow only after this local workspace slice proves the contracts and user experience.
+The active milestone is a trustworthy Windows distribution with a consistent publisher identity, protected signing, independently verifiable artifacts, authenticated update metadata, rollback, and official publication boundaries.
+
+Managed synchronization, team workspaces, Advisor, Bench, billing, and broader platform distribution remain separate future decisions and are not authorized by Workspace v1 closure.

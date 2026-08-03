@@ -52,11 +52,13 @@ The installed candidate must expose:
 - executable file description containing `Metrora`;
 - one logical per-user Windows uninstall registration in HKCU, even when the same key is visible through both registry views;
 - uninstall `DisplayName` beginning with `Metrora` and including the packaged version;
-- publisher `Maikol Siragusa`;
+- publisher `Vensent`;
 - an uninstall command targeting `Uninstall Metrora.exe` in the disposable installation directory;
 - at least one Start Menu shortcut named `Metrora.lnk` targeting the installed `Metrora.exe`.
 
 The public `appId` remains `eu.metrora.desktop` and is already bound by the R1.A/R1.B.A source and manifest checks.
+
+The accepted R1.B physical result predates this publisher-policy update and therefore remains historical evidence for the then-current development identity. A future release candidate must pass this contract again with Vensent before it can become an official Metrora distribution.
 
 ## Runtime smoke checks
 

@@ -13,7 +13,7 @@ Thumbs.db
 *.swo
 *~
 
-# Planning artifacts (internal, not shipped)
+# Local planning and tool state
 docs/superpowers/
 .claude/
 /CLAUDE.md
@@ -35,14 +35,8 @@ npm-debug.log*
 # Build artifacts
 *.tsbuildinfo
 
-# Local Discord brand / promo assets not yet ready to publish
+# Untracked local assets and experiments
 assets/discord-*.png
-
-# Desktop app experiments
 desktop/
-
-# Mac App Store app (private)
 appstore/
-
-# WIP / not ready
 src/summit.ts

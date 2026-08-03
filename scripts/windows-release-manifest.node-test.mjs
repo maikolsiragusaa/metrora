@@ -33,6 +33,8 @@ async function fixture() {
     name: 'metrora-desktop',
     version: '0.9.19',
     homepage: 'https://metrora.eu',
+    publisher: 'Vensent',
+    author: 'Vensent (https://metrora.eu)',
     build: { appId: 'eu.metrora.desktop', productName: 'Metrora' },
   }))
   await write(join(repositoryRoot, 'app', 'package-lock.json'), JSON.stringify({
@@ -90,6 +92,7 @@ test('writes and independently verifies a complete candidate', async t => {
     verificationOptions(fx, { expectedCommit: sourceCommit }),
   )
 
+  assert.equal(created.manifest.product.publisher, 'Vensent')
   assert.equal(created.manifest.payload.fileCount, 3)
   assert.equal(verified.fileCount, 3)
   assert.equal(verified.sourceCommit, sourceCommit)

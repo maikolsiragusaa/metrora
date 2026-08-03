@@ -62,10 +62,15 @@ function Get-BoundedWindowsAuthority([string]$InstallDirectory) {
   }
 }
 
-function Test-MetroraUninstallerAuthority($Entry, [string]$ExpectedUninstaller, [string[]]$ExpectedVersions) {
+function Test-MetroraUninstallerAuthority(
+  $Entry,
+  [string]$ExpectedUninstaller,
+  [string[]]$ExpectedVersions,
+  [string[]]$ExpectedPublishers
+) {
   return (
     $Entry.Hive -eq 'HKCU' -and
-    $Entry.Publisher -eq 'Maikol Siragusa' -and
+    $ExpectedPublishers -contains $Entry.Publisher -and
     $ExpectedVersions -contains $Entry.DisplayVersion -and
     $Entry.UninstallString.IndexOf($ExpectedUninstaller, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
     $Entry.QuietUninstallString.IndexOf($ExpectedUninstaller, [StringComparison]::OrdinalIgnoreCase) -ge 0
@@ -100,6 +105,7 @@ $originalLocalAppData = $env:LOCALAPPDATA
 $originalCheckpoint = $env:METRORA_R1BCB_CHECKPOINT
 $interruptProcess = $null
 $finalUninstaller = Join-Path $installDirectory 'Uninstall Metrora.exe'
+$baselinePublisher = $null
 
 try {
   $env:APPDATA = $roamingDirectory
@@ -110,12 +116,14 @@ try {
   $sentinel = New-MetroraStateSentinel $roamingDirectory 'r1bcb-user-owned-state.txt'
 
   Invoke-MetroraSilentInstall $baselineInstallerPath $installDirectory 'interruption baseline install'
-  Assert-MetroraInstalledApplication `
+  $baseline = Assert-MetroraInstalledApplication `
     -InstallDirectory $installDirectory `
     -CanonicalDirectory $baselinePayload `
     -RepositoryRoot $repository `
     -ExpectedVersion $BaselineVersion `
-    -Launch | Out-Null
+    -AllowHistoricalPublisher `
+    -Launch
+  $baselinePublisher = $baseline.Registration.Publisher
   Assert-MetroraStateSentinel $sentinel 'baseline before interruption'
 
   Remove-Item -LiteralPath $readyMarker, $releaseMarker -Force -ErrorAction SilentlyContinue
@@ -143,10 +151,15 @@ try {
 
   if ($interruptedState.classification -eq 'mixed') {
     $entries = @(Get-MetroraUninstallEntries $installDirectory $finalUninstaller)
+    $expectedPublishers = @($baselinePublisher, 'Vensent') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique
     $hasSafeAuthority = (
       (Test-Path -LiteralPath $finalUninstaller) -and
       $entries.Count -eq 1 -and
-      (Test-MetroraUninstallerAuthority $entries[0] $finalUninstaller @($BaselineVersion, $CandidateVersion))
+      (Test-MetroraUninstallerAuthority `
+        -Entry $entries[0] `
+        -ExpectedUninstaller $finalUninstaller `
+        -ExpectedVersions @($BaselineVersion, $CandidateVersion) `
+        -ExpectedPublishers $expectedPublishers)
     )
     if (-not $hasSafeAuthority) {
       throw 'mixed interrupted state has no single safe disposable uninstaller authority'
