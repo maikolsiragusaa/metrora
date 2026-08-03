@@ -13,7 +13,8 @@ import { rangeLabel, TopBar } from './components/TopBar'
 import { Window } from './components/Window'
 import { providerName, useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
-import { clearPolledMemo, hasPolledMemo, primePolledMemo, setPolledMemoMax, usePolled } from './hooks/usePolled'
+import { overviewMemoKey, useProviderPrefetch } from './hooks/useProviderPrefetch'
+import { clearPolledMemo, usePolled } from './hooks/usePolled'
 import { readDailyBudget } from './lib/budget'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { formatCompact, formatUsd, setActiveCurrency } from './lib/format'
@@ -33,7 +34,9 @@ import { Plans } from './sections/Plans'
 import { Settings, type SettingsPane } from './sections/Settings'
 import { SpendContent } from './sections/Spend'
 import { WorkspaceContent } from './sections/Workspace'
-import type { DateRange, MenubarPayload, ModelReportRow, Period, TelemetryStatus } from './lib/types'
+import type { MenubarPayload, ModelReportRow, TelemetryStatus } from './lib/types'
+
+export { overviewMemoKey }
 
 // Bucket raw dollar amounts before they leave the machine: telemetry carries
 // coarse ranges, never exact spend.
@@ -109,28 +112,6 @@ export function usageSnapshotProps(payload: MenubarPayload, modelCategories?: Ma
     })),
   }
 }
-
-// Instant-switch memo key for an overview result. Shared by the overview poll
-// and the provider prefetcher so the two never drift out of sync. Exported so
-// the prefetch-storm test can assert warmed keys survive between polls.
-export function overviewMemoKey(provider: string, period: Period, range: DateRange | null, configSource: string | null): string {
-  return `overview|${provider}|${period}|${range?.from ?? ''}-${range?.to ?? ''}|${configSource ?? ''}`
-}
-
-// Prefetch pacing: wait a short idle after the first paint, then warm one
-// provider at a time at low priority so the background scan never competes with
-// the interaction the user is actually having.
-const PREFETCH_START_DELAY_MS = 1500
-// A warm spawn takes seconds, so a 400ms stagger let the loop fire the whole set
-// almost at once; pace it wide enough that each warm genuinely trails the last.
-const PREFETCH_STAGGER_MS = 2000
-// Base instant-switch memo keys live during overview polling besides the per-
-// provider prefetch entries: `overview|all`, `overview-act`, `overview-yield`,
-// plus one slot of headroom for section navigation. The memo cap is sized to
-// (detected providers + this) so warmed entries — and the base overview key —
-// never LRU-evict between polls (which would blank the overview and re-arm the
-// prefetch every cycle).
-const BASE_MEMO_KEYS = 4
 
 function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
   if (loading && lastSuccessAt === null) return 'refreshing…'
@@ -293,65 +274,16 @@ function AppMain() {
     setCurrencyTick(tick => tick + 1)
   }, [overview.data?.currency?.code, overview.data?.currency?.rate, overview.data?.currency?.symbol, overview.switching])
 
-  // Size the instant-switch memo to hold every prefetched provider overview plus
-  // the base keys, so warmed entries survive between polls instead of evicting.
-  useEffect(() => {
-    setPolledMemoMax(detectedProviders.length + BASE_MEMO_KEYS)
-  }, [detectedProviders.length])
-
-  // Prefetch for millisecond switches: once the first overview has resolved,
-  // quietly warm the instant-switch memo for every OTHER detected provider at the
-  // current period, so a picker switch to one paints from memory instead of
-  // waiting on a fresh 2-3s CLI spawn. One provider at a time, lowest priority,
-  // and only for the plain view (no custom range / no config scope) the picker
-  // actually toggles between. The CLI's own read-cache + in-flight coalescing keep
-  // this from double-spawning against a live user fetch; hasPolledMemo skips any
-  // provider already warm (including one warmed by a real visit).
-  //
-  // `warmedKeys` is a session-lifetime once-per-key guard: each (provider,period)
-  // memo key is marked BEFORE its spawn, so an effect re-run — e.g. an overview
-  // poll that momentarily blanked `overview.data` — can never re-spawn a provider
-  // already warmed. New keys (a new provider id, or a period switch) still warm
-  // exactly once. Without this the prefetch re-fired every poll: 12 redundant
-  // full-history CLI parses every 30s, forever.
-  // Mirror the visible overview's fetch state into a ref so the prefetch can hold
-  // for a user-triggered fetch without re-arming the whole loop on each toggle.
-  const overviewBusyRef = useRef(false)
-  overviewBusyRef.current = overview.loading
-  const warmedKeys = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!ready || overview.data == null || customRange || scopedClaudeConfigSource) return
-    const targets = detectedProviders.map(entry => entry.id).filter(id => id !== provider)
-    if (targets.length === 0) return
-    let cancelled = false
-    const warm = async () => {
-      for (let i = 0; i < targets.length && !cancelled; ) {
-        const key = overviewMemoKey(targets[i]!, period, null, null)
-        if (warmedKeys.current.has(key) || hasPolledMemo(key)) { i++; continue }
-        // Only warm while the visible overview is idle: a user fetch in flight
-        // takes priority (background-classed CLI spawns yield their slot to it),
-        // so hold and retry this provider after the stagger rather than race it.
-        if (overviewBusyRef.current) {
-          await new Promise(resolve => setTimeout(resolve, PREFETCH_STAGGER_MS))
-          continue
-        }
-        warmedKeys.current.add(key)
-        try {
-          // background priority (5th arg) so this never delays an interactive
-          // poll; ignored by an older preload, degrading to current behavior.
-          const value = await codeburn.getOverview(period, targets[i]!, undefined, undefined, true)
-          if (!cancelled) primePolledMemo(key, value)
-        } catch { /* best-effort warm; a real switch will fetch and surface any error */ }
-        i++
-        if (!cancelled && i < targets.length) await new Promise(resolve => setTimeout(resolve, PREFETCH_STAGGER_MS))
-      }
-    }
-    const start = setTimeout(() => { void warm() }, PREFETCH_START_DELAY_MS)
-    return () => { cancelled = true; clearTimeout(start) }
-    // `overview.data == null` (a boolean) gates on first-resolution without
-    // re-running every poll; the data content itself is intentionally not a dep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, period, provider, customRange, scopedClaudeConfigSource, detectedProviders, overview.data == null])
+  useProviderPrefetch({
+    ready,
+    hasOverviewData: overview.data != null,
+    overviewLoading: overview.loading,
+    detectedProviders,
+    period,
+    provider,
+    customRange,
+    scopedClaudeConfigSource,
+  })
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
