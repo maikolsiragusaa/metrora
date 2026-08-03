@@ -1,12 +1,12 @@
 # Metrora Public Contracts v1
 
-Status: **foundation contract**. These schemas are public, local-first, content-minimal, and intentionally independent from any future commercial control plane.
+Status: **shipped public foundation contracts**. These schemas are public, local-first, content-minimal, and intentionally independent from any future commercial control plane.
 
 The TypeScript source of truth lives in `src/contracts/v1/`. Every object is runtime-validated with Zod 4, statically typed, strict against undeclared fields, and exportable as JSON Schema Draft 2020-12.
 
 ## Why these contracts exist
 
-Metrora already has mature collectors, parsers, analytics, desktop surfaces, and local sharing inherited and hardened from CodeBurn. The missing boundary was not another collector framework. It was one stable vocabulary that future desktop, CLI, web, Android, team, export, and managed-advisor surfaces can share without exposing the internal parser model.
+Metrora has mature collectors, parsers, analytics, desktop surfaces, and local sharing inherited and hardened from CodeBurn. The missing boundary was not another collector framework. It was one stable vocabulary that desktop, CLI, web, Android, export, and any future networked surface can share without exposing the internal parser model.
 
 The v1 boundary covers:
 
@@ -18,13 +18,23 @@ The v1 boundary covers:
 - collector provenance profiles;
 - verifiable aggregate-usage evidence statements.
 
-It does **not** define billing, hosted BYOK, account provisioning, cloud synchronization, an advisor prompt protocol, or a general authorization engine.
+It does **not** define billing, hosted BYOK, account provisioning, cloud synchronization, enterprise deployment, an advisor prompt protocol, or a general authorization engine.
+
+The existence of these contracts is not a claim that a managed service, account system or complete self-hosted server exists.
+
+## Deployment-neutral authority
+
+The contracts are shared public semantics, not a server implementation.
+
+Local production, any future managed Workspace and any future customer-operated deployment must use the same measurement, historical-pricing, provenance and evidence meaning.
+
+A future receiver may validate authorization, schemas, signatures, sequence ranges and duplicate delivery. It must not reparse local tool data, invent missing facts, recalculate tokens, reprice settled history or silently reinterpret rejected evidence.
 
 ## Standards adopted instead of reinvented
 
 ### Zod 4
 
-Metrora already depends on `zod@3.25.x`, which includes the stable `zod/v4` subpath. The contracts use that existing dependency rather than introducing TypeBox, Joi, Yup, Valibot, or a home-grown validator.
+Metrora uses the stable `zod/v4` subpath already available through the project dependency rather than introducing TypeBox, Joi, Yup, Valibot, or a home-grown validator.
 
 Zod is the executable source of truth and its built-in `z.toJSONSchema()` converter produces language-neutral JSON Schema documents.
 
@@ -34,11 +44,11 @@ The generated schema target is JSON Schema Draft 2020-12:
 
 - https://json-schema.org/draft/2020-12
 
-When Metrora exposes a public HTTP control-plane API, it should describe that API with OpenAPI 3.1 or newer. OpenAPI 3.1 aligns its Schema Object with modern JSON Schema and avoids maintaining a separate DTO dialect:
+If Metrora later exposes a public HTTP control-plane API, that API should use OpenAPI 3.1 or newer so its Schema Object remains aligned with modern JSON Schema:
 
 - https://spec.openapis.org/oas/v3.1.1.html
 
-No public HTTP API is created by this tranche.
+No public hosted HTTP control-plane API is created by this contract.
 
 ### CloudEvents 1.0
 
@@ -70,11 +80,11 @@ The measurement data uses the same core concepts as the OpenTelemetry Generative
 - input and output token usage;
 - cache and reasoning token usage.
 
-The OpenTelemetry GenAI conventions are still marked as development and have moved to their own repository. Metrora therefore records the convention version in each batch instead of importing unstable generated constants into the public wire contract:
+Metrora records the convention version in each batch rather than importing unstable generated constants into the public wire contract:
 
 - https://github.com/open-telemetry/semantic-conventions-genai
 
-Metrora extensions cover facts OpenTelemetry does not currently standardize for this product boundary, including cost provenance, repository/session attribution, reasoning attribution confidence, collector evidence, and content-exclusion guarantees.
+Metrora extensions cover facts OpenTelemetry does not standardize for this product boundary, including cost provenance, repository/session attribution, reasoning-attribution confidence, collector evidence, and content-exclusion guarantees.
 
 ### in-toto Statement v1
 
@@ -89,17 +99,17 @@ The statement subject binds the exact SHA-256 digest of the measurement batch. R
 
 ### RFC 8785 canonical JSON
 
-Evidence predicates declare RFC 8785 JSON Canonicalization Scheme as the canonical preimage before hashing:
+Evidence predicates and signed Workspace batch records use RFC 8785 JSON Canonicalization Scheme before hashing:
 
 - https://www.rfc-editor.org/rfc/rfc8785.html
 
-Metrora must use a tested RFC 8785 implementation when hashing is wired into runtime. It must not create an ad-hoc sorted-key serializer.
+Metrora uses a tested RFC 8785 implementation rather than an ad-hoc sorted-key serializer.
 
-### DSSE and Sigstore later, not now
+### Signature packaging remains separable
 
-The in-toto statement is intentionally signature-neutral. A later signing tranche can wrap it in DSSE and, where appropriate, use Sigstore bundles or a local enterprise key. No custom `signature` field is added to the statement.
+The public in-toto statement remains signature-neutral. The shipped local Workspace runtime signs its bounded batch-chain records with the protected endpoint identity and verifies exported packages independently.
 
-This separation keeps offline local evidence possible and avoids coupling the open contract to a public transparency service.
+A future interoperable DSSE or Sigstore wrapper remains a separate contract decision. No hosted transparency service is required for offline local evidence.
 
 ## Contracts
 
@@ -116,11 +126,13 @@ Defines a user or service principal with one of four stable roles:
 - analyst;
 - viewer.
 
-This is a product-level role contract, not a provisioning protocol. SCIM can be adopted later if enterprise directory provisioning is implemented.
+This is a product-level role contract, not a provisioning protocol. SCIM can be considered only if enterprise directory provisioning is separately implemented.
 
 ### `EndpointV1`
 
 Defines the identity and lifecycle of a desktop, server, or companion endpoint. Identity is a SHA-256 fingerprint of an ECDSA P-256 or Ed25519 public key. Enrollment state is a discriminated contract: pending, active, or revoked records require the timestamps appropriate to that state.
+
+The shipped local Workspace uses a protected Ed25519 endpoint identity. The contract does not create a remote enrollment service.
 
 ### `RepositoryIdentityV1`
 
@@ -132,7 +144,7 @@ Defines a narrow positive allowlist for aggregate datasets, recipients, time win
 
 V1 can never authorize prompts, responses, source code, patches, secrets, or full local paths. Those fields are literals fixed to `none`.
 
-This is deliberately smaller than OPA/Rego, Cedar, OpenFGA, SpiceDB, or Casbin. Metrora should adopt one of those systems only when a real multi-user control plane requires delegated authorization evaluation. Embedding a general policy engine in the local core now would add complexity without enforcing an existing product flow.
+This is deliberately smaller than OPA/Rego, Cedar, OpenFGA, SpiceDB, or Casbin. Metrora should adopt a general policy engine only when a real multi-user control plane requires delegated authorization evaluation.
 
 ### `UsageMeasurementEventV1`
 
@@ -152,19 +164,15 @@ Reasoning is also explicit: a known level requires an attribution source; otherw
 
 Batches up to 10,000 CloudEvents measurement records, identifies the producing endpoint and adapter set, pins the semantic-convention versions, and optionally chains to a previous batch digest.
 
-It is not OTLP. OTLP is the transport protocol for OpenTelemetry data and can be added as an adapter when Metrora actually exports to or receives from an OpenTelemetry Collector. Forcing the existing local historical parsers into OTLP's wire representation now would make the core more complex without improving interoperability.
+It is not OTLP. OTLP may be added as an adapter if Metrora later exports to or receives from an OpenTelemetry Collector. Existing local historical parsers are not forced into OTLP's wire representation.
+
+The local Workspace runtime persists immutable signed batch records and independently verifies their chain. No network uploader or server acknowledgement implementation is shipped.
 
 ### `CollectorProvenanceProfileV1`
 
-Defines what one reviewed collector path can actually prove, per field. It does not use a single optimistic “measured” badge for an entire call.
+Defines what one reviewed collector path can prove, per field. It does not use a single optimistic “measured” badge for an entire call.
 
-The initial registry contains only three paths:
-
-- Claude JSONL usage records;
-- Codex rollout `token_count` records;
-- Codex content-length fallback records.
-
-For each path the profile records:
+The initial registry contains reviewed Claude and Codex paths. For each path the profile records:
 
 - provenance of input, output, cache-read, cache-write, and reasoning tokens;
 - model and session identity quality;
@@ -173,11 +181,9 @@ For each path the profile records:
 - whether pricing coverage must be established before a cost claim is exported;
 - whether raw content or local paths are required.
 
-All current profiles explicitly mark cost as local token pricing, never provider-metered. Codex cache-write remains unknown because the reviewed token-count record does not expose it. Codex content fallback marks input/output as estimated and cache/reasoning fields as unknown. Claude marks its principal input/output counts as measured, optional cache fields as derived, and separate reasoning tokens as unknown.
+Profile objects are deeply frozen after Zod validation. Embedded parser versions are tested against `PROVIDER_PARSE_VERSIONS`; a parser change therefore forces an explicit provenance review instead of silently inheriting old guarantees.
 
-Profile objects are deeply frozen after Zod validation. Their embedded parser versions are tested against `PROVIDER_PARSE_VERSIONS`; a parser change therefore forces an explicit provenance review instead of silently inheriting old guarantees.
-
-`collectorProvenanceProfileForCall()` returns `undefined` for every unreviewed collector. Zed, OpenCode, Copilot, Cursor, Antigravity, and the other inherited collectors receive no optimistic default merely because they already produce internal calls.
+`collectorProvenanceProfileForCall()` returns `undefined` for every unreviewed collector. Existing collector support does not create optimistic public evidence by default.
 
 ### `UsageEvidenceStatementV1`
 
@@ -191,7 +197,7 @@ The evidence content policy permanently records that content and local paths wer
 
 ## Internal projection adapter
 
-`toUsageMeasurementEventV1()` is the only first-party projection from the inherited normalized `ParsedApiCall` record into the public event contract.
+`toUsageMeasurementEventV1()` is the only first-party projection from the normalized `ParsedApiCall` record into the public event contract.
 
 The adapter is deliberately an allowlist rather than a serializer:
 
@@ -202,11 +208,35 @@ The adapter is deliberately an allowlist rather than a serializer:
 - it requires at least 32 bytes of local endpoint key material, never exports that key, and intentionally breaks cross-key linkability when the key rotates;
 - it never exports the raw deduplication key, tools, MCP names, skills, subagents, shell commands, file names, local paths, prompts, responses, source code, or patches;
 - it emits `unavailable` rather than inventing a zero when cost evidence is absent;
-- it rejects negative, non-finite, or micro-USD amounts that cannot be represented as a JavaScript safe integer instead of silently clamping them;
+- it rejects invalid monetary values instead of silently clamping them;
 - it rejects partial reasoning attribution and non-unknown session quality without an exported session ID;
 - it validates its own output through the public Zod schema before returning it.
 
-This does not replace any CodeBurn/Metrora collector or parser. Existing collectors remain authoritative and can be projected only after their adapter-specific provenance and quality mapping is reviewed.
+The shipped reviewed-production boundary uses this projection only for exact executable provenance paths and verified immutable pricing assignments. It does not replace collectors or parsers.
+
+## Shipped local runtime use
+
+The public contracts now participate in the accepted local Workspace runtime:
+
+- protected local endpoint identity;
+- explicit local personal Workspace creation;
+- reviewed provenance-gated event production;
+- rotation-safe private production receipts;
+- append-only local measurement outbox;
+- active/paused production lifecycle;
+- deterministic non-destructive recovery;
+- immutable signed batch-chain records;
+- independently verifiable user-owned export;
+- strict desktop DTO and action boundaries.
+
+Normal analytics remain available without creating a Workspace. No automatic upload or hosted dependency is introduced.
+
+Detailed runtime boundaries live in:
+
+- `docs/LOCAL_ENDPOINT_IDENTITY_AND_OUTBOX_V1.md`;
+- `docs/WORKSPACE_V1.md`;
+- `docs/WORKSPACE_EVIDENCE_EXPORT_V1.md`;
+- `docs/DESKTOP_WORKSPACE_RUNTIME_V1.md`.
 
 ## Versioning rules
 
@@ -215,15 +245,26 @@ This does not replace any CodeBurn/Metrora collector or parser. Existing collect
 - OpenTelemetry semantic-convention versions are pinned in each measurement batch.
 - in-toto uses its own `_type` URI.
 - Breaking Metrora changes create `v2`; v1 schemas are not silently reinterpreted.
-- Consumers must reject unknown required fields because all v1 objects are strict.
+- Consumers reject unknown required fields because all v1 objects are strict.
 - Producers may continue emitting v1 after v2 exists.
+- A future deployment mode cannot reinterpret v1 to create different pricing, evidence or privacy semantics.
 
 ## Current limits
 
-The public contracts, schema export, one-call projection adapter, and initial collector provenance registry have unit tests. The adapter is not yet enabled in normal parser/cache execution.
+The following remain unimplemented or not authorized:
 
-Only the three reviewed Claude/Codex paths have profiles. The registry does not yet prove pricing coverage, convert field-level provenance into an event-level quality rollup, or authorize export by itself.
+- hosted synchronization and network transport;
+- account or tenant provisioning;
+- endpoint-to-server enrollment credentials;
+- a server acknowledgement issuer;
+- managed retention, deletion and offboarding;
+- general multi-user authorization evaluation;
+- Android synchronization through the public batch protocol;
+- DSSE/Sigstore interoperability packaging;
+- a hosted evidence store or manager console;
+- enterprise private deployment;
+- SSO/SCIM, billing, entitlement or remote lifecycle control.
 
-There is still no hosted service, Android synchronization through these contracts, endpoint event-key provisioning, measurement-batch persistence, RFC 8785 hashing implementation, DSSE signing, or Sigstore integration.
+Collector evidence coverage remains intentionally limited to reviewed paths. Adding another collector requires equivalent source, fixture, parser-version and pricing review.
 
-The next safe step is fixture-based parity for the three registered paths and a fail-closed mapper that combines a reviewed profile with verified pricing coverage. Other collectors should be added one at a time only after equivalent source and fixture review.
+C3-P0 — Canonical Observation, Activity and History Authority is ratified as a future core milestone. This document does not define or anticipate its storage schema, database, identity algorithm or migration mechanics.
