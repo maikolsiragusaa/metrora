@@ -72,6 +72,7 @@ try {
     -CanonicalDirectory $baselinePayload `
     -RepositoryRoot $repository `
     -ExpectedVersion $BaselineVersion `
+    -AllowHistoricalPublisher `
     -Launch
   Assert-MetroraStateSentinel $sentinel 'baseline install and launch'
   $stages += "installed-$($baseline.FileVersion)"
@@ -105,6 +106,7 @@ try {
     -CanonicalDirectory $baselinePayload `
     -RepositoryRoot $repository `
     -ExpectedVersion $BaselineVersion `
+    -AllowHistoricalPublisher `
     -Launch
   Assert-MetroraStateSentinel $sentinel 'baseline rollback and launch'
   $stages += "rolled-back-$($rolledBack.FileVersion)"
