@@ -20,7 +20,7 @@ import { motionClass } from './lib/motion'
 import { codeburn } from './lib/ipc'
 import { localDateKey } from './lib/period'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
-import { shortcutLabel } from './lib/shortcuts'
+import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
 import { readCompatStorage, removeCompatStorage, writeCompatStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
@@ -202,17 +202,19 @@ function AppMain() {
   const [refreshToken, setRefreshToken] = useState(0)
   const [now, setNow] = useState(() => Date.now())
   const [, setCurrencyTick] = useState(0)
+  const sectionCapabilities = DESKTOP_SECTION_CAPABILITIES[section]
+  const scopedClaudeConfigSource = sectionCapabilities.claudeConfig ? claudeConfigSource : null
 
   // Preserve the 2/3-arg call shapes when no config is scoped so the CLI argv
   // stays flag-free; only add --claude-config-source once a config is picked.
   const overview = usePolled<MenubarPayload>(
-    () => claudeConfigSource
-      ? codeburn.getOverview(period, provider, customRange ?? undefined, claudeConfigSource)
+    () => scopedClaudeConfigSource
+      ? codeburn.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
       : customRange
       ? codeburn.getOverview(period, provider, customRange)
       : codeburn.getOverview(period, provider),
-    [period, provider, customRange?.from, customRange?.to, claudeConfigSource],
-    { memoKey: overviewMemoKey(provider, period, customRange, claudeConfigSource) },
+    [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource],
+    { memoKey: overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource) },
   )
   const refreshOverview = overview.refresh
 
@@ -254,7 +256,7 @@ function AppMain() {
   // fails we still emit the snapshot, just without the model x category cross.
   const snapshotDayRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!overview.data || provider !== 'all' || customRange || claudeConfigSource) return
+    if (!overview.data || provider !== 'all' || customRange || scopedClaudeConfigSource) return
     const today = localDateKey(new Date())
     if (snapshotDayRef.current === today) return
     snapshotDayRef.current = today
@@ -266,7 +268,7 @@ function AppMain() {
       } catch { /* degrade: emit the snapshot without per-model topCategory */ }
       trackEvent('usage_snapshot', usageSnapshotProps(payload, modelCategories))
     })()
-  }, [overview.data, provider, customRange, claudeConfigSource, period, trackEvent])
+  }, [overview.data, provider, customRange, scopedClaudeConfigSource, period, trackEvent])
 
   useEffect(() => {
     const saved = readCompatStorage('theme')
@@ -340,7 +342,7 @@ function AppMain() {
   overviewBusyRef.current = overview.loading
   const warmedKeys = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (!ready || overview.data == null || customRange || claudeConfigSource) return
+    if (!ready || overview.data == null || customRange || scopedClaudeConfigSource) return
     const targets = detectedProviders.map(entry => entry.id).filter(id => id !== provider)
     if (targets.length === 0) return
     let cancelled = false
@@ -371,7 +373,7 @@ function AppMain() {
     // `overview.data == null` (a boolean) gates on first-resolution without
     // re-running every poll; the data content itself is intentionally not a dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, period, provider, customRange, claudeConfigSource, detectedProviders, overview.data == null])
+  }, [ready, period, provider, customRange, scopedClaudeConfigSource, detectedProviders, overview.data == null])
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
@@ -435,11 +437,10 @@ function AppMain() {
     ...detectedProviders.map(entry => ({ value: entry.id, label: entry.label })),
   ]
   const providerLabel = detectedProviders.find(entry => entry.id === provider)?.label ?? providerName(provider)
-  const activeConfigLabel = claudeConfigSource
-    ? claudeConfigs?.options.find(option => option.id === claudeConfigSource)?.label ?? null
+  const activeConfigLabel = scopedClaudeConfigSource
+    ? claudeConfigs?.options.find(option => option.id === scopedClaudeConfigSource)?.label ?? null
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
-  const sectionCapabilities = DESKTOP_SECTION_CAPABILITIES[section]
 
   return (
     <Window>
@@ -501,7 +502,7 @@ function AppMain() {
         {section !== 'settings' && (
           <Hint
             items={[
-              { k: `${shortcutLabel('1')}-${shortcutLabel('9').replace(/^.*?(?=9$)/, '')}`, label: 'Navigate' },
+              { k: shortcutRangeLabel('1', '9'), label: 'Navigate' },
               { k: shortcutLabel(','), label: 'Settings' },
               { k: shortcutLabel('R'), label: 'Refresh' },
             ]}
