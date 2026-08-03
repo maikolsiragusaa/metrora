@@ -14,6 +14,7 @@ import { formatConverted, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
 import { REFRESH_OPTIONS, useRefreshCadence } from '../lib/refreshCadence'
+import { shortcutLabel, shortcutRangeLabel } from '../lib/shortcuts'
 import { readCompatStorage, writeCompatStorage } from '../lib/storage'
 import { showToast } from '../lib/toast'
 import { ToastHost } from '../components/ToastHost'
@@ -129,7 +130,7 @@ export function Settings({ period, refreshToken = 0, onNavigate, initialPane, cl
           {pane === 'privacy' && <PrivacyPane />}
         </main>
       </div>
-      <Hint items={[{ k: '⌘1-7', label: 'Navigate' }, { k: '⌘R', label: 'Refresh' }]} right="pairing uses mutual TLS · approve-style, no PIN" />
+      <Hint items={[{ k: shortcutRangeLabel('1', '9'), label: 'Navigate' }, { k: shortcutLabel('R'), label: 'Refresh' }]} right="pairing uses mutual TLS · approve-style, no PIN" />
     </>
   )
 }
@@ -191,7 +192,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
         {hasConfigs && (
           <div className="about-sec">
             <div className="about-sec-h">Claude config</div>
-            <div className="about-row"><span className="tx">Active config<small>Applies to the overview data. Manage config folders with the compatibility CLI (`codeburn`).</small></span><span className="r"><span className="set-cap">{activeConfigLabel}</span></span></div>
+            <div className="about-row"><span className="tx">Active config<small>Applies only to views backed by the scoped Overview data. Configuration folders are managed by the Metrora CLI.</small></span><span className="r"><span className="set-cap">{activeConfigLabel}</span></span></div>
           </div>
         )}
         <div className="about-sec">
@@ -201,7 +202,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
             <button className="set-text-button" onClick={() => void codeburn.resetCurrency().then(finishCurrency)}>Reset to USD</button>
           </span></div>
           <div className="about-row"><label className="tx" htmlFor="settings-period">Default period<small>Applied on next launch.</small></label><span className="r"><Dropdown id="settings-period" ariaLabel="Default period" value={defaultPeriod} options={[{ value: 'today', label: 'Today' }, { value: 'week', label: '7d' }, { value: '30days', label: '30d' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All' }]} onChange={value => { setDefaultPeriod(value); writeSetting('codeburn.defaultPeriod', value) }} width={92} /></span></div>
-          <div className="about-row"><label className="tx" htmlFor="settings-refresh">Refresh every<small>How often data auto-refreshes. Manual updates only on ⌘R.</small></label><span className="r"><Dropdown id="settings-refresh" ariaLabel="Refresh every" value={cadence.value} options={REFRESH_OPTIONS.map(option => ({ value: option.value, label: option.label }))} onChange={cadence.setValue} width={124} /></span></div>
+          <div className="about-row"><label className="tx" htmlFor="settings-refresh">Refresh every<small>How often data auto-refreshes. Manual updates use {shortcutLabel('R')}.</small></label><span className="r"><Dropdown id="settings-refresh" ariaLabel="Refresh every" value={cadence.value} options={REFRESH_OPTIONS.map(option => ({ value: option.value, label: option.label }))} onChange={cadence.setValue} width={124} /></span></div>
           <div className="about-row"><label className="tx" htmlFor="settings-budget">Daily budget<small>Warns at 80%, alerts at 100%.</small></label><span className="r"><Dropdown id="settings-budget" ariaLabel="Daily budget" value={budgetKind} options={[{ value: 'off', label: 'Off' }, { value: 'usd', label: 'USD amount' }, { value: 'tokens', label: 'Tokens' }]} onChange={value => { const kind = value as 'off' | 'usd' | 'tokens'; setBudgetKind(kind); persistBudget(kind, budgetInput) }} width={120} />{budgetKind !== 'off' && <input className="set-input" type="text" inputMode="decimal" aria-label="Daily budget amount" placeholder={budgetKind === 'usd' ? 'USD' : 'tokens'} value={budgetInput} onChange={event => { setBudgetInput(event.target.value); persistBudget(budgetKind, event.target.value) }} style={{ width: 90 }} />}</span></div>
           {budgetError && <p className="set-action-msg error">{budgetError}</p>}
         </div>
@@ -437,7 +438,7 @@ function PrivacyPane() {
   return <section className="set-p on"><div><h3 className="set-h">Privacy &amp; data</h3><p className="set-sub">What Metrora does, and does not do, with your data.</p></div><div className="card">
     <PrivacyClaim title="Local-only" detail="Usage analysis runs on your machine and reads local session files." icon={<><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>} />
     <PrivacyClaim title="No API keys" detail="Usage is detected from local files; no provider API keys are required." icon={<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />} />
-    <PrivacyClaim title="No product telemetry" detail="This build does not transmit product telemetry or query inherited CodeBurn update services." icon={<path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" />} />
+    <PrivacyClaim title="No product telemetry" detail="This build does not transmit product telemetry or query legacy update services." icon={<path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" />} />
   </div></section>
 }
 
@@ -452,7 +453,7 @@ function ThisDevicePanel({ identity, shareStatus }: { identity: ReturnType<typeo
 
 function DiscoveredPanel({ scan }: { scan: ReturnType<typeof usePolled<DeviceScanResult>> }) {
   const found = scan.data?.found.filter(device => !device.paired) ?? []
-  return <Panel title="Discovered nearby" right={scan.loading ? 'listening…' : undefined}>{!scan.data && scan.error ? <SettingsErrorText error={scan.error} /> : !scan.data ? <p className="set-cap">listening…</p> : found.length === 0 ? <p className="set-cap">No nearby devices found.</p> : found.map(device => <div className="li" key={`${device.host}:${device.port}:${device.fingerprint}`}><div className="lx"><b>{device.name}</b><span>fingerprint {shortFingerprint(device.fingerprint)}</span></div></div>)}<p className="set-cap set-device-caption">To pair a device, run the compatibility command <code>codeburn devices add</code> in a terminal. Pairing is interactive (approve on the other device).</p></Panel>
+  return <Panel title="Discovered nearby" right={scan.loading ? 'listening…' : undefined}>{!scan.data && scan.error ? <SettingsErrorText error={scan.error} /> : !scan.data ? <p className="set-cap">listening…</p> : found.length === 0 ? <p className="set-cap">No nearby devices found.</p> : found.map(device => <div className="li" key={`${device.host}:${device.port}:${device.fingerprint}`}><div className="lx"><b>{device.name}</b><span>fingerprint {shortFingerprint(device.fingerprint)}</span></div></div>)}<p className="set-cap set-device-caption">To pair a device, run <code>metrora devices add</code> in a terminal. Pairing is interactive (approve on the other device).</p></Panel>
 }
 
 function PairedPanel({ devices, period, onRefresh }: { devices: ReturnType<typeof usePolled<CombinedUsage>>; period: Period; onRefresh: () => void }) {

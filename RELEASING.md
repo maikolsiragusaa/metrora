@@ -10,7 +10,7 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Canonical command: `metrora`
 - Current development version: `0.9.19`
 
-The `qovrion` and `codeburn` commands are temporary compatibility aliases. They are not release brands, package names to advertise or names for new artifacts.
+Temporary compatibility commands are governed only by the technical compatibility register. They are not release brands, package names to advertise or names for new artifacts.
 
 The root npm package is private and must not be published from this repository.
 

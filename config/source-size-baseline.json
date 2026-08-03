@@ -23,7 +23,6 @@
     "src/act/plans.ts": 719,
     "app/renderer/lib/types.ts": 700,
     "src/act/report.ts": 672,
-    "app/renderer/App.tsx": 618,
     "app/electron/main.ts": 612,
     "app/renderer/sections/Workspace.tsx": 582
   }

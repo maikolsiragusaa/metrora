@@ -117,7 +117,7 @@ describe('Settings', () => {
     render(<Settings period="month" claudeConfigs={{ selectedId: null, options: [{ id: 'claude-config:aaaa', label: 'Default Claude', path: '/x' }, { id: 'claude-desktop:bbbb', label: 'Claude Desktop', path: '/y' }] }} claudeConfigSource="claude-desktop:bbbb" />)
     expect(await screen.findByText('Claude config')).toBeInTheDocument()
     expect(screen.getByText('Claude Desktop')).toBeInTheDocument()
-    expect(screen.getByText(/Manage config folders with the compatibility CLI/)).toBeInTheDocument()
+    expect(screen.getByText(/Metrora CLI/)).toBeInTheDocument()
   })
 
   it('omits the Claude config line when no multi-config selector is present', async () => {
