@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 
 import { codeburn } from '../lib/ipc'
 import type { DateRange, Period } from '../lib/types'
-import type { DetectedProvider } from './useDesktopScope'
 import { hasPolledMemo, primePolledMemo, setPolledMemoMax } from './usePolled'
 
 // Wait for the first paint before background warming begins.
@@ -13,6 +12,10 @@ const PREFETCH_STAGGER_MS = 2000
 // Base instant-switch memo keys live beside the per-provider entries:
 // overview|all, overview-act, overview-yield, plus navigation headroom.
 const BASE_MEMO_KEYS = 4
+
+type PrefetchProvider = {
+  id: string
+}
 
 /** Shared memo-key authority for the visible Overview poll and provider warming. */
 export function overviewMemoKey(provider: string, period: Period, range: DateRange | null, configSource: string | null): string {
@@ -33,7 +36,7 @@ export function useProviderPrefetch({
   ready: boolean
   hasOverviewData: boolean
   overviewLoading: boolean
-  detectedProviders: DetectedProvider[]
+  detectedProviders: PrefetchProvider[]
   period: Period
   provider: string
   customRange: DateRange | null
