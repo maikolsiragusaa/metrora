@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, open, readFile, stat, unlink, utimes } from 'fs/promises'
 import { homedir } from 'os'
@@ -94,14 +94,17 @@ async function createExclusive(path: string, body: string): Promise<'created' | 
   }
 }
 
-type Observation = { record: LockRecord; mtimeMs: number }
+type Observation = { record: LockRecord | null; mtimeMs: number; digest: string }
 type ObservationResult = Observation | 'missing' | 'changing' | 'unavailable'
 
 async function observe(path: string): Promise<ObservationResult> {
-  // Exclusive create exposes the directory entry just before its small body is
-  // written, and heartbeat may update mtime between either stat. Treat those
-  // bounded transitions as contention, not broken infrastructure.
+  // Exclusive create publishes the directory entry before its small body is
+  // fully written, so a fresh empty body may belong to a live creator. A stable
+  // malformed body is nevertheless observable lock state, not an infrastructure
+  // failure: it owns nothing, carries its real mtime, and may be recovered only
+  // after the unchanged staleness gate and takeover-guard re-verification pass.
   let sawChange = false
+  let corrupt: Observation | null = null
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const before = await stat(path)
@@ -112,10 +115,29 @@ async function observe(path: string): Promise<ObservationResult> {
         await delay(1)
         continue
       }
-      const parsed = JSON.parse(raw) as Partial<LockRecord>
-      if (typeof parsed.pid === 'number' && typeof parsed.token === 'string' && typeof parsed.at === 'number') {
-        return { record: { pid: parsed.pid, token: parsed.token, at: parsed.at }, mtimeMs: after.mtimeMs }
+
+      // mtime and size can both remain unchanged across a same-size rewrite on
+      // coarse filesystems. Fingerprint the exact bytes before treating two
+      // corrupt observations as the same stale object.
+      const digest = createHash('sha256').update(raw).digest('hex')
+      let parsed: Partial<LockRecord> | null = null
+      try {
+        const candidate = JSON.parse(raw) as Partial<LockRecord>
+        if (typeof candidate.pid === 'number' && typeof candidate.token === 'string' && typeof candidate.at === 'number') {
+          parsed = candidate
+        }
+      } catch {
+        // Empty and truncated bodies are corrupt observations handled below.
       }
+
+      if (parsed) {
+        return {
+          record: { pid: parsed.pid!, token: parsed.token!, at: parsed.at! },
+          mtimeMs: after.mtimeMs,
+          digest,
+        }
+      }
+      corrupt = { record: null, mtimeMs: after.mtimeMs, digest }
     } catch (err) {
       if (isMissingError(err)) return 'missing'
       const code = (err as NodeJS.ErrnoException | undefined)?.code
@@ -123,11 +145,17 @@ async function observe(path: string): Promise<ObservationResult> {
     }
     await delay(1)
   }
-  return sawChange ? 'changing' : 'unavailable'
+  // Contention outranks a corrupt snapshot: a body observed changing may be a
+  // live owner between exclusive create and body publication or a replacement.
+  if (sawChange) return 'changing'
+  return corrupt ?? 'unavailable'
 }
 
 function sameObservation(a: Observation, b: Observation): boolean {
-  return a.record.token === b.record.token && a.mtimeMs === b.mtimeMs
+  // Corrupt and owned records are never equivalent. The digest closes the
+  // coarse-mtime/same-size rewrite gap before a stale body can be removed.
+  if ((a.record === null) !== (b.record === null)) return false
+  return a.record?.token === b.record?.token && a.mtimeMs === b.mtimeMs && a.digest === b.digest
 }
 
 const singleFlightTails = new Map<string, Promise<void>>()
@@ -225,7 +253,7 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
       if (current === 'missing') return true
       if (current === 'changing') return false
       if (current === 'unavailable') return false
-      if (current.record.token !== token) return true
+      if (current.record?.token !== token) return true
       return retryWindowsMutation(() => unlink(lockPath), sleep)
     } finally {
       await retryWindowsMutation(() => unlink(takeoverPath), sleep)
@@ -237,7 +265,7 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
     if (guard !== 'created') return false
     try {
       const current = await observe(lockPath)
-      return current !== 'missing' && current !== 'changing' && current !== 'unavailable' && current.record.token === token
+      return current !== 'missing' && current !== 'changing' && current !== 'unavailable' && current.record?.token === token
     } finally {
       await retryWindowsMutation(() => unlink(takeoverPath), sleep)
     }
@@ -255,7 +283,7 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
         if (guard !== 'created') return
         try {
           const current = await observe(lockPath)
-          if (current === 'missing' || current === 'changing' || current === 'unavailable' || current.record.token !== token) return
+          if (current === 'missing' || current === 'changing' || current === 'unavailable' || current.record?.token !== token) return
           const now = new Date(clock.wallNow())
           await utimes(lockPath, now, now)
         } finally {
