@@ -123,13 +123,18 @@ export async function ensureCacheHydrated(
       (latest, day) => latest === null || day.date > latest ? day.date : latest,
       null,
     )
-    if (
-      cache.watermarkTrusted !== true
-      && newestCachedDate !== null
-      && cache.lastComputedDate !== null
-      && cache.lastComputedDate > newestCachedDate
-    ) {
-      cache = { ...cache, lastComputedDate: newestCachedDate }
+    if (cache.watermarkTrusted !== true && cache.lastComputedDate !== null) {
+      // An unstamped watermark has no complete-parse authority. Pull it back to
+      // the newest populated day; when the cache is empty there is no historical
+      // coverage to trust at all, so reset it to null and open one backfill.
+      const trustedBoundary = newestCachedDate === null
+        ? null
+        : cache.lastComputedDate > newestCachedDate
+          ? newestCachedDate
+          : cache.lastComputedDate
+      if (trustedBoundary !== cache.lastComputedDate) {
+        cache = { ...cache, lastComputedDate: trustedBoundary }
+      }
     }
 
     const tzKey = core.currentTzKey()
