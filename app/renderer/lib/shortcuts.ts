@@ -19,6 +19,10 @@ export function shortcutLabel(key: string, platform = detectDesktopPlatform()): 
   return `${shortcutModifierLabel(platform)}${key}`
 }
 
+export function shortcutRangeLabel(from: string, to: string, platform = detectDesktopPlatform()): string {
+  return `${shortcutModifierLabel(platform)}${from}-${to}`
+}
+
 export function isPrimaryShortcut(
   event: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
   platform = detectDesktopPlatform(),
