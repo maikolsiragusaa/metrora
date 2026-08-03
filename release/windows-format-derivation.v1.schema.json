@@ -39,9 +39,10 @@
     "product": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "appId", "version", "visualIdentity"],
+      "required": ["name", "publisher", "appId", "version", "visualIdentity"],
       "properties": {
         "name": { "const": "Metrora" },
+        "publisher": { "const": "Vensent" },
         "appId": { "const": "eu.metrora.desktop" },
         "version": { "type": "string", "minLength": 1, "maxLength": 64 },
         "visualIdentity": { "const": "Signal Grid v1" }
