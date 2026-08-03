@@ -1,5 +1,6 @@
 import { existsSync } from 'fs'
-import { readFile } from 'fs/promises'
+import { readFile, readdir, stat } from 'fs/promises'
+import { dirname, join } from 'path'
 import { isSessionHydrationComplete } from './parser.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
@@ -15,15 +16,40 @@ function withTrust(cache: core.DailyCache, watermarkTrusted: boolean): DailyCach
   return { ...cache, watermarkTrusted }
 }
 
-async function readPersistedTrust(): Promise<boolean> {
-  const path = core.dailyCachePath()
-  if (!existsSync(path)) return false
+async function readTrust(path: string): Promise<{ version: number; trusted: boolean } | null> {
   try {
-    const raw = JSON.parse(await readFile(path, 'utf-8')) as { watermarkTrusted?: unknown }
-    return raw.watermarkTrusted === true
+    const raw = JSON.parse(await readFile(path, 'utf-8')) as {
+      version?: unknown
+      days?: unknown
+      watermarkTrusted?: unknown
+    }
+    if (typeof raw.version !== 'number' || !Array.isArray(raw.days)) return null
+    return { version: raw.version, trusted: raw.watermarkTrusted === true }
   } catch {
-    return false
+    return null
   }
+}
+
+async function readPersistedTrust(): Promise<boolean> {
+  const activePath = core.dailyCachePath()
+  if (existsSync(activePath)) {
+    const active = await readTrust(activePath)
+    if (active) return active.trusted
+  }
+
+  const dir = dirname(activePath)
+  const candidates: Array<{ version: number; trusted: boolean; mtimeMs: number }> = []
+  for (const name of await readdir(dir).catch(() => [])) {
+    if (!name.startsWith('daily-cache') || !name.includes('.json')) continue
+    const path = join(dir, name)
+    if (path === activePath) continue
+    const parsed = await readTrust(path)
+    if (!parsed) continue
+    candidates.push({ ...parsed, mtimeMs: (await stat(path)).mtimeMs })
+  }
+  candidates.sort((left, right) => (right.version - left.version) || (right.mtimeMs - left.mtimeMs))
+  const base = candidates[0]
+  return base?.version === core.DAILY_CACHE_VERSION && base.trusted
 }
 
 export function emptyCache(savingsConfigHash = ''): DailyCache {
