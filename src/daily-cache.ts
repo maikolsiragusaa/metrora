@@ -63,8 +63,17 @@ export function emptyCache(savingsConfigHash = ''): DailyCache {
 }
 
 export async function loadDailyCache(): Promise<DailyCache> {
+  // Read before the core migration/adoption path sanitizes unknown fields, then
+  // re-persist a trusted stamp when that path minted the active v16 envelope.
   const watermarkTrusted = await readPersistedTrust()
-  return withTrust(await core.loadDailyCache(), watermarkTrusted)
+  const cache = withTrust(await core.loadDailyCache(), watermarkTrusted)
+  if (watermarkTrusted) {
+    const active = await readTrust(core.dailyCachePath())
+    if (active?.version !== core.DAILY_CACHE_VERSION || !active.trusted) {
+      await core.saveDailyCache(cache).catch(() => {})
+    }
+  }
+  return cache
 }
 
 export async function saveDailyCache(cache: DailyCache): Promise<void> {
