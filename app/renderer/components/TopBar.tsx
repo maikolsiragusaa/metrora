@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
+import type { DesktopSectionCapabilities } from '../lib/desktopSections'
 import type { ClaudeConfigSelector, DateRange } from '../lib/types'
 import { Dropdown } from './Dropdown'
 import { ProviderPop, type ProviderOption } from './ProviderPop'
@@ -9,7 +10,7 @@ import { SegTabs, type SegOption } from './SegTabs'
 /** Sentinel option value: no --claude-config-source flag (aggregate all configs). */
 const ALL_CONFIGS = ''
 
-/** The real CLI period vocabulary (`codeburn ... --period`, src/cli-date.ts). */
+/** The real CLI period vocabulary (`metrora ... --period`, src/cli-date.ts). */
 export const PERIOD_OPTIONS: SegOption[] = [
   { value: 'today', label: 'Today' },
   { value: 'week', label: '7D' },
@@ -19,7 +20,15 @@ export const PERIOD_OPTIONS: SegOption[] = [
   { value: 'lifetime', label: 'Life' },
 ]
 
-/** The `.bar` top bar: title, scope caption, period SegTabs, provider ProviderPop. */
+const DEFAULT_CAPABILITIES: DesktopSectionCapabilities = {
+  period: true,
+  customRange: true,
+  provider: true,
+  claudeConfig: true,
+  globalRefresh: true,
+}
+
+/** The shared top bar renders only scope dimensions supported by the active section. */
 export function TopBar({
   title,
   scope,
@@ -34,6 +43,7 @@ export function TopBar({
   claudeConfigs,
   configSource,
   onConfigSelect,
+  capabilities = DEFAULT_CAPABILITIES,
 }: {
   title: ReactNode
   scope?: ReactNode
@@ -48,22 +58,28 @@ export function TopBar({
   claudeConfigs?: ClaudeConfigSelector
   configSource: string | null
   onConfigSelect: (id: string) => void
+  capabilities?: DesktopSectionCapabilities
 }) {
   return (
     <div className="bar">
       <div className="t">{title}</div>
       {scope !== undefined && <span className="scope">{scope}</span>}
       <div className="sp" />
-      <SegTabs options={PERIOD_OPTIONS} value={customRange ? '' : period} onChange={onPeriodChange} />
-      <CalendarPop value={customRange} onSelect={onRangeSelect} />
-      <ProviderPop value={provider} label={providerLabel} options={providerOptions} onSelect={onProviderSelect} />
-      {claudeConfigs && <ConfigPicker configs={claudeConfigs} value={configSource} onSelect={onConfigSelect} />}
+      {capabilities.period && (
+        <SegTabs options={PERIOD_OPTIONS} value={customRange ? '' : period} onChange={onPeriodChange} />
+      )}
+      {capabilities.customRange && <CalendarPop value={customRange} onSelect={onRangeSelect} />}
+      {capabilities.provider && (
+        <ProviderPop value={provider} label={providerLabel} options={providerOptions} onSelect={onProviderSelect} />
+      )}
+      {capabilities.claudeConfig && claudeConfigs && (
+        <ConfigPicker configs={claudeConfigs} value={configSource} onSelect={onConfigSelect} />
+      )}
     </div>
   )
 }
 
-/** Claude config source switcher. Only getOverview honors the selection, so the
- * footer names the limit; the active label is also echoed in the scope line. */
+/** Claude config source switcher. Only views backed by the scoped Overview payload expose it. */
 function ConfigPicker({ configs, value, onSelect }: { configs: ClaudeConfigSelector; value: string | null; onSelect: (id: string) => void }) {
   const options = [
     { value: ALL_CONFIGS, label: 'All Claude configs' },
@@ -77,7 +93,7 @@ function ConfigPicker({ configs, value, onSelect }: { configs: ClaudeConfigSelec
       options={options}
       onChange={onSelect}
       width={168}
-      footer="Applies to the overview data. Manage config folders with the codeburn CLI."
+      footer="Applies only to views backed by the scoped Overview data."
     />
   )
 }
