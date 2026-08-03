@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync } from 'fs'
-import { mkdir, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -28,6 +28,10 @@ function envelope(overrides: Partial<DailyCache> = {}): DailyCache {
   }
 }
 
+async function persistedTrust(): Promise<unknown> {
+  return (JSON.parse(await readFile(dailyCachePath(), 'utf-8')) as { watermarkTrusted?: unknown }).watermarkTrusted
+}
+
 beforeEach(async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-03T12:00:00.000Z'))
@@ -42,21 +46,25 @@ afterEach(async () => {
 })
 
 describe('trusted watermark envelope propagation', () => {
-  it('adopts a trusted same-version legacy envelope when the active cache is absent', async () => {
+  it('adopts and durably persists a trusted same-version legacy envelope', async () => {
     await writeFile(join(root, 'daily-cache.json'), JSON.stringify(envelope()), 'utf-8')
 
     const loaded = await loadDailyCache()
     expect(loaded.watermarkTrusted).toBe(true)
     expect(loaded.complete).toBe(true)
     expect(existsSync(dailyCachePath())).toBe(true)
+    expect(await persistedTrust()).toBe(true)
+    expect((await loadDailyCache()).watermarkTrusted).toBe(true)
   })
 
-  it('preserves a trusted stamp while migrating a supported envelope in the active filename', async () => {
+  it('durably preserves a trusted stamp while migrating a supported active envelope', async () => {
     await writeFile(dailyCachePath(), JSON.stringify(envelope({ version: DAILY_CACHE_VERSION - 1 })), 'utf-8')
 
     const loaded = await loadDailyCache()
     expect(loaded.version).toBe(DAILY_CACHE_VERSION)
     expect(loaded.watermarkTrusted).toBe(true)
+    expect(await persistedTrust()).toBe(true)
+    expect((await loadDailyCache()).watermarkTrusted).toBe(true)
   })
 
   it('never transfers trust from an unsupported active envelope to an adopted cache', async () => {
