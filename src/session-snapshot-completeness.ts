@@ -31,7 +31,7 @@ async function discoveredPaths(source: SessionSource): Promise<string[]> {
  * Session-cache hydration, parse completion and daily-cache completeness are
  * deliberately separate authorities. A complete session cache can still be a
  * stale read-only snapshot when a source appeared or changed after publication.
- * Only a byte-identical discovered set may authorize the daily watermark.
+ * Only a fingerprint-identical discovered set may authorize the daily watermark.
  */
 export async function assessSessionSnapshotCompleteness(
   cache: SessionCache,
