@@ -1,0 +1,38 @@
+name: C4 one-shot PR integration
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/c4-project-filter-durable-reconciliation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/c4-project-filter-durable-reconciliation
+          fetch-depth: 0
+
+      - name: Apply bounded aggregator transformation
+        run: node scripts/c4-apply-aggregator.mjs
+
+      - name: Remove one-shot operational files and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/c4-apply-aggregator.mjs
+          git rm .github/workflows/c4-apply.yml
+          git rm .github/workflows/c4-pr-apply.yml
+          git add src/usage-aggregator.ts
+          git diff --cached --check
+          git commit -m "fix(c4): reconcile durable project filters"
+          git push origin HEAD:fix/c4-project-filter-durable-reconciliation
