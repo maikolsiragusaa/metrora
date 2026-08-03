@@ -164,6 +164,7 @@ export async function buildReleaseManifest(options) {
     },
     product: {
       name: source.appPackage.build.productName,
+      publisher: source.appPackage.publisher,
       packageName: source.appPackage.name,
       appId: source.appPackage.build.appId,
       version: source.appPackage.version,
@@ -328,10 +329,11 @@ function requireManifestShape(manifest) {
     throw new Error('release manifest kind or version is unsupported')
   }
   if (
-    manifest.product?.visualIdentity?.name !== 'Signal Grid'
+    manifest.product?.publisher !== 'Vensent'
+    || manifest.product?.visualIdentity?.name !== 'Signal Grid'
     || manifest.product?.visualIdentity?.version !== '1.0'
   ) {
-    throw new Error('release manifest visual identity is not canonical Signal Grid')
+    throw new Error('release manifest product or visual identity is not canonical Metrora/Vensent')
   }
   if (
     manifest.source?.repository !== 'maikolsiragusaa/metrora'
