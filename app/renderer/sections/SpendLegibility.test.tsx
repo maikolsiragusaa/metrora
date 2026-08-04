@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-// Connector-authored CI trigger; removed in the next commit.
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
