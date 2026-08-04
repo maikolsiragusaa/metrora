@@ -1,5 +1,7 @@
-import type { Section } from '../components/Sidebar'
+import { SECTION_TITLES, type Section } from './desktopNavigation'
 import type { Period } from './types'
+
+export { SECTION_TITLES }
 
 export type DesktopSectionCapabilities = {
   period: boolean
@@ -7,19 +9,6 @@ export type DesktopSectionCapabilities = {
   provider: boolean
   claudeConfig: boolean
   globalRefresh: boolean
-}
-
-export const SECTION_TITLES: Record<Section, string> = {
-  overview: 'Overview',
-  sessions: 'Sessions',
-  pullRequests: 'Pull requests',
-  spend: 'Spend',
-  optimize: 'Optimize',
-  models: 'Models',
-  compare: 'Compare',
-  plans: 'Plans',
-  workspace: 'Workspace',
-  settings: 'Settings',
 }
 
 export const PERIOD_LABELS: Record<Period, string> = {

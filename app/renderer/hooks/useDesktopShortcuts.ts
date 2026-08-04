@@ -1,20 +1,7 @@
 import { useEffect } from 'react'
 
-import type { Section } from '../components/Sidebar'
+import { SECTION_BY_SHORTCUT, type Section } from '../lib/desktopNavigation'
 import { detectDesktopPlatform, isPrimaryShortcut, type DesktopPlatform } from '../lib/shortcuts'
-
-const SECTION_SHORTCUTS: Record<string, Section> = {
-  '1': 'overview',
-  '2': 'sessions',
-  '3': 'pullRequests',
-  '4': 'spend',
-  '5': 'optimize',
-  '6': 'models',
-  '7': 'compare',
-  '8': 'plans',
-  '9': 'workspace',
-  ',': 'settings',
-}
 
 export function useDesktopShortcuts({
   navigate,
@@ -29,7 +16,7 @@ export function useDesktopShortcuts({
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isPrimaryShortcut(event, platform)) return
       const key = event.key.toLowerCase()
-      const section = SECTION_SHORTCUTS[key]
+      const section = SECTION_BY_SHORTCUT[key]
       if (section) navigate(section)
       else if (key === 'r') refresh()
       else return
