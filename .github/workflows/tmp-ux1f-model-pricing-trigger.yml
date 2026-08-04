@@ -49,7 +49,7 @@ jobs:
               "    file = Path(path)\n"
               "    text = file.read_text()\n"
               "    count = text.count(old)\n"
-              "    known_duplicate = (path == 'app/renderer/sections/Models.test.tsx' and count == 2 and old == \\\"    savingsBaselineModel: 'Claude Opus 4.8',\\\\n    credits: null,\\\")\n"
+              "    known_duplicate = (path == 'app/renderer/sections/Models.test.tsx' and count == 2 and 'Claude Opus 4.8' in old and 'credits: null' in old)\n"
               "    if count != 1 and not known_duplicate:\n"
               "        raise SystemExit(f'{path}: expected one match, found {count}')\n"
               "    file.write_text(text.replace(old, new, 1))\n"
