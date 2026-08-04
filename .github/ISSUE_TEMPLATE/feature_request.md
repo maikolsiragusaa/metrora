@@ -1,7 +1,7 @@
 ---
 name: Feature request
 about: Propose a bounded improvement to the public product
- title: "feature: "
+title: "feature: "
 labels: ""
 assignees: ""
 ---
