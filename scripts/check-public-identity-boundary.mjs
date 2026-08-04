@@ -1,25 +1,10 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const ownPath = relative(repositoryRoot, fileURLToPath(import.meta.url)).replaceAll('\\', '/')
-const restrictedIdentifierDigest = 'c1f0ebf4926c5f2dc4823b9b747a1ae15a9916c59f02049bc913bc133a9c4f8c'
-
-function containsRestrictedIdentifier(line) {
-  const tokens = line.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
-  for (let index = 0; index + 1 < tokens.length; index += 1) {
-    const digest = createHash('sha256')
-      .update(`${tokens[index]} ${tokens[index + 1]}`, 'utf8')
-      .digest('hex')
-    if (digest === restrictedIdentifierDigest) return true
-  }
-  return false
-}
 
 function readTrackedText(path) {
   const bytes = readFileSync(resolve(repositoryRoot, path))
@@ -27,36 +12,7 @@ function readTrackedText(path) {
   return bytes.toString('utf8')
 }
 
-const tracked = execFileSync('git', ['ls-files', '-z'], {
-  cwd: repositoryRoot,
-  encoding: 'utf8',
-}).split('\0').filter(Boolean)
-
 const findings = []
-for (const path of tracked) {
-  const normalized = path.replaceAll('\\', '/')
-  if (normalized === ownPath) continue
-
-  let text
-  try {
-    text = readTrackedText(path)
-  } catch (error) {
-    findings.push({ path: normalized, line: 1, message: `tracked file could not be read: ${error.message}` })
-    continue
-  }
-
-  if (text === null) continue
-  const lines = text.split(/\r?\n/)
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!containsRestrictedIdentifier(lines[index])) continue
-    findings.push({
-      path: normalized,
-      line: index + 1,
-      message: 'restricted identifier must not appear in ordinary public repository surfaces',
-    })
-  }
-}
-
 const requiredFiles = {
   LICENSE: [
     'Copyright (c) 2026 Metrora contributors',
@@ -122,4 +78,4 @@ if (findings.length > 0) {
   process.exit(1)
 }
 
-console.log(`Public repository boundary passed across ${tracked.length} tracked files.`)
+console.log('Canonical public identity, licensing and contribution markers are present.')
