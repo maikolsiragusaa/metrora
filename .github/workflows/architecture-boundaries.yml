@@ -36,5 +36,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.13.0'
-      - name: Prevent new or growing GOD FILES
+      - name: Prevent oversized production modules from growing
         run: node scripts/check-source-size-ratchet.mjs
