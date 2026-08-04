@@ -11,13 +11,13 @@ import { ToastHost } from './components/ToastHost'
 import { UpdateBanner } from './components/UpdateBanner'
 import { rangeLabel, TopBar } from './components/TopBar'
 import { Window } from './components/Window'
-import { providerName, useDesktopScope } from './hooks/useDesktopScope'
+import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
-import { overviewMemoKey, useProviderPrefetch } from './hooks/useProviderPrefetch'
-import { clearPolledMemo, usePolled } from './hooks/usePolled'
+import { useOverviewRuntime } from './hooks/useOverviewRuntime'
+import type { Polled } from './hooks/usePolled'
 import { readDailyBudget } from './lib/budget'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
-import { formatCompact, formatUsd, setActiveCurrency } from './lib/format'
+import { formatCompact, formatUsd } from './lib/format'
 import { motionClass } from './lib/motion'
 import { codeburn } from './lib/ipc'
 import { localDateKey } from './lib/period'
@@ -36,7 +36,7 @@ import { SpendContent } from './sections/Spend'
 import { WorkspaceContent } from './sections/Workspace'
 import type { MenubarPayload, ModelReportRow, TelemetryStatus } from './lib/types'
 
-export { overviewMemoKey }
+export { overviewMemoKey } from './hooks/useProviderPrefetch'
 
 // Bucket raw dollar amounts before they leave the machine: telemetry carries
 // coarse ranges, never exact spend.
@@ -160,33 +160,15 @@ function AppMain() {
     onProviderSelect,
     onConfigSelect,
   } = useDesktopScope({ section, detectedProviders })
-  const [refreshToken, setRefreshToken] = useState(0)
+  const { overview, ready, refreshToken, refreshVisible, onConfigMutated } = useOverviewRuntime({
+    period,
+    provider,
+    customRange,
+    scopedClaudeConfigSource,
+    detectedProviders,
+    setDetectedProviders,
+  })
   const [now, setNow] = useState(() => Date.now())
-  const [, setCurrencyTick] = useState(0)
-
-  // Preserve the 2/3-arg call shapes when no config is scoped so the CLI argv
-  // stays flag-free; only add --claude-config-source once a config is picked.
-  const overview = usePolled<MenubarPayload>(
-    () => scopedClaudeConfigSource
-      ? codeburn.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
-      : customRange
-      ? codeburn.getOverview(period, provider, customRange)
-      : codeburn.getOverview(period, provider),
-    [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource],
-    { memoKey: overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource) },
-  )
-  const refreshOverview = overview.refresh
-
-  // Boot readiness: the overview poll is the single cold-cache warmer (long
-  // timeout + progress). Other sections gate their first CLI spawn on this so a
-  // cold first run hydrates ONCE here instead of fanning out into a parallel
-  // full-history parse per section. Flips true the moment overview first has data
-  // OR a (resolved) error; LATCHED, so a later uncached switch (which clears
-  // overview.data to paint a skeleton) can never re-gate the sections.
-  const [ready, setReady] = useState(false)
-  useEffect(() => {
-    if (overview.data != null || overview.error != null) setReady(true)
-  }, [overview.data, overview.error])
 
   // First-launch onboarding: shown until the telemetry consent screen has been
   // completed once. All telemetry bridge calls are typeof-guarded so an older
@@ -236,75 +218,9 @@ function AppMain() {
   }, [])
 
   useEffect(() => {
-    if (!overview.data) return
-    const details = overview.data.current.providerDetails
-    // Prefer providerDetails (internal id + display label); fall back to the
-    // providers map keys (lowercased display names) for older CLIs. The CLI
-    // only emits detected providers, so keep every entry (including ones with
-    // no spend this period) and sort by cost so zero-cost ones sit at the
-    // bottom of the picker.
-    const found = details
-      ? [...details]
-          .sort((a, b) => b.cost - a.cost)
-          .map(entry => ({ id: entry.id, label: entry.label }))
-      : Object.entries(overview.data.current.providers)
-          // Fallback map keys are lowercased display names; ones with spaces
-          // ("grok build") cannot round-trip as --provider, so exclude them
-          // rather than offer a filter that is guaranteed to error.
-          .filter(([key]) => /^[a-z0-9-]+$/.test(key))
-          .sort(([, a], [, b]) => b - a)
-          .map(([key]) => ({ id: key, label: providerName(key) }))
-    setDetectedProviders(current => {
-      const next = [...current]
-      for (const item of found) if (!next.some(entry => entry.id === item.id)) next.push(item)
-      return next.length === current.length ? current : next
-    })
-  }, [overview.data])
-
-  useEffect(() => {
-    const currency = overview.data?.currency
-    if (!currency) return
-    // While `switching`, `data` is a memo-served payload from a previous key that
-    // may carry a STALE currency (cached before a Settings currency change): never
-    // let it regress the display. Apply currency only from a freshly-resolved
-    // fetch; the fresh result (switching false) re-runs this and applies the real
-    // one. clearPolledMemo() on a currency mutation also purges those stale entries.
-    if (overview.switching) return
-    setActiveCurrency(currency)
-    setCurrencyTick(tick => tick + 1)
-  }, [overview.data?.currency?.code, overview.data?.currency?.rate, overview.data?.currency?.symbol, overview.switching])
-
-  useProviderPrefetch({
-    ready,
-    hasOverviewData: overview.data != null,
-    overviewLoading: overview.loading,
-    detectedProviders,
-    period,
-    provider,
-    customRange,
-    scopedClaudeConfigSource,
-  })
-
-  useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
   }, [])
-
-  const refreshVisible = useCallback(() => {
-    refreshOverview()
-    setRefreshToken(token => token + 1)
-  }, [refreshOverview])
-
-  // A Settings action changed config that alters computed costs/currency
-  // (currency/alias/plan/price-override). The electron read-cache is flushed CLI-
-  // side, but the renderer's instant-switch memo still holds payloads computed
-  // under the OLD config — a later provider switch would repaint the stale currency.
-  // Purge the memo, then force-refresh the active view so the new values land in a
-  // couple seconds (quick like the menubar) instead of at the next poll.
-  const onConfigMutated = useCallback(() => {
-    clearPolledMemo()
-    refreshVisible()
-  }, [refreshVisible])
 
   const navigate = useCallback((next: Section, pane: SettingsPane = 'general') => {
     setSettingsPane(pane)
@@ -392,7 +308,7 @@ function AppMain() {
   )
 }
 
-function StatusLine({ polled }: { polled: ReturnType<typeof usePolled<MenubarPayload>> }) {
+function StatusLine({ polled }: { polled: Polled<MenubarPayload> }) {
   if (polled.data) {
     return (
       <>

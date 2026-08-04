@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MenubarPayload } from '../lib/types'
@@ -145,7 +146,7 @@ describe('useOverviewRuntime', () => {
     polled = { ...polled, data: payload, loading: false }
 
     const { result } = renderHook(() => {
-      const [detectedProviders, setDetectedProviders] = React.useState<Array<{ id: string; label: string }>>([])
+      const [detectedProviders, setDetectedProviders] = useState<Array<{ id: string; label: string }>>([])
       const runtime = useOverviewRuntime(runtimeOptions({ detectedProviders, setDetectedProviders }))
       return { detectedProviders, runtime }
     })
