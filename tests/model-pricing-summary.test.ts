@@ -6,7 +6,6 @@ import {
   summarizeModelPricing,
 } from '../src/model-pricing-summary.js'
 
-// This focused authority test also anchors the ordinary PR review gates.
 describe('model pricing summary', () => {
   it('distinguishes paid, explicitly free, unavailable, partial, and unknown evidence', () => {
     const paid = createModelPricingCounts()
