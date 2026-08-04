@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import type { DailyHistoryEntry, MenubarPayload } from '../lib/types'
+import type { DailyHistoryEntry, MenubarPayload, YieldJsonReport } from '../lib/types'
 import { deriveEfficiency } from './overviewEfficiency'
 import { aggregateModels, buildModelIndex, sessionModelKey, topModelsToAggregated } from './overviewModels'
+import { deriveCostPerOutcome } from './overviewOutcome'
 import { deriveSignals, deriveStats } from './overviewTrends'
 import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
 
@@ -39,6 +40,34 @@ describe('Overview derivations', () => {
     expect(result.score).toBeCloseTo(67)
     expect(result.grade).toBe('C')
     expect(result.gradeTone).toBe('grade-bc')
+  })
+
+  it('keeps outcome costs tied to the yield report without inventing zero denominators', () => {
+    const report = {
+      summary: {
+        productive: { costUSD: 120, sessions: 3, costPercent: 80, sessionPercent: 60 },
+        reverted: { costUSD: 20, sessions: 1, costPercent: 13, sessionPercent: 20 },
+        abandoned: { costUSD: 10, sessions: 1, costPercent: 7, sessionPercent: 20 },
+        total: { costUSD: 150, sessions: 5 },
+        productiveToRevertedCostRatio: 6,
+      },
+      details: [
+        { sessionId: 's1', project: 'one', category: 'productive', commitCount: 4, costUSD: 80 },
+        { sessionId: 's2', project: 'two', category: 'productive', commitCount: 2, costUSD: 40 },
+      ],
+    } as YieldJsonReport
+
+    expect(deriveCostPerOutcome(report)).toEqual({
+      costPerCommit: 25,
+      costPerProductiveSession: 40,
+      productivePercent: 80,
+      revertedPercent: 13,
+      abandonedPercent: 7,
+    })
+    report.details = []
+    report.summary.productive.sessions = 0
+    expect(deriveCostPerOutcome(report).costPerCommit).toBeNull()
+    expect(deriveCostPerOutcome(report).costPerProductiveSession).toBeNull()
   })
 
   it('keeps workflow coaching priority and duration formatting deterministic', () => {
