@@ -52,7 +52,7 @@ for (const file of await collect(root)) {
   const frozenMax = frozen.get(file.path)
   const max = frozenMax ?? defaultMax
   if (lines > max) {
-    failures.push(`${file.path}: ${lines} lines (maximum ${max}${frozenMax ? ', frozen legacy baseline' : ''})`)
+    failures.push(`${file.path}: ${lines} lines (maximum ${max}${frozenMax ? ', reviewed frozen baseline' : ''})`)
   }
   if (lines >= Math.floor(defaultMax * 0.75) || frozenMax) {
     reports.push({ path: file.path, lines, max, frozen: frozenMax !== undefined })
