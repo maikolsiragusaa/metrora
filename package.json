@@ -2,7 +2,7 @@
   "name": "metrora",
   "version": "0.9.19",
   "private": true,
-  "description": "Metrora local-first AI usage intelligence with temporary qovrion and codeburn CLI compatibility aliases",
+  "description": "Metrora — local-first AI usage intelligence for tools, models, projects and sessions",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
