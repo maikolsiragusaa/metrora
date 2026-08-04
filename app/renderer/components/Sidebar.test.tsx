@@ -1,32 +1,60 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 
 import { Sidebar } from './Sidebar'
 
 describe('Sidebar', () => {
-  it('renders all ten nav items in the desktop order', () => {
+  it('renders every destination exactly once in task-oriented groups', () => {
     render(<Sidebar active="overview" onNavigate={() => {}} />)
-    const labels = screen.getAllByRole('button').map(item => item.textContent?.replace(/⌘[\d,]/, ''))
-    expect(labels).toEqual(['Overview', 'Sessions', 'Pull requests', 'Spend', 'Optimize', 'Models', 'Compare', 'Plans', 'Workspace', 'Settings'])
-    expect(screen.getByRole('button', { name: /Sessions.*⌘2/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Pull requests.*⌘3/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Compare.*⌘7/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Plans.*⌘8/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Workspace.*⌘9/ })).toBeInTheDocument()
+
+    expect(screen.getByRole('navigation', { name: 'Metrora navigation' })).toBeInTheDocument()
+    const home = screen.getByRole('group', { name: 'Home' })
+    const analyze = screen.getByRole('group', { name: 'Analyze' })
+    const improve = screen.getByRole('group', { name: 'Improve' })
+    const trust = screen.getByRole('group', { name: 'Trust' })
+    const product = screen.getByRole('group', { name: 'Product' })
+
+    expect(within(home).getByRole('button', { name: /Home.*⌘1/ })).toBeInTheDocument()
+    expect(within(analyze).getAllByRole('button').map(item => item.textContent)).toEqual([
+      'Sessions⌘2',
+      'Pull requests⌘3',
+      'Spend⌘4',
+      'Models⌘6',
+      'Compare⌘7',
+    ])
+    expect(within(improve).getAllByRole('button').map(item => item.textContent)).toEqual(['Optimize⌘5', 'Plans⌘8'])
+    expect(within(trust).getByRole('button', { name: /Workspace.*⌘9/ })).toBeInTheDocument()
+    expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(10)
   })
 
-  it('calls onNavigate with the section id when a nav item is clicked', () => {
+  it('routes by click and keyboard without changing section ids', async () => {
+    const user = userEvent.setup()
     const onNavigate = vi.fn()
     render(<Sidebar active="overview" onNavigate={onNavigate} />)
-    fireEvent.click(screen.getByRole('button', { name: /Spend/ }))
+
+    await user.click(screen.getByRole('button', { name: /Spend/ }))
     expect(onNavigate).toHaveBeenCalledWith('spend')
+
+    const compare = screen.getByRole('button', { name: /Compare/ })
+    compare.focus()
+    await user.keyboard('{Enter}')
+    expect(onNavigate).toHaveBeenCalledWith('compare')
   })
 
-  it('marks the active item with the "on" class', () => {
+  it('marks the active item with the current-page contract', () => {
     render(<Sidebar active="models" onNavigate={() => {}} />)
     expect(screen.getByRole('button', { name: /Models/ })).toHaveClass('on')
-    expect(screen.getByRole('button', { name: /Overview/ })).not.toHaveClass('on')
+    expect(screen.getByRole('button', { name: /Models/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: /Home/ })).not.toHaveClass('on')
+  })
+
+  it('opens About without competing with the ten product destinations', () => {
+    render(<Sidebar active="overview" onNavigate={() => {}} />)
+    fireEvent.click(screen.getByRole('link', { name: 'About' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('renders the static Metrora vector mark instead of the inherited flame asset', () => {
