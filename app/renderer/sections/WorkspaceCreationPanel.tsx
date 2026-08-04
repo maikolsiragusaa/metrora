@@ -37,11 +37,13 @@ export function WorkspaceCreationPanel({
           <span>Endpoint name</span>
           <input value={endpointName} maxLength={80} onChange={event => setEndpointName(event.target.value)} />
         </label>
-        <div className="workspace-create-copy">
-          <b>Existing protected identity</b>
-          <code>{shortFingerprint(identity.publicKeyFingerprintSha256)}</code>
-          <span>Generation {identity.generation}. The runtime reuses this identity instead of creating a competing key.</span>
-        </div>
+        <details className="workspace-disclosure workspace-create-copy">
+          <summary>Protected identity details</summary>
+          <div className="workspace-disclosure-body">
+            <code>{shortFingerprint(identity.publicKeyFingerprintSha256)}</code>
+            <span>Identity generation {identity.generation}. Metrora reuses this protected identity instead of creating a competing key.</span>
+          </div>
+        </details>
         <button type="button" className="btn btn-p workspace-primary-action" onClick={() => void onCreate()} disabled={busy}>
           {action === 'create' ? 'Creating…' : 'Create local Workspace'}
         </button>
