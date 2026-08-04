@@ -58,6 +58,34 @@ const presentationForbidden = [
   'platform-sensitive failures on Ubuntu',
 ]
 
+const contractFiles = [
+  'docs/CODEX_MODEL_PROVIDER_V1.md',
+  'docs/WORKSPACE_V1.md',
+  'docs/WORKSPACE_PRODUCTION_LIFECYCLE_V1.md',
+  'docs/DESKTOP_REVIEWED_PRODUCTION_V1.md',
+  'docs/WORKSPACE_RECOVERY_V1.md',
+  'docs/CANONICAL_REVIEWED_PRODUCTION_SCANNER_V1.md',
+  'docs/DESKTOP_WORKSPACE_RUNTIME_V1.md',
+  'docs/CANONICAL_REVIEWED_PRODUCTION_ORCHESTRATOR_V1.md',
+  'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md',
+]
+
+const contractForbidden = [
+  'Advisor',
+  'Bench implementation',
+  'hosted service',
+  'hosted synchronization',
+  'customer-operated',
+  'managed synchronization',
+  'managed Workspace',
+  'enterprise deployment',
+  'commercial packaging',
+  'Partner Center',
+  'DUNS',
+  'separate infrastructure decision',
+  'next core authority milestone',
+]
+
 function containsProtectedPersonalIdentity(line) {
   const tokens = line.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
   for (let index = 0; index + 1 < tokens.length; index += 1) {
@@ -73,6 +101,21 @@ function readTrackedText(path) {
   const bytes = readFileSync(resolve(repositoryRoot, path))
   if (bytes.includes(0)) return null
   return bytes.toString('utf8')
+}
+
+function scanFiles(files, forbidden, message) {
+  const findings = []
+  for (const path of files) {
+    const text = readTrackedText(path)
+    const lines = text.split(/\r?\n/)
+    for (let index = 0; index < lines.length; index += 1) {
+      for (const value of forbidden) {
+        if (!lines[index].includes(value)) continue
+        findings.push({ path, line: index + 1, message })
+      }
+    }
+  }
+  return findings
 }
 
 const tracked = execFileSync('git', ['ls-files', '-z'], {
@@ -110,20 +153,17 @@ for (const path of tracked) {
   }
 }
 
-for (const path of presentationFiles) {
-  const text = readTrackedText(path)
-  const lines = text.split(/\r?\n/)
-  for (let index = 0; index < lines.length; index += 1) {
-    for (const value of presentationForbidden) {
-      if (!lines[index].includes(value)) continue
-      findings.push({
-        path,
-        line: index + 1,
-        message: 'public presentation must not expose defensive, administrative or unpublished roadmap wording',
-      })
-    }
-  }
-}
+findings.push(...scanFiles(
+  presentationFiles,
+  presentationForbidden,
+  'public presentation must not expose defensive, administrative or unpublished roadmap wording',
+))
+
+findings.push(...scanFiles(
+  contractFiles,
+  contractForbidden,
+  'implemented public contracts must not expose reserved product names, administrative prerequisites or unpublished roadmap sequencing',
+))
 
 const requiredFiles = {
   'LICENSE': [
