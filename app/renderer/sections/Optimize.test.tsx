@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MenubarPayload, OptimizeJsonReport, YieldJsonReport } from '../lib/types'
@@ -160,31 +160,58 @@ describe('Optimize', () => {
     expect(screen.getByText('{"batch":true}')).toBeInTheDocument()
   })
 
-  it('switches to Reverts and Abandoned and shows only the matching yield details', async () => {
+  it('switches to Reverts and Abandoned with explicit table and session context', async () => {
     render(<Optimize period="30days" provider="all" />)
     await screen.findByText('Opus is doing your small talk')
 
     fireEvent.click(screen.getByRole('tab', { name: 'Reverts $107.00' }))
-    expect(screen.getByText('codeburn')).toBeInTheDocument()
-    expect(screen.getByText('2 commits · rev-1')).toBeInTheDocument()
+    const reverted = screen.getByRole('table', { name: 'Reverted sessions' })
+    expect(within(reverted).getByRole('columnheader', { name: 'Project and session' })).toBeInTheDocument()
+    expect(within(reverted).getByText('codeburn')).toBeInTheDocument()
+    expect(within(reverted).getByText('2 commits · Session ID rev-1')).toBeInTheDocument()
+    expect(within(reverted).getByRole('row', { name: /codeburn\. 2 commits\. Session ID rev-1\. Cost \$55\.00\./ })).toBeInTheDocument()
     expect(screen.queryByText('sandbox-spike')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Abandoned $65.40' }))
-    expect(screen.getByText('sandbox-spike')).toBeInTheDocument()
-    expect(screen.getByText('0 commits · abn-1')).toBeInTheDocument()
-    expect(screen.getByText('$65.40')).toHaveClass('val')
+    const abandoned = screen.getByRole('table', { name: 'Abandoned sessions' })
+    expect(within(abandoned).getByText('sandbox-spike')).toBeInTheDocument()
+    expect(within(abandoned).getByText('0 commits · Session ID abn-1')).toBeInTheDocument()
+    expect(within(abandoned).getByText('$65.40')).toHaveClass('val')
     expect(screen.queryByText('codeburn')).not.toBeInTheDocument()
     expect(screen.queryByText('desktop-app')).not.toBeInTheDocument()
   })
 
-  it('renders honest placeholders for unavailable yield totals and tab bodies', async () => {
+  it('names unavailable yield totals and tab bodies explicitly', async () => {
     getYield.mockReset().mockRejectedValue(new Error('yield failed'))
     render(<Optimize period="30days" provider="all" />)
 
-    expect(await screen.findByRole('tab', { name: 'Reverts —' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Abandoned —' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('tab', { name: 'Reverts —' }))
+    expect(await screen.findByRole('tab', { name: 'Reverts unavailable' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Abandoned unavailable' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Reverts unavailable' }))
     expect(screen.getByText('Yield data is unavailable right now.')).toBeInTheDocument()
+  })
+
+  it('keeps loading distinct from unavailable yield evidence', async () => {
+    getYield.mockReset().mockImplementation(() => new Promise<YieldJsonReport>(() => {}))
+    render(<Optimize period="30days" provider="all" />)
+
+    expect(await screen.findByRole('tab', { name: 'Reverts loading' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Abandoned loading' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Reverts loading' }))
+    expect(screen.getByText('Scanning session outcomes…')).toBeInTheDocument()
+  })
+
+  it('names missing project and session identifiers without fabricating values', async () => {
+    const report = makeYield()
+    report.details = [{ sessionId: '', project: '', category: 'reverted', commitCount: 0, costUSD: 12 }]
+    getYield.mockReset().mockResolvedValue(report)
+    render(<Optimize period="30days" provider="all" />)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Reverts $107.00' }))
+    const table = screen.getByRole('table', { name: 'Reverted sessions' })
+    expect(within(table).getByText('Project not identified')).toBeInTheDocument()
+    expect(within(table).getByText('0 commits · Session ID Not available')).toBeInTheDocument()
+    expect(within(table).getByRole('row', { name: /Project not identified\. 0 commits\. Session ID Not available\. Cost \$12\.00\./ })).toBeInTheDocument()
   })
 
   it('keeps the Fixes tab populated and preserves all four empty tab states', async () => {

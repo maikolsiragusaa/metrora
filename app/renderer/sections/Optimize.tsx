@@ -12,6 +12,17 @@ import { codeburn } from '../lib/ipc'
 import type { DateRange, MenubarPayload, OptimizeJsonReport, Period, SessionYieldJson, WasteAction, YieldJsonReport } from '../lib/types'
 
 type OptimizeTab = 'waste' | 'reverts' | 'abandoned' | 'fixes'
+type YieldCategory = 'reverted' | 'abandoned'
+
+function yieldTabValue(report: Polled<YieldJsonReport>, category: YieldCategory): string {
+  if (report.data) return formatUsd(report.data.summary[category].costUSD)
+  return report.error ? 'unavailable' : 'loading'
+}
+
+function identified(value: string, fallback: string): string {
+  const normalized = value.trim()
+  return normalized || fallback
+}
 
 export function Optimize({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
@@ -55,13 +66,10 @@ export function OptimizeContent({
     return <SectionSkeleton label="Scanning optimize findings…" rows={5} />
   }
 
-  const yieldData = yieldReport.error ? null : yieldReport.data
-  const revertedTotal = yieldData ? formatUsd(yieldData.summary.reverted.costUSD) : '—'
-  const abandonedTotal = yieldData ? formatUsd(yieldData.summary.abandoned.costUSD) : '—'
   const options = [
     { value: 'waste', label: `Waste ${formatUsd(overview.data.optimize.savingsUSD)}` },
-    { value: 'reverts', label: `Reverts ${revertedTotal}` },
-    { value: 'abandoned', label: `Abandoned ${abandonedTotal}` },
+    { value: 'reverts', label: `Reverts ${yieldTabValue(yieldReport, 'reverted')}` },
+    { value: 'abandoned', label: `Abandoned ${yieldTabValue(yieldReport, 'abandoned')}` },
     // The Fixes tab renders topFindings (capped list), so label the count that shows.
     { value: 'fixes', label: `Fixes ${overview.data.optimize.topFindings.length.toLocaleString('en-US')}` },
   ]
@@ -211,26 +219,42 @@ function YieldRows({
   category: SessionYieldJson['category']
   empty: string
 }) {
-  if (report.error || !report.data) return <EmptyNote>Yield data is unavailable right now.</EmptyNote>
+  if (!report.data) {
+    return <EmptyNote>{report.error ? 'Yield data is unavailable right now.' : 'Scanning session outcomes…'}</EmptyNote>
+  }
 
   const rows = report.data.details.filter(row => row.category === category)
   if (!rows.length) return <EmptyNote>{empty}</EmptyNote>
 
   return (
-    <>
-      {rows.map((row, i) => (
-        <div className="li" style={{ alignItems: 'flex-start' }} key={row.sessionId}>
-          <span className="no">{String(i + 1).padStart(2, '0')}</span>
-          <div className="lx">
-            <b>{row.project}</b>
-            <span>
-              {row.commitCount.toLocaleString('en-US')} {row.commitCount === 1 ? 'commit' : 'commits'} · {row.sessionId}
-            </span>
+    <div role="table" aria-label={`${category === 'reverted' ? 'Reverted' : 'Abandoned'} sessions`}>
+      <div className="sr-only" role="row">
+        <span role="columnheader">Rank</span>
+        <span role="columnheader">Project and session</span>
+        <span role="columnheader">Cost</span>
+      </div>
+      {rows.map((row, i) => {
+        const project = identified(row.project, 'Project not identified')
+        const sessionId = identified(row.sessionId, 'Not available')
+        const commitLabel = `${row.commitCount.toLocaleString('en-US')} ${row.commitCount === 1 ? 'commit' : 'commits'}`
+        return (
+          <div
+            className="li"
+            style={{ alignItems: 'flex-start' }}
+            key={`${category}-${row.sessionId || i}`}
+            role="row"
+            aria-label={`${project}. ${commitLabel}. Session ID ${sessionId}. Cost ${formatUsd(row.costUSD)}.`}
+          >
+            <span className="no" role="cell">{String(i + 1).padStart(2, '0')}</span>
+            <div className="lx" role="cell">
+              <b>{project}</b>
+              <span>{commitLabel} · Session ID {sessionId}</span>
+            </div>
+            <span className="val" role="cell">{formatUsd(row.costUSD)}</span>
           </div>
-          <span className="val">{formatUsd(row.costUSD)}</span>
-        </div>
-      ))}
-    </>
+        )
+      })}
+    </div>
   )
 }
 
