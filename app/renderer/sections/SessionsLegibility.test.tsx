@@ -67,7 +67,8 @@ describe('Sessions dense-report legibility', () => {
 
     render(<Sessions period="30days" provider="all" />)
 
-    const status = await screen.findByRole('status')
+    const sessionId = await screen.findByText('Session ID · claude/abc:123')
+    const status = screen.getByRole('status')
     expect(status).toHaveTextContent('Sessions sorted by highest cost, grouped by provider. 1 session after filters.')
 
     const row = screen.getByRole('button', {
@@ -75,7 +76,7 @@ describe('Sessions dense-report legibility', () => {
     })
     expect(row).toHaveAttribute('aria-controls', 'session-details-claude-abc-123')
     expect(row).toHaveAttribute('aria-expanded', 'false')
-    expect(within(row).getByText('Session ID · claude/abc:123')).toBeInTheDocument()
+    expect(within(row).getByText(sessionId.textContent ?? '')).toBeInTheDocument()
 
     await user.click(row)
 
