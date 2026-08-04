@@ -117,6 +117,9 @@ jobs:
       - name: Test Windows refresh lock
         if: runner.os == 'Windows'
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
+      - name: Test Windows replacement-file portability
+        if: runner.os == 'Windows'
+        run: npm test -- --run --no-file-parallelism tests/parser-incremental-append.test.ts
       - name: Test Windows local-state contracts
         if: runner.os == 'Windows'
         run: >-
