@@ -1,74 +1,53 @@
-# Windows Store distribution
+# Official Windows distribution boundary
 
-## Decision
+## Status
 
-Metrora uses two parallel Windows channels:
+Official Windows distribution is in preparation.
 
-- Microsoft Store AppX/MSIX for ordinary users;
-- GitHub Releases and metrora.eu for the portable ZIP and unsigned NSIS installer used by technical users.
+The accepted 0.9.19 Windows artifacts remain unsigned engineering candidates used for validation. They are not an official release, signed package or active update channel.
 
-The Store channel is the recommended public path because Microsoft hosts, signs and updates the packaged application after certification. The GitHub channel remains available without requiring a Microsoft account or Store access.
+## Identity
 
-## Current status
+An official distribution must use the exact product and publisher identity issued for Metrora by the selected channel.
 
-The accepted Windows 0.9.19 authority remains the unsigned portable and NSIS candidate validated through R1.B physical acceptance.
+Identity values must never be guessed, copied from another project or patched into an artifact after the reviewed product build.
 
-The Store package does not exist yet. It requires a separately reserved Partner Center product identity and its own build, verification and physical acceptance.
+Protected credentials and verification material remain outside untrusted public pull-request workflows.
 
-## Store identity
+## Package requirements
 
-Do not guess or copy Store metadata from CodeBurn or any other upstream project.
+An official Windows package must:
 
-After the Metrora product is reserved in Partner Center, record the exact public values supplied by Microsoft:
+- derive from reviewed public Metrora source and the canonical bundled runtime;
+- retain the local filesystem access required for supported usage sources;
+- preserve endpoint identity, Workspace state, secure-storage material and user-owned data;
+- contain only declared product bytes and metadata;
+- expose truthful product, publisher, version and channel information;
+- remain independently traceable through checksums, manifests and provenance;
+- pass clean installation, first launch, update, removal and rollback acceptance;
+- keep private user data out of package metadata, reports and provenance.
 
-- package identity name;
-- publisher CN;
-- publisher display name;
-- Store product ID;
-- official Store URL.
+## Technical artifacts
 
-No payment or external code-signing certificate is authorized.
+Portable and installer candidates may be published only as clearly labelled technical artifacts with their exact signature status, checksums and source binding.
 
-## Packaging model
-
-The planned Store package is a separate electron-builder AppX target built on Windows x64 from the same reviewed Metrora source and bundled CLI as the desktop application.
-
-The package must:
-
-- retain full-trust desktop execution required to read local AI-tool session files;
-- keep prompts, responses, source code and private paths local;
-- preserve endpoint identity, Workspace state, safe-storage material and user-owned data;
-- contain only Metrora product bytes and declared metadata;
-- remain unsigned before Partner Center upload;
-- be signed by Microsoft during Store certification;
-- never be presented as suitable for direct sideloading unless a separate trusted signing path exists.
-
-## Parallel GitHub channel
-
-GitHub Releases may contain:
-
-- the verified portable ZIP;
-- the unsigned NSIS installer;
-- SHA-256 checksums;
-- release and format manifests;
-- explicit installation guidance for SmartScreen.
-
-The unsigned GitHub files must never be described as Microsoft-signed or equivalent to the Store package.
+They must not be described as an official signed distribution or as equivalent to a channel-certified package.
 
 ## Acceptance gates
 
-Before Store publication, verify on physical Windows:
+Before official publication, verify on supported physical Windows systems:
 
-1. Store package identity and displayed publisher are correct.
-2. First launch works without an external Node.js installation.
-3. Supported provider session files remain discoverable.
-4. Existing endpoint and Workspace state are reused safely where migration is intended.
-5. A clean Store install does not collide with the NSIS installation.
-6. Update preserves all user-owned local state.
-7. Uninstall removes application authority while preserving local state by default.
-8. Store and GitHub channels expose truthful version and channel information.
-9. No private data enters Store metadata, reports or provenance.
+1. product and publisher identity are exact;
+2. first launch works without an external Node.js installation;
+3. supported local usage sources remain discoverable;
+4. intended migration reuses existing endpoint and Workspace state safely;
+5. installation channels do not collide or silently migrate one another;
+6. update and rollback preserve user-owned local state;
+7. removal clears application authority while preserving local state by default;
+8. public version and channel information are truthful;
+9. no private data enters package metadata, reports or provenance;
+10. published artifacts remain bound to reviewed public source.
 
-## Architecture boundary
+## Responsibility boundary
 
-Store build, Store submission, GitHub release publication and incident rollback remain separate responsibilities. Do not combine them into one all-purpose workflow.
+Product build, package derivation, independent verification, channel submission, publication and rollback remain separate responsibilities. No single workflow receives unnecessary authority over all of them.
