@@ -1,15 +1,16 @@
 name: Apply P0.A fixture remediation
 
 on:
-  push:
-    branches: [test/p0a-remove-inherited-quarantines]
+  pull_request:
+    branches: [main]
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.ref == 'test/p0a-remove-inherited-quarantines'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
