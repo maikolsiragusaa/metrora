@@ -9,14 +9,12 @@ The public repository is authoritative for local collection, parsing, normalizat
 Metrora is local-first:
 
 - AI traffic does not pass through Metrora;
-- ordinary local use requires no account or hosted service;
+- ordinary local use requires no account or remote service;
 - prompts, responses, source code, patches, secrets and unrestricted local paths are not exported by default;
 - settled historical cost assignments remain immutable;
 - unavailable or uninspected evidence remains explicit rather than becoming a false zero.
 
-Private commercial and infrastructure repositories may extend public contracts through versioned artifacts and services. They may not fork or redefine canonical local product semantics.
-
-## Surfaces
+## Data flow
 
 ```text
 local AI-tool session stores
@@ -31,6 +29,8 @@ CLI / Electron desktop / local web dashboard
             ↓
 optional native companions and explicit exports
 ```
+
+## Surfaces
 
 ### CLI — `src/`
 
@@ -61,19 +61,19 @@ The Electron main process owns privileged work:
 
 The preload bridge exposes a narrow typed API. The renderer runs with context isolation and no Node integration, consumes public DTOs and must not implement its own parser, pricing engine or evidence authority.
 
-State orchestration, domain formatting and presentation must be split before a component or main-process module becomes a GOD FILE.
+State orchestration, domain formatting and presentation are extracted into focused modules before a component or main-process module becomes oversized.
 
 ### Local web dashboard — `dash/`
 
-The dashboard renders canonical local analytical payloads in a browser surface served from the user's machine. It does not become a hosted control plane or a second data model.
+The dashboard renders canonical local analytical payloads in a browser surface served from the user's machine. It does not own a separate data model.
 
 ### Native companions — `mac/`, `gnome/`, `android/`
 
-- macOS and GNOME surfaces are lightweight local companions over the canonical CLI/runtime.
-- Android is a companion foundation and does not own collection, pricing or evidence authority.
+- macOS and GNOME surfaces are lightweight local companions over the canonical CLI/runtime;
+- Android is a companion foundation and does not own collection, pricing or evidence authority;
 - inherited module names, UUIDs and storage paths may remain where migration would otherwise break installed state.
 
-Compatibility identifiers are governed by `TECHNICAL_IDENTITY_COMPATIBILITY.md`, not treated as current product branding.
+Compatibility identifiers are governed by [`TECHNICAL_IDENTITY_COMPATIBILITY.md`](TECHNICAL_IDENTITY_COMPATIBILITY.md), not treated as product branding.
 
 ## Collection and parsing
 
@@ -81,29 +81,29 @@ Provider adapters discover source records and emit normalized calls through shar
 
 Key rules:
 
-- source-present provider/model metadata is preferred over inference;
-- deduplication occurs through canonical identities shared across providers;
+- source-present provider and model metadata is preferred over inference;
+- deduplication uses canonical identities shared across providers;
 - parser caches accelerate repeated reads but do not become independent truth;
-- cache reconciliation must preserve provenance and fail closed on contradictory records;
+- cache reconciliation preserves provenance and fails closed on contradictory records;
 - provider-specific parsing remains isolated from product presentation.
 
-New or changed provider adapters require fixtures, focused tests, provenance review and validation against representative real records where possible.
+New or changed provider adapters require fixtures, focused tests, provenance review and validation against representative records where possible.
 
 ## Pricing authority
 
 Historical API-equivalent pricing is date-effective and evidence-aware.
 
-- provider/client metered values are authoritative when available;
+- provider or client metered values are authoritative when available;
 - explicit zero is distinct from unavailable pricing;
 - subscription or proxy coverage is an overlay, not a rewrite of historical API-equivalent value;
 - a later catalog update cannot silently change an already settled call;
-- legacy fallback remains explicit and conservative.
+- fallback behavior remains explicit and conservative.
 
-Pricing logic belongs in shared domain modules, never in renderer components or deployment configuration.
+Pricing logic belongs in shared domain modules, never in renderer components or packaging configuration.
 
 ## Local Workspace and evidence
 
-Workspace v1 is endpoint-owned and useful without cloud services.
+Workspace v1 is endpoint-owned and works without a remote service.
 
 The local runtime owns:
 
@@ -111,19 +111,17 @@ The local runtime owns:
 - local personal Workspace state and membership;
 - reviewed measurement production;
 - private receipts and append-only outbox publication;
-- active/paused production lifecycle;
+- active and paused production lifecycle;
 - truthful read-only evidence inspection;
 - deterministic non-destructive recovery;
-- workspace-authorized signed batches;
+- Workspace-authorized signed batches;
 - independently verifiable user-owned exports.
 
-Opening the application may inspect evidence automatically, but recovery remains explicit and mutation-capable only when reconciliation is actually needed.
-
-Managed synchronization, billing, remote lifecycle control, hosted scanning and cloud recovery require separate contracts, threat models and implementation tranches.
+Opening the application may inspect evidence automatically, but recovery remains explicit and mutation-capable only when reconciliation is needed.
 
 ## Public contracts
 
-Versioned public contracts under `src/contracts/` define stable boundaries for endpoints, Workspaces, repositories, sharing, measurements and evidence.
+Versioned contracts under `src/contracts/` define stable boundaries for endpoints, Workspaces, repositories, sharing, measurements and evidence.
 
 Contract evolution requires:
 
@@ -132,38 +130,32 @@ Contract evolution requires:
 - migration and rollback analysis;
 - privacy review;
 - fixtures and conformance tests;
-- no silent reinterpretation by infrastructure.
+- no silent reinterpretation by another surface.
 
-## Distribution
+## Distribution integrity
 
-Windows uses two parallel channels:
+Official desktop distribution is in preparation. Technical candidates remain engineering artifacts until an accepted official channel publishes them.
 
-```text
-Microsoft Store
-└── AppX/MSIX signed and hosted by Microsoft after certification
+Distribution work preserves these boundaries:
 
-GitHub Releases / metrora.eu
-├── verified portable ZIP
-├── explicitly unsigned NSIS installer
-├── SHA-256 checksums
-└── manifests and provenance
-```
+- every artifact traces to reviewed public source;
+- portable and installer formats derive from one canonical product payload where applicable;
+- publisher and channel identity are exact rather than guessed;
+- checksums, manifests and provenance are independently verifiable;
+- installation, update and rollback preserve user-owned local state;
+- technical validation artifacts remain visibly distinct from official releases;
+- build, verification, publication and rollback remain separate responsibilities.
 
-The Store package receives its own identity, build and physical-acceptance boundary. Store product identifiers are supplied by Partner Center and must never be guessed or copied from another project.
-
-Build, format packaging, independent verification, physical acceptance, Store submission, GitHub publication, update rollout and rollback remain separate responsibilities.
-
-See `WINDOWS_STORE_DISTRIBUTION.md`, `WINDOWS_FORMAT_DERIVATION_V1.md` and the related Windows acceptance contracts.
+See [`WINDOWS_STORE_DISTRIBUTION.md`](WINDOWS_STORE_DISTRIBUTION.md), [`WINDOWS_FORMAT_DERIVATION_V1.md`](WINDOWS_FORMAT_DERIVATION_V1.md) and the Windows acceptance contracts.
 
 ## Security boundaries
 
 - no shell interpolation for untrusted command arguments;
 - no Node integration in the renderer;
 - no remote content in privileged windows;
-- no signing, Store or deployment credentials in untrusted pull requests;
-- no raw customer content or secret material in logs or reports;
+- no protected distribution credentials in untrusted pull requests;
+- no raw user content or secret material in logs or reports;
 - no destructive reset disguised as recovery;
-- no public/private source copying as a synchronization mechanism;
 - no deployment-time patching of product semantics or visual identity.
 
 ## Repository map
@@ -171,7 +163,7 @@ See `WINDOWS_STORE_DISTRIBUTION.md`, `WINDOWS_FORMAT_DERIVATION_V1.md` and the r
 ```text
 src/       canonical collection, parsing, pricing, analytics, evidence and CLI
 app/       Electron desktop application
- dash/      local browser dashboard
+dash/      local browser dashboard
 android/   companion application foundation
 mac/       native macOS menubar companion
 gnome/     GNOME Shell companion
@@ -182,13 +174,13 @@ scripts/   bounded build, validation, migration and release utilities
 
 ## Change discipline
 
-Every substantial change should identify:
+Every substantial change identifies:
 
 - the authority it modifies;
 - the public contract or compatibility boundary involved;
 - focused and full validation required;
 - migration and rollback behavior;
 - privacy and provenance impact;
-- whether documentation belongs in the public, commercial or infrastructure repository.
+- the public documentation that must remain accurate.
 
 Prefer small independently revertible modules and pull requests. Do not solve architectural growth by raising size limits or moving unrelated responsibilities into another oversized file.
