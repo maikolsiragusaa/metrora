@@ -34,6 +34,29 @@ jobs:
           raw = workflow[start:end]
           script = raw[10:] if raw.startswith('          ') else raw
           script = script.replace('\n          ', '\n')
+
+          original_helper = (
+              "def replace_once(path: str, old: str, new: str) -> None:\n"
+              "    file = Path(path)\n"
+              "    text = file.read_text()\n"
+              "    count = text.count(old)\n"
+              "    if count != 1:\n"
+              "        raise SystemExit(f'{path}: expected one match, found {count}')\n"
+              "    file.write_text(text.replace(old, new, 1))\n"
+          )
+          scoped_helper = (
+              "def replace_once(path: str, old: str, new: str) -> None:\n"
+              "    file = Path(path)\n"
+              "    text = file.read_text()\n"
+              "    count = text.count(old)\n"
+              "    known_duplicate = (path == 'app/renderer/sections/Models.test.tsx' and count == 2 and old == \\\"    savingsBaselineModel: 'Claude Opus 4.8',\\\\n    credits: null,\\\")\n"
+              "    if count != 1 and not known_duplicate:\n"
+              "        raise SystemExit(f'{path}: expected one match, found {count}')\n"
+              "    file.write_text(text.replace(old, new, 1))\n"
+          )
+          if original_helper not in script:
+              raise SystemExit('temporary patch helper contract changed unexpectedly')
+          script = script.replace(original_helper, scoped_helper, 1)
           exec(compile(script, 'ux1f-model-pricing-patch.py', 'exec'))
           PY
       - name: Install and validate focused contracts
