@@ -11,11 +11,11 @@ type Inspection = Extract<DesktopWorkspaceAvailability, { availability: 'ready' 
 
 const EVIDENCE_LABELS: Record<WorkspaceEvidenceState, string> = {
   'workspace-required': 'Workspace required',
-  empty: 'No verifiable activity yet',
+  empty: 'No reviewed evidence yet',
   ready: 'Ready to sign',
-  acknowledged: 'Signed evidence ready',
-  quarantined: 'Some activity was isolated',
-  blocked: 'Needs attention',
+  acknowledged: 'Evidence acknowledged',
+  quarantined: 'Evidence quarantined',
+  blocked: 'Action required',
 }
 
 const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
