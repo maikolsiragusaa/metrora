@@ -3,14 +3,14 @@ name: Apply P0.A fixture remediation
 on:
   pull_request:
     branches: [main]
-    types: [opened]
+    types: [synchronize]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.pull_request.head.ref == 'test/p0a-remove-inherited-quarantines'
+    if: github.event.pull_request.head.ref == 'test/p0a-remove-inherited-quarantines' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +22,12 @@ jobs:
           node-version: '22.15.0'
       - name: Apply bounded fixture and CI changes
         run: node .github/scripts/apply-p0a.mjs
+      - name: Stage CI result outside the workflow directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .github/workflows/ci.yml .github/ci-p0a-result.yml
+          git checkout -- .github/workflows/ci.yml
       - name: Verify patch shape
         shell: bash
         run: |
@@ -29,17 +35,17 @@ jobs:
           git diff --check
           changed="$(git diff --name-only | sort)"
           expected="$(printf '%s\n' \
-            '.github/workflows/ci.yml' \
+            '.github/ci-p0a-result.yml' \
             'docs/TEST_QUARANTINE.md' \
             'tests/cli-durable-totals.test.ts' \
             'tests/parser-incremental-append.test.ts' \
             'tests/parser.test.ts' | sort)"
           test "$changed" = "$expected"
-      - name: Commit bounded remediation
+      - name: Commit non-workflow remediation
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/p0a-placeholder .github/scripts/apply-p0a.mjs .github/workflows/apply-p0a.yml
+          rm -f .github/p0a-placeholder .github/scripts/apply-p0a.mjs
           git config user.name 'Metrora Automation'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
