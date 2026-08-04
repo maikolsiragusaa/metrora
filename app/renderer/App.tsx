@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { EmptyNote } from './components/EmptyState'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -13,13 +13,13 @@ import { rangeLabel, TopBar } from './components/TopBar'
 import { Window } from './components/Window'
 import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
+import { useDesktopTelemetry } from './hooks/useDesktopTelemetry'
 import { useOverviewRuntime } from './hooks/useOverviewRuntime'
 import type { Polled } from './hooks/usePolled'
 import { readDailyBudget } from './lib/budget'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { formatCompact, formatUsd } from './lib/format'
 import { motionClass } from './lib/motion'
-import { codeburn } from './lib/ipc'
 import { localDateKey } from './lib/period'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
@@ -34,84 +34,10 @@ import { Plans } from './sections/Plans'
 import { Settings, type SettingsPane } from './sections/Settings'
 import { SpendContent } from './sections/Spend'
 import { WorkspaceContent } from './sections/Workspace'
-import type { MenubarPayload, ModelReportRow, TelemetryStatus } from './lib/types'
+import type { MenubarPayload } from './lib/types'
 
 export { overviewMemoKey } from './hooks/useProviderPrefetch'
-
-// Bucket raw dollar amounts before they leave the machine: telemetry carries
-// coarse ranges, never exact spend.
-function costBucket(usd: number): string {
-  if (usd < 1) return '<1'
-  if (usd < 10) return '1-10'
-  if (usd < 50) return '10-50'
-  if (usd < 200) return '50-200'
-  if (usd < 1000) return '200-1k'
-  return '1k+'
-}
-
-// Bucket occurrence counts (MCP-server / skill invocations) the same way costBucket
-// coarsens dollars: telemetry carries usage magnitude, never an exact tally.
-function countBucket(n: number): string {
-  if (n < 10) return '1-10'
-  if (n < 100) return '10-100'
-  if (n < 1000) return '100-1k'
-  return '1k+'
-}
-
-/** Map each model to its dominant task category from the default models report.
- * `topCategory` is computed only in that view (not `--by-task`). The overview's
- * `topModels[].name` is the provider display name — for Claude that's exactly
- * `modelDisplayName`, so we key on both it and the raw `model` id and take the
- * highest-cost row per key (rows arrive cost-descending). */
-export function topCategoryByModel(rows: ModelReportRow[]): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const row of rows) {
-    if (!row.topCategory) continue
-    if (!map.has(row.modelDisplayName)) map.set(row.modelDisplayName, row.topCategory)
-    if (!map.has(row.model)) map.set(row.model, row.topCategory)
-  }
-  return map
-}
-
-/** The once-per-day anonymous aggregate (main process dedups by calendar day). */
-export function usageSnapshotProps(payload: MenubarPayload, modelCategories?: Map<string, string>): Record<string, unknown> {
-  return {
-    period: payload.current.label,
-    providerCount: Object.keys(payload.current.providers).length,
-    costBucket: costBucket(payload.current.cost),
-    // Each top model with its coarse cost bucket, and — when the once-daily
-    // by-model report joins — its dominant task category (a single name string,
-    // never an array, so the sanitizer keeps it). This is the model x purpose cross.
-    models: (payload.current.topModels ?? []).slice(0, 8).map(model => {
-      const entry: Record<string, unknown> = { name: model.name, costBucket: costBucket(model.cost) }
-      const topCategory = modelCategories?.get(model.name)
-      if (topCategory) entry.topCategory = topCategory
-      return entry
-    }),
-    // Per-provider spend, same cost-bucketing as models. `providers` maps lowercased
-    // display name -> cost USD; sort by cost so the top spenders survive the cap.
-    providers: Object.entries(payload.current.providers ?? {})
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, cost]) => ({ name, costBucket: costBucket(cost) })),
-    // Aggregate task categories (the "purpose" dimension across all models).
-    categories: (payload.current.topActivities ?? []).slice(0, 12).map(activity => ({
-      name: activity.name,
-      // Task-completion signal: share of turns resolved in one shot, 2dp.
-      oneShotRate: activity.oneShotRate == null ? -1 : Math.round(activity.oneShotRate * 100) / 100,
-    })),
-    // MCP servers and skills by name + bucketed usage. Names are config identifiers
-    // (like model names), never args/paths/descriptions. Skills are measured in turns.
-    mcpServers: (payload.current.mcpServers ?? []).slice(0, 12).map(server => ({
-      name: server.name,
-      callBucket: countBucket(server.calls),
-    })),
-    skills: (payload.current.skills ?? []).slice(0, 12).map(skill => ({
-      name: skill.name,
-      callBucket: countBucket(skill.turns),
-    })),
-  }
-}
+export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTelemetry'
 
 function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
   if (loading && lastSuccessAt === null) return 'refreshing…'
@@ -168,48 +94,14 @@ function AppMain() {
     detectedProviders,
     setDetectedProviders,
   })
+  const { onboardingStatus, finishOnboarding, trackEvent } = useDesktopTelemetry({
+    overviewData: overview.data,
+    period,
+    provider,
+    customRange,
+    scopedClaudeConfigSource,
+  })
   const [now, setNow] = useState(() => Date.now())
-
-  // First-launch onboarding: shown until the telemetry consent screen has been
-  // completed once. All telemetry bridge calls are typeof-guarded so an older
-  // preload (or the test bridge mock) degrades to "no onboarding, no tracking".
-  const [onboardingStatus, setOnboardingStatus] = useState<TelemetryStatus | null>(null)
-  useEffect(() => {
-    if (typeof codeburn.telemetryStatus !== 'function') return
-    codeburn.telemetryStatus()
-      .then(status => { if (status && !status.onboarded) setOnboardingStatus(status) })
-      .catch(() => { /* telemetry unavailable — skip onboarding */ })
-  }, [])
-  const finishOnboarding = useCallback((enabled: boolean) => {
-    setOnboardingStatus(null)
-    if (typeof codeburn.completeOnboarding === 'function') void codeburn.completeOnboarding(enabled).catch(() => {})
-  }, [])
-
-  const trackEvent = useCallback((name: string, props?: Record<string, unknown>) => {
-    if (typeof codeburn.telemetryTrack === 'function') void codeburn.telemetryTrack(name, props).catch(() => {})
-  }, [])
-
-  // Once-per-day anonymous usage aggregate, only from the canonical view
-  // (all providers, standard period, no config scope) so buckets are stable.
-  // Gated to the first qualifying render per calendar day so the extra by-model
-  // report fetch runs at most once/day, not on every poll (main also dedups the
-  // event). The fetch enriches each model with its dominant task category; if it
-  // fails we still emit the snapshot, just without the model x category cross.
-  const snapshotDayRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (!overview.data || provider !== 'all' || customRange || scopedClaudeConfigSource) return
-    const today = localDateKey(new Date())
-    if (snapshotDayRef.current === today) return
-    snapshotDayRef.current = today
-    const payload = overview.data
-    void (async () => {
-      let modelCategories: Map<string, string> | undefined
-      try {
-        modelCategories = topCategoryByModel(await codeburn.getModels(period, 'all', false))
-      } catch { /* degrade: emit the snapshot without per-model topCategory */ }
-      trackEvent('usage_snapshot', usageSnapshotProps(payload, modelCategories))
-    })()
-  }, [overview.data, provider, customRange, scopedClaudeConfigSource, period, trackEvent])
 
   useEffect(() => {
     const saved = readCompatStorage('theme')
