@@ -2,7 +2,7 @@
 
 Electron desktop application for Metrora's local-first AI usage intelligence and Workspace surfaces.
 
-Metrora Desktop reads structured data produced by the bundled compatibility CLI. It does not require a separate Node.js installation, run an analytics daemon, proxy AI traffic or send prompts/source code to Metrora services.
+Metrora Desktop reads structured local usage data through the bundled, version-matched Metrora runtime. It does not require a separate Node.js installation or proxy AI traffic.
 
 ## Development
 
@@ -21,25 +21,25 @@ npm --prefix app run build
 
 ## Runtime boundary
 
-The packaged application ships a version-matched CLI bundle under Electron resources and executes it with Electron's own runtime.
+The packaged application ships its required command-line runtime under Electron resources and executes it with Electron's own runtime.
 
 The main process owns:
 
-- CLI resolution and execution;
+- runtime resolution and execution;
 - local filesystem and OS-vault access;
 - bounded IPC handlers;
 - Workspace identity, lifecycle, inspection and recovery authority;
 - export-path validation and private-buffer handling.
 
-The renderer runs with context isolation and no Node integration. It receives public JSON/DTO payloads only through the preload bridge.
+The renderer runs with context isolation and no Node integration. It receives public JSON and DTO payloads only through the preload bridge.
 
-## Compatibility identifiers
+## Compatibility boundary
 
-Some internal names such as `window.codeburn`, `CODEBURN_BIN`, inherited storage paths and compatibility command aliases remain intentionally stable while migrations are reviewed. They are technical compatibility boundaries, not Metrora product branding.
+Inherited identifiers may remain internally where changing them would break stored state, packaging or integrations. They are technical compatibility boundaries, not product branding.
 
-New user-facing text, artifact names, documentation and release metadata must use **Metrora**.
+New user-facing text, artifact names, documentation and release metadata use **Metrora**.
 
-See `../docs/TECHNICAL_IDENTITY_COMPATIBILITY.md` for the canonical migration boundary.
+See [`../docs/TECHNICAL_IDENTITY_COMPATIBILITY.md`](../docs/TECHNICAL_IDENTITY_COMPATIBILITY.md).
 
 ## Product surfaces
 
@@ -49,25 +49,22 @@ Current desktop surfaces include:
 - session, project, tool, model, cost and token analysis;
 - optimization and model-comparison views;
 - plans, pricing overrides and exports;
-- local device/identity foundations;
+- local device and identity foundations;
 - the local personal Workspace with truthful evidence inspection, production lifecycle, batching, export and recovery.
 
-The public CLI and desktop share canonical parsing, aggregation, pricing and evidence semantics. The renderer must never create a second analytics authority or invent data for incomplete states.
+The public CLI and desktop share canonical parsing, aggregation, pricing and evidence semantics. The renderer must not create a second analytics authority or invent data for incomplete states.
 
-## Windows distribution
+## Distribution boundary
 
-Two parallel Windows channels are planned:
+Official desktop distribution is in preparation. Development and engineering artifacts must state their exact platform, format, version and signature status.
 
-- Microsoft Store AppX/MSIX for ordinary users, signed and hosted by Microsoft after certification;
-- GitHub Releases and `metrora.eu` for the verified portable ZIP and explicitly unsigned NSIS installer used by technical users.
+An official package must derive from reviewed public source, preserve user-owned local state and pass the channel-specific identity, installation, update, rollback and removal gates.
 
-Store identity values are added only after the Metrora product is reserved in Partner Center. They must never be guessed or copied from another project.
-
-See `DISTRIBUTION.md` and `../docs/WINDOWS_STORE_DISTRIBUTION.md`.
+See [`DISTRIBUTION.md`](DISTRIBUTION.md) and [`../docs/WINDOWS_STORE_DISTRIBUTION.md`](../docs/WINDOWS_STORE_DISTRIBUTION.md).
 
 ## Packaging
 
-Current commands:
+Current development commands:
 
 ```sh
 npm --prefix app run package          # macOS
@@ -77,12 +74,10 @@ npm --prefix app run package:win      # Windows NSIS x64
 npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
 ```
 
-A separate `package:store` target will be introduced only after exact Partner Center identity values exist and the Store-specific acceptance contract is ready.
-
 ## Engineering rules
 
-- Keep build, packaging, Store submission, GitHub publication and rollback separate.
-- Do not expose signing or publication authority to untrusted pull requests.
-- Do not grow renderer or main-process GOD FILES; extract domain state, orchestration and presentation by responsibility.
-- Preserve local state and compatibility boundaries through reviewed migrations.
-- Keep unsupported or uninspected data visibly indeterminate rather than showing false zeroes.
+- keep product build, format packaging, independent verification, publication and rollback separate;
+- do not expose protected distribution authority to untrusted pull requests;
+- extract domain state, orchestration and presentation before renderer or main-process modules become oversized;
+- preserve local state and compatibility boundaries through reviewed migrations;
+- keep unsupported or uninspected data visibly indeterminate rather than showing false zeroes.
