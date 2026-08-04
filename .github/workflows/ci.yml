@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -34,7 +35,34 @@ jobs:
             exit 1
           fi
 
+  targeted-draft:
+    name: Targeted draft validation
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Validate runtime compression support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate generated pricing documentation
+        run: npm run pricing:docs:check
+      - name: Build product runtime
+        run: npm run build:cli
+      - name: Run affected parser and durable-cache tests
+        run: >-
+          npm test -- --run --no-file-parallelism
+          tests/parser.test.ts
+          tests/parser-incremental-append.test.ts
+          tests/cli-durable-totals.test.ts
+
   build:
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     name: Core and desktop validation (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -89,6 +117,9 @@ jobs:
       - name: Test Windows refresh lock
         if: runner.os == 'Windows'
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
+      - name: Test Windows replacement-file portability
+        if: runner.os == 'Windows'
+        run: npm test -- --run --no-file-parallelism tests/parser-incremental-append.test.ts
       - name: Test Windows local-state contracts
         if: runner.os == 'Windows'
         run: >-
@@ -119,6 +150,7 @@ jobs:
         run: npm --prefix app run build
 
   full-suite:
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     name: Core test suite
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -134,55 +166,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Test Windows UX acceptance report contracts
         run: node --test scripts/windows-ux-acceptance-report.node-test.mjs
-      - name: Run ordinary core files deterministically
-        shell: bash
-        run: |
-          set +e
-          npm test -- --run --no-file-parallelism \
-            --reporter=json --outputFile=vitest-ordinary.json \
-            --exclude 'app/**' \
-            --exclude 'tests/parser.test.ts' \
-            --exclude 'tests/parser-incremental-append.test.ts' \
-            --exclude 'tests/cli-durable-totals.test.ts'
-          status=$?
-          set -e
-          if [ "$status" -ne 0 ]; then
-            node <<'NODE'
-          const fs = require('node:fs')
-          const report = JSON.parse(fs.readFileSync('vitest-ordinary.json', 'utf8'))
-          const failed = []
-          for (const file of report.testResults ?? []) {
-            const assertions = file.assertionResults ?? []
-            for (const assertion of assertions) {
-              if (assertion.status !== 'failed') continue
-              failed.push({
-                file: file.name ?? file.testFilePath ?? 'unknown file',
-                test: [...(assertion.ancestorTitles ?? []), assertion.title].filter(Boolean).join(' > '),
-                messages: assertion.failureMessages ?? [],
-              })
-            }
-          }
-          console.error(`Core validation failed: ${report.numFailedTestSuites ?? '?'} suite(s), ${report.numFailedTests ?? failed.length} test(s).`)
-          for (const item of failed) {
-            console.error(`\nFILE: ${item.file}\nTEST: ${item.test}`)
-            for (const message of item.messages) console.error(message)
-          }
-          if (failed.length === 0) console.error('No failed assertion was present in the JSON report.')
-          NODE
-            exit "$status"
-          fi
-      - name: Run durable parser compatibility group
-        run: >-
-          npm test -- --run --no-file-parallelism tests/parser.test.ts
-          -t "^(?!.*preserves monthly total after events\\.jsonl is deleted)(?!.*keeps counting a pruned-source orphan after the provider fingerprint changes).*$"
-      - name: Run incremental parser compatibility group
-        run: >-
-          npm test -- --run --no-file-parallelism tests/parser-incremental-append.test.ts
-          -t "^(?!.*EDGE: file replaced \\(inode change\\) falls back to a full re-parse).*$"
-      - name: Run durable totals compatibility group
-        run: >-
-          npm test -- --run --no-file-parallelism tests/cli-durable-totals.test.ts
-          -t "^(?!.*resolves provider filters identically on both paths, slicing the carried day per provider).*$"
+      - name: Run complete core suite deterministically
+        run: npm test -- --run --no-file-parallelism --exclude 'app/**'
       - name: Record validation outcome
         shell: bash
         run: |
@@ -191,5 +176,5 @@ jobs:
             echo
             echo "Outcome: \`success\`"
             echo
-            echo "Required core and platform-specific validation completed."
+            echo "The complete core suite and required platform-specific validation completed without quarantined cases."
           } >> "$GITHUB_STEP_SUMMARY"

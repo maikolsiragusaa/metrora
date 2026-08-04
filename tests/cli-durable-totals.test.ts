@@ -88,9 +88,11 @@ async function seedCarriedCache(): Promise<string> {
 async function seedLiveTodaySession(): Promise<void> {
   const projectDir = join(ROOT, 'home', '.claude', 'projects', 'p')
   await mkdir(projectDir, { recursive: true })
-  const now = new Date()
-  const ts = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).toISOString()
-  const ts2 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 30, 0).toISOString()
+  const nowMs = Date.now()
+  const now = new Date(nowMs)
+  const localMidnightMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const ts = new Date(Math.max(localMidnightMs, nowMs - 60_000)).toISOString()
+  const ts2 = new Date(Math.max(localMidnightMs, nowMs - 1_000)).toISOString()
   const line = (id: string, t: string): string => JSON.stringify({
     type: 'assistant',
     timestamp: t,

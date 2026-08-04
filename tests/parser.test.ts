@@ -143,10 +143,14 @@ async function createJsonlSession(
   const dir = join(sessionStateDir, sessionId)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'workspace.yaml'), `id: ${sessionId}\ncwd: /home/user/testproj\n`)
+  const nowMs = Date.now()
+  const modelTimestamp = new Date(nowMs - 11_000).toISOString()
+  const userTimestamp = new Date(nowMs - 6_000).toISOString()
+  const assistantTimestamp = new Date(nowMs - 1_000).toISOString()
   const lines = [
-    JSON.stringify({ type: 'session.model_change', timestamp: '2026-05-01T10:00:00Z', data: { newModel: 'gpt-4.1' } }),
-    JSON.stringify({ type: 'user.message', timestamp: '2026-05-01T10:00:05Z', data: { content: 'hello', interactionId: 'int-1' } }),
-    JSON.stringify({ type: 'assistant.message', timestamp: '2026-05-01T10:00:10Z', data: { messageId: 'msg-1', outputTokens, interactionId: 'int-1', toolRequests: [] } }),
+    JSON.stringify({ type: 'session.model_change', timestamp: modelTimestamp, data: { newModel: 'gpt-4.1' } }),
+    JSON.stringify({ type: 'user.message', timestamp: userTimestamp, data: { content: 'hello', interactionId: 'int-1' } }),
+    JSON.stringify({ type: 'assistant.message', timestamp: assistantTimestamp, data: { messageId: 'msg-1', outputTokens, interactionId: 'int-1', toolRequests: [] } }),
   ]
   await writeFile(join(dir, 'events.jsonl'), lines.join('\n') + '\n')
   return join(dir, 'events.jsonl')

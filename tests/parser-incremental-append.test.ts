@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mkdtemp, mkdir, writeFile, appendFile, readFile, rm, stat, unlink } from 'fs/promises'
+import { mkdtemp, mkdir, writeFile, appendFile, readFile, rename, rm, stat, unlink } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -284,17 +284,21 @@ describe('incremental append parsing', () => {
     const warmCache = await mkdtemp(join(tmpdir(), 'incr-warm4-'))
     await writeFile(sessionPath, baseLines().join('\n') + '\n')
     await parseWith(warmCache)
-    const inoBefore = (await stat(sessionPath)).ino
+    const originalIdentity = await stat(sessionPath)
 
-    // Replace the file (new inode) with different, LARGER content.
-    await unlink(sessionPath)
+    // Create the replacement while the original still exists so the two file
+    // identities cannot be reused, then atomically rename it over the source.
+    const replacementPath = join(projectDir, 'sess-1.replacement.jsonl')
     const replaced = [
       ...baseLines(),
       userLine('2026-05-01T12:00:00.000Z', 'brand new task'),
       asstLine('msg-z', '2026-05-01T12:00:02.000Z', { input_tokens: 500, output_tokens: 120 }, [readBlock('/z.ts')]),
     ].join('\n') + '\n'
-    await writeFile(sessionPath, replaced)
-    expect((await stat(sessionPath)).ino).not.toBe(inoBefore)
+    await writeFile(replacementPath, replaced)
+    const replacementIdentity = await stat(replacementPath)
+    expect([replacementIdentity.dev, replacementIdentity.ino])
+      .not.toEqual([originalIdentity.dev, originalIdentity.ino])
+    await rename(replacementPath, sessionPath)
 
     readLineCalls.length = 0
     const warm = await parseWith(warmCache)
