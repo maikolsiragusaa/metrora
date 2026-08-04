@@ -106,7 +106,7 @@ export function OverviewHomeSummary({
           <DecisionFact fact={decision.driver} onNavigate={onNavigate} />
           <DecisionFact fact={decision.quality} />
         </div>
-        <div className={`ov-home-warning ov-home-${decision.warning.tone}`} role={decision.warning.tone === 'warn' || decision.warning.tone === 'bad' ? 'status' : undefined}>
+        <div className={`ov-home-warning ov-home-${decision.warning.tone}`}>
           <span>{decision.warning.label}</span>
           <strong>{decision.warning.value}</strong>
           <small>{decision.warning.detail}</small>
