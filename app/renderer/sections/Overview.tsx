@@ -21,51 +21,18 @@ import type {
   Period,
   YieldJsonReport,
 } from '../lib/types'
+import { deriveEfficiency } from './overviewEfficiency'
+import { aggregateModels, buildModelIndex, sessionModelKey, topModelsToAggregated, type AggregatedModel } from './overviewModels'
+import { deriveCostPerOutcome } from './overviewOutcome'
+import { deriveSignals, deriveStats, mean, streakDays, type SignalGroups } from './overviewTrends'
+import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
 
 export { localDateKey } from '../lib/period'
-
-function median(values: number[]): number {
-  if (!values.length) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
-}
-
-function mean(values: number[]): number {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-type EfficiencyGrade = 'A+' | 'A' | 'B' | 'C' | 'D' | 'F'
-
-function efficiencyGrade(score: number): EfficiencyGrade {
-  if (score >= 93) return 'A+'
-  if (score >= 85) return 'A'
-  if (score >= 75) return 'B'
-  if (score >= 65) return 'C'
-  if (score >= 55) return 'D'
-  return 'F'
-}
+export { sessionModelKey } from './overviewModels'
+export { deriveSignals } from './overviewTrends'
 
 function EfficiencyScorecard({ current, bare = false }: { current: MenubarPayload['current']; bare?: boolean }) {
-  const oneShot = current.oneShotRate ?? 0.6
-  const cacheFrac = clamp(current.cacheHitPercent / 100, 0, 1)
-  const retrySpendFraction = current.retryTax.totalUSD / Math.max(current.cost, 1e-9)
-  const retryPenalty = clamp(retrySpendFraction * 4, 0, 1)
-  // score = 100 * (0.45*oneShot + 0.30*cacheFrac + 0.25*(1-retryPenalty))
-  // Missing one-shot data uses the specified neutral 0.6 and is disclosed below.
-  const score = 100 * (0.45 * oneShot + 0.30 * cacheFrac + 0.25 * (1 - retryPenalty))
-  const grade = efficiencyGrade(score)
-  const gradeTone = grade === 'A+' || grade === 'A'
-    ? 'grade-a'
-    : grade === 'D'
-      ? 'grade-d'
-      : grade === 'F'
-        ? 'grade-f'
-        : 'grade-bc'
+  const { oneShot, cacheFraction: cacheFrac, retrySpendFraction, retryPenalty, score, grade, gradeTone } = deriveEfficiency(current)
 
   return (
     <div className={`${bare ? '' : 'ov-card '}ov-efficiency`}>
@@ -101,18 +68,15 @@ function CostPerOutcome({ outcome }: { outcome: Polled<YieldJsonReport> }) {
   } else if (report.summary.total.sessions === 0 && report.details.length === 0) {
     body = <EmptyNote>No git-correlated outcomes in this period.</EmptyNote>
   } else {
-    const commits = report.details.reduce((sum, detail) => sum + detail.commitCount, 0)
-    const costPerCommit = commits > 0 ? report.summary.total.costUSD / commits : null
-    const productive = report.summary.productive
-    const costPerProductiveSession = productive.sessions > 0 ? productive.costUSD / productive.sessions : null
+    const outcome = deriveCostPerOutcome(report)
     body = (
       <>
         <div className="ov-outcome-metrics">
-          <div><span>$ / commit</span><strong>{costPerCommit === null ? '—' : formatUsd(costPerCommit)}</strong></div>
-          <div><span>$ / productive session</span><strong>{costPerProductiveSession === null ? '—' : formatUsd(costPerProductiveSession)}</strong></div>
+          <div><span>$ / commit</span><strong>{outcome.costPerCommit === null ? '—' : formatUsd(outcome.costPerCommit)}</strong></div>
+          <div><span>$ / productive session</span><strong>{outcome.costPerProductiveSession === null ? '—' : formatUsd(outcome.costPerProductiveSession)}</strong></div>
         </div>
         <div className="ov-outcome-split">
-          productive {Math.round(productive.costPercent)}% · reverted {Math.round(report.summary.reverted.costPercent)}% · abandoned {Math.round(report.summary.abandoned.costPercent)}%
+          productive {Math.round(outcome.productivePercent)}% · reverted {Math.round(outcome.revertedPercent)}% · abandoned {Math.round(outcome.abandonedPercent)}%
         </div>
       </>
     )
@@ -129,45 +93,9 @@ function CostPerOutcome({ outcome }: { outcome: Polled<YieldJsonReport> }) {
   )
 }
 
-// Coaching-note thresholds, mirrored from the CLI so the card and the CLI never
-// disagree (src/workflow-insights.ts buildCoachingNotes).
-const WORKFLOW_CORRECTION_RATE = 0.15
-const WORKFLOW_CORRECTION_COUNT = 3
-const WORKFLOW_CHURN_SESSIONS = 3
-const WORKFLOW_TTFE_SLOW_MS = 5 * 60 * 1000
-
-/** Median time to first edit: `<60s → Ns`, else `Nm` (src/workflow-insights.ts formatDurationShort). */
-function formatWorkflowDuration(ms: number): string {
-  if (ms >= 60_000) return `${Math.round(ms / 60_000)}m`
-  return `${Math.round(ms / 1000)}s`
-}
-
-type WorkflowRollup = NonNullable<MenubarPayload['current']['workflow']>
-type ReworkedFile = { path: string; sessions: number; edits: number }
-
-/**
- * One coaching line derived with the CLI's thresholds and dry copy voice
- * (src/workflow-insights.ts buildCoachingNotes): corrections, then file churn,
- * then time-to-first-edit; the first that fires. Null when none clears its bar.
- */
-function workflowCoachingNote(workflow: WorkflowRollup, topReworked?: ReworkedFile): string | null {
-  const { correctionRate, corrections, medianTimeToFirstEditMs } = workflow
-  if (correctionRate !== null && correctionRate >= WORKFLOW_CORRECTION_RATE && corrections >= WORKFLOW_CORRECTION_COUNT) {
-    return `You corrected the assistant on ${Math.round(correctionRate * 100)}% of prompts (${corrections} times). State the requirements in the first message to cut the back and forth.`
-  }
-  if (topReworked && topReworked.sessions >= WORKFLOW_CHURN_SESSIONS) {
-    return `${topReworked.path} was reworked across ${topReworked.sessions} sessions (${topReworked.edits} edits). A focused pass on it may cost less than the repeated churn.`
-  }
-  if (medianTimeToFirstEditMs !== null && medianTimeToFirstEditMs >= WORKFLOW_TTFE_SLOW_MS) {
-    return `Median time to first edit is ${formatWorkflowDuration(medianTimeToFirstEditMs)}. Point the assistant at the target file to cut the exploration before it starts editing.`
-  }
-  return null
-}
-
 function WorkflowCard({ current }: { current: MenubarPayload['current'] }) {
   const workflow = current.workflow
   const topReworked = current.topReworkedFiles?.[0]
-  // Hide when there is no real signal: never show a card of zeros.
   const hasSignal = !!workflow && (
     workflow.correctionRate !== null ||
     workflow.medianTimeToFirstEditMs !== null ||
@@ -209,106 +137,6 @@ function WorkflowCard({ current }: { current: MenubarPayload['current'] }) {
       </div>
     </div>
   )
-}
-
-export type Signal = { text: string; trailing?: string }
-export type SignalGroups = { wins: Signal[]; improvements: Signal[]; risks: Signal[] }
-
-/**
- * Client-side port of the menubar's FindingsSection rule set
- * (mac/Sources/CodeBurnMenubar/Views/FindingsSection.swift:133-205). Thresholds
- * mirror the Swift; the desktop-only weekday-spike anomaly is absorbed as a risk.
- * Week-over-week and month-projection rules are suppressed for a custom range.
- */
-export function deriveSignals(data: MenubarPayload, now: Date, rangeActive: boolean): SignalGroups {
-  const daily = data.history.daily
-  const current = data.current
-  const wins: Signal[] = []
-  const improvements: Signal[] = []
-  const risks: Signal[] = []
-
-  const streak = streakDays(daily, now)
-
-  // Week-over-week: mean of the last 7 active entries vs the prior 7 (matches the
-  // coach's pacing line). Needs >= 14 entries for both windows to exist.
-  let weekDelta: number | null = null
-  if (daily.length >= 14) {
-    const recent14 = daily.slice(-14)
-    const weekNow = mean(recent14.slice(-7).map(day => day.cost))
-    const weekPrior = mean(recent14.slice(0, 7).map(day => day.cost))
-    if (weekPrior > 0) weekDelta = (weekNow - weekPrior) / weekPrior * 100
-  }
-
-  // Month projection vs previous calendar month's total.
-  const todayKey = localDateKey(now)
-  const monthPrefix = todayKey.slice(0, 7)
-  const mtd = daily.filter(day => day.date.startsWith(monthPrefix)).reduce((sum, day) => sum + day.cost, 0)
-  const medianDaily = median(daily.slice(-7).map(day => day.cost))
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const projectedMonth = mtd + medianDaily * Math.max(0, daysInMonth - now.getDate())
-  const prevPrefix = localDateKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7)
-  const prevMonthTotal = daily.filter(day => day.date.startsWith(prevPrefix)).reduce((sum, day) => sum + day.cost, 0)
-
-  // Weekday spike: today vs the mean of prior same-weekday entries.
-  const today = daily.find(day => day.date === todayKey)
-  const sameWeekdayCosts = daily
-    .filter(day => {
-      if (day.date === todayKey) return false
-      const [year, month, date] = day.date.split('-').map(Number)
-      return new Date(year, month - 1, date).getDay() === now.getDay()
-    })
-    .map(day => day.cost)
-  const typicalWeekday = mean(sameWeekdayCosts)
-
-  // ————— Wins —————
-  if (current.cacheHitPercent >= 80) {
-    wins.push({ text: `Cache hit at ${Math.round(current.cacheHitPercent)}%, most prompts reuse cache` })
-  }
-  if (current.oneShotRate !== null && current.oneShotRate >= 0.75) {
-    wins.push({ text: `${Math.round(current.oneShotRate * 100)}% one-shot, edits land first try` })
-  }
-  if (!rangeActive && weekDelta !== null && weekDelta < -10) {
-    wins.push({ text: `Spend down ${Math.round(Math.abs(weekDelta))}% vs last 7 days` })
-  }
-  if (streak >= 5) {
-    wins.push({ text: `${streak}-day usage streak` })
-  }
-  if (current.localModelSavings.totalUSD > 0) {
-    wins.push({ text: `${formatUsd(current.localModelSavings.totalUSD)} saved via local models` })
-  }
-
-  // ————— Improvements —————
-  for (const finding of data.optimize.topFindings.slice(0, 3)) {
-    improvements.push({ text: finding.title, trailing: formatUsd(finding.savingsUSD) })
-  }
-  if (current.cacheHitPercent > 0 && current.cacheHitPercent < 50) {
-    improvements.push({ text: `Cache hit only ${Math.round(current.cacheHitPercent)}%, paying for cold prompts` })
-  }
-  if (current.oneShotRate !== null && current.oneShotRate < 0.5) {
-    improvements.push({ text: `${Math.round(current.oneShotRate * 100)}% one-shot, lots of iteration` })
-  }
-  // Retry-tax share is not a menubar rule; the threshold is the point where the
-  // efficiency scorecard's retry penalty saturates (retrySpendFraction * 4 == 1).
-  const retryShare = current.retryTax.totalUSD / Math.max(current.cost, 1e-9)
-  if (retryShare >= 0.25) {
-    improvements.push({ text: `Retry tax is ${Math.round(retryShare * 100)}% of spend` })
-  }
-
-  // ————— Risks —————
-  if (today && typicalWeekday > 0 && today.cost > typicalWeekday * 1.8) {
-    const ratio = today.cost / typicalWeekday
-    const weekday = now.toLocaleString('en-US', { weekday: 'long' })
-    risks.push({ text: `Today's spend is ${ratio.toFixed(1).replace(/\.0$/, '')}× your typical ${weekday}` })
-  }
-  if (!rangeActive && weekDelta !== null && weekDelta > 25) {
-    risks.push({ text: `Spend up ${Math.round(weekDelta)}% vs prior 7 days` })
-  }
-  if (!rangeActive && prevMonthTotal > 0 && projectedMonth > prevMonthTotal * 1.3) {
-    const overPct = Math.round((projectedMonth - prevMonthTotal) / prevMonthTotal * 100)
-    risks.push({ text: `On pace for ${formatUsd(projectedMonth)} this month, +${overPct}% vs last` })
-  }
-
-  return { wins: wins.slice(0, 3), improvements: improvements.slice(0, 3), risks: risks.slice(0, 3) }
 }
 
 const SIGNAL_GROUPS = [
@@ -367,64 +195,6 @@ function RoutingWhatIf({ routing, onNavigate }: {
   )
 }
 
-function deriveStats(data: MenubarPayload, now: Date) {
-  const daily = data.history.daily
-  const todayKey = localDateKey(now)
-  const todayEntry = daily.find(day => day.date === todayKey)
-  const monthPrefix = todayKey.slice(0, 7)
-  const mtdEntries = daily.filter(day => day.date.startsWith(monthPrefix))
-  const mtd = mtdEntries.reduce((sum, day) => sum + day.cost, 0)
-  const medianDaily = median(daily.slice(-7).map(day => day.cost))
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const projected = mtd + medianDaily * Math.max(0, daysInMonth - now.getDate())
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const prevPrefix = localDateKey(prevMonth).slice(0, 7)
-  const priorEntries = daily.filter(day => day.date.startsWith(prevPrefix))
-  const priorAverage = mean(priorEntries.map(day => day.cost))
-  const currentAverage = mean(mtdEntries.map(day => day.cost))
-  const pacePct = priorAverage > 0 ? ((currentAverage - priorAverage) / priorAverage) * 100 : null
-
-  return {
-    todayEntry,
-    todayCost: todayEntry?.cost ?? 0,
-    mtd,
-    projected,
-    pacePct,
-    prevMonthName: prevMonth.toLocaleString('en-US', { month: 'long' }),
-  }
-}
-
-export function sessionModelKey(project: string, date: string, calls: number, cost: number): string {
-  return `${project}|${date}|${calls}|${cost}`
-}
-
-function buildModelIndex(data: MenubarPayload): Map<string, string> {
-  const index = new Map<string, string>()
-  for (const project of data.current.topProjects) {
-    for (const session of project.sessionDetails) {
-      const dominant = [...session.models].sort((a, b) => b.cost - a.cost)[0]
-      if (dominant) index.set(sessionModelKey(project.name, session.date, session.calls, session.cost), dominant.name)
-    }
-  }
-  return index
-}
-
-function streakDays(daily: DailyHistoryEntry[], now: Date): number {
-  const byDate = new Map(daily.map(day => [day.date, day.cost]))
-  let streak = 0
-  for (let offset = 0; ; offset++) {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
-    if ((byDate.get(localDateKey(date)) ?? 0) <= 0) break
-    streak++
-  }
-  return streak
-}
-
-/**
- * Hero cost with a count-up that fires on mount and whenever the filter key
- * changes (a user action), but never on the 30s poll: a value that arrives
- * under the same `animateKey` snaps in place instead of re-animating.
- */
 function CountUp({ value, animateKey }: { value: number; animateKey: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const keyRef = useRef<string | null>(null)
@@ -454,44 +224,6 @@ function CountUp({ value, animateKey }: { value: number; animateKey: string }) {
 function formatShortDay(date: string): string {
   const [, month, day] = date.split('-').map(Number)
   return `${month}/${day}`
-}
-
-type AggregatedModel = {
-  name: string
-  cost: number
-  calls: number
-  // Absent in provider-filtered mode: `current.topModels` carries no per-model
-  // token counts, so the table shows "—" rather than a misleading zero.
-  inputTokens?: number
-  outputTokens?: number
-}
-
-/** Provider-filtered source: `current.topModels` is already period/range/provider-scoped by the CLI. */
-function topModelsToAggregated(models: MenubarPayload['current']['topModels']): AggregatedModel[] {
-  return models
-    .map(model => ({ name: model.name, cost: model.cost, calls: model.calls }))
-    .sort((a, b) => b.cost - a.cost)
-}
-
-function aggregateModels(daily: DailyHistoryEntry[]): AggregatedModel[] {
-  const byName = new Map<string, AggregatedModel>()
-  for (const day of daily) {
-    for (const model of day.topModels) {
-      const row = byName.get(model.name) ?? {
-        name: model.name,
-        cost: 0,
-        calls: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-      }
-      row.cost += model.cost
-      row.calls += model.calls
-      row.inputTokens = (row.inputTokens ?? 0) + model.inputTokens
-      row.outputTokens = (row.outputTokens ?? 0) + model.outputTokens
-      byName.set(model.name, row)
-    }
-  }
-  return [...byName.values()].sort((a, b) => b.cost - a.cost)
 }
 
 function ModelsTable({ models }: { models: AggregatedModel[] }) {
@@ -665,9 +397,6 @@ export function OverviewContent({
   onNavigate?: (section: 'optimize' | 'sessions') => void
   ready?: boolean
 }) {
-  // Gate secondary spawns on the app-level readiness (first overview resolved),
-  // so the cold hydration runs once (via overview) rather than 3 parses at once
-  // on boot. Defaults true so standalone renders/tests poll normally.
   const actReport = usePolled<ActReportJson>(() => codeburn.getActReport(), [], { enabled: ready, memoKey: 'overview-act' })
   const yieldReport = usePolled<YieldJsonReport>(() => codeburn.getYield(period, provider), [period, provider], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
   const { data, error } = overview
@@ -683,9 +412,6 @@ export function OverviewContent({
   const animateKey = `${period}|${provider}|${range?.from ?? ''}|${range?.to ?? ''}`
   const stats = deriveStats(data, now)
   const periodDaily = sliceDailyToPeriod(data.history.daily, period, now)
-  // Daily chart: contiguous zero-filled calendar window. A custom range spans
-  // [from..to]; otherwise the trend covers at least the last 30 days, extended
-  // back to the earliest active day already in the period window.
   const defaultChartStart = localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29))
   const chartDaily = rangeActive
     ? contiguousDailyWindow(data.history.daily, range.from, range.to)
@@ -694,8 +420,6 @@ export function OverviewContent({
         periodDaily[0] && periodDaily[0].date < defaultChartStart ? periodDaily[0].date : defaultChartStart,
         localDateKey(now),
       )
-  // Provider-filtered history.daily has empty topModels, so source the models
-  // table from current.topModels (already period/range/provider-scoped) instead.
   const models = provider !== 'all'
     ? topModelsToAggregated(data.current.topModels)
     : aggregateModels(rangeActive ? sliceDailyToRange(data.history.daily, range.from, range.to) : periodDaily)
@@ -708,7 +432,6 @@ export function OverviewContent({
   const saved = actReport.data?.totals.realizedCostUSD ?? 0
   const applied = saved > 0 ? (actReport.data?.totals.measuredActions ?? 0) : 0
   const localSaved = data.current.localModelSavings.totalUSD
-  // A custom range has no meaningful "vs last week" or month-to-date baseline.
   const signals = deriveSignals(data, now, rangeActive)
   return (
     <div className="ov-dashboard">
