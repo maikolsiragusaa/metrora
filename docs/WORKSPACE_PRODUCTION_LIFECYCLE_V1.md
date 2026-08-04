@@ -106,5 +106,5 @@ Blocking tests cover:
 
 - no reviewed-measurement scan or production;
 - no automatic/background action;
-- no batch, export, upload, synchronization, account, team, billing, Android, Advisor, or Bench behavior;
+- no batch, export, upload, synchronization, account, team, billing, mobile, or unrelated product behavior;
 - no new collector, parser, pricing, cache, aggregation, or analytics authority.
