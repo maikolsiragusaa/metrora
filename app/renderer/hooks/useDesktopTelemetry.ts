@@ -79,7 +79,10 @@ export type DesktopTelemetry = {
   trackEvent: (name: string, props?: Record<string, unknown>) => void
 }
 
-/** Owns optional desktop telemetry consent, events, and the canonical daily snapshot. */
+/**
+ * Owns optional consent, best-effort shell events, and the bounded canonical
+ * daily snapshot without becoming an analytics or navigation authority.
+ */
 export function useDesktopTelemetry({
   overviewData,
   period,
