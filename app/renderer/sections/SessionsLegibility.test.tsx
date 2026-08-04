@@ -21,7 +21,10 @@ function reasoningMix(level: 'unknown' | 'xhigh', totalCalls = 1): ReasoningMix 
       level,
       calls: totalCalls,
       callShare: 1,
+      generatedTokens: 0,
       reasoningTokens: 0,
+      costUSD: 0,
+      sources: level === 'unknown' ? [] : ['explicit'],
     }],
   }
 }
