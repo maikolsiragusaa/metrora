@@ -26,14 +26,15 @@ describe('desktop navigation authority', () => {
     }
   })
 
-  it('prototypes a task-oriented hierarchy without hiding reports', () => {
+  it('prototypes a task-oriented hierarchy while keeping shortcuts in scan order', () => {
     expect(DESKTOP_NAVIGATION_GROUPS).toEqual([
       { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
-      { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['sessions', 'pullRequests', 'spend', 'models', 'compare'] },
-      { id: 'improve', label: 'Improve', placement: 'primary', sections: ['optimize', 'plans'] },
-      { id: 'trust', label: 'Trust', placement: 'primary', sections: ['workspace'] },
+      { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
+      { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare'] },
+      { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
       { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
     ])
+    expect(DESKTOP_NAVIGATION_ORDER).toEqual(SECTION_IDS)
     expect(DESKTOP_NAVIGATION_ITEMS.overview.label).toBe('Home')
     expect(DESKTOP_NAVIGATION_ITEMS.settings.shortcut).toBe(',')
   })
