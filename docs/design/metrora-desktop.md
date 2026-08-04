@@ -8,7 +8,7 @@ Metrora Desktop is the primary local graphical surface for usage intelligence an
 
 ## Process boundary
 
-- Electron main process owns local filesystem access, CLI execution, OS-vault access, Workspace runtime and bounded IPC handlers.
+- Electron main owns local filesystem access, runtime execution, OS-vault access, Workspace authority and bounded IPC handlers.
 - The preload bridge exposes a minimal typed API.
 - The renderer runs with context isolation and no Node integration.
 - No remote content is loaded into privileged application surfaces.
@@ -16,7 +16,7 @@ Metrora Desktop is the primary local graphical surface for usage intelligence an
 
 ## Data authority
 
-The desktop consumes canonical CLI/runtime payloads for:
+The desktop consumes canonical runtime payloads for:
 
 - overview, sessions, projects, tools, models, tokens and cost;
 - historical pricing and evidence states;
@@ -28,23 +28,18 @@ Uninspected or unavailable evidence remains visibly indeterminate. The UI must n
 
 ## Compatibility
 
-Inherited command aliases, IPC object names and storage identifiers may remain only where changing them would break installed state or integrations. They are governed by `../TECHNICAL_IDENTITY_COMPATIBILITY.md` and are not product-facing branding.
+Inherited command aliases, IPC object names and storage identifiers may remain only where changing them would break installed state or integrations. They are governed by [`../TECHNICAL_IDENTITY_COMPATIBILITY.md`](../TECHNICAL_IDENTITY_COMPATIBILITY.md) and are not product-facing branding.
 
-## Packaging
+## Packaging boundary
 
-Desktop packaging is split by platform and channel:
+Desktop development packaging currently supports Windows, macOS and Linux formats. Official publication requires platform-specific identity, integrity, installation, update, rollback and support acceptance.
 
-- Windows Microsoft Store AppX/MSIX for ordinary users;
-- Windows portable ZIP and unsigned NSIS for technical users;
-- macOS development packaging pending a separate trusted-distribution tranche;
-- Linux AppImage, deb and rpm pending release acceptance.
-
-Build, packaging, Store submission, publication and rollback remain separate responsibilities.
+Product build, packaging, protected signing, publication and rollback remain separate responsibilities.
 
 ## Maintenance rules
 
 - Keep domain state, orchestration and presentation in separate modules.
-- Do not grow GOD FILES or duplicate canonical aggregation logic in React.
+- Prevent oversized modules and duplicate canonical aggregation logic in React.
 - Preserve local state through reviewed migrations.
 - Add focused tests for every IPC boundary and failure state.
 - Keep privacy, provenance and evidence-quality language truthful at the UI boundary.
