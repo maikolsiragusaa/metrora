@@ -22,5 +22,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.15.0'
-      - name: Reject personal and private project identities
+      - name: Validate canonical public repository boundary
         run: npm run identity:public:check
