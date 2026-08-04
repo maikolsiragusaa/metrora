@@ -281,10 +281,10 @@ function ModelTableRow({ row, onAddAlias }: { row: ModelReportRow; onAddAlias: (
         {row.modelDisplayName}
         <span style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}>{row.providerDisplayName}</span>
         <span
-style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}
-title={pricing.title}
+          style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}
+          title={pricing.title}
         >
-{pricing.label}
+          {pricing.label}
         </span>
         {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
       </td>
@@ -316,16 +316,16 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
     <tr className="model-group-row">
       <td title={model.model}>
         <span className="model-group-lead">
-<span
-  className="mdot"
-  style={{ background: seriesColorForModel(model.modelDisplayName || model.model) }}
-/>
-<span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-  <span className="model-group-name">{model.modelDisplayName}</span>
-  <span style={providerTagStyle}>{model.providerDisplayName}</span>
-  <span style={providerTagStyle} title={pricing.title}>{pricing.label}</span>
-</span>
-{pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
+          <span
+            className="mdot"
+            style={{ background: seriesColorForModel(model.modelDisplayName || model.model) }}
+          />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span className="model-group-name">{model.modelDisplayName}</span>
+            <span style={providerTagStyle}>{model.providerDisplayName}</span>
+            <span style={providerTagStyle} title={pricing.title}>{pricing.label}</span>
+          </span>
+          {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
         </span>
       </td>
       <td>{fmtInt(calls)}</td>
