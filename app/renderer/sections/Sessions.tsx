@@ -28,6 +28,13 @@ const SORT_OPTIONS = [
   { value: 'tokens', label: 'Tokens' },
 ]
 
+const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
+  cost: 'highest cost',
+  recent: 'most recent',
+  turns: 'turn count',
+  tokens: 'token count',
+}
+
 function providerName(provider: string): string {
   return provider
     .split(/[-\s]+/)
@@ -42,15 +49,17 @@ const REASONING_LABELS: Record<ReasoningLevelOrUnknown, string> = {
   low: 'Low',
   medium: 'Medium',
   high: 'High',
-  xhigh: 'XHigh',
+  xhigh: 'Extra high',
   max: 'Max',
   adaptive: 'Adaptive',
-  unknown: 'Unknown',
+  unknown: 'Not identified',
 }
 
 export function reasoningMixLabel(mix?: ReasoningMix): string {
-  if (!mix || mix.totalCalls === 0 || mix.rows.length === 0) return 'Unknown'
+  if (!mix) return 'Not available'
+  if (mix.totalCalls === 0 || mix.rows.length === 0) return 'No attributed calls'
   const rows = mix.rows.filter(row => row.calls > 0)
+  if (rows.length === 0) return 'No attributed calls'
   if (rows.length === 1 && rows[0]!.callShare === 1) return REASONING_LABELS[rows[0]!.level]
   const visible = rows.slice(0, 2).map(row =>
     `${REASONING_LABELS[row.level]} ${Math.round(row.callShare * 100)}%`
@@ -60,7 +69,8 @@ export function reasoningMixLabel(mix?: ReasoningMix): string {
 }
 
 function reasoningCoverageLabel(mix?: ReasoningMix): string {
-  if (!mix || mix.totalCalls === 0) return 'No attributed calls'
+  if (!mix) return 'Reasoning attribution unavailable'
+  if (mix.totalCalls === 0) return 'No calls to attribute'
   return `${mix.knownCalls.toLocaleString('en-US')} of ${mix.totalCalls.toLocaleString('en-US')} calls known · ${Math.round(mix.coverage * 100)}% coverage`
 }
 
@@ -85,6 +95,31 @@ function groupSortValue(sort: SessionSort, rows: SessionRow[]): number {
     return rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0)
   }
   return rows.reduce((latest, row) => Math.max(latest, endedAtTime(row)), 0)
+}
+
+function sessionHeadline(row: SessionRow): string {
+  return row.title || shortenProjectPath(row.project)
+}
+
+function sessionDetailId(sessionId: string): string {
+  return `session-details-${sessionId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
+function sessionRowLabel(row: SessionRow, expanded: boolean): string {
+  const headline = sessionHeadline(row)
+  const project = shortenProjectPath(row.project)
+  const parts = [`${expanded ? 'Collapse' : 'Open'} session: ${headline}.`]
+  if (row.title && project !== headline) parts.push(`Project ${project}.`)
+  parts.push(
+    `Session ID ${row.sessionId}.`,
+    `Ended ${formatDayLong(row.endedAt)}.`,
+    `Models ${row.models.length > 0 ? row.models.join(', ') : 'not identified'}.`,
+    `Reasoning ${reasoningMixLabel(row.reasoningMix)}.`,
+    `${row.turns.toLocaleString('en-US')} turns.`,
+    `Cost ${formatUsd(row.cost)}.`,
+    `${formatCompact(row.inputTokens + row.outputTokens)} tokens.`,
+  )
+  return parts.join(' ')
 }
 
 function ProviderFilterRow({
@@ -226,6 +261,7 @@ export function Sessions({
   const totalCost = filtered.reduce((sum, row) => sum + row.cost, 0)
   const totalTokens = filtered.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0)
   const remaining = filtered.length - renderedRows
+  const sessionCountLabel = `${filtered.length} ${filtered.length === 1 ? 'session' : 'sessions'}`
 
   return (
     <div className="sessions-list-view">
@@ -235,7 +271,7 @@ export function Sessions({
         <input
           className="sessions-search"
           aria-label="Search sessions"
-          placeholder="Search project, model, or id…"
+          placeholder="Search title, project, model, or session ID…"
           value={query}
           onChange={event => setQuery(event.target.value)}
         />
@@ -253,6 +289,9 @@ export function Sessions({
           Group by provider
         </button>
       </div>
+      <div className="sr-only" role="status" aria-live="polite">
+        {`Sessions sorted by ${SORT_ANNOUNCEMENTS[sort]}, ${grouped ? 'grouped by provider' : 'not grouped by provider'}. ${sessionCountLabel} after filters.`}
+      </div>
       <div className="sessions-summary">
         {filtered.length} sessions · {formatUsd(totalCost)} · {formatCompact(totalTokens)} tokens
       </div>
@@ -265,7 +304,13 @@ export function Sessions({
         <>
           <div className="session-list">
             {renderedSequence.map(entry => entry.type === 'header' ? (
-              <div className="provider-h" key={`provider-${entry.provider}`}>
+              <div
+                className="provider-h"
+                key={`provider-${entry.provider}`}
+                role="heading"
+                aria-level={3}
+                aria-label={`${providerName(entry.provider)}: ${entry.count.toLocaleString('en-US')} sessions, ${formatUsd(entry.cost)}`}
+              >
                 <span>{providerName(entry.provider)}</span>
                 <span className="provider-count">{entry.count.toLocaleString('en-US')} sessions</span>
                 <span className="provider-cost">{formatUsd(entry.cost)}</span>
@@ -275,14 +320,16 @@ export function Sessions({
                 <button
                   className="session-row"
                   type="button"
+                  aria-label={sessionRowLabel(entry.row, selectedId === entry.row.sessionId)}
                   aria-expanded={selectedId === entry.row.sessionId}
+                  aria-controls={sessionDetailId(entry.row.sessionId)}
                   onClick={() => setSelectedId(current => current === entry.row.sessionId ? null : entry.row.sessionId)}
                 >
                   <span className="session-primary">
                     <span className="session-chevron" aria-hidden="true">›</span>
                     <span className="session-project-copy">
-                      <span className="session-title" title={entry.row.title || undefined}>{entry.row.title || shortenProjectPath(entry.row.project)}</span>
-                      <span className="session-project">{entry.row.sessionId.slice(0, 18)}</span>
+                      <span className="session-title" title={entry.row.title || undefined}>{sessionHeadline(entry.row)}</span>
+                      <span className="session-project">Session ID · {entry.row.sessionId.slice(0, 18)}</span>
                     </span>
                   </span>
                   <span className="session-when">{formatDayShort(entry.row.endedAt)}</span>
@@ -314,7 +361,10 @@ export function Sessions({
 
 function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollapse: () => void }) {
   const cacheTotal = session.inputTokens + session.cacheReadTokens
-  const cacheHit = cacheTotal > 0 ? Math.round(session.cacheReadTokens / cacheTotal * 100) : 0
+  const cacheHit = cacheTotal > 0 ? Math.round(session.cacheReadTokens / cacheTotal * 100) : null
+  const reasoningTokenSummary = session.reasoningTokens === undefined
+    ? 'Reasoning-token count unavailable'
+    : `${formatCompact(session.reasoningTokens)} dedicated reasoning tokens`
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -325,7 +375,12 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
   }, [onCollapse])
 
   return (
-    <div className="session-inline-detail" role="region" aria-label={`${shortenProjectPath(session.project)} session details`}>
+    <div
+      id={sessionDetailId(session.sessionId)}
+      className="session-inline-detail"
+      role="region"
+      aria-label={`${shortenProjectPath(session.project)} session details`}
+    >
       <div className="detail-head">
         <h3 className="detail-title">{shortenProjectPath(session.project)}</h3>
         <div className="detail-line">{session.provider} · {session.models.join(', ')}</div>
@@ -341,14 +396,14 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
         <Stat label="Saved" value={formatUsd(session.savingsUSD)} delta="vs baseline" />
         <Stat label="Input" value={formatCompact(session.inputTokens)} delta="tokens sent" />
         <Stat label="Output" value={formatCompact(session.outputTokens)} delta="tokens generated" />
-        <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta={`${cacheHit}% hit`} />
+        <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta={cacheHit === null ? 'No cacheable input' : `${cacheHit}% hit`} />
         <Stat label="Cache write" value={formatCompact(session.cacheWriteTokens)} delta="tokens cached" />
       </div>
       {session.reasoningMix && session.reasoningMix.rows.length > 0 && (
         <div className="reasoning-detail">
           <div className="reasoning-detail-head">
             <span>Reasoning mix by API call</span>
-            <span>{formatCompact(session.reasoningTokens ?? 0)} dedicated reasoning tokens</span>
+            <span>{reasoningTokenSummary}</span>
           </div>
           <div className="reasoning-detail-rows">
             {session.reasoningMix.rows.map(row => (
@@ -356,7 +411,7 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
                 <span className="reasoning-detail-label">{REASONING_LABELS[row.level]}</span>
                 <span className="reasoning-detail-track"><span style={{ width: `${Math.max(2, row.callShare * 100)}%` }} /></span>
                 <span className="reasoning-detail-value">
-                  {Math.round(row.callShare * 100)}% · {row.calls.toLocaleString('en-US')} calls · {formatCompact(row.reasoningTokens)} reasoning
+                  {Math.round(row.callShare * 100)}% · {row.calls.toLocaleString('en-US')} calls · {formatCompact(row.reasoningTokens)} reasoning tokens
                 </span>
               </div>
             ))}
