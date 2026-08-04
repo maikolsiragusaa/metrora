@@ -367,7 +367,7 @@ describe('Spend', () => {
     const detail = screen.getByRole('region', { name: 'codeburn sessions' })
     expect(within(detail).getByText('Jul 9')).toBeInTheDocument()
     expect(within(detail).getByText('$120.50')).toBeInTheDocument()
-    expect(within(detail).getByText('claude-opus-4')).toBeInTheDocument()
+    expect(within(detail).getByLabelText('Models: claude-opus-4, claude-haiku-4')).toHaveTextContent('claude-opus-4 +1 more')
     expect(within(detail).getByText('Jul 5')).toBeInTheDocument()
     expect(within(detail).getByText('$44.25')).toBeInTheDocument()
 
