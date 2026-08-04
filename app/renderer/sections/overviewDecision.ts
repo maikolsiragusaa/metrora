@@ -64,7 +64,7 @@ function comparisonFact(data: MenubarPayload, rangeActive: boolean): OverviewDec
   return {
     label: 'Change',
     value: `${rounded}% ${direction}`,
-    detail: `${rounded}% ${direction} than last week, based on average daily spend.`,
+    detail: `Average daily spend is ${direction} than last week.`,
     tone: delta > 25 ? 'warn' : delta < -10 ? 'good' : 'neutral',
   }
 }
