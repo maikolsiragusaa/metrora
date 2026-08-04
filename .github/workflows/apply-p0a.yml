@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          changed="$(git diff --name-only | sort)"
+          changed="$( { git diff --name-only; git ls-files --others --exclude-standard; } | sort)"
           expected="$(printf '%s\n' \
             '.github/ci-p0a-result.yml' \
             'docs/TEST_QUARANTINE.md' \
