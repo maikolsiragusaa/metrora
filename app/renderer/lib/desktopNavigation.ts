@@ -21,7 +21,7 @@ export type DesktopNavigationItem = {
 }
 
 export type DesktopNavigationGroup = {
-  id: 'home' | 'analyze' | 'improve' | 'trust' | 'product'
+  id: 'home' | 'activity' | 'analyze' | 'control' | 'product'
   label: string | null
   placement: 'primary' | 'utility'
   sections: readonly Section[]
@@ -42,9 +42,9 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
 
 export const DESKTOP_NAVIGATION_GROUPS: readonly DesktopNavigationGroup[] = [
   { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
-  { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['sessions', 'pullRequests', 'spend', 'models', 'compare'] },
-  { id: 'improve', label: 'Improve', placement: 'primary', sections: ['optimize', 'plans'] },
-  { id: 'trust', label: 'Trust', placement: 'primary', sections: ['workspace'] },
+  { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
+  { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare'] },
+  { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
   { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
 ]
 
