@@ -41,7 +41,7 @@ export function WorkspaceCreationPanel({
           <summary>Protected identity details</summary>
           <div className="workspace-disclosure-body">
             <code>{shortFingerprint(identity.publicKeyFingerprintSha256)}</code>
-            <span>Identity generation {identity.generation}. Metrora reuses this protected identity instead of creating a competing key.</span>
+            <span>Generation {identity.generation}. Metrora reuses this protected identity instead of creating a competing key.</span>
           </div>
         </details>
         <button type="button" className="btn btn-p workspace-primary-action" onClick={() => void onCreate()} disabled={busy}>
