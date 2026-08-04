@@ -46,13 +46,22 @@ function payload(): MenubarPayload {
             date: 'not-a-date',
             calls: 1,
             cost: 1.5,
+            savingsUSD: 0,
+            inputTokens: 0,
+            outputTokens: 0,
             models: [],
           },
           {
             date: '2026-08-04',
             calls: 2,
             cost: 3,
-            models: [{ name: 'model-a', cost: 2 }, { name: 'model-b', cost: 1 }],
+            savingsUSD: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            models: [
+              { name: 'model-a', cost: 2, savingsUSD: 0 },
+              { name: 'model-b', cost: 1, savingsUSD: 0 },
+            ],
           },
         ],
       }],
@@ -67,7 +76,7 @@ function payload(): MenubarPayload {
     },
     optimize: { findingCount: 0, savingsUSD: 0, topFindings: [] },
     history: { daily: [] },
-  } as MenubarPayload
+  }
 }
 
 function emptyFlow(): SpendFlow {
