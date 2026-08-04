@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url'
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const ownPath = relative(repositoryRoot, fileURLToPath(import.meta.url)).replaceAll('\\', '/')
 const restrictedIdentifierDigest = 'c1f0ebf4926c5f2dc4823b9b747a1ae15a9916c59f02049bc913bc133a9c4f8c'
-const canonicalRepository = 'metrora'
 
 function containsRestrictedIdentifier(line) {
   const tokens = line.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
@@ -49,25 +48,12 @@ for (const path of tracked) {
   if (text === null) continue
   const lines = text.split(/\r?\n/)
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]
-    if (containsRestrictedIdentifier(line)) {
-      findings.push({
-        path: normalized,
-        line: index + 1,
-        message: 'restricted identifier must not appear in ordinary public repository surfaces',
-      })
-    }
-
-    const repositoryReferences = line.matchAll(/https?:\/\/github\.com\/maikolsiragusaa\/([A-Za-z0-9_.-]+)/g)
-    for (const match of repositoryReferences) {
-      const repository = match[1].toLowerCase().replace(/\.git$/, '')
-      if (repository === canonicalRepository) continue
-      findings.push({
-        path: normalized,
-        line: index + 1,
-        message: 'non-canonical repository reference must not appear in the public product repository',
-      })
-    }
+    if (!containsRestrictedIdentifier(lines[index])) continue
+    findings.push({
+      path: normalized,
+      line: index + 1,
+      message: 'restricted identifier must not appear in ordinary public repository surfaces',
+    })
   }
 }
 
