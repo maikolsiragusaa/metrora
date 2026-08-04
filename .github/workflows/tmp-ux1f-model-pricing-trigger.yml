@@ -1,0 +1,60 @@
+name: Temporary UX1F model pricing patch trigger
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: ${{ github.event.pull_request.head.ref == 'fix/ux1f-model-pricing-state' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ux1f-model-pricing-state
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Apply bounded patch from the temporary patch authority
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/tmp-ux1f-model-pricing-state.yml').read_text()
+          marker = "python <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY\n", start)
+          script = dedent(workflow[start:end])
+          exec(compile(script, 'ux1f-model-pricing-patch.py', 'exec'))
+          PY
+      - name: Install and validate focused contracts
+        run: |
+          npm ci --no-audit --no-fund
+          npm test -- --run --no-file-parallelism tests/model-pricing-summary.test.ts tests/models-report.test.ts
+          npm run build:cli
+          npm --prefix app ci --no-audit --no-fund
+          npm --prefix app run stage-cli
+          npm --prefix app test -- renderer/sections/Models.test.tsx renderer/sections/modelPricingPresentation.test.ts
+          npm --prefix app run typecheck
+          npm --prefix app run build
+      - name: Validate architecture ratchet
+        run: |
+          git fetch origin main --depth=1
+          SOURCE_SIZE_BASE_REF=origin/main node scripts/check-source-size-ratchet.mjs
+      - name: Commit clean validated delta
+        run: |
+          rm .github/workflows/tmp-ux1f-model-pricing-state.yml
+          rm .github/workflows/tmp-ux1f-model-pricing-trigger.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "[ux1f-model-pricing-applied] feat(models): preserve pricing evidence states"
+          git push origin HEAD:fix/ux1f-model-pricing-state
