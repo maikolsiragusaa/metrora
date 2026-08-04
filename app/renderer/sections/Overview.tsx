@@ -1,14 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import gsap from 'gsap'
-
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { ActivityHeatmap } from '../components/ActivityHeatmap'
 import { EmptyNote } from '../components/EmptyState'
 import { ListRow } from '../components/ListRow'
 import { SectionSkeleton } from '../components/Skeleton'
 import { StaleBanner } from '../components/StaleBanner'
-import { motionEnabled, useBarGrowIn } from '../lib/motion'
+import { useBarGrowIn } from '../lib/motion'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
@@ -22,6 +20,8 @@ import type {
   YieldJsonReport,
 } from '../lib/types'
 import { deriveEfficiency } from './overviewEfficiency'
+import { OverviewHomeSummary } from './OverviewHomeSummary'
+import { deriveOverviewDecision } from './overviewDecision'
 import { aggregateModels, buildModelIndex, sessionModelKey, topModelsToAggregated, type AggregatedModel } from './overviewModels'
 import { deriveCostPerOutcome } from './overviewOutcome'
 import { deriveSignals, deriveStats, mean, streakDays, type SignalGroups } from './overviewTrends'
@@ -193,32 +193,6 @@ function RoutingWhatIf({ routing, onNavigate }: {
       <button className="ov-link" type="button" onClick={() => onNavigate?.('optimize')}>Optimize →</button>
     </div>
   )
-}
-
-function CountUp({ value, animateKey }: { value: number; animateKey: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const keyRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const element = ref.current
-    if (!element) return
-    const keyChanged = keyRef.current !== animateKey
-    keyRef.current = animateKey
-    if (!keyChanged || !motionEnabled()) {
-      element.textContent = formatUsd(value)
-      return
-    }
-    const counter = { n: 0 }
-    const tween = gsap.to(counter, {
-      n: value,
-      duration: 0.7,
-      ease: 'power2.out',
-      onUpdate: () => { element.textContent = formatUsd(counter.n) },
-    })
-    return () => { tween.kill() }
-  }, [value, animateKey])
-
-  return <div ref={ref} className="ov-hero-num" data-countup={value}>{formatUsd(value)}</div>
 }
 
 function formatShortDay(date: string): string {
@@ -423,31 +397,27 @@ export function OverviewContent({
   const models = provider !== 'all'
     ? topModelsToAggregated(data.current.topModels)
     : aggregateModels(rangeActive ? sliceDailyToRange(data.history.daily, range.from, range.to) : periodDaily)
-  const recent14 = data.history.daily.slice(-14)
-  const weekNow = mean(recent14.slice(-7).map(day => day.cost))
-  const weekPrior = mean(recent14.slice(-14, -7).map(day => day.cost))
-  const weeklyPct = weekPrior > 0 ? Math.round(Math.abs((weekNow - weekPrior) / weekPrior * 100)) : null
-  const weeklyDirection = weekNow >= weekPrior ? 'higher' : 'lower'
   const topModel = data.current.topModels[0]
   const saved = actReport.data?.totals.realizedCostUSD ?? 0
   const applied = saved > 0 ? (actReport.data?.totals.measuredActions ?? 0) : 0
   const localSaved = data.current.localModelSavings.totalUSD
   const signals = deriveSignals(data, now, rangeActive)
+  const decision = deriveOverviewDecision(data, signals, rangeActive)
+  const streak = streakDays(data.history.daily, now)
   return (
     <div className="ov-dashboard">
       {error && <StaleBanner error={error} />}
-      <div className="ov-card ov-hero-split" aria-label="Key performance indicators">
-        <div className="ov-hero-main">
-          <div className="ov-hero-top"><span className="ov-label">{data.current.label}</span><span className="ov-streak"><b>{streakDays(data.history.daily, now)}</b>-day streak</span></div>
-          <CountUp value={data.current.cost} animateKey={animateKey} />
-          <div className="ov-hero-sub">{data.current.calls.toLocaleString('en-US')} calls · {data.current.sessions.toLocaleString('en-US')} sessions</div>
-          {saved > 0 && (
-            <div className="ov-saved-line"><span>Saved by applied fixes</span><strong>{formatUsd(saved)}</strong><small>across {applied} {applied === 1 ? 'fix' : 'fixes'}</small></div>
-          )}
-          {localSaved > 0 && (
-            <div className="ov-saved-line"><span>Saved via local models</span><strong>{formatUsd(localSaved)}</strong><small>local-model routing</small></div>
-          )}
-        </div>
+      <div className="ov-card ov-home-shell" aria-label="Key performance indicators">
+        <OverviewHomeSummary
+          current={data.current}
+          decision={decision}
+          streak={streak}
+          saved={saved}
+          applied={applied}
+          localSaved={localSaved}
+          animateKey={animateKey}
+          onNavigate={onNavigate}
+        />
         <ActivityHeatmap daily={data.history.daily} bare />
         <EfficiencyScorecard current={data.current} bare />
       </div>
@@ -465,18 +435,6 @@ export function OverviewContent({
       </div>
 
       <WorkflowCard current={data.current} />
-
-      <div className="ov-insight-band">
-        <div className="ov-coach">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
-          <div className="ov-coach-tx">
-            {rangeActive
-              ? <>{topModel ? <><span className="num">{topModel.name}</span> is the biggest driver in this range</> : 'No single model dominates this range'}. <span className="num">{formatUsd(data.optimize.savingsUSD)}</span> is recoverable.</>
-              : <>{weeklyPct === null ? <>No prior-week pacing baseline yet</> : <>You're pacing <span className="num">{weeklyPct}% {weeklyDirection}</span> than last week</>}{topModel ? <>; <span className="num">{topModel.name}</span> is the biggest driver</> : ''}. <span className="num">{formatUsd(data.optimize.savingsUSD)}</span> is recoverable.</>}
-          </div>
-          <button className="ov-coach-cta" type="button" onClick={() => onNavigate?.('optimize')}>Review →</button>
-        </div>
-      </div>
 
       <SignalsCard signals={signals} />
 
