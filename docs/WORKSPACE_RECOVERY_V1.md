@@ -126,15 +126,13 @@ A separate interruption test removes only the public event file after its privat
 
 ## Historical scope
 
-Normal Produce and Recovery do not backfill pre-Workspace history. That history remains available to canonical Overview analytics.
-
-A future historical evidence import, if approved, must be a separate explicit action with a visible scope, progress, cancellation, resumable checkpoints, deterministic ordering, and an estimate before mutation.
+Normal Produce and Recovery do not backfill pre-Workspace history. That history remains available to canonical Overview analytics. Historical evidence import is outside this recovery contract.
 
 ## Non-goals
 
 - no destructive repair or reset;
 - no automatic recovery or production at startup;
 - no normal-action historical backfill;
-- no remote recovery service, support backdoor, hosted queue, or cloud receipt;
-- no account, team, entitlement, billing, Android, Advisor, or Bench behavior;
+- no remote recovery authority or support backdoor;
+- no account, team, entitlement, billing, mobile, or unrelated product behavior;
 - no collector, pricing, label, or aggregation redesign.
