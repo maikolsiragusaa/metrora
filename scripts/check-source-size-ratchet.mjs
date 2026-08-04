@@ -1,12 +1,10 @@
+import { execFileSync } from 'node:child_process'
 import { readFile, readdir } from 'node:fs/promises'
 import { extname, join, relative, sep } from 'node:path'
 import process from 'node:process'
 
 const root = process.cwd()
-const baselinePath = join(root, 'config', 'source-size-baseline.json')
-const baseline = JSON.parse(await readFile(baselinePath, 'utf8'))
-const defaultMax = baseline.defaultMaxLines
-const frozen = new Map(Object.entries(baseline.frozenFiles))
+const defaultMaxLines = 600
 const extensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 const excludedDirectories = new Set([
   '.git', 'node_modules', 'dist', 'build', 'coverage', '.next', 'out',
@@ -45,36 +43,86 @@ function physicalLineCount(source) {
   return source.split(/\r?\n/).length
 }
 
+function git(args, options = {}) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    ...options,
+  }).trim()
+}
+
+function resolveBaseRef() {
+  const configured = process.env.SOURCE_SIZE_BASE_REF?.trim()
+  if (configured && !/^0+$/.test(configured)) return configured
+  try {
+    return git(['rev-parse', 'HEAD^'])
+  } catch {
+    return null
+  }
+}
+
+function renameMapFrom(baseRef) {
+  const renames = new Map()
+  if (!baseRef) return renames
+  let output = ''
+  try {
+    output = git(['diff', '--name-status', '--find-renames=50%', baseRef, 'HEAD', '--'])
+  } catch {
+    return renames
+  }
+  for (const line of output.split(/\r?\n/).filter(Boolean)) {
+    const [status, oldPath, newPath] = line.split('\t')
+    if (!status?.startsWith('R') || !oldPath || !newPath) continue
+    renames.set(normalized(newPath), normalized(oldPath))
+  }
+  return renames
+}
+
+function readAtRef(ref, path) {
+  if (!ref) return null
+  try {
+    return execFileSync('git', ['show', `${ref}:${path}`], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return null
+  }
+}
+
+const baseRef = resolveBaseRef()
+if (!baseRef) {
+  console.error('A Git base reference is required for source-size validation.')
+  process.exit(1)
+}
+
+const renames = renameMapFrom(baseRef)
 const failures = []
-const reports = []
 for (const file of await collect(root)) {
-  const lines = physicalLineCount(await readFile(file.absolute, 'utf8'))
-  const frozenMax = frozen.get(file.path)
-  const max = frozenMax ?? defaultMax
-  if (lines > max) {
-    failures.push(`${file.path}: ${lines} lines (maximum ${max}${frozenMax ? ', reviewed frozen baseline' : ''})`)
-  }
-  if (lines >= Math.floor(defaultMax * 0.75) || frozenMax) {
-    reports.push({ path: file.path, lines, max, frozen: frozenMax !== undefined })
-  }
-  if (frozenMax !== undefined) frozen.delete(file.path)
-}
+  const currentLines = physicalLineCount(await readFile(file.absolute, 'utf8'))
+  if (currentLines <= defaultMaxLines) continue
 
-for (const [path] of frozen) {
-  failures.push(`${path}: frozen baseline entry does not match a production source file`)
-}
+  const basePath = renames.get(file.path) ?? file.path
+  const baseSource = readAtRef(baseRef, basePath)
+  const baseLines = baseSource === null ? null : physicalLineCount(baseSource)
 
-reports.sort((a, b) => b.lines - a.lines || a.path.localeCompare(b.path))
-console.log('Source-size review list:')
-for (const item of reports) {
-  console.log(`- ${item.path}: ${item.lines}/${item.max}${item.frozen ? ' (frozen)' : ''}`)
+  if (baseLines === null || baseLines <= defaultMaxLines) {
+    failures.push(`${file.path}: ${currentLines} lines; new or newly oversized production modules must remain at or below ${defaultMaxLines}`)
+    continue
+  }
+
+  if (currentLines > baseLines) {
+    failures.push(`${file.path}: grew from ${baseLines} to ${currentLines} lines; an already oversized production module may not grow`)
+  }
 }
 
 if (failures.length > 0) {
-  console.error('\nSource-size ratchet failed:')
+  console.error('Source-size ratchet failed:')
   for (const failure of failures) console.error(`- ${failure}`)
-  console.error('\nSplit an actual responsibility, or add a reviewed temporary baseline tied to issue #52.')
-  process.exitCode = 1
-} else {
-  console.log('\nSource-size ratchet passed.')
+  console.error('Extract a coherent responsibility or reduce the affected module before integration.')
+  process.exit(1)
 }
+
+console.log('Source-size ratchet passed against the Git base.')
