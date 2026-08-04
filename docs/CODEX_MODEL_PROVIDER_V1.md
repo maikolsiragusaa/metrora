@@ -77,4 +77,4 @@ This checkpoint does not broaden collector provenance or make every Codex record
 - no collector/parser rewrite;
 - no analytics-total or price change;
 - no cache-schema migration or destructive invalidation;
-- no renderer, IPC, network, account, billing, Android, Advisor, or Bench behavior.
+- no renderer, IPC, network, account, billing, mobile, or unrelated product behavior.

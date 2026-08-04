@@ -2,7 +2,7 @@
   "name": "metrora-desktop",
   "private": true,
   "version": "0.9.19",
-  "description": "Metrora Desktop — local-first AI usage intelligence powered by the compatibility CLI",
+  "description": "Metrora Desktop — local-first AI usage intelligence",
   "main": "dist/electron/bootstrap.js",
   "scripts": {
     "brand:assets": "node ../scripts/generate-brand-assets.mjs",
@@ -80,9 +80,9 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
-        "NSDocumentsFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
-        "NSDesktopFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry.",
-        "NSDownloadsFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. This build does not transmit product telemetry."
+        "NSDocumentsFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. Prompt and response bodies are not exported by default.",
+        "NSDesktopFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. Prompt and response bodies are not exported by default.",
+        "NSDownloadsFolderUsageDescription": "Metrora reads local AI coding tool session logs to calculate token usage and cost. Prompt and response bodies are not exported by default."
       }
     },
     "dmg": {},

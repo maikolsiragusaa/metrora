@@ -14,14 +14,14 @@ concurrency:
 
 jobs:
   semgrep:
-    name: Semgrep guard
+    name: Security rules
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install Semgrep
         run: pip install semgrep
-      - name: Run hot-path security guard
+      - name: Validate protected code paths
         shell: bash
         run: |
           set -euo pipefail
@@ -35,7 +35,7 @@ jobs:
           fi
 
   build:
-    name: Core build and desktop validation (${{ matrix.os }})
+    name: Core and desktop validation (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -48,13 +48,13 @@ jobs:
         with:
           node-version: '22.15.0'
           cache: npm
-      - name: Require Node zstd support
-        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required by the Zed gate')"
+      - name: Validate runtime compression support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
       - name: Install core dependencies
         run: npm ci --no-audit --no-fund
-      - name: Validate historical price book and generated docs
+      - name: Validate generated pricing documentation
         run: npm run pricing:docs:check
-      - name: Test historical pricing, settlement, and assignment contracts
+      - name: Test pricing contracts
         run: >-
           npm test -- --run --no-file-parallelism
           src/pricing/history.test.ts
@@ -65,20 +65,17 @@ jobs:
           src/pricing/local-observation-bands.test.ts
           src/pricing/cost-assignment.test.ts
           src/pricing/settled-historical-cost.test.ts
-      - name: Test reviewed production receipt semantics
+      - name: Test local evidence receipt contracts
         run: npm test -- --run --no-file-parallelism src/local-state/measurement-production-receipt.test.ts
-      - name: Build CLI and desktop local-state runtime
+      - name: Build product runtime
         run: npm run build:cli
-      - name: Test Zed SQLite and zstd collector
+      - name: Test local database collector
         run: npm test -- --run --no-file-parallelism tests/providers/zed.test.ts
-      - name: Test refresh lock lease on Windows
+      - name: Test Windows refresh lock
         if: runner.os == 'Windows'
         run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
-      - name: Test local endpoint, workspace, reviewed production, outbox, signed batches, exports, and desktop runtime on Windows
+      - name: Test Windows local-state contracts
         if: runner.os == 'Windows'
-        # Windows Server 2025 hosted runners can exceed Vitest's 5s default on
-        # filesystem-heavy cryptographic tests. Keep every test blocking while
-        # allowing bounded runner variance instead of quarantining coverage.
         run: >-
           npx vitest --run --no-file-parallelism --testTimeout=15000
           src/vendor/rfc8785-canonicalize.test.ts
@@ -96,7 +93,7 @@ jobs:
         run: npm --prefix app ci --no-audit --no-fund
       - name: Stage desktop runtime
         run: npm --prefix app run stage-cli
-      - name: Probe Electron safeStorage with Windows DPAPI
+      - name: Probe Windows protected storage
         if: runner.os == 'Windows'
         run: npm --prefix app run test:safe-storage
       - name: Test desktop
@@ -107,7 +104,7 @@ jobs:
         run: npm --prefix app run build
 
   full-suite:
-    name: Full core test suite
+    name: Core test suite
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -116,15 +113,11 @@ jobs:
         with:
           node-version: '22.15.0'
           cache: npm
-      - name: Require Node zstd support
-        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required by the Zed gate')"
+      - name: Validate runtime compression support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Run ordinary core files deterministically
-        # Root tests mutate process-wide HOME/config and filesystem fixtures.
-        # Desktop tests have their own blocking cross-platform job above.
-        # Three files with named inherited quarantines are executed separately
-        # below so every other test in those files remains blocking.
         shell: bash
         run: |
           set +e
@@ -152,7 +145,7 @@ jobs:
               })
             }
           }
-          console.error(`Ordinary core gate failed: ${report.numFailedTestSuites ?? '?'} suite(s), ${report.numFailedTests ?? failed.length} test(s).`)
+          console.error(`Core validation failed: ${report.numFailedTestSuites ?? '?'} suite(s), ${report.numFailedTests ?? failed.length} test(s).`)
           for (const item of failed) {
             console.error(`\nFILE: ${item.file}\nTEST: ${item.test}`)
             for (const message of item.messages) console.error(message)
@@ -161,35 +154,25 @@ jobs:
           NODE
             exit "$status"
           fi
-      - name: Run non-quarantined durable parser tests
+      - name: Run durable parser compatibility group
         run: >-
           npm test -- --run --no-file-parallelism tests/parser.test.ts
           -t "^(?!.*preserves monthly total after events\\.jsonl is deleted)(?!.*keeps counting a pruned-source orphan after the provider fingerprint changes).*$"
-      - name: Run non-quarantined incremental parser tests
+      - name: Run incremental parser compatibility group
         run: >-
           npm test -- --run --no-file-parallelism tests/parser-incremental-append.test.ts
           -t "^(?!.*EDGE: file replaced \\(inode change\\) falls back to a full re-parse).*$"
-      - name: Run non-quarantined durable totals tests
+      - name: Run durable totals compatibility group
         run: >-
           npm test -- --run --no-file-parallelism tests/cli-durable-totals.test.ts
           -t "^(?!.*resolves provider filters identically on both paths, slicing the carried day per provider).*$"
-      - name: Record blocking status and quarantine
+      - name: Record validation outcome
         shell: bash
         run: |
           {
-            echo "## Full core test suite"
+            echo "## Core validation"
             echo
             echo "Outcome: \`success\`"
             echo
-            echo "All non-quarantined core tests ran serially as blocking gates. Desktop tests ran separately on Ubuntu and Windows."
-            echo
-            echo "The Zed SQLite/zstd collector ran as an explicit blocking gate on Node 22.15 on Ubuntu and Windows."
-            echo
-            echo "The reviewed GPT-5.6 intervals, historical calculations, immutable cost assignments, local observation ledger, cross-book resolution and generated documentation ran as explicit blocking gates on Ubuntu and Windows."
-            echo
-            echo "Reviewed production-receipt semantics ran explicitly on Ubuntu and Windows."
-            echo
-            echo "The refresh-lock lease, local endpoint/workspace state, reviewed measurement production, signed evidence, private desktop Workspace runtime, public-only IPC bridge, and real Electron DPAPI probe also ran on Windows."
-            echo
-            echo "Four exact inherited cases remain quarantined in \`docs/TEST_QUARANTINE.md\`; no wildcard file or subsystem quarantine is active."
+            echo "Required core and platform-specific validation completed."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -205,12 +205,12 @@ A failure remains evidence. Do not rewrite it into a PASS and do not add free-fo
 
 ## Public report privacy
 
-The report schema forbids usernames, home or application paths, prompts or responses, session/endpoint/Workspace identifiers, keys, receipts, raw evidence, arbitrary notes and unknown fields.
+The report schema forbids usernames, home or application paths, prompts or responses, session, endpoint or Workspace identifiers, keys, receipts, raw evidence, arbitrary notes and unknown fields.
 
 Only bounded platform metadata, public artifact names and digests, version identity, fixed transition names, booleans and counts are allowed.
 
 ## Boundary after PASS
 
-A PASS closes unsigned R1.B acceptance. It does not authorize Authenticode signing, certificate/provider selection, release publication, an updater or stable channel, arbitrary downgrade support, or hosted Workspace, Advisor, Bench or billing behavior.
+A PASS closes unsigned engineering acceptance. It does not itself create an official release, signing authority, update channel, publication decision, arbitrary downgrade guarantee or unrelated product capability.
 
-Protected signing remains a separate infrastructure decision and acceptance boundary.
+Official distribution requires its own accepted identity, integrity and publication gates.
