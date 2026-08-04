@@ -2,11 +2,11 @@
 
 Thanks for helping improve Metrora.
 
-Metrora is early in its independent development and still contains CodeBurn-era runtime names. Keep changes focused, evidence-based, and compatible with existing local data.
+Keep changes focused, evidence-based and compatible with existing local data. Some inherited compatibility identifiers remain intentionally stable until a reviewed migration is available.
 
 ## Prerequisites
 
-- Node.js 22.13 or newer
+- Node.js 22.15 or newer
 - npm
 - Optional: Swift toolchain for `mac/`
 - Optional: GNOME 45 or newer for `gnome/`
@@ -24,13 +24,13 @@ npm run build:cli
 ## Repository layout
 
 ```text
-src/       TypeScript engine, CLI, collectors, caches, and analytics
+src/       TypeScript engine, CLI, collectors, caches and analytics
 app/       Electron desktop application
-dash/      Local React web dashboard
+dash/      local React web dashboard
 mac/       macOS menubar application
 gnome/     GNOME extension
-tests/     Test suite
-docs/      Upstream and public implementation documentation
+tests/     test suite
+docs/      public contracts and technical documentation
 ```
 
 ## Common commands
@@ -44,19 +44,32 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-The imported CodeBurn 0.9.19 suite includes platform-sensitive failures on Ubuntu. New or changed behavior still requires targeted blocking tests and must not add regressions.
-
 ## Contribution principles
 
 - Keep each pull request bounded to one primary concern.
-- Separate rebranding, structural changes, parser changes, and feature changes.
-- Preserve raw values, provenance, confidence, and unknown states.
-- Do not infer model, provider, billing route, or reasoning configuration without evidence.
-- Do not collect or export prompts, code, secrets, or full local paths by default.
+- Separate product copy, structural changes, parser changes and feature changes.
+- Preserve raw values, provenance, confidence and unknown states.
+- Do not infer model, provider, billing route or reasoning configuration without evidence.
+- Do not collect or export prompts, code, secrets or full local paths by default.
 - Treat Windows as a first-class target.
 - Preserve compatibility or provide migration for persisted local data.
 - Retain attribution for upstream-derived code and fixes.
-- Never claim real-data, real-device, or store validation without performing it.
+- Never claim real-data, real-device or store validation without performing it.
+
+## Public repository hygiene
+
+Issues, pull requests, commits and documentation are public product surfaces. Include only information needed to understand, review, validate or maintain the public change.
+
+Do not publish:
+
+- personal usage records, device details or local identifiers;
+- credentials, verification material or private administrative documents;
+- names or locations of non-public repositories and internal systems;
+- unpublished commercial plans, budgets or internal prioritization;
+- unrelated future product initiatives;
+- raw logs, paths or evidence that may identify a person or customer.
+
+Describe unavailable or unrelated work generically when its exact internal identity is not required for review. Product, publisher and provenance language must follow [`README.md`](README.md), [`NOTICE.md`](NOTICE.md) and [`BRAND_POLICY.md`](BRAND_POLICY.md).
 
 ## Provider and collector changes
 
@@ -70,11 +83,11 @@ Collectors silently affect totals and therefore have a high evidence bar. A prov
 6. explicit handling of ambiguous and estimated values;
 7. privacy review for new captured fields.
 
-Online documentation or AI-generated assumptions are not sufficient evidence for storage paths, schemas, token semantics, or pricing.
+Online documentation or AI-generated assumptions are not sufficient evidence for storage paths, schemas, token semantics or pricing.
 
 ## Pull requests
 
-Use the pull-request template and report only validation actually performed. Include screenshots for visible changes, migration impact where applicable, known risks, and rollback information.
+Use the pull-request template and report only validation actually performed. Include screenshots for visible changes, migration impact where applicable, known risks and rollback information.
 
 Squash merge is preferred for bounded feature branches unless preserving a structured series is materially useful.
 
@@ -84,4 +97,4 @@ Do not file vulnerabilities in the public tracker. Follow [`SECURITY.md`](SECURI
 
 ## License
 
-Metrora is distributed under the MIT License and contains software initially derived from CodeBurn 0.9.19. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`UPSTREAM.md`](UPSTREAM.md).
+Metrora is distributed under the MIT License and includes portions originally derived from CodeBurn 0.9.19. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), [`UPSTREAM.md`](UPSTREAM.md) and [`LICENSES/`](LICENSES/).
