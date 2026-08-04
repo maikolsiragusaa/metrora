@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - refactor/desktop-telemetry-controller
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -15,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: refactor/desktop-telemetry-controller
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
