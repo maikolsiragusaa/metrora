@@ -1,0 +1,119 @@
+name: Temporary Signal Orange alignment
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-clean-delta:
+    if: ${{ github.event.pull_request.head.ref == 'chore/brand-signal-orange-alignment' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/brand-signal-orange-alignment
+          fetch-depth: 0
+      - name: Apply bounded palette alignment
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_all(path: str, replacements: list[tuple[str, str]]) -> None:
+              file = Path(path)
+              text = file.read_text()
+              for old, new in replacements:
+                  count = text.count(old)
+                  if count == 0:
+                      raise SystemExit(f'{path}: expected at least one occurrence of {old!r}')
+                  text = text.replace(old, new)
+              file.write_text(text)
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one occurrence of {old!r}, found {count}')
+              file.write_text(text.replace(old, new, 1))
+
+          replace_all('app/renderer/styles/brand.css', [
+              ('#2563eb', '#e8590c'),
+              ('#1d4ed8', '#bf4808'),
+              ('#60a5fa', '#f2701c'),
+          ])
+
+          replace_all('dash/src/index.css', [
+              ('Signal Blue', 'Signal Orange'),
+              ('#e8efff', '#fff1e8'),
+              ('#2563eb', '#e8590c'),
+              ('#5b83e8', '#f28c45'),
+          ])
+          replace_all('dash/src/App.tsx', [('#2563EB', '#E8590C')])
+
+          replace_all('gnome/stylesheet.css', [
+              ('rgba(37, 99, 235,', 'rgba(232, 89, 12,'),
+              ('#2563eb', '#e8590c'),
+              ('#1d4ed8', '#bf4808'),
+              ('#60a5fa', '#f2701c'),
+          ])
+
+          replace_all('assets/brand/README.md', [
+              ('Signal Blue', 'Signal Orange'),
+              ('#2563EB', '#F2701C'),
+          ])
+          replace_once(
+              'assets/brand/README.md',
+              '| Signal Orange | `#F2701C` | actions, data highlights and active states |',
+              '| Signal Orange | `#F2701C` | actions, data highlights and active states on dark surfaces |\n| Signal Orange Deep | `#E8590C` | actions, data highlights and active states on light surfaces |',
+          )
+
+          replace_all('mac/README.md', [
+              ('Signal Blue', 'Signal Orange'),
+              ('#2563EB', '#F2701C'),
+          ])
+          replace_once(
+              'mac/README.md',
+              '- Signal Orange `#F2701C`',
+              '- Signal Orange `#F2701C`\n- Signal Orange Deep `#E8590C`',
+          )
+
+          replace_once(
+              'README.md',
+              'License-MIT-2563EB.svg',
+              'License-MIT-E8590C.svg',
+          )
+          replace_once(
+              'README.md',
+              'Product and repository surfaces use the assets and palette documented in [`assets/brand`](assets/brand/README.md).',
+              'Product and repository surfaces use the Signal Grid assets and Graphite + Signal Orange palette documented in [`assets/brand`](assets/brand/README.md).',
+          )
+
+          targets = [
+              'app/renderer/styles/brand.css',
+              'dash/src/index.css',
+              'dash/src/App.tsx',
+              'gnome/stylesheet.css',
+              'assets/brand/README.md',
+              'mac/README.md',
+              'README.md',
+          ]
+          forbidden = ('Signal Blue', '#2563eb', '#2563EB', '#60a5fa', '#1d4ed8', 'rgba(37, 99, 235,')
+          for path in targets:
+              text = Path(path).read_text()
+              leftovers = [token for token in forbidden if token in text]
+              if leftovers:
+                  raise SystemExit(f'{path}: stale brand tokens remain: {leftovers}')
+          PY
+      - name: Commit clean palette delta
+        run: |
+          rm .github/workflows/tmp-brand-signal-orange.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "chore(brand): align Signal Orange across public surfaces"
+          git push origin HEAD:chore/brand-signal-orange-alignment
