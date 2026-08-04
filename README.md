@@ -9,7 +9,7 @@
 Understand where AI time, tokens and money go — across tools, models, projects and sessions — without routing your work through another service.
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-2563EB.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
 
 </div>
 
@@ -120,7 +120,7 @@ The canonical command is `metrora`. The former `qovrion` command and inherited `
 
 Metrora™ is the product and user-facing brand. Signal Grid™ is its canonical visual identity. Vensent™ is the publisher identity used for official Metrora distribution.
 
-Product and repository surfaces use the assets and palette documented in [`assets/brand`](assets/brand/README.md). Compatibility identifiers may remain internally where changing them would break existing state or integrations, but they are not the product-facing identity.
+Product and repository surfaces use the Signal Grid assets and Graphite + Signal Orange palette documented in [`assets/brand`](assets/brand/README.md). Compatibility identifiers may remain internally where changing them would break existing state or integrations, but they are not the product-facing identity.
 
 See the [project notices](NOTICE.md) and [brand policy](BRAND_POLICY.md).
 

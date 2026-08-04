@@ -1,25 +1,25 @@
 /* Metrora visual identity v1 — Signal Grid */
 :root {
-  --accent: #2563eb;
-  --accent-text: #1d4ed8;
+  --accent: #e8590c;
+  --accent-text: #bf4808;
   --grad: var(--accent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #60a5fa;
-    --accent-text: #60a5fa;
+    --accent: #f2701c;
+    --accent-text: #f2701c;
   }
 }
 
 :root[data-theme='dark'] {
-  --accent: #60a5fa;
-  --accent-text: #60a5fa;
+  --accent: #f2701c;
+  --accent-text: #f2701c;
 }
 
 :root[data-theme='light'] {
-  --accent: #2563eb;
-  --accent-text: #1d4ed8;
+  --accent: #e8590c;
+  --accent-text: #bf4808;
 }
 
 .metrora-mark {
