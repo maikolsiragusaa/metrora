@@ -26,13 +26,14 @@ jobs:
         run: |
           python <<'PY'
           from pathlib import Path
-          from textwrap import dedent
 
           workflow = Path('.github/workflows/tmp-ux1f-model-pricing-state.yml').read_text()
           marker = "python <<'PY'\n"
           start = workflow.index(marker) + len(marker)
           end = workflow.index("\n          PY\n", start)
-          script = dedent(workflow[start:end])
+          raw = workflow[start:end]
+          script = raw[10:] if raw.startswith('          ') else raw
+          script = script.replace('\n          ', '\n')
           exec(compile(script, 'ux1f-model-pricing-patch.py', 'exec'))
           PY
       - name: Install and validate focused contracts
