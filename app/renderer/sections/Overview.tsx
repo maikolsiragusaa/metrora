@@ -23,6 +23,7 @@ import type {
 } from '../lib/types'
 import { deriveEfficiency } from './overviewEfficiency'
 import { aggregateModels, buildModelIndex, sessionModelKey, topModelsToAggregated, type AggregatedModel } from './overviewModels'
+import { deriveCostPerOutcome } from './overviewOutcome'
 import { deriveSignals, deriveStats, mean, streakDays, type SignalGroups } from './overviewTrends'
 import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
 
@@ -67,18 +68,15 @@ function CostPerOutcome({ outcome }: { outcome: Polled<YieldJsonReport> }) {
   } else if (report.summary.total.sessions === 0 && report.details.length === 0) {
     body = <EmptyNote>No git-correlated outcomes in this period.</EmptyNote>
   } else {
-    const commits = report.details.reduce((sum, detail) => sum + detail.commitCount, 0)
-    const costPerCommit = commits > 0 ? report.summary.total.costUSD / commits : null
-    const productive = report.summary.productive
-    const costPerProductiveSession = productive.sessions > 0 ? productive.costUSD / productive.sessions : null
+    const outcome = deriveCostPerOutcome(report)
     body = (
       <>
         <div className="ov-outcome-metrics">
-          <div><span>$ / commit</span><strong>{costPerCommit === null ? '—' : formatUsd(costPerCommit)}</strong></div>
-          <div><span>$ / productive session</span><strong>{costPerProductiveSession === null ? '—' : formatUsd(costPerProductiveSession)}</strong></div>
+          <div><span>$ / commit</span><strong>{outcome.costPerCommit === null ? '—' : formatUsd(outcome.costPerCommit)}</strong></div>
+          <div><span>$ / productive session</span><strong>{outcome.costPerProductiveSession === null ? '—' : formatUsd(outcome.costPerProductiveSession)}</strong></div>
         </div>
         <div className="ov-outcome-split">
-          productive {Math.round(productive.costPercent)}% · reverted {Math.round(report.summary.reverted.costPercent)}% · abandoned {Math.round(report.summary.abandoned.costPercent)}%
+          productive {Math.round(outcome.productivePercent)}% · reverted {Math.round(outcome.revertedPercent)}% · abandoned {Math.round(outcome.abandonedPercent)}%
         </div>
       </>
     )
