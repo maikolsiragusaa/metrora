@@ -7,6 +7,7 @@ import { migrateKnownStorage } from './lib/storage'
 import './styles/indigo.css'
 import './styles/plain.css'
 import './styles/brand.css'
+import './styles/overview-home.css'
 import './styles/workspace.css'
 import './styles/workspace-guidance.css'
 
