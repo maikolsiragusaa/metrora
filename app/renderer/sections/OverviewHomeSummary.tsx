@@ -53,6 +53,7 @@ function DecisionFact({
     <button
       type="button"
       className={`ov-home-fact ov-home-fact-button ov-home-${fact.tone}`}
+      aria-label={`${fact.label}: ${fact.value}. ${fact.detail}`}
       onClick={() => onNavigate?.(fact.target as OverviewDecisionTarget)}
     >
       {content}
