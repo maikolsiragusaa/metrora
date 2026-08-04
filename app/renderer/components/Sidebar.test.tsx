@@ -11,21 +11,20 @@ describe('Sidebar', () => {
 
     expect(screen.getByRole('navigation', { name: 'Metrora navigation' })).toBeInTheDocument()
     const home = screen.getByRole('group', { name: 'Home' })
+    const activity = screen.getByRole('group', { name: 'Activity' })
     const analyze = screen.getByRole('group', { name: 'Analyze' })
-    const improve = screen.getByRole('group', { name: 'Improve' })
-    const trust = screen.getByRole('group', { name: 'Trust' })
+    const control = screen.getByRole('group', { name: 'Control' })
     const product = screen.getByRole('group', { name: 'Product' })
 
     expect(within(home).getByRole('button', { name: /Home.*⌘1/ })).toBeInTheDocument()
+    expect(within(activity).getAllByRole('button').map(item => item.textContent)).toEqual(['Sessions⌘2', 'Pull requests⌘3'])
     expect(within(analyze).getAllByRole('button').map(item => item.textContent)).toEqual([
-      'Sessions⌘2',
-      'Pull requests⌘3',
       'Spend⌘4',
+      'Optimize⌘5',
       'Models⌘6',
       'Compare⌘7',
     ])
-    expect(within(improve).getAllByRole('button').map(item => item.textContent)).toEqual(['Optimize⌘5', 'Plans⌘8'])
-    expect(within(trust).getByRole('button', { name: /Workspace.*⌘9/ })).toBeInTheDocument()
+    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Plans⌘8', 'Workspace⌘9'])
     expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
     expect(screen.getAllByRole('button')).toHaveLength(10)
   })
