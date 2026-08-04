@@ -13,6 +13,7 @@ import { formatCompact, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import type { AuditRow, DateRange, ModelReportRow, Period } from '../lib/types'
 import type { SettingsPane } from './Settings'
+import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
 
 type ModelsLens = 'model' | 'task' | 'audit'
 
@@ -265,9 +266,8 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
 }
 
 function ModelTableRow({ row, onAddAlias }: { row: ModelReportRow; onAddAlias: () => void }) {
-  const unpriced = row.costUSD === 0 && row.savingsUSD === 0
-  const cellClass = unpriced ? 'dim' : undefined
-  const tokenValue = (value: number) => (unpriced ? '—' : formatCompact(value))
+  const pricing = modelPricingPresentation(row.pricing, row.calls)
+  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
   const dotStyle = {
     display: 'inline-block',
     background: seriesColorForModel(row.modelDisplayName || row.model),
@@ -276,23 +276,30 @@ function ModelTableRow({ row, onAddAlias }: { row: ModelReportRow; onAddAlias: (
 
   return (
     <tr>
-      <td className={cellClass} title={row.model}>
+      <td title={row.model}>
         <span className="mdot" style={dotStyle} />
         {row.modelDisplayName}
-        {unpriced ? (
-          <>
-            {' '}
-            <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button>
-          </>
-        ) : null}
         <span style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}>{row.providerDisplayName}</span>
+        <span
+          style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}
+          title={pricing.title}
+        >
+          {pricing.label}
+        </span>
+        {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
       </td>
-      <td className={cellClass}>{fmtInt(row.calls)}</td>
-      <td className={cellClass}>{tokenValue(row.inputTokens)}</td>
-      <td className={cellClass}>{tokenValue(row.outputTokens)}</td>
-      <td className={cellClass}>{tokenValue(row.cacheReadTokens)}</td>
-      <td className={cellClass}>{unpriced ? '—' : formatUsd(row.costUSD)}</td>
-      <td className={unpriced ? 'dim' : row.savingsUSD > 0 ? 'pos' : undefined}>{unpriced ? '—' : formatUsd(row.savingsUSD)}</td>
+      <td>{fmtInt(row.calls)}</td>
+      <td>{formatCompact(row.inputTokens)}</td>
+      <td>{formatCompact(row.outputTokens)}</td>
+      <td>{formatCompact(row.cacheReadTokens)}</td>
+      <td
+        className={pricing.muteCost ? 'dim' : undefined}
+        title={pricing.title}
+        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
+      >
+        {costValue}
+      </td>
+      <td className={row.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(row.savingsUSD)}</td>
     </tr>
   )
 }
@@ -302,11 +309,12 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
   const calls = rows.reduce((sum, row) => sum + row.calls, 0)
   const costUSD = rows.reduce((sum, row) => sum + row.costUSD, 0)
   const savingsUSD = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
-  const unpriced = costUSD === 0 && savingsUSD === 0
+  const pricing = modelPricingPresentation(combineModelPricing(rows), calls)
+  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(costUSD)
 
   return (
     <tr className="model-group-row">
-      <td className={unpriced ? 'dim' : undefined} title={model.model}>
+      <td title={model.model}>
         <span className="model-group-lead">
           <span
             className="mdot"
@@ -315,34 +323,46 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
           <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <span className="model-group-name">{model.modelDisplayName}</span>
             <span style={providerTagStyle}>{model.providerDisplayName}</span>
+            <span style={providerTagStyle} title={pricing.title}>{pricing.label}</span>
           </span>
-          {unpriced ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
+          {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
         </span>
       </td>
-      <td className={unpriced ? 'dim' : undefined}>{fmtInt(calls)}</td>
+      <td>{fmtInt(calls)}</td>
       <td aria-label="No aggregate input" />
       <td aria-label="No aggregate output" />
       <td aria-label="No aggregate cache read" />
-      <td className={unpriced ? 'dim' : undefined}>{unpriced ? '—' : formatUsd(costUSD)}</td>
-      <td className={unpriced ? 'dim' : savingsUSD > 0 ? 'pos' : undefined}>{unpriced ? '—' : formatUsd(savingsUSD)}</td>
+      <td
+        className={pricing.muteCost ? 'dim' : undefined}
+        title={pricing.title}
+        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
+      >
+        {costValue}
+      </td>
+      <td className={savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(savingsUSD)}</td>
     </tr>
   )
 }
 
 function ModelTaskRow({ row }: { row: ModelReportRow }) {
-  const unpriced = row.costUSD === 0 && row.savingsUSD === 0
-  const cellClass = unpriced ? 'dim' : undefined
-  const tokenValue = (value: number) => (unpriced ? '—' : formatCompact(value))
+  const pricing = modelPricingPresentation(row.pricing, row.calls)
+  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
 
   return (
     <tr className="model-task-row">
-      <td className={cellClass}>{row.category ?? 'general'}</td>
-      <td className={cellClass}>{fmtInt(row.calls)}</td>
-      <td className={cellClass}>{tokenValue(row.inputTokens)}</td>
-      <td className={cellClass}>{tokenValue(row.outputTokens)}</td>
-      <td className={cellClass}>{tokenValue(row.cacheReadTokens)}</td>
-      <td className={cellClass}>{unpriced ? '—' : formatUsd(row.costUSD)}</td>
-      <td className={unpriced ? 'dim' : row.savingsUSD > 0 ? 'pos' : undefined}>{unpriced ? '—' : formatUsd(row.savingsUSD)}</td>
+      <td>{row.category ?? 'general'}</td>
+      <td>{fmtInt(row.calls)}</td>
+      <td>{formatCompact(row.inputTokens)}</td>
+      <td>{formatCompact(row.outputTokens)}</td>
+      <td>{formatCompact(row.cacheReadTokens)}</td>
+      <td
+        className={pricing.muteCost ? 'dim' : undefined}
+        title={pricing.title}
+        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
+      >
+        {costValue}
+      </td>
+      <td className={row.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(row.savingsUSD)}</td>
     </tr>
   )
 }

@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuditRow, ModelReportRow } from '../lib/types'
+import type { AuditRow, ModelPricingState, ModelPricingSummary, ModelReportRow } from '../lib/types'
 import { Models } from './Models'
 
 const { getModels, getAudit } = vi.hoisted(() => ({
@@ -13,6 +13,14 @@ vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
   return { ...actual, codeburn: { getModels, getAudit } }
 })
+
+function pricing(state: ModelPricingState, totalCalls: number): ModelPricingSummary {
+  const base: ModelPricingSummary = { state, totalCalls, coveredCalls: totalCalls, pricedCalls: totalCalls, explicitZeroCalls: 0, unavailableCalls: 0, unknownCalls: 0, missingPriceRecordCalls: 0 }
+  if (state === 'explicit-zero') return { ...base, pricedCalls: 0, explicitZeroCalls: totalCalls }
+  if (state === 'unavailable') return { ...base, coveredCalls: 0, pricedCalls: 0, unavailableCalls: totalCalls, missingPriceRecordCalls: totalCalls }
+  if (state === 'unknown') return { ...base, coveredCalls: 0, pricedCalls: 0, unknownCalls: totalCalls }
+  return base
+}
 
 const rows: ModelReportRow[] = [
   {
@@ -32,6 +40,7 @@ const rows: ModelReportRow[] = [
     costUSD: 331.2,
     savingsUSD: 86.4,
     savingsBaselineModel: 'Claude Opus 4.8',
+    pricing: pricing('priced', 4812),
     credits: null,
   },
   {
@@ -51,6 +60,7 @@ const rows: ModelReportRow[] = [
     costUSD: 137.9,
     savingsUSD: 35.1,
     savingsBaselineModel: 'GPT-5.5 Codex',
+    pricing: pricing('priced', 2704),
     credits: 173,
   },
   {
@@ -68,6 +78,7 @@ const rows: ModelReportRow[] = [
     costUSD: 0,
     savingsUSD: 12.34,
     savingsBaselineModel: 'Claude Opus 4.8',
+    pricing: pricing('explicit-zero', 82),
     credits: null,
   },
   {
@@ -85,6 +96,7 @@ const rows: ModelReportRow[] = [
     costUSD: 0,
     savingsUSD: 0,
     savingsBaselineModel: '',
+    pricing: pricing('unavailable', 176),
     credits: null,
   },
 ]
@@ -100,6 +112,7 @@ const byTaskRows: ModelReportRow[] = [
     totalTokens: 210_100_000,
     costUSD: 244.12,
     savingsUSD: 61.22,
+    pricing: pricing('priced', 3400),
   },
   {
     ...rows[0],
@@ -111,6 +124,7 @@ const byTaskRows: ModelReportRow[] = [
     totalTokens: 14_500_000,
     costUSD: 20.88,
     savingsUSD: 5.18,
+    pricing: pricing('priced', 120),
   },
 ]
 
@@ -219,15 +233,18 @@ describe('Models', () => {
     expect(screen.queryByText('add alias ›')).not.toBeInTheDocument()
   })
 
-  it('renders unpriced proxy rows as dim with alias affordance and dashes', async () => {
+  it('keeps usage visible when model pricing is unavailable', async () => {
     getModels.mockResolvedValue([rows[3]])
 
     render(<Models period="30days" provider="all" />)
 
-    expect(await screen.findByText('my-proxy-model')).toHaveClass('dim')
+    expect(await screen.findByText('my-proxy-model')).not.toHaveClass('dim')
+    expect(screen.getByText('4.8M')).toBeInTheDocument()
+    expect(screen.getByText('400K')).toBeInTheDocument()
+    expect(screen.getByText('Price unavailable')).toBeInTheDocument()
     expect(screen.getByText('add alias ›')).toHaveClass('alias')
-    expect(screen.getAllByText('—')).toHaveLength(5)
-    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Cost unavailable' })).toHaveTextContent('—')
+    expect(screen.getByText('$0.00')).toBeInTheDocument()
   })
 
   it('refetches with byTask=true and renders the task category', async () => {

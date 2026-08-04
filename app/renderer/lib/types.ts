@@ -272,7 +272,6 @@ export type MenubarPayload = {
 }
 
 // ————— src/types.ts + src/models-report.ts —————
-
 export type TaskCategory =
   | 'coding'
   | 'debugging'
@@ -287,7 +286,8 @@ export type TaskCategory =
   | 'conversation'
   | 'brainstorming'
   | 'general'
-
+export type ModelPricingState = 'priced' | 'explicit-zero' | 'partial' | 'unavailable' | 'unknown'
+export type ModelPricingSummary = { state: ModelPricingState; totalCalls: number; coveredCalls: number; pricedCalls: number; explicitZeroCalls: number; unavailableCalls: number; unknownCalls: number; missingPriceRecordCalls: number }
 export type ModelReportRow = {
   provider: string
   providerDisplayName: string
@@ -303,12 +303,12 @@ export type ModelReportRow = {
   savingsUSD: number
   savingsBaselineModel: string
   calls: number
+  pricing?: ModelPricingSummary
   credits: number | null
   topCategory?: TaskCategory
   topCategoryCost?: number
   topCategoryShare?: number
 }
-
 // ————— src/yield.ts —————
 
 export type YieldCategory = 'productive' | 'reverted' | 'abandoned'
