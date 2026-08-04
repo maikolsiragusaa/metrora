@@ -13,7 +13,7 @@ describe('session reasoning mix label', () => {
     })).toBe('High')
   })
 
-  it('keeps unknown calls visible in a mixed session', () => {
+  it('keeps unidentified calls visible in a mixed session', () => {
     expect(reasoningMixLabel({
       totalCalls: 3,
       knownCalls: 2,
@@ -22,6 +22,6 @@ describe('session reasoning mix label', () => {
         { level: 'high', calls: 2, callShare: 2 / 3, generatedTokens: 100, reasoningTokens: 20, costUSD: 1, sources: ['explicit'] },
         { level: 'unknown', calls: 1, callShare: 1 / 3, generatedTokens: 40, reasoningTokens: 15, costUSD: 0.4, sources: [] },
       ],
-    })).toBe('High 67% · Unknown 33%')
+    })).toBe('High 67% · Not identified 33%')
   })
 })
