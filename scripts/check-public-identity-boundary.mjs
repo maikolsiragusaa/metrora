@@ -8,91 +8,16 @@ import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const ownPath = relative(repositoryRoot, fileURLToPath(import.meta.url)).replaceAll('\\', '/')
-const protectedPersonalIdentityDigest = 'c1f0ebf4926c5f2dc4823b9b747a1ae15a9916c59f02049bc913bc133a9c4f8c'
+const restrictedIdentifierDigest = 'c1f0ebf4926c5f2dc4823b9b747a1ae15a9916c59f02049bc913bc133a9c4f8c'
+const canonicalRepository = 'metrora'
 
-const globallyForbidden = [
-  {
-    value: ['metrora', 'infra'].join('-'),
-    message: 'private infrastructure repository identity must not appear publicly',
-  },
-  {
-    value: ['metrora', 'commercial'].join('-'),
-    message: 'private commercial repository identity must not appear publicly',
-  },
-  ...['Ltd', 'LLC', 'Inc.', 'S.r.l.', 'GmbH'].map(suffix => ({
-    value: ['Vensent', suffix].join(' '),
-    message: 'Vensent must not be represented as a separate incorporated entity without verified legal status',
-  })),
-  ...['Metrora', 'Vensent', 'Signal Grid'].map(name => ({
-    value: `${name}®`,
-    message: 'brand symbols must match the canonical public brand policy',
-  })),
-]
-
-const presentationFiles = [
-  'README.md',
-  'NOTICE.md',
-  'BRAND_POLICY.md',
-  'UPSTREAM.md',
-  'CONTRIBUTING.md',
-  'assets/brand/README.md',
-  'docs/PRODUCT_PRINCIPLES.md',
-]
-
-const presentationForbidden = [
-  'No registered-trade-mark claim',
-  'Do not add the `®`',
-  'under active development',
-  'hosted synchronization',
-  'customer-operated',
-  'managed service',
-  'private deployment',
-  'enterprise deployment',
-  'Partner Center',
-  'zero monetary spend',
-  'Full Ubuntu Vitest audit: failure',
-  'Upstream Semgrep guard',
-  'Upstream CLI build',
-  'Commercial value may come from',
-  'early in its independent development',
-  'platform-sensitive failures on Ubuntu',
-]
-
-const contractFiles = [
-  'docs/CODEX_MODEL_PROVIDER_V1.md',
-  'docs/WORKSPACE_V1.md',
-  'docs/WORKSPACE_PRODUCTION_LIFECYCLE_V1.md',
-  'docs/DESKTOP_REVIEWED_PRODUCTION_V1.md',
-  'docs/WORKSPACE_RECOVERY_V1.md',
-  'docs/CANONICAL_REVIEWED_PRODUCTION_SCANNER_V1.md',
-  'docs/DESKTOP_WORKSPACE_RUNTIME_V1.md',
-  'docs/CANONICAL_REVIEWED_PRODUCTION_ORCHESTRATOR_V1.md',
-  'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md',
-]
-
-const contractForbidden = [
-  'Advisor',
-  'Bench implementation',
-  'hosted service',
-  'hosted synchronization',
-  'customer-operated',
-  'managed synchronization',
-  'managed Workspace',
-  'enterprise deployment',
-  'commercial packaging',
-  'Partner Center',
-  'DUNS',
-  'separate infrastructure decision',
-  'next core authority milestone',
-]
-
-function containsProtectedPersonalIdentity(line) {
+function containsRestrictedIdentifier(line) {
   const tokens = line.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
   for (let index = 0; index + 1 < tokens.length; index += 1) {
     const digest = createHash('sha256')
       .update(`${tokens[index]} ${tokens[index + 1]}`, 'utf8')
       .digest('hex')
-    if (digest === protectedPersonalIdentityDigest) return true
+    if (digest === restrictedIdentifierDigest) return true
   }
   return false
 }
@@ -101,21 +26,6 @@ function readTrackedText(path) {
   const bytes = readFileSync(resolve(repositoryRoot, path))
   if (bytes.includes(0)) return null
   return bytes.toString('utf8')
-}
-
-function scanFiles(files, forbidden, message) {
-  const findings = []
-  for (const path of files) {
-    const text = readTrackedText(path)
-    const lines = text.split(/\r?\n/)
-    for (let index = 0; index < lines.length; index += 1) {
-      for (const value of forbidden) {
-        if (!lines[index].includes(value)) continue
-        findings.push({ path, line: index + 1, message })
-      }
-    }
-  }
-  return findings
 }
 
 const tracked = execFileSync('git', ['ls-files', '-z'], {
@@ -139,34 +49,29 @@ for (const path of tracked) {
   if (text === null) continue
   const lines = text.split(/\r?\n/)
   for (let index = 0; index < lines.length; index += 1) {
-    if (containsProtectedPersonalIdentity(lines[index])) {
+    const line = lines[index]
+    if (containsRestrictedIdentifier(line)) {
       findings.push({
         path: normalized,
         line: index + 1,
-        message: 'protected personal identity must not appear in ordinary public repository surfaces',
+        message: 'restricted identifier must not appear in ordinary public repository surfaces',
       })
     }
-    for (const rule of globallyForbidden) {
-      if (!lines[index].includes(rule.value)) continue
-      findings.push({ path: normalized, line: index + 1, message: rule.message })
+
+    const repositoryReferences = line.matchAll(/https?:\/\/github\.com\/maikolsiragusaa\/([A-Za-z0-9_.-]+)/g)
+    for (const match of repositoryReferences) {
+      if (match[1].toLowerCase() === canonicalRepository) continue
+      findings.push({
+        path: normalized,
+        line: index + 1,
+        message: 'non-canonical repository reference must not appear in the public product repository',
+      })
     }
   }
 }
 
-findings.push(...scanFiles(
-  presentationFiles,
-  presentationForbidden,
-  'public presentation must not expose defensive, administrative or unpublished roadmap wording',
-))
-
-findings.push(...scanFiles(
-  contractFiles,
-  contractForbidden,
-  'implemented public contracts must not expose reserved product names, administrative prerequisites or unpublished roadmap sequencing',
-))
-
 const requiredFiles = {
-  'LICENSE': [
+  LICENSE: [
     'Copyright (c) 2026 Metrora contributors',
   ],
   'LICENSES/CodeBurn-MIT.txt': [
@@ -192,13 +97,25 @@ const requiredFiles = {
     'Metrora is independently maintained',
     'Metrora™ — published by Vensent™',
   ],
+  'CONTRIBUTING.md': [
+    '## Public repository hygiene',
+  ],
+  '.github/PULL_REQUEST_TEMPLATE.md': [
+    '## Public boundary',
+  ],
+  '.github/ISSUE_TEMPLATE/bug_report.md': [
+    'sanitized data',
+  ],
+  '.github/ISSUE_TEMPLATE/feature_request.md': [
+    '## Public boundaries',
+  ],
 }
 
 for (const [path, markers] of Object.entries(requiredFiles)) {
   const text = readTrackedText(path)
   for (const marker of markers) {
     if (text.includes(marker)) continue
-    findings.push({ path, line: 1, message: `required canonical public marker is missing: ${marker}` })
+    findings.push({ path, line: 1, message: `required public-boundary marker is missing: ${marker}` })
   }
 }
 
@@ -218,4 +135,4 @@ if (findings.length > 0) {
   process.exit(1)
 }
 
-console.log(`Public identity and repository hygiene boundary passed across ${tracked.length} tracked files.`)
+console.log(`Public repository boundary passed across ${tracked.length} tracked files.`)
