@@ -112,7 +112,7 @@ Blocking validation covers:
 
 - no automatic or background production;
 - no automatic batch creation, export, upload, or publication;
-- no hosted synchronization, account, team, entitlement, or billing dependency;
+- no mandatory remote synchronization, account, team, entitlement, or billing dependency;
 - no alternate parser, cache, pricing, or analytics authority;
 - no recovery action that deletes or silently resets evidence;
-- no Android, Advisor, or Bench behavior.
+- no mobile or unrelated product behavior.
