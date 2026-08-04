@@ -52,6 +52,21 @@ jobs:
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
       - name: Install core dependencies
         run: npm ci --no-audit --no-fund
+      - name: Validate UX acceptance PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/Invoke-Metrora-Windows-UX-Acceptance.ps1').Path,
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
       - name: Validate generated pricing documentation
         run: npm run pricing:docs:check
       - name: Test pricing contracts
@@ -117,6 +132,8 @@ jobs:
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Test Windows UX acceptance report contracts
+        run: node --test scripts/windows-ux-acceptance-report.node-test.mjs
       - name: Run ordinary core files deterministically
         shell: bash
         run: |
