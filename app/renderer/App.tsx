@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { DailyBudgetBanner } from './components/DailyBudgetBanner'
 import { EmptyNote } from './components/EmptyState'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Hint } from './components/Hint'
@@ -16,14 +17,12 @@ import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { useDesktopTelemetry } from './hooks/useDesktopTelemetry'
 import { useOverviewRuntime } from './hooks/useOverviewRuntime'
 import type { Polled } from './hooks/usePolled'
-import { readDailyBudget } from './lib/budget'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
-import { formatCompact, formatUsd } from './lib/format'
+import { formatUsd } from './lib/format'
 import { motionClass } from './lib/motion'
-import { localDateKey } from './lib/period'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
-import { readCompatStorage, writeCompatStorage } from './lib/storage'
+import { readCompatStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
 import { Models } from './sections/Models'
@@ -218,49 +217,5 @@ function SectionPlaceholder({ title }: { title: string }) {
     <Panel title={title}>
       <EmptyNote>{title} lands in a later task. The shell, data bridge, and design system are in place.</EmptyNote>
     </Panel>
-  )
-}
-
-/** App-wide daily-budget alert: reads today's usage from the overview payload and
- * warns at >=80% / alerts at >=100% of the configured cap. Dismissible per day. */
-function DailyBudgetBanner({ payload, provider }: { payload: MenubarPayload | null; provider: string }) {
-  const [, bumpDismiss] = useState(0)
-  const budget = readDailyBudget()
-  if (!budget || !payload) return null
-
-  // Token totals in history.daily are zeroed under a specific-provider filter
-  // (only cost is per-provider), so a token cap can only be evaluated honestly on
-  // the all-providers view; otherwise we'd compare usage against a false zero.
-  if (budget.kind === 'tokens' && provider !== 'all') return null
-
-  const todayKey = localDateKey(new Date())
-  const dismissed = readCompatStorage('dailyBudget.dismissed')
-  if (dismissed === todayKey) return null
-
-  // Today's entry may be absent when there has been no activity yet: that's 0 used.
-  const entry = payload.history.daily.find(day => day.date === todayKey)
-  const used = budget.kind === 'usd'
-    ? entry?.cost ?? 0
-    : entry ? entry.inputTokens + entry.outputTokens : 0
-  const percent = (used / budget.value) * 100
-  if (percent < 80) return null
-
-  const exceeded = percent >= 100
-  const spent = budget.kind === 'usd' ? formatUsd(used) : formatCompact(used)
-  const cap = budget.kind === 'usd' ? formatUsd(budget.value) : formatCompact(budget.value)
-  const text = exceeded
-    ? `Daily budget exceeded: ${spent} of ${cap}`
-    : `Today's spend is at ${Math.floor(percent)}% of your daily budget`
-
-  const dismiss = () => {
-    writeCompatStorage('dailyBudget.dismissed', todayKey)
-    bumpDismiss(tick => tick + 1)
-  }
-
-  return (
-    <div role="status" className={exceeded ? 'budget-banner exceeded' : 'budget-banner'}>
-      <span>{text}</span>
-      <button type="button" className="set-text-button" onClick={dismiss}>Dismiss</button>
-    </div>
   )
 }
