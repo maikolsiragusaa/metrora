@@ -15,11 +15,23 @@ import { contiguousDailyWindow, dataStartKey, localDateKey } from '../lib/period
 import type { CliError, DateRange, MenubarPayload, Period, SpendFlow } from '../lib/types'
 
 type Project = MenubarPayload['current']['topProjects'][number]
+type ProjectSession = Project['sessionDetails'][number]
 
 /** Date-only CLI strings ("2026-07-11") formatted at local noon so the calendar day never rolls across time zones. */
-function formatProjectDay(date: string): string {
+function formatProjectDay(date: string): string | null {
   const d = new Date(`${date}T12:00:00`)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function projectSessionModels(models: ProjectSession['models']): { visible: string; accessible: string; title?: string } {
+  const names = models.map(model => model.name).filter(Boolean)
+  if (names.length === 0) return { visible: 'Not identified', accessible: 'not identified' }
+  if (names.length === 1) return { visible: names[0]!, accessible: names[0]! }
+  return {
+    visible: `${names[0]} +${names.length - 1} more`,
+    accessible: names.join(', '),
+    title: names.join(', '),
+  }
 }
 
 const SPEND_CHART_DAYS = 15
@@ -199,16 +211,45 @@ function ProjectBreakdown({ projects }: { projects: Project[] }) {
                 onClick={() => setExpanded(current => current === project.name ? null : project.name)}
               />
               {open && (
-                <div className="spend-proj-detail" role="region" aria-label={`${project.name} sessions`}>
+                <div className="spend-proj-detail" role="table" aria-label={`${project.name} sessions`}>
+                  <div className="sr-only" role="row">
+                    <span role="columnheader">Date</span>
+                    <span role="columnheader">Models</span>
+                    <span role="columnheader">Calls</span>
+                    <span role="columnheader">Cost</span>
+                  </div>
                   {project.sessionDetails.length ? (
-                    project.sessionDetails.map((session, j) => (
-                      <div className="spend-proj-session" key={`${session.date}-${j}`}>
-                        <span className="sps-date">{formatProjectDay(session.date)}</span>
-                        <span className="sps-model">{session.models[0]?.name ?? '—'}</span>
-                        <span className="sps-calls">{session.calls.toLocaleString('en-US')} calls</span>
-                        <span className="sps-cost">{formatUsd(session.cost)}</span>
-                      </div>
-                    ))
+                    project.sessionDetails.map((session, j) => {
+                      const day = formatProjectDay(session.date)
+                      const models = projectSessionModels(session.models)
+                      return (
+                        <div
+                          className="spend-proj-session"
+                          role="row"
+                          key={`${session.date}-${j}`}
+                          aria-label={`${day ?? 'Date not available'}. Models ${models.accessible}. ${session.calls.toLocaleString('en-US')} calls. Cost ${formatUsd(session.cost)}.`}
+                        >
+                          <span
+                            className="sps-date"
+                            role="cell"
+                            aria-label={day ? `Date ${day}` : 'Date not available'}
+                            title={day ? undefined : 'Date not available'}
+                          >
+                            {day ?? <span aria-hidden="true">—</span>}
+                          </span>
+                          <span
+                            className="sps-model"
+                            role="cell"
+                            aria-label={`Models: ${models.accessible}`}
+                            title={models.title}
+                          >
+                            {models.visible}
+                          </span>
+                          <span className="sps-calls" role="cell">{session.calls.toLocaleString('en-US')} calls</span>
+                          <span className="sps-cost" role="cell">{formatUsd(session.cost)}</span>
+                        </div>
+                      )
+                    })
                   ) : (
                     <div className="spend-proj-empty">No session detail for this project.</div>
                   )}
