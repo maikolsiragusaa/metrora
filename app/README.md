@@ -60,7 +60,7 @@ Official desktop distribution is in preparation. Development and engineering art
 
 An official package must derive from reviewed public source, preserve user-owned local state and pass the channel-specific identity, installation, update, rollback and removal gates.
 
-See [`DISTRIBUTION.md`](DISTRIBUTION.md) and [`../docs/WINDOWS_STORE_DISTRIBUTION.md`](../docs/WINDOWS_STORE_DISTRIBUTION.md).
+See [`DISTRIBUTION.md`](DISTRIBUTION.md) and [`../docs/WINDOWS_DISTRIBUTION.md`](../docs/WINDOWS_DISTRIBUTION.md).
 
 ## Packaging
 
