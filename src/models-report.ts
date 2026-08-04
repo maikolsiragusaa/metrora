@@ -3,6 +3,7 @@ import stripAnsi from 'strip-ansi'
 
 import { codexCredits } from './codex-credits.js'
 import { formatCost, formatTokens } from './format.js'
+import { createModelPricingCounts, observeModelPricing, summarizeModelPricing, type ModelPricingCounts, type ModelPricingSummary } from './model-pricing-summary.js'
 import { getProvider } from './providers/index.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 
@@ -12,10 +13,7 @@ export type ModelReportRow = {
   model: string
   modelDisplayName: string
   category: TaskCategory | null
-  /// Set only in `byAgent` mode: the Claude subagent type this row's spend ran
-  /// under (`general-purpose`, `Explore`, a workflow agent, …), or `'(main)'` for
-  /// ordinary non-agent sessions and every non-Claude provider. `null` in the
-  /// default and `byTask` views.
+  /// Claude subagent label in byAgent mode; `(main)` for ordinary/non-Claude sessions.
   agentType?: string | null
   inputTokens: number
   outputTokens: number
@@ -26,8 +24,8 @@ export type ModelReportRow = {
   savingsUSD: number
   savingsBaselineModel: string
   calls: number
-  /// Codex credit consumption (issues #408/#495). null for non-Codex models or
-  /// Codex models without a known credit rate.
+  pricing: ModelPricingSummary
+  /// Codex credit consumption; null outside Codex or without a known rate.
   credits: number | null
   topCategory?: TaskCategory
   topCategoryCost?: number
@@ -62,6 +60,7 @@ type Bucket = {
   savingsUSD: number
   savingsBaselineModel: string
   calls: number
+  pricing: ModelPricingCounts
 }
 
 type ModelKey = string
@@ -115,18 +114,17 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
               savingsUSD: 0,
               savingsBaselineModel: '',
               calls: 0,
+              pricing: createModelPricingCounts(),
             }
             buckets.set(key, bucket)
           }
           bucket.inputTokens += call.usage.inputTokens
           bucket.outputTokens += call.usage.outputTokens + call.usage.reasoningTokens
           bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
-          // cacheReadInputTokens (Anthropic vocab) and cachedInputTokens (OpenAI vocab)
-          // are two names for the same thing. Providers populate one or set both to the
-          // same value, so take the max — summing double-counts cache reads for every
-          // provider that fills both fields.
+          // The two cache-read fields are provider vocabularies for the same tokens.
           bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)
           bucket.costUSD += call.costUSD
+          observeModelPricing(bucket.pricing, call.costAssignment)
           bucket.savingsUSD += call.savingsUSD ?? 0
           if (!bucket.savingsBaselineModel && call.savingsBaselineModel) {
             bucket.savingsBaselineModel = call.savingsBaselineModel
@@ -179,9 +177,8 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
       savingsUSD: bucket.savingsUSD,
       savingsBaselineModel: bucket.savingsBaselineModel,
       calls: bucket.calls,
-      // outputTokens already includes reasoning (folded in above), and for Codex
-      // inputTokens is non-cached with cacheReadTokens holding cached input, which
-      // is exactly what the credit rates expect.
+      pricing: summarizeModelPricing(bucket.pricing),
+      // Codex credits consume non-cached input, cached reads and normalized output.
       credits: bucket.provider === 'codex'
         ? codexCredits(bucket.model, {
             inputTokens: bucket.inputTokens,

@@ -34,6 +34,7 @@ function makeCall(opts: {
   output?: number
   cacheWrite?: number
   cacheRead?: number
+  costAssignment?: ParsedApiCall['costAssignment']
 }): ParsedApiCall {
   return {
     provider: opts.provider,
@@ -46,6 +47,7 @@ function makeCall(opts: {
       cacheReadInputTokens: opts.cacheRead ?? 0,
     },
     costUSD: opts.costUSD,
+    costAssignment: opts.costAssignment,
     tools: [],
     mcpTools: [],
     skills: [],
@@ -256,6 +258,20 @@ describe('aggregateModels', () => {
     ])
     const rows = await aggregateModels([project])
     expect(rows[0]!.outputTokens).toBe(250)
+  })
+  it('rolls call-level pricing evidence into each model row', async () => {
+    const rows = await aggregateModels([makeProject([
+      makeTurn('feature', [
+        makeCall({ provider: 'mixed', model: 'model-a', costUSD: 1, costAssignment: { version: 1, kind: 'metered', amountMicrosUsd: 1_000_000, source: 'provider' } }),
+        makeCall({ provider: 'mixed', model: 'model-a', costUSD: 0, costAssignment: { version: 1, kind: 'unavailable', reason: 'no-price-record' } }),
+        makeCall({ provider: 'local', model: 'free-model', costUSD: 0, costAssignment: { version: 1, kind: 'explicit-zero', amountMicrosUsd: 0, reason: 'local-inference' } }),
+        makeCall({ provider: 'legacy', model: 'unknown-evidence', costUSD: 0 }),
+      ]),
+    ])])
+    const byKey = Object.fromEntries(rows.map(row => [`${row.provider}:${row.model}`, row]))
+    expect(byKey['mixed:model-a']!.pricing).toMatchObject({ state: 'partial', totalCalls: 2, coveredCalls: 1, unavailableCalls: 1, missingPriceRecordCalls: 1 })
+    expect(byKey['local:free-model']!.pricing).toMatchObject({ state: 'explicit-zero', explicitZeroCalls: 1 })
+    expect(byKey['legacy:unknown-evidence']!.pricing).toMatchObject({ state: 'unknown', unknownCalls: 1 })
   })
 })
 
