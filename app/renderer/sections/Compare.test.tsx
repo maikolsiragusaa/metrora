@@ -49,7 +49,7 @@ describe('Compare', () => {
     mocks.getCompare.mockReset()
   })
 
-  it('defaults to the top two and renders formatted report panels and winners', async () => {
+  it('defaults to the top two and renders formatted report panels and explicit winners', async () => {
     const user = userEvent.setup()
     mocks.getCompareModels.mockResolvedValue([modelA, modelB])
     mocks.getCompare.mockResolvedValue(report)
@@ -62,12 +62,13 @@ describe('Compare', () => {
       expect(second).toHaveTextContent('Sonnet 5 · 3,318 calls')
     })
 
-    expect(await screen.findByText('Performance')).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: 'Performance comparison' })).toBeInTheDocument()
     expect(mocks.getCompare).toHaveBeenCalledWith('30days', 'all', 'Opus 4.8', 'Sonnet 5')
-    expect(screen.getByText('Efficiency')).toBeInTheDocument()
-    expect(screen.getByText('Context')).toBeInTheDocument()
-    expect(screen.getByText('71%')).toHaveClass('cmp-best')
-    expect(screen.getByText('$0.03')).toHaveClass('cmp-best')
+    expect(screen.getByRole('table', { name: 'Efficiency comparison' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Comparison context' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Opus 4\.8, One-shot rate: 71%\. Better value/)).toHaveClass('cmp-best')
+    expect(screen.getByLabelText(/Sonnet 5, Cost \/ call: \$0\.03\. Better value/)).toHaveClass('cmp-best')
+    expect(screen.getAllByTitle('Better value').length).toBeGreaterThanOrEqual(3)
     expect(screen.getByText('$331.20')).toBeInTheDocument()
     expect(screen.getByText('152.6M')).toBeInTheDocument()
     expect(screen.getByText('9.6M')).toBeInTheDocument()
@@ -94,12 +95,47 @@ describe('Compare', () => {
     expect(row).not.toHaveTextContent('41%')
   })
 
+  it('keeps unavailable evidence distinct from zero and does not rank it', async () => {
+    const sparseModelA: ModelStats = {
+      ...modelA,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      firstSeen: '',
+      lastSeen: '',
+    }
+    const sparseReport: CompareJsonReport = {
+      ...report,
+      modelA: sparseModelA,
+      metrics: [
+        { section: 'Performance', label: 'One-shot rate', valueA: null, valueB: 63, formatFn: 'percent', winner: 'b' },
+        report.metrics[1]!,
+      ],
+      categories: [
+        { ...report.categories[0]!, oneShotRateA: null, winner: 'b' },
+      ],
+    }
+    mocks.getCompareModels.mockResolvedValue([sparseModelA, modelB])
+    mocks.getCompare.mockResolvedValue(sparseReport)
+    render(<Compare period="30days" provider="all" />)
+
+    const unavailableMetric = await screen.findByLabelText('Opus 4.8, One-shot rate: Not available')
+    expect(unavailableMetric).toHaveTextContent('—')
+    expect(unavailableMetric).not.toHaveClass('cmp-best')
+    expect(screen.getByText('Not available')).toBeInTheDocument()
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+
+    const context = screen.getByRole('table', { name: 'Comparison context' })
+    expect(within(context).getByLabelText('Opus 4.8, Cache hit rate: Not available')).toHaveTextContent('—')
+    expect(within(context).getByLabelText('Opus 4.8, Days of data: Not available')).toHaveTextContent('—')
+    expect(screen.getByLabelText(/Sonnet 5: 63% one-shot rate; 280 edit turns\. Better value/)).toHaveClass('cmp-best')
+  })
+
   it('notes that custom ranges are unsupported and still compares by period', async () => {
     mocks.getCompareModels.mockResolvedValue([modelA, modelB])
     mocks.getCompare.mockResolvedValue(report)
     render(<Compare period="30days" provider="all" range={{ from: '2026-07-01', to: '2026-07-11' }} />)
 
-    expect(await screen.findByText('Compare uses the selected period, custom dates are not supported yet.')).toBeInTheDocument()
+    expect(await screen.findByRole('note')).toHaveTextContent('Compare uses the selected period, custom dates are not supported yet.')
     expect(mocks.getCompareModels).toHaveBeenCalledWith('30days', 'all')
   })
 
