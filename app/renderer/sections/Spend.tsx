@@ -200,6 +200,7 @@ function ProjectBreakdown({ projects }: { projects: Project[] }) {
       {projects.length ? (
         projects.map((project, i) => {
           const open = expanded === project.name
+          const sessionsLabel = `${project.name} sessions`
           return (
             <Fragment key={project.name}>
               <ListRow
@@ -211,48 +212,50 @@ function ProjectBreakdown({ projects }: { projects: Project[] }) {
                 onClick={() => setExpanded(current => current === project.name ? null : project.name)}
               />
               {open && (
-                <div className="spend-proj-detail" role="table" aria-label={`${project.name} sessions`}>
-                  <div className="sr-only" role="row">
-                    <span role="columnheader">Date</span>
-                    <span role="columnheader">Models</span>
-                    <span role="columnheader">Calls</span>
-                    <span role="columnheader">Cost</span>
+                <div className="spend-proj-detail" role="region" aria-label={sessionsLabel}>
+                  <div role="table" aria-label={sessionsLabel}>
+                    <div className="sr-only" role="row">
+                      <span role="columnheader">Date</span>
+                      <span role="columnheader">Models</span>
+                      <span role="columnheader">Calls</span>
+                      <span role="columnheader">Cost</span>
+                    </div>
+                    {project.sessionDetails.length ? (
+                      project.sessionDetails.map((session, j) => {
+                        const day = formatProjectDay(session.date)
+                        const models = projectSessionModels(session.models)
+                        return (
+                          <div
+                            className="spend-proj-session"
+                            role="row"
+                            key={`${session.date}-${j}`}
+                            aria-label={`${day ?? 'Date not available'}. Models ${models.accessible}. ${session.calls.toLocaleString('en-US')} calls. Cost ${formatUsd(session.cost)}.`}
+                          >
+                            <span
+                              className="sps-date"
+                              role="cell"
+                              aria-label={day ? `Date ${day}` : 'Date not available'}
+                              title={day ? undefined : 'Date not available'}
+                            >
+                              {day ?? <span aria-hidden="true">—</span>}
+                            </span>
+                            <span
+                              className="sps-model"
+                              role="cell"
+                              aria-label={`Models: ${models.accessible}`}
+                              title={models.title}
+                            >
+                              {models.visible}
+                            </span>
+                            <span className="sps-calls" role="cell">{session.calls.toLocaleString('en-US')} calls</span>
+                            <span className="sps-cost" role="cell">{formatUsd(session.cost)}</span>
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <div className="spend-proj-empty">No session detail for this project.</div>
+                    )}
                   </div>
-                  {project.sessionDetails.length ? (
-                    project.sessionDetails.map((session, j) => {
-                      const day = formatProjectDay(session.date)
-                      const models = projectSessionModels(session.models)
-                      return (
-                        <div
-                          className="spend-proj-session"
-                          role="row"
-                          key={`${session.date}-${j}`}
-                          aria-label={`${day ?? 'Date not available'}. Models ${models.accessible}. ${session.calls.toLocaleString('en-US')} calls. Cost ${formatUsd(session.cost)}.`}
-                        >
-                          <span
-                            className="sps-date"
-                            role="cell"
-                            aria-label={day ? `Date ${day}` : 'Date not available'}
-                            title={day ? undefined : 'Date not available'}
-                          >
-                            {day ?? <span aria-hidden="true">—</span>}
-                          </span>
-                          <span
-                            className="sps-model"
-                            role="cell"
-                            aria-label={`Models: ${models.accessible}`}
-                            title={models.title}
-                          >
-                            {models.visible}
-                          </span>
-                          <span className="sps-calls" role="cell">{session.calls.toLocaleString('en-US')} calls</span>
-                          <span className="sps-cost" role="cell">{formatUsd(session.cost)}</span>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="spend-proj-empty">No session detail for this project.</div>
-                  )}
                 </div>
               )}
             </Fragment>
