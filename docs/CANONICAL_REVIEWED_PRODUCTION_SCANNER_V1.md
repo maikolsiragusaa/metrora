@@ -88,4 +88,4 @@ Provider sections and source paths are sorted. Within one source file, the scann
 - no inferred provider from collector or model label;
 - no automatic/background production;
 - no session, repository, project, or account disclosure;
-- no collector, parser, pricing, cache-schema, label, aggregation, batch, export, network, account, team, billing, Android, Advisor, or Bench redesign.
+- no collector, parser, pricing, cache-schema, label, aggregation, batch, export, network, account, team, billing, mobile, or unrelated product redesign.
