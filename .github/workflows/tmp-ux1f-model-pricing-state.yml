@@ -1,0 +1,307 @@
+name: Temporary UX1F model pricing evidence patch
+
+on:
+  push:
+    branches: [fix/ux1f-model-pricing-state]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[ux1f-model-pricing-applied]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ux1f-model-pricing-state
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Apply bounded core and renderer patch
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}')
+              file.write_text(text.replace(old, new, 1))
+
+          def replace_between(path: str, start: str, end: str, replacement: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              left = text.index(start)
+              right = text.index(end, left)
+              file.write_text(text[:left] + replacement.rstrip() + '\n\n' + text[right:])
+
+          replace_once(
+              'src/models-report.ts',
+              "import { formatCost, formatTokens } from './format.js'\nimport { getProvider } from './providers/index.js'",
+              "import { formatCost, formatTokens } from './format.js'\nimport { createModelPricingCounts, observeModelPricing, summarizeModelPricing, type ModelPricingCounts, type ModelPricingSummary } from './model-pricing-summary.js'\nimport { getProvider } from './providers/index.js'",
+          )
+          replace_once(
+              'src/models-report.ts',
+              "  /// Set only in `byAgent` mode: the Claude subagent type this row's spend ran\n  /// under (`general-purpose`, `Explore`, a workflow agent, …), or `'(main)'` for\n  /// ordinary non-agent sessions and every non-Claude provider. `null` in the\n  /// default and `byTask` views.\n  agentType?: string | null",
+              "  /// Claude subagent label in byAgent mode; `(main)` for ordinary/non-Claude sessions.\n  agentType?: string | null",
+          )
+          replace_once(
+              'src/models-report.ts',
+              "  calls: number\n  /// Codex credit consumption (issues #408/#495). null for non-Codex models or\n  /// Codex models without a known credit rate.\n  credits: number | null",
+              "  calls: number\n  pricing: ModelPricingSummary\n  /// Codex credit consumption; null outside Codex or without a known rate.\n  credits: number | null",
+          )
+          replace_once(
+              'src/models-report.ts',
+              "  savingsBaselineModel: string\n  calls: number\n}",
+              "  savingsBaselineModel: string\n  calls: number\n  pricing: ModelPricingCounts\n}",
+          )
+          replace_once(
+              'src/models-report.ts',
+              "              savingsBaselineModel: '',\n              calls: 0,",
+              "              savingsBaselineModel: '',\n              calls: 0,\n              pricing: createModelPricingCounts(),",
+          )
+          replace_once(
+              'src/models-report.ts',
+              "          // cacheReadInputTokens (Anthropic vocab) and cachedInputTokens (OpenAI vocab)\n          // are two names for the same thing. Providers populate one or set both to the\n          // same value, so take the max — summing double-counts cache reads for every\n          // provider that fills both fields.\n          bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)\n          bucket.costUSD += call.costUSD",
+              "          // The two cache-read fields are provider vocabularies for the same tokens.\n          bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)\n          bucket.costUSD += call.costUSD\n          observeModelPricing(bucket.pricing, call.costAssignment)",
+          )
+          replace_once(
+              'src/models-report.ts',
+              "      savingsBaselineModel: bucket.savingsBaselineModel,\n      calls: bucket.calls,\n      // outputTokens already includes reasoning (folded in above), and for Codex\n      // inputTokens is non-cached with cacheReadTokens holding cached input, which\n      // is exactly what the credit rates expect.\n      credits:",
+              "      savingsBaselineModel: bucket.savingsBaselineModel,\n      calls: bucket.calls,\n      pricing: summarizeModelPricing(bucket.pricing),\n      // Codex credits consume non-cached input, cached reads and normalized output.\n      credits:",
+          )
+
+          replace_once(
+              'app/renderer/lib/types.ts',
+              "// ————— src/types.ts + src/models-report.ts —————\n\nexport type TaskCategory =",
+              "// ————— src/types.ts + src/models-report.ts —————\nexport type TaskCategory =",
+          )
+          replace_once(
+              'app/renderer/lib/types.ts',
+              "  | 'general'\n\nexport type ModelReportRow = {",
+              "  | 'general'\nexport type ModelPricingState = 'priced' | 'explicit-zero' | 'partial' | 'unavailable' | 'unknown'\nexport type ModelPricingSummary = { state: ModelPricingState; totalCalls: number; coveredCalls: number; pricedCalls: number; explicitZeroCalls: number; unavailableCalls: number; unknownCalls: number; missingPriceRecordCalls: number }\nexport type ModelReportRow = {",
+          )
+          replace_once(
+              'app/renderer/lib/types.ts',
+              "  calls: number\n  credits: number | null",
+              "  calls: number\n  pricing?: ModelPricingSummary\n  credits: number | null",
+          )
+          replace_once(
+              'app/renderer/lib/types.ts',
+              "  topCategoryShare?: number\n}\n\n// ————— src/yield.ts —————",
+              "  topCategoryShare?: number\n}\n// ————— src/yield.ts —————",
+          )
+
+          replace_once(
+              'app/renderer/sections/Models.tsx',
+              "import type { SettingsPane } from './Settings'",
+              "import type { SettingsPane } from './Settings'\nimport { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'",
+          )
+
+          replace_between(
+              'app/renderer/sections/Models.tsx',
+              'function ModelTableRow',
+              'function ModelGroupRow',
+              '''function ModelTableRow({ row, onAddAlias }: { row: ModelReportRow; onAddAlias: () => void }) {
+  const pricing = modelPricingPresentation(row.pricing, row.calls)
+  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
+  const dotStyle = {
+    display: 'inline-block',
+    background: seriesColorForModel(row.modelDisplayName || row.model),
+    marginRight: 8,
+  }
+
+  return (
+    <tr>
+      <td title={row.model}>
+        <span className="mdot" style={dotStyle} />
+        {row.modelDisplayName}
+        <span style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}>{row.providerDisplayName}</span>
+        <span
+          style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}
+          title={pricing.title}
+        >
+          {pricing.label}
+        </span>
+        {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
+      </td>
+      <td>{fmtInt(row.calls)}</td>
+      <td>{formatCompact(row.inputTokens)}</td>
+      <td>{formatCompact(row.outputTokens)}</td>
+      <td>{formatCompact(row.cacheReadTokens)}</td>
+      <td
+        className={pricing.muteCost ? 'dim' : undefined}
+        title={pricing.title}
+        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
+      >
+        {costValue}
+      </td>
+      <td className={row.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(row.savingsUSD)}</td>
+    </tr>
+  )
+}''',
+          )
+
+          replace_between(
+              'app/renderer/sections/Models.tsx',
+              'function ModelGroupRow',
+              'function ModelTaskRow',
+              '''function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
+  const model = rows[0]
+  const calls = rows.reduce((sum, row) => sum + row.calls, 0)
+  const costUSD = rows.reduce((sum, row) => sum + row.costUSD, 0)
+  const savingsUSD = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
+  const pricing = modelPricingPresentation(combineModelPricing(rows), calls)
+  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(costUSD)
+
+  return (
+    <tr className="model-group-row">
+      <td title={model.model}>
+        <span className="model-group-lead">
+          <span
+            className="mdot"
+            style={{ background: seriesColorForModel(model.modelDisplayName || model.model) }}
+          />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span className="model-group-name">{model.modelDisplayName}</span>
+            <span style={providerTagStyle}>{model.providerDisplayName}</span>
+            <span style={providerTagStyle} title={pricing.title}>{pricing.label}</span>
+          </span>
+          {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
+        </span>
+      </td>
+      <td>{fmtInt(calls)}</td>
+      <td aria-label="No aggregate input" />
+      <td aria-label="No aggregate output" />
+      <td aria-label="No aggregate cache read" />
+      <td
+        className={pricing.muteCost ? 'dim' : undefined}
+        title={pricing.title}
+        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
+      >
+        {costValue}
+      </td>
+      <td className={savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(savingsUSD)}</td>
+    </tr>
+  )
+}''',
+          )
+
+          replace_between(
+              'app/renderer/sections/Models.tsx',
+              'function ModelTaskRow',
+              'function groupTaskRows',
+              '''function ModelTaskRow({ row }: { row: ModelReportRow }) {
+  const pricing = modelPricingPresentation(row.pricing, row.calls)
+  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
+
+  return (
+    <tr className="model-task-row">
+      <td>{row.category ?? 'general'}</td>
+      <td>{fmtInt(row.calls)}</td>
+      <td>{formatCompact(row.inputTokens)}</td>
+      <td>{formatCompact(row.outputTokens)}</td>
+      <td>{formatCompact(row.cacheReadTokens)}</td>
+      <td
+        className={pricing.muteCost ? 'dim' : undefined}
+        title={pricing.title}
+        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
+      >
+        {costValue}
+      </td>
+      <td className={row.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(row.savingsUSD)}</td>
+    </tr>
+  )
+}''',
+          )
+
+          replace_once(
+              'tests/models-report.test.ts',
+              "  cacheRead?: number\n}): ParsedApiCall {",
+              "  cacheRead?: number\n  costAssignment?: ParsedApiCall['costAssignment']\n}): ParsedApiCall {",
+          )
+          replace_once(
+              'tests/models-report.test.ts',
+              "    costUSD: opts.costUSD,\n    tools: [],",
+              "    costUSD: opts.costUSD,\n    costAssignment: opts.costAssignment,\n    tools: [],",
+          )
+          replace_once(
+              'tests/models-report.test.ts',
+              "})\n\ndescribe('aggregateModels byAgent'",
+              "  it('rolls call-level pricing evidence into each model row', async () => {\n    const rows = await aggregateModels([makeProject([\n      makeTurn('feature', [\n        makeCall({ provider: 'mixed', model: 'model-a', costUSD: 1, costAssignment: { version: 1, kind: 'metered', amountMicrosUsd: 1_000_000, source: 'provider' } }),\n        makeCall({ provider: 'mixed', model: 'model-a', costUSD: 0, costAssignment: { version: 1, kind: 'unavailable', reason: 'no-price-record' } }),\n        makeCall({ provider: 'local', model: 'free-model', costUSD: 0, costAssignment: { version: 1, kind: 'explicit-zero', amountMicrosUsd: 0, reason: 'local-inference' } }),\n        makeCall({ provider: 'legacy', model: 'unknown-evidence', costUSD: 0 }),\n      ]),\n    ])])\n    const byKey = Object.fromEntries(rows.map(row => [`${row.provider}:${row.model}`, row]))\n    expect(byKey['mixed:model-a']!.pricing).toMatchObject({ state: 'partial', totalCalls: 2, coveredCalls: 1, unavailableCalls: 1, missingPriceRecordCalls: 1 })\n    expect(byKey['local:free-model']!.pricing).toMatchObject({ state: 'explicit-zero', explicitZeroCalls: 1 })\n    expect(byKey['legacy:unknown-evidence']!.pricing).toMatchObject({ state: 'unknown', unknownCalls: 1 })\n  })\n})\n\ndescribe('aggregateModels byAgent'",
+          )
+
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "import type { AuditRow, ModelReportRow } from '../lib/types'",
+              "import type { AuditRow, ModelPricingState, ModelPricingSummary, ModelReportRow } from '../lib/types'",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "vi.mock('../lib/ipc', async orig => {\n  const actual = await orig<typeof import('../lib/ipc')>()\n  return { ...actual, codeburn: { getModels, getAudit } }\n})\n\nconst rows:",
+              "vi.mock('../lib/ipc', async orig => {\n  const actual = await orig<typeof import('../lib/ipc')>()\n  return { ...actual, codeburn: { getModels, getAudit } }\n})\n\nfunction pricing(state: ModelPricingState, totalCalls: number): ModelPricingSummary {\n  const base: ModelPricingSummary = { state, totalCalls, coveredCalls: totalCalls, pricedCalls: totalCalls, explicitZeroCalls: 0, unavailableCalls: 0, unknownCalls: 0, missingPriceRecordCalls: 0 }\n  if (state === 'explicit-zero') return { ...base, pricedCalls: 0, explicitZeroCalls: totalCalls }\n  if (state === 'unavailable') return { ...base, coveredCalls: 0, pricedCalls: 0, unavailableCalls: totalCalls, missingPriceRecordCalls: totalCalls }\n  if (state === 'unknown') return { ...base, coveredCalls: 0, pricedCalls: 0, unknownCalls: totalCalls }\n  return base\n}\n\nconst rows:",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "    savingsBaselineModel: 'Claude Opus 4.8',\n    credits: null,",
+              "    savingsBaselineModel: 'Claude Opus 4.8',\n    pricing: pricing('priced', 4812),\n    credits: null,",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "    savingsBaselineModel: 'GPT-5.5 Codex',\n    credits: 173,",
+              "    savingsBaselineModel: 'GPT-5.5 Codex',\n    pricing: pricing('priced', 2704),\n    credits: 173,",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "    savingsBaselineModel: 'Claude Opus 4.8',\n    credits: null,\n  },\n  {\n    provider: 'custom',",
+              "    savingsBaselineModel: 'Claude Opus 4.8',\n    pricing: pricing('explicit-zero', 82),\n    credits: null,\n  },\n  {\n    provider: 'custom',",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "    savingsBaselineModel: '',\n    credits: null,",
+              "    savingsBaselineModel: '',\n    pricing: pricing('unavailable', 176),\n    credits: null,",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "    costUSD: 244.12,\n    savingsUSD: 61.22,",
+              "    costUSD: 244.12,\n    savingsUSD: 61.22,\n    pricing: pricing('priced', 3400),",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "    costUSD: 20.88,\n    savingsUSD: 5.18,",
+              "    costUSD: 20.88,\n    savingsUSD: 5.18,\n    pricing: pricing('priced', 120),",
+          )
+          replace_once(
+              'app/renderer/sections/Models.test.tsx',
+              "  it('renders unpriced proxy rows as dim with alias affordance and dashes', async () => {\n    getModels.mockResolvedValue([rows[3]])\n\n    render(<Models period=\"30days\" provider=\"all\" />)\n\n    expect(await screen.findByText('my-proxy-model')).toHaveClass('dim')\n    expect(screen.getByText('add alias ›')).toHaveClass('alias')\n    expect(screen.getAllByText('—')).toHaveLength(5)\n    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()\n  })",
+              "  it('keeps usage visible when model pricing is unavailable', async () => {\n    getModels.mockResolvedValue([rows[3]])\n\n    render(<Models period=\"30days\" provider=\"all\" />)\n\n    expect(await screen.findByText('my-proxy-model')).not.toHaveClass('dim')\n    expect(screen.getByText('4.8M')).toBeInTheDocument()\n    expect(screen.getByText('400K')).toBeInTheDocument()\n    expect(screen.getByText('Price unavailable')).toBeInTheDocument()\n    expect(screen.getByText('add alias ›')).toHaveClass('alias')\n    expect(screen.getByRole('cell', { name: 'Cost unavailable' })).toHaveTextContent('—')\n    expect(screen.getByText('$0.00')).toBeInTheDocument()\n  })",
+          )
+          PY
+      - name: Install and validate focused contracts
+        run: |
+          npm ci --no-audit --no-fund
+          npm test -- --run --no-file-parallelism tests/model-pricing-summary.test.ts tests/models-report.test.ts
+          npm run build:cli
+          npm --prefix app ci --no-audit --no-fund
+          npm --prefix app run stage-cli
+          npm --prefix app test -- renderer/sections/Models.test.tsx renderer/sections/modelPricingPresentation.test.ts
+          npm --prefix app run typecheck
+          npm --prefix app run build
+      - name: Validate architecture ratchet
+        run: |
+          git fetch origin main --depth=1
+          SOURCE_SIZE_BASE_REF=origin/main node scripts/check-source-size-ratchet.mjs
+      - name: Commit clean validated delta
+        run: |
+          rm .github/workflows/tmp-ux1f-model-pricing-state.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/model-pricing-summary.ts src/models-report.ts tests/model-pricing-summary.test.ts tests/models-report.test.ts app/renderer/lib/types.ts app/renderer/sections/Models.tsx app/renderer/sections/Models.test.tsx app/renderer/sections/modelPricingPresentation.ts app/renderer/sections/modelPricingPresentation.test.ts .github/workflows/tmp-ux1f-model-pricing-state.yml
+          git commit -m "[ux1f-model-pricing-applied] feat(models): preserve pricing evidence states"
+          git push origin HEAD:fix/ux1f-model-pricing-state
