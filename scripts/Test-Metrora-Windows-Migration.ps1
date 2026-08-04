@@ -33,9 +33,12 @@ function Get-SingleCandidateInstaller([string]$Directory) {
   return $installers[0].FullName
 }
 
-$baselineSemver = [version]$BaselineVersion
-$candidateSemver = [version]$CandidateVersion
-if ($baselineSemver -ge $candidateSemver) {
+$versionComparison = (& node (Join-Path $PSScriptRoot 'compare-metrora-versions.mjs') `
+  $BaselineVersion $CandidateVersion 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+  throw "version comparison failed for ${BaselineVersion} -> ${CandidateVersion}: $versionComparison"
+}
+if ([int]$versionComparison -ge 0) {
   throw "migration baseline must be older than the candidate: $BaselineVersion -> $CandidateVersion"
 }
 

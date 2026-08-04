@@ -12,6 +12,7 @@ on:
           - unsigned-development-artifact
           - unsigned-release-candidate
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - '.github/workflows/windows-portable.yml'
       - 'app/**'
@@ -42,13 +43,14 @@ concurrency:
 
 jobs:
   candidate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Build, derive, install, migrate, interrupt, and recover Windows candidate
     runs-on: windows-latest
     timeout-minutes: 120
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      MIGRATION_BASELINE_COMMIT: '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
-      MIGRATION_BASELINE_VERSION: '0.9.18'
+      MIGRATION_BASELINE_COMMIT: '80c3a5a1a116a0bc2fd5352b9fee2afc58207f15'
+      MIGRATION_BASELINE_VERSION: '0.9.19'
     steps:
       - uses: actions/checkout@v4
 

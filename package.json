@@ -1,6 +1,6 @@
 {
   "name": "metrora",
-  "version": "0.9.19",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "Metrora — local-first AI usage intelligence for tools, models, projects and sessions",
   "type": "module",
@@ -24,7 +24,8 @@
     "pricing:docs": "tsx scripts/generate-pricing-history.ts",
     "pricing:docs:check": "tsx scripts/generate-pricing-history.ts --check",
     "test": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "version:check": "node scripts/check-version-consistency.mjs"
   },
   "keywords": [
     "metrora",

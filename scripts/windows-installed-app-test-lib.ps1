@@ -1,5 +1,19 @@
 . (Join-Path $PSScriptRoot 'windows-install-test-lib.ps1')
 
+function Resolve-MetroraExpectedFileVersion(
+  [string]$PublicVersion,
+  [string]$RepositoryRoot,
+  [switch]$AllowHistoricalVersion
+) {
+  if ($AllowHistoricalVersion) { return $PublicVersion }
+  $output = (& node (Join-Path $RepositoryRoot 'scripts\resolve-metrora-build-version.mjs') `
+    $PublicVersion 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0) {
+    throw "platform build-version resolution failed for ${PublicVersion}: $output"
+  }
+  return $output
+}
+
 function Assert-MetroraInstalledApplication(
   [string]$InstallDirectory,
   [string]$CanonicalDirectory,
@@ -20,10 +34,16 @@ function Assert-MetroraInstalledApplication(
   if ($LASTEXITCODE -ne 0) { throw "installed layout verification failed: $layoutReport" }
   Write-Host $layoutReport
 
+  $expectedFileVersion = Resolve-MetroraExpectedFileVersion `
+    -PublicVersion $ExpectedVersion `
+    -RepositoryRoot $RepositoryRoot `
+    -AllowHistoricalVersion:$AllowHistoricalPublisher
   $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
   if ($versionInfo.ProductName -ne 'Metrora') { throw "installed ProductName is not Metrora: $($versionInfo.ProductName)" }
   if ($versionInfo.FileDescription -notmatch 'Metrora') { throw "installed FileDescription is not canonical: $($versionInfo.FileDescription)" }
-  if ($versionInfo.FileVersion -ne $ExpectedVersion) { throw "installed FileVersion is not ${ExpectedVersion}: $($versionInfo.FileVersion)" }
+  if ($versionInfo.FileVersion -ne $expectedFileVersion) {
+    throw "installed FileVersion is not ${expectedFileVersion} for ${ExpectedVersion}: $($versionInfo.FileVersion)"
+  }
 
   $registration = Assert-MetroraUninstallRegistration `
     -InstallDirectory $InstallDirectory `
@@ -52,6 +72,7 @@ function Assert-MetroraInstalledApplication(
     Executable = $executable
     Uninstaller = $uninstaller
     ProductName = $versionInfo.ProductName
+    PublicVersion = $ExpectedVersion
     FileVersion = $versionInfo.FileVersion
     CliVersion = $cliVersion
     ShortcutCount = $shortcuts.Count

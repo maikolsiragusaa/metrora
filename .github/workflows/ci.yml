@@ -14,6 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version-authority:
+    name: Version authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - name: Verify package and platform versions
+        run: npm run version:check
+
   semgrep:
     name: Security rules
     runs-on: ubuntu-latest
@@ -39,13 +51,18 @@ jobs:
     name: Targeted draft validation
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == true
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22.15.0'
           cache: npm
+      - name: Detect affected draft surfaces conservatively
+        id: surfaces
+        run: node scripts/draft-surface-classifier.mjs --base '${{ github.event.pull_request.base.sha }}'
       - name: Validate runtime compression support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
       - name: Install dependencies
@@ -55,11 +72,120 @@ jobs:
       - name: Build product runtime
         run: npm run build:cli
       - name: Run affected parser and durable-cache tests
+        if: steps.surfaces.outputs.parser == 'true' && steps.surfaces.outputs.fallback_core != 'true'
         run: >-
           npm test -- --run --no-file-parallelism
           tests/parser.test.ts
           tests/parser-incremental-append.test.ts
           tests/cli-durable-totals.test.ts
+      - name: Run affected provider tests
+        if: steps.surfaces.outputs.providers == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          roots=()
+          for directory in src/providers tests/providers; do
+            if [ -d "$directory" ]; then roots+=("$directory"); fi
+          done
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo '::error::Provider surface changed but no provider test roots exist.'
+            exit 1
+          fi
+          mapfile -t provider_tests < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | sort)
+          if [ "${#provider_tests[@]}" -eq 0 ]; then
+            echo '::error::Provider surface changed but no provider tests were discovered.'
+            exit 1
+          fi
+          npm test -- --run --no-file-parallelism "${provider_tests[@]}"
+      - name: Run affected local-state and canonicalization tests
+        if: steps.surfaces.outputs.local_state == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          roots=()
+          for directory in src/local-state src/vendor; do
+            if [ -d "$directory" ]; then roots+=("$directory"); fi
+          done
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo '::error::Local-state surface changed but no local-state test roots exist.'
+            exit 1
+          fi
+          mapfile -t local_state_tests < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | sort)
+          if [ "${#local_state_tests[@]}" -eq 0 ]; then
+            echo '::error::Local-state surface changed but no local-state tests were discovered.'
+            exit 1
+          fi
+          npm test -- --run --no-file-parallelism "${local_state_tests[@]}"
+      - name: Run affected pricing contracts
+        if: steps.surfaces.outputs.pricing == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        run: >-
+          npm test -- --run --no-file-parallelism
+          src/pricing/history.test.ts
+          src/pricing/historical-cost.test.ts
+          src/pricing/historical-cost-coverage.test.ts
+          src/pricing/gpt-5-6-history.test.ts
+          src/pricing/local-observation-ledger.test.ts
+          src/pricing/local-observation-bands.test.ts
+          src/pricing/cost-assignment.test.ts
+          src/pricing/settled-historical-cost.test.ts
+      - name: Test affected version and release contracts
+        if: steps.surfaces.outputs.release == 'true'
+        run: >-
+          node --test
+          scripts/draft-surface-classifier.node-test.mjs
+          scripts/version-authority.node-test.mjs
+          scripts/windows-release-manifest.node-test.mjs
+          scripts/windows-release-layout.node-test.mjs
+          scripts/windows-installer-source.node-test.mjs
+          scripts/windows-installed-layout.node-test.mjs
+          scripts/windows-installed-state-classifier.node-test.mjs
+          scripts/windows-migration-fixture.node-test.mjs
+      - name: Validate every changed PowerShell file
+        if: steps.surfaces.outputs.powershell == 'true'
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          $paths = @(git diff --name-only "$env:BASE_SHA...HEAD" -- '*.ps1')
+          if ($LASTEXITCODE -ne 0) { throw 'failed to enumerate changed PowerShell files' }
+          if ($paths.Count -eq 0) { throw 'PowerShell surface was classified but no changed PowerShell file was found' }
+
+          foreach ($path in $paths) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              Write-Host "Skipping deleted PowerShell file: $path"
+              continue
+            }
+            Write-Host "Validating PowerShell syntax: $path"
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $path).Path,
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${path}: $($_.Message)" }
+              exit 1
+            }
+          }
+      - name: Install desktop dependencies for affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app ci --no-audit --no-fund
+      - name: Stage desktop runtime for affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app run stage-cli
+      - name: Test affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app test
+      - name: Typecheck affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app run typecheck
+      - name: Build affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app run build
+      - name: Run complete core fallback for unclassified surfaces
+        if: steps.surfaces.outputs.fallback_core == 'true'
+        run: npm test -- --run --no-file-parallelism --exclude 'app/**'
 
   build:
     if: github.event_name == 'push' || github.event.pull_request.draft == false

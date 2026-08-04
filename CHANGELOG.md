@@ -7,6 +7,7 @@ This file records Metrora-originated public changes. Required upstream provenanc
 ### Product identity and public boundary
 
 - Established Metrora™ as the product identity, Signal Grid™ as the canonical visual identity and Vensent™ as the publisher identity.
+- Established `1.0.0-rc.1` as the first independent Metrora candidate line while preserving `0.9.19` as an immutable historical source baseline.
 - Separated the Metrora MIT licence from the preserved CodeBurn upstream notice.
 - Reduced public documentation to current product behavior, stable principles and verifiable release status.
 - Added public contribution, issue and pull-request hygiene guidance.
