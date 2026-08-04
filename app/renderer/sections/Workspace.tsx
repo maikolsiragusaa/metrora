@@ -1,23 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
 import { formatCompact, formatUsd } from '../lib/format'
-import { metrora } from '../lib/ipc'
-import { showToast } from '../lib/toast'
 import type { MenubarPayload } from '../lib/types'
 import type {
   DesktopReviewedProductionSummary,
   DesktopWorkspaceAvailability,
   DesktopWorkspaceRecoverySummary,
-  WorkspaceBridge,
   WorkspaceProductionMode,
 } from '../lib/workspace'
 import {
   WorkspaceEvidencePanel,
   workspaceEvidenceViewState,
 } from './WorkspaceEvidencePanel'
-import { useWorkspaceStatus, type WorkspaceAction } from './useWorkspaceStatus'
+import { useWorkspaceController } from './useWorkspaceController'
+import { workspaceRecoveryLabel } from './workspaceActionCopy'
+import type { WorkspaceAction } from './useWorkspaceStatus'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
 
@@ -67,50 +66,6 @@ function platformLabel(value: string): string {
   return 'Other'
 }
 
-function actionErrorMessage(action: Exclude<WorkspaceAction, null>): string {
-  if (action === 'reload') return 'Workspace status could not be refreshed.'
-  if (action === 'create') return 'The local workspace could not be created.'
-  if (action === 'produce') return 'Reviewed measurements could not be produced.'
-  if (action === 'recover') return 'Local Workspace state could not be checked safely.'
-  if (action === 'pause') return 'Reviewed production could not be paused.'
-  if (action === 'resume') return 'Reviewed production could not be resumed.'
-  if (action === 'batch') return 'The next signed batch could not be created.'
-  return 'The Workspace evidence package could not be exported.'
-}
-
-function productionToast(summary: DesktopReviewedProductionSummary): string {
-  if (summary.outcome === 'paused') return 'Reviewed production is paused.'
-  return `${summary.producedCount} produced · ${summary.existingCount} already present · ${summary.withheldCount} withheld · ${summary.failedCount} failed sources.`
-}
-
-function recoveryLabel(summary: DesktopWorkspaceRecoverySummary): string {
-  if (summary.outcome === 'workspace-required') return 'Recovery: Workspace required · retry skipped'
-  if (summary.outcome === 'paused') return 'Recovery: Paused · retry skipped'
-  if (summary.outcome === 'blocked') return `Recovery: Blocked · ${summary.blocker ?? 'blocked-evidence'}`
-  if (summary.outcome === 'healthy') return 'Recovery: Healthy · no reconciliation needed'
-  return 'Recovery: Reconciled · existing evidence preserved'
-}
-
-function showRecoveryToast(summary: DesktopWorkspaceRecoverySummary): void {
-  if (summary.outcome === 'reconciled') {
-    showToast('Local Workspace state was reconciled through existing private receipts.', undefined)
-    return
-  }
-  if (summary.outcome === 'blocked') {
-    showToast('Local evidence remains blocked. Nothing was deleted or reset.', 'error')
-    return
-  }
-  if (summary.outcome === 'paused') {
-    showToast('Reviewed production is paused. Recovery stopped before scanning.')
-    return
-  }
-  if (summary.outcome === 'workspace-required') {
-    showToast('Create the local Workspace before recovery can run.', 'error')
-    return
-  }
-  showToast('Local Workspace state is healthy. No reconciliation was needed.')
-}
-
 export function WorkspaceContent({
   payload,
   scope,
@@ -120,125 +75,27 @@ export function WorkspaceContent({
   scope: string
   analyticsLoading?: boolean
 }) {
-  const bridge = metrora as Partial<WorkspaceBridge>
   const {
     availability,
-    acceptSnapshot,
     statusError,
     inspectionError,
     action,
-    setAction,
+    workspaceName,
+    endpointName,
+    lastProduction,
+    lastRecovery,
+    setWorkspaceName,
+    setEndpointName,
     loadBootstrap,
     reload,
-  } = useWorkspaceStatus(bridge)
-  const [workspaceName, setWorkspaceName] = useState('My workspace')
-  const [endpointName, setEndpointName] = useState('This computer')
-  const [lastProduction, setLastProduction] = useState<DesktopReviewedProductionSummary | null>(null)
-  const [lastRecovery, setLastRecovery] = useState<DesktopWorkspaceRecoverySummary | null>(null)
+    createWorkspace,
+    produceMeasurements,
+    recoverLocalState,
+    setProductionMode,
+    createBatch,
+    exportEvidence,
+  } = useWorkspaceController()
   const usage = useMemo(() => workspaceUsageFromOverview(payload), [payload])
-
-  const createWorkspace = async () => {
-    const displayName = workspaceName.trim()
-    const endpointDisplayName = endpointName.trim()
-    if (!displayName || !endpointDisplayName) {
-      showToast('Workspace and endpoint names are required.', 'error')
-      return
-    }
-
-    setAction('create')
-    try {
-      if (typeof bridge.createWorkspace !== 'function') throw new Error('workspace bridge unavailable')
-      const result = await bridge.createWorkspace({ displayName, endpointDisplayName })
-      acceptSnapshot(result.snapshot)
-      setLastProduction(null)
-      setLastRecovery(null)
-      showToast(result.outcome === 'created' ? 'Local workspace created.' : 'Existing local workspace loaded.')
-    } catch {
-      showToast(actionErrorMessage('create'), 'error')
-    } finally {
-      setAction(null)
-    }
-  }
-
-  const produceMeasurements = async () => {
-    setAction('produce')
-    try {
-      if (typeof bridge.produceWorkspaceMeasurements !== 'function') throw new Error('workspace bridge unavailable')
-      const result = await bridge.produceWorkspaceMeasurements()
-      acceptSnapshot(result.snapshot)
-      setLastProduction(result.summary)
-      setLastRecovery(null)
-      showToast(productionToast(result.summary))
-    } catch {
-      showToast(actionErrorMessage('produce'), 'error')
-    } finally {
-      setAction(null)
-    }
-  }
-
-  const recoverLocalState = async () => {
-    setAction('recover')
-    try {
-      if (typeof bridge.recoverWorkspaceState !== 'function') throw new Error('workspace bridge unavailable')
-      const result = await bridge.recoverWorkspaceState()
-      acceptSnapshot(result.snapshot)
-      setLastRecovery(result.summary)
-      if (result.summary.production) setLastProduction(result.summary.production)
-      showRecoveryToast(result.summary)
-    } catch {
-      showToast(actionErrorMessage('recover'), 'error')
-    } finally {
-      setAction(null)
-    }
-  }
-
-  const setProductionMode = async (mode: WorkspaceProductionMode) => {
-    const nextAction: WorkspaceAction = mode === 'paused' ? 'pause' : 'resume'
-    setAction(nextAction)
-    try {
-      const method = mode === 'paused' ? bridge.pauseWorkspaceProduction : bridge.resumeWorkspaceProduction
-      if (typeof method !== 'function') throw new Error('workspace bridge unavailable')
-      const result = await method.call(bridge)
-      acceptSnapshot(result.snapshot)
-      setLastRecovery(null)
-      showToast(mode === 'paused' ? 'Reviewed production paused.' : 'Reviewed production resumed.')
-    } catch {
-      showToast(actionErrorMessage(nextAction), 'error')
-    } finally {
-      setAction(null)
-    }
-  }
-
-  const createBatch = async () => {
-    setAction('batch')
-    try {
-      if (typeof bridge.createWorkspaceBatch !== 'function') throw new Error('workspace bridge unavailable')
-      const result = await bridge.createWorkspaceBatch()
-      acceptSnapshot(result.snapshot)
-      showToast(result.outcome === 'created'
-        ? `Signed ${result.batch?.eventCount ?? 0} reviewed measurements.`
-        : 'No reviewed measurements are waiting to be signed.')
-    } catch {
-      showToast(actionErrorMessage('batch'), 'error')
-    } finally {
-      setAction(null)
-    }
-  }
-
-  const exportEvidence = async () => {
-    setAction('export')
-    try {
-      if (typeof bridge.exportWorkspaceEvidence !== 'function') throw new Error('workspace bridge unavailable')
-      const result = await bridge.exportWorkspaceEvidence()
-      if (result.outcome === 'cancelled') return
-      acceptSnapshot(result.snapshot)
-      showToast(`Exported ${result.fileName}.`)
-    } catch {
-      showToast(actionErrorMessage('export'), 'error')
-    } finally {
-      setAction(null)
-    }
-  }
 
   if (statusError) {
     return (
@@ -504,7 +361,7 @@ function ReadyWorkspaceView({
           </p>
           {lastRecovery ? (
             <div className="workspace-source-line" data-testid="workspace-recovery-summary">
-              {recoveryLabel(lastRecovery)}
+              {workspaceRecoveryLabel(lastRecovery)}
             </div>
           ) : null}
           <p className="workspace-action-note">
