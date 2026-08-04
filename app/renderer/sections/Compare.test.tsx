@@ -127,7 +127,7 @@ describe('Compare', () => {
     const context = screen.getByRole('table', { name: 'Comparison context' })
     expect(within(context).getByLabelText('Opus 4.8, Cache hit rate: Not available')).toHaveTextContent('—')
     expect(within(context).getByLabelText('Opus 4.8, Days of data: Not available')).toHaveTextContent('—')
-    expect(screen.getByLabelText(/Sonnet 5: 63% one-shot rate; 280 edit turns\. Better value/)).toHaveClass('cmp-best')
+    expect(screen.getByLabelText(/Sonnet 5: 66% one-shot rate; 280 edit turns\. Better value/)).toHaveClass('cmp-best')
   })
 
   it('notes that custom ranges are unsupported and still compares by period', async () => {
