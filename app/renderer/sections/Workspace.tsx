@@ -15,6 +15,7 @@ import {
   WorkspaceEvidencePanel,
   workspaceEvidenceViewState,
 } from './WorkspaceEvidencePanel'
+import { WorkspaceGuidancePanel } from './WorkspaceGuidancePanel'
 import { WorkspaceHero } from './WorkspaceHero'
 import { WorkspaceIdentityPanel } from './WorkspaceIdentityPanel'
 import { WorkspacePrivacyPanel } from './WorkspacePrivacyPanel'
@@ -22,6 +23,7 @@ import { WorkspaceProductionPanel } from './WorkspaceProductionPanel'
 import { WorkspaceUsagePanel } from './WorkspaceUsagePanel'
 import { useWorkspaceController } from './useWorkspaceController'
 import type { WorkspaceAction } from './useWorkspaceStatus'
+import { workspaceGuidance } from './workspaceGuidance'
 import { workspaceUsageFromOverview, type WorkspaceUsage } from './workspaceUsage'
 
 export { workspaceUsageFromOverview } from './workspaceUsage'
@@ -173,10 +175,12 @@ function ReadyWorkspaceView({
   const productionPaused = lifecycle?.mode === 'paused'
   const busy = action !== null
   const evidenceView = workspaceEvidenceViewState(evidence, availability.inspection, inspectionError)
+  const guidance = workspaceGuidance({ snapshot, evidenceView })
 
   return (
     <>
       <WorkspaceHero workspace={workspace} evidenceView={evidenceView} />
+      <WorkspaceGuidancePanel guidance={guidance} />
 
       {!workspace ? (
         <WorkspaceCreationPanel
