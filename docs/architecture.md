@@ -53,7 +53,7 @@ The desktop application is the primary local graphical surface.
 
 The Electron main process owns privileged work:
 
-- execution of the bundled compatibility CLI;
+- execution of the bundled Metrora runtime;
 - local filesystem and OS-vault access;
 - endpoint and Workspace runtime authority;
 - bounded inspection, production, recovery, batching and export actions;
@@ -146,7 +146,7 @@ Distribution work preserves these boundaries:
 - technical validation artifacts remain visibly distinct from official releases;
 - build, verification, publication and rollback remain separate responsibilities.
 
-See [`WINDOWS_STORE_DISTRIBUTION.md`](WINDOWS_STORE_DISTRIBUTION.md), [`WINDOWS_FORMAT_DERIVATION_V1.md`](WINDOWS_FORMAT_DERIVATION_V1.md) and the Windows acceptance contracts.
+See [`WINDOWS_DISTRIBUTION.md`](WINDOWS_DISTRIBUTION.md), [`WINDOWS_FORMAT_DERIVATION_V1.md`](WINDOWS_FORMAT_DERIVATION_V1.md) and the Windows acceptance contracts.
 
 ## Security boundaries
 
