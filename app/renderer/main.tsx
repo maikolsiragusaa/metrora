@@ -8,6 +8,7 @@ import './styles/indigo.css'
 import './styles/plain.css'
 import './styles/brand.css'
 import './styles/workspace.css'
+import './styles/workspace-guidance.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')

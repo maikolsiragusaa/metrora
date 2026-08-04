@@ -19,12 +19,12 @@ const EVIDENCE_LABELS: Record<WorkspaceEvidenceState, string> = {
 }
 
 const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Create the local personal workspace before producing signed evidence.',
-  empty: 'No reviewed measurements are waiting in the local outbox.',
-  ready: 'Reviewed measurements are available for the next signed batch.',
-  acknowledged: 'All currently signed evidence has been acknowledged locally.',
-  quarantined: 'Some evidence was isolated and will not enter a signed batch.',
-  blocked: 'The runtime found a condition that must be resolved before signing or export.',
+  'workspace-required': 'Create the local Workspace before preparing verifiable activity.',
+  empty: 'No reviewed local activity is currently waiting for signing.',
+  ready: 'Reviewed local activity is waiting to be signed.',
+  acknowledged: 'The current signed local evidence is available for explicit export.',
+  quarantined: 'Some local evidence was isolated and cannot be signed or exported.',
+  blocked: 'A local condition must be resolved before signing or export.',
 }
 
 export type WorkspaceEvidenceViewState = {
@@ -54,7 +54,7 @@ export function workspaceEvidenceViewState(
     description: inspectionError
       ? 'The read-only evidence inspection could not complete. Existing files were not changed.'
       : inspectionPending
-        ? 'Metrora is verifying local evidence in the background. Counts will appear after the read-only inspection finishes.'
+        ? 'Metrora is verifying local evidence in the background. Details will appear after the read-only check finishes.'
         : EVIDENCE_DESCRIPTIONS[evidence.state],
     blocked: !inspectionComplete || evidence.state === 'blocked' || evidence.state === 'quarantined',
     stateClass: inspectionComplete ? evidence.state : 'blocked',
@@ -71,17 +71,8 @@ export function WorkspaceEvidencePanel({
   inspectionError: boolean
 }) {
   return (
-    <Panel title="Reviewed evidence" right={view.label}>
+    <Panel title="Local verification" right={view.label}>
       <p className="workspace-evidence-copy">{view.description}</p>
-      <div className="workspace-counts" aria-busy={view.inspectionPending}>
-        <EvidenceCount label="Pending events" value={view.inspectionComplete ? evidence.pendingEventCount : null} />
-        <EvidenceCount label="Unbatched events" value={view.inspectionComplete ? evidence.unbatchedEventCount : null} />
-        <EvidenceCount label="Acknowledged events" value={view.inspectionComplete ? evidence.acknowledgedEventCount : null} />
-        <EvidenceCount label="Pending batches" value={view.inspectionComplete ? evidence.pendingBatchCount : null} />
-        <EvidenceCount label="Acknowledged batches" value={view.inspectionComplete ? evidence.acknowledgedBatchCount : null} />
-        <EvidenceCount label="Quarantined" value={view.inspectionComplete ? evidence.quarantinedEventCount : null} />
-        <EvidenceCount label="Invalid" value={view.inspectionComplete ? evidence.invalidEventCount : null} />
-      </div>
       {view.inspectionPending ? (
         <div className="workspace-source-line" role="status" data-testid="workspace-evidence-inspection">
           Read-only evidence verification in progress…
@@ -89,14 +80,29 @@ export function WorkspaceEvidencePanel({
       ) : null}
       {inspectionError ? (
         <div className="workspace-source-line" role="alert" data-testid="workspace-evidence-inspection-error">
-          Verification could not complete. Use the bounded recovery action for an explicit retry; no files were deleted or reset.
+          Verification could not complete. Use the explicit recovery action for a bounded retry; no files were deleted or reset.
         </div>
       ) : null}
       {view.inspectionComplete && evidence.blockers.length > 0 ? (
-        <ul className="workspace-blockers">
-          {evidence.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
-        </ul>
+        <div className="workspace-visible-blockers" role="alert">
+          <b>Blocking conditions</b>
+          <ul className="workspace-blockers">
+            {evidence.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
+          </ul>
+        </div>
       ) : null}
+      <details className="workspace-disclosure">
+        <summary>Audit counts</summary>
+        <div className="workspace-counts workspace-disclosure-body" aria-busy={view.inspectionPending}>
+          <EvidenceCount label="Pending events" value={view.inspectionComplete ? evidence.pendingEventCount : null} />
+          <EvidenceCount label="Unbatched events" value={view.inspectionComplete ? evidence.unbatchedEventCount : null} />
+          <EvidenceCount label="Acknowledged events" value={view.inspectionComplete ? evidence.acknowledgedEventCount : null} />
+          <EvidenceCount label="Pending batches" value={view.inspectionComplete ? evidence.pendingBatchCount : null} />
+          <EvidenceCount label="Acknowledged batches" value={view.inspectionComplete ? evidence.acknowledgedBatchCount : null} />
+          <EvidenceCount label="Quarantined" value={view.inspectionComplete ? evidence.quarantinedEventCount : null} />
+          <EvidenceCount label="Invalid" value={view.inspectionComplete ? evidence.invalidEventCount : null} />
+        </div>
+      </details>
     </Panel>
   )
 }
