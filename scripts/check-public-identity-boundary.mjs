@@ -60,7 +60,8 @@ for (const path of tracked) {
 
     const repositoryReferences = line.matchAll(/https?:\/\/github\.com\/maikolsiragusaa\/([A-Za-z0-9_.-]+)/g)
     for (const match of repositoryReferences) {
-      if (match[1].toLowerCase() === canonicalRepository) continue
+      const repository = match[1].toLowerCase().replace(/\.git$/, '')
+      if (repository === canonicalRepository) continue
       findings.push({
         path: normalized,
         line: index + 1,
