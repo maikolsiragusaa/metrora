@@ -10,19 +10,44 @@ import { formatCompact, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import type { CompareJsonReport, ComparisonRow, DateRange, ModelStats, Period, WorkingStyleRow } from '../lib/types'
 
-function fmtMetric(v: number | null, fn: 'cost' | 'number' | 'percent' | 'decimal'): string {
-  if (v === null) return '—'
+function fmtMetric(v: number | null, fn: 'cost' | 'number' | 'percent' | 'decimal'): string | null {
+  if (v === null) return null
   if (fn === 'cost') return formatUsd(v)
   if (fn === 'percent') return `${v.toFixed(0)}%`
   if (fn === 'decimal') return v.toFixed(2)
   return Math.round(v).toLocaleString('en-US')
 }
 
+function DenseMetricValue({
+  value,
+  model,
+  metric,
+  better = false,
+}: {
+  value: string | null
+  model: string
+  metric: string
+  better?: boolean
+}) {
+  const accessibleValue = value ?? 'Not available'
+  return (
+    <span
+      role="cell"
+      className={`cmp-value${better ? ' cmp-best' : ''}`}
+      aria-label={`${model}, ${metric}: ${accessibleValue}${better ? '. Better value' : ''}`}
+      title={value === null ? 'Not available' : better ? 'Better value' : undefined}
+    >
+      {value === null ? <span aria-hidden="true">—</span> : value}
+      {better && <> <span aria-hidden="true">✓</span></>}
+    </span>
+  )
+}
+
 // The CLI `compare` command has no --from/--to, so a custom range falls back to
 // the selected period. Say so instead of silently ignoring the dates.
 function RangeNote() {
   return (
-    <p className="cmp-range-note" role="status">
+    <p className="cmp-range-note" role="note">
       Compare uses the selected period, custom dates are not supported yet.
     </p>
   )
@@ -182,26 +207,42 @@ function MetricCard({
   return (
     <div className="panel cmp-card">
       <div className="cmp-head"><h3>{title}</h3></div>
-      <div className="cmp-metrics">
+      <div className="cmp-metrics" role="table" aria-label={`${title} comparison`}>
         <MetricHeader modelA={modelA} modelB={modelB} />
         {rows.map(row => {
           const winner = 'winner' in row ? row.winner : 'none'
           return (
-            <div className="cmp-metric" key={row.label}>
-              <span className="cmp-label">{row.label}</span>
-              <span className={`cmp-value${showWinners && winner === 'a' ? ' cmp-best' : ''}`}>{fmtMetric(row.valueA, row.formatFn)}</span>
-              <span className={`cmp-value${showWinners && winner === 'b' ? ' cmp-best' : ''}`}>{fmtMetric(row.valueB, row.formatFn)}</span>
+            <div className="cmp-metric" role="row" key={row.label}>
+              <span className="cmp-label" role="rowheader">{row.label}</span>
+              <DenseMetricValue
+                value={fmtMetric(row.valueA, row.formatFn)}
+                model={modelA}
+                metric={row.label}
+                better={showWinners && winner === 'a'}
+              />
+              <DenseMetricValue
+                value={fmtMetric(row.valueB, row.formatFn)}
+                model={modelB}
+                metric={row.label}
+                better={showWinners && winner === 'b'}
+              />
             </div>
           )
         })}
       </div>
-      {showWinners && <div className="cmp-foot">Green = better on that metric.</div>}
+      {showWinners && <div className="cmp-foot">✓ marks the better value for that metric; unavailable values are not ranked.</div>}
     </div>
   )
 }
 
 function MetricHeader({ modelA, modelB }: { modelA: string; modelB: string }) {
-  return <div className="cmp-metric-head"><span>Metric</span><span>{modelA}</span><span>{modelB}</span></div>
+  return (
+    <div className="cmp-metric-head" role="row">
+      <span role="columnheader">Metric</span>
+      <span role="columnheader">{modelA}</span>
+      <span role="columnheader">{modelB}</span>
+    </div>
+  )
 }
 
 function CategoryCard({ report }: { report: CompareJsonReport }) {
@@ -213,58 +254,82 @@ function CategoryCard({ report }: { report: CompareJsonReport }) {
           <span className="cmp-legend-item"><span className="cmp-key" />{report.modelA.model}</span>
           <span className="cmp-legend-item"><span className="cmp-key cmp-key-b" />{report.modelB.model}</span>
         </div>
-        <div className="cmp-categories">
-          {report.categories.map(category => (
-            <div className="cmp-category" key={category.category}>
-              <span className="cmp-category-name">{category.category}</span>
-              <div className="cmp-bars">
-                <div className="cmp-bar-row">
-                  <span className="cmp-track"><span className="cmp-bar" style={{ width: `${category.oneShotRateA ?? 0}%` }} /></span>
-                  <span className={`cmp-bar-value${category.winner === 'a' ? ' cmp-best' : ''}`}>{fmtMetric(category.oneShotRateA, 'percent')} <span className="cmp-turns">({category.editTurnsA})</span></span>
-                </div>
-                <div className="cmp-bar-row">
-                  <span className="cmp-track"><span className="cmp-bar cmp-bar-b" style={{ width: `${category.oneShotRateB ?? 0}%` }} /></span>
-                  <span className={`cmp-bar-value${category.winner === 'b' ? ' cmp-best' : ''}`}>{fmtMetric(category.oneShotRateB, 'percent')} <span className="cmp-turns">({category.editTurnsB})</span></span>
+        <div className="cmp-categories" aria-label="Category comparison">
+          {report.categories.map(category => {
+            const rateA = category.oneShotRateA
+            const rateB = category.oneShotRateB
+            return (
+              <div className="cmp-category" role="group" aria-label={`${category.category} comparison`} key={category.category}>
+                <span className="cmp-category-name">{category.category}</span>
+                <div className="cmp-bars">
+                  <div className="cmp-bar-row">
+                    <span className="cmp-track" aria-hidden="true">
+                      {rateA !== null && <span className="cmp-bar" style={{ width: `${rateA}%` }} />}
+                    </span>
+                    <span
+                      className={`cmp-bar-value${category.winner === 'a' ? ' cmp-best' : ''}`}
+                      aria-label={`${report.modelA.model}: ${rateA === null ? 'one-shot rate not available' : `${rateA.toFixed(0)}% one-shot rate`}; ${category.editTurnsA.toLocaleString('en-US')} edit turns${category.winner === 'a' ? '. Better value' : ''}`}
+                      title={rateA === null ? 'One-shot rate not available' : category.winner === 'a' ? 'Better value' : undefined}
+                    >
+                      {rateA === null ? 'Not available' : `${rateA.toFixed(0)}%`} <span className="cmp-turns">({category.editTurnsA.toLocaleString('en-US')})</span>
+                      {category.winner === 'a' && <> <span aria-hidden="true">✓</span></>}
+                    </span>
+                  </div>
+                  <div className="cmp-bar-row">
+                    <span className="cmp-track" aria-hidden="true">
+                      {rateB !== null && <span className="cmp-bar cmp-bar-b" style={{ width: `${rateB}%` }} />}
+                    </span>
+                    <span
+                      className={`cmp-bar-value${category.winner === 'b' ? ' cmp-best' : ''}`}
+                      aria-label={`${report.modelB.model}: ${rateB === null ? 'one-shot rate not available' : `${rateB.toFixed(0)}% one-shot rate`}; ${category.editTurnsB.toLocaleString('en-US')} edit turns${category.winner === 'b' ? '. Better value' : ''}`}
+                      title={rateB === null ? 'One-shot rate not available' : category.winner === 'b' ? 'Better value' : undefined}
+                    >
+                      {rateB === null ? 'Not available' : `${rateB.toFixed(0)}%`} <span className="cmp-turns">({category.editTurnsB.toLocaleString('en-US')})</span>
+                      {category.winner === 'b' && <> <span aria-hidden="true">✓</span></>}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>
   )
 }
 
-function cacheHitRate(model: ModelStats): string {
+function cacheHitRate(model: ModelStats): string | null {
   // reads over reads + fresh input (matches menubar-json + compare-stats).
   const total = model.inputTokens + model.cacheReadTokens
-  return total > 0 ? `${Math.round(model.cacheReadTokens / total * 100)}%` : '—'
+  return total > 0 ? `${Math.round(model.cacheReadTokens / total * 100)}%` : null
 }
 
-function daysOfData(model: ModelStats): string {
-  if (!model.firstSeen || !model.lastSeen) return '—'
+function daysOfData(model: ModelStats): string | null {
+  if (!model.firstSeen || !model.lastSeen) return null
   return String(Math.max(1, Math.round((new Date(model.lastSeen).getTime() - new Date(model.firstSeen).getTime()) / 86_400_000) + 1))
 }
 
 function ContextCard({ modelA, modelB }: { modelA: ModelStats; modelB: ModelStats }) {
-  const rows = [
-    ['Calls', modelA.calls.toLocaleString(), modelB.calls.toLocaleString()],
-    ['Total cost', formatUsd(modelA.cost), formatUsd(modelB.cost)],
-    ['Input tokens', formatCompact(modelA.inputTokens), formatCompact(modelB.inputTokens)],
-    ['Output tokens', formatCompact(modelA.outputTokens), formatCompact(modelB.outputTokens)],
-    ['Edit turns', modelA.editTurns.toLocaleString(), modelB.editTurns.toLocaleString()],
-    ['Self-corrections', modelA.selfCorrections.toLocaleString(), modelB.selfCorrections.toLocaleString()],
-    ['Cache hit rate', cacheHitRate(modelA), cacheHitRate(modelB)],
-    ['Days of data', daysOfData(modelA), daysOfData(modelB)],
+  const rows: Array<{ label: string; valueA: string | null; valueB: string | null }> = [
+    { label: 'Calls', valueA: modelA.calls.toLocaleString(), valueB: modelB.calls.toLocaleString() },
+    { label: 'Total cost', valueA: formatUsd(modelA.cost), valueB: formatUsd(modelB.cost) },
+    { label: 'Input tokens', valueA: formatCompact(modelA.inputTokens), valueB: formatCompact(modelB.inputTokens) },
+    { label: 'Output tokens', valueA: formatCompact(modelA.outputTokens), valueB: formatCompact(modelB.outputTokens) },
+    { label: 'Edit turns', valueA: modelA.editTurns.toLocaleString(), valueB: modelB.editTurns.toLocaleString() },
+    { label: 'Self-corrections', valueA: modelA.selfCorrections.toLocaleString(), valueB: modelB.selfCorrections.toLocaleString() },
+    { label: 'Cache hit rate', valueA: cacheHitRate(modelA), valueB: cacheHitRate(modelB) },
+    { label: 'Days of data', valueA: daysOfData(modelA), valueB: daysOfData(modelB) },
   ]
   return (
     <div className="panel cmp-card">
       <div className="cmp-head"><h3>Context</h3></div>
-      <div className="cmp-metrics">
+      <div className="cmp-metrics" role="table" aria-label="Comparison context">
         <MetricHeader modelA={modelA.model} modelB={modelB.model} />
-        {rows.map(([label, valueA, valueB]) => (
-          <div className="cmp-metric" key={label}>
-            <span className="cmp-label">{label}</span><span className="cmp-value">{valueA}</span><span className="cmp-value">{valueB}</span>
+        {rows.map(row => (
+          <div className="cmp-metric" role="row" key={row.label}>
+            <span className="cmp-label" role="rowheader">{row.label}</span>
+            <DenseMetricValue value={row.valueA} model={modelA.model} metric={row.label} />
+            <DenseMetricValue value={row.valueB} model={modelB.model} metric={row.label} />
           </div>
         ))}
       </div>
