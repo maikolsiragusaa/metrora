@@ -1,0 +1,46 @@
+name: Apply P0.A fixture remediation
+
+on:
+  push:
+    branches: [test/p0a-remove-inherited-quarantines]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/p0a-remove-inherited-quarantines
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - name: Apply bounded fixture and CI changes
+        run: node .github/scripts/apply-p0a.mjs
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/ci.yml' \
+            'docs/TEST_QUARANTINE.md' \
+            'tests/cli-durable-totals.test.ts' \
+            'tests/parser-incremental-append.test.ts' \
+            'tests/parser.test.ts' | sort)"
+          test "$changed" = "$expected"
+      - name: Commit bounded remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/apply-p0a.mjs .github/workflows/apply-p0a.yml
+          git config user.name 'Metrora Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'test(parser): make durable fixtures deterministic'
+          git push origin HEAD:test/p0a-remove-inherited-quarantines
