@@ -58,7 +58,8 @@ mac/
 
 Metrora Menubar uses the Signal Grid icon generated from `assets/brand` and the canonical palette:
 
-- Signal Blue `#2563EB`
+- Signal Orange `#F2701C`
+- Signal Orange Deep `#E8590C`
 - Graphite `#0F1115`
 - Slate `#47505A`
 - Panel Gray `#E6E9EE`

@@ -3,7 +3,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* Metrora visual identity v1 — Signal Grid.
- * Warm editorial surfaces, Graphite text and Signal Blue interactions.
+ * Warm editorial surfaces, Graphite text and Signal Orange interactions.
  * Semantic success/warning colors remain distinct from the brand accent.
  */
 :root {
@@ -26,16 +26,16 @@
   --interactive-secondary: rgba(15, 17, 21, 0.045);
   --interactive-secondary-hover: rgba(15, 17, 21, 0.085);
   --active-primary: #ffffff;
-  --accent: #e8efff;
+  --accent: #fff1e8;
   --accent-foreground: #0f1115;
   --subtle: #7b828d;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --ring: #2563eb;
+  --primary: #e8590c;
+  --primary-foreground: #0f1115;
+  --ring: #e8590c;
   --positive: #16805c;
 
-  --chart-1: #2563eb;
-  --chart-2: #5b83e8;
+  --chart-1: #e8590c;
+  --chart-2: #f28c45;
   --chart-3: #47505a;
   --chart-4: #2aa198;
   --chart-5: #8a68d6;

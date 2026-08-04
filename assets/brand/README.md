@@ -17,7 +17,8 @@ Metrora™ is the product brand. Vensent™ is the publisher identity used for o
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| Signal Blue | `#2563EB` | actions, data highlights and active states |
+| Signal Orange | `#F2701C` | actions, data highlights and active states on dark surfaces |
+| Signal Orange Deep | `#E8590C` | actions, data highlights and active states on light surfaces |
 | Graphite | `#0F1115` | primary mark, headings and dark surfaces |
 | Slate | `#47505A` | secondary text and supporting UI |
 | Panel Gray | `#E6E9EE` | dividers and neutral panels |
@@ -30,7 +31,7 @@ Metrora™ is the product brand. Vensent™ is the publisher identity used for o
 - Keep clear space equal to at least one bar width.
 - Do not rotate, skew, outline, add gradients or recolor individual bars.
 - Minimum standalone size is 16 px; 24–32 px is preferred in product UI.
-- Use Signal Blue for interaction and data, not as a mandatory fill inside the primary logo.
+- Use Signal Orange for interaction and data, not as a mandatory fill inside the primary logo.
 - Use official names and canonical assets exactly as documented.
 
 The public website and product surfaces derive their visual identity from these files. Compatibility identifiers inherited from upstream may remain internally where changing them would break state, packaging or integrations; they must not appear as the product-facing identity.

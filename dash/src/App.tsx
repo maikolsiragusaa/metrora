@@ -636,7 +636,7 @@ export function App() {
                       type="checkbox"
                       checked={shareInfo.always}
                       onChange={() => void toggleAlways()}
-                      className="h-3.5 w-3.5 accent-[#2563EB]"
+                      className="h-3.5 w-3.5 accent-[#E8590C]"
                     />
                     Keep sharing always
                   </label>
