@@ -227,7 +227,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // title / prLinks / isSidechain. Forces one re-parse so cached sessions gain
   // the new optional fields.
   claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1',
-  cline: 'worktree-project-grouping-v1',
+  cline: 'worktree-project-grouping-v1-vscode-variants-v1',
   codewhale: 'aggregate-session-v1-est-cost',
   // Bump when the Codex parser changes attribution so unchanged, already-cached
   // session files re-parse (session-cache.json serves them without invoking the

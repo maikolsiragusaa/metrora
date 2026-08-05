@@ -20,8 +20,8 @@ import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
 import { getDaysInRange, ensureCacheHydrated, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
+import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
 import { buildGranularHistory } from './granular-history.js'
-
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 
@@ -98,7 +98,7 @@ export function getDailyCacheConfigHash(): string {
   // headline from one mode can be combined with model/project rows
   // from another. Sourceless slices are still carried forward by the
   // v14+ merge contract and remain conservatively legacy-frozen.
-  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\u0002${accountingHash}`
+  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}\u0002${accountingHash}`
 }
 
 async function hydrateCache(): Promise<DailyCache> {

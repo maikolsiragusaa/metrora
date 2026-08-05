@@ -4,8 +4,8 @@ Metrora uses semantic versioning for public product identity and a separate nume
 
 ## Current line
 
-- Public development version: `1.0.0-rc.6`
-- Desktop build version: `1.0.0.6`
+- Public development version: `1.0.0-rc.7`
+- Desktop build version: `1.0.0.7`
 - First intended stable release: `1.0.0`
 
 Changing metadata does not create an accepted artifact. Candidate identity always consists of the version, exact source commit, payload manifest and checksums, plus the applicable platform acceptance.

@@ -8,12 +8,12 @@ Cline VS Code extension and Cline home-data task storage.
 
 ## Where it reads from
 
-Two task roots are scanned:
+These task roots are scanned:
 
-1. VS Code extension globalStorage for `saoudrizwan.claude-dev`.
+1. VS Code extension globalStorage for `saoudrizwan.claude-dev` in stable VS Code, VS Code Insiders, and VSCodium. Platform paths come from `getVSCodeGlobalStoragePaths` in `src/providers/vscode-cline-parser.ts`.
 2. Cline's home-data root at `~/.cline/data`.
 
-Both roots are expected to contain a `tasks/` child directory. Discovery is delegated to `discoverClineTasks` in `src/providers/vscode-cline-parser.ts`, so a task is only included when it has a `ui_messages.json` file.
+Every root is expected to contain a `tasks/` child directory. Discovery is delegated to `discoverClineTasks` in `src/providers/vscode-cline-parser.ts`, so a task is only included when it has a `ui_messages.json` file.
 
 ## Storage format
 
@@ -27,20 +27,22 @@ tasks/<taskId>/
 ```
 
 `ui_messages.json` provides the `api_req_started` usage entries. `api_conversation_history.json` is used for model extraction. See [`vscode-cline-parser`](vscode-cline-parser.md) for the full schema description.
-`task_metadata.json` is part of Cline's task layout but is not read by CodeBurn today.
+`task_metadata.json` is part of Cline's task layout but is not read by Metrora today.
 
 ## Caching
 
-None at the provider level; delegates to the shared helper and normal parser/cache layers.
+The shared session cache fingerprints Cline's collector version. Discovery changes advance that provider-scoped authority so surviving tasks are selected and parsed again without resetting unrelated providers.
+
+Cline's collector authority also participates in the daily-cache configuration hash. When storage coverage changes, source-backed days are re-derived through the normal backfill and reconciliation path while sourceless historical slices remain carried.
 
 ## Deduplication
 
-Discovery deduplicates by task id across the two Cline roots so a migrated task is not scanned twice. If the same task id exists in multiple roots, the one with the newest `ui_messages.json` wins. Parsing still uses the shared per-call key: `<providerName>:<taskId>:<index>`.
+Discovery deduplicates by task id across every Cline root so a migrated or replicated task is not scanned twice. If the same task id exists in multiple roots, the one with the newest `ui_messages.json` wins. Parsing still uses the shared per-call key: `<providerName>:<taskId>:<index>`.
 
 ## Quirks
 
 - This provider is intentionally a thin wrapper over the shared Cline-family parser.
-- Cline can keep data in both VS Code globalStorage and `~/.cline/data`, depending on version and workflow.
+- Cline can keep data in VS Code stable, Insiders, VSCodium, and `~/.cline/data`, depending on version and workflow. All roots are scanned without summing duplicate task IDs.
 - If Cline changes the JSON shape, fix `vscode-cline-parser.ts` only if Roo Code and KiloCode still pass. Branch provider-specific parsing rather than duplicating the whole parser.
 
 ## When fixing a bug here
