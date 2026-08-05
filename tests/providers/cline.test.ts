@@ -3,8 +3,11 @@ import { mkdtemp, mkdir, writeFile, rm, utimes } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-import { cline, createClineProvider } from '../../src/providers/cline.js'
+import { cline, createClineProvider, getClineDataPath } from '../../src/providers/cline.js'
+import { getVSCodeGlobalStoragePaths } from '../../src/providers/vscode-cline-parser.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
+
+const EXTENSION_ID = 'saoudrizwan.claude-dev'
 
 let tmpDir: string
 
@@ -90,6 +93,74 @@ describe('cline provider - discovery', () => {
     const sessions = await provider.discoverSessions()
 
     expect(sessions).toHaveLength(0)
+  })
+})
+
+describe.sequential('cline provider - default roots', () => {
+  let previousHome: string | undefined
+  let previousUserProfile: string | undefined
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'cline-default-roots-test-'))
+    previousHome = process.env['HOME']
+    previousUserProfile = process.env['USERPROFILE']
+    process.env['HOME'] = tmpDir
+    process.env['USERPROFILE'] = tmpDir
+  })
+
+  afterEach(async () => {
+    if (previousHome === undefined) delete process.env['HOME']
+    else process.env['HOME'] = previousHome
+    if (previousUserProfile === undefined) delete process.env['USERPROFILE']
+    else process.env['USERPROFILE'] = previousUserProfile
+    await rm(tmpDir, { recursive: true, force: true })
+  })
+
+  it('discovers tasks from stable VS Code, Insiders, and VSCodium', async () => {
+    const roots = getVSCodeGlobalStoragePaths(EXTENSION_ID)
+    expect(roots).toHaveLength(3)
+    const [stableRoot, insidersRoot, codiumRoot] = roots
+    await writeTask(stableRoot!, 'task-stable')
+    await writeTask(insidersRoot!, 'task-insiders')
+    await writeTask(codiumRoot!, 'task-codium')
+
+    const sessions = await createClineProvider().discoverSessions()
+
+    expect(sessions.map(session => session.path).sort()).toEqual([
+      join(stableRoot!, 'tasks', 'task-stable'),
+      join(insidersRoot!, 'tasks', 'task-insiders'),
+      join(codiumRoot!, 'tasks', 'task-codium'),
+    ].sort())
+  })
+
+  it('still scans the Cline home-data root alongside VS Code variants', async () => {
+    const stableRoot = getVSCodeGlobalStoragePaths(EXTENSION_ID)[0]!
+    const homeDataRoot = getClineDataPath()
+    expect(homeDataRoot).toBe(join(tmpDir, '.cline', 'data'))
+    await writeTask(stableRoot, 'task-vscode')
+    await writeTask(homeDataRoot, 'task-home')
+
+    const sessions = await createClineProvider().discoverSessions()
+
+    expect(sessions.map(session => session.path).sort()).toEqual([
+      join(stableRoot, 'tasks', 'task-vscode'),
+      join(homeDataRoot, 'tasks', 'task-home'),
+    ].sort())
+  })
+
+  it('keeps only the newest copy of a task id shared across variants', async () => {
+    const [stableRoot, insidersRoot, codiumRoot] = getVSCodeGlobalStoragePaths(EXTENSION_ID)
+    const stableTask = await writeTask(stableRoot!, 'task-same')
+    const insidersTask = await writeTask(insidersRoot!, 'task-same')
+    const codiumTask = await writeTask(codiumRoot!, 'task-same')
+    await utimes(join(stableTask, 'ui_messages.json'), new Date('2026-01-01T00:00:00Z'), new Date('2026-01-01T00:00:00Z'))
+    await utimes(join(codiumTask, 'ui_messages.json'), new Date('2026-02-01T00:00:00Z'), new Date('2026-02-01T00:00:00Z'))
+    await utimes(join(insidersTask, 'ui_messages.json'), new Date('2026-03-01T00:00:00Z'), new Date('2026-03-01T00:00:00Z'))
+
+    const sessions = await createClineProvider().discoverSessions()
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.path).toBe(insidersTask)
   })
 })
 
