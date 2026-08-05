@@ -209,8 +209,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   for (const msg of chat) {
     if (msg.role === 'human') {
       if (msg.content.startsWith('<identity>')) continue
-      inputChars += msg.content.length
-      pendingUserMessage = msg.content.slice(0, 500)
+      inputChars += msg.content.length; pendingUserMessage = msg.content.slice(0, 500)
     }
     if (msg.role === 'bot') {
       const msgTools = extractToolNames(msg.content)
