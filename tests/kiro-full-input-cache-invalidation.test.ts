@@ -8,6 +8,7 @@ import { join } from 'path'
 import { clearSessionCache, parseAllSessions } from '../src/parser.js'
 import {
   CACHE_VERSION,
+  computeEnvFingerprint,
   fingerprintFile,
   sessionCachePath,
   type SessionCache,
@@ -107,6 +108,8 @@ afterAll(async () => {
 
 describe('Kiro legacy full-input cache invalidation', () => {
   it('reparses unchanged legacy chats cached under the previous parser version', async () => {
+    expect(computeEnvFingerprint('kiro')).not.toBe(previousKiroFingerprint())
+
     const fixture = await seedLegacyChat()
     await seedPreviousCache(fixture.path)
 
