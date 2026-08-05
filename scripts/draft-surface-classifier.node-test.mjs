@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   applyPackageChangeRisk,
   classifyDraftPaths,
+  failClosedClassification,
   isVersionOnlyPackageChange,
 } from './draft-surface-classifier.mjs'
 
@@ -56,6 +57,26 @@ test('allows ordinary documentation-only changes to remain cheap', () => {
   assert.equal(result.documentation_only, true)
   assert.equal(result.fallback_core, false)
   assert.equal(result.release, false)
+})
+
+test('keeps generated documentation on its owning validation surfaces', () => {
+  const result = classifyDraftPaths([
+    'docs/PRICING_HISTORY.md',
+    'docs/COLLECTOR_INVENTORY_V1.md',
+  ])
+
+  assert.equal(result.pricing, true)
+  assert.equal(result.providers, true)
+  assert.equal(result.documentation_only, false)
+  assert.equal(result.fallback_core, false)
+})
+
+test('forces complete validation when change classification cannot be trusted', () => {
+  const result = failClosedClassification('missing base commit')
+
+  assert.equal(result.documentation_only, false)
+  assert.equal(result.fallback_core, true)
+  assert.deepEqual(result.fallback_paths, ['missing base commit'])
 })
 
 test('treats release guidance, workflows and script helpers as release surfaces', () => {

@@ -49,6 +49,14 @@ const LOCAL_STATE_EXACT = new Set([
   'tests/cache-refresh-lock.test.ts',
 ])
 
+const GENERATED_PRICING_DOCUMENTS = new Set([
+  'docs/PRICING_HISTORY.md',
+])
+
+const GENERATED_PROVIDER_DOCUMENTS = new Set([
+  'docs/COLLECTOR_INVENTORY_V1.md',
+])
+
 function normalized(path) {
   return path.replaceAll('\\', '/')
 }
@@ -66,6 +74,14 @@ function emptyClassification() {
     documentation_only: true,
     fallback_paths: [],
   }
+}
+
+export function failClosedClassification(reason) {
+  const result = emptyClassification()
+  result.documentation_only = false
+  result.fallback_core = true
+  result.fallback_paths.push(reason)
+  return result
 }
 
 function isDocumentationPath(path) {
@@ -96,6 +112,18 @@ export function classifyDraftPaths(inputPaths) {
       path.startsWith('scripts/')
     ) {
       result.release = true
+      result.documentation_only = false
+      continue
+    }
+
+    if (GENERATED_PRICING_DOCUMENTS.has(path)) {
+      result.pricing = true
+      result.documentation_only = false
+      continue
+    }
+
+    if (GENERATED_PROVIDER_DOCUMENTS.has(path)) {
+      result.providers = true
       result.documentation_only = false
       continue
     }
@@ -256,9 +284,17 @@ function main() {
   }
 
   const base = process.argv[baseIndex + 1]
-  const changedPaths = changedPathsFrom(base)
-  const result = classifyDraftPaths(changedPaths)
-  applyPackageRisk(base, result, changedPaths)
+  let changedPaths = []
+  let result
+
+  try {
+    changedPaths = changedPathsFrom(base)
+    result = classifyDraftPaths(changedPaths)
+    applyPackageRisk(base, result, changedPaths)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    result = failClosedClassification(`change classification failed: ${message}`)
+  }
 
   console.log(JSON.stringify({ changedPaths, ...result }, null, 2))
   writeGithubOutputs(result, changedPaths)

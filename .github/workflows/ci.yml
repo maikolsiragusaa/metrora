@@ -18,15 +18,65 @@ jobs:
     name: Version authority
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      documentation_only: ${{ steps.surfaces.outputs.documentation_only }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22.15.0'
       - name: Verify package and platform versions
         run: npm run version:check
+      - name: Test change-surface classifier
+        run: node --test scripts/draft-surface-classifier.node-test.mjs
+      - name: Classify changed surfaces conservatively
+        id: surfaces
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base_sha="$PR_BASE_SHA"
+          if [ -z "$base_sha" ]; then
+            base_sha="$PUSH_BASE_SHA"
+          fi
+
+          if [ -z "$base_sha" ] || [[ "$base_sha" =~ ^0+$ ]]; then
+            echo 'No usable base commit is available; forcing full validation.'
+            {
+              echo 'parser=false'
+              echo 'providers=false'
+              echo 'local_state=false'
+              echo 'pricing=false'
+              echo 'desktop=false'
+              echo 'release=false'
+              echo 'powershell=false'
+              echo 'fallback_core=true'
+              echo 'documentation_only=false'
+              echo 'changed_count=unknown'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          node scripts/draft-surface-classifier.mjs --base "$base_sha"
+      - name: Record documentation-only fast path
+        if: steps.surfaces.outputs.documentation_only == 'true'
+        shell: bash
+        run: |
+          {
+            echo '## Documentation-only validation'
+            echo
+            echo 'Heavy core, desktop and security jobs were skipped because every changed path is documentation-only.'
+            echo
+            echo 'Generated or release-sensitive documents remain classified under their owning validation surface.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   semgrep:
+    needs: version-authority
+    if: needs.version-authority.outputs.documentation_only != 'true'
     name: Security rules
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -48,8 +98,12 @@ jobs:
           fi
 
   targeted-draft:
+    needs: version-authority
     name: Targeted draft validation
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == true
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == true &&
+      needs.version-authority.outputs.documentation_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -188,7 +242,10 @@ jobs:
         run: npm test -- --run --no-file-parallelism --exclude 'app/**'
 
   build:
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    needs: version-authority
+    if: >-
+      needs.version-authority.outputs.documentation_only != 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
     name: Core and desktop validation (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -276,7 +333,10 @@ jobs:
         run: npm --prefix app run build
 
   full-suite:
-    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    needs: version-authority
+    if: >-
+      needs.version-authority.outputs.documentation_only != 'true' &&
+      (github.event_name == 'push' || github.event.pull_request.draft == false)
     name: Core test suite
     runs-on: ubuntu-latest
     timeout-minutes: 45
