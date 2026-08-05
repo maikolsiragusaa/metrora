@@ -78,7 +78,7 @@ export type CollectorCostProvenanceV1 = z.infer<typeof CollectorCostProvenanceSc
 export type CollectorProvenanceProfileV1 = z.infer<typeof CollectorProvenanceProfileV1Schema>
 
 const CLAUDE_PARSER_VERSION = 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1'
-const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1'
+const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1'
 const GEMINI_PARSER_VERSION = 'message-token-ledger-v1'
 const ZED_PARSER_VERSION = 'sqlite-zstd-ledger-v1-model-provider-v1'
 
@@ -258,9 +258,7 @@ export function collectorProvenanceProfileForCall(
   if (call.provider === 'gemini') return call.isEstimated ? undefined : GEMINI_MESSAGE_USAGE_PROFILE_V1
   if (call.provider === 'zed') {
     if (call.isEstimated || !call.modelProvider || !call.deduplicationKey) return undefined
-    if (normalizeExplicitModelProvider(call.modelProvider) !== call.modelProvider) return undefined
-    if (!call.deduplicationKey.startsWith('zed:')) return undefined
-    return call.deduplicationKey.endsWith(':cumulative-remainder')
+    return call.deduplicationKey.startsWith('zed:remainder:')
       ? ZED_CUMULATIVE_REMAINDER_PROFILE_V1
       : ZED_REQUEST_USAGE_PROFILE_V1
   }
