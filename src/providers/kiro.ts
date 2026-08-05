@@ -202,13 +202,18 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   let modelId = normalizeModelId(metadata.modelId ?? '')
   if (modelId === 'auto' || !modelId) modelId = 'kiro-auto'
 
+  // Keep presentation and accounting separate: userMessage is only the latest
+  // bounded preview, while inputChars covers every eligible human turn in the
+  // legacy execution. Identity bootstrap text is not user prompt input.
   let pendingUserMessage = ''
+  let inputChars = 0
   const allTools: string[] = []
   const toolSequence: ToolCall[][] = []
 
   for (const msg of chat) {
     if (msg.role === 'human') {
       if (msg.content.startsWith('<identity>')) continue
+      inputChars += msg.content.length
       pendingUserMessage = msg.content.slice(0, 500)
     }
     if (msg.role === 'bot') {
@@ -226,7 +231,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   if (seenKeys.has(dedupKey)) return results
 
   const outputTokens = estimateTokensFromChars(totalOutputChars)
-  const inputTokens = estimateTokensFromChars(pendingUserMessage.length)
+  const inputTokens = estimateTokensFromChars(inputChars)
   const costUSD = calculateCost(modelId, inputTokens, outputTokens, 0, 0, 0)
   const tsDate = parseKiroTimestamp(metadata.startTime)
   if (!tsDate) return results
