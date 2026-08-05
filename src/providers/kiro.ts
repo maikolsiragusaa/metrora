@@ -202,11 +202,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   let modelId = normalizeModelId(metadata.modelId ?? '')
   if (modelId === 'auto' || !modelId) modelId = 'kiro-auto'
 
-  // Keep presentation and accounting separate: userMessage is only the latest
-  // bounded preview, while inputChars covers every eligible human turn in the
-  // legacy execution. Identity bootstrap text is not user prompt input.
-  let pendingUserMessage = ''
-  let inputChars = 0
+  let pendingUserMessage = '', inputChars = 0
   const allTools: string[] = []
   const toolSequence: ToolCall[][] = []
 
