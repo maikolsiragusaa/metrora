@@ -1,4 +1,4 @@
-name: Run reviewed Cline remediation payload
+name: Complete reviewed Cline remediation
 
 on:
   pull_request:
@@ -18,25 +18,46 @@ jobs:
           ref: fix/cline-vscode-storage-variants
           fetch-depth: 0
 
-      - name: Execute the reviewed payload
+      - name: Apply remaining cache authorities and remove helpers
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          from textwrap import dedent
 
-          workflow = Path('.github/workflows/apply-cline-p0e.yml')
-          text = workflow.read_text(encoding='utf-8')
-          start = "          python - <<'PY'\n"
-          end = "\n          PY\n\n      - name: Commit bounded remediation"
-          if text.count(start) != 2 or text.count(end) != 1:
-              raise SystemExit('reviewed payload markers changed unexpectedly')
-          block = text.split(start, 1)[1].split(end, 1)[0]
-          exec(compile(dedent(block), str(workflow), 'exec'), {})
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}')
+              file.write_text(text.replace(old, new), encoding='utf-8')
+
+          replace_once(
+              'src/session-cache.ts',
+              "cline: 'worktree-project-grouping-v1',",
+              "cline: 'worktree-project-grouping-v1-vscode-variants-v1',",
+          )
+          replace_once(
+              'src/usage-aggregator.ts',
+              """import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
+          import { buildGranularHistory } from './granular-history.js'
+
+          // Row caps""",
+              """import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
+          import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
+          import { buildGranularHistory } from './granular-history.js'
+          // Row caps""",
+          )
+          replace_once(
+              'src/usage-aggregator.ts',
+              "return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\\u0002${accountingHash}`",
+              "return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}\\u0002${accountingHash}`",
+          )
+          Path('.github/workflows/apply-cline-p0e.yml').unlink()
           Path('.github/workflows/run-cline-p0e.yml').unlink()
           PY
 
-      - name: Commit exact final delta
+      - name: Commit exact remaining delta
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -44,12 +65,8 @@ jobs:
           git add \
             .github/workflows/apply-cline-p0e.yml \
             .github/workflows/run-cline-p0e.yml \
-            docs/providers/cline.md \
-            src/providers/cline.ts \
             src/session-cache.ts \
-            src/usage-aggregator.ts \
-            tests/cline-discovery-cache-authority.test.ts \
-            tests/providers/cline.test.ts
+            src/usage-aggregator.ts
           git diff --cached --check
           python - <<'PY'
           import subprocess
@@ -57,16 +74,12 @@ jobs:
           expected = {
               '.github/workflows/apply-cline-p0e.yml',
               '.github/workflows/run-cline-p0e.yml',
-              'docs/providers/cline.md',
-              'src/providers/cline.ts',
               'src/session-cache.ts',
               'src/usage-aggregator.ts',
-              'tests/cline-discovery-cache-authority.test.ts',
-              'tests/providers/cline.test.ts',
           }
           actual = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
           if actual != expected:
-              raise SystemExit(f'unexpected final delta: {sorted(actual)}')
+              raise SystemExit(f'unexpected remaining delta: {sorted(actual)}')
           PY
-          git commit -m 'fix(cline): discover every VS Code storage variant'
+          git commit -m 'fix(cache): reconcile broadened Cline discovery'
           git push origin HEAD:fix/cline-vscode-storage-variants
