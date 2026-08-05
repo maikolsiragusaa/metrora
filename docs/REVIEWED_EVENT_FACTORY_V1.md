@@ -1,148 +1,105 @@
 # Metrora reviewed event factory v1
 
-Status: **implemented and connected to an explicit local Workspace producer; automatic collection and network transport remain disabled**.
+**Status:** implemented and used by explicit local Workspace production.
 
-`createReviewedUsageMeasurementEventV1()` is the single first-party composition boundary between:
+`createReviewedUsageMeasurementEventV1()` is the first-party projection boundary between a normalized local call, the executable collector-provenance registry, immutable cost evidence and the public measurement contract.
 
-- an existing normalized `ParsedApiCall`;
-- the reviewed collector provenance registry;
-- fail-closed quality and cost-evidence resolution;
-- the public CloudEvents measurement adapter.
-
-`produceLocalReviewedMeasurementV1()` is the first Workspace v1 production boundary above it. The producer loads the local workspace, reuses the protected endpoint event-identity key, invokes the reviewed factory in immutable-assignment mode, and writes only created events to the durable local outbox.
-
-Neither function scans providers or uploads data automatically.
+`produceLocalReviewedMeasurementV1()` loads the active local Workspace and protected endpoint identity, invokes that factory and writes only accepted events into the durable outbox. Neither function scans providers or transmits data.
 
 ## Explicit context
 
-The factory and producer do not discover or infer the following facts:
+The factory does not infer:
 
-- repository, project, account, or session disclosure;
-- tool name and version;
+- repository, project, account or session disclosure;
+- tool name or version;
 - Metrora adapter version;
 - source fingerprint;
-- actual AI/API provider;
-- GenAI operation;
+- AI/API provider;
+- operation name;
 - requested model.
 
-The caller must supply them. In particular, collector `codex` never implies AI provider `openai`: the actual provider remains an explicit field. A source-recorded `modelProvider`, when present, must agree with the declared provider or the event is withheld.
+The trusted caller supplies those facts. A collector name never implies the AI provider, and a source-recorded provider must agree with the declared provider or the event is withheld.
 
-The local producer does not accept caller-selected workspace, endpoint, or event-key values. It loads the existing local personal workspace, uses its enrolled endpoint, and uses the already-protected endpoint identity material.
+Workspace and endpoint identities are loaded from protected local state rather than accepted from renderer input.
 
-## Profile-owned fields
+## Profile-owned evidence
 
-The caller cannot choose the public collector profile identity or source kind. When evidence is approved, the factory derives:
+The executable provenance registry owns the reviewed profile and source kind. It resolves token, model, session, reasoning and cost quality per concrete source path.
 
-- `collector.adapterId` from the reviewed profile ID;
-- `collector.sourceKind` from the reviewed profile source kind;
-- token/model/session quality from `resolveMeasurementEvidenceV1()`;
-- cost evidence from the immutable per-call assignment in Workspace production.
+This prevents estimated content-length fallback from being labelled as measured and prevents a mutable current-price catalog from reinterpreting settled history.
 
-This prevents a content-length fallback from being labelled as a measured token-count path and prevents a mutable current-price feed from reinterpreting settled history.
+## Immutable cost authority
 
-`collector.adapterVersion` remains explicit because it identifies the Metrora implementation release, while the provenance profile separately pins the inherited parser fingerprint.
+Workspace production requires the immutable per-call cost assignment.
 
-## Cost authority
+- compatible provider- or client-metered evidence remains metered;
+- compatible token pricing remains an explicit estimated valuation;
+- numeric zero remains different from unavailable cost;
+- bounded legacy values retain their documented quality;
+- missing, malformed or contradictory assignments become unavailable rather than being repriced from the current catalog.
 
-The factory supports two bounded cost-evidence modes:
-
-- `current-compatible` preserves the earlier isolated-factory behavior for callers that have not crossed the runtime settlement boundary;
-- `immutable-assignment` is mandatory for Workspace production.
-
-In immutable-assignment mode:
-
-- a matching `metered` assignment is accepted only when the reviewed profile declares the same provider/client/billing-export source;
-- a matching `token-price` assignment becomes token-pricing cost only for a profile reviewed as local token pricing;
-- an explicit numeric zero remains different from unavailable cost;
-- a matching legacy-frozen value remains an estimated `other` value;
-- an unavailable assignment produces unavailable cost;
-- a missing, malformed, contradictory, or profile-incompatible assignment produces unavailable cost rather than current-price fallback.
-
-Reviewed usage is not discarded merely because cost is unavailable. Measurement v1 does not yet expose the full local `priceRecordId`, zero reason, or rate-band detail; those remain authoritative in the endpoint's immutable local assignment and can be carried by a later evidence/export contract without changing the event amount.
+A call can still produce a useful reviewed measurement when cost is unavailable.
 
 ## Session disclosure
 
-Session sharing is a discriminated decision:
+Session sharing is explicit:
 
-- `{ mode: "omit" }` produces no session ID and forces session quality to `unknown`;
-- `{ mode: "include", sessionId }` requires a concrete non-empty ID.
+- `omit` publishes no session identifier and keeps session quality unknown;
+- `include` requires one concrete non-empty session identifier.
 
-There is no boolean or implicit default that can accidentally claim session identity.
+There is no implicit default that can accidentally claim session identity.
 
-## Created, duplicate, and withheld
+## Enqueued, duplicate and withheld
 
-A reviewed call with unavailable pricing still creates a useful measurement event whose cost is `unavailable`.
-
-A call is withheld when its collector path or reasoning attribution is not reviewed, or when a source-recorded model provider conflicts with the declared provider. Withheld calls do not touch the outbox.
-
-A produced event is written through the existing append-only outbox:
+Accepted events pass through the append-only outbox:
 
 - `enqueued` means the immutable record was published for the first time;
-- `duplicate` means the same private production identity was already published;
-- reusing one production identity for a different semantic measurement fails closed;
-- the same public event ID with different bytes remains a collision.
+- `duplicate` means the same private production identity already exists with identical semantics;
+- conflicting reuse of one event or production identity fails closed.
 
-Malformed normalized facts, invalid context, foreign workspace identity, corrupted state, or invalid outbox state throw rather than being silently repaired.
+Calls are withheld when the concrete source path is not reviewed, reasoning attribution is unsupported or source-provider evidence conflicts. Withheld calls do not touch the outbox.
 
 ## Rotation-safe idempotency
 
-The public event ID is intentionally HMAC-derived from the endpoint event-identity key. Rotating that key breaks future linkability as designed, so the same source call would otherwise receive a different public ID after rotation.
+Public event IDs are HMAC-derived and intentionally change after event-key rotation. A private production receipt binds the stable Workspace, endpoint, reviewed profile, source fingerprint and normalized-call identity.
 
-Workspace production therefore creates a separate private receipt key from:
+Only the receipt digest is stored. Publishing it before the public event permits deterministic repair after interruption and returns the original event after key rotation instead of creating a duplicate.
 
-- workspace ID;
-- stable endpoint ID;
-- reviewed provenance profile ID;
-- source fingerprint;
-- the private normalized-call deduplication key.
-
-Only the SHA-256 digest of that composition is stored. The raw deduplication key never enters the receipt, event, or batch.
-
-The receipt stores the original immutable outbox record and its semantic digest. It is published before the public event file. Therefore:
-
-- an interruption between receipt and event publication is repairable on the next identical production;
-- endpoint HMAC-key rotation returns the original event record instead of producing a duplicate;
-- changed tokens, cost, scope, provider, disclosure, or other public semantics under the same production identity are rejected;
-- the private production digest is not exported or signed into a public batch.
+Changed tokens, cost, scope, provider or disclosure under the same production identity are rejected.
 
 ## Privacy boundary
 
-The factory ultimately calls the existing allowlist adapter. The event, outbox record, and private production receipt never serialize:
+The event, outbox record and private receipt never serialize:
 
-- private deduplication keys;
-- prompts or responses;
-- source code or patches;
-- tool sequences, MCP names, skills, or subagents;
-- shell commands, filenames, or local paths;
-- endpoint HMAC/event-identity keys;
-- endpoint private signing keys.
+- raw private deduplication keys;
+- prompts, responses, source code or patches;
+- tool sequences, commands, filenames or unrestricted local paths;
+- endpoint event-identity or signing keys.
 
-The public event contains only the structured measurement fields allowed by the v1 contract.
+Only allowlisted structured measurement fields enter the public contract.
 
 ## Current reviewed paths
 
-Workspace production remains limited to the paths admitted by the executable provenance registry:
+The executable registry currently admits six concrete paths across four collectors:
 
 - Claude JSONL usage;
 - Codex measured token-count records;
 - Codex content-length fallback with estimated quality;
 - Gemini message usage;
-- Zed request token usage with explicit source-recorded model provider;
-- Zed cumulative-remainder usage with explicit source-recorded model provider.
+- Zed request token usage with explicit source-recorded provider;
+- Zed cumulative-remainder usage with explicit source-recorded provider.
 
-A collector being locally supported does not make it eligible for Workspace production.
+Local collector support does not imply signed-measurement eligibility.
 
-## Non-goals
+## Responsibility boundary
 
-- no automatic scan/parser/cache hook;
-- no source-fingerprint or provider inference;
-- no repository-ID derivation from local paths;
-- no automatic session disclosure;
-- no signed workspace batch creation in this tranche;
-- no retry scheduler, synchronization, account, hosted service, or network transport;
-- no additional collector profiles;
-- no change to collectors, token accounting, historical pricing, observed labels, or analytics totals.
+The factory and one-call producer do not:
 
-## Next safe step
+- scan provider stores;
+- create signed batches or exports;
+- schedule retries;
+- upload data;
+- create accounts or hosted services;
+- change collector parsing, token accounting, historical pricing or analytics totals.
 
-W1.C can bind pending workspace-authorized outbox records into the existing immutable signed-batch chain and add a verifiable local export. It must preserve outbox sequence order, signer generation, previous-digest chaining, acknowledgements, quarantine state, private receipt recovery, and the same content-minimal boundary without activating an uploader.
+Canonical scanning, lifecycle control, batch creation, recovery and export remain separate explicit Workspace responsibilities.
