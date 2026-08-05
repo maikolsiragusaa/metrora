@@ -7,6 +7,7 @@ import { homedir } from 'os'
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
 import { CostAssignmentV1Schema, costAssignmentMatchesUsdV1, type CostAssignmentV1 } from './pricing/cost-assignment.js'
+import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -94,6 +95,8 @@ export type FileFingerprint = {
   ino: number
   mtimeMs: number
   sizeBytes: number
+  /** Present only when a SQLite source has a live WAL sidecar. */
+  sqliteWal?: SQLiteWalFingerprint
 }
 
 export type CachedFile = {
@@ -341,7 +344,13 @@ function isToolCallArray(v: unknown): boolean {
 function validateFingerprint(fp: unknown): fp is FileFingerprint {
   if (!fp || typeof fp !== 'object') return false
   const f = fp as Record<string, unknown>
+  const wal = f['sqliteWal']
   return isNum(f['dev']) && isNum(f['ino']) && isNum(f['mtimeMs']) && isNum(f['sizeBytes'])
+    && (wal === undefined || (
+      !!wal && typeof wal === 'object'
+      && isNum((wal as Record<string, unknown>)['mtimeMs'])
+      && isNum((wal as Record<string, unknown>)['sizeBytes'])
+    ))
 }
 
 function validateUsage(u: unknown): u is CachedUsage {
@@ -632,46 +641,12 @@ async function retryCacheFileMutation(operation: () => Promise<void>): Promise<b
 
 // ── File Fingerprinting ────────────────────────────────────────────────
 //
-// Fingerprints cover the source's transcript file only. Providers that keep
-// metadata in a companion file (kiro CLI: credits in `<id>.json` next to the
-// `.jsonl`; kiro v2: modelId in `session.json` next to `messages.jsonl`) have
-// a blind spot: a parse that races the companion write caches the turn with
-// fallback values, and if the transcript never changes again (a session's
-// final turn) the entry never invalidates. Mid-session turns self-heal since
-// append-only transcripts keep changing. Fixing this properly means
-// multi-file fingerprints per source.
+// This public authority preserves historical single-file behavior for JSONL
+// and other ordinary sources. SQLite paths additionally include their live WAL
+// state through the dedicated Metrora-owned helper.
 
 export async function fingerprintFile(filePath: string): Promise<FileFingerprint | null> {
-  try {
-    const s = await stat(filePath)
-    return { dev: s.dev, ino: s.ino, mtimeMs: s.mtimeMs, sizeBytes: s.size }
-  } catch {
-    // Providers encode extra context into source paths using virtual suffixes:
-    // - Cursor: `<dbPath>#cursor-ws=<workspace>` (workspace-aware routing)
-    // - OpenCode: `<dbPath>:<sessionId>` (session scoping)
-    // These compound paths don't exist on disk; strip the suffix to stat the
-    // underlying file. Try `#` first (rare in real paths), then `:` (must use
-    // lastIndexOf to tolerate Windows drive letters like C:\...).
-    const hashIdx = filePath.indexOf('#')
-    if (hashIdx > 0) {
-      try {
-        const s = await stat(filePath.slice(0, hashIdx))
-        return { dev: s.dev, ino: s.ino, mtimeMs: s.mtimeMs, sizeBytes: s.size }
-      } catch {
-        // fall through to colon check
-      }
-    }
-    const colonIdx = filePath.lastIndexOf(':')
-    if (colonIdx > 0) {
-      try {
-        const s = await stat(filePath.slice(0, colonIdx))
-        return { dev: s.dev, ino: s.ino, mtimeMs: s.mtimeMs, sizeBytes: s.size }
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
+  return fingerprintSourceFile(filePath)
 }
 
 // ── Reconciliation ─────────────────────────────────────────────────────
@@ -681,6 +656,14 @@ export type ReconcileAction =
   | { action: 'appended'; readFromOffset: number }
   | { action: 'modified' }
   | { action: 'new' }
+
+function sqliteWalFingerprintMatches(a: FileFingerprint, b: FileFingerprint): boolean {
+  if (a.sqliteWal === undefined || b.sqliteWal === undefined) {
+    return a.sqliteWal === b.sqliteWal
+  }
+  return a.sqliteWal.mtimeMs === b.sqliteWal.mtimeMs
+    && a.sqliteWal.sizeBytes === b.sqliteWal.sizeBytes
+}
 
 export function reconcileFile(
   current: FileFingerprint,
@@ -694,13 +677,18 @@ export function reconcileFile(
     fp.dev === current.dev &&
     fp.ino === current.ino &&
     fp.mtimeMs === current.mtimeMs &&
-    fp.sizeBytes === current.sizeBytes
+    fp.sizeBytes === current.sizeBytes &&
+    sqliteWalFingerprintMatches(fp, current)
   ) {
     return { action: 'unchanged' }
   }
 
   if (
     cached.lastCompleteLineOffset !== undefined &&
+    // SQLite sources are always reparsed as whole databases. The append path is
+    // reserved for historical single-file streams such as JSONL.
+    fp.sqliteWal === undefined &&
+    current.sqliteWal === undefined &&
     // Defensive: never resume past the file's current end. A truncate-then-regrow
     // can leave the cached offset stranded beyond live bytes; reading from there
     // would silently drop the appended tail, so fall back to a full re-parse.

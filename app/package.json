@@ -1,7 +1,7 @@
 {
   "name": "metrora-desktop",
   "private": true,
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "description": "Metrora Desktop — local-first AI usage intelligence",
   "main": "dist/electron/bootstrap.js",
   "scripts": {
@@ -129,7 +129,7 @@
       "maintainer": "Vensent (https://metrora.eu)",
       "executableName": "metrora"
     },
-    "buildVersion": "1.0.0.2"
+    "buildVersion": "1.0.0.3"
   },
   "homepage": "https://metrora.eu",
   "publisher": "Vensent",
