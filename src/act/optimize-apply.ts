@@ -118,7 +118,7 @@ export async function runOptimizeApply(
     const bad = onlyIds.filter(id => !valid.has(id))
     if (bad.length > 0) {
       const validList = valid.size > 0 ? [...valid].join(', ') : '(none)'
-      errout.write(`codeburn optimize --apply: unknown or not-appliable finding id${bad.length === 1 ? '' : 's'}: ${bad.join(', ')}. Appliable ids for this run: ${validList}\n`)
+      errout.write(`metrora optimize --apply: unknown or not-appliable finding id${bad.length === 1 ? '' : 's'}: ${bad.join(', ')}. Appliable ids for this run: ${validList}\n`)
       process.exitCode = 2
       return
     }
@@ -176,7 +176,7 @@ export async function runOptimizeApply(
     try {
       const record = await runAction(fp.plan!, opts.actionsDir)
       print(`  Applied ${chalk.bold(shortId(record.id))}  ${record.description}`)
-      print(chalk.dim(`    Undo anytime: codeburn act undo ${shortId(record.id)}`))
+      print(chalk.dim(`    Undo anytime: metrora act undo ${shortId(record.id)}`))
     } catch (e) {
       errout.write(chalk.red(`  Failed to apply ${fp.finding.id}: ${e instanceof Error ? e.message : String(e)}`) + '\n')
       process.exitCode = 1

@@ -1,5 +1,5 @@
 /**
- * codeburn sync — sent-ledger.
+ * metrora sync — sent-ledger.
  *
  * Client-side deduplication: tracks which calls have been successfully pushed.
  * Push logic: window minus ledger = what to send.

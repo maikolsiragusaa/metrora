@@ -7,8 +7,8 @@ import type { ActionPlan, PlannedChange } from '../act/types.js'
 // The hook entries `guard install` writes and `guard uninstall` removes. Every
 // command carries the same recognizable prefix so uninstall can find exactly
 // ours by substring even if the user later moved or reindented the file.
-export const GUARD_HOOK_PREFIX = 'codeburn guard hook'
-export const GUARD_STATUSLINE_COMMAND = 'codeburn guard statusline'
+export const GUARD_HOOK_PREFIX = 'metrora guard hook'
+export const GUARD_STATUSLINE_COMMAND = 'metrora guard statusline'
 
 const INSTALL_HOOKS: { event: string; matcher?: string; arg: string }[] = [
   { event: 'PreToolUse', arg: 'pretooluse' },
@@ -110,7 +110,7 @@ export function buildInstall(path: string, opts: { statusline?: boolean } = {}):
     plan: {
       kind: 'guard-install',
       findingId: null,
-      description: `Install codeburn guard hooks into ${path}`,
+      description: `Install metrora guard hooks into ${path}`,
       changes: [change(path, existed, rawHash, doc)],
     },
     path,
@@ -153,13 +153,13 @@ export function buildUninstall(path: string): SettingsBuild {
   }
 
   if (!removed) {
-    return { plan: null, path, existed, notes: ['no codeburn guard hooks found in that settings file'] }
+    return { plan: null, path, existed, notes: ['no metrora guard hooks found in that settings file'] }
   }
   return {
     plan: {
       kind: 'guard-uninstall',
       findingId: null,
-      description: `Remove codeburn guard hooks from ${path}`,
+      description: `Remove metrora guard hooks from ${path}`,
       changes: [change(path, existed, rawHash, doc)],
     },
     path,

@@ -487,7 +487,7 @@ describe('optimize header', () => {
     const actionsDir = await writeJournal([mcpRecord()])
     const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
     const header = buildOptimizeAppliedHeader(report)
-    expect(header).toMatch(/^Applied fixes: 1 active, realized ~40\.0K tokens.*over 10 days\. Details: codeburn act report$/)
+    expect(header).toMatch(/^Applied fixes: 1 active, realized ~40\.0K tokens.*over 10 days\. Details: metrora act report$/)
   })
 
   it('renders no header when every measured row is low confidence (under-claim)', async () => {

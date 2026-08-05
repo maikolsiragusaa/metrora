@@ -1,5 +1,5 @@
 /**
- * codeburn sync — OIDC authentication.
+ * metrora sync — OIDC authentication.
  *
  * Authorization Code + PKCE flow with localhost callback server.
  */
@@ -347,7 +347,7 @@ export async function refreshToken(
     let detail = ''
     try { detail = await response.text() } catch {}
     if (response.status === 400 || response.status === 401) {
-      throw new AuthError('Sync auth expired. Run `codeburn sync setup` to re-authenticate.')
+      throw new AuthError('Sync auth expired. Run `metrora sync setup` to re-authenticate.')
     }
     throw new AuthError(`Token refresh failed (HTTP ${response.status}): ${detail}`)
   }

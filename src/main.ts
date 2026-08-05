@@ -297,7 +297,7 @@ function printBudgetList(budget: CodeburnConfig['budget']): void {
   if (entries.length === 0) {
     console.log('\n  No budgets configured.')
     console.log(`  Config: ${getConfigFilePath()}`)
-    console.log('  Add one with: codeburn budget --monthly <amount>\n')
+    console.log('  Add one with: metrora budget --monthly <amount>\n')
     return
   }
 
@@ -350,7 +350,7 @@ async function runBudgetCheck(budget: CodeburnConfig['budget']): Promise<void> {
   const entries = configuredBudgetEntries(budget)
   if (entries.length === 0) {
     console.log('\n  No budgets configured.')
-    console.log('  Add one with: codeburn budget --monthly <amount>\n')
+    console.log('  Add one with: metrora budget --monthly <amount>\n')
     return
   }
 
@@ -820,11 +820,11 @@ program
       return
     }
     if (action !== undefined) {
-      process.stderr.write('codeburn share: unknown action. Valid values: status.\n')
+      process.stderr.write('metrora share: unknown action. Valid values: status.\n')
       process.exit(1)
     }
     if (opts.format === 'json') {
-      process.stderr.write('codeburn share: --format json is only supported for `share status`.\n')
+      process.stderr.write('metrora share: --format json is only supported for `share status`.\n')
       process.exit(1)
     }
     await runShareServer({ port: opts.port, pair: !!opts.pair, always: !!opts.always })
@@ -859,7 +859,7 @@ program
         return
       }
       if (found.length === 0) {
-        console.log('\n  No devices found. On the other Mac run `codeburn share`, and make sure both are on the same Wi-Fi.\n')
+        console.log('\n  No devices found. On the other Mac run `metrora share`, and make sure both are on the same Wi-Fi.\n')
         return
       }
       process.stdout.write('\n  Found devices:\n')
@@ -870,7 +870,7 @@ program
       return
     }
     if (opts.format === 'json' && action !== undefined) {
-      process.stderr.write('codeburn devices: --format json is only supported for read-only devices output and scan.\n')
+      process.stderr.write('metrora devices: --format json is only supported for read-only devices output and scan.\n')
       process.exit(1)
     }
     if (action === 'add') {
@@ -882,7 +882,7 @@ program
       process.stdout.write('\n  Looking for devices on your network...\n')
       const found = await browse(3000)
       if (found.length === 0) {
-        console.error('  No devices found. On the other Mac run `codeburn share`, and make sure both are on the same Wi-Fi.\n')
+        console.error('  No devices found. On the other Mac run `metrora share`, and make sure both are on the same Wi-Fi.\n')
         process.exit(1)
       }
       let chosen = found[0]!
@@ -1270,7 +1270,7 @@ program
       return
     }
 
-    const defaultName = `codeburn-${toDateString(new Date())}`
+    const defaultName = `metrora-${toDateString(new Date())}`
     const outputPath = opts.output ?? `${defaultName}.${opts.format}`
 
     let savedPath: string
@@ -1310,7 +1310,7 @@ program
 
 program
   .command('currency [code]')
-  .description('Set display currency (e.g. codeburn currency GBP)')
+  .description('Set display currency (e.g. metrora currency GBP)')
   .option('--symbol <symbol>', 'Override the currency symbol')
   .option('--reset', 'Reset to USD (removes currency config)')
   .action(async (code?: string, opts?: { symbol?: string; reset?: boolean }) => {
@@ -1442,7 +1442,7 @@ program
         console.log('\n  No price overrides configured.')
         console.log('  Rates use USD per 1,000,000 tokens.')
         console.log(`  Config: ${getConfigFilePath()}`)
-        console.log('  Add one with: codeburn price-override <model> --input <usd-per-1M> --output <usd-per-1M>\n')
+        console.log('  Add one with: metrora price-override <model> --input <usd-per-1M> --output <usd-per-1M>\n')
       } else {
         console.log('\n  Price overrides (USD per 1,000,000 tokens):')
         for (const [name, rates] of entries) {
@@ -1471,7 +1471,7 @@ program
     const cacheRead = opts?.cacheRead
     const cacheCreation = opts?.cacheCreation
     if (!model || input === undefined || output === undefined) {
-      console.error('\n  Usage: codeburn price-override <model> --input <usd-per-1M> --output <usd-per-1M> [--cache-read <usd-per-1M>] [--cache-creation <usd-per-1M>]\n')
+      console.error('\n  Usage: metrora price-override <model> --input <usd-per-1M> --output <usd-per-1M> [--cache-read <usd-per-1M>] [--cache-creation <usd-per-1M>]\n')
       process.exitCode = 1
       return
     }
@@ -1563,7 +1563,7 @@ program
 
 program
   .command('proxy-path [path]')
-  .description('Mark a project directory as routed through a subscription-backed LLM proxy (e.g. Claude Code over GitHub Copilot). Sessions whose canonical path is under it keep their full API-rate cost as the "would-be" figure, but that amount is reported as subscription-covered so the report can show net out-of-pocket (e.g. codeburn proxy-path ~/work/copilot-repo). Actual API-key sessions elsewhere are untouched.')
+  .description('Mark a project directory as routed through a subscription-backed LLM proxy (e.g. Claude Code over GitHub Copilot). Sessions whose canonical path is under it keep their full API-rate cost as the "would-be" figure, but that amount is reported as subscription-covered so the report can show net out-of-pocket (e.g. metrora proxy-path ~/work/copilot-repo). Actual API-key sessions elsewhere are untouched.')
   .option('--remove <path>', 'Remove a configured proxy path')
   .option('--list', 'List configured proxy paths')
   .option('--format <format>', 'Output format: text, json', 'text')
@@ -1586,7 +1586,7 @@ program
       if (paths.length === 0) {
         console.log('\n  No proxy paths configured.')
         console.log(`  Config: ${getConfigFilePath()}`)
-        console.log('  Add one with: codeburn proxy-path <project-dir>\n')
+        console.log('  Add one with: metrora proxy-path <project-dir>\n')
       } else {
         console.log('\n  Proxy paths (sessions under these are subscription-covered):')
         for (const p of paths) console.log(`    ${p}`)
@@ -1610,7 +1610,7 @@ program
     }
 
     if (!path) {
-      console.error('\n  Usage: codeburn proxy-path <project-dir>\n')
+      console.error('\n  Usage: metrora proxy-path <project-dir>\n')
       process.exitCode = 1
       return
     }
@@ -1695,7 +1695,7 @@ program
     }
 
     if (mode !== 'set') {
-      console.error('\n  Usage: codeburn plan [set <id> | reset]\n')
+      console.error('\n  Usage: metrora plan [set <id> | reset]\n')
       process.exitCode = 1
       return
     }
@@ -1795,7 +1795,7 @@ program
     assertProvider(opts.provider, 'optimize')
     const format = opts.json ? 'json' : opts.format
     if (opts.apply && format === 'json') {
-      process.stderr.write('codeburn optimize: --apply cannot be combined with --json\n')
+      process.stderr.write('metrora optimize: --apply cannot be combined with --json\n')
       process.exit(2)
     }
     await loadPricing()
@@ -1870,13 +1870,13 @@ program
   .action(async (session: string | undefined, opts: { json?: boolean; limit: number; watch: number }) => {
     const intervalMs = Math.max(0, opts.watch) * 1000
     if (opts.json && intervalMs > 0) {
-      process.stderr.write('codeburn codex-tps: --json cannot be combined with --watch; use text watch output or one-shot JSON.\n')
+      process.stderr.write('metrora codex-tps: --json cannot be combined with --watch; use text watch output or one-shot JSON.\n')
       process.exitCode = 2
       return
     }
     const provider = await getProvider('codex')
     if (!provider) {
-      process.stderr.write('codeburn codex-tps: Codex provider is unavailable.\n')
+      process.stderr.write('metrora codex-tps: Codex provider is unavailable.\n')
       process.exitCode = 1
       return
     }
@@ -1899,7 +1899,7 @@ program
           filePath = await newestCodexSession(await provider.discoverSessions())
         }
         if (!filePath) {
-          process.stderr.write('codeburn codex-tps: no Codex rollout sessions found.\n')
+          process.stderr.write('metrora codex-tps: no Codex rollout sessions found.\n')
           if (intervalMs === 0) process.exitCode = 1
           return
         }
@@ -1908,7 +1908,7 @@ program
         if (previousPath !== filePath || !throughputReader) throughputReader = new CodexThroughputReader()
         const fileInfo = await import('node:fs/promises').then(fs => fs.stat(filePath)).catch(() => null)
         if (!fileInfo) {
-          process.stderr.write(`codeburn codex-tps: session file not found: ${filePath}\n`)
+          process.stderr.write(`metrora codex-tps: session file not found: ${filePath}\n`)
           if (intervalMs === 0) process.exitCode = 1
           if (!session) cachedPath = undefined
           return
@@ -1930,7 +1930,7 @@ program
       await render()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      process.stderr.write(`codeburn codex-tps: refresh failed: ${message}\n`)
+      process.stderr.write(`metrora codex-tps: refresh failed: ${message}\n`)
       if (intervalMs === 0) {
         process.exitCode = 1
         return
@@ -1941,7 +1941,7 @@ program
         const timer = setInterval(() => {
           void render().catch(error => {
             const message = error instanceof Error ? error.message : String(error)
-            process.stderr.write(`codeburn codex-tps: refresh failed: ${message}\n`)
+            process.stderr.write(`metrora codex-tps: refresh failed: ${message}\n`)
           })
         }, intervalMs)
         process.once('SIGINT', () => { clearInterval(timer); resolve() })
@@ -1983,17 +1983,17 @@ program
         return
       }
       if (!opts.modelA || !opts.modelB) {
-        process.stderr.write('codeburn compare: --model-a and --model-b must be provided together.\n')
+        process.stderr.write('metrora compare: --model-a and --model-b must be provided together.\n')
         process.exit(1)
       }
       const modelA = models.find(model => model.model === opts.modelA)
       const modelB = models.find(model => model.model === opts.modelB)
       if (!modelA) {
-        process.stderr.write(`codeburn compare: model not found: "${opts.modelA}".\n`)
+        process.stderr.write(`metrora compare: model not found: "${opts.modelA}".\n`)
         process.exit(1)
       }
       if (!modelB) {
-        process.stderr.write(`codeburn compare: model not found: "${opts.modelB}".\n`)
+        process.stderr.write(`metrora compare: model not found: "${opts.modelB}".\n`)
         process.exit(1)
       }
       process.stdout.write(renderCompareJson(buildCompareJson(projects, modelA, modelB, label, opts.provider)) + '\n')
@@ -2275,7 +2275,7 @@ program
           : '\n  Antigravity CLI usage capture removed.\n')
         return
       }
-      console.error('\n  Usage: codeburn antigravity-hook <install|uninstall>\n')
+      console.error('\n  Usage: metrora antigravity-hook <install|uninstall>\n')
       process.exit(1)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

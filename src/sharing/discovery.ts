@@ -58,8 +58,8 @@ export function browse(timeoutMs = 2500): Promise<DiscoveredDevice[]> {
     }
 
     const finishWithError = (err?: unknown) => {
-      if (err) console.error(`codeburn devices scan: mDNS discovery failed: ${err instanceof Error ? err.message : String(err)}`)
-      else console.error('codeburn devices scan: mDNS discovery failed')
+      if (err) console.error(`metrora devices scan: mDNS discovery failed: ${err instanceof Error ? err.message : String(err)}`)
+      else console.error('metrora devices scan: mDNS discovery failed')
       finish([...found.values()])
     }
 

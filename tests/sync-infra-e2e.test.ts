@@ -1,5 +1,5 @@
 /**
- * Integration test: codeburn sync push against real AWS infrastructure.
+ * Integration test: metrora sync push against real AWS infrastructure.
  *
  * Requires:
  * - Deployed CodeburnSyncBackend stack

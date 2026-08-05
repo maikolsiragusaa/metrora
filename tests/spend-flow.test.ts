@@ -234,7 +234,7 @@ describe('computeSpendFlow', () => {
   })
 })
 
-describe('codeburn spend --format flow-json', () => {
+describe('metrora spend --format flow-json', () => {
   it('prints a valid SpendFlow payload', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-spend-flow-cli-'))
 

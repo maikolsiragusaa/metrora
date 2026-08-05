@@ -1,5 +1,5 @@
 /**
- * codeburn sync — push orchestration.
+ * metrora sync — push orchestration.
  *
  * Extracted from the CLI action so the flatten/filter/batch/send/ledger
  * pipeline is unit-testable without a full CLI invocation.

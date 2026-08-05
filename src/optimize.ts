@@ -2562,7 +2562,7 @@ function estimateLowWorthRecoverableTokens(
 }
 
 // Session-opener texts, the single source of truth shared by the optimize
-// findings below and by `codeburn guard` (SessionStart hook). Kept as
+// findings below and by `metrora guard` (SessionStart hook). Kept as
 // constants so the two surfaces can never drift.
 export const LOW_WORTH_OPENER = 'Before continuing, name the deliverable in one sentence (PR title, file changed, command output you expect). Stop and check with me if (a) you spend more than 10 minutes without an edit, or (b) the same approach fails twice. Do not retry past two attempts on any single fix.'
 export const CONTEXT_HEAVY_OPENER = 'Start fresh before continuing. Use only the current goal, the relevant files, the failing command/output, and the constraints below. Restate the working context in under 10 bullets before editing.'
@@ -3222,7 +3222,7 @@ function renderOptimize(
       lines.push(`  ${rec.project}: ${chalk.bold(rec.currentModel)} -> ${chalk.bold.hex(GREEN)(rec.candidateModel)}`)
       lines.push(chalk.dim(`  Current:  ${(rec.currentOneShotRate*100).toFixed(1)}% one-shot over ${rec.currentEditTurns} edits, ${formatCost(rec.currentCostPerEdit)}/edit`))
       lines.push(chalk.dim(`  Candidate: ${(rec.candidateOneShotRate*100).toFixed(1)}% one-shot over ${rec.candidateEditTurns} edits, ${formatCost(rec.candidateCostPerEdit)}/edit`))
-      lines.push(`  To apply: ${chalk.hex(CYAN)(`codeburn act apply-model ${rec.project}`)}`)
+      lines.push(`  To apply: ${chalk.hex(CYAN)(`metrora act apply-model ${rec.project}`)}`)
       lines.push('')
     }
   }

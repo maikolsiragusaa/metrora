@@ -1,5 +1,5 @@
 /**
- * codeburn sync — config file management.
+ * metrora sync — config file management.
  *
  * Stores non-secret sync configuration at ~/.config/codeburn/sync.json
  */

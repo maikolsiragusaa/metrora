@@ -286,7 +286,7 @@ export async function runWebDashboard(opts: {
           await share.start(!!body.always)
           await saveShareAlways(!!body.always)
         } catch (err) {
-          // e.g. EADDRINUSE when a CLI `codeburn share` already holds the port.
+          // e.g. EADDRINUSE when a CLI `metrora share` already holds the port.
           startError = err instanceof Error ? err.message : String(err)
         }
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })

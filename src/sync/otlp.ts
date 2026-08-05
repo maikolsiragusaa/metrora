@@ -1,5 +1,5 @@
 /**
- * codeburn sync — OTLP payload builder.
+ * metrora sync — OTLP payload builder.
  *
  * Converts ParsedApiCall[] into an ExportTraceServiceRequest (OTLP/HTTP JSON).
  * Span and trace IDs are derived deterministically from deduplicationKey/sessionId.

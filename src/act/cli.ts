@@ -95,7 +95,7 @@ export function registerActCommands(program: Command): void {
 
         console.log(`Applied default model ${chalk.green(recommendation.candidateModel)} for ${project}`)
         console.log(chalk.dim(`  Evidence: ${recommendation.candidateEditTurns} turns, ${(recommendation.candidateOneShotRate * 100).toFixed(1)}% one-shot, $${recommendation.candidateCostPerEdit.toFixed(3)}/edit`))
-        console.log(chalk.dim(`  Undo anytime: codeburn act undo ${shortId(record.id)}`))
+        console.log(chalk.dim(`  Undo anytime: metrora act undo ${shortId(record.id)}`))
         console.log(chalk.dim(`  Per-session override: --model <name>`))
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err))

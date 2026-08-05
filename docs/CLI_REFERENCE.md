@@ -127,4 +127,4 @@ The macOS menubar and other retained platform surfaces are not official Metrora 
 
 New documentation, scripts and releases should use `metrora`. Compatibility aliases may be removed only through an explicit migration that protects existing user-owned state.
 
-Some command output and internal paths can still contain historical compatibility identifiers. Those are tracked as migration debt; they are not alternate product identities.
+Internal paths, versioned schemas and persisted identifiers can still contain historical compatibility names where migration safety requires them. Canonical CLI help, diagnostics and examples use Metrora.

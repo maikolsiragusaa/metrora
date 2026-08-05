@@ -21,7 +21,7 @@ function runCli(args: string[], home: string) {
   })
 }
 
-describe('codeburn plan command', () => {
+describe('metrora plan command', () => {
   it('persists provider-keyed plans and clears on reset', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
 

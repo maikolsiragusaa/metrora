@@ -5,7 +5,7 @@ import { renderTable, type TableColumn } from './text-table.js'
 import type { ProjectSummary } from './types.js'
 
 // One (provider, model) bucket, exposing both the raw token fields as recorded
-// by the provider/transcript and the normalized totals codeburn actually
+// by the provider/transcript and the normalized totals metrora actually
 // prices, so a mismatch between the two is visible in one place.
 export type AuditRow = {
   provider: string
@@ -44,7 +44,7 @@ export type AuditRow = {
     webSearch: number
     recomputedTotalUSD: number
   }
-  // The cost codeburn actually attributed to these calls (sum of call.costUSD).
+  // The cost metrora actually attributed to these calls (sum of call.costUSD).
   attributedCostUSD: number
 }
 
