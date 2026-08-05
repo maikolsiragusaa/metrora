@@ -1,0 +1,42 @@
+name: Remove temporary branches
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  remove:
+    if: github.head_ref == 'maintenance/branches'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Close and lock maintenance pull request
+        shell: bash
+        run: |
+          gh api --method PATCH "/repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+            -f title='Archived repository maintenance' \
+            -f body='Temporary maintenance change used to remove obsolete branch references.' \
+            -f state=closed
+          gh api --method PUT "/repos/${REPOSITORY}/issues/${PR_NUMBER}/lock" -f lock_reason=resolved || true
+
+      - name: Delete all non-main branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r branch; do
+            [ "$branch" = "main" ] && continue
+            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/heads/${branch}" || true
+          done < <(gh api --paginate "/repos/${REPOSITORY}/branches?per_page=100" --jq '.[].name')
