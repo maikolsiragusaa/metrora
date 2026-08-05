@@ -18,23 +18,22 @@ describe('CollectorInventoryV1', () => {
     expect(new Set(inventoried).size).toBe(38)
   })
 
-  it('points every collector at a real provider module and every claimed document at a real file', () => {
+  it('points every collector at a real provider module and provider guide', () => {
     for (const entry of CollectorInventoryV1.entries) {
       expect(existsSync(join(process.cwd(), entry.modulePath)), entry.provider).toBe(true)
-      if (entry.documentationPath) {
-        expect(existsSync(join(process.cwd(), entry.documentationPath)), entry.provider).toBe(true)
-      }
+      expect(entry.documentationPath, entry.provider).not.toBeNull()
+      expect(existsSync(join(process.cwd(), entry.documentationPath!)), entry.provider).toBe(true)
     }
   })
 
-  it('tracks the current documentation gaps explicitly', () => {
+  it('tracks complete provider documentation coverage separately from evidence approval', () => {
     expect(collectorInventorySummaryV1()).toEqual({
       total: 38,
       approved: 4,
       priority: 8,
       pending: 26,
-      documented: 34,
-      documentationGaps: ['codebuff', 'kimicode', 'open-design', 'quickdesk'],
+      documented: 38,
+      documentationGaps: [],
     })
   })
 

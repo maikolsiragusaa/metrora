@@ -18,7 +18,7 @@ This is an evidence boundary, not a product-priority ranking.
 | `antigravity` | Available | Protobuf/RPC cache and status-line sources documented; path-specific signed review incomplete | Withheld |
 | `claude` | Available | JSONL and desktop session evidence reviewed | Approved |
 | `cline` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
-| `codebuff` | Available | Local collector registered; public provider guide pending | Withheld |
+| `codebuff` | Available | Chat JSON, token fields, credit fallback and tool normalization documented; signed-evidence audit incomplete | Withheld |
 | `codewhale` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `codex` | Available | Rollout JSONL measured and fallback evidence reviewed | Approved |
 | `copilot` | Available | OTEL, SQLite and legacy multi-store sources documented; path-specific signed review incomplete | Withheld |
@@ -35,17 +35,17 @@ This is an evidence boundary, not a product-priority ranking.
 | `ibm-bob` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `kilo-code` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `kimi` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
-| `kimicode` | Available | Local collector registered; public provider guide pending | Withheld |
+| `kimicode` | Available | Agent-wire token, cache and tool evidence documented; signed-evidence audit incomplete | Withheld |
 | `kiro` | Available | Legacy chat JSON with estimated fields documented | Withheld |
 | `lingtai-tui` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `mistral-vibe` | Available | Session metadata and JSONL evidence documented | Withheld |
 | `mux` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `omp` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
-| `open-design` | Available | Local collector registered; public provider guide pending | Withheld |
+| `open-design` | Available | Per-run JSONL token, cache and reasoning evidence documented; signed-evidence audit incomplete | Withheld |
 | `openclaw` | Available | Agent JSONL evidence documented | Withheld |
 | `opencode` | Available | SQLite and file-storage evidence documented | Withheld |
 | `pi` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
-| `quickdesk` | Available | Local collector registered; public provider guide pending | Withheld |
+| `quickdesk` | Available | Metrics JSONL, SQLite enrichment and fallback estimation documented; signed-evidence audit incomplete | Withheld |
 | `qwen` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `roo-code` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `vercel-gateway` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
@@ -69,19 +69,10 @@ Metrora must preserve those differences in downstream reporting. A source that e
 
 ## Provider documentation
 
-Detailed source paths, formats, caches, deduplication behavior and known limitations live under [`docs/providers`](providers/).
+Every registered collector now has a public provider guide under [`docs/providers`](providers/). Each guide records the current source location, storage format, caching, deduplication behavior and known limitations supported by the implementation and tests.
 
-Current public provider guides are missing for:
-
-- `codebuff`;
-- `kimicode`;
-- `open-design`;
-- `quickdesk`.
-
-Those gaps are documentation gaps, not a claim that the registered local collectors are disabled.
+Complete guide coverage does **not** promote a collector to signed Workspace approval. Signed approval remains limited to concrete source paths with fixture parity, field-level provenance, pricing reconciliation, privacy review and required manual validation.
 
 ## Technical inventory
 
-[`COLLECTOR_INVENTORY_V1.md`](COLLECTOR_INVENTORY_V1.md) is generated from the executable collector inventory and is checked against the provider registry in tests.
-
-Signed Workspace approval requires concrete fixture parity, field-level provenance, pricing reconciliation, privacy review and manual validation when the source depends on a live IDE, RPC process or mutable database.
+[`COLLECTOR_INVENTORY_V1.md`](COLLECTOR_INVENTORY_V1.md) is generated from the executable collector inventory and is checked against the provider registry and provider-guide files in tests.

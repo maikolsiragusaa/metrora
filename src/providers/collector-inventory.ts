@@ -130,7 +130,7 @@ const entries = [
   priority('warp', 'src/providers/warp.ts', 'docs/providers/warp.md', 'lazy', 'sqlite-weighted-estimation', 2),
 
   pending('cline', 'src/providers/cline.ts', 'docs/providers/cline.md', 'core'),
-  pending('codebuff', 'src/providers/codebuff.ts', null, 'core'),
+  pending('codebuff', 'src/providers/codebuff.ts', 'docs/providers/codebuff.md', 'core'),
   pending('codewhale', 'src/providers/codewhale.ts', 'docs/providers/codewhale.md', 'core'),
   pending('crush', 'src/providers/crush.ts', 'docs/providers/crush.md', 'lazy'),
   pending('cursor-agent', 'src/providers/cursor-agent.ts', 'docs/providers/cursor-agent.md', 'lazy'),
@@ -143,13 +143,13 @@ const entries = [
   pending('ibm-bob', 'src/providers/ibm-bob.ts', 'docs/providers/ibm-bob.md', 'core'),
   pending('kilo-code', 'src/providers/kilo-code.ts', 'docs/providers/kilo-code.md', 'core'),
   pending('kimi', 'src/providers/kimi.ts', 'docs/providers/kimi.md', 'core'),
-  pending('kimicode', 'src/providers/kimicode.ts', null, 'core'),
+  pending('kimicode', 'src/providers/kimicode.ts', 'docs/providers/kimicode.md', 'core'),
   pending('lingtai-tui', 'src/providers/lingtai-tui.ts', 'docs/providers/lingtai-tui.md', 'core'),
   pending('mux', 'src/providers/mux.ts', 'docs/providers/mux.md', 'core'),
   pending('omp', 'src/providers/pi.ts', 'docs/providers/omp.md', 'core'),
-  pending('open-design', 'src/providers/open-design.ts', null, 'core'),
+  pending('open-design', 'src/providers/open-design.ts', 'docs/providers/open-design.md', 'core'),
   pending('pi', 'src/providers/pi.ts', 'docs/providers/pi.md', 'core'),
-  pending('quickdesk', 'src/providers/quickdesk.ts', null, 'core'),
+  pending('quickdesk', 'src/providers/quickdesk.ts', 'docs/providers/quickdesk.md', 'core'),
   pending('qwen', 'src/providers/qwen.ts', 'docs/providers/qwen.md', 'core'),
   pending('roo-code', 'src/providers/roo-code.ts', 'docs/providers/roo-code.md', 'core'),
   pending('vercel-gateway', 'src/providers/vercel-gateway.ts', 'docs/providers/vercel-gateway.md', 'lazy'),
@@ -221,6 +221,9 @@ export function renderCollectorInventoryMarkdownV1(): string {
     lines.push(`| ${item.provider} | ${item.loading} | ${item.sourceFamily} | ${item.documentationPath ?? 'missing'} | available | ${publicEvidenceStatus(item)} | ${item.shareEligibility} |`)
   }
   const summary = collectorInventorySummaryV1()
+  const documentationGaps = summary.documentationGaps.length > 0
+    ? summary.documentationGaps.join(', ')
+    : 'none'
   lines.push(
     '',
     '## Current totals',
@@ -229,7 +232,7 @@ export function renderCollectorInventoryMarkdownV1(): string {
     `- Approved for signed Workspace measurements: **${summary.approved} collectors / ${reviewedProvenanceProfileIdsV1().length} path-specific profiles**.`,
     `- Local collectors with signed sharing withheld: **${summary.total - summary.approved}**.`,
     `- Provider documentation present: **${summary.documented}**.`,
-    `- Documentation gaps: **${summary.documentationGaps.join(', ')}**.`,
+    `- Documentation gaps: **${documentationGaps}**.`,
     '',
     '## Approval gate',
     '',
