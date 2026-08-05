@@ -1,0 +1,165 @@
+name: Prepare canonical CLI identity cleanup
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/public-cli-identity-maintenance.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/public-cli-identity'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Canonicalize user-facing CLI examples and diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          commands = [
+              'report', 'today', 'month', 'overview', 'status', 'sessions', 'models',
+              'spend', 'export', 'compare', 'optimize', 'audit', 'doctor', 'yield',
+              'context', 'codex-tps', 'budget', 'plan', 'currency', 'model-alias',
+              'price-override', 'model-savings', 'proxy-path', 'act', 'guard', 'sync',
+              'share', 'devices', 'identity', 'web', 'mcp', 'menubar',
+              'antigravity-hook',
+          ]
+
+          changed = []
+          replacements = 0
+          for base in (root / 'src', root / 'tests'):
+              for path in base.rglob('*'):
+                  if path.suffix not in {'.ts', '.tsx', '.js', '.mjs', '.cjs'}:
+                      continue
+                  text = path.read_text(encoding='utf-8')
+                  updated = text
+                  for command in commands:
+                      old = f'codeburn {command}'
+                      count = updated.count(old)
+                      if count:
+                          updated = updated.replace(old, f'metrora {command}')
+                          replacements += count
+                  if path == root / 'src/main.ts':
+                      old = 'const defaultName = `codeburn-${toDateString(new Date())}`'
+                      if old not in updated:
+                          raise SystemExit('expected legacy default export name was not found')
+                      updated = updated.replace(old, 'const defaultName = `metrora-${toDateString(new Date())}`')
+                      replacements += 1
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8')
+                      changed.append(path.as_posix())
+
+          if replacements < 10:
+              raise SystemExit(f'expected a bounded set of user-facing replacements, found only {replacements}')
+
+          test_path = root / 'tests/public-cli-identity.test.ts'
+          test_path.write_text("""import { readFileSync } from 'node:fs'
+          import { join } from 'node:path'
+
+          import { describe, expect, it } from 'vitest'
+
+          const commands = [
+            'report', 'today', 'month', 'overview', 'status', 'sessions', 'models',
+            'spend', 'export', 'compare', 'optimize', 'audit', 'doctor', 'yield',
+            'context', 'codex-tps', 'budget', 'plan', 'currency', 'model-alias',
+            'price-override', 'model-savings', 'proxy-path', 'act', 'guard', 'sync',
+            'share', 'devices', 'identity', 'web', 'mcp', 'menubar',
+            'antigravity-hook',
+          ] as const
+
+          const sourceFiles = [
+            'src/main.ts',
+            'src/export.ts',
+            'src/act/cli.ts',
+            'src/act/optimize-apply.ts',
+            'src/act/report.ts',
+            'src/guard/cli.ts',
+            'src/sync/cli.ts',
+            'src/compare.tsx',
+            'src/optimize.ts',
+            'src/audit-report.ts',
+          ] as const
+
+          describe('canonical CLI public identity', () => {
+            it('uses Metrora in canonical command examples and diagnostics', () => {
+              const source = sourceFiles
+                .map(path => readFileSync(join(process.cwd(), path), 'utf-8'))
+                .join('\\n')
+
+              for (const command of commands) {
+                expect(source).not.toContain(`codeburn ${command}`)
+              }
+              expect(source).toContain('metrora optimize')
+              expect(source).toContain('metrora act')
+              expect(source).toContain('metrora share')
+            })
+
+            it('uses a Metrora default export name while preserving export compatibility authorities', () => {
+              const main = readFileSync(join(process.cwd(), 'src/main.ts'), 'utf-8')
+              const exporter = readFileSync(join(process.cwd(), 'src/export.ts'), 'utf-8')
+
+              expect(main).toContain('const defaultName = `metrora-${toDateString(new Date())}`')
+              expect(exporter).toContain("schema: 'codeburn.export.v2'")
+              expect(exporter).toContain("const EXPORT_MARKER_FILE = '.codeburn-export'")
+            })
+          })
+          """, encoding='utf-8')
+          changed.append(test_path.as_posix())
+
+          changelog = root / 'CHANGELOG.md'
+          changelog_text = changelog.read_text(encoding='utf-8')
+          marker = '### Product identity and public documentation\n\n'
+          bullet = '- Canonicalized CLI help, usage examples, diagnostics and default export names around the `metrora` command while preserving versioned compatibility schemas and markers.\n'
+          if bullet not in changelog_text:
+              if marker not in changelog_text:
+                  raise SystemExit('changelog insertion point not found')
+              changelog.write_text(changelog_text.replace(marker, marker + bullet, 1), encoding='utf-8')
+              changed.append(changelog.as_posix())
+
+          cli_reference = root / 'docs/CLI_REFERENCE.md'
+          cli_text = cli_reference.read_text(encoding='utf-8')
+          old = 'Some command output and internal paths can still contain historical compatibility identifiers. Those are tracked as migration debt; they are not alternate product identities.'
+          new = 'Internal paths, versioned schemas and persisted identifiers can still contain historical compatibility names where migration safety requires them. Canonical CLI help, diagnostics and examples use Metrora.'
+          if old not in cli_text:
+              raise SystemExit('CLI reference compatibility sentence not found')
+          cli_reference.write_text(cli_text.replace(old, new, 1), encoding='utf-8')
+          changed.append(cli_reference.as_posix())
+
+          print(f'Applied {replacements} bounded replacements across:')
+          for path in sorted(set(changed)):
+              print(f'- {path}')
+          PY
+
+      - name: Remove temporary maintenance workflow
+        run: rm .github/workflows/public-cli-identity-maintenance.yml
+
+      - name: Verify bounded diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -f tests/public-cli-identity.test.ts
+          test ! -e .github/workflows/public-cli-identity-maintenance.yml
+          git diff --name-only
+
+      - name: Commit prepared cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Metrora'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(cli): use the canonical Metrora identity'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
