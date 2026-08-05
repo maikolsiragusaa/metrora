@@ -21,6 +21,18 @@ function runCli(args: string[], home: string, extraEnv: Record<string, string | 
   })
 }
 
+function completedUtcFixtureWindow(eventCount: number, spacingMs = 60_000): { base: Date; day: string } {
+  const now = new Date()
+  const dayStartMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const durationMs = Math.max(eventCount - 1, 0) * spacingMs
+  const requiredElapsedMs = durationMs + 60_000
+  const baseMs = now.getTime() - dayStartMs >= requiredElapsedMs
+    ? now.getTime() - requiredElapsedMs
+    : dayStartMs - requiredElapsedMs
+  const base = new Date(baseMs)
+  return { base, day: base.toISOString().slice(0, 10) }
+}
+
 function userLine(sessionId: string, timestamp: string): string {
   return JSON.stringify({
     type: 'user',
@@ -57,9 +69,7 @@ describe('codeburn status --format menubar-json', () => {
       const projectDir = join(home, '.claude', 'projects', 'myapp')
       await mkdir(projectDir, { recursive: true })
 
-      const now = new Date()
-      const h = now.getUTCHours()
-      const base = h >= 2 ? new Date(now.getTime() - 2 * 3600_000) : new Date(now.getTime() - h * 3600_000 - 300_000)
+      const { base, day } = completedUtcFixtureWindow(4)
       const ts1 = base.toISOString().replace(/\.\d+Z$/, 'Z')
       const ts2 = new Date(base.getTime() + 60_000).toISOString().replace(/\.\d+Z$/, 'Z')
       const ts3 = new Date(base.getTime() + 120_000).toISOString().replace(/\.\d+Z$/, 'Z')
@@ -78,7 +88,7 @@ describe('codeburn status --format menubar-json', () => {
       const result = runCli([
         'status',
         '--format', 'menubar-json',
-        '--period', 'today',
+        '--day', day,
         '--provider', 'all',
         '--no-optimize',
       ], home)
@@ -419,9 +429,7 @@ describe('codeburn status --format menubar-json', () => {
         llm: { model: 'gpt-4o' },
       }))
 
-      const now = new Date()
-      const h = now.getUTCHours()
-      const base = h >= 2 ? new Date(now.getTime() - 2 * 3600_000) : new Date(now.getTime() - h * 3600_000 - 300_000)
+      const { base, day } = completedUtcFixtureWindow(3)
       const ts1 = base.toISOString().replace(/\.\d+Z$/, 'Z')
       const ts2 = new Date(base.getTime() + 60_000).toISOString().replace(/\.\d+Z$/, 'Z')
       const ts3 = new Date(base.getTime() + 120_000).toISOString().replace(/\.\d+Z$/, 'Z')
@@ -438,7 +446,7 @@ describe('codeburn status --format menubar-json', () => {
       const result = runCli([
         'status',
         '--format', 'menubar-json',
-        '--period', 'today',
+        '--day', day,
         '--provider', 'lingtai-tui',
         '--no-optimize',
       ], home, {

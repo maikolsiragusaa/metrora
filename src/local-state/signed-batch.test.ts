@@ -190,6 +190,31 @@ describe.sequential('local signed measurement batches v1', () => {
     })).rejects.toThrow(/different receipt/)
   })
 
+  it('rejects negative-zero evidence before reserving an outbox sequence', async () => {
+    const dataDir = await root()
+    const protector = new Aes256GcmSecretProtector(Buffer.alloc(32, 12))
+    const identity = await loadOrCreateLocalEndpointIdentityV1({ dataDir, protector })
+
+    await expect(enqueueMeasurementEventV1(
+      event(identity.metadata.endpointId, 'evt_negative_zero', -0),
+      { dataDir },
+    )).rejects.toThrow(/negative zero/)
+
+    const afterRejection = await scanMeasurementOutboxV1({ dataDir })
+    expect(afterRejection.pending).toHaveLength(0)
+    expect(afterRejection.acknowledged).toHaveLength(0)
+    expect(afterRejection.invalid).toHaveLength(0)
+
+    const accepted = await enqueueMeasurementEventV1(
+      event(identity.metadata.endpointId, 'evt_after_negative_zero', 10),
+      { dataDir },
+    )
+    expect(accepted.record.sequence).toBe(1)
+
+    const batch = await createNextSignedMeasurementBatchV1(createOptions(dataDir, identity))
+    expect(batch?.range).toEqual({ firstSequence: 1, lastSequence: 1, eventCount: 1 })
+  })
+
   it('fails closed when the immutable event outbox is corrupt', async () => {
     const dataDir = await root()
     const protector = new Aes256GcmSecretProtector(Buffer.alloc(32, 11))
