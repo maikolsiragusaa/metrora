@@ -148,6 +148,19 @@ describe.sequential('cline provider - default roots', () => {
     ].sort())
   })
 
+  it('keeps explicit override roots exact instead of silently adding defaults', async () => {
+    const defaultRoot = getVSCodeGlobalStoragePaths(EXTENSION_ID)[0]!
+    const overrideRoot = join(tmpDir, 'explicit-cline-root')
+    await writeTask(defaultRoot, 'task-default')
+    await writeTask(overrideRoot, 'task-override')
+
+    const sessions = await createClineProvider(overrideRoot).discoverSessions()
+
+    expect(sessions.map(session => session.path)).toEqual([
+      join(overrideRoot, 'tasks', 'task-override'),
+    ])
+  })
+
   it('keeps only the newest copy of a task id shared across variants', async () => {
     const [stableRoot, insidersRoot, codiumRoot] = getVSCodeGlobalStoragePaths(EXTENSION_ID)
     const stableTask = await writeTask(stableRoot!, 'task-same')
