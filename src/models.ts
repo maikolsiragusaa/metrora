@@ -37,7 +37,7 @@ type SnapshotEntry = [number, number, number | null, number | null, (number | nu
 const LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const WEB_SEARCH_COST = 0.01
-const ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE = 1.6
+export const PRICING_LOOKUP_VERSION = 'context-capacity-tags-v1'; const ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE = 1.6
 
 // Explicit USD/token prices that must override LiteLLM/cache data. Cursor
 // publishes house-model rates in the models table at cursor.com/docs/models
@@ -513,7 +513,7 @@ export function getLocalModelSavingsConfigHash(): string {
 export function getPriceOverridesConfigHash(): string {
   // The builtin overrides participate so editing BUILTIN_PRICE_OVERRIDES in a
   // release invalidates cached daily costs the same way a user override does.
-  const builtin = `builtin:${JSON.stringify(BUILTIN_PRICE_OVERRIDES)}`
+  const builtin = `lookup:${PRICING_LOOKUP_VERSION}\u0001builtin:${JSON.stringify(BUILTIN_PRICE_OVERRIDES)}`
   const keys = Object.keys(userPriceOverridesConfig).sort()
   if (keys.length === 0) return builtin
   const parts = keys.map(k => {
@@ -592,7 +592,7 @@ function getCanonicalName(model: string): string {
   return model
     .replace(/@.*$/, '')       // strip pin: claude-sonnet-4-6@20250929 -> claude-sonnet-4-6
     .replace(/-\d{8}$/, '')   // strip date: claude-sonnet-4-20250514 -> claude-sonnet-4
-    .replace(/^[^/]+\//, '') // strip provider prefix: anthropic/foo -> foo
+    .replace(/^[^/]+\//, '').replace(/\[(?:\d+(?:\.\d+)?(?:k|m|g)?)\]$/i, '') // provider prefix + numeric context tag
 }
 
 /// Internal pricing key only. Observed model labels remain unchanged in every

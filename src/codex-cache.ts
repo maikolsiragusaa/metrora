@@ -15,7 +15,8 @@ import type { ParsedProviderCall } from './providers/types.js'
 // patch_apply_end. Sessions cached under v5 lack these fields; re-parse to add.
 // v8: persist native MCP timing and compact invocation attribution.
 // v9: persist explicit per-call reasoning attribution from turn_context.
-const CODEX_CACHE_VERSION = 9
+// v10: reprice raw Codex model ids carrying numeric context-capacity tags.
+const CODEX_CACHE_VERSION = 10
 const CACHE_FILE = 'codex-results.json'
 
 type FileFingerprint = { mtimeMs: number; sizeBytes: number }

@@ -1,6 +1,6 @@
 {
   "name": "metrora",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.6",
   "private": true,
   "description": "Metrora — local-first AI usage intelligence for tools, models, projects and sessions",
   "type": "module",

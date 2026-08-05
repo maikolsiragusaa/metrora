@@ -236,7 +236,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // rich-session-capture-v1: per-call LOC deltas + editFailed from
   // patch_apply_end. (The codex-results.json CODEX_CACHE_VERSION is bumped in
   // lockstep so the pre-session-cache layer re-parses too.)
-  codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1',
+  codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v1',
   copilot: 'cli-shutdown-cost-v1-skills',
