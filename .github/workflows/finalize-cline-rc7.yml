@@ -1,0 +1,92 @@
+name: Finalize Cline rc.7
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/cline-vscode-storage-variants
+          fetch-depth: 0
+
+      - name: Advance every candidate authority
+        run: |
+          set -euo pipefail
+          npm version 1.0.0-rc.7 --no-git-tag-version
+          (
+            cd app
+            npm version 1.0.0-rc.7 --no-git-tag-version
+            npm pkg set build.buildVersion=1.0.0.7
+          )
+          python - <<'PY'
+          from pathlib import Path
+
+          for path in [
+              Path('RELEASING.md'),
+              Path('app/DISTRIBUTION.md'),
+              Path('docs/VERSIONING.md'),
+              Path('docs/WINDOWS_DISTRIBUTION.md'),
+          ]:
+              text = path.read_text(encoding='utf-8')
+              if '1.0.0-rc.6' not in text or '1.0.0.6' not in text:
+                  raise SystemExit(f'missing rc.6 authority in {path}')
+              path.write_text(
+                  text.replace('1.0.0-rc.6', '1.0.0-rc.7').replace('1.0.0.6', '1.0.0.7'),
+                  encoding='utf-8',
+              )
+          Path('.github/workflows/finalize-cline-rc7.yml').unlink()
+          PY
+
+      - name: Commit exact candidate delta
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/finalize-cline-rc7.yml \
+            RELEASING.md \
+            app/DISTRIBUTION.md \
+            app/package-lock.json \
+            app/package.json \
+            docs/VERSIONING.md \
+            docs/WINDOWS_DISTRIBUTION.md \
+            package-lock.json \
+            package.json
+          git diff --cached --check
+          python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          expected = {
+              '.github/workflows/finalize-cline-rc7.yml',
+              'RELEASING.md',
+              'app/DISTRIBUTION.md',
+              'app/package-lock.json',
+              'app/package.json',
+              'docs/VERSIONING.md',
+              'docs/WINDOWS_DISTRIBUTION.md',
+              'package-lock.json',
+              'package.json',
+          }
+          actual = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines())
+          if actual != expected:
+              raise SystemExit(f'unexpected rc.7 delta: {sorted(actual)}')
+          root = json.loads(Path('package.json').read_text(encoding='utf-8'))
+          app = json.loads(Path('app/package.json').read_text(encoding='utf-8'))
+          if root.get('version') != '1.0.0-rc.7':
+              raise SystemExit('root version not rc.7')
+          if app.get('version') != '1.0.0-rc.7' or app.get('build', {}).get('buildVersion') != '1.0.0.7':
+              raise SystemExit('desktop version authority not rc.7 / 1.0.0.7')
+          PY
+          git commit -m 'chore(release): advance Cline candidate to rc.7'
+          git push origin HEAD:fix/cline-vscode-storage-variants
