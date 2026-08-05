@@ -2,11 +2,11 @@
 
 <img src="./assets/brand/metrora-lockup.svg" alt="Metrora" width="520" />
 
-**Website:** [metrora.eu](https://metrora.eu)
-
 ### Local-first intelligence for AI-assisted development
 
-Understand where AI time, tokens and money go — across tools, models, projects and sessions — without routing your work through another service.
+Understand where AI time, tokens and money go across tools, models, projects and sessions — without routing your work through another service.
+
+[Website](https://metrora.eu) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
@@ -14,82 +14,68 @@ Understand where AI time, tokens and money go — across tools, models, projects
 </div>
 
 > [!IMPORTANT]
-> Official desktop distribution is in preparation. Build and evaluate Metrora from this canonical repository; published artifacts will be announced through [metrora.eu](https://metrora.eu) and [GitHub Releases](https://github.com/maikolsiragusaa/metrora/releases).
+> Metrora does not yet have an official stable desktop release. The current public source line is `1.0.0-rc.7`; build and evaluate it from this canonical repository. Official artifacts will be announced through [metrora.eu](https://metrora.eu) and GitHub Releases only after the applicable distribution checks pass.
 
-## Why Metrora
+## What Metrora helps you understand
 
-AI-assisted work is split across editors, desktop applications, CLIs, providers, subscriptions and models. Each tool exposes a different fragment of the picture.
+AI-assisted work is usually split across editors, desktop applications, CLIs, subscriptions, gateways and models. Each tool exposes a different fragment of the picture.
 
-Metrora builds one evidence-based view from usage records already stored on your machine. It helps answer practical questions:
+Metrora reads supported usage records already stored on your machine and builds one evidence-aware view that can answer questions such as:
 
-- Which tools and models are driving cost?
-- Which models work best for different kinds of tasks?
-- How much value comes from cache, subscriptions and local models?
-- Which sessions were efficient, abandoned, reverted or unusually expensive?
-- Where can usage be improved without exposing prompts or source code?
+- Which tools, models and projects are driving cost and token usage?
+- How much usage is covered by cache, subscriptions or local models?
+- Which sessions were efficient, retried, abandoned, reverted or unusually expensive?
+- Which models work best for the kinds of tasks you actually perform?
+- Which optimization findings are supported by observed data, and which values remain estimated or unknown?
+
+No wrapper or proxy is required, and AI traffic does not pass through Metrora.
 
 ## What works today
 
-- **Multi-tool collection** from supported AI coding clients and local session stores.
-- **Desktop application** for Windows, macOS and Linux development builds.
-- **CLI and terminal dashboard** for scripts, exports and keyboard-first workflows.
-- **Session intelligence** across projects, tasks, tools, models, cost, tokens, cache and timing.
-- **Model comparison** across performance, efficiency, working style, task categories and observed context.
-- **Reasoning attribution** when a source exposes a trustworthy effort level, with unknown coverage kept explicit.
-- **Historical API-equivalent pricing** with immutable per-call cost assignments, date-effective reviewed rates, explicit free-route handling, metered-cost precedence and conservative legacy fallback.
-- **Optimization findings** for waste, reverts, abandoned work and actionable savings opportunities.
-- **Budgets, plans, pricing overrides, token audit and CSV/JSON export.**
-- **Private device linking** and combined local usage across machines.
-- **Local personal Workspace** with protected endpoint identity, explicit reviewed production, pause/resume, deterministic non-destructive recovery, signed batches and independently verifiable evidence export.
-- **Public v1 contracts** for workspaces, endpoints, sharing, normalized measurements and evidence.
+| Capability | What it provides |
+| --- | --- |
+| **Collect** | Local collection from 38 registered AI-tool and gateway integrations, with provider-specific discovery and parsing. |
+| **Understand** | Cost, tokens, cache, projects, sessions, tools, task categories, timing and model breakdowns. |
+| **Compare** | Model efficiency and observed working-style comparisons, with missing evidence kept explicit. |
+| **Optimize** | Waste findings, reversible configuration changes and realized-versus-estimated savings reporting. |
+| **Control** | Budgets, subscription plans, local pricing overrides, model aliases and subscription-covered paths. |
+| **Inspect** | Token audit, provider diagnostics, durable history and provenance-aware evidence states. |
+| **Export** | CSV and JSON output suitable for inspection, automation and independent tooling. |
+| **Connect locally** | Private device pairing and combined usage across machines on the same local network. |
+| **Verify** | A local personal Workspace with protected endpoint identity, explicit reviewed production, signed batches and independently verifiable evidence export. |
 
-Historical pricing is the default runtime behavior. A later catalog refresh cannot silently rewrite settled historical costs. Provider- or client-metered values remain authoritative, explicit zero remains different from unavailable pricing, and subscription coverage stays separate from API-equivalent valuation. See [Pricing history](docs/PRICING_HISTORY.md).
+Local collector support and eligibility for signed Workspace measurements are deliberately separate. A collector can be useful for local analysis before every field and source path has passed the stricter signed-sharing review. See [Supported tools](docs/SUPPORTED_TOOLS.md).
 
-## Release status
+## Try Metrora from source
 
-Windows is the first official desktop distribution target. Source support for other platforms remains available, while official packages follow platform-specific validation.
-
-## Surfaces
-
-| Surface | Role | Status |
-| --- | --- | --- |
-| Desktop | Primary local analysis and configuration | Windows distribution in preparation |
-| CLI | First-class automation, inspection and export | Available from source |
-| Local web dashboard | Browser view served from the local machine | Available |
-| Android companion | Read-only local-network companion foundation | Experimental |
-
-## Privacy model
-
-Metrora is local-first by default:
-
-- no account is required for local use;
-- AI traffic does not pass through Metrora;
-- prompts, responses, source code, patches, secrets and full local paths are not exported by default;
-- analytical claims distinguish observed, derived, estimated, metered, explicit-zero, legacy-frozen and unavailable evidence where relevant;
-- optional sharing requires explicit scope, revocation and structured usage data;
-- user-owned data remains exportable through open formats.
-
-Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1 boundary](docs/WORKSPACE_V1.md) and [security policy](SECURITY.md).
-
-## Development
-
-Requirements:
-
-- Node.js 22.15 or newer
-- npm
+Use Node.js 22.15 or newer for repository development and validation.
 
 ```bash
 git clone https://github.com/maikolsiragusaa/metrora.git
 cd metrora
 npm ci
 npm run build:cli
-npm test -- --run
+npm run dev -- --help
 ```
 
-Run the CLI from source:
+Open the terminal dashboard:
 
 ```bash
-npm run dev -- --help
+npm run dev
+```
+
+Generate a copy-pasteable overview:
+
+```bash
+npm run dev -- overview
+npm run dev -- overview --provider codex
+npm run dev -- overview --from 2026-08-01 --to 2026-08-05
+```
+
+Open the local browser dashboard:
+
+```bash
+npm run dev -- web
 ```
 
 Build and validate the desktop application:
@@ -101,7 +87,104 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Repository map:
+The root npm package is intentionally private and is not an official distribution channel. See the complete [getting-started guide](docs/GETTING_STARTED.md).
+
+## Main commands
+
+| Command | Purpose |
+| --- | --- |
+| `metrora` | Interactive usage dashboard. |
+| `metrora overview` | Plain-text usage summary for a period or exact date range. |
+| `metrora web` | Local browser dashboard. |
+| `metrora status` | Compact today-and-month status output. |
+| `metrora sessions` | Per-session usage report. |
+| `metrora models` | Per-model cost, token and task breakdown. |
+| `metrora compare` | Side-by-side model comparison. |
+| `metrora optimize` | Waste analysis and optional reversible fixes. |
+| `metrora budget` | Configure and check spend limits. |
+| `metrora plan` | Track subscription-plan usage and projected overage. |
+| `metrora audit` | Compare provider evidence with displayed token and cost totals. |
+| `metrora doctor` | Diagnose provider discovery and parsing health. |
+| `metrora export` | Export usage as CSV or JSON. |
+
+Most analytical commands support provider, project and date filters. The [CLI reference](docs/CLI_REFERENCE.md) groups the public commands by task and explains compatibility boundaries.
+
+## Supported tools
+
+Metrora currently registers **38 local collectors**, including Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Roo Code, KiloCode, Qwen, Kimi, Warp and other supported clients and gateways.
+
+Support is reported with three separate facts:
+
+1. whether Metrora can discover and analyze the source locally;
+2. what kind of evidence the source exposes, including measured, derived or estimated values;
+3. whether a concrete source path is approved for signed Workspace measurements.
+
+This prevents “supported” from implying stronger evidence than a provider actually exposes. See the [user-facing support matrix](docs/SUPPORTED_TOOLS.md) and the generated [collector inventory](docs/COLLECTOR_INVENTORY_V1.md).
+
+## Evidence and pricing
+
+Metrora distinguishes values that are:
+
+- **observed** directly from a source;
+- **derived** deterministically from observed values;
+- **estimated** using documented assumptions;
+- **metered** by a provider or client;
+- **explicitly zero** rather than unavailable;
+- **unknown or unavailable** when trustworthy attribution does not exist.
+
+Missing evidence is not silently converted to zero.
+
+Historical API-equivalent pricing is date-effective and non-retroactive by default. A later catalog refresh cannot silently rewrite settled historical costs. Provider- or client-metered values remain authoritative, subscription coverage stays separate from API-equivalent valuation, and explicit zero remains different from unavailable pricing. See [Pricing history](docs/PRICING_HISTORY.md).
+
+## Product surfaces
+
+| Surface | Role | Current status |
+| --- | --- | --- |
+| Desktop | Primary local analysis and configuration | Windows official distribution in preparation; development builds available from source |
+| CLI | Automation, inspection, export and keyboard-first analysis | Available from source |
+| Local web dashboard | Browser view served from the local machine | Available from source |
+| Android companion | Read-only local-network companion foundation | Experimental |
+| macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
+| GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
+
+Windows is the first official desktop distribution target. Source support for other platforms does not imply that an accepted signed package exists for those platforms.
+
+## Privacy model
+
+Metrora is local-first by default:
+
+- no account is required for ordinary local use;
+- AI traffic does not pass through Metrora;
+- prompts, responses, source code, patches, secrets and unrestricted local paths are outside the default sharing boundary;
+- analytical claims keep observed, derived, estimated and unavailable evidence distinguishable;
+- optional device or Workspace connections require explicit scope and revocable authorization;
+- user-owned data remains exportable through documented formats.
+
+Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1 boundary](docs/WORKSPACE_V1.md) and [security policy](SECURITY.md).
+
+## Origin and independent development
+
+Metrora began from a reviewed CodeBurn 0.9.19 MIT-licensed source baseline and preserves the required upstream copyright and licence notices.
+
+The inherited baseline provided substantial local collection, reporting and interface foundations. Metrora independently maintains that code while introducing its own product identity, evidence model, durable-history rules, historical-pricing authority, Windows release discipline, local Workspace contracts and other material changes.
+
+See [Product lineage](docs/PRODUCT_LINEAGE.md) for the functional boundary and [Upstream provenance](UPSTREAM.md) for the exact imported source authority. Required notices remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
+
+## Documentation
+
+Start from the [documentation index](docs/README.md):
+
+- [Getting started](docs/GETTING_STARTED.md)
+- [CLI reference](docs/CLI_REFERENCE.md)
+- [Supported tools](docs/SUPPORTED_TOOLS.md)
+- [Product lineage](docs/PRODUCT_LINEAGE.md)
+- [Product principles](docs/PRODUCT_PRINCIPLES.md)
+- [Pricing history](docs/PRICING_HISTORY.md)
+- [Workspace v1](docs/WORKSPACE_V1.md)
+- [Public contracts v1](docs/PUBLIC_CONTRACTS_V1.md)
+- [Windows distribution boundary](docs/WINDOWS_DISTRIBUTION.md)
+
+## Repository map
 
 ```text
 src/       collection, parsing, canonical records, CLI, analytics and sharing
@@ -111,29 +194,23 @@ android/   experimental Android companion
 mac/       macOS menubar application
 gnome/     GNOME extension
 tests/     core test suite
-docs/      public contracts, principles and technical documentation
+docs/      product, user, contract and technical documentation
 ```
 
-The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases while local state and integrations migrate safely.
-
-## Product identity
-
-Metrora™ is the product and user-facing brand. Signal Grid™ is its canonical visual identity. Vensent™ is the publisher identity used for official Metrora distribution.
-
-Product and repository surfaces use the Signal Grid assets and Graphite + Signal Orange palette documented in [`assets/brand`](assets/brand/README.md). Compatibility identifiers may remain internally where changing them would break existing state or integrations, but they are not the product-facing identity.
-
-See the [project notices](NOTICE.md) and [brand policy](BRAND_POLICY.md).
+The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases while local state and integrations migrate safely. They are not product-facing names for new releases.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Provider and parser changes require fixtures, targeted tests, provenance, privacy review and real-session validation where possible.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Provider and parser changes require fixtures, focused tests, provenance, privacy review and real-session validation where possible.
 
 Security issues must be reported privately according to [SECURITY.md](SECURITY.md).
 
-## License and provenance
+## Product identity and licence
 
-Metrora is independently maintained and distributed under the MIT License. It includes MIT-licensed portions originally derived from CodeBurn 0.9.19 and other third-party components.
+Metrora™ is the product and user-facing brand. Signal Grid™ is its canonical visual identity. Vensent™ is the publisher identity used for official Metrora distribution.
 
-Required notices and licence texts are preserved in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [UPSTREAM.md](UPSTREAM.md) and [`LICENSES/`](LICENSES/).
+Metrora is independently maintained and distributed under the MIT License. Product and repository surfaces use the assets and Graphite + Signal Orange palette documented in [`assets/brand`](assets/brand/README.md).
+
+See the [project notices](NOTICE.md), [brand policy](BRAND_POLICY.md) and [licence](LICENSE).
 
 Metrora™ — published by Vensent™. Copyright © 2026 Metrora contributors.
