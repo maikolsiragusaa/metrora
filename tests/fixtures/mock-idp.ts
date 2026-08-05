@@ -1,5 +1,5 @@
 /**
- * Mock OIDC Identity Provider for codeburn sync e2e tests.
+ * Mock OIDC Identity Provider for metrora sync e2e tests.
  *
  * Serves:
  * - /.well-known/codeburn-export.json (discovery doc)

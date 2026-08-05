@@ -26,7 +26,7 @@ function readConfig(home: string): Promise<Record<string, unknown>> {
     .then(raw => JSON.parse(raw) as Record<string, unknown>)
 }
 
-describe('codeburn price-override command', () => {
+describe('metrora price-override command', () => {
   it('saves, lists, and removes a model price override', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-price-override-'))
     try {

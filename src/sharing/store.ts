@@ -45,7 +45,7 @@ export function savePeers(peers: PairedPeer[], dir: string = getSharingDir()): P
   return writeJson(join(dir, 'paired-peers.json'), peers)
 }
 
-// Devices this host pulls from (the host side, used by `codeburn devices`).
+// Devices this host pulls from (the host side, used by `metrora devices`).
 export function loadRemotes(dir: string = getSharingDir()): Promise<RemoteDevice[]> {
   return readJson(join(dir, 'remote-devices.json'), [] as RemoteDevice[])
 }
@@ -54,7 +54,7 @@ export function saveRemotes(remotes: RemoteDevice[], dir: string = getSharingDir
 }
 
 // Whether the dashboard should keep sharing on (opt-in always-live). Persisted
-// so `codeburn web` resumes the chosen state on launch.
+// so `metrora web` resumes the chosen state on launch.
 export async function loadShareAlways(dir: string = getSharingDir()): Promise<boolean> {
   const s = await readJson(join(dir, 'web-share.json'), { always: false } as { always?: boolean })
   return !!s.always

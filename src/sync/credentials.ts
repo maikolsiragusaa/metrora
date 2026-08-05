@@ -1,5 +1,5 @@
 /**
- * codeburn sync — OS credential storage.
+ * metrora sync — OS credential storage.
  *
  * Stores refresh tokens in the OS keychain.
  * Falls back to a 0600 file when no keychain is available.

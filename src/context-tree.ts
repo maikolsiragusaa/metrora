@@ -689,7 +689,7 @@ export type TitledSessionRef = SessionRef & { title: string }
 
 function renderSessionList(refs: TitledSessionRef[], provider: 'claude' | 'codex'): string {
   const heading = provider === 'codex' ? 'Recent Codex sessions' : 'Recent Claude Code sessions'
-  const hint = provider === 'codex' ? 'codeburn context <id> --provider codex to inspect one' : 'codeburn context <id> to inspect one'
+  const hint = provider === 'codex' ? 'metrora context <id> --provider codex to inspect one' : 'metrora context <id> to inspect one'
   const lines = ['', `  ${chalk.bold(heading)}`, '']
   const projectWidth = Math.max(...refs.map((r) => r.project.length))
   for (const ref of refs) {

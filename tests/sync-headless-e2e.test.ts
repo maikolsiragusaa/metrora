@@ -1,8 +1,8 @@
 /**
- * E2E test: codeburn sync setup with headless browser against real Cognito.
+ * E2E test: metrora sync setup with headless browser against real Cognito.
  *
  * This test exercises the FULL PKCE flow:
- * 1. Starts the callback server (simulating `codeburn sync setup`)
+ * 1. Starts the callback server (simulating `metrora sync setup`)
  * 2. Builds the auth URL with PKCE challenge
  * 3. Opens a headless Chromium to the Cognito Hosted UI
  * 4. Fills the login form with test credentials

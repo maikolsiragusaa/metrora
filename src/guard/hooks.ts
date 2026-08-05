@@ -66,13 +66,13 @@ async function handlePreToolUse(input: unknown, opts: HookOpts): Promise<string>
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason:
-          `Session cost passed ${usd(config.hardUSD)} (codeburn guard). Run 'codeburn guard allow' to lift the cap for this session, or raise hardUSD in guard.json.`,
+          `Session cost passed ${usd(config.hardUSD)} (metrora guard). Run 'metrora guard allow' to lift the cap for this session, or raise hardUSD in guard.json.`,
       },
     })
   } else if (config.softUSD !== null && cache.costUSD >= config.softUSD && !cache.softWarned) {
     cache.softWarned = true
     output = JSON.stringify({
-      systemMessage: `codeburn guard: this session is ${usd(cache.costUSD)} (soft cap ${usd(config.softUSD)}).`,
+      systemMessage: `metrora guard: this session is ${usd(cache.costUSD)} (soft cap ${usd(config.softUSD)}).`,
     })
   }
 
@@ -152,7 +152,7 @@ export async function runGuardStatusline(raw: string, opts: HookOpts = {}): Prom
     const prev = await readCache(sessionId, opts.base)
     const { cache } = await computeSessionUsage(prev, transcript)
     await writeCache(cache, opts.base)
-    return `codeburn guard ${usd(cache.costUSD)} · ${freshness(cache.lastTurnAt)}`
+    return `metrora guard ${usd(cache.costUSD)} · ${freshness(cache.lastTurnAt)}`
   } catch {
     return ''
   }

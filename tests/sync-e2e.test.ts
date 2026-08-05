@@ -1,5 +1,5 @@
 /**
- * End-to-end test for codeburn sync setup flow.
+ * End-to-end test for metrora sync setup flow.
  *
  * Spins up a mock IdP, runs the auth flow programmatically
  * (simulating the browser callback), and verifies tokens are

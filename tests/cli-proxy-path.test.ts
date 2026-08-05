@@ -44,7 +44,7 @@ async function writeConfig(home: string, obj: unknown): Promise<void> {
   await writeFile(configPath(home), JSON.stringify(obj), 'utf-8')
 }
 
-describe('codeburn proxy-path CLI', () => {
+describe('metrora proxy-path CLI', () => {
   it('adds, lists, dedupes, and removes a proxy path', async () => {
     const home = await makeHome()
 
@@ -110,7 +110,7 @@ describe('codeburn proxy-path CLI', () => {
   })
 })
 
-describe('codeburn report --format json: proxy overview', () => {
+describe('metrora report --format json: proxy overview', () => {
   async function writeClaudeSession(home: string, cwd: string): Promise<void> {
     const dir = join(home, '.claude', 'projects', 'proxied')
     await mkdir(dir, { recursive: true })

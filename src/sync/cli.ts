@@ -1,5 +1,5 @@
 /**
- * codeburn sync — CLI commands.
+ * metrora sync — CLI commands.
  *
  * Registers: sync setup | push | status | logout | reset
  */
@@ -137,7 +137,7 @@ export function registerSyncCommands(program: Command): void {
         process.stderr.write(`\n✓ Sync configured successfully.\n`)
         process.stderr.write(`  Endpoint: ${baseUrl}\n`)
         process.stderr.write(`  Token stored in: ${store.method()}\n`)
-        process.stderr.write(`\nRun \`codeburn sync push\` to send telemetry data.\n`)
+        process.stderr.write(`\nRun \`metrora sync push\` to send telemetry data.\n`)
       } catch (err) {
         // Known errors (login timeout, port exhaustion, discovery failures)
         // get a clean one-line message instead of a raw Node crash dump.
@@ -157,7 +157,7 @@ export function registerSyncCommands(program: Command): void {
     .action(async () => {
       const config = readSyncConfig()
       if (!config) {
-        process.stderr.write('Sync not configured. Run `codeburn sync setup <url>` first.\n')
+        process.stderr.write('Sync not configured. Run `metrora sync setup <url>` first.\n')
         process.exit(1)
       }
 
@@ -229,14 +229,14 @@ export function registerSyncCommands(program: Command): void {
     .action(async (opts: { since: string; dryRun?: boolean }) => {
       const config = readSyncConfig()
       if (!config) {
-        process.stderr.write('Sync not configured. Run `codeburn sync setup <url>` first.\n')
+        process.stderr.write('Sync not configured. Run `metrora sync setup <url>` first.\n')
         process.exit(1)
       }
 
       const store = createCredentialStore()
       const rt = store.retrieve()
       if (!rt) {
-        process.stderr.write('No auth token found. Run `codeburn sync setup` to authenticate.\n')
+        process.stderr.write('No auth token found. Run `metrora sync setup` to authenticate.\n')
         process.exit(1)
       }
 
@@ -313,7 +313,7 @@ export function registerSyncCommands(program: Command): void {
         })
 
         if (result.outcome === 'auth-rejected') {
-          process.stderr.write('Auth rejected by server. Run `codeburn sync setup` to re-authenticate.\n')
+          process.stderr.write('Auth rejected by server. Run `metrora sync setup` to re-authenticate.\n')
           process.exit(1)
         }
         if (result.outcome === 'rate-limited') {
@@ -332,7 +332,7 @@ export function registerSyncCommands(program: Command): void {
           process.stderr.write(`  ${result.totalRejected} spans rejected (will retry on next push)\n`)
         }
         if (unsent.length > MAX_PER_PUSH) {
-          process.stderr.write(`  ${unsent.length - MAX_PER_PUSH} calls remaining (safety limit). Run \`codeburn sync push\` again.\n`)
+          process.stderr.write(`  ${unsent.length - MAX_PER_PUSH} calls remaining (safety limit). Run \`metrora sync push\` again.\n`)
         }
 
         // Non-zero exit when the push did not complete, so cron/scripts can

@@ -478,7 +478,7 @@ export function buildOptimizeAppliedHeader(report: ActReport): string | null {
     confident.reduce((mx, r) => Math.max(mx, Math.ceil(ageDays(r.appliedAt, generated))), 0),
   )
   const cost = report.costRate > 0 ? ` (~${formatCost(tokens * report.costRate)})` : ''
-  return `Applied fixes: ${report.activeCount} active, realized ~${formatTokens(tokens)} tokens${cost} over ${days} day${days === 1 ? '' : 's'}. Details: codeburn act report`
+  return `Applied fixes: ${report.activeCount} active, realized ~${formatTokens(tokens)} tokens${cost} over ${days} day${days === 1 ? '' : 's'}. Details: metrora act report`
 }
 
 function realizedCell(r: ActReportRow): string {
@@ -499,7 +499,7 @@ export function renderActReport(report: ActReport): string {
     if (report.activeCount > 0) {
       lines.push(`  ${report.activeCount} action${report.activeCount === 1 ? '' : 's'} applied; measurement starts after ${REPORT_MIN_AGE_DAYS} days.`)
     } else {
-      lines.push('  Apply fixes with codeburn optimize --apply, then check back after a few days.')
+      lines.push('  Apply fixes with metrora optimize --apply, then check back after a few days.')
     }
     if (report.malformedRecords > 0) lines.push(`  ${malformedNote(report.malformedRecords)}.`)
     lines.push('')

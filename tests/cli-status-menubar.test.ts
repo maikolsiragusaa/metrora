@@ -61,7 +61,7 @@ function assistantLine(sessionId: string, timestamp: string, messageId: string):
   })
 }
 
-describe('codeburn status --format menubar-json', () => {
+describe('metrora status --format menubar-json', () => {
   it('returns valid MenubarPayload with expected top-level fields', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-'))
 

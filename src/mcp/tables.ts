@@ -23,7 +23,7 @@ export function renderSummaryTable(p: MenubarPayload): string {
     `**${c.label}** — ${formatCost(c.cost)} · ${c.calls} calls · ${c.sessions} sessions`,
     `cache hit ${pct(c.cacheHitPercent)} · one-shot ${oneShot(c.oneShotRate)} · in ${formatTokens(c.inputTokens)} / out ${formatTokens(c.outputTokens)}`,
     ...(unpriced.length > 0
-      ? [`⚠ ${unpriced.length} model${unpriced.length === 1 ? '' : 's'} unpriced, counted at $0: ${unpriced.map(u => `${u.model} (${u.calls} calls)`).join(', ')}. Cost above understates real spend; fix with \`metrora model-alias\` or \`codeburn price-override\`.`]
+      ? [`⚠ ${unpriced.length} model${unpriced.length === 1 ? '' : 's'} unpriced, counted at $0: ${unpriced.map(u => `${u.model} (${u.calls} calls)`).join(', ')}. Cost above understates real spend; fix with \`metrora model-alias\` or \`metrora price-override\`.`]
       : []),
     '',
     '_Top models_',

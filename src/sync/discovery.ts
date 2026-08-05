@@ -1,5 +1,5 @@
 /**
- * codeburn sync — discovery document parser.
+ * metrora sync — discovery document parser.
  *
  * Fetches and validates {baseUrl}/.well-known/codeburn-export.json
  */
@@ -55,7 +55,7 @@ export function parseDiscoveryDoc(raw: unknown): CodeburnDiscoveryDoc {
   const version = typeof doc.version === 'number' ? doc.version : 1
   if (version > SUPPORTED_VERSION) {
     throw new DiscoveryError(
-      `This endpoint requires codeburn sync v${version}. Please update codeburn.`
+      `This endpoint requires metrora sync v${version}. Please update codeburn.`
     )
   }
 
@@ -100,7 +100,7 @@ export async function fetchDiscoveryDoc(baseUrl: string): Promise<CodeburnDiscov
 
   if (response.status === 404) {
     throw new DiscoveryError(
-      `Server does not support codeburn sync.\n${url} returned 404.`
+      `Server does not support metrora sync.\n${url} returned 404.`
     )
   }
 

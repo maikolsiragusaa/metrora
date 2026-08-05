@@ -95,7 +95,7 @@ async function seedCurrentMonthSpend(home: string): Promise<void> {
   await seedClaudeSpend(home, { sessionId: 'budget-session', timestamp: currentMonthTimestamp(0) })
 }
 
-describe('codeburn budget command', () => {
+describe('metrora budget command', () => {
   it('saves, lists, and removes a monthly budget', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
     try {

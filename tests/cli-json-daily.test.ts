@@ -67,7 +67,7 @@ function assistantNoEditLine(sessionId: string, timestamp: string, messageId: st
   })
 }
 
-describe('codeburn report --format json daily[] one-shot fields (issue #279)', () => {
+describe('metrora report --format json daily[] one-shot fields (issue #279)', () => {
   it('exposes per-day turns / editTurns / oneShotTurns / oneShotRate', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-json-daily-'))
 

@@ -48,7 +48,7 @@ export async function runAction(plan: ActionPlan, actionsDir: string = defaultAc
       for (const pc of plan.changes) {
         if (pc.op === 'move' || pc.expectedHash === undefined) continue
         if ((await sha256File(pc.path)) !== pc.expectedHash) {
-          throw new Error(`${pc.path} changed since the plan was built; re-run codeburn optimize --apply`)
+          throw new Error(`${pc.path} changed since the plan was built; re-run metrora optimize --apply`)
         }
       }
       for (let i = 0; i < plan.changes.length; i++) {

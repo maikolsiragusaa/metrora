@@ -337,7 +337,7 @@ function buildReadme(periods: PeriodExport[]): string {
 }
 
 /// Sentinel file dropped into every folder we create so we can safely overwrite an older
-/// codeburn export without ever deleting a user's unrelated files by accident.
+/// metrora export without ever deleting a user's unrelated files by accident.
 const EXPORT_MARKER_FILE = '.codeburn-export'
 
 async function isCodeburnExportFolder(path: string): Promise<boolean> {
@@ -441,7 +441,7 @@ export async function exportJson(periods: PeriodExport[], outputPath: string): P
       const head = buf.toString('utf-8', 0, bytesRead)
       if (!head.includes('"schema": "codeburn.export.v')) {
         throw new Error(
-          `Refusing to overwrite ${target}: file does not look like a codeburn export. ` +
+          `Refusing to overwrite ${target}: file does not look like a metrora export. ` +
           `Delete it manually or pick a different -o path.`
         )
       }

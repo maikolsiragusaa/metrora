@@ -356,7 +356,7 @@ describe('statusline', () => {
     const base = await tmp()
     const path = await transcript([assistantLine('a')])
     const out = await runGuardStatusline(JSON.stringify({ session_id: SID, transcript_path: path }), { base })
-    expect(out.startsWith('codeburn guard $')).toBe(true)
+    expect(out.startsWith('metrora guard $')).toBe(true)
     expect(out).not.toContain('\n')
   })
 })

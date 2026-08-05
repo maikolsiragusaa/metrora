@@ -23,7 +23,7 @@ function runCli(args: string[], home: string) {
   })
 }
 
-describe('codeburn report Devin model variants', () => {
+describe('metrora report Devin model variants', () => {
   it('keeps friendly Devin effort-tier names in JSON model rows and efficiency rows', async () => {
     const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-devin-models-'))
     try {

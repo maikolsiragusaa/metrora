@@ -113,7 +113,7 @@ describe('sharing discovery', () => {
           fingerprint: 'fixture-fingerprint',
         },
       ])
-      expect(stderr).toHaveBeenCalledWith('codeburn devices scan: mDNS discovery failed: bind EPERM')
+      expect(stderr).toHaveBeenCalledWith('metrora devices scan: mDNS discovery failed: bind EPERM')
     } finally {
       stderr.mockRestore()
     }
