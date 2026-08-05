@@ -1,0 +1,120 @@
+name: Repository maintenance
+
+on:
+  push:
+    branches:
+      - maintenance/clean-history
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  prepare:
+    if: github.event.head_commit.message != 'maintenance: finalize cleanup'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      EXPECTED_MAIN: 5c8434c0f1e05c88568e6399b15df09cac44aa59
+    steps:
+      - name: Checkout final public tree
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Create one-commit baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN"
+          git config user.name "Metrora"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan clean-baseline-work
+          git add -A
+          git commit -m "Metrora 1.0 baseline"
+          git push --force origin HEAD:refs/heads/clean-baseline
+
+      - name: Delete closed issues
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r issue_id; do
+            [ -n "$issue_id" ] || continue
+            gh api graphql \
+              -f query='mutation($id:ID!){deleteIssue(input:{issueId:$id}){clientMutationId}}' \
+              -f id="$issue_id"
+          done < <(
+            gh api graphql --paginate \
+              -f query='query($endCursor:String){repository(owner:"maikolsiragusaa",name:"metrora"){issues(first:100,after:$endCursor,states:CLOSED){nodes{id}pageInfo{hasNextPage endCursor}}}}' \
+              --jq '.data.repository.issues.nodes[].id'
+          )
+
+      - name: Archive historical pull requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r pr_id; do
+            [ -n "$pr_id" ] || continue
+            gh api graphql \
+              -f query='mutation($id:ID!){archivePullRequest(input:{pullRequestId:$id}){pullRequest{id number isArchived}}}' \
+              -f id="$pr_id"
+          done < <(
+            gh api graphql --paginate \
+              -f query='query($endCursor:String){repository(owner:"maikolsiragusaa",name:"metrora"){pullRequests(first:100,after:$endCursor){nodes{id isArchived}pageInfo{hasNextPage endCursor}}}}' \
+              --jq '.data.repository.pullRequests.nodes[] | select(.isArchived == false) | .id'
+          )
+
+      - name: Remove releases and tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r release_id; do
+            [ -n "$release_id" ] || continue
+            gh api --method DELETE "/repos/${REPOSITORY}/releases/${release_id}"
+          done < <(gh api --paginate "/repos/${REPOSITORY}/releases?per_page=100" --jq '.[].id')
+          while read -r tag_ref; do
+            [ -n "$tag_ref" ] || continue
+            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/${tag_ref}"
+          done < <(
+            gh api --paginate "/repos/${REPOSITORY}/git/matching-refs/tags/" \
+              --jq '.[].ref | sub("^refs/"; "")'
+          )
+
+  finalize:
+    if: github.event.head_commit.message == 'maintenance: finalize cleanup'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Remove old workflow history
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            [ "$run_id" = "$GITHUB_RUN_ID" ] && continue
+            gh api --method POST "/repos/${REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null 2>&1 || true
+            gh api --method DELETE "/repos/${REPOSITORY}/actions/runs/${run_id}" || true
+          done < <(
+            gh api --paginate "/repos/${REPOSITORY}/actions/runs?per_page=100" \
+              --jq '.workflow_runs[].id'
+          )
+
+      - name: Remove every non-main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r branch; do
+            [ "$branch" = "main" ] && continue
+            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/heads/${branch}" || true
+          done < <(gh api --paginate "/repos/${REPOSITORY}/branches?per_page=100" --jq '.[].name')
+
+      - name: Remove maintenance run
+        if: always()
+        shell: bash
+        run: gh api --method DELETE "/repos/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" || true
