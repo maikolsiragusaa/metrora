@@ -1,0 +1,51 @@
+name: Kiro zero-growth finalize
+
+on:
+  push:
+    branches: [fix/kiro-legacy-full-input]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kiro-zero-growth-finalize
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/kiro-legacy-full-input
+          fetch-depth: 0
+
+      - name: Finalize zero-growth branch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('src/providers/kiro.ts')
+          text = source.read_text(encoding='utf-8')
+          old = "      inputChars += msg.content.length\n      pendingUserMessage = msg.content.slice(0, 500)\n"
+          new = "      inputChars += msg.content.length; pendingUserMessage = msg.content.slice(0, 500)\n"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one legacy human-accounting block, found {text.count(old)}')
+          source.write_text(text.replace(old, new), encoding='utf-8')
+
+          workflow = Path('.github/workflows/kiro-zero-growth-finalize.yml')
+          workflow.unlink()
+          PY
+
+      - name: Commit bounded finalization
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/providers/kiro.ts .github/workflows/kiro-zero-growth-finalize.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/kiro-zero-growth-finalize.yml\nsrc/providers/kiro.ts'
+          git commit -m 'refactor(kiro): keep legacy accounting delta line-neutral'
+          git push origin HEAD:fix/kiro-legacy-full-input
