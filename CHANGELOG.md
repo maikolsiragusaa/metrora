@@ -9,6 +9,7 @@ The current version identifies public source under development. It is not a clai
 ### Product identity and public documentation
 
 - Canonicalized CLI help, usage examples, diagnostics and default export names around the `metrora` command while preserving versioned compatibility schemas and markers.
+- Completed public provider-guide coverage for all 38 registered local collectors and corrected stale inventory metadata without changing evidence approval.
 - Established Metrora™ as the product identity, Signal Grid™ as the canonical visual identity and Vensent™ as the publisher identity.
 - Established the independent `1.0.0-rc.N` candidate line while preserving `0.9.19` as an immutable historical source and migration baseline.
 - Separated the Metrora MIT licence from the preserved CodeBurn upstream notice.
