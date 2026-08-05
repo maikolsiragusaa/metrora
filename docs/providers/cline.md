@@ -27,7 +27,7 @@ tasks/<taskId>/
 ```
 
 `ui_messages.json` provides the `api_req_started` usage entries. `api_conversation_history.json` is used for model extraction. See [`vscode-cline-parser`](vscode-cline-parser.md) for the full schema description.
-`task_metadata.json` is part of Cline's task layout but is not read by CodeBurn today.
+`task_metadata.json` is part of Cline's task layout but is not read by Metrora today.
 
 ## Caching
 
