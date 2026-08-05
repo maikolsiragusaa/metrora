@@ -81,6 +81,18 @@ describe('Optimize content-addressed result cache key', () => {
     )
   })
 
+  it('separates savings and proxied-cost changes with unchanged calls', () => {
+    const baseline = [project('alpha')]
+    const savingsChanged = [project('alpha', { totalSavingsUSD: 3 })]
+    const proxiedChanged = [project('alpha', { totalProxiedCostUSD: 1 })]
+    expect(optimizeResultCacheKey(baseline, range())).not.toBe(
+      optimizeResultCacheKey(savingsChanged, range()),
+    )
+    expect(optimizeResultCacheKey(baseline, range())).not.toBe(
+      optimizeResultCacheKey(proxiedChanged, range()),
+    )
+  })
+
   it('separates token changes even when project totals and calls are unchanged', () => {
     const before = [project('alpha')]
     const after = clone(before)
