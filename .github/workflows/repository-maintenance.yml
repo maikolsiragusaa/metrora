@@ -1,4 +1,4 @@
-name: Prepare clean repository baseline
+name: Sanitize historical GitHub surfaces
 
 on:
   pull_request:
@@ -17,62 +17,54 @@ permissions:
   actions: write
 
 jobs:
-  prepare:
+  sanitize:
     if: github.head_ref == 'maintenance/clean-history'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      SOURCE_COMMIT: 5c8434c0f1e05c88568e6399b15df09cac44aa59
     steps:
-      - name: Checkout accepted public tree
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.SOURCE_COMMIT }}
-          fetch-depth: 1
-
-      - name: Create one-commit baseline
+      - name: Sanitize closed issues
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
-          git config user.name "Metrora"
-          git config user.email "actions@users.noreply.github.com"
-          git checkout --orphan clean-baseline-work
-          git add -A
-          git commit -m "Metrora 1.0 baseline"
-          git push --force origin HEAD:refs/heads/clean-baseline
-
-      - name: Delete closed issues
-        shell: bash
-        run: |
-          set -euo pipefail
-          while read -r issue_id; do
-            [ -n "$issue_id" ] || continue
-            gh api graphql \
-              -f query='mutation($id:ID!){deleteIssue(input:{issueId:$id}){clientMutationId}}' \
-              -f id="$issue_id"
+          while read -r number; do
+            [ -n "$number" ] || continue
+            while read -r comment_id; do
+              [ -n "$comment_id" ] || continue
+              gh api --method DELETE "/repos/${REPOSITORY}/issues/comments/${comment_id}" || true
+            done < <(gh api --paginate "/repos/${REPOSITORY}/issues/${number}/comments?per_page=100" --jq '.[].id')
+            gh api --method PATCH "/repos/${REPOSITORY}/issues/${number}" \
+              -f title="Archived historical issue #${number}" \
+              -f body='This closed item predates the current public baseline and is retained only as a historical reference.'
+            gh api --method PUT "/repos/${REPOSITORY}/issues/${number}/lock" -f lock_reason=resolved || true
           done < <(
-            gh api graphql --paginate \
-              -f query='query($endCursor:String){repository(owner:"maikolsiragusaa",name:"metrora"){issues(first:100,after:$endCursor,states:CLOSED){nodes{id}pageInfo{hasNextPage endCursor}}}}' \
-              --jq '.data.repository.issues.nodes[].id'
+            gh api --paginate "/repos/${REPOSITORY}/issues?state=closed&per_page=100" \
+              --jq '.[] | select(.pull_request == null) | .number'
           )
 
-      - name: Archive historical pull requests
+      - name: Sanitize historical pull requests
         shell: bash
         run: |
           set -euo pipefail
-          while read -r pr_id; do
-            [ -n "$pr_id" ] || continue
-            gh api graphql \
-              -f query='mutation($id:ID!){archivePullRequest(input:{pullRequestId:$id}){pullRequest{id number isArchived}}}' \
-              -f id="$pr_id"
-          done < <(
-            gh api graphql --paginate \
-              -f query='query($endCursor:String){repository(owner:"maikolsiragusaa",name:"metrora"){pullRequests(first:100,after:$endCursor){nodes{id number isArchived}pageInfo{hasNextPage endCursor}}}}' \
-              --jq ".data.repository.pullRequests.nodes[] | select(.isArchived == false and .number != ${PR_NUMBER}) | .id"
-          )
+          while read -r number; do
+            [ -n "$number" ] || continue
+            [ "$number" = "$PR_NUMBER" ] && continue
+            while read -r comment_id; do
+              [ -n "$comment_id" ] || continue
+              gh api --method DELETE "/repos/${REPOSITORY}/issues/comments/${comment_id}" || true
+            done < <(gh api --paginate "/repos/${REPOSITORY}/issues/${number}/comments?per_page=100" --jq '.[].id')
+            while read -r comment_id; do
+              [ -n "$comment_id" ] || continue
+              gh api --method DELETE "/repos/${REPOSITORY}/pulls/comments/${comment_id}" || true
+            done < <(gh api --paginate "/repos/${REPOSITORY}/pulls/${number}/comments?per_page=100" --jq '.[].id')
+            gh api --method PATCH "/repos/${REPOSITORY}/pulls/${number}" \
+              -f title="Archived historical change #${number}" \
+              -f body='This closed change predates the current public baseline and is retained only as a historical reference.' \
+              -f state=closed
+            gh api --method PUT "/repos/${REPOSITORY}/issues/${number}/lock" -f lock_reason=resolved || true
+          done < <(gh api --paginate "/repos/${REPOSITORY}/pulls?state=all&per_page=100" --jq '.[].number')
 
       - name: Remove releases and tags
         shell: bash
@@ -80,21 +72,22 @@ jobs:
           set -euo pipefail
           while read -r release_id; do
             [ -n "$release_id" ] || continue
-            gh api --method DELETE "/repos/${REPOSITORY}/releases/${release_id}"
+            gh api --method DELETE "/repos/${REPOSITORY}/releases/${release_id}" || true
           done < <(gh api --paginate "/repos/${REPOSITORY}/releases?per_page=100" --jq '.[].id')
           while read -r tag_ref; do
             [ -n "$tag_ref" ] || continue
-            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/${tag_ref}"
+            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/${tag_ref}" || true
           done < <(
             gh api --paginate "/repos/${REPOSITORY}/git/matching-refs/tags/" \
               --jq '.[].ref | sub("^refs/"; "")'
           )
 
-      - name: Archive maintenance pull request
+      - name: Close maintenance pull request
         if: always()
         shell: bash
         run: |
-          pr_id=$(gh api "/repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.node_id')
-          gh api graphql \
-            -f query='mutation($id:ID!){archivePullRequest(input:{pullRequestId:$id}){pullRequest{id number isArchived}}}' \
-            -f id="$pr_id" || true
+          gh api --method PATCH "/repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+            -f title='Archived repository maintenance' \
+            -f body='Temporary maintenance change used to prepare the current public baseline.' \
+            -f state=closed || true
+          gh api --method PUT "/repos/${REPOSITORY}/issues/${PR_NUMBER}/lock" -f lock_reason=resolved || true
