@@ -6,7 +6,7 @@ Official Windows distribution is in preparation.
 
 The accepted 0.9.19 Windows artifacts remain unsigned engineering candidates used for validation. They are not an official release, signed package or active update channel.
 
-The active source line is `1.0.0-rc.2`, with numeric desktop build version `1.0.0.2`. It does not have an accepted artifact yet and does not supersede the source-bound 0.9.19 evidence.
+The active source line is `1.0.0-rc.3`, with numeric desktop build version `1.0.0.3`. It does not have an accepted artifact yet and does not supersede the source-bound 0.9.19 evidence.
 
 ## Identity
 
