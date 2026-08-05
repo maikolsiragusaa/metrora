@@ -1,11 +1,17 @@
 /**
  * RFC 8785 JSON Canonicalization Scheme implementation.
  *
- * Adapted from `erdtman/canonicalize` (`lib/canonicalize.js`), licensed under
- * Apache-2.0. Metrora modifications: TypeScript types, named export, explicit
- * unsupported-primitive rejection, and project formatting.
+ * Adapted from `erdtman/canonicalize` 3.0.0, exact upstream commit
+ * `63c3410a074d35950212a81fdb2bbb05607f3cd1` (`lib/canonicalize.js`),
+ * licensed under Apache-2.0.
+ *
+ * Metrora modifications: TypeScript types, named export, explicit
+ * unsupported-primitive rejection, failure-safe cycle cleanup, and rejection
+ * of negative zero according to verified RFC 8785 erratum 7920.
  *
  * Upstream: https://github.com/erdtman/canonicalize
+ * Standard: RFC 8785
+ * Verified erratum: https://www.rfc-editor.org/errata/eid7920
  */
 
 function hasLoneSurrogate(value: string): boolean {
@@ -23,18 +29,28 @@ function hasLoneSurrogate(value: string): boolean {
   return false
 }
 
+function serializePrimitive(value: unknown): string {
+  try {
+    const serialized = JSON.stringify(value)
+    if (serialized === undefined) throw new Error('value is not JSON serializable')
+    return serialized
+  } catch (error) {
+    if (error instanceof Error && error.message === 'value is not JSON serializable') throw error
+    throw new Error('value is not JSON serializable')
+  }
+}
+
 export function canonicalizeRfc8785(value: unknown, seen = new Set<object>()): string {
+  if (typeof value === 'number' && Object.is(value, -0)) {
+    throw new Error('negative zero is not allowed by RFC 8785 erratum 7920')
+  }
   if (typeof value === 'number' && Number.isNaN(value)) throw new Error('NaN is not allowed by RFC 8785')
   if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Infinity is not allowed by RFC 8785')
   if (typeof value === 'string' && hasLoneSurrogate(value)) {
     throw new Error('lone surrogate is not allowed by RFC 8785')
   }
 
-  if (value === null || typeof value !== 'object') {
-    const serialized = JSON.stringify(value)
-    if (serialized === undefined) throw new Error('value is not JSON serializable')
-    return serialized
-  }
+  if (value === null || typeof value !== 'object') return serializePrimitive(value)
 
   const object = value as Record<string, unknown> & { toJSON?: () => unknown }
   if (typeof object.toJSON === 'function') {

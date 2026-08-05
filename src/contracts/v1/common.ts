@@ -20,10 +20,23 @@ export const SlugSchema = z
 
 export const TimestampSchema = z.iso.datetime({ offset: true })
 export const Sha256DigestSchema = z.string().regex(/^[a-f0-9]{64}$/)
-export const NonNegativeIntegerSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
+
+const notNegativeZero = (value: number) => !Object.is(value, -0)
+const negativeZeroMessage = 'negative zero is not allowed in canonical evidence'
+
+export const NonNegativeIntegerSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(Number.MAX_SAFE_INTEGER)
+  .refine(notNegativeZero, negativeZeroMessage)
 export const PositiveIntegerSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 export const MicrosUsdSchema = NonNegativeIntegerSchema
-export const FractionSchema = z.number().min(0).max(1)
+export const FractionSchema = z
+  .number()
+  .min(0)
+  .max(1)
+  .refine(notNegativeZero, negativeZeroMessage)
 
 export const DigestSetSchema = z.strictObject({
   sha256: Sha256DigestSchema,
