@@ -20,7 +20,10 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$CandidateVersion,
 
-  [string]$RepositoryRoot = (Get-Location).Path
+  [string]$RepositoryRoot = (Get-Location).Path,
+
+  [ValidateRange(60, 600)]
+  [int]$CheckpointTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
@@ -133,7 +136,7 @@ try {
       throw "interruption installer exited before the checkpoint with code $($interruptProcess.ExitCode)"
     }
     Test-Path -LiteralPath $readyMarker
-  } 90 'interruption installer did not reach the deterministic checkpoint'
+  } $CheckpointTimeoutSeconds 'interruption installer did not reach the deterministic checkpoint'
   Write-Host "R1.B.C.B checkpoint observed: $readyMarker"
   Assert-MetroraStateSentinel $sentinel 'interruption checkpoint'
 
@@ -192,6 +195,7 @@ try {
   [ordered]@{
     status = 'pass'
     checkpointObserved = $true
+    checkpointTimeoutSeconds = $CheckpointTimeoutSeconds
     interruptedClassification = $interruptedState.classification
     interruptedAuthority = $interruptedAuthority
     recoveredClassification = $recoveredState.classification

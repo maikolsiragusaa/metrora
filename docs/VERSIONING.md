@@ -4,8 +4,8 @@ Metrora uses semantic versioning for public product identity and a separate nume
 
 ## Current line
 
-- Public development version: `1.0.0-rc.4`
-- Desktop build version: `1.0.0.4`
+- Public development version: `1.0.0-rc.5`
+- Desktop build version: `1.0.0.5`
 - First intended stable release: `1.0.0`
 
 Changing metadata does not create an accepted artifact. Candidate identity always consists of the version, exact source commit, payload manifest and checksums, plus the applicable platform acceptance.
@@ -32,6 +32,14 @@ Metrora accepts only stable versions and numbered release candidates in the form
 - `MAJOR.MINOR.PATCH-rc.N`
 
 For the same core version, release candidates are ordered by `N` and the stable release sorts after every candidate. Release and migration tooling must use the shared authority in `scripts/version-authority-lib.mjs`; platform-native parsers that reject SemVer prerelease identifiers are not authoritative.
+
+## Material candidate changes
+
+Advance `rc.N` whenever source changes can alter user-visible accounting, historical reconciliation, persisted-state interpretation, security or trust evidence, packaging, installation, migration, rollback or platform behavior.
+
+Parser and provider corrections that can change tokens, costs, calls, projects or other reported usage are material even when their code delta is small. They require a new source-bound candidate rather than reusing an artifact built from an earlier commit.
+
+Documentation-only clarification, test-only determinism and other changes proven not to alter shipped behavior do not automatically require a new candidate. The applicable validation still follows the changed surface.
 
 ## Authorities
 

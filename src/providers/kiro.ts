@@ -202,14 +202,14 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   let modelId = normalizeModelId(metadata.modelId ?? '')
   if (modelId === 'auto' || !modelId) modelId = 'kiro-auto'
 
-  let pendingUserMessage = ''
+  let pendingUserMessage = '', inputChars = 0
   const allTools: string[] = []
   const toolSequence: ToolCall[][] = []
 
   for (const msg of chat) {
     if (msg.role === 'human') {
       if (msg.content.startsWith('<identity>')) continue
-      pendingUserMessage = msg.content.slice(0, 500)
+      inputChars += msg.content.length; pendingUserMessage = msg.content.slice(0, 500)
     }
     if (msg.role === 'bot') {
       const msgTools = extractToolNames(msg.content)
@@ -226,7 +226,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   if (seenKeys.has(dedupKey)) return results
 
   const outputTokens = estimateTokensFromChars(totalOutputChars)
-  const inputTokens = estimateTokensFromChars(pendingUserMessage.length)
+  const inputTokens = estimateTokensFromChars(inputChars)
   const costUSD = calculateCost(modelId, inputTokens, outputTokens, 0, 0, 0)
   const tsDate = parseKiroTimestamp(metadata.startTime)
   if (!tsDate) return results
