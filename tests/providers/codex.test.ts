@@ -896,3 +896,117 @@ describe('codex provider - forked session dedupe', () => {
     expect(tokens).toBe(300)
   })
 })
+
+
+describe('codex provider - structural admission and field guards', () => {
+  it('accepts structurally valid third-party app-server rollouts without Codex branding', async () => {
+    await writeSession(tmpDir, '2026-04-14', 'rollout-third-party.jsonl', [
+      sessionMeta({ originator: 'acme-app-server', session_id: 'sess-third-party', cwd: '/Users/test/third-party' }),
+      tokenCount({ last: { input: 100, output: 50 }, total: { total: 150 } }),
+    ])
+    await writeSession(tmpDir, '2026-04-14', 'rollout-no-originator.jsonl', [
+      JSON.stringify({
+        type: 'session_meta',
+        timestamp: '2026-04-14T11:00:00Z',
+        payload: { session_id: 'sess-no-originator', cwd: '/Users/test/no-originator', model: 'gpt-5.3-codex' },
+      }),
+      tokenCount({ timestamp: '2026-04-14T11:01:00Z', last: { input: 50, output: 25 }, total: { total: 75 } }),
+    ])
+
+    const provider = createCodexProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions.map(session => session.project).sort()).toEqual([
+      'Users-test-no-originator',
+      'Users-test-third-party',
+    ])
+  })
+
+  it('keeps discovery confined to Codex-owned roots and rollout naming rules', async () => {
+    await writeFile(join(tmpDir, 'rollout-outside.jsonl'), [
+      sessionMeta({ originator: 'third-party', session_id: 'outside' }),
+      tokenCount({ last: { input: 1, output: 1 }, total: { total: 2 } }),
+    ].join('\n'))
+    const sessionsDir = join(tmpDir, 'sessions', '2026', '04', '14')
+    await mkdir(sessionsDir, { recursive: true })
+    await writeFile(join(sessionsDir, 'arbitrary.jsonl'), sessionMeta({ session_id: 'wrong-name' }))
+
+    const provider = createCodexProvider(tmpDir)
+    expect(await provider.discoverSessions()).toEqual([])
+  })
+
+  it('isolates malformed first lines and non-object payloads from valid siblings', async () => {
+    const sessionDir = join(tmpDir, 'sessions', '2026', '04', '14')
+    await mkdir(sessionDir, { recursive: true })
+    await writeFile(join(sessionDir, 'rollout-torn-guard.jsonl'), '{"type":"session_meta","payload":')
+    await writeFile(join(sessionDir, 'rollout-array-payload.jsonl'), JSON.stringify({ type: 'session_meta', payload: [] }))
+    await writeSession(tmpDir, '2026-04-14', 'rollout-valid-sibling.jsonl', [
+      sessionMeta({ session_id: 'sess-valid-sibling' }),
+      tokenCount({ last: { input: 20, output: 10 }, total: { total: 30 } }),
+    ])
+
+    const provider = createCodexProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.path).toContain('rollout-valid-sibling.jsonl')
+  })
+
+  it('guards non-string cwd/model and invalid session timestamps deterministically', async () => {
+    await writeSession(tmpDir, '2026-04-14', 'rollout-untrusted-fields.jsonl', [
+      JSON.stringify({
+        type: 'session_meta',
+        timestamp: 'not-a-date',
+        payload: {
+          session_id: 'sess-untrusted-fields',
+          originator: { brand: 'codex' },
+          cwd: { path: '/unsafe' },
+          model: { id: 'gpt-unsafe' },
+          forked_from_id: 'parent-session',
+        },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-04-14T10:01:00Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            model: { id: 'bad-model' },
+            last_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5, reasoning_output_tokens: 0, total_tokens: 15 },
+            total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5, reasoning_output_tokens: 0, total_tokens: 15 },
+          },
+        },
+      }),
+    ])
+
+    const provider = createCodexProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.project).toBe('unknown')
+
+    const calls: ParsedProviderCall[] = []
+    for await (const call of provider.createSessionParser(sessions[0]!, new Set()).parse()) calls.push(call)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.model).toBe('gpt-5')
+    expect(calls[0]!.timestamp).toBe('2026-04-14T10:01:00Z')
+    expect(calls[0]!.projectPath).toBeUndefined()
+  })
+
+  it('rejects only calls with no finite timestamp and preserves unrelated sessions', async () => {
+    await writeSession(tmpDir, '2026-04-14', 'rollout-invalid-time.jsonl', [
+      JSON.stringify({ type: 'session_meta', timestamp: 'also-invalid', payload: { session_id: 'sess-invalid-time', cwd: '/tmp/invalid', model: 'gpt-5.3-codex' } }),
+      tokenCount({ timestamp: 'not-a-date', last: { input: 100, output: 50 }, total: { total: 150 } }),
+    ])
+    await writeSession(tmpDir, '2026-04-14', 'rollout-valid-time.jsonl', [
+      sessionMeta({ session_id: 'sess-valid-time' }),
+      tokenCount({ timestamp: '2026-04-14T12:00:00Z', last: { input: 40, output: 20 }, total: { total: 60 } }),
+    ])
+
+    const provider = createCodexProvider(tmpDir)
+    const sessions = await provider.discoverSessions()
+    const calls: ParsedProviderCall[] = []
+    const seen = new Set<string>()
+    for (const session of sessions) {
+      for await (const call of provider.createSessionParser(session, seen).parse()) calls.push(call)
+    }
+    expect(calls.map(call => call.sessionId)).toEqual(['sess-valid-time'])
+  })
+})

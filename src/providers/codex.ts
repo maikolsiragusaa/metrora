@@ -12,6 +12,8 @@ import { estimateTokensFromChars } from '../token-estimate.js'
 import { findExplicitReasoningLevel, reasoningLevelFromModelLabel, type ReasoningLevel } from '../reasoning-level.js'
 import type { ToolCall } from '../types.js'
 import type { Provider, ProbeRoot, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import { finiteTimestamp, isPlainObject, nonEmptyString, sanitizeProject } from './codex-input-guards.js'
+import { mcpToolFromShellCommand } from './codex-shell-tools.js'
 
 const modelDisplayNames: Record<string, string> = {
   'codex-auto-review': 'Codex Auto Review',
@@ -44,40 +46,6 @@ const toolNameMap: Record<string, string> = {
   close_agent: 'Agent',
   wait_agent: 'Agent',
   read_dir: 'Glob',
-}
-
-// CLI-based MCP wrappers (e.g. philschmid/mcp-cli) let Codex call an MCP tool
-// through a shell command instead of registering the server natively. Codex
-// then logs a plain exec_command with no `mcp_tool_call_end` event, so the MCP
-// usage would only appear as a shell command and be absent from the MCP
-// breakdown (issue #478). Recognize the `mcp-cli [options] call <server>
-// <tool>` form and return the canonical mcp__<server>__<tool> so the call is
-// also attributed to MCP. Only the `call` subcommand (an actual tool execution)
-// is matched; info / grep / bare listing are lookups. The exec_command still
-// counts as Bash since it genuinely is a shell exec. Scoped to the mcp-cli
-// binary; other wrappers would need their own pattern.
-//
-// The negative lookbehind keeps `mcp-cli` a standalone binary (a leading
-// quote/space/slash from a `bash -lc "..."` wrapper or absolute path is fine,
-// but `foo-mcp-cli` is not). `(?:\s+(?!call\b)[^\s;|&]+)*` skips any options and
-// their values between the binary and the subcommand (e.g.
-// `mcp-cli -c ./mcp.json call ...`) without crossing a shell separator, and
-// stops at the `call` token. This is substring matching, so a command that
-// merely mentions the phrase (a comment, an echo, a commit message) can
-// false-positive, an accepted tradeoff for the common case. \s+ and the token
-// class don't overlap, so there is no catastrophic backtracking.
-const MCP_CLI_CALL = /(?<![\w.-])mcp-cli(?:\s+(?!call\b)[^\s;|&]+)*\s+call\s+(\S+)\s+(\S+)/
-function mcpToolFromShellCommand(command: unknown): string | null {
-  const text = typeof command === 'string'
-    ? command
-    : Array.isArray(command) ? command.filter(x => typeof x === 'string').join(' ') : ''
-  if (!text) return null
-  const m = MCP_CLI_CALL.exec(text)
-  if (!m) return null
-  const server = m[1]!.replace(/['"]/g, '')
-  const tool = m[2]!.replace(/['"]/g, '')
-  if (!server || !tool) return null
-  return `mcp__${server}__${tool}`
 }
 
 // Count added/removed lines from a Codex `patch_apply_end` change's
@@ -140,10 +108,6 @@ function getCodexDir(override?: string): string {
   return override ?? process.env['CODEX_HOME'] ?? join(homedir(), '.codex')
 }
 
-function sanitizeProject(cwd: string): string {
-  return cwd.replace(/^\//, '').replace(/\//g, '-')
-}
-
 // Cap how many bytes we'll read while looking for the first newline. Real
 // Codex session_meta lines are ~22-27 KB; this leaves plenty of headroom while
 // keeping memory bounded if a corrupt file has no newline at all.
@@ -181,7 +145,9 @@ async function readFirstLine(filePath: string): Promise<CodexEntry | null> {
   }
   if (!firstLine || !firstLine.trim()) return null
   try {
-    return JSON.parse(firstLine) as CodexEntry
+    const parsed: unknown = JSON.parse(firstLine)
+    if (!isPlainObject(parsed) || typeof parsed['type'] !== 'string') return null
+    return parsed as unknown as CodexEntry
   } catch {
     return null
   }
@@ -190,9 +156,14 @@ async function readFirstLine(filePath: string): Promise<CodexEntry | null> {
 async function isValidCodexSession(filePath: string): Promise<{ valid: boolean; meta?: CodexEntry }> {
   const entry = await readFirstLine(filePath)
   if (!entry) return { valid: false }
-  const valid = entry.type === 'session_meta' &&
-    typeof entry.payload?.originator === 'string' &&
-    entry.payload.originator.toLowerCase().startsWith('codex')
+  const payload: unknown = entry.payload
+  // Admission is structural and remains confined to Codex-owned roots plus
+  // rollout filename/layout rules. `originator` is untrusted metadata:
+  // third-party app servers may emit valid Codex rollouts without a
+  // Codex-branded value, so branding alone must never decide admission.
+  const valid = entry.type === 'session_meta'
+    && isPlainObject(payload)
+    && nonEmptyString(payload['session_id']) !== undefined
   return { valid, meta: valid ? entry : undefined }
 }
 
@@ -401,7 +372,11 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
     const trimmed = line.trim()
     if (!trimmed) return null
     try {
-      return JSON.parse(trimmed) as CodexEntry
+      const parsed: unknown = JSON.parse(trimmed)
+      if (!isPlainObject(parsed) || typeof parsed['type'] !== 'string') return null
+      const payload = parsed['payload']
+      if (payload !== undefined && !isPlainObject(payload)) return null
+      return parsed as unknown as CodexEntry
     } catch {
       return null
     }
@@ -491,7 +466,7 @@ async function discoverSessionFile(filePath: string): Promise<SessionSource | nu
   const { valid, meta } = await isValidCodexSession(filePath)
   if (!valid || !meta) return null
 
-  const cwd = meta.payload?.cwd ?? 'unknown'
+  const cwd = nonEmptyString(meta.payload?.cwd) ?? 'unknown'
   return { path: filePath, project: sanitizeProject(cwd), provider: 'codex' }
 }
 
@@ -551,11 +526,11 @@ async function discoverSessionsInDir(codexDir: string): Promise<SessionSource[]>
 }
 
 function resolveModel(info: CodexEntry['payload'], sessionModel?: string): string {
-  return info?.model
-    ?? info?.info?.model
-    ?? info?.info?.model_name
-    ?? sessionModel
-    ?? 'gpt-5'
+  for (const candidate of [info?.model, info?.info?.model, info?.info?.model_name, sessionModel]) {
+    const model = nonEmptyString(candidate)
+    if (model) return model
+  }
+  return 'gpt-5'
 }
 
 function reasoningMetadata(
@@ -589,6 +564,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       let currentExplicitReasoning: ReasoningLevel | undefined
       let sessionId = ''
       let sessionCwd: string | undefined
+      let sessionTimestamp: string | undefined
       let forkedFromId = ''
       let forkCutoff = ''
       // Null sentinel rather than `0` so the FIRST event is never confused
@@ -611,6 +587,15 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       let pendingLocAdded = 0
       let pendingLocRemoved = 0
       let pendingEditFailed = 0
+      const resetPendingTurn = (): void => {
+        pendingTools = []
+        pendingToolSequence = []
+        pendingUserMessage = ''
+        pendingOutputChars = 0
+        pendingLocAdded = 0
+        pendingLocRemoved = 0
+        pendingEditFailed = 0
+      }
       let estCounter = 0
       let turnCounter = 0
       let currentTurnId = `${sessionId}:t0`
@@ -638,13 +623,15 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (!entry) continue
 
         if (entry.type === 'session_meta') {
-          sessionId = entry.payload?.session_id ?? basename(source.path, '.jsonl')
-          sessionCwd = entry.payload?.cwd ?? sessionCwd
-          forkedFromId = entry.payload?.forked_from_id ?? ''
-          if (forkedFromId && entry.timestamp) {
-            forkCutoff = new Date(new Date(entry.timestamp).getTime() + 5000).toISOString()
+          sessionId = nonEmptyString(entry.payload?.session_id) ?? basename(source.path, '.jsonl')
+          sessionCwd = nonEmptyString(entry.payload?.cwd) ?? sessionCwd
+          sessionTimestamp = finiteTimestamp(entry.timestamp) ?? sessionTimestamp
+          forkedFromId = nonEmptyString(entry.payload?.forked_from_id) ?? ''
+          if (forkedFromId && sessionTimestamp) {
+            const cutoffMs = Date.parse(sessionTimestamp) + 5000
+            if (Number.isFinite(cutoffMs)) forkCutoff = new Date(cutoffMs).toISOString()
           }
-          sessionModel = entry.payload?.model ?? sessionModel
+          sessionModel = nonEmptyString(entry.payload?.model) ?? sessionModel
           const explicit = findExplicitReasoningLevel(entry.payload)
           if (explicit) currentExplicitReasoning = explicit
           continue
@@ -652,16 +639,18 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
         if (entry.type === 'turn_context') {
           const previousModel = sessionModel
-          if (entry.payload?.model) sessionModel = entry.payload.model
+          const nextModel = nonEmptyString(entry.payload?.model)
+          if (nextModel) sessionModel = nextModel
           const explicit = findExplicitReasoningLevel(entry.payload)
           if (explicit) currentExplicitReasoning = explicit
-          else if (entry.payload?.model && previousModel && entry.payload.model !== previousModel) {
+          else if (nextModel && previousModel && nextModel !== previousModel) {
             currentExplicitReasoning = undefined
           }
           continue
         }
 
-        const isForkReplay = Boolean(forkCutoff && entry.timestamp && entry.timestamp < forkCutoff)
+        const entryTimestamp = finiteTimestamp(entry.timestamp)
+        const isForkReplay = Boolean(forkCutoff && entryTimestamp && entryTimestamp < forkCutoff)
         if (isForkReplay && (
           entry.payload?.type === 'task_started' ||
           entry.payload?.type === 'task_complete' ||
@@ -821,7 +810,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           // Forked sessions replay the parent's entire event history with
           // timestamps clustered at the fork creation time. Skip replayed
           // events (within 5s of fork) to avoid double-counting.
-          if (forkCutoff && entry.timestamp && entry.timestamp < forkCutoff) continue
+          if (forkCutoff && entryTimestamp && entryTimestamp < forkCutoff) continue
           const info = entry.payload.info
           if (!info) {
             if (pendingOutputChars === 0 && pendingUserMessage.length === 0) continue
@@ -829,8 +818,12 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             const estOutput = estimateTokensFromChars(pendingOutputChars)
             if (estInput === 0 && estOutput === 0) continue
 
-            const model = sessionModel ?? 'gpt-5'
-            const timestamp = entry.timestamp ?? ''
+            const model = resolveModel(undefined, sessionModel)
+            const timestamp = entryTimestamp ?? sessionTimestamp
+            if (!timestamp) {
+              resetPendingTurn()
+              continue
+            }
             const dedupKey = `codex:${sessionId}:${timestamp}:est${estCounter++}`
 
             if (seenKeys.has(dedupKey)) { pendingTools = []; pendingToolSequence = []; pendingUserMessage = ''; pendingOutputChars = 0; pendingLocAdded = 0; pendingLocRemoved = 0; pendingEditFailed = 0; continue }
@@ -929,7 +922,11 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           const uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens)
 
           const model = resolveModel(entry.payload, sessionModel)
-          const timestamp = entry.timestamp ?? ''
+          const timestamp = entryTimestamp ?? sessionTimestamp
+          if (!timestamp) {
+            resetPendingTurn()
+            continue
+          }
           // Forked sessions copy the parent's entire token_count history
           // (re-timestamped), so replays must collide with the parent's events
           // and drop to avoid double-counting -- hence the parent namespace
