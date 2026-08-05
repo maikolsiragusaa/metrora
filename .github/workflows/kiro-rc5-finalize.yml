@@ -1,0 +1,79 @@
+name: Kiro rc.5 finalize
+
+on:
+  push:
+    branches: [fix/kiro-legacy-full-input]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kiro-rc5-finalize
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/kiro-legacy-full-input
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+
+      - name: Advance synchronized candidate authority
+        run: |
+          set -euo pipefail
+          npm version 1.0.0-rc.5 --no-git-tag-version
+          npm --prefix app version 1.0.0-rc.5 --no-git-tag-version
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('app/package.json'): [('"buildVersion": "1.0.0.4"', '"buildVersion": "1.0.0.5"')],
+              Path('RELEASING.md'): [
+                  ('Current development version: `1.0.0-rc.4`', 'Current development version: `1.0.0-rc.5`'),
+                  ('Current desktop build version: `1.0.0.4`', 'Current desktop build version: `1.0.0.5`'),
+                  ('active source line is `1.0.0-rc.4`, with desktop build metadata `1.0.0.4`', 'active source line is `1.0.0-rc.5`, with desktop build metadata `1.0.0.5`'),
+              ],
+              Path('app/DISTRIBUTION.md'): [
+                  ('Current desktop version: `1.0.0-rc.4`', 'Current desktop version: `1.0.0-rc.5`'),
+                  ('Current desktop build version: `1.0.0.4`', 'Current desktop build version: `1.0.0.5`'),
+              ],
+              Path('docs/VERSIONING.md'): [
+                  ('Public development version: `1.0.0-rc.4`', 'Public development version: `1.0.0-rc.5`'),
+                  ('Desktop build version: `1.0.0.4`', 'Desktop build version: `1.0.0.5`'),
+              ],
+              Path('docs/WINDOWS_DISTRIBUTION.md'): [
+                  ('active source line is `1.0.0-rc.4`, with numeric desktop build version `1.0.0.4`', 'active source line is `1.0.0-rc.5`, with numeric desktop build version `1.0.0.5`'),
+              ],
+          }
+
+          for path, pairs in replacements.items():
+              text = path.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  if text.count(old) != 1:
+                      raise SystemExit(f'{path}: expected one occurrence of {old!r}, found {text.count(old)}')
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+          Path('.github/workflows/kiro-rc5-finalize.yml').unlink()
+          PY
+          npm run version:check
+
+      - name: Commit final candidate metadata
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RELEASING.md app/DISTRIBUTION.md app/package-lock.json app/package.json docs/VERSIONING.md docs/WINDOWS_DISTRIBUTION.md package-lock.json package.json .github/workflows/kiro-rc5-finalize.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/kiro-rc5-finalize.yml\nRELEASING.md\napp/DISTRIBUTION.md\napp/package-lock.json\napp/package.json\ndocs/VERSIONING.md\ndocs/WINDOWS_DISTRIBUTION.md\npackage-lock.json\npackage.json'
+          git commit -m 'chore(release): advance Kiro correction to rc.5'
+          git push origin HEAD:fix/kiro-legacy-full-input
