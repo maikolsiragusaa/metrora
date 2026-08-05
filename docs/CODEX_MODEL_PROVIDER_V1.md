@@ -1,80 +1,74 @@
 # Codex source-recorded model provider v1
 
-**Status:** bounded W1.D.C compatibility checkpoint.
+**Status:** implemented compatibility boundary for reviewed Codex measurements.
 
 Codex rollout files may include `session_meta.payload.model_provider`. Metrora preserves that source-recorded value so reviewed Workspace production can distinguish the AI/API provider from the Codex collector without inference.
 
 ## Source authority
 
-The only accepted source is:
+The accepted source is:
 
 ```text
 session_meta.payload.model_provider
 ```
 
-The value is normalized through the existing explicit-provider normalizer. Missing, malformed, path-like, or unsupported values remain unknown.
+The value passes through the existing explicit-provider normalizer. Missing, malformed, path-like or unsupported values remain unknown.
 
 Metrora does not infer the provider from:
 
 - collector name `codex`;
 - model label;
-- endpoint, account, or subscription;
-- pricing record;
-- historical assumptions about OpenAI products.
+- endpoint, account or subscription;
+- pricing records;
+- assumptions about a vendor or product.
 
 ## Fresh parser path
 
-The canonical provider registry decorates the existing Codex provider.
+The canonical provider registry decorates the existing Codex parser. Before a call enters the ordinary session cache, it:
 
-Before one parsed call enters the ordinary session cache, the decorator:
-
-1. reads a bounded prefix of the rollout until `session_meta`;
+1. reads a bounded rollout prefix until `session_meta`;
 2. extracts and normalizes `model_provider`;
-3. attaches it to every call from that source;
+3. attaches it to calls from that source;
 4. rejects a contradiction if the base parser already supplied a different explicit provider.
 
-The decorator does not change token parsing, cost settlement, deduplication, model labels, timestamps, tool attribution, or project/session grouping.
+This does not change tokens, settled cost, deduplication, model labels, timestamps, tools or project/session grouping.
 
-## Pre-upgrade cache compatibility
+## Existing-cache compatibility
 
-An existing complete session cache may contain Codex calls created before provider propagation.
+A complete cache created before provider propagation may contain Codex calls without the field.
 
-During explicit reviewed production only, the canonical scanner reads the same `session_meta.model_provider` for that source and reconciles it with the cached call:
+During explicit reviewed production, the scanner reads the same source metadata and reconciles it with the cached call:
 
-- missing cached provider + explicit source provider → use the source provider for the reviewed candidate;
-- matching providers → keep the cached provider;
-- contradictory providers → fail closed;
-- missing/invalid source provider → withhold the call.
+- missing cached provider plus explicit source provider — use the source value for the reviewed candidate;
+- matching providers — preserve the value;
+- contradictory providers — fail closed;
+- missing or invalid source provider — withhold the call.
 
-This compatibility path does not rewrite the cache, reprice usage, or create a second token parser. A later ordinary source reparse stores the provider through the decorated canonical provider.
+This compatibility path does not rewrite the cache, reprice usage or introduce a second token parser. A later ordinary reparse stores the provider through the canonical provider path.
 
 ## Privacy and bounds
 
 The metadata reader:
 
 - scans at most the first 256 lines;
-- extracts no prompt, response, code, patch, command, or tool content;
+- extracts no prompt, response, code, patch, command or tool content;
 - returns only a normalized provider identifier or unknown;
-- does not expose the rollout path or metadata to the renderer;
-- runs locally and requires no network or account service.
+- exposes no rollout path or source metadata to the renderer;
+- runs locally without an account or network service.
 
-## Reviewed production effect
+## Reviewed-production effect
 
-A Codex call becomes eligible only when all existing requirements also pass:
+A Codex call becomes eligible only when all ordinary requirements also pass:
 
-- source still exists;
-- canonical cache is complete;
+- the source still exists;
+- canonical cache state is complete;
 - private deduplication identity is valid;
-- Codex provenance profile is reviewed;
+- the concrete Codex provenance path is reviewed;
 - immutable cost evidence is valid or explicitly unavailable;
 - source-recorded provider is present and non-contradictory.
 
-This checkpoint does not broaden collector provenance or make every Codex record eligible automatically.
+This boundary does not make every Codex record eligible automatically.
 
 ## Non-goals
 
-- no provider inference;
-- no collector/parser rewrite;
-- no analytics-total or price change;
-- no cache-schema migration or destructive invalidation;
-- no renderer, IPC, network, account, billing, mobile, or unrelated product behavior.
+It adds no provider inference, collector rewrite, analytics or price change, destructive cache migration, renderer authority, network transport, account, billing or mobile behavior.
