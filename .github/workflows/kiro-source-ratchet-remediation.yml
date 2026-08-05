@@ -29,12 +29,14 @@ jobs:
 
           source = Path('src/providers/kiro.ts')
           text = source.read_text(encoding='utf-8')
-          old = """  // Keep presentation and accounting separate: userMessage is only the latest
-          // bounded preview, while inputChars covers every eligible human turn in the
-          // legacy execution. Identity bootstrap text is not user prompt input.
-          let pendingUserMessage = ''
-          let inputChars = 0
-          """
+          old_lines = [
+              '  // Keep presentation and accounting separate: userMessage is only the latest',
+              '  // bounded preview, while inputChars covers every eligible human turn in the',
+              '  // legacy execution. Identity bootstrap text is not user prompt input.',
+              "  let pendingUserMessage = ''",
+              '  let inputChars = 0',
+          ]
+          old = '\n'.join(old_lines) + '\n'
           new = "  let pendingUserMessage = '', inputChars = 0\n"
           if text.count(old) != 1:
               raise SystemExit(f'expected one accounting declaration block, found {text.count(old)}')
