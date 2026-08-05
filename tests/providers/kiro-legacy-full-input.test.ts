@@ -1,3 +1,5 @@
+// Focused money-path coverage: display previews stay bounded while complete
+// eligible human input drives token and estimated-cost accounting.
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
