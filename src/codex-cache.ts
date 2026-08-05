@@ -16,7 +16,7 @@ import type { ParsedProviderCall } from './providers/types.js'
 // v8: persist native MCP timing and compact invocation attribution.
 // v9: persist explicit per-call reasoning attribution from turn_context.
 // v10: reprice raw Codex model ids carrying numeric context-capacity tags.
-export const CODEX_CACHE_VERSION = 10
+const CODEX_CACHE_VERSION = 10
 const CACHE_FILE = 'codex-results.json'
 
 type FileFingerprint = { mtimeMs: number; sizeBytes: number }
@@ -41,113 +41,83 @@ function getCachePath(): string {
   return join(getCacheDir(), CACHE_FILE)
 }
 
-let memCache: ResultCache | null = null
-
 async function loadCache(): Promise<ResultCache> {
-  if (memCache) return memCache
   try {
-    const raw = await readFile(getCachePath(), 'utf-8')
-    const cache = JSON.parse(raw) as ResultCache
-    if (cache.version === CODEX_CACHE_VERSION && cache.files && typeof cache.files === 'object') {
-      memCache = cache
-      return cache
+    const parsed = JSON.parse(await readFile(getCachePath(), 'utf8')) as Partial<ResultCache>
+    if (parsed.version === CODEX_CACHE_VERSION && parsed.files && typeof parsed.files === 'object') {
+      return { version: CODEX_CACHE_VERSION, files: parsed.files }
     }
-  } catch {}
-  memCache = { version: CODEX_CACHE_VERSION, files: {} }
-  return memCache
+  } catch { /* cold or invalid cache */ }
+  return { version: CODEX_CACHE_VERSION, files: {} }
 }
 
-function getEntry(cache: ResultCache, filePath: string, fp: FileFingerprint): FileEntry | null {
-  if (!Object.hasOwn(cache.files, filePath)) return null
-  const entry = cache.files[filePath]
-  if (entry && entry.mtimeMs === fp.mtimeMs && entry.sizeBytes === fp.sizeBytes) {
-    return entry
-  }
-  return null
+let cachePromise: Promise<ResultCache> | null = null
+
+function sharedCache(): Promise<ResultCache> {
+  if (!cachePromise) cachePromise = loadCache()
+  return cachePromise
 }
 
-export async function readCachedCodexResults(
-  filePath: string,
-): Promise<ParsedProviderCall[] | null> {
+async function fingerprint(path: string): Promise<FileFingerprint | null> {
   try {
-    const s = await stat(filePath)
-    const cache = await loadCache()
-    const entry = getEntry(cache, filePath, { mtimeMs: s.mtimeMs, sizeBytes: s.size })
-    return entry?.calls ?? null
-  } catch {}
-  return null
-}
-
-export async function getCachedCodexProject(
-  filePath: string,
-): Promise<string | null> {
-  try {
-    const s = await stat(filePath)
-    const cache = await loadCache()
-    const entry = getEntry(cache, filePath, { mtimeMs: s.mtimeMs, sizeBytes: s.size })
-    return entry?.project ?? null
-  } catch {}
-  return null
-}
-
-export async function fingerprintFile(
-  filePath: string,
-): Promise<FileFingerprint | null> {
-  try {
-    const s = await stat(filePath)
+    const s = await stat(path)
     return { mtimeMs: s.mtimeMs, sizeBytes: s.size }
   } catch {
     return null
   }
 }
 
-export async function writeCachedCodexResults(
-  filePath: string,
-  project: string,
-  calls: ParsedProviderCall[],
-  fingerprint: FileFingerprint,
-): Promise<void> {
-  try {
-    const cache = await loadCache()
-    cache.files[filePath] = {
-      mtimeMs: fingerprint.mtimeMs,
-      sizeBytes: fingerprint.sizeBytes,
-      project,
-      calls,
-    }
-  } catch {}
+function sameFingerprint(entry: FileEntry, fp: FileFingerprint): boolean {
+  return entry.mtimeMs === fp.mtimeMs && entry.sizeBytes === fp.sizeBytes
 }
 
-export async function flushCodexCache(): Promise<void> {
-  if (!memCache) return
+async function atomicWrite(path: string, content: string): Promise<void> {
+  await mkdir(join(path, '..'), { recursive: true })
+  const tmp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+  const handle = await open(tmp, 'wx')
   try {
-    // Evict entries for files that no longer exist on disk
-    const paths = Object.keys(memCache.files)
-    for (const p of paths) {
-      try {
-        await stat(p)
-      } catch {
-        delete memCache.files[p]
-      }
-    }
+    await handle.writeFile(content, 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+  try {
+    await rename(tmp, path)
+  } catch (error) {
+    try { await unlink(tmp) } catch { /* ignore */ }
+    throw error
+  }
+}
 
-    const dir = getCacheDir()
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true })
-    const finalPath = getCachePath()
-    const tempPath = `${finalPath}.${randomBytes(8).toString('hex')}.tmp`
-    const payload = JSON.stringify(memCache)
-    const handle = await open(tempPath, 'w', 0o600)
-    try {
-      await handle.writeFile(payload, { encoding: 'utf-8' })
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    try {
-      await rename(tempPath, finalPath)
-    } catch (err) {
-      try { await unlink(tempPath) } catch {}
-      throw err
-    }
-  } catch {}
+let saveChain: Promise<void> = Promise.resolve()
+
+async function persist(cache: ResultCache): Promise<void> {
+  saveChain = saveChain.then(() => atomicWrite(getCachePath(), JSON.stringify(cache)))
+  await saveChain
+}
+
+export async function readCachedCodexResults(path: string): Promise<ParsedProviderCall[] | null> {
+  const fp = await fingerprint(path)
+  if (!fp) return null
+  const cache = await sharedCache()
+  const entry = cache.files[path]
+  if (!entry || !sameFingerprint(entry, fp)) return null
+  return entry.calls
+}
+
+export async function writeCachedCodexResults(
+  path: string,
+  project: string,
+  calls: ParsedProviderCall[],
+): Promise<void> {
+  const fp = await fingerprint(path)
+  if (!fp) return
+  const cache = await sharedCache()
+  cache.files[path] = { ...fp, project, calls }
+  await persist(cache)
+}
+
+export function resetCodexCacheForTests(): void {
+  cachePromise = null
+  saveChain = Promise.resolve()
 }
