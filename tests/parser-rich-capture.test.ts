@@ -1,0 +1,370 @@
+import { describe, it, expect } from 'vitest'
+
+import {
+  countStructuredPatchLoc,
+  collectToolResultMeta,
+  collectSessionMeta,
+  emptySessionMeta,
+  parseApiCall,
+  groupIntoTurns,
+  parsedTurnsToCachedTurns,
+  buildSpawnPrSets,
+  type ToolResultMeta,
+} from '../src/parser.js'
+import type { JournalEntry } from '../src/types.js'
+
+// ── structuredPatch LOC counting ───────────────────────────────────────
+
+describe('countStructuredPatchLoc', () => {
+  it('counts +/- lines across a single hunk', () => {
+    const patch = [
+      { oldStart: 80, oldLines: 7, newStart: 80, newLines: 7, lines: [
+        '     unchanged context',
+        '-    old line',
+        '+    new line',
+        '       more context',
+      ] },
+    ]
+    expect(countStructuredPatchLoc(patch)).toEqual({ added: 1, removed: 1 })
+  })
+
+  it('sums across multiple hunks', () => {
+    const patch = [
+      { lines: ['+a', '+b', '-c', ' ctx'] },
+      { lines: ['+d', '-e', '-f'] },
+    ]
+    expect(countStructuredPatchLoc(patch)).toEqual({ added: 3, removed: 3 })
+  })
+
+  it('returns zero for an empty patch (Write-create shape)', () => {
+    expect(countStructuredPatchLoc([])).toEqual({ added: 0, removed: 0 })
+  })
+
+  it('returns zero for a missing/non-array patch', () => {
+    expect(countStructuredPatchLoc(undefined)).toEqual({ added: 0, removed: 0 })
+    expect(countStructuredPatchLoc(null)).toEqual({ added: 0, removed: 0 })
+    expect(countStructuredPatchLoc({ lines: ['+x'] })).toEqual({ added: 0, removed: 0 })
+  })
+
+  it('ignores hunks whose lines are absent or non-string', () => {
+    const patch = [{ oldStart: 1 }, { lines: [1, '+ok', null, '-no'] }]
+    expect(countStructuredPatchLoc(patch)).toEqual({ added: 1, removed: 1 })
+  })
+})
+
+// ── tool-result meta extraction + per-call attribution ─────────────────
+
+function assistantEntry(id: string, toolUseIds: string[]): JournalEntry {
+  return {
+    type: 'assistant',
+    timestamp: '2026-07-01T10:00:00Z',
+    sessionId: 's1',
+    gitBranch: 'main',
+    message: {
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-20250514',
+      id,
+      content: toolUseIds.map(tid => ({ type: 'tool_use' as const, id: tid, name: 'Edit', input: {} })),
+      usage: { input_tokens: 10, output_tokens: 5 },
+    },
+  }
+}
+
+function toolResultEntry(opts: {
+  toolUseId: string
+  isError?: boolean
+  structuredPatch?: unknown
+  interrupted?: boolean
+  userModified?: boolean
+}): JournalEntry {
+  return {
+    type: 'user',
+    timestamp: '2026-07-01T10:00:01Z',
+    sessionId: 's1',
+    gitBranch: 'main',
+    message: {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: opts.toolUseId, is_error: opts.isError, content: 'x' } as never],
+    },
+    toolUseResult: {
+      structuredPatch: opts.structuredPatch,
+      interrupted: opts.interrupted ?? false,
+      userModified: opts.userModified ?? false,
+    },
+  } as JournalEntry
+}
+
+describe('collectToolResultMeta + parseApiCall attribution', () => {
+  it('attributes LOC, interrupted, userModified, and toolErrors to the issuing call', () => {
+    const map = new Map<string, ToolResultMeta>()
+    collectToolResultMeta(toolResultEntry({
+      toolUseId: 'tu1',
+      structuredPatch: [{ lines: ['+a', '+b', '-c'] }],
+      userModified: true,
+    }), map)
+    collectToolResultMeta(toolResultEntry({
+      toolUseId: 'tu2',
+      isError: true,
+      interrupted: true,
+    }), map)
+
+    const call = parseApiCall(assistantEntry('m1', ['tu1', 'tu2']), map)
+    expect(call).not.toBeNull()
+    expect(call!.locAdded).toBe(2)
+    expect(call!.locRemoved).toBe(1)
+    expect(call!.toolErrors).toBe(1)
+    expect(call!.interrupted).toBe(true)
+    expect(call!.userModified).toBe(true)
+  })
+
+  it('omits all rich fields when no meta map is supplied', () => {
+    const call = parseApiCall(assistantEntry('m1', ['tu1']))
+    expect(call!.locAdded).toBeUndefined()
+    expect(call!.locRemoved).toBeUndefined()
+    expect(call!.toolErrors).toBeUndefined()
+    expect(call!.interrupted).toBeUndefined()
+    expect(call!.userModified).toBeUndefined()
+  })
+
+  it('omits fields when the map has no matching tool_use id', () => {
+    const map = new Map<string, ToolResultMeta>()
+    collectToolResultMeta(toolResultEntry({ toolUseId: 'other', structuredPatch: [{ lines: ['+a'] }] }), map)
+    const call = parseApiCall(assistantEntry('m1', ['tu1']), map)
+    expect(call!.locAdded).toBeUndefined()
+    expect(call!.toolErrors).toBeUndefined()
+  })
+
+  it('counts is_error but not a non-error result with stderr', () => {
+    // Bash results carry stderr for warnings; only is_error marks a real failure.
+    const map = new Map<string, ToolResultMeta>()
+    collectToolResultMeta(toolResultEntry({ toolUseId: 'tu1', isError: false }), map)
+    const call = parseApiCall(assistantEntry('m1', ['tu1']), map)
+    expect(call!.toolErrors).toBeUndefined()
+  })
+})
+
+// ── gitBranch representation (per-turn dedup) ──────────────────────────
+
+function userText(text: string, branch: string, sessionId = 's1'): JournalEntry {
+  return { type: 'user', timestamp: '2026-07-01T10:00:00Z', sessionId, gitBranch: branch, message: { role: 'user', content: text } }
+}
+function assistant(id: string, branch: string, sessionId = 's1'): JournalEntry {
+  return {
+    type: 'assistant', timestamp: '2026-07-01T10:00:02Z', sessionId, gitBranch: branch,
+    message: { type: 'message', role: 'assistant', model: 'claude-sonnet-4-20250514', id, content: [], usage: { input_tokens: 5, output_tokens: 5 } },
+  }
+}
+
+describe('gitBranch capture + dedup', () => {
+  it('stores the branch once for a single-branch session', () => {
+    const entries = [
+      userText('first', 'main'), assistant('m1', 'main'),
+      userText('second', 'main'), assistant('m2', 'main'),
+    ]
+    const turns = groupIntoTurns(entries, new Set())
+    expect(turns.map(t => t.gitBranch)).toEqual(['main', 'main'])
+    const cached = parsedTurnsToCachedTurns(turns)
+    // First turn stores 'main'; second inherits (no stored branch).
+    expect(cached[0]!.gitBranch).toBe('main')
+    expect(cached[1]!.gitBranch).toBeUndefined()
+  })
+
+  it('re-stores the branch at a mid-session switch', () => {
+    const entries = [
+      userText('a', 'main'), assistant('m1', 'main'),
+      userText('b', 'feature/x'), assistant('m2', 'feature/x'),
+      userText('c', 'feature/x'), assistant('m3', 'feature/x'),
+      userText('d', 'main'), assistant('m4', 'main'),
+    ]
+    const turns = groupIntoTurns(entries, new Set())
+    expect(turns.map(t => t.gitBranch)).toEqual(['main', 'feature/x', 'feature/x', 'main'])
+    const cached = parsedTurnsToCachedTurns(turns)
+    expect(cached.map(t => t.gitBranch)).toEqual(['main', 'feature/x', undefined, 'main'])
+  })
+})
+
+// ── per-turn PR references (prRefs) ────────────────────────────────────
+
+function prLink(url: string, sessionId = 's1'): JournalEntry {
+  return { type: 'pr-link', timestamp: '2026-07-01T10:00:03Z', sessionId, prUrl: url } as JournalEntry
+}
+
+describe('pr-link capture + per-turn prRefs', () => {
+  it('attaches a PR referenced during a turn to that turn, and it survives caching', () => {
+    const entries = [
+      userText('open a PR', 'main'), assistant('m1', 'main'),
+      prLink('https://github.com/o/r/pull/1'),
+      userText('next task', 'main'), assistant('m2', 'main'),
+    ]
+    const turns = groupIntoTurns(entries, new Set())
+    expect(turns[0]!.prRefs).toEqual(['https://github.com/o/r/pull/1'])
+    expect(turns[1]!.prRefs).toBeUndefined()
+    const cached = parsedTurnsToCachedTurns(turns)
+    // Stored per-turn directly (no change-detection dedup like gitBranch).
+    expect(cached[0]!.prRefs).toEqual(['https://github.com/o/r/pull/1'])
+    expect(cached[1]!.prRefs).toBeUndefined()
+  })
+
+  it('sorts and dedupes multiple refs within one merge-sweep turn', () => {
+    const entries = [
+      userText('merge sweep', 'main'), assistant('m1', 'main'),
+      prLink('https://github.com/o/r/pull/2'),
+      prLink('https://github.com/o/r/pull/1'),
+      prLink('https://github.com/o/r/pull/2'),
+    ]
+    const turns = groupIntoTurns(entries, new Set())
+    expect(turns[0]!.prRefs).toEqual([
+      'https://github.com/o/r/pull/1',
+      'https://github.com/o/r/pull/2',
+    ])
+  })
+})
+
+// ── session meta: ai-title last-wins, pr-link accumulation ─────────────
+
+describe('collectSessionMeta', () => {
+  it('keeps the LAST ai-title and accumulates unique pr-link URLs', () => {
+    const meta = emptySessionMeta()
+    collectSessionMeta({ type: 'ai-title', aiTitle: 'first title' } as JournalEntry, meta)
+    collectSessionMeta({ type: 'pr-link', prUrl: 'https://github.com/o/r/pull/1' } as JournalEntry, meta)
+    collectSessionMeta({ type: 'ai-title', aiTitle: 'final title' } as JournalEntry, meta)
+    collectSessionMeta({ type: 'pr-link', prUrl: 'https://github.com/o/r/pull/1' } as JournalEntry, meta)
+    collectSessionMeta({ type: 'pr-link', prUrl: 'https://github.com/o/r/pull/2' } as JournalEntry, meta)
+    collectSessionMeta({ type: 'user', isSidechain: true } as JournalEntry, meta)
+
+    expect(meta.title).toBe('final title')
+    expect(meta.prLinks).toEqual([
+      'https://github.com/o/r/pull/1',
+      'https://github.com/o/r/pull/2',
+    ])
+    expect(meta.isSidechain).toBe(true)
+  })
+
+  it('leaves fields empty for a session with no meta entries', () => {
+    const meta = emptySessionMeta()
+    collectSessionMeta({ type: 'user', message: { role: 'user', content: 'hi' } } as JournalEntry, meta)
+    expect(meta.title).toBeUndefined()
+    expect(meta.prLinks).toEqual([])
+    expect(meta.isSidechain).toBe(false)
+    expect(meta.parentSessionId).toBeUndefined()
+    expect(meta.agentSpawnLinks).toEqual({})
+  })
+})
+
+// ── subagent linkage: parentSessionId + agentSpawnLinks ────────────────
+
+describe('collectSessionMeta subagent linkage', () => {
+  it("captures a sidechain's parent id from its internal sessionId (first wins)", () => {
+    const meta = emptySessionMeta()
+    collectSessionMeta({ type: 'user', isSidechain: true, sessionId: 'parent-1' } as JournalEntry, meta)
+    // A later entry restating a different id must not override the first capture.
+    collectSessionMeta({ type: 'assistant', isSidechain: true, sessionId: 'parent-2' } as JournalEntry, meta)
+    expect(meta.isSidechain).toBe(true)
+    expect(meta.parentSessionId).toBe('parent-1')
+  })
+
+  it('maps agentId -> spawn tool_use id from a spawn result (toolUseResult.agentId)', () => {
+    const meta = emptySessionMeta()
+    const spawnResult = {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_spawn1', content: 'agent output' }] },
+      toolUseResult: { status: 'completed', agentId: 'a17e80ec626c9de38' },
+    } as JournalEntry
+    collectSessionMeta(spawnResult, meta)
+    expect(meta.agentSpawnLinks).toEqual({ a17e80ec626c9de38: 'toolu_spawn1' })
+    // A non-agent tool_result (no toolUseResult.agentId) adds nothing.
+    collectSessionMeta({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_edit', content: 'x' }] },
+      toolUseResult: { structuredPatch: [] },
+    } as JournalEntry, meta)
+    expect(meta.agentSpawnLinks).toEqual({ a17e80ec626c9de38: 'toolu_spawn1' })
+  })
+
+  it('pairs the agentId with the matching block when a record batches several results (unrelated block first)', () => {
+    const meta = emptySessionMeta()
+    collectSessionMeta({
+      type: 'user',
+      message: { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'toolu_unrelated', content: 'a bash result' },
+        { type: 'tool_result', tool_use_id: 'toolu_spawn', content: 'agent output' },
+      ] },
+      // The result's content identifies the spawn block, so the FIRST (unrelated)
+      // block must not capture the agentId.
+      toolUseResult: { status: 'completed', agentId: 'a999', content: 'agent output' },
+    } as JournalEntry, meta)
+    expect(meta.agentSpawnLinks).toEqual({ a999: 'toolu_spawn' })
+  })
+
+  it('omits the spawn link (deferring to the timestamp fallback) when blocks are ambiguous', () => {
+    const meta = emptySessionMeta()
+    collectSessionMeta({
+      type: 'user',
+      // Two tool_result blocks with IDENTICAL content: the content match cannot
+      // pick one, so the link is omitted on purpose (resolveChild's timestamp
+      // fallback then folds the child rather than risking the wrong id).
+      message: { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'toolu_a', content: 'same' },
+        { type: 'tool_result', tool_use_id: 'toolu_b', content: 'same' },
+      ] },
+      toolUseResult: { status: 'completed', agentId: 'a777', content: 'same' },
+    } as JournalEntry, meta)
+    expect(meta.agentSpawnLinks).toEqual({}) // no guess
+    // But we KNOW a777 was spawned here, so it is recorded as an ambiguous pairing.
+    expect(meta.ambiguousSpawnAgentIds).toEqual(['a777'])
+  })
+})
+
+// ── per-turn subagent spawn ids (spawnToolUseIds) ──────────────────────
+
+function spawnAssistant(id: string, blocks: Array<{ id: string; name: string }>): JournalEntry {
+  return {
+    type: 'assistant', timestamp: '2026-07-01T10:00:02Z', sessionId: 's1', gitBranch: 'main',
+    message: {
+      type: 'message', role: 'assistant', model: 'claude-sonnet-4-20250514', id,
+      content: blocks.map(b => ({ type: 'tool_use' as const, id: b.id, name: b.name, input: {} })),
+      usage: { input_tokens: 5, output_tokens: 5 },
+    },
+  }
+}
+
+describe('per-turn spawnToolUseIds capture', () => {
+  it('records only Agent/Task spawn ids per turn and survives caching', () => {
+    const entries = [
+      userText('launch reviewers', 'main'),
+      spawnAssistant('m1', [
+        { id: 'toolu_agent', name: 'Agent' },
+        { id: 'toolu_task', name: 'Task' },
+        { id: 'toolu_edit', name: 'Edit' }, // not a spawn -> excluded
+      ]),
+      userText('unrelated turn', 'main'), assistant('m2', 'main'),
+    ]
+    const turns = groupIntoTurns(entries, new Set())
+    expect(turns[0]!.spawnToolUseIds).toEqual(['toolu_agent', 'toolu_task'])
+    expect(turns[1]!.spawnToolUseIds).toBeUndefined()
+    const cached = parsedTurnsToCachedTurns(turns)
+    expect(cached[0]!.spawnToolUseIds).toEqual(['toolu_agent', 'toolu_task'])
+    expect(cached[1]!.spawnToolUseIds).toBeUndefined()
+  })
+})
+
+describe('buildSpawnPrSets', () => {
+  it('maps each spawn id to the PR set active at its turn, carrying refs forward', () => {
+    const sets = buildSpawnPrSets([
+      { spawnToolUseIds: ['s0'] },                       // before any PR -> empty
+      { prRefs: ['pr/A'], spawnToolUseIds: ['s1'] },     // spawn under A
+      { spawnToolUseIds: ['s2'] },                       // carries A
+      { prRefs: ['pr/B'], spawnToolUseIds: ['s3'] },     // spawn under B
+    ])
+    expect(sets).toEqual({ s0: [], s1: ['pr/A'], s2: ['pr/A'], s3: ['pr/B'] })
+  })
+
+  it('first occurrence of a spawn id wins deterministically', () => {
+    const sets = buildSpawnPrSets([
+      { prRefs: ['pr/A'], spawnToolUseIds: ['dup'] },
+      { prRefs: ['pr/B'], spawnToolUseIds: ['dup'] }, // restatement must not overwrite
+    ])
+    expect(sets['dup']).toEqual(['pr/A'])
+  })
+})

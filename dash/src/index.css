@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Metrora visual identity v1 — Signal Grid.
+ * Warm editorial surfaces, Graphite text and Signal Orange interactions.
+ * Semantic success/warning colors remain distinct from the brand accent.
+ */
+:root {
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --radius: 0.5rem;
+
+  --background: #faf7f2;
+  --outer-background: #e6e9ee;
+  --foreground: #0f1115;
+  --card: #ffffff;
+  --card-foreground: #0f1115;
+  --popover: #ffffff;
+  --popover-foreground: #0f1115;
+  --muted: #f1f2f4;
+  --muted-foreground: #5f6670;
+  --tertiary-foreground: #7b828d;
+  --heading: #0f1115;
+  --border: rgba(15, 17, 21, 0.10);
+  --input: rgba(15, 17, 21, 0.16);
+  --interactive-secondary: rgba(15, 17, 21, 0.045);
+  --interactive-secondary-hover: rgba(15, 17, 21, 0.085);
+  --active-primary: #ffffff;
+  --accent: #fff1e8;
+  --accent-foreground: #0f1115;
+  --subtle: #7b828d;
+  --primary: #e8590c;
+  --primary-foreground: #0f1115;
+  --ring: #e8590c;
+  --positive: #16805c;
+
+  --chart-1: #e8590c;
+  --chart-2: #f28c45;
+  --chart-3: #47505a;
+  --chart-4: #2aa198;
+  --chart-5: #8a68d6;
+  --chart-6: #d99a3c;
+  --chart-7: #4f8f6e;
+  --chart-8: #bd554b;
+  --chart-9: #7c93c8;
+  --chart-10: #9b8151;
+  --chart-grid-stroke: rgba(15, 17, 21, 0.07);
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-outer-background: var(--outer-background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-tertiary-foreground: var(--tertiary-foreground);
+  --color-heading: var(--heading);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-interactive-secondary: var(--interactive-secondary);
+  --color-interactive-secondary-hover: var(--interactive-secondary-hover);
+  --color-active-primary: var(--active-primary);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-positive: var(--positive);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+  --color-chart-9: var(--chart-9);
+  --color-chart-10: var(--chart-10);
+  --color-chart-grid-stroke: var(--chart-grid-stroke);
+
+  --font-display: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-outer-background text-foreground;
+    letter-spacing: -0.006em;
+    font-weight: 400;
+    margin: 0;
+  }
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 16%, transparent) transparent;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-shimmer {
+  background-color: var(--muted);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--foreground) 7%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: shimmer 1.6s ease-in-out infinite;
+}

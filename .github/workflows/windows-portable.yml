@@ -1,0 +1,324 @@
+name: Metrora Windows Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      distribution:
+        description: Candidate classification
+        required: true
+        default: unsigned-development-artifact
+        type: choice
+        options:
+          - unsigned-development-artifact
+          - unsigned-release-candidate
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - '.github/workflows/windows-portable.yml'
+      - 'app/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'release/**'
+      - 'tools/windows-portable/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-portable.yml'
+      - 'app/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'release/**'
+      - 'tools/windows-portable/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrora-windows-candidate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Build, derive, install, migrate, interrupt, and recover Windows candidate
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      MIGRATION_BASELINE_COMMIT: '80c3a5a1a116a0bc2fd5352b9fee2afc58207f15'
+      MIGRATION_BASELINE_VERSION: '0.9.19'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+
+      - name: Test release candidate integrity libraries
+        run: >-
+          node --test
+          scripts/windows-release-manifest.node-test.mjs
+          scripts/windows-release-layout.node-test.mjs
+          scripts/windows-installer-source.node-test.mjs
+          scripts/windows-installed-layout.node-test.mjs
+          scripts/windows-installed-state-classifier.node-test.mjs
+          scripts/windows-migration-fixture.node-test.mjs
+
+      - name: Validate Windows release PowerShell syntax
+        shell: pwsh
+        run: ./scripts/Test-Metrora-Windows-Release-Syntax.ps1 -RepositoryRoot $PWD
+
+      - name: Require Node zstd support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Node zstd support is required')"
+
+      - name: Install core dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install desktop dependencies
+        run: npm --prefix app ci --no-audit --no-fund
+
+      - name: Stage bundled CLI
+        run: npm --prefix app run stage-cli
+
+      - name: Build desktop application
+        run: npm --prefix app run build
+
+      - name: Build canonical unpacked Windows payload once
+        shell: pwsh
+        run: |
+          Push-Location app
+          npx --no-install electron-builder --win --x64 --dir --publish never
+          Pop-Location
+          $payload = Join-Path $PWD 'app\release\win-unpacked'
+          if (-not (Test-Path -LiteralPath (Join-Path $payload 'Metrora.exe'))) {
+            throw "electron-builder did not produce $payload\Metrora.exe"
+          }
+
+      - name: Prepare canonical candidate layout and portable copy
+        shell: pwsh
+        run: |
+          $payload = Join-Path $PWD 'app\release\win-unpacked'
+          $candidate = Join-Path $PWD 'app\release\Metrora-Windows-Candidate'
+          node scripts/prepare-windows-candidate-layout.mjs `
+            --payload $payload `
+            --candidate $candidate
+
+          $portable = Join-Path $candidate 'portable'
+          Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.ps1' -Destination $portable -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\Run-Metrora-Baseline.cmd' -Destination $portable -Force
+          Copy-Item -LiteralPath 'tools\windows-portable\README.txt' -Destination $portable -Force
+
+      - name: Generate portable payload manifest and build attestation
+        shell: pwsh
+        run: |
+          $portable = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\portable'
+          $sourceTree = (git rev-parse "$env:GITHUB_SHA^{tree}").Trim()
+          $sourceEpoch = (git show -s --format=%ct $env:GITHUB_SHA).Trim()
+          $distribution = '${{ inputs.distribution }}'
+          if (-not $distribution) { $distribution = 'unsigned-development-artifact' }
+          $runnerImage = "$env:ImageOS/$env:ImageVersion"
+          $builtAt = [DateTime]::UtcNow.ToString('o')
+
+          node scripts/create-windows-release-manifest.mjs `
+            --bundle $portable `
+            --source-commit $env:GITHUB_SHA `
+            --source-tree $sourceTree `
+            --source-date-epoch $sourceEpoch `
+            --distribution $distribution `
+            --provider github-actions `
+            --workflow $env:GITHUB_WORKFLOW `
+            --run-id $env:GITHUB_RUN_ID `
+            --run-attempt $env:GITHUB_RUN_ATTEMPT `
+            --ref $env:GITHUB_REF `
+            --built-at $builtAt `
+            --runner-os windows `
+            --runner-image $runnerImage
+
+      - name: Build NSIS from an isolated copy of the canonical payload
+        shell: pwsh
+        run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          ./scripts/Build-Metrora-Windows-Installer.ps1 `
+            -AppDirectory app `
+            -CanonicalPayloadDirectory app\release\win-unpacked `
+            -OutputDirectory app\release\Metrora-Windows-Candidate\installer `
+            -ExpectedVersion $candidateVersion `
+            -RepositoryRoot $PWD
+
+      - name: Finalize and verify format derivation
+        shell: pwsh
+        run: |
+          node scripts/finalize-windows-candidate-layout.mjs `
+            --payload app/release/win-unpacked `
+            --candidate app/release/Metrora-Windows-Candidate `
+            --source-commit $env:GITHUB_SHA
+          node scripts/verify-windows-candidate-layout.mjs `
+            app/release/Metrora-Windows-Candidate `
+            --expected-commit $env:GITHUB_SHA
+
+      - name: Smoke-test portable CLI and baseline runner
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'app\release\Metrora-Windows-Candidate\portable'
+          $smokeOutput = Join-Path $env:RUNNER_TEMP 'metrora-baseline-smoke'
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $bundle 'Run-Metrora-Baseline.ps1') `
+            -OutputDirectory $smokeOutput `
+            -SkipCodeBurn `
+            -SkipPrivateCacheBackup `
+            -NoArchive
+          if ($LASTEXITCODE -ne 0) { throw 'portable baseline runner failed' }
+
+          $version = Get-Content -LiteralPath (Join-Path $smokeOutput 'metrora-version.txt') -Raw
+          if (-not $version.Trim()) { throw 'bundled CLI version output is empty' }
+          $manifest = Get-Content -LiteralPath (Join-Path $smokeOutput 'manifest.json') -Raw | ConvertFrom-Json
+          if ($manifest.schemaVersion -ne 1) { throw 'unexpected baseline manifest schema' }
+          Get-Content -LiteralPath (Join-Path $smokeOutput 'metrora-report-lifetime.json') -Raw | ConvertFrom-Json | Out-Null
+          Get-Content -LiteralPath (Join-Path $smokeOutput 'metrora-doctor.json') -Raw | ConvertFrom-Json | Out-Null
+
+          $overviewPath = Join-Path $smokeOutput 'metrora-overview-lifetime.txt'
+          $overview = [System.IO.File]::ReadAllText($overviewPath, [System.Text.Encoding]::UTF8)
+          if ($overview -notmatch '^Metrora\s+Lifetime') {
+            throw 'portable overview does not expose the canonical Metrora heading'
+          }
+          if ($overview -match '\bCodeBurn\b') {
+            throw 'portable overview leaked legacy CodeBurn branding'
+          }
+          if ($overview.Contains('Ô')) {
+            throw 'portable overview contains Windows encoding mojibake'
+          }
+
+      - name: Clean-install, launch, and uninstall NSIS candidate
+        shell: pwsh
+        run: |
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\Test-Metrora-Windows-Install.ps1 `
+            -CandidateDirectory app\release\Metrora-Windows-Candidate `
+            -CanonicalPayloadDirectory app\release\win-unpacked `
+            -RepositoryRoot $PWD
+          if ($LASTEXITCODE -ne 0) { throw 'Windows clean-install acceptance failed' }
+
+      - name: Checkout historical migration baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MIGRATION_BASELINE_COMMIT }}
+          path: migration-baseline
+          persist-credentials: false
+
+      - name: Prepare isolated historical version fixture
+        shell: pwsh
+        run: |
+          node scripts/prepare-windows-migration-fixture.mjs `
+            --repository migration-baseline `
+            --version $env:MIGRATION_BASELINE_VERSION
+
+      - name: Install historical baseline dependencies
+        shell: pwsh
+        run: |
+          npm --prefix migration-baseline ci --no-audit --no-fund
+          npm --prefix migration-baseline/app ci --no-audit --no-fund
+
+      - name: Build isolated historical baseline payload and installer
+        shell: pwsh
+        run: |
+          npm --prefix migration-baseline/app run stage-cli
+          npm --prefix migration-baseline/app run build
+
+          Push-Location migration-baseline/app
+          npx --no-install electron-builder --win --x64 --dir --publish never
+          Pop-Location
+
+          ./scripts/Build-Metrora-Windows-Installer.ps1 `
+            -AppDirectory migration-baseline\app `
+            -CanonicalPayloadDirectory migration-baseline\app\release\win-unpacked `
+            -OutputDirectory migration-baseline\app\release\migration-installer `
+            -ExpectedVersion $env:MIGRATION_BASELINE_VERSION `
+            -RepositoryRoot $PWD
+
+      - name: Validate upgrade, reinstall, rollback, and re-upgrade
+        shell: pwsh
+        run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\Test-Metrora-Windows-Migration.ps1 `
+            -BaselineInstaller "migration-baseline\app\release\migration-installer\Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe" `
+            -BaselinePayloadDirectory migration-baseline\app\release\win-unpacked `
+            -CandidateDirectory app\release\Metrora-Windows-Candidate `
+            -CandidatePayloadDirectory app\release\win-unpacked `
+            -RepositoryRoot $PWD `
+            -BaselineVersion $env:MIGRATION_BASELINE_VERSION `
+            -CandidateVersion $candidateVersion
+          if ($LASTEXITCODE -ne 0) { throw 'Windows migration acceptance failed' }
+
+      - name: Build non-publishable interruption fixture
+        shell: pwsh
+        run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          ./scripts/Build-Metrora-Windows-Installer.ps1 `
+            -AppDirectory app `
+            -CanonicalPayloadDirectory app\release\win-unpacked `
+            -OutputDirectory app\release\r1bcb-interruption-installer `
+            -ExpectedVersion $candidateVersion `
+            -RepositoryRoot $PWD `
+            -NsisInclude app\build\r1bcb-interrupt.nsh
+
+          $ordinary = "app\release\Metrora-Windows-Candidate\installer\Metrora-Setup-$candidateVersion.exe"
+          $fixture = "app\release\r1bcb-interruption-installer\Metrora-Setup-$candidateVersion.exe"
+          if ((Get-FileHash -LiteralPath $ordinary -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash) {
+            throw 'interruption fixture is not distinct from the ordinary candidate installer'
+          }
+
+      - name: Validate controlled interruption and deterministic recovery
+        shell: pwsh
+        run: |
+          $candidateVersion = (Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json).version
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File scripts\Test-Metrora-Windows-Interrupted-Migration.ps1 `
+            -BaselineInstaller "migration-baseline\app\release\migration-installer\Metrora-Setup-$env:MIGRATION_BASELINE_VERSION.exe" `
+            -BaselinePayloadDirectory migration-baseline\app\release\win-unpacked `
+            -InterruptionInstaller "app\release\r1bcb-interruption-installer\Metrora-Setup-$candidateVersion.exe" `
+            -CandidateDirectory app\release\Metrora-Windows-Candidate `
+            -CandidatePayloadDirectory app\release\win-unpacked `
+            -RepositoryRoot $PWD `
+            -BaselineVersion $env:MIGRATION_BASELINE_VERSION `
+            -CandidateVersion $candidateVersion
+          if ($LASTEXITCODE -ne 0) { throw 'Windows interrupted-upgrade recovery acceptance failed' }
+
+          Remove-Item -LiteralPath app\release\r1bcb-interruption-installer -Recurse -Force
+          if (Test-Path -LiteralPath app\release\r1bcb-interruption-installer) {
+            throw 'interruption fixture remained after acceptance'
+          }
+
+      - name: Upload Windows installer and portable candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrora-windows-candidate-${{ github.sha }}
+          path: app/release/Metrora-Windows-Candidate
+          if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 6
+          retention-days: 14
+
+  independent-verification:
+    name: Independently verify downloaded Windows formats
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: metrora-windows-candidate-${{ github.sha }}
+          path: candidate
+
+      - name: Verify canonical payload, portable, installer, and metadata
+        run: node scripts/verify-windows-candidate-layout.mjs candidate --expected-commit ${{ github.sha }}

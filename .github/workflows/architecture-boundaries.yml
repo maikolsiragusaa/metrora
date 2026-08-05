@@ -1,0 +1,44 @@
+name: Architecture boundaries
+
+on:
+  pull_request:
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.mjs'
+      - '**/*.cjs'
+      - 'scripts/check-source-size-ratchet.mjs'
+      - '.github/workflows/architecture-boundaries.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.mjs'
+      - '**/*.cjs'
+      - 'scripts/check-source-size-ratchet.mjs'
+      - '.github/workflows/architecture-boundaries.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-size-ratchet:
+    name: Source size ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+      - name: Prevent oversized production modules from growing
+        env:
+          SOURCE_SIZE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-source-size-ratchet.mjs

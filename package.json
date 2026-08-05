@@ -1,0 +1,83 @@
+{
+  "name": "metrora",
+  "version": "1.0.0-rc.7",
+  "private": true,
+  "description": "Metrora — local-first AI usage intelligence for tools, models, projects and sessions",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "bin": {
+    "metrora": "dist/cli.js",
+    "qovrion": "dist/cli.js",
+    "codeburn": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "brand:assets": "node scripts/generate-brand-assets.mjs",
+    "bundle-litellm": "node scripts/bundle-litellm.mjs",
+    "build": "npm run brand:assets && node scripts/bundle-litellm.mjs && tsup && node -e \"const fs=require('fs'); fs.copyFileSync('src/cli.ts','dist/cli.js'); fs.chmodSync('dist/cli.js',0o755)\" && npm run build:dash",
+    "build:cli": "tsup && node -e \"const fs=require('fs'); fs.copyFileSync('src/cli.ts','dist/cli.js'); fs.chmodSync('dist/cli.js',0o755)\"",
+    "build:dash": "cd dash && npm install --no-audit --no-fund --silent && npm run build",
+    "dev": "NODE_OPTIONS=--no-deprecation tsx src/cli.ts",
+    "identity:public:check": "node scripts/check-public-identity-boundary.mjs",
+    "pricing:docs": "tsx scripts/generate-pricing-history.ts",
+    "pricing:docs:check": "tsx scripts/generate-pricing-history.ts --check",
+    "test": "vitest",
+    "prepublishOnly": "npm run build",
+    "version:check": "node scripts/check-version-consistency.mjs"
+  },
+  "keywords": [
+    "metrora",
+    "claude-code",
+    "cursor",
+    "codex",
+    "kimi",
+    "devin",
+    "ibm-bob",
+    "opencode",
+    "pi",
+    "codebuff",
+    "codewhale",
+    "ai-coding",
+    "token-usage",
+    "cost-tracking",
+    "observability",
+    "developer-tools"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "author": "Vensent (https://metrora.eu)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maikolsiragusaa/metrora.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maikolsiragusaa/metrora/issues"
+  },
+  "homepage": "https://metrora.eu",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "bonjour-service": "^1.4.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "ink": "^7.0.0",
+    "react": "^19.2.5",
+    "selfsigned": "^5.5.0",
+    "strip-ansi": "^7.2.0",
+    "undici": "^7.27.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "@types/react": "^19.2.14",
+    "@types/selfsigned": "^2.0.4",
+    "playwright": "^1.61.1",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0"
+  }
+}

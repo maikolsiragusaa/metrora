@@ -1,0 +1,78 @@
+.workspace-guidance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.workspace-guidance-item {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(160,175,255,.025);
+}
+.workspace-guidance-item > span {
+  display: block;
+  color: var(--mut2);
+  font-size: 9.5px;
+  font-weight: 620;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.workspace-guidance-item > b {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.workspace-guidance-item > p {
+  margin: 6px 0 0;
+  color: var(--mut);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.workspace-guidance-good { border-color: rgba(70,200,140,.25); background: rgba(70,200,140,.045); }
+.workspace-guidance-warning { border-color: rgba(240,180,70,.28); background: rgba(240,180,70,.045); }
+.workspace-guidance-blocked { border-color: rgba(242,109,109,.28); background: rgba(242,109,109,.045); }
+.workspace-guidance-good > b { color: var(--ok); }
+.workspace-guidance-warning > b { color: var(--warn, #d9a441); }
+.workspace-guidance-blocked > b { color: var(--bad); }
+
+.workspace-disclosure {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--mut);
+}
+.workspace-disclosure > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--mut);
+  font-size: 10.5px;
+  font-weight: 580;
+  user-select: none;
+}
+.workspace-disclosure > summary:hover { color: var(--ink); }
+.workspace-disclosure-body { margin-top: 10px; }
+.workspace-create-copy.workspace-disclosure { margin-top: 0; align-self: end; }
+.workspace-create-copy.workspace-disclosure > summary { color: var(--ink); font-size: 11px; }
+.workspace-create-copy .workspace-disclosure-body { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.workspace-visible-blockers {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(242,109,109,.25);
+  border-radius: 7px;
+  background: rgba(242,109,109,.045);
+  color: var(--bad);
+  font-size: 10.5px;
+}
+.workspace-visible-blockers > b { font-weight: 650; }
+.workspace-visible-blockers .workspace-blockers { margin-top: 6px; }
+
+@media (max-width: 1100px) {
+  .workspace-guidance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 680px) {
+  .workspace-guidance { grid-template-columns: 1fr; }
+}

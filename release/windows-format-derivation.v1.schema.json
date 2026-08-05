@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://metrora.eu/schemas/windows-format-derivation.v1.schema.json",
+  "title": "Metrora Windows Format Derivation Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "version",
+    "schema",
+    "source",
+    "product",
+    "canonicalPayload",
+    "portable",
+    "installer",
+    "reproducibility"
+  ],
+  "properties": {
+    "kind": { "const": "metrora.windows-format-derivation" },
+    "version": { "const": 1 },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "const": "FORMAT_DERIVATION.schema.json" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit"],
+      "properties": {
+        "repository": { "const": "maikolsiragusaa/metrora" },
+        "commit": { "$ref": "#/$defs/gitSha1" }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "publisher", "appId", "version", "visualIdentity"],
+      "properties": {
+        "name": { "const": "Metrora" },
+        "publisher": { "const": "Vensent" },
+        "appId": { "const": "eu.metrora.desktop" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "visualIdentity": { "const": "Signal Grid v1" }
+      }
+    },
+    "canonicalPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "inventoryFile", "fileCount", "totalBytes", "inventorySha256"],
+      "properties": {
+        "directory": { "const": "win-unpacked" },
+        "inventoryFile": { "const": "CANONICAL_PRODUCT_PAYLOAD.jsonl" },
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 1 },
+        "inventorySha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "portable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "releaseManifestFile", "releaseManifestSha256", "canonicalPayloadMatch", "extraFiles"],
+      "properties": {
+        "directory": { "const": "portable" },
+        "releaseManifestFile": { "const": "portable/RELEASE_MANIFEST.json" },
+        "releaseManifestSha256": { "$ref": "#/$defs/sha256" },
+        "canonicalPayloadMatch": { "const": true },
+        "extraFiles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/path" }
+        }
+      }
+    },
+    "installer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "method", "unsigned", "files"],
+      "properties": {
+        "directory": { "const": "installer" },
+        "method": { "const": "electron-builder-prepackaged-nsis" },
+        "unsigned": { "const": true },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/fileRecord" }
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalPayloadBuiltOnce", "formatDerivationVerified", "installerByteReproducibilityProven", "note"],
+      "properties": {
+        "canonicalPayloadBuiltOnce": { "const": true },
+        "formatDerivationVerified": { "const": true },
+        "installerByteReproducibilityProven": { "const": false },
+        "note": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gitSha1": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\r\\n\\0]+$"
+    },
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "size": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+node_modules/
+dist/
+*.tgz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local planning and tool state
+docs/superpowers/
+.claude/
+/CLAUDE.md
+
+# Config / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Debug / logs
+*.log
+npm-debug.log*
+
+# Cache
+.cache/
+*.sqlite
+
+# Build artifacts
+*.tsbuildinfo
+
+# Untracked local assets and experiments
+assets/discord-*.png
+desktop/
+appstore/
+src/summit.ts

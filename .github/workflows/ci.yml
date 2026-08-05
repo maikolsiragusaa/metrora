@@ -1,0 +1,306 @@
+name: Metrora CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrora-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-authority:
+    name: Version authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - name: Verify package and platform versions
+        run: npm run version:check
+
+  semgrep:
+    name: Security rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Semgrep
+        run: pip install semgrep
+      - name: Validate protected code paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          semgrep --config .semgrep/rules/no-bracket-assign-hot-paths.yml \
+            --strict --json \
+            src/providers/ src/parser.ts > semgrep-out.json
+          findings="$(jq '.results | length' semgrep-out.json)"
+          if [ "$findings" -gt 0 ]; then
+            jq -r '.results[] | "::error file=\(.path),line=\(.start.line)::\(.extra.message)"' semgrep-out.json
+            exit 1
+          fi
+
+  targeted-draft:
+    name: Targeted draft validation
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Detect affected draft surfaces conservatively
+        id: surfaces
+        run: node scripts/draft-surface-classifier.mjs --base '${{ github.event.pull_request.base.sha }}'
+      - name: Validate runtime compression support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate generated pricing documentation
+        run: npm run pricing:docs:check
+      - name: Build product runtime
+        run: npm run build:cli
+      - name: Run affected parser and durable-cache tests
+        if: steps.surfaces.outputs.parser == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        run: >-
+          npm test -- --run --no-file-parallelism
+          tests/parser.test.ts
+          tests/parser-incremental-append.test.ts
+          tests/cli-durable-totals.test.ts
+      - name: Run affected provider tests
+        if: steps.surfaces.outputs.providers == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          roots=()
+          for directory in src/providers tests/providers; do
+            if [ -d "$directory" ]; then roots+=("$directory"); fi
+          done
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo '::error::Provider surface changed but no provider test roots exist.'
+            exit 1
+          fi
+          mapfile -t provider_tests < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | sort)
+          if [ "${#provider_tests[@]}" -eq 0 ]; then
+            echo '::error::Provider surface changed but no provider tests were discovered.'
+            exit 1
+          fi
+          npm test -- --run --no-file-parallelism "${provider_tests[@]}"
+      - name: Run affected local-state and canonicalization tests
+        if: steps.surfaces.outputs.local_state == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          roots=()
+          for directory in src/local-state src/vendor; do
+            if [ -d "$directory" ]; then roots+=("$directory"); fi
+          done
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo '::error::Local-state surface changed but no local-state test roots exist.'
+            exit 1
+          fi
+          mapfile -t local_state_tests < <(find "${roots[@]}" -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) -print | sort)
+          if [ "${#local_state_tests[@]}" -eq 0 ]; then
+            echo '::error::Local-state surface changed but no local-state tests were discovered.'
+            exit 1
+          fi
+          npm test -- --run --no-file-parallelism "${local_state_tests[@]}"
+      - name: Run affected pricing contracts
+        if: steps.surfaces.outputs.pricing == 'true' && steps.surfaces.outputs.fallback_core != 'true'
+        run: >-
+          npm test -- --run --no-file-parallelism
+          src/pricing/history.test.ts
+          src/pricing/historical-cost.test.ts
+          src/pricing/historical-cost-coverage.test.ts
+          src/pricing/gpt-5-6-history.test.ts
+          src/pricing/local-observation-ledger.test.ts
+          src/pricing/local-observation-bands.test.ts
+          src/pricing/cost-assignment.test.ts
+          src/pricing/settled-historical-cost.test.ts
+      - name: Test affected version and release contracts
+        if: steps.surfaces.outputs.release == 'true'
+        run: >-
+          node --test
+          scripts/draft-surface-classifier.node-test.mjs
+          scripts/version-authority.node-test.mjs
+          scripts/windows-release-manifest.node-test.mjs
+          scripts/windows-release-layout.node-test.mjs
+          scripts/windows-installer-source.node-test.mjs
+          scripts/windows-installed-layout.node-test.mjs
+          scripts/windows-installed-state-classifier.node-test.mjs
+          scripts/windows-migration-fixture.node-test.mjs
+      - name: Validate every changed PowerShell file
+        if: steps.surfaces.outputs.powershell == 'true'
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          $paths = @(git diff --name-only "$env:BASE_SHA...HEAD" -- '*.ps1')
+          if ($LASTEXITCODE -ne 0) { throw 'failed to enumerate changed PowerShell files' }
+          if ($paths.Count -eq 0) { throw 'PowerShell surface was classified but no changed PowerShell file was found' }
+
+          foreach ($path in $paths) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              Write-Host "Skipping deleted PowerShell file: $path"
+              continue
+            }
+            Write-Host "Validating PowerShell syntax: $path"
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $path).Path,
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${path}: $($_.Message)" }
+              exit 1
+            }
+          }
+      - name: Install desktop dependencies for affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app ci --no-audit --no-fund
+      - name: Stage desktop runtime for affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app run stage-cli
+      - name: Test affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app test
+      - name: Typecheck affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app run typecheck
+      - name: Build affected desktop surfaces
+        if: steps.surfaces.outputs.desktop == 'true'
+        run: npm --prefix app run build
+      - name: Run complete core fallback for unclassified surfaces
+        if: steps.surfaces.outputs.fallback_core == 'true'
+        run: npm test -- --run --no-file-parallelism --exclude 'app/**'
+
+  build:
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    name: Core and desktop validation (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Validate runtime compression support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
+      - name: Install core dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate UX acceptance PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/Invoke-Metrora-Windows-UX-Acceptance.ps1').Path,
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+      - name: Validate generated pricing documentation
+        run: npm run pricing:docs:check
+      - name: Test pricing contracts
+        run: >-
+          npm test -- --run --no-file-parallelism
+          src/pricing/history.test.ts
+          src/pricing/historical-cost.test.ts
+          src/pricing/historical-cost-coverage.test.ts
+          src/pricing/gpt-5-6-history.test.ts
+          src/pricing/local-observation-ledger.test.ts
+          src/pricing/local-observation-bands.test.ts
+          src/pricing/cost-assignment.test.ts
+          src/pricing/settled-historical-cost.test.ts
+      - name: Test local evidence receipt contracts
+        run: npm test -- --run --no-file-parallelism src/local-state/measurement-production-receipt.test.ts
+      - name: Build product runtime
+        run: npm run build:cli
+      - name: Test local database collector
+        run: npm test -- --run --no-file-parallelism tests/providers/zed.test.ts
+      - name: Test Windows refresh lock
+        if: runner.os == 'Windows'
+        run: npm test -- --run --no-file-parallelism tests/cache-refresh-lock.test.ts
+      - name: Test Windows replacement-file portability
+        if: runner.os == 'Windows'
+        run: npm test -- --run --no-file-parallelism tests/parser-incremental-append.test.ts
+      - name: Test Windows local-state contracts
+        if: runner.os == 'Windows'
+        run: >-
+          npx vitest --run --no-file-parallelism --testTimeout=15000
+          src/vendor/rfc8785-canonicalize.test.ts
+          src/local-state/secret-protector.test.ts
+          src/local-state/endpoint-identity.test.ts
+          src/local-state/local-workspace.test.ts
+          src/local-state/reviewed-measurement-producer.test.ts
+          src/local-state/measurement-production-receipt.test.ts
+          src/local-state/desktop-host.test.ts
+          src/local-state/desktop-workspace-runtime.test.ts
+          src/local-state/measurement-outbox.test.ts
+          src/local-state/signed-batch.test.ts
+          src/local-state/workspace-evidence.test.ts
+      - name: Install desktop dependencies
+        run: npm --prefix app ci --no-audit --no-fund
+      - name: Stage desktop runtime
+        run: npm --prefix app run stage-cli
+      - name: Probe Windows protected storage
+        if: runner.os == 'Windows'
+        run: npm --prefix app run test:safe-storage
+      - name: Test desktop
+        run: npm --prefix app test
+      - name: Typecheck desktop
+        run: npm --prefix app run typecheck
+      - name: Build desktop
+        run: npm --prefix app run build
+
+  full-suite:
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    name: Core test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - name: Validate runtime compression support
+        run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Test Windows UX acceptance report contracts
+        run: node --test scripts/windows-ux-acceptance-report.node-test.mjs
+      - name: Run complete core suite deterministically
+        run: npm test -- --run --no-file-parallelism --exclude 'app/**'
+      - name: Record validation outcome
+        shell: bash
+        run: |
+          {
+            echo "## Core validation"
+            echo
+            echo "Outcome: \`success\`"
+            echo
+            echo "The complete core suite and required platform-specific validation completed without quarantined cases."
+          } >> "$GITHUB_STEP_SUMMARY"

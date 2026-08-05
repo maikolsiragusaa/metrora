@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="codeburn">
+  <schema id="org.gnome.shell.extensions.codeburn"
+          path="/org/gnome/shell/extensions/codeburn/">
+
+    <key name="refresh-interval" type="u">
+      <default>30</default>
+      <summary>Refresh interval</summary>
+      <description>Seconds between automatic data refreshes</description>
+      <range min="5" max="300"/>
+    </key>
+
+    <key name="default-period" type="s">
+      <default>'today'</default>
+      <summary>Default time period</summary>
+      <description>Period shown when extension opens (today, week, 30days, month, all)</description>
+    </key>
+
+    <key name="budget-threshold" type="d">
+      <default>0.0</default>
+      <summary>Budget threshold</summary>
+      <description>Daily budget threshold in USD. Set to 0 to disable.</description>
+    </key>
+
+    <key name="budget-alert-enabled" type="b">
+      <default>false</default>
+      <summary>Enable budget alerts</summary>
+      <description>Show warning when spending exceeds budget threshold</description>
+    </key>
+
+    <key name="compact-mode" type="b">
+      <default>false</default>
+      <summary>Compact mode</summary>
+      <description>Show only icon in panel, hide cost label</description>
+    </key>
+
+    <key name="force-dark-mode" type="b">
+      <default>false</default>
+      <summary>Force dark mode</summary>
+      <description>Always use dark theme for the popup, regardless of system theme</description>
+    </key>
+
+    <key name="show-exact-costs" type="b">
+      <default>false</default>
+      <summary>Show exact costs</summary>
+      <description>Show full decimal values instead of compact notation (e.g. $2,655.23 instead of $2.7k)</description>
+    </key>
+
+    <key name="codeburn-path" type="s">
+      <default>''</default>
+      <summary>CodeBurn CLI path</summary>
+      <description>Custom path to the codeburn executable. Leave empty to use PATH.</description>
+    </key>
+
+    <key name="provider-filter" type="s">
+      <default>'all'</default>
+      <summary>Default provider filter</summary>
+      <description>Default provider to filter by (all shows everything)</description>
+    </key>
+
+    <key name="disabled-providers" type="as">
+      <default>[]</default>
+      <summary>Disabled providers</summary>
+      <description>Providers excluded from cost accounting and display</description>
+    </key>
+
+  </schema>
+</schemalist>
