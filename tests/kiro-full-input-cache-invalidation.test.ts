@@ -1,3 +1,5 @@
+// Proves the immediately preceding Kiro parse fingerprint cannot preserve
+// stale, truncated legacy-input accounting after upgrade.
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'crypto'
 import { mkdir, rm, writeFile } from 'fs/promises'
