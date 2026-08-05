@@ -1,9 +1,14 @@
-name: Repository maintenance
+name: Prepare clean repository baseline
 
 on:
-  push:
+  pull_request:
     branches:
-      - maintenance/clean-history
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
 
 permissions:
   contents: write
@@ -13,24 +18,25 @@ permissions:
 
 jobs:
   prepare:
-    if: github.event.head_commit.message != 'maintenance: finalize cleanup'
+    if: github.head_ref == 'maintenance/clean-history'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       REPOSITORY: ${{ github.repository }}
-      EXPECTED_MAIN: 5c8434c0f1e05c88568e6399b15df09cac44aa59
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      SOURCE_COMMIT: 5c8434c0f1e05c88568e6399b15df09cac44aa59
     steps:
-      - name: Checkout final public tree
+      - name: Checkout accepted public tree
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.SOURCE_COMMIT }}
           fetch-depth: 1
 
       - name: Create one-commit baseline
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
           git config user.name "Metrora"
           git config user.email "actions@users.noreply.github.com"
           git checkout --orphan clean-baseline-work
@@ -64,8 +70,8 @@ jobs:
               -f id="$pr_id"
           done < <(
             gh api graphql --paginate \
-              -f query='query($endCursor:String){repository(owner:"maikolsiragusaa",name:"metrora"){pullRequests(first:100,after:$endCursor){nodes{id isArchived}pageInfo{hasNextPage endCursor}}}}' \
-              --jq '.data.repository.pullRequests.nodes[] | select(.isArchived == false) | .id'
+              -f query='query($endCursor:String){repository(owner:"maikolsiragusaa",name:"metrora"){pullRequests(first:100,after:$endCursor){nodes{id number isArchived}pageInfo{hasNextPage endCursor}}}}' \
+              --jq ".data.repository.pullRequests.nodes[] | select(.isArchived == false and .number != ${PR_NUMBER}) | .id"
           )
 
       - name: Remove releases and tags
@@ -84,37 +90,11 @@ jobs:
               --jq '.[].ref | sub("^refs/"; "")'
           )
 
-  finalize:
-    if: github.event.head_commit.message == 'maintenance: finalize cleanup'
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      REPOSITORY: ${{ github.repository }}
-    steps:
-      - name: Remove old workflow history
-        shell: bash
-        run: |
-          set -euo pipefail
-          while read -r run_id; do
-            [ -n "$run_id" ] || continue
-            [ "$run_id" = "$GITHUB_RUN_ID" ] && continue
-            gh api --method POST "/repos/${REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null 2>&1 || true
-            gh api --method DELETE "/repos/${REPOSITORY}/actions/runs/${run_id}" || true
-          done < <(
-            gh api --paginate "/repos/${REPOSITORY}/actions/runs?per_page=100" \
-              --jq '.workflow_runs[].id'
-          )
-
-      - name: Remove every non-main branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          while read -r branch; do
-            [ "$branch" = "main" ] && continue
-            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/heads/${branch}" || true
-          done < <(gh api --paginate "/repos/${REPOSITORY}/branches?per_page=100" --jq '.[].name')
-
-      - name: Remove maintenance run
+      - name: Archive maintenance pull request
         if: always()
         shell: bash
-        run: gh api --method DELETE "/repos/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" || true
+        run: |
+          pr_id=$(gh api "/repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.node_id')
+          gh api graphql \
+            -f query='mutation($id:ID!){archivePullRequest(input:{pullRequestId:$id}){pullRequest{id number isArchived}}}' \
+            -f id="$pr_id" || true
