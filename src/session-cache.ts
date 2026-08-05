@@ -244,7 +244,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   hermes: 'reasoning-output-accounting-v1-est-cost',
   'lingtai-tui': 'token-ledger-registry-activity-v3',
   'ibm-bob': 'worktree-project-grouping-v1',
-  kiro: 'ide-parsing-v1-est-cost',
+  kiro: 'ide-parsing-v2-legacy-full-input-est-cost',
   quickdesk: 'emf-sqlite-v2-est-cost',
   kimicode: 'wire-usage-v1-est-cost',
   'kilo-code': 'worktree-project-grouping-v1',
