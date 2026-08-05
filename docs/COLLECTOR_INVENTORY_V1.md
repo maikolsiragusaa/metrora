@@ -17,7 +17,7 @@ These labels describe current evidence boundaries. They are not a public impleme
 | antigravity | lazy | protobuf-rpc-cache-and-statusline | docs/providers/antigravity.md | available | source-documented | withheld |
 | claude | core | jsonl-and-desktop-session-files | docs/providers/claude.md | available | signed-approved | approved |
 | cline | core | unassessed | docs/providers/cline.md | available | local-only | withheld |
-| codebuff | core | unassessed | missing | available | local-only | withheld |
+| codebuff | core | unassessed | docs/providers/codebuff.md | available | local-only | withheld |
 | codewhale | core | unassessed | docs/providers/codewhale.md | available | local-only | withheld |
 | codex | core | rollout-jsonl | docs/providers/codex.md | available | signed-approved | approved |
 | copilot | core | otel-sqlite-and-legacy-multi-store | docs/providers/copilot.md | available | source-documented | withheld |
@@ -34,17 +34,17 @@ These labels describe current evidence boundaries. They are not a public impleme
 | ibm-bob | core | unassessed | docs/providers/ibm-bob.md | available | local-only | withheld |
 | kilo-code | core | unassessed | docs/providers/kilo-code.md | available | local-only | withheld |
 | kimi | core | unassessed | docs/providers/kimi.md | available | local-only | withheld |
-| kimicode | core | unassessed | missing | available | local-only | withheld |
+| kimicode | core | unassessed | docs/providers/kimicode.md | available | local-only | withheld |
 | kiro | core | chat-json-estimated | docs/providers/kiro.md | available | source-documented | withheld |
 | lingtai-tui | core | unassessed | docs/providers/lingtai-tui.md | available | local-only | withheld |
 | mistral-vibe | core | session-meta-and-jsonl | docs/providers/mistral-vibe.md | available | source-documented | withheld |
 | mux | core | unassessed | docs/providers/mux.md | available | local-only | withheld |
 | omp | core | unassessed | docs/providers/omp.md | available | local-only | withheld |
-| open-design | core | unassessed | missing | available | local-only | withheld |
+| open-design | core | unassessed | docs/providers/open-design.md | available | local-only | withheld |
 | openclaw | core | agent-jsonl | docs/providers/openclaw.md | available | source-documented | withheld |
 | opencode | lazy | sqlite-or-file-storage | docs/providers/opencode.md | available | source-documented | withheld |
 | pi | core | unassessed | docs/providers/pi.md | available | local-only | withheld |
-| quickdesk | core | unassessed | missing | available | local-only | withheld |
+| quickdesk | core | unassessed | docs/providers/quickdesk.md | available | local-only | withheld |
 | qwen | core | unassessed | docs/providers/qwen.md | available | local-only | withheld |
 | roo-code | core | unassessed | docs/providers/roo-code.md | available | local-only | withheld |
 | vercel-gateway | lazy | unassessed | docs/providers/vercel-gateway.md | available | local-only | withheld |
@@ -58,8 +58,8 @@ These labels describe current evidence boundaries. They are not a public impleme
 - Registered local collectors: **38**.
 - Approved for signed Workspace measurements: **4 collectors / 6 path-specific profiles**.
 - Local collectors with signed sharing withheld: **34**.
-- Provider documentation present: **34**.
-- Documentation gaps: **codebuff, kimicode, open-design, quickdesk**.
+- Provider documentation present: **38**.
+- Documentation gaps: **none**.
 
 ## Approval gate
 
