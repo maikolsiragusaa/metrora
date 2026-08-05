@@ -1,125 +1,97 @@
 # Windows clean install and uninstall v1
 
-**Status:** public R1.B.B contract for unsigned NSIS validation
+**Status:** implemented CI contract for unsigned NSIS installation validation.
 
-## Purpose
+This contract proves that the NSIS candidate can be installed, launched and removed in a disposable Windows environment without changing canonical product bytes or deleting user-owned local state.
 
-R1.B.B proves that the unsigned NSIS candidate produced by R1.B.A can be installed and removed in a disposable Windows environment without changing Metrora product bytes or deleting user-owned local state.
-
-This is release engineering validation. It is not code signing, publication, updater activation or a claim that the installer is trusted by Windows.
+It is release-engineering validation. It is not code signing, publication, updater activation or a claim that Windows trusts the installer publisher.
 
 ## Installer policy
 
-The current Windows installer is:
+The current installer is:
 
 - NSIS x64;
-- per-user (`perMachine: false`);
-- assisted (`oneClick: false`);
+- per-user;
+- assisted rather than one-click;
 - unsigned;
-- configured explicitly with `deleteAppDataOnUninstall: false`.
+- configured with application-data deletion disabled.
 
-Silent test execution uses the NSIS `/S` option. The disposable installation directory is supplied as the final `/D=<path>` argument.
-
-## Disposable boundary
-
-The CI test uses a unique directory below the Windows runner temporary root for:
-
-- installed application files;
-- temporary roaming application data;
-- temporary local application data;
-- a user-owned local-state sentinel.
-
-The installation directory contains no spaces so the NSIS `/D` argument can remain final and unquoted.
-
-The test restores the original environment and removes its temporary files after verification. It does not inspect or export user content.
+CI uses a disposable installation directory and isolated roaming/local application-data roots.
 
 ## Installed layout
 
-Every canonical product file from `win-unpacked` must exist in the installed application directory with the same path, size and SHA-256.
+Every canonical product file from the unpacked payload must exist in the installed directory with the same path, size and SHA-256.
 
 The only accepted installed-format additions are:
 
 - `Uninstall Metrora.exe`;
 - `resources/elevate.exe`.
 
-A changed canonical file, missing canonical file, empty format-specific file or any undeclared extra file fails the gate.
+Changed, missing, empty or undeclared files fail validation.
 
 ## Identity checks
 
 The installed candidate must expose:
 
-- executable `ProductName` equal to `Metrora`;
-- executable file description containing `Metrora`;
-- one logical per-user Windows uninstall registration in HKCU, even when the same key is visible through both registry views;
-- uninstall `DisplayName` beginning with `Metrora` and including the packaged version;
-- publisher `Vensent`;
-- an uninstall command targeting `Uninstall Metrora.exe` in the disposable installation directory;
-- at least one Start Menu shortcut named `Metrora.lnk` targeting the installed `Metrora.exe`.
+- product name `Metrora`;
+- file description containing `Metrora`;
+- one logical per-user uninstall registration under HKCU;
+- versioned Metrora display name;
+- publisher display `Vensent`;
+- an uninstall command targeting the local uninstaller;
+- a canonical Start Menu shortcut targeting `Metrora.exe`.
 
-The public `appId` remains `eu.metrora.desktop` and is already bound by the R1.A/R1.B.A source and manifest checks.
+The application ID remains `eu.metrora.desktop`.
 
-The accepted R1.B physical result predates this publisher-policy update and therefore remains historical evidence for the then-current development identity. A future release candidate must pass this contract again with Vensent before it can become an official Metrora distribution.
+Historical acceptance reports remain bound to the identity present in their original source and artifact. A later official candidate must pass the current identity contract again.
 
 ## Runtime smoke checks
 
-The installed candidate must pass both:
+The installed candidate must pass:
 
-1. installed compatibility CLI `--version` execution;
-2. installed Electron application launch, remaining alive for a bounded smoke window before controlled termination.
+1. bundled compatibility CLI version execution;
+2. bounded Electron launch without early failure.
 
-The launch test does not perform Workspace production, evidence export or network publication.
+The smoke test does not produce Workspace evidence, export data or publish over a network.
 
 ## User-owned state preservation
 
-Before installation, CI creates a sentinel inside the disposable equivalent of:
+Before installation, CI creates a sentinel in the disposable equivalent of the Metrora local-state directory.
 
-```text
-%APPDATA%\metrora-desktop\metrora-local-state
-```
+Installation, first launch and uninstall must preserve it byte-for-byte.
 
-The sentinel digest is recorded locally for the duration of the test.
-
-The following operations must preserve the sentinel byte-for-byte:
-
-- silent installation;
-- first application launch;
-- silent uninstall.
-
-Uninstall must remove the application executable, uninstall registry entry and Metrora Start Menu shortcut while leaving the user-owned state sentinel unchanged.
+Successful uninstall removes application files, registration and shortcuts while leaving user-owned local state intact.
 
 ## Failure model
 
-The gate fails on:
+Validation fails on:
 
-- installer non-zero exit;
+- installer or uninstaller failure;
 - missing executable or uninstaller;
 - installed payload drift;
-- incorrect product identity;
-- missing, duplicated or inconsistent uninstall metadata;
-- per-user installation registered outside HKCU;
-- missing canonical shortcut;
-- CLI failure;
-- early Electron exit;
-- uninstall non-zero exit;
-- residual installed executable, registry entry or shortcut;
-- deletion or mutation of user-owned local state.
+- incorrect product or publisher identity;
+- missing, duplicated or inconsistent registration;
+- registration outside the per-user boundary;
+- missing or incorrect shortcut;
+- CLI or bounded launch failure;
+- residual application authority after uninstall;
+- deletion or mutation of user-owned state.
 
-No failure path is allowed to reset or delete real user state.
+No failure path is allowed to reset real user data.
 
-## What R1.B.B does not prove
+## Scope
 
-R1.B.B does not yet prove:
+This isolated contract proves clean installation, first launch and removal for the candidate under test.
 
-- upgrade from an earlier candidate;
-- interrupted upgrade recovery;
-- repair/reinstall behavior;
-- rollback compatibility;
-- physical-machine SmartScreen behavior;
-- publisher authenticity;
-- update-channel authenticity.
+The Windows candidate workflow separately validates:
 
-Those remain R1.B.C, R1.B.D and later signing work.
+- same-version reinstall and repair;
+- historical upgrade, rollback and re-upgrade;
+- controlled interruption and deterministic recovery;
+- independent candidate verification.
+
+Physical-machine UX, Store identity, publisher authenticity and official publication remain separate acceptance boundaries.
 
 ## Evolution
 
-Any change to accepted installed extras, uninstall data policy, identity rules or smoke behavior requires an explicit contract update. The test must not silently broaden its allowlist to make a new installer pass.
+Any change to installed extras, uninstall data policy, identity rules or smoke behavior requires an explicit contract update. Tests must not silently broaden their allowlists to make a new installer pass.

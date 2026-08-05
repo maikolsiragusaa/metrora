@@ -1,160 +1,120 @@
 # Windows release candidate manifest v1
 
-**Status:** public R1.A contract for unsigned Windows candidates
+**Status:** implemented public contract for unsigned Windows engineering candidates.
 
-## Purpose
+Metrora Windows candidates must be traceable to one reviewed public source commit and independently verifiable after download.
 
-Metrora Windows candidates must be traceable to one reviewed public source and independently verifiable after download.
+This contract separates:
 
-This contract separates three different claims:
+1. **Payload integrity** — every candidate payload file is inventoried by path, size and SHA-256.
+2. **Source and input binding** — the manifest records the source commit, tree, timestamp and release-critical Git blobs.
+3. **Build-run attestation** — variable CI execution metadata is bound to the deterministic manifest without becoming part of it.
 
-1. **Payload integrity** — every file in the candidate directory is inventoried by path, size and SHA-256.
-2. **Source/input binding** — the manifest records the public source commit, tree, source timestamp and hashes of release-critical Git blobs.
-3. **Build-run attestation** — variable CI metadata is bound to the deterministic manifest without becoming part of it.
-
-R1.A does not claim byte-for-byte reproduction of Electron output, NSIS output or the GitHub artifact ZIP. That claim requires separate evidence and remains future work.
+It does not claim byte-for-byte reproduction of Electron, NSIS or archive output.
 
 ## Candidate files
 
-A candidate directory contains:
+The portable candidate contains:
 
 - `RELEASE_MANIFEST.json` — deterministic product, source, build-input and payload summary;
-- `RELEASE_MANIFEST.schema.json` — the exact public v1 schema copied from the declared Git commit;
-- `PAYLOAD_MANIFEST.jsonl` — one canonically sorted JSON record per payload file;
-- `BUILD_ATTESTATION.json` — variable CI run metadata bound to the manifest digest;
-- `SHA256SUMS.txt` — checksums for the four metadata files above;
+- `RELEASE_MANIFEST.schema.json` — the public schema copied from the declared commit;
+- `PAYLOAD_MANIFEST.jsonl` — one sorted record per payload file;
+- `BUILD_ATTESTATION.json` — build execution metadata bound to the manifest digest;
+- `SHA256SUMS.txt` — checksums for the metadata files;
 - the Metrora application payload.
 
-Release metadata files are excluded from the payload inventory to avoid circular hashing. They are verified through the manifest/attestation/checksum chain.
+Release metadata is excluded from the payload inventory to avoid circular hashing and is verified through its own checksum chain.
 
 ## Deterministic manifest
 
 `RELEASE_MANIFEST.json` records:
 
-- canonical Metrora product name, package name, application ID, version and homepage;
-- Signal Grid identity name and version;
-- public repository, source commit, Git tree and commit timestamp;
+- product name, package name, application ID, version and homepage;
+- Signal Grid identity;
+- source repository, commit, tree and timestamp;
 - Windows target and candidate classification;
 - exact Node, Electron and electron-builder versions;
-- hashes of the exact Git blobs for root/app lockfiles, package definitions, workflow and brand identity source;
-- manifest-schema hash;
-- payload inventory hash, file count and total bytes;
-- an explicit reproducibility statement.
+- hashes of release-critical package, lockfile, workflow and brand-source blobs;
+- schema hash;
+- payload inventory digest, file count and byte count;
+- explicit reproducibility limits.
 
-The manifest does not include workflow run IDs, mutable timestamps, runner image labels or branch names.
-
-Two builds with identical source, declared tool versions, build-input blobs and payload bytes produce the same release manifest and payload inventory even when CI run metadata differs.
+Mutable workflow-run identifiers, branch labels and build timestamps stay in the separate attestation.
 
 ## Canonical source authority
 
-Release-critical source files are read as bytes directly from the declared Git commit, not from the operating system's materialized working tree.
+Release-critical inputs are read as bytes from the declared Git commit rather than the materialized checkout. This prevents line-ending conversion from changing input hashes across operating systems.
 
-This prevents platform checkout behavior such as CRLF/LF conversion from changing source-input hashes between Windows and Linux.
-
-The verifier also proves that:
-
-- the declared tree belongs to the declared commit;
-- the declared source timestamp is the commit timestamp;
-- the input set is complete and cannot be shortened;
-- product version, package name, application ID, homepage and Signal Grid metadata agree with the source package;
-- Electron and electron-builder versions agree with the source lockfile;
-- the bundled manifest schema is byte-identical to the schema blob in the source commit.
-
-A working-tree mode exists only for isolated unit fixtures. Production creation and verification use Git-blob authority.
+Verification also proves that declared tree and timestamp belong to the commit, required inputs are complete, package identity agrees with source metadata, tool versions agree with lockfiles and the bundled schema matches the source blob.
 
 ## Build attestation
 
-`BUILD_ATTESTATION.json` records the individual build execution:
+`BUILD_ATTESTATION.json` records the individual execution, including manifest digest, automation provider, workflow, run and attempt, source ref, build time and runner identity.
 
-- manifest SHA-256;
-- automation provider and workflow;
-- run ID and attempt;
-- source ref;
-- build time;
-- runner OS and image label.
+The attestation is expected to vary between runs. It does not change the deterministic payload or source manifest.
 
-The attestation is expected to vary between runs. It does not change the deterministic manifest or payload inventory.
-
-A future signing tranche may bind additional protected signing evidence to the accepted unsigned manifest. Public CI does not sign or hold signing authority.
+Public pull-request CI does not hold signing authority.
 
 ## Payload inventory
 
-Each non-empty line in `PAYLOAD_MANIFEST.jsonl` is a strict JSON object:
+Each non-empty `PAYLOAD_MANIFEST.jsonl` line is a strict object:
 
 ```json
 {"path":"resources/app.asar","size":123456,"sha256":"..."}
 ```
 
-Rules:
-
-- paths use `/` separators;
-- paths are relative and traversal-free;
-- entries are sorted by deterministic code-point order;
-- paths are unique;
-- sizes are non-negative safe integers;
-- SHA-256 digests use lowercase hexadecimal;
-- every payload file is listed;
-- no unlisted payload file is permitted.
-
-Filesystem links or other unsupported entry types fail candidate creation rather than being interpreted differently across operating systems.
+Paths are relative, traversal-free, unique, `/`-separated and deterministically sorted. Sizes are non-negative safe integers and digests are lowercase SHA-256. Missing, additional or unsupported filesystem entries fail verification.
 
 ## Independent verification
 
-The canonical verifier:
+The verifier:
 
-1. validates the manifest identity and supported version;
+1. validates manifest identity and schema;
 2. checks the expected source commit when supplied;
-3. verifies commit tree and timestamp;
-4. re-hashes the fixed release-input set from canonical Git blobs;
-5. verifies product and toolchain metadata against the same commit;
-6. verifies the source schema matches the bundled schema;
-7. validates metadata checksums;
-8. verifies the attestation binds the manifest;
-9. re-inventories every downloaded payload file;
-10. rejects missing, extra, resized or modified files.
+3. verifies source tree and timestamp;
+4. re-hashes the fixed input set from Git blobs;
+5. verifies package and toolchain metadata;
+6. verifies the bundled schema;
+7. validates metadata checksums and attestation binding;
+8. re-inventories every downloaded payload file;
+9. rejects missing, additional, resized or modified files.
 
-The Windows workflow verifies before upload. A separate Ubuntu job downloads the uploaded artifact and repeats verification against the same source commit.
+The Windows workflow verifies before upload. A separate Ubuntu job downloads the uploaded candidate and repeats content and source-binding verification.
 
-Verification on another operating system proves content and source binding, not Windows executable behavior or signature validity.
+Cross-platform verification proves bytes and provenance, not Windows runtime behavior or signature validity.
 
 ## Candidate classifications
 
 ### `unsigned-development-artifact`
 
-Used for pull requests, ordinary main-branch validation and controlled engineering tests. It is not an official release.
+Used for ordinary validation and controlled engineering tests. It is not an official release.
 
 ### `unsigned-release-candidate`
 
-Used only through an explicit workflow dispatch when the source is intended for a later protected signing/acceptance step. It is still not an official release and must remain clearly separated from signed downloads.
+Used through explicit workflow dispatch when source is being evaluated for a later protected distribution step. It remains unsigned and must not be presented as an official channel package.
 
-An official signed release requires R1.B–R1.E acceptance and protected signing evidence.
+## Allowed claims
 
-## Reproducibility language
+Allowed:
 
-Allowed R1.A claim:
+> Payload contents and declared build inputs are deterministic and independently verifiable.
 
-> Payload contents and build inputs are deterministic and independently verifiable.
+Not established by this contract:
 
-Not yet allowed:
-
-- byte-for-byte reproducible Electron directory;
-- byte-for-byte reproducible NSIS installer;
-- byte-for-byte reproducible GitHub artifact ZIP;
+- byte-for-byte reproducible Electron, NSIS or archive output;
 - official publisher authenticity;
-- trusted update-channel authenticity.
-
-The manifest records `byteForByteArchiveProven: false` and verification rejects a contrary claim under v1.
+- trusted update-channel authenticity;
+- acceptance by a distribution platform.
 
 ## Security and privacy boundary
 
 - public workflows receive no signing keys or protected release credentials;
-- manifest and attestation contain no endpoint identity, Workspace data, local paths, prompts, responses, code or user content;
-- candidate metadata exposes only public source/build information;
-- private signing may not alter product semantics after public acceptance;
+- candidate metadata contains no endpoint, Workspace or user data;
+- private signing or channel packaging may not alter already reviewed product semantics;
 - development candidates remain visibly distinct from official releases.
+
+An official distribution requires exact platform-issued product identity, platform-specific acceptance and an explicit publication decision. See [Windows distribution](WINDOWS_DISTRIBUTION.md).
 
 ## Compatibility and evolution
 
-Manifest v1 is append-resistant through strict verification and an explicit schema. A future version uses a new `kind`/version contract or a documented compatible extension; it must not silently reinterpret v1 fields.
-
-The public source commit remains the final authority for code and contract meaning. The manifest is an evidence index, not a second release database.
+Manifest v1 is strict. A future contract uses a new version or documented compatible extension rather than silently reinterpreting existing fields. The declared public source commit remains authoritative for code and contract meaning.

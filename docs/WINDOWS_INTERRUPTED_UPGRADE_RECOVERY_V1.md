@@ -1,138 +1,113 @@
 # Windows interrupted upgrade recovery v1
 
-**Status:** R1.B.C.B implementation contract
+**Status:** implemented CI contract for controlled installer interruption and deterministic recovery.
 
-## Purpose
+This contract proves that an interrupted Windows installer run cannot silently leave Metrora with ambiguous application authority or damaged user-owned local state.
 
-Prove that an interrupted Windows installer run cannot silently leave Metrora with ambiguous application authority or damaged user-owned local state.
-
-This contract covers an unsigned, disposable CI fixture. It does not enable an automatic updater, remote recovery service, signing authority, public release or support backdoor.
+It uses an unsigned disposable test fixture. It does not add updater logic, network recovery, signing authority, public release behavior or a support backdoor.
 
 ## Controlled interruption
 
-The interruption test must not depend on arbitrary sleep timing or random deletion of application files.
+The test does not depend on arbitrary sleep timing or random file deletion.
 
-A dedicated test-only NSIS include inserts a runtime checkpoint into an installer derived from the same current canonical payload used by the ordinary candidate.
-
-The checkpoint:
+A test-only NSIS include inserts a runtime checkpoint into an installer derived from the same canonical current payload as the ordinary candidate. The checkpoint:
 
 - exists only in the interruption fixture;
-- writes one unique marker below the disposable runner temporary directory;
-- waits inside the installer until released or terminated;
-- runs only during installation;
+- writes one unique marker below the disposable runner directory;
+- waits until released or terminated;
 - contains no product, Workspace or user-state logic;
-- is never copied into the ordinary candidate output;
+- is never copied into ordinary candidate output;
 - is never uploaded or published.
 
-CI terminates the fixture only after observing the expected marker.
+CI terminates the fixture only after observing the checkpoint marker.
 
-## Current candidate authority
+## Candidate authority
 
-The ordinary current candidate remains built once by the existing Windows candidate job.
+The ordinary current candidate remains the recovery authority.
 
-The interruption fixture may repackage an isolated copy of the same canonical current payload with the test-only NSIS include. It is not a second product build and cannot replace the ordinary candidate manifest or installer.
+The interruption fixture repackages an isolated copy of the canonical payload with the test-only include. It is not a second product build and cannot replace the ordinary manifest or installer.
 
-After interruption, recovery must use the ordinary current installer, not the fixture.
+Recovery always uses the ordinary current installer.
 
-## State classification
+## Interrupted-state classification
 
-The interrupted installation directory is classified independently from installer process exit or registry assumptions.
+The installation is classified independently from process exit and registry assumptions:
 
-Allowed classifications are:
-
-- `baseline-complete` — every historical baseline product file matches and the current payload does not;
-- `candidate-complete` — every current product file matches and the baseline payload does not;
-- `absent` — no product payload or Windows application authority remains;
+- `baseline-complete` — historical baseline files are complete and current files are not;
+- `candidate-complete` — current files are complete and baseline files are not;
+- `absent` — no application payload or Windows authority remains;
 - `mixed` — files or authorities do not form one accepted complete state.
 
-The classifier compares canonical file paths, sizes and SHA-256 digests. Windows registration and shortcut authority are checked separately by the lifecycle harness.
+Classification compares canonical paths, sizes and SHA-256 digests. Registration and shortcut authority are inventoried separately.
 
-A mixed state is never treated as a valid installed application.
+A mixed state is never treated as healthy.
 
 ## Recovery policy
 
-Recovery is local to the disposable test installation.
+Recovery is confined to the disposable test installation:
 
-- `candidate-complete`: validate the current installation and normalize any missing Windows authority through the ordinary current installer if needed;
-- `baseline-complete`: retry the ordinary current upgrade;
-- `absent`: install the ordinary current candidate;
-- `mixed`: remove disposable application authority only, verify its absence, then install the ordinary current candidate.
+- `candidate-complete` — validate current installation and normalize missing Windows authority if needed;
+- `baseline-complete` — retry the ordinary current upgrade;
+- `absent` — install the ordinary current candidate;
+- `mixed` — remove disposable application authority only, verify absence and install the ordinary current candidate.
 
 Recovery must converge to:
 
-- the exact current canonical payload;
-- the expected current executable and CLI version;
-- one logical HKCU uninstall registration;
+- the exact canonical current payload;
+- the expected executable and CLI version;
+- one logical per-user uninstall registration;
 - one canonical Start Menu shortcut;
 - successful bounded Electron launch;
-- no competing baseline or mixed application authority.
+- no competing baseline or mixed authority.
 
 ## User-owned local state
 
-Before baseline installation, CI creates a sentinel in the disposable equivalent of:
+Before baseline installation, CI creates a sentinel in the disposable Metrora local-state directory.
 
-```text
-%APPDATA%\metrora-desktop\metrora-local-state
-```
+Its digest is checked after baseline launch, interruption, termination, classification, any bounded cleanup, recovery launch and final application removal.
 
-The sentinel digest is verified:
+The fixture, classifier and recovery harness may not reset, rewrite, inspect, export or upload Workspace evidence.
 
-- after baseline installation and launch;
-- after the interruption checkpoint is reached;
-- immediately after installer termination;
-- after interrupted-state classification;
-- after cleanup where required;
-- after current-candidate recovery and launch;
-- after final application removal.
+## Windows authority checks
 
-The interruption fixture, classifier and recovery harness may not reset, rewrite, inspect, export or upload Workspace evidence.
-
-## Windows authority classification
-
-File classification alone is not enough.
-
-The harness also inventories:
+File classification alone is insufficient. The harness also inventories:
 
 - logical HKCU uninstall registrations;
 - registrations outside HKCU;
-- canonical Start Menu shortcuts;
-- shortcut targets;
+- canonical Start Menu shortcuts and targets;
 - installed executable version where available.
 
-Before recovery, incomplete or conflicting Windows authority is reported as part of the bounded interruption result. It must not be accepted as healthy.
-
-After recovery, exactly one canonical current authority is required.
+Incomplete or conflicting authority is reported and cannot pass as healthy. After recovery, exactly one canonical current authority is required.
 
 ## Failure model
 
-The gate fails when:
+Validation fails when:
 
-- the test-only installer cannot prove that the checkpoint was reached;
-- the fixture appears in ordinary candidate output;
-- the installer cannot be terminated deterministically;
-- state classification is impossible or contradictory;
-- a mixed state is accepted without cleanup;
-- cleanup targets anything outside the disposable installation;
-- recovery does not converge to the canonical current payload;
+- the checkpoint cannot be proven;
+- the fixture enters ordinary candidate output;
+- termination is not deterministic;
+- state classification is contradictory;
+- a mixed state is accepted without bounded cleanup;
+- cleanup targets anything outside the disposable application authority;
+- recovery does not converge to the canonical candidate;
 - registration, shortcut, executable or CLI authority remains ambiguous;
 - the application cannot launch after recovery;
-- user-owned local state changes;
-- the ordinary candidate no longer passes independent verification.
+- user-owned state changes;
+- independent candidate verification fails.
 
 ## Explicit prohibitions
 
-R1.B.C.B must not introduce:
+The interruption contract must not introduce:
 
-- updater logic in the product runtime;
+- runtime updater or background installer monitoring;
 - network access or remote repair;
-- background installer monitoring in Metrora;
 - hidden support commands;
 - deletion of real user data;
 - publication of the interruption fixture;
-- a second current payload build;
-- relaxed payload, registry or shortcut allowlists;
+- a second current product build;
+- relaxed payload, registration or shortcut allowlists;
 - changes to Workspace, parser, pricing, provider or evidence semantics.
 
 ## Completion criteria
 
-R1.B.C.B completes only when the controlled interruption is observed on Windows, the resulting state is classified, recovery converges to the ordinary current candidate, local state remains byte-identical and every existing release/architecture/brand gate remains green.
+The contract passes only when the controlled interruption is observed on Windows, the resulting state is classified, recovery converges to the ordinary candidate, local state remains byte-identical and the candidate still passes independent verification.

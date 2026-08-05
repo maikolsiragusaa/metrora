@@ -1,91 +1,95 @@
 # Canonical reviewed-production scanner v1
 
-**Status:** W1.D.C.B.B.A scanner boundary. Secure desktop runtime/IPC/UI integration remains W1.D.C.B.B.B.
+**Status:** implemented and invoked by the protected desktop Workspace runtime after the explicit production action.
 
-This scanner is the trusted read-side counterpart to the reviewed-production orchestrator. It refreshes Metrora's existing canonical parser/cache path and derives eligible local Workspace production candidates from per-source cached calls.
+The scanner is the trusted read-side boundary that refreshes Metrora's existing parser/cache authority and derives eligible reviewed-production candidates from source-present cached calls.
 
-It does not create events, receipts, batches, exports, uploads, or analytics totals.
+It does not create events, receipts, batches, exports, uploads or analytics totals.
 
-## Authority
+## Reused authority
 
 The scanner reuses:
 
-- `clearSessionCache()` only to bypass the process-local Overview TTL;
-- `parseAllSessions()` as the canonical discovery, reconciliation, parse, settlement, and cache-publication path;
-- `loadCache()` and the current cache-completeness marker;
-- `cachedCallToApiCall()` for the exact normalized call and immutable cost assignment;
-- `collectorProvenanceProfileForCall()` for executable reviewed-path eligibility;
-- the provider registry for the local tool display name.
+- the canonical provider discovery and parsing path;
+- the existing session cache and completeness marker;
+- the normalized-call and immutable-cost projection;
+- the executable collector-provenance registry;
+- the provider registry for local tool display names.
 
-It does not create a second provider scan, parser, pricing calculation, cache, or call normalization path.
+It does not create a second provider scan, parser, pricing calculation, cache or normalization path.
 
-## Per-source rule
+## Source-present rule
 
-Candidates are derived only from current per-file cache entries whose source still exists locally.
+Candidates come only from current per-source cache entries whose underlying source still exists locally.
 
-A source-less durable or migrated cache entry may remain authoritative for historical analytics, but it cannot become newly produced evidence after the underlying source disappears. Its cached calls are counted as withheld and are not emitted as candidates.
+Source-less durable or migrated history may remain authoritative for ordinary historical analytics, but it cannot become newly produced signed evidence after the source disappears.
 
-A cache marked incomplete after the explicit canonical refresh is an integrity failure, not an empty successful scan.
+A cache marked incomplete after the explicit refresh is an integrity failure, not an empty successful scan.
+
+## Production scope
+
+Normal production is bounded from the protected local Workspace creation timestamp. Older history remains available to Overview analytics but is not silently backfilled or counted as failed evidence.
+
+The renderer cannot supply or alter the scope timestamp.
+
+See [Workspace production scope v1](WORKSPACE_PRODUCTION_SCOPE_V1.md).
 
 ## Eligibility
 
-A cached call becomes a candidate only when all of these are true:
+A cached call becomes a candidate only when:
 
-1. the source file is still present;
-2. the cached call provider matches its provider section;
-3. the private deduplication key is non-empty;
-4. the source supplied an explicit normalized model/API provider;
+1. its source still exists;
+2. its provider section and normalized provider agree;
+3. its private deduplication identity is valid;
+4. the source supplies an explicit model/API provider where required;
 5. the executable provenance registry resolves a reviewed profile;
-6. the provider registry can resolve the local tool display name.
+6. the provider registry resolves the local tool name.
 
-Missing explicit provider identity, unsupported collectors, estimated/unreviewed paths, unavailable provider modules, and source-less history are withheld rather than inferred.
+Missing provider identity, unsupported collectors, unreviewed paths, unavailable provider modules and source-less history are withheld rather than inferred.
 
-A provider-section mismatch, empty deduplication identity, incomplete cache, or malformed trusted state fails closed.
+Provider-section mismatch, empty private identity, incomplete cache or malformed trusted state fails closed.
 
 ## Context and privacy
 
-The scanner supplies only the context required by the existing reviewed producer:
+The scanner supplies only the context required by the reviewed producer:
 
-- session disclosure is `omit`;
-- no repository, project, account, prompt, response, code, patch, tool argument, local path, or private receipt is disclosed;
+- session disclosure remains omitted;
+- repository, project and account disclosure remain absent;
 - tool name comes from the provider registry;
-- adapter version is the current Metrora release supplied by the trusted main process;
-- GenAI operation is `other` when no stronger source-backed operation exists;
-- model/API provider comes only from the source-recorded normalized call.
+- adapter version comes from the trusted desktop runtime;
+- operation remains `other` when no stronger source-backed value exists;
+- model/API provider comes from normalized source evidence.
 
-The scanner does not select a public profile ID or source kind. The reviewed factory derives both from the executable registry.
+No prompt, response, code, patch, tool argument, unrestricted local path or private receipt crosses this boundary.
 
 ## Source-record fingerprint
 
-Each candidate receives a SHA-256 source-record fingerprint over a domain-separated composition of:
+Each candidate receives a SHA-256 fingerprint over a domain-separated composition of:
 
 - stable endpoint ID;
 - collector/provider section;
 - private per-call deduplication key.
 
-The local source path is used only for the source-presence check and is not an input to the public digest. The private deduplication key also never leaves the scanner; only the digest crosses into the reviewed event.
+The local source path is used only to confirm source presence and is not included in the public digest. The private key itself never leaves the scanner.
 
-Provider parsers already enforce the private deduplication identity globally within their provider, so adding a local path would not improve record identity. Excluding it also avoids creating a path-derived public correlation value. Including the endpoint ID prevents an identical local record on different endpoints from becoming a cross-device correlation handle. Endpoint-key rotation does not change the fingerprint.
+Including the endpoint ID prevents identical records on separate devices from becoming a cross-device correlation handle. Endpoint-key rotation does not change this fingerprint.
 
-## Counts
+## Counts and ordering
 
 The scanner returns:
 
-- `candidates`: eligible trusted calls and minimal contexts;
-- `withheldCount`: individual calls not eligible for production;
-- `failedCount`: source files already marked failed by the canonical parser/cache path.
+- eligible candidates;
+- a withheld-call count;
+- a failed-source count.
 
-A failed source file is counted once and contributes no invented calls.
+Provider sections and source paths are sorted, while canonical call order inside one source is preserved. The production orchestrator processes candidates sequentially so outbox order remains deterministic.
 
-## Ordering
+## Runtime boundary
 
-Provider sections and source paths are sorted. Within one source file, the scanner preserves canonical cached turn and call order. The production orchestrator then processes candidates sequentially, preserving deterministic outbox order.
+The scanner is packaged in a separate desktop bundle and loaded lazily only after the user requests reviewed production. The Electron renderer has no direct scanner API and cannot supply calls, providers, paths, costs or evidence claims.
+
+Opening Metrora or the Workspace view does not load this path or produce evidence.
 
 ## Non-goals
 
-- no renderer input;
-- no desktop runtime method, IPC channel, preload method, or button yet;
-- no inferred provider from collector or model label;
-- no automatic/background production;
-- no session, repository, project, or account disclosure;
-- no collector, parser, pricing, cache-schema, label, aggregation, batch, export, network, account, team, billing, mobile, or unrelated product redesign.
+The scanner does not provide automatic or background production, inferred providers, historical backfill, renderer-controlled scope, batch creation, export, network transport, account, team or billing behavior.

@@ -1,18 +1,12 @@
 # Windows format derivation v1
 
-**Status:** public R1.B.A contract for unsigned installer and portable candidates
+**Status:** implemented contract for unsigned portable and NSIS candidate derivation.
 
-## Purpose
+Metrora builds one canonical unpacked Windows application payload. The portable directory and NSIS installer are derived from isolated copies of that same payload rather than separate product builds.
 
-Metrora must not build the portable application and NSIS installer as two independent product payloads.
-
-The Windows candidate workflow builds one canonical unpacked application directory, records its complete inventory, copies it into the portable format and creates an isolated installer-source copy for electron-builder `--prepackaged` NSIS creation.
-
-This contract proves the relationship between those formats without claiming that NSIS bytes are reproducible or that an unsigned installer is an official release.
+This proves the relationship between formats without claiming reproducible NSIS bytes or official publisher authenticity.
 
 ## Candidate layout
-
-The downloaded candidate contains:
 
 ```text
 Metrora-Windows-Candidate/
@@ -29,136 +23,96 @@ Metrora-Windows-Candidate/
     └── Metrora-Setup-<version>.exe
 ```
 
-An optional installer blockmap may appear beside the setup executable when the packaging tool produces one.
+An optional blockmap may appear beside the setup executable when produced by the packaging tool.
 
 ## Canonical payload
 
-The canonical product payload is the one `win-unpacked` directory produced after:
+The canonical payload is the single `win-unpacked` directory produced after installing pinned dependencies, staging the bundled CLI, generating brand assets, building Electron main and renderer code and running the packaging hook.
 
-1. installing pinned root and desktop dependencies;
-2. staging the compatibility CLI;
-3. generating canonical Signal Grid assets;
-4. building Electron main and renderer code;
-5. running electron-builder once with the unpacked-directory target;
-6. completing the existing `afterPack` staging hook.
+`CANONICAL_PRODUCT_PAYLOAD.jsonl` records every file by canonical path, size and SHA-256.
 
-`CANONICAL_PRODUCT_PAYLOAD.jsonl` records every file in that directory by canonical path, size and SHA-256.
-
-The canonical directory is not passed to NSIS. It remains unchanged and is re-inventoried after installer creation. Any mutation causes the workflow to fail.
+The canonical directory is never passed directly to NSIS. It remains unchanged and is re-inventoried after installer creation.
 
 ## Portable derivation
 
-The portable directory begins as a recursive copy of the canonical payload.
+The portable directory starts as a recursive copy of the canonical payload. Canonical application files must remain byte-identical.
 
-Canonical application files must remain byte-identical. The only permitted portable-only files are:
+Permitted portable-only additions are limited to:
 
 - `README.txt`;
 - `Run-Metrora-Baseline.cmd`;
 - `Run-Metrora-Baseline.ps1`;
-- R1.A release manifest, schema, inventory, attestation and metadata checksum files.
+- release manifest, schema, inventory, attestation and metadata checksums.
 
-Missing canonical files, changed canonical files or any undeclared extra file fail verification.
-
-The R1.A verifier remains authoritative for the portable release manifest and source binding.
+Missing, changed or undeclared files fail verification.
 
 ## Installer derivation
 
-The workflow creates a separate recursive copy of the canonical unpacked payload and passes only that copy to electron-builder through `--prepackaged`.
+The workflow creates a separate copy of the canonical payload and passes it to electron-builder through `--prepackaged`. It does not run a second application build for the installer.
 
-The workflow does not run a second application build for the installer. Every canonical product file in the installer-source copy must remain byte-identical.
+Electron-builder may add the documented non-empty elevation helper under `resources/elevate.exe`. Any other product-payload drift fails the installer-source check.
 
-Electron-builder NSIS may add exactly one packaging helper:
-
-- `resources/elevate.exe`.
-
-The helper must be non-empty. A missing helper, changed canonical file, removed canonical file or any other addition fails the dedicated installer-source gate. The canonical `win-unpacked` directory remains untouched.
-
-Accepted installer outputs are:
-
-- exactly one `Metrora-Setup-<version>.exe`;
-- an optional `.blockmap` produced by the same packaging step.
-
-Other files are not included in the candidate's installer directory.
-
-R1.B.A records installer bytes and the derivation method. It does not yet prove the files installed by NSIS match the canonical payload; unattended install and post-install comparison belong to R1.B.B.
+Accepted installer output is one versioned setup executable plus an optional blockmap.
 
 ## Format derivation manifest
 
 `FORMAT_DERIVATION.json` records:
 
-- manifest schema and SHA-256;
+- schema identity and digest;
 - public source commit;
-- canonical Metrora product identity and version;
-- Signal Grid v1 identity;
+- product and version identity;
+- Signal Grid identity;
 - canonical payload inventory summary;
 - portable release-manifest digest;
 - exact portable-only file set;
 - installer derivation method;
-- every installer output path, size and SHA-256;
+- installer output paths, sizes and digests;
 - explicit reproducibility limits.
 
-`FORMAT_SHA256SUMS.txt` covers:
-
-- canonical product payload inventory;
-- format derivation manifest;
-- format derivation schema.
-
-The public source commit remains authoritative. The format manifest is evidence of derivation, not a second packaging configuration.
+The format manifest is derivation evidence, not a second packaging configuration.
 
 ## Verification
 
 The Windows workflow:
 
-1. runs native manifest, derivation and installer-source tests;
+1. tests the manifest and derivation libraries;
 2. builds the canonical unpacked payload once;
-3. prepares the portable copy and canonical inventory;
-4. adds only documented portable helpers;
-5. generates and verifies the R1.A portable manifest;
-6. copies the canonical payload into an isolated NSIS source directory;
-7. builds NSIS from that copy with `--prepackaged`;
-8. proves every canonical file in the NSIS copy remains byte-identical and only the documented elevation helper was added;
-9. proves the original canonical directory did not change;
-10. proves the portable copy still contains identical canonical files;
-11. inventories installer outputs;
-12. writes and verifies the derivation manifest;
-13. smoke-tests the portable CLI;
-14. uploads the complete combined candidate.
+3. inventories it;
+4. derives the portable copy and adds only allowed helpers;
+5. creates and verifies the portable release manifest;
+6. derives the NSIS source from an isolated canonical copy;
+7. verifies that canonical files remain identical;
+8. verifies that the original canonical directory did not change;
+9. inventories installer outputs;
+10. writes and verifies format metadata;
+11. smoke-tests the portable CLI;
+12. uploads the combined candidate.
 
-A separate Ubuntu job downloads the candidate and repeats:
+A separate Ubuntu job downloads the candidate and repeats canonical inventory, portable comparison, source binding, installer-digest and format-metadata verification.
 
-- canonical inventory validation;
-- portable/canonical comparison;
-- R1.A portable verification against canonical Git blobs;
-- installer digest verification;
-- format metadata verification.
+## Allowed claims and limits
 
-Cross-platform verification proves content and derivation metadata. It does not run the Windows installer.
-
-## Reproducibility language
-
-Allowed R1.B.A claim:
+Allowed:
 
 > Portable and NSIS candidates derive from one verified canonical unpacked product payload.
 
-Not yet allowed:
+This contract alone does not establish:
 
-- installed NSIS files verified against the canonical payload;
 - byte-for-byte reproducible NSIS output;
 - official publisher authenticity;
 - trusted update-channel authenticity;
-- supported upgrade or rollback guarantees.
+- platform acceptance or publication.
 
-The manifest records `installerByteReproducibilityProven: false`.
+Installed-layout, migration and interruption behavior are validated by separate Windows contracts and workflow steps.
 
 ## Security and privacy boundary
 
-- all artifacts remain unsigned;
+- candidates remain unsigned unless a later protected channel explicitly states otherwise;
 - public CI receives no signing authority;
 - candidate metadata contains no endpoint, Workspace or user data;
-- the installer cannot replace product bytes without changing the recorded format derivation;
 - user-owned local state is not part of either product payload;
-- clean install, uninstall, upgrade and rollback remain separate R1.B acceptance work.
+- deployment tooling may not alter product semantics after the canonical build.
 
 ## Evolution
 
-A format-derivation contract change requires a new explicit version. R1.B.B may add installation evidence that references this v1 manifest; it must not silently reinterpret the canonical payload or permitted portable extras.
+A format-contract change requires an explicit version. Later installation evidence may reference this manifest but must not reinterpret the canonical payload or silently broaden permitted additions.
