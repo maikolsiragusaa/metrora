@@ -12,6 +12,7 @@ import { formatCost } from './currency.js'
 import { formatTokens } from './format.js'
 import { recommendModelDefault, type ModelDefaultRecommendation } from './act/model-defaults.js'
 import { aggregateFileChurn, buildCoachingNotes, scanUserCorrections, medianTimeToFirstEditMs, worstOneShotCategory, type ReworkedFile } from './workflow-insights.js'
+import { optimizeResultCacheKey } from './optimize-cache-key.js'
 
 // ============================================================================
 // Display constants
@@ -2965,12 +2966,6 @@ export function computeInputCostRate(projects: ProjectSummary[]): number {
 type CacheEntry = { data: OptimizeResult; ts: number }
 const resultCache = new Map<string, CacheEntry>()
 
-function cacheKey(projects: ProjectSummary[], dateRange: DateRange | undefined): string {
-  const dr = dateRange ? `${dateRange.start.getTime()}-${dateRange.end.getTime()}` : 'all'
-  const fingerprint = projects.length + ':' + projects.reduce((s, p) => s + p.totalApiCalls, 0)
-  return `${dr}:${fingerprint}`
-}
-
 export async function scanAndDetect(
   projects: ProjectSummary[],
   dateRange?: DateRange,
@@ -2979,7 +2974,7 @@ export async function scanAndDetect(
     return { findings: [], costRate: 0, healthScore: 100, healthGrade: 'A', modelRecommendations: [] }
   }
 
-  const key = cacheKey(projects, dateRange)
+  const key = optimizeResultCacheKey(projects, dateRange)
   const cached = resultCache.get(key)
   if (cached && Date.now() - cached.ts < RESULT_CACHE_TTL_MS) return cached.data
 
