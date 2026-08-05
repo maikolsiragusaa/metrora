@@ -192,26 +192,33 @@ export function reviewedProvenanceProfileIdsV1(): string[] {
   return CollectorProvenanceProfilesV1.map(profile => profile.profileId).sort()
 }
 
+function publicEvidenceStatus(item: CollectorInventoryEntryV1): string {
+  if (item.shareEligibility === 'approved') return 'signed-approved'
+  if (item.automatedEvidence === 'focused-tests') return 'source-documented'
+  return 'local-only'
+}
+
 export function renderCollectorInventoryMarkdownV1(): string {
   const lines = [
     '# Metrora collector inventory v1',
     '',
-    'Status: **local collector coverage inventory; sharing remains fail-closed**.',
+    'Status: **local collector coverage inventory; signed sharing remains fail-closed**.',
     '',
-    'This file is generated from `CollectorInventoryV1`. Local support and share eligibility are intentionally separate: an inherited collector may remain useful in the local dashboard while its fields are still withheld from signed workspace measurements.',
+    'This file is generated from `CollectorInventoryV1`. Local analysis and signed Workspace eligibility are intentionally separate: a registered collector may remain useful in local reports while its fields are withheld from signed measurements until the concrete source path passes the stricter provenance review.',
     '',
-    '## Review waves',
+    '## Public status labels',
     '',
-    '- **Wave 0 — approved:** parser fixture parity and field-level provenance already exist.',
-    '- **Wave 1 — strong next candidates:** sources with strong measured data or high product priority, but still requiring path-specific audit and manual validation.',
-    '- **Wave 2 — mixed next candidates:** useful collectors with known estimation, multi-source or reconciliation complexity.',
-    '- **Wave 3 — pending:** operational local collectors not yet audited for signed sharing.',
+    '- **signed-approved:** fixture parity and path-specific provenance profiles authorize the listed source for signed Workspace measurements.',
+    '- **source-documented:** the source family and focused behavior are documented, but signed Workspace approval is withheld.',
+    '- **local-only:** the operational collector is registered for local analysis while its signed-evidence audit remains incomplete.',
     '',
-    '| Provider | Loading | Source family | Documentation | Review | Wave | Signed sharing |',
-    '| --- | --- | --- | --- | --- | ---: | --- |',
+    'These labels describe current evidence boundaries. They are not a public implementation sequence or priority ranking.',
+    '',
+    '| Provider | Loading | Source family | Documentation | Local analysis | Evidence | Signed Workspace |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const item of CollectorInventoryV1.entries) {
-    lines.push(`| ${item.provider} | ${item.loading} | ${item.sourceFamily} | ${item.documentationPath ?? 'missing'} | ${item.reviewStatus} | ${item.reviewWave} | ${item.shareEligibility} |`)
+    lines.push(`| ${item.provider} | ${item.loading} | ${item.sourceFamily} | ${item.documentationPath ?? 'missing'} | available | ${publicEvidenceStatus(item)} | ${item.shareEligibility} |`)
   }
   const summary = collectorInventorySummaryV1()
   lines.push(
@@ -219,15 +226,14 @@ export function renderCollectorInventoryMarkdownV1(): string {
     '## Current totals',
     '',
     `- Registered local collectors: **${summary.total}**.`,
-    `- Approved for signed sharing: **${summary.approved} collectors / ${reviewedProvenanceProfileIdsV1().length} path-specific profiles**.`,
-    `- Priority audit queue: **${summary.priority}**.`,
-    `- Pending audit: **${summary.pending}**.`,
+    `- Approved for signed Workspace measurements: **${summary.approved} collectors / ${reviewedProvenanceProfileIdsV1().length} path-specific profiles**.`,
+    `- Local collectors with signed sharing withheld: **${summary.total - summary.approved}**.`,
     `- Provider documentation present: **${summary.documented}**.`,
     `- Documentation gaps: **${summary.documentationGaps.join(', ')}**.`,
     '',
     '## Approval gate',
     '',
-    'A collector can move to `approved` only when its concrete source path has fixture parity, field-level token/model/session/reasoning/cost provenance, privacy review, pricing reconciliation rules, and manual validation where the source depends on a live IDE, RPC process or mutable database.',
+    'A collector can become signed-approved only when its concrete source path has fixture parity, field-level token/model/session/reasoning/cost provenance, privacy review, pricing reconciliation rules, and manual validation where the source depends on a live IDE, RPC process or mutable database.',
     '',
     'Approval never replaces the inherited parser. It authorizes a narrow, tested projection of that parser output into Metrora signed measurements.',
     '',
