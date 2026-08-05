@@ -14,7 +14,7 @@ Understand where AI time, tokens and money go across tools, models, projects and
 </div>
 
 > [!IMPORTANT]
-> Metrora does not yet have an official stable desktop release. The current public source line is `1.0.0-rc.7`; build and evaluate it from this canonical repository. Official artifacts will be announced through [metrora.eu](https://metrora.eu) and GitHub Releases only after the applicable distribution checks pass.
+> Official desktop distribution is in preparation. Metrora does not yet have an official stable desktop release. The current public source line is `1.0.0-rc.7`; build and evaluate it from this canonical repository. Official artifacts will be announced through [metrora.eu](https://metrora.eu) and GitHub Releases only after the applicable distribution checks pass.
 
 ## What Metrora helps you understand
 
