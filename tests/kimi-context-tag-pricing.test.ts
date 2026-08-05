@@ -1,3 +1,5 @@
+// Pricing normalization is internal only: these assertions keep raw evidence,
+// explicit overrides, display labels and durable-history invalidation separate.
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import {
