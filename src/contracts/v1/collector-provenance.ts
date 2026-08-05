@@ -258,7 +258,9 @@ export function collectorProvenanceProfileForCall(
   if (call.provider === 'gemini') return call.isEstimated ? undefined : GEMINI_MESSAGE_USAGE_PROFILE_V1
   if (call.provider === 'zed') {
     if (call.isEstimated || !call.modelProvider || !call.deduplicationKey) return undefined
-    return call.deduplicationKey.startsWith('zed:remainder:')
+    if (normalizeExplicitModelProvider(call.modelProvider) !== call.modelProvider) return undefined
+    if (!call.deduplicationKey.startsWith('zed:')) return undefined
+    return call.deduplicationKey.endsWith(':cumulative-remainder')
       ? ZED_CUMULATIVE_REMAINDER_PROFILE_V1
       : ZED_REQUEST_USAGE_PROFILE_V1
   }
