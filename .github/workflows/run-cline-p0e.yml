@@ -1,14 +1,15 @@
 name: Run reviewed Cline remediation payload
 
 on:
-  push:
-    branches: [fix/cline-vscode-storage-variants]
+  pull_request:
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
 
 jobs:
   run:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
