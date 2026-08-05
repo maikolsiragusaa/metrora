@@ -7,7 +7,8 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Product: `Metrora`
 - Desktop app ID: `eu.metrora.desktop`
 - Website: `https://metrora.eu`
-- Current desktop version: `0.9.19`
+- Current desktop version: `1.0.0-rc.1`
+- Current desktop build version: `1.0.0.1`
 
 Inherited names may remain only where required for compatibility or upstream provenance. They are not Metrora distribution names.
 

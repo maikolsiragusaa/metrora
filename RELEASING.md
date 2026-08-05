@@ -8,7 +8,8 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Current development version: `0.9.19`
+- Current development version: `1.0.0-rc.1`
+- Current desktop build version: `1.0.0.1`
 
 Temporary compatibility commands are governed by the technical compatibility register. They are not release brands or names for new artifacts.
 
@@ -16,7 +17,9 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-The accepted Windows 0.9.19 candidate is bound to reviewed public source, independently verifiable manifests and a sanitized physical-acceptance report.
+The active source line is `1.0.0-rc.1`, with desktop build metadata `1.0.0.1`. No artifact at this version is accepted, signed or published merely because the metadata exists.
+
+The accepted Windows 0.9.19 candidate remains bound to reviewed public source, independently verifiable manifests and a sanitized physical-acceptance report.
 
 It passed existing-state, clean-install and migration lifecycle validation. It remains unsigned engineering evidence and is not an official stable release.
 
@@ -57,7 +60,7 @@ Platform workflows add their own manifest, payload, installation, update, rollba
 
 ## Versioning and notes
 
-Metrora uses semantic versioning. A release change updates every version-bearing package and generated metadata deliberately.
+Metrora uses semantic versioning. The first independent candidate line is `1.0.0-rc.N`; the first official stable release is `1.0.0`. A release change updates every version-bearing package and generated metadata deliberately. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 Every public release note states:
 
