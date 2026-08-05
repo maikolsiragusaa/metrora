@@ -1,0 +1,74 @@
+name: Finalize repository maintenance
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  finalize:
+    if: github.head_ref == 'maintenance/finalize'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Close and lock maintenance pull request
+        shell: bash
+        run: |
+          gh api --method PATCH "/repos/${REPOSITORY}/pulls/${PR_NUMBER}" \
+            -f title='Archived repository maintenance' \
+            -f body='Temporary maintenance change used to finalize the current public baseline.' \
+            -f state=closed
+          gh api --method PUT "/repos/${REPOSITORY}/issues/${PR_NUMBER}/lock" -f lock_reason=resolved || true
+
+      - name: Remove old workflow history
+        shell: bash
+        run: |
+          set +e
+          active=0
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            [ "$run_id" = "$GITHUB_RUN_ID" ] && continue
+            (
+              gh api --method POST "/repos/${REPOSITORY}/actions/runs/${run_id}/cancel" >/dev/null 2>&1 || true
+              gh api --method DELETE "/repos/${REPOSITORY}/actions/runs/${run_id}" >/dev/null 2>&1 || true
+            ) &
+            active=$((active + 1))
+            if [ "$active" -ge 10 ]; then
+              wait
+              active=0
+            fi
+          done < <(
+            gh api --paginate "/repos/${REPOSITORY}/actions/runs?per_page=100" \
+              --jq '.workflow_runs[].id'
+          )
+          wait
+
+      - name: Remove every non-main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r branch; do
+            case "$branch" in
+              main|maintenance/finalize) continue ;;
+            esac
+            gh api --method DELETE "/repos/${REPOSITORY}/git/refs/heads/${branch}" || true
+          done < <(gh api --paginate "/repos/${REPOSITORY}/branches?per_page=100" --jq '.[].name')
+          gh api --method DELETE "/repos/${REPOSITORY}/git/refs/heads/maintenance/finalize" || true
+
+      - name: Remove final maintenance run
+        if: always()
+        shell: bash
+        run: gh api --method DELETE "/repos/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" || true
