@@ -22,13 +22,13 @@ function runCli(args: string[], home: string) {
 }
 
 function readConfig(home: string): Promise<Record<string, unknown>> {
-  return readFile(join(home, '.config', 'codeburn', 'config.json'), 'utf-8')
+  return readFile(join(home, '.config', 'metrora', 'config.json'), 'utf-8')
     .then(raw => JSON.parse(raw) as Record<string, unknown>)
 }
 
 describe('metrora model-savings command', () => {
   it('saves, lists, and removes a local-model savings mapping', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-savings-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-savings-'))
     try {
       const set = runCli(['model-savings', 'llama3.1:8b', 'gpt-4o'], home)
       expect(set.status).toBe(0)
@@ -52,7 +52,7 @@ describe('metrora model-savings command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('warns when the same model is also configured in modelAliases', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-savings-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-savings-'))
     try {
       expect(runCli(['model-alias', 'llama3.1:8b', 'gpt-4o'], home).status).toBe(0)
       const set = runCli(['model-savings', 'llama3.1:8b', 'gpt-4o'], home)
@@ -64,7 +64,7 @@ describe('metrora model-savings command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('rejects a remove for an unknown mapping', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-savings-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-savings-'))
     try {
       const result = runCli(['model-savings', '--remove', 'unknown:1b'], home)
       expect(result.status).toBe(1)
