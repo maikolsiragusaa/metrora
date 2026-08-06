@@ -1,8 +1,8 @@
 import { readFile, writeFile, mkdir, rename } from 'fs/promises'
 import { join } from 'path'
-import { homedir } from 'os'
 import { randomBytes } from 'crypto'
 import { PLAN_PROVIDERS } from './plans.js'
+import { getMetroraConfigDir } from './product-paths.js'
 
 export type PlanId = 'claude-pro' | 'claude-max' | 'claude-max-5x' | 'cursor-pro' | 'supergrok' | 'supergrok-heavy' | 'custom' | 'none'
 export type PlanProvider = 'claude' | 'codex' | 'cursor' | 'grok' | 'all'
@@ -19,6 +19,7 @@ export type PlanConfig = Omit<Plan, 'provider' | 'setAt'> & Partial<Pick<Plan, '
 export type PlanConfigMap = Partial<Record<PlanProvider, PlanConfig>>
 export type PlanMap = Partial<Record<PlanProvider, Plan>>
 
+// Historical type name retained as an internal source-compatibility alias.
 export type CodeburnConfig = {
   currency?: {
     code: string
@@ -53,7 +54,7 @@ export type CodeburnConfig = {
   // Absolute directory prefixes whose Claude Code sessions are routed through a
   // subscription-backed LLM proxy (e.g. GitHub Copilot via ANTHROPIC_BASE_URL;
   // tools like claude-code-over-github-copilot / claudegate). The JSONL records
-  // the underlying model name and no endpoint, so codeburn cannot auto-detect
+  // the underlying model name and no endpoint, so Metrora cannot auto-detect
   // proxying — the user declares it here, scoped by the project's canonical cwd.
   // Matching projects keep their full API-rate `totalCostUSD` (the billable /
   // would-be figure is never destroyed) but expose `totalProxiedCostUSD` so the
@@ -64,7 +65,7 @@ export type CodeburnConfig = {
 }
 
 function getConfigDir(): string {
-  return join(homedir(), '.config', 'codeburn')
+  return getMetroraConfigDir()
 }
 
 function getConfigPath(): string {
