@@ -32,7 +32,7 @@ Neither channel inherits the signature, certification or publication status of t
 
 The guided local path is documented in [`WINDOWS_STORE_LOCAL_TEST_GUIDED.md`](WINDOWS_STORE_LOCAL_TEST_GUIDED.md).
 
-It signs only a temporary copy with a current-user test certificate, installs that copy for physical validation and then removes the package, trusted certificate and private key. The unsigned candidate intended for Partner Center is not modified.
+It signs only a temporary copy. The public test certificate is trusted at machine level while its private key remains in the current-user personal store; both are removed with the installed package after validation. The unsigned candidate intended for Partner Center is not modified.
 
 A local PASS is not Store certification and does not authorize submission.
 
