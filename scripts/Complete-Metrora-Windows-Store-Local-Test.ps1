@@ -66,13 +66,13 @@ $observations = [ordered]@{
   noExternalNode = $NoExternalNode
 }
 $allObservationsPass = @($observations.Values | Where-Object { $_ -ne 'pass' }).Count -eq 0
-$status = if (
-  $allObservationsPass -and
+$cleanupComplete = (
   $packageRemoved -and
   $certificateRemoved -and
   $privateKeyRemoved -and
   $cleanupErrors.Count -eq 0
-) { 'pass' } else { 'fail' }
+)
+$status = if ($allObservationsPass -and $cleanupComplete) { 'pass' } else { 'fail' }
 
 $report = [ordered]@{
   kind = 'metrora.windows-store-local-test-report'
@@ -134,20 +134,27 @@ if ($LASTEXITCODE -ne 0) {
   throw "Store local-test report verification failed: $verification"
 }
 
-foreach ($relative in @(
-  'STORE_LOCAL_TEST_CONTEXT.json',
-  'local-test-signed.appx',
-  'unsigned-package',
-  'downloaded-artifact'
-)) {
-  $path = Join-Path $state.Acceptance $relative
-  if (Test-Path -LiteralPath $path) {
-    Remove-Item -LiteralPath $path -Recurse -Force
+if ($cleanupComplete) {
+  foreach ($relative in @(
+    'STORE_LOCAL_TEST_CONTEXT.json',
+    'local-test-signed.appx',
+    'unsigned-package',
+    'downloaded-artifact'
+  )) {
+    $path = Join-Path $state.Acceptance $relative
+    if (Test-Path -LiteralPath $path) {
+      Remove-Item -LiteralPath $path -Recurse -Force
+    }
   }
 }
 
 if ($status -ne 'pass') {
-  throw "Store local test failed. A sanitized report was preserved at $reportPath"
+  $suffix = if ($cleanupComplete) {
+    'Cleanup completed; the sanitized FAIL report was preserved.'
+  } else {
+    'Cleanup is incomplete; preserve the local context and complete removal before deleting the workspace.'
+  }
+  throw "Store local test failed. $suffix"
 }
 
 [ordered]@{
