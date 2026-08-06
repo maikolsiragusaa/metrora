@@ -1,17 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, writeFile, readFile, mkdir } from 'fs/promises'
+import { mkdtemp, rm, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { createServer, type Server } from 'http'
 
-import { parseDiscoveryDoc, DiscoveryError } from '../src/sync/discovery.js'
+import { parseDiscoveryDoc } from '../src/sync/discovery.js'
 import {
   generatePkce,
   buildAuthUrl,
   resolveScopes,
   startCallbackServer,
   renderCallbackPage,
-  CALLBACK_PORTS,
 } from '../src/sync/auth.js'
 
 // ── Discovery Doc Parser ──────────────────────────────────────────────
@@ -36,7 +34,7 @@ describe('parseDiscoveryDoc', () => {
 
   it('rejects version > 1', () => {
     expect(() => parseDiscoveryDoc({ version: 2, issuer: 'https://idp.example', client_id: 'y' }))
-      .toThrow('Please update codeburn')
+      .toThrow('Please update Metrora')
   })
 
   it('rejects missing issuer', () => {
@@ -171,13 +169,8 @@ describe('startCallbackServer', () => {
   it('accepts valid callback with matching state', async () => {
     const state = 'test-state-123'
     const { promise, ready } = startCallbackServer(state, 5000, [0])
-
-    // Wait for server to bind
     const port = await ready
-
-    // Simulate IdP callback
     await fetch(`http://127.0.0.1:${port}/callback?code=auth-code-xyz&state=${state}`)
-
     const result = await promise
     expect(result.code).toBe('auth-code-xyz')
   }, 10000)
@@ -186,20 +179,15 @@ describe('startCallbackServer', () => {
     const state = 'correct-state'
     const { promise, ready } = startCallbackServer(state, 5000, [0])
     const port = await ready
-
-    // Send with wrong state — server stays running
     const resp = await fetch(`http://127.0.0.1:${port}/callback?code=xxx&state=wrong-state`)
     expect(resp.status).toBe(400)
-
-    // Now send correct one
     await fetch(`http://127.0.0.1:${port}/callback?code=real-code&state=${state}`)
     const result = await promise
     expect(result.code).toBe('real-code')
   }, 10000)
 
   it('times out after configured duration', async () => {
-    const { promise } = startCallbackServer('state', 300, [0]) // 300ms timeout
-
+    const { promise } = startCallbackServer('state', 300, [0])
     await expect(promise).rejects.toThrow('timed out')
   }, 5000)
 })
@@ -211,7 +199,7 @@ describe('syncConfig', () => {
   const originalHome = process.env.HOME
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'codeburn-sync-config-'))
+    tmpDir = await mkdtemp(join(tmpdir(), 'metrora-sync-config-'))
     process.env.HOME = tmpDir
   })
 
@@ -221,7 +209,6 @@ describe('syncConfig', () => {
   })
 
   it('writes and reads config', async () => {
-    // Dynamically import to pick up new HOME
     const { writeSyncConfig, readSyncConfig } = await import('../src/sync/config.js')
 
     writeSyncConfig({
@@ -253,7 +240,7 @@ describe('syncConfig', () => {
       issuer: 'https://idp.test.com',
     })
 
-    const raw = await readFile(join(tmpDir, '.config', 'codeburn', 'sync.json'), 'utf-8')
+    const raw = await readFile(join(tmpDir, '.config', 'metrora', 'sync.json'), 'utf-8')
     expect(raw).not.toContain('token')
     expect(raw).not.toContain('secret')
     expect(raw).not.toContain('password')
