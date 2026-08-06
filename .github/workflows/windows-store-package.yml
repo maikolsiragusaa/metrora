@@ -46,7 +46,7 @@ jobs:
           node-version: '22.15.0'
           cache: npm
 
-      - name: Validate exact Store identity and channel separation
+      - name: Validate Store identity and channel separation
         run: node scripts/windows-store-identity.node-test.mjs
 
       - name: Install core dependencies
@@ -58,7 +58,7 @@ jobs:
       - name: Build unsigned AppX candidate without publication
         run: npm --prefix app run package:store
 
-      - name: Inspect package manifest, assets, and signature boundary
+      - name: Inspect package boundary
         id: inspect
         shell: pwsh
         run: |
@@ -84,31 +84,31 @@ jobs:
           $application = $manifest.Package.Applications.Application
 
           if ($identity.Name -cne 'Vensent.Metrora') {
-            throw "unexpected Identity.Name: $($identity.Name)"
+            throw 'unexpected package identity name'
           }
           if ($identity.Publisher -cne 'CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F') {
-            throw "unexpected Identity.Publisher: $($identity.Publisher)"
+            throw 'unexpected package publisher'
           }
           if ($identity.ProcessorArchitecture -cne 'x64') {
-            throw "unexpected package architecture: $($identity.ProcessorArchitecture)"
+            throw 'unexpected package architecture'
           }
           if ([string]$properties.PublisherDisplayName -cne 'Vensent') {
-            throw "unexpected PublisherDisplayName: $($properties.PublisherDisplayName)"
+            throw 'unexpected publisher display name'
           }
           if ([string]$properties.DisplayName -cne 'Metrora') {
-            throw "unexpected package DisplayName: $($properties.DisplayName)"
+            throw 'unexpected package display name'
           }
           if ($application.Id -cne 'eu.metrora.desktop') {
-            throw "unexpected application Id: $($application.Id)"
+            throw 'unexpected application identifier'
           }
 
           $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.GetAttribute('Name') })
           if ($capabilities.Count -ne 1 -or $capabilities[0] -cne 'runFullTrust') {
-            throw "unexpected capability set: $($capabilities -join ', ')"
+            throw 'unexpected capability set'
           }
 
           if (Test-Path -LiteralPath (Join-Path $unpacked 'AppxSignature.p7x')) {
-            throw 'the pre-submission Store candidate must remain unsigned'
+            throw 'the pre-submission candidate must remain unsigned'
           }
 
           Add-Type -AssemblyName System.Drawing
@@ -120,7 +120,7 @@ jobs:
             $image = [System.Drawing.Image]::FromFile($matches[0].FullName)
             try {
               if ($image.Width -ne $width -or $image.Height -ne $height) {
-                throw "$name has $($image.Width)x$($image.Height), expected ${width}x${height}"
+                throw "$name has unexpected dimensions"
               }
             } finally {
               $image.Dispose()
@@ -135,7 +135,6 @@ jobs:
           $candidateDirectory = Join-Path $PWD 'app\release\Metrora-Windows-Store-Candidate'
           New-Item -ItemType Directory -Path $candidateDirectory -Force | Out-Null
           Copy-Item -LiteralPath $package.FullName -Destination $candidateDirectory -Force
-          Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $candidateDirectory 'AppxManifest.xml') -Force
 
           $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           $summary = [ordered]@{
@@ -145,12 +144,6 @@ jobs:
             sha256 = $hash
             packageVersion = [string]$identity.Version
             architecture = [string]$identity.ProcessorArchitecture
-            identityName = [string]$identity.Name
-            publisher = [string]$identity.Publisher
-            publisherDisplayName = [string]$properties.PublisherDisplayName
-            applicationId = [string]$application.Id
-            packageFamilyName = 'Vensent.Metrora_1xcj95baterfy'
-            storeId = '9NXSZFQSBBDX'
             signed = $false
             submitted = $false
             published = $false
@@ -178,7 +171,5 @@ jobs:
 
           - Artifact: `${{ steps.inspect.outputs.artifact_name }}`
           - SHA-256: `${{ steps.inspect.outputs.sha256 }}`
-          - Identity: `Vensent.Metrora`
-          - Publisher: `CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F`
           - State: unsigned, not submitted, not published
           "@ >> $env:GITHUB_STEP_SUMMARY
