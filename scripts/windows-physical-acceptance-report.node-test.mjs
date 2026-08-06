@@ -87,11 +87,13 @@ function validReportV2() {
   report.migrationBaseline = {
     commit: baselineCommit,
     productVersion: '0.9.19',
+    fileVersion: '0.9.19',
   }
   report.candidate.productVersion = '1.0.0-rc.7'
+  report.candidate.fileVersion = '1.0.0.7'
   report.profiles.clean.cliVersion = '1.0.0-rc.7'
   report.profiles.migration.transitions = [
-    ...expectedMigrationTransitions('0.9.19', '1.0.0-rc.7'),
+    ...expectedMigrationTransitions('0.9.19', '1.0.0.7'),
   ]
   return report
 }
@@ -139,18 +141,18 @@ test('accepts a v2 report with explicit migration authority', () => {
 })
 
 test('derives v2 transitions from baseline and candidate versions', () => {
-  assert.deepEqual(expectedMigrationTransitions('0.9.19', '1.0.0-rc.7'), [
+  assert.deepEqual(expectedMigrationTransitions('0.9.19', '1.0.0.7'), [
     'installed-0.9.19',
-    'upgraded-1.0.0-rc.7',
-    'reinstalled-1.0.0-rc.7',
+    'upgraded-1.0.0.7',
+    'reinstalled-1.0.0.7',
     'uninstalled-for-rollback',
     'rolled-back-0.9.19',
-    're-upgraded-1.0.0-rc.7',
+    're-upgraded-1.0.0.7',
     'uninstalled',
   ])
 })
 
-test('rejects equal baseline and candidate versions', () => {
+test('rejects equal baseline and candidate file versions', () => {
   assert.throws(() => expectedMigrationTransitions('0.9.19', '0.9.19'), /must differ/)
 })
 
@@ -179,6 +181,12 @@ test('requires an explicit valid v2 migration baseline', () => {
   const invalid = validReportV2()
   invalid.migrationBaseline.commit = 'invalid'
   assert.throws(() => validateWindowsPhysicalAcceptanceReport(invalid), /baseline commit/)
+})
+
+test('rejects a candidate file version that contradicts version authority', () => {
+  const report = validReportV2()
+  report.candidate.fileVersion = '1.0.0.8'
+  assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /version authority/)
 })
 
 test('rejects path-shaped platform text', () => {
