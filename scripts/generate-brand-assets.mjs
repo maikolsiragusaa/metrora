@@ -30,6 +30,32 @@ function chunk(type, data) {
   return Buffer.concat([length, typeBuffer, data, checksum])
 }
 
+function encodePng(width, height, pixels) {
+  if (pixels.length !== width * height * 4) {
+    throw new Error(`unexpected RGBA buffer length for ${width}x${height}`)
+  }
+
+  const raw = Buffer.alloc((width * 4 + 1) * height)
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * (width * 4 + 1)
+    raw[rowOffset] = 0
+    pixels.copy(raw, rowOffset + 1, y * width * 4, (y + 1) * width * 4)
+  }
+
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6
+
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
 function insideRoundedSquare(x, y, size, radius) {
   const left = radius
   const right = size - radius - 1
@@ -57,7 +83,7 @@ function fillRect(pixels, size, x, y, width, height, color) {
   }
 }
 
-function createIcon(size = 1024) {
+function createIconPixels(size) {
   const pixels = Buffer.alloc(size * size * 4)
   const radius = Math.round(size * 0.2266)
 
@@ -81,35 +107,40 @@ function createIcon(size = 1024) {
     fillRect(pixels, size, x * scale, y * scale, width * scale, height * scale, COLORS.paper)
   }
 
-  const raw = Buffer.alloc((size * 4 + 1) * size)
-  for (let y = 0; y < size; y += 1) {
-    const rowOffset = y * (size * 4 + 1)
-    raw[rowOffset] = 0
-    pixels.copy(raw, rowOffset + 1, y * size * 4, (y + 1) * size * 4)
-  }
-
-  const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(size, 0)
-  ihdr.writeUInt32BE(size, 4)
-  ihdr[8] = 8
-  ihdr[9] = 6
-
-  return Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ])
+  return pixels
 }
 
-const icon = createIcon(1024)
+function createIcon(size) {
+  return encodePng(size, size, createIconPixels(size))
+}
+
+function createWideIcon(width = 310, height = 150, markSize = 112) {
+  const pixels = Buffer.alloc(width * height * 4)
+  const mark = createIconPixels(markSize)
+  const offsetX = Math.floor((width - markSize) / 2)
+  const offsetY = Math.floor((height - markSize) / 2)
+
+  for (let y = 0; y < markSize; y += 1) {
+    const sourceStart = y * markSize * 4
+    const targetStart = ((offsetY + y) * width + offsetX) * 4
+    mark.copy(pixels, targetStart, sourceStart, sourceStart + markSize * 4)
+  }
+
+  return encodePng(width, height, pixels)
+}
+
+const canonicalIcon = createIcon(1024)
 const outputs = [
-  resolve(ROOT, 'app/build/icon.png'),
-  resolve(ROOT, 'assets/menubar-logo.png'),
+  [resolve(ROOT, 'app/build/icon.png'), canonicalIcon],
+  [resolve(ROOT, 'assets/menubar-logo.png'), canonicalIcon],
+  [resolve(ROOT, 'app/build/appx/StoreLogo.png'), createIcon(50)],
+  [resolve(ROOT, 'app/build/appx/Square44x44Logo.png'), createIcon(44)],
+  [resolve(ROOT, 'app/build/appx/Square150x150Logo.png'), createIcon(150)],
+  [resolve(ROOT, 'app/build/appx/Wide310x150Logo.png'), createWideIcon()],
 ]
 
-for (const output of outputs) {
+for (const [output, bytes] of outputs) {
   mkdirSync(dirname(output), { recursive: true })
-  writeFileSync(output, icon)
+  writeFileSync(output, bytes)
   console.log(`Generated ${output.replace(`${ROOT}/`, '')}`)
 }
