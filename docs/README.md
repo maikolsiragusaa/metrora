@@ -15,6 +15,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [Product lineage](PRODUCT_LINEAGE.md) — inherited foundations, material Metrora changes and compatibility identifiers.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
+- [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
 - [Pricing history](PRICING_HISTORY.md) — date-effective rates, settled assignments and historical-cost behavior.
 - [Collector inventory v1](COLLECTOR_INVENTORY_V1.md) — generated technical inventory of registered collectors and signed-measurement eligibility.
 - [Public contracts v1](PUBLIC_CONTRACTS_V1.md) — public schemas, signed-data behavior and compatibility commitments.
