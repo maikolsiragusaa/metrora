@@ -33,11 +33,22 @@ function Get-MetroraWindowsPlatform {
   if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'physical Windows acceptance must run on Windows'
   }
+
   $operatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem
-  $architecture = switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()) {
-    'X64' { 'x64' }
-    default { $_.ToLowerInvariant() }
+  $processor = @(Get-CimInstance -ClassName Win32_Processor | Select-Object -First 1)
+  if ($processor.Count -ne 1) {
+    throw 'physical Windows acceptance could not determine processor architecture'
   }
+
+  $architecture = switch ([int]$processor[0].Architecture) {
+    0 { 'x86' }
+    5 { 'arm' }
+    6 { 'ia64' }
+    9 { 'x64' }
+    12 { 'arm64' }
+    default { "unknown-$([int]$processor[0].Architecture)" }
+  }
+
   return [ordered]@{
     edition = [string]$operatingSystem.Caption
     version = [string]$operatingSystem.Version

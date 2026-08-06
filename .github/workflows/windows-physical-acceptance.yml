@@ -99,3 +99,7 @@ jobs:
       - name: Exercise Store local-test helpers
         shell: pwsh
         run: ./scripts/Test-Metrora-Windows-Store-Local-Test-Runtime.ps1 -RepositoryRoot $PWD
+
+      - name: Exercise Store helpers under Windows PowerShell 5.1
+        shell: powershell
+        run: ./scripts/Test-Metrora-Windows-Store-Local-Test-Runtime.ps1 -RepositoryRoot $PWD

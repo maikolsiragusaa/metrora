@@ -8,6 +8,16 @@ Set-StrictMode -Version Latest
 $repository = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 . (Join-Path $repository 'scripts\windows-store-local-test-lib.ps1')
 
+$platform = Get-MetroraWindowsPlatform
+if (
+  [string]::IsNullOrWhiteSpace([string]$platform.edition) -or
+  [string]::IsNullOrWhiteSpace([string]$platform.version) -or
+  [string]::IsNullOrWhiteSpace([string]$platform.build) -or
+  @('x86', 'x64', 'arm', 'arm64', 'ia64') -notcontains [string]$platform.architecture
+) {
+  throw 'Windows platform runtime detection returned unexpected values'
+}
+
 $temporary = Join-Path $env:TEMP "metrora-store-runtime-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $temporary -Force | Out-Null
 try {
