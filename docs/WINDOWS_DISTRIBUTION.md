@@ -33,7 +33,9 @@ An official Windows package must:
 
 Portable and installer candidates may be published only as clearly labelled technical artifacts with their exact signature status, checksums and source binding.
 
-They must not be described as an official signed distribution or as equivalent to a channel-certified package.
+An unsigned GitHub pre-release follows the separate source, candidate, physical and publication gates in [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md).
+
+Technical artifacts must not be described as an official signed distribution or as equivalent to a channel-certified package.
 
 ## Acceptance gates
 

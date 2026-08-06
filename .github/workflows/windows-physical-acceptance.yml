@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'AVVIA-TEST-FISICO-METRORA.cmd'
+      - 'docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md'
       - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md'
       - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md'
       - 'scripts/*Physical-Acceptance*.ps1'
@@ -20,6 +21,7 @@ on:
     paths:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'AVVIA-TEST-FISICO-METRORA.cmd'
+      - 'docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md'
       - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md'
       - 'docs/WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md'
       - 'scripts/*Physical-Acceptance*.ps1'

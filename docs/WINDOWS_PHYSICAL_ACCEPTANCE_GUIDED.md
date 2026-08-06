@@ -1,6 +1,8 @@
 # Metrora Windows physical acceptance — guided path
 
-This guide is a convenience layer over the authoritative R1.B.D protocol in `WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md`. It does not replace or weaken any candidate, repository, profile, sentinel, lifecycle or report verification.
+This guide is the convenience layer for the current Windows candidate acceptance process in [`WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md). It does not replace or weaken any candidate, repository, profile, sentinel, lifecycle or report verification.
+
+The historical R1.B.D contract remains the authority for its accepted `0.9.19` evidence. Current candidates produce a version 2 report that records the exact migration baseline and candidate versions instead of reinterpreting the historical version 1 report.
 
 ## What remains manual
 
@@ -17,7 +19,8 @@ The guide fingerprints the local Windows profile without writing the username or
 - download the complete `metrora-windows-candidate-<commit>.zip` artifact produced from that same commit;
 - leave the ZIP intact, preferably in `Downloads`;
 - close every running Metrora process;
-- ensure the repository path can also be read by the dedicated Windows user.
+- ensure the repository path can also be read by the dedicated Windows user;
+- ensure the declared historical migration baseline commit is available in the local Git repository.
 
 Do not manually extract or launch anything from the artifact.
 
@@ -38,6 +41,7 @@ The guide:
 - calls the authoritative preparation script;
 - preserves and hashes the ZIP before bounded extraction;
 - reconstructs and verifies the canonical payload;
+- records the declared migration baseline in the closed acceptance context;
 - creates the sentinel and closed draft report;
 - launches the verified portable twice;
 - records P1 through the existing bounded recorder;
@@ -66,10 +70,10 @@ Open the shared directory shown by the first stage and double-click:
 CONTINUA-TEST-METRORA.cmd
 ```
 
-The guide refuses to continue when it detects the same profile used for P1. On the dedicated profile it invokes the unchanged authoritative scripts for:
+The guide refuses to continue when it detects the same profile used for P1. On the dedicated profile it invokes the authoritative scripts for:
 
 - P2 clean install, first launch, exact layout and identity checks, uninstall and sentinel preservation;
-- P3 local historical fixture build, upgrade, reinstall, explicit rollback, re-upgrade, uninstall, fixture removal and sentinel preservation;
+- P3 local declared-baseline fixture build, upgrade, reinstall, explicit rollback, re-upgrade, uninstall, fixture removal and sentinel preservation;
 - final closed-schema report generation and verification.
 
 The historical fixture remains local and is never uploaded or presented as a supported release.
@@ -82,10 +86,14 @@ A successful run opens the directory containing:
 METRORA-WINDOWS-PHYSICAL-ACCEPTANCE.json
 ```
 
+For current candidates, the report is version 2 and contains the exact historical baseline commit and version alongside the exact candidate source and version.
+
 The report contains no usernames, local paths, prompts, Workspace identifiers, keys, receipts or evidence contents.
 
 A failure stops the guide. It does not clean unknown state destructively, reinterpret a failed observation or convert a FAIL into PASS.
 
 ## Manual fallback
 
-The command-by-command protocol remains available in `WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md`. Both paths invoke the same underlying scripts and verifiers; the guided path only chooses the correct next stage and supplies validated paths.
+The current release-candidate boundary is defined in [`WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md). The historical command-by-command R1.B.D protocol remains available in [`WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md`](WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md) for the evidence it originally governed.
+
+Both current paths invoke the same checked-in scripts and verifiers; the guided path only chooses the correct next stage and supplies validated paths.

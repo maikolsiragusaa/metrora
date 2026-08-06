@@ -1,6 +1,9 @@
+import { buildVersionFor } from './version-authority-lib.mjs'
+
 const sha256Pattern = /^[a-f0-9]{64}$/
 const gitSha1Pattern = /^[a-f0-9]{40}$/
 const semverPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
+const fileVersionPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
 const safeTextPattern = /^[^\\/\r\n\0]{1,160}$/
 const artifactNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,195}\.zip$/
@@ -23,6 +26,24 @@ export const EXPECTED_MIGRATION_TRANSITIONS = Object.freeze([
   're-upgraded-0.9.19',
   'uninstalled',
 ])
+
+export function expectedMigrationTransitions(baselineFileVersion, candidateFileVersion) {
+  if (!fileVersionPattern.test(baselineFileVersion) || !fileVersionPattern.test(candidateFileVersion)) {
+    throw new Error('migration file versions are invalid')
+  }
+  if (baselineFileVersion === candidateFileVersion) {
+    throw new Error('migration baseline and candidate file versions must differ')
+  }
+  return Object.freeze([
+    `installed-${baselineFileVersion}`,
+    `upgraded-${candidateFileVersion}`,
+    `reinstalled-${candidateFileVersion}`,
+    'uninstalled-for-rollback',
+    `rolled-back-${baselineFileVersion}`,
+    `re-upgraded-${candidateFileVersion}`,
+    'uninstalled',
+  ])
+}
 
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -167,7 +188,7 @@ function validateCleanProfile(profile, candidateVersion) {
   }
 }
 
-function validateMigrationProfile(profile) {
+function validateMigrationProfile(profile, expectedTransitions) {
   assertExactKeys(profile, [
     'status',
     'transitions',
@@ -182,7 +203,7 @@ function validateMigrationProfile(profile) {
   assertBoolean(profile.fixtureRemoved, 'profiles.migration.fixtureRemoved')
   if (profile.status === 'pass') {
     assertPassCondition(
-      JSON.stringify(profile.transitions) === JSON.stringify(EXPECTED_MIGRATION_TRANSITIONS),
+      JSON.stringify(profile.transitions) === JSON.stringify(expectedTransitions),
       'migration-profile PASS requires the complete declared transition sequence',
     )
     assertPassCondition(profile.sentinelPreserved, 'migration-profile PASS requires preserved sentinel')
@@ -196,8 +217,25 @@ function validateMigrationProfile(profile) {
   }
 }
 
+function validateMigrationBaseline(migrationBaseline) {
+  assertExactKeys(migrationBaseline, ['commit', 'productVersion', 'fileVersion'], 'migrationBaseline')
+  if (!gitSha1Pattern.test(migrationBaseline.commit)) {
+    throw new Error('migration baseline commit is invalid')
+  }
+  if (!semverPattern.test(migrationBaseline.productVersion)) {
+    throw new Error('migration baseline product version is invalid')
+  }
+  if (!fileVersionPattern.test(migrationBaseline.fileVersion)) {
+    throw new Error('migration baseline file version is invalid')
+  }
+}
+
 export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
-  assertExactKeys(report, [
+  assertObject(report, 'report')
+  if (report.kind !== 'metrora.windows-physical-acceptance-report' || ![1, 2].includes(report.version)) {
+    throw new Error('report kind or version is unsupported')
+  }
+  assertExactKeys(report, report.version === 1 ? [
     'kind',
     'version',
     'generatedAt',
@@ -207,10 +245,18 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     'profiles',
     'privacy',
     'limitations',
+  ] : [
+    'kind',
+    'version',
+    'generatedAt',
+    'source',
+    'migrationBaseline',
+    'candidate',
+    'platform',
+    'profiles',
+    'privacy',
+    'limitations',
   ], 'report')
-  if (report.kind !== 'metrora.windows-physical-acceptance-report' || report.version !== 1) {
-    throw new Error('report kind or version is unsupported')
-  }
   if (typeof report.generatedAt !== 'string' || !timestampPattern.test(report.generatedAt)) {
     throw new Error('generatedAt must be a UTC timestamp')
   }
@@ -223,10 +269,17 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     throw new Error('report source commit does not match the expected commit')
   }
 
-  assertExactKeys(report.candidate, [
+  assertExactKeys(report.candidate, report.version === 1 ? [
     'artifactName',
     'artifactSha256',
     'productVersion',
+    'releaseManifestSha256',
+    'formatManifestSha256',
+  ] : [
+    'artifactName',
+    'artifactSha256',
+    'productVersion',
+    'fileVersion',
     'releaseManifestSha256',
     'formatManifestSha256',
   ], 'candidate')
@@ -239,11 +292,29 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
   if (!semverPattern.test(report.candidate.productVersion)) {
     throw new Error('candidate product version is invalid')
   }
+  if (report.version === 2) {
+    if (!fileVersionPattern.test(report.candidate.fileVersion)) {
+      throw new Error('candidate file version is invalid')
+    }
+    if (report.candidate.fileVersion !== buildVersionFor(report.candidate.productVersion)) {
+      throw new Error('candidate file version does not match version authority')
+    }
+  }
   for (const field of ['releaseManifestSha256', 'formatManifestSha256']) {
     if (!sha256Pattern.test(report.candidate[field])) {
       throw new Error(`candidate ${field} is invalid`)
     }
   }
+
+  const migrationTransitions = report.version === 1
+    ? EXPECTED_MIGRATION_TRANSITIONS
+    : (() => {
+        validateMigrationBaseline(report.migrationBaseline)
+        return expectedMigrationTransitions(
+          report.migrationBaseline.fileVersion,
+          report.candidate.fileVersion,
+        )
+      })()
 
   assertExactKeys(report.platform, ['edition', 'version', 'build', 'architecture'], 'platform')
   for (const field of ['edition', 'version', 'build', 'architecture']) {
@@ -256,7 +327,7 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
   assertExactKeys(report.profiles, ['existing', 'clean', 'migration'], 'profiles')
   validateExistingProfile(report.profiles.existing)
   validateCleanProfile(report.profiles.clean, report.candidate.productVersion)
-  validateMigrationProfile(report.profiles.migration)
+  validateMigrationProfile(report.profiles.migration, migrationTransitions)
 
   assertExactKeys(report.privacy, [
     'containsPrivatePaths',

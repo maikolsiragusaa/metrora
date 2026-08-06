@@ -58,6 +58,8 @@ The current version identifies public source under development. It is not a clai
 - Derived portable and installer formats from one canonical application payload.
 - Validated clean installation, removal, upgrade, repair, controlled rollback, interruption recovery and user-owned state preservation.
 - Completed bounded physical Windows keyboard, scaling, theme, reduced-motion and Narrator acceptance for the unsigned engineering candidate.
+- Added physical-acceptance report v2 with an explicit migration baseline and candidate-derived transitions while preserving historical report v1 verification.
+- Added a public unsigned GitHub pre-release acceptance contract and version-scoped `1.0.0-rc.7` preparation record.
 
 ## 0.9.19 — Metrora public source baseline
 

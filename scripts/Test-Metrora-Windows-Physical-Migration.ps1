@@ -20,8 +20,6 @@ if (-not $DedicatedProfileAcknowledged) {
   throw 'P3 requires an explicitly acknowledged dedicated Windows user profile'
 }
 
-$baselineCommit = '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
-$baselineVersion = '0.9.18'
 $state = Get-MetroraPhysicalAcceptanceState $AcceptanceDirectory $RepositoryRoot
 $acceptance = $state.Acceptance
 $repository = $state.Repository
@@ -29,6 +27,14 @@ $candidate = $state.Candidate
 $canonical = $state.Canonical
 $sentinelPath = $state.SentinelPath
 $context = $state.Context
+
+if ([int]$context.version -eq 2) {
+  $baselineCommit = [string]$context.migrationBaseline.commit
+  $baselineVersion = [string]$context.migrationBaseline.productVersion
+} else {
+  $baselineCommit = '169992beef06f1f4cddc5dba6bce3b8991ce9fd4'
+  $baselineVersion = '0.9.18'
+}
 
 & git -C $repository cat-file -e "$baselineCommit`^{commit}"
 if ($LASTEXITCODE -ne 0) {

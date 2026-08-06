@@ -20,10 +20,19 @@ function Get-MetroraPhysicalAcceptanceState([string]$AcceptanceDirectory, [strin
     throw 'physical acceptance context is missing'
   }
   $context = Get-Content -LiteralPath $contextPath -Raw | ConvertFrom-Json
+  $contextVersion = [int]$context.version
 
-  Assert-MetroraPhysicalContextKeys $context @('kind', 'version', 'source', 'candidate', 'platform', 'sentinel') 'context'
+  if ($contextVersion -eq 1) {
+    Assert-MetroraPhysicalContextKeys $context @('kind', 'version', 'source', 'candidate', 'platform', 'sentinel') 'context'
+  } elseif ($contextVersion -eq 2) {
+    Assert-MetroraPhysicalContextKeys $context @('kind', 'version', 'source', 'migrationBaseline', 'candidate', 'platform', 'sentinel') 'context'
+    Assert-MetroraPhysicalContextKeys $context.migrationBaseline @('commit', 'productVersion', 'fileVersion') 'context.migrationBaseline'
+  } else {
+    throw 'physical acceptance context version is unsupported'
+  }
+
   Assert-MetroraPhysicalContextKeys $context.source @('repository', 'commit') 'context.source'
-  Assert-MetroraPhysicalContextKeys $context.candidate @(
+  $candidateKeys = @(
     'directory',
     'archive',
     'artifactName',
@@ -35,13 +44,14 @@ function Get-MetroraPhysicalAcceptanceState([string]$AcceptanceDirectory, [strin
     'formatManifestSha256',
     'canonicalFileCount',
     'canonicalInventorySha256'
-  ) 'context.candidate'
+  )
+  if ($contextVersion -eq 2) { $candidateKeys += 'fileVersion' }
+  Assert-MetroraPhysicalContextKeys $context.candidate $candidateKeys 'context.candidate'
   Assert-MetroraPhysicalContextKeys $context.platform @('edition', 'version', 'build', 'architecture') 'context.platform'
   Assert-MetroraPhysicalContextKeys $context.sentinel @('file', 'sha256') 'context.sentinel'
 
   if (
     $context.kind -ne 'metrora.windows-physical-acceptance-context' -or
-    $context.version -ne 1 -or
     $context.source.repository -ne 'maikolsiragusaa/metrora' -or
     $context.source.commit -notmatch '^[a-f0-9]{40}$' -or
     $context.candidate.directory -ne 'downloaded-candidate' -or
@@ -50,6 +60,19 @@ function Get-MetroraPhysicalAcceptanceState([string]$AcceptanceDirectory, [strin
   ) {
     throw 'physical acceptance context authority is invalid'
   }
+
+  if ($contextVersion -eq 2) {
+    if (
+      $context.migrationBaseline.commit -notmatch '^[a-f0-9]{40}$' -or
+      $context.migrationBaseline.productVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$' -or
+      $context.migrationBaseline.fileVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$' -or
+      $context.candidate.fileVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$' -or
+      $context.migrationBaseline.fileVersion -eq $context.candidate.fileVersion
+    ) {
+      throw 'physical acceptance migration baseline authority is invalid'
+    }
+  }
+
   foreach ($digest in @(
     $context.candidate.artifactSha256,
     $context.candidate.releaseManifestSha256,

@@ -30,41 +30,51 @@ $profiles = [ordered]@{
 
 $report = [ordered]@{
   kind = 'metrora.windows-physical-acceptance-report'
-  version = 1
+  version = [int]$context.version
   generatedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
   source = [ordered]@{
     repository = [string]$context.source.repository
     commit = [string]$context.source.commit
   }
-  candidate = [ordered]@{
-    artifactName = [string]$context.candidate.artifactName
-    artifactSha256 = [string]$context.candidate.artifactSha256
-    productVersion = [string]$context.candidate.productVersion
-    releaseManifestSha256 = [string]$context.candidate.releaseManifestSha256
-    formatManifestSha256 = [string]$context.candidate.formatManifestSha256
-  }
-  platform = [ordered]@{
-    edition = [string]$context.platform.edition
-    version = [string]$context.platform.version
-    build = [string]$context.platform.build
-    architecture = [string]$context.platform.architecture
-  }
-  profiles = $profiles
-  privacy = [ordered]@{
-    containsPrivatePaths = $false
-    containsUsernames = $false
-    containsPromptsOrResponses = $false
-    containsWorkspaceIdentifiers = $false
-    containsKeysOrEvidence = $false
-  }
-  limitations = @(
-    'unsigned-candidate'
-    'no-official-release'
-    'no-update-channel'
-    'single-windows-host'
-    'historical-fixture-local-only'
-  )
 }
+if ([int]$context.version -eq 2) {
+  $report.migrationBaseline = [ordered]@{
+    commit = [string]$context.migrationBaseline.commit
+    productVersion = [string]$context.migrationBaseline.productVersion
+    fileVersion = [string]$context.migrationBaseline.fileVersion
+  }
+}
+$report.candidate = [ordered]@{
+  artifactName = [string]$context.candidate.artifactName
+  artifactSha256 = [string]$context.candidate.artifactSha256
+  productVersion = [string]$context.candidate.productVersion
+}
+if ([int]$context.version -eq 2) {
+  $report.candidate.fileVersion = [string]$context.candidate.fileVersion
+}
+$report.candidate.releaseManifestSha256 = [string]$context.candidate.releaseManifestSha256
+$report.candidate.formatManifestSha256 = [string]$context.candidate.formatManifestSha256
+$report.platform = [ordered]@{
+  edition = [string]$context.platform.edition
+  version = [string]$context.platform.version
+  build = [string]$context.platform.build
+  architecture = [string]$context.platform.architecture
+}
+$report.profiles = $profiles
+$report.privacy = [ordered]@{
+  containsPrivatePaths = $false
+  containsUsernames = $false
+  containsPromptsOrResponses = $false
+  containsWorkspaceIdentifiers = $false
+  containsKeysOrEvidence = $false
+}
+$report.limitations = @(
+  'unsigned-candidate'
+  'no-official-release'
+  'no-update-channel'
+  'single-windows-host'
+  'historical-fixture-local-only'
+)
 
 $reportPath = Join-Path $acceptance 'METRORA-WINDOWS-PHYSICAL-ACCEPTANCE.json'
 Write-MetroraUtf8Json $reportPath $report
