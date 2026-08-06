@@ -58,6 +58,25 @@ npm --prefix app run build
 
 Platform workflows add their own manifest, payload, installation, update, rollback and state-preservation checks.
 
+## GitHub Windows pre-release
+
+An unsigned Windows GitHub pre-release is a technical-evaluation channel. It is separate from Microsoft Store signing and certification.
+
+The final candidate must come from an explicit `Metrora Windows Candidate` workflow dispatch on one exact reviewed `main` commit with classification `unsigned-release-candidate`. A pull-request merge ref, ordinary development artifact or local rebuild is not publication authority.
+
+Before a GitHub pre-release may be published:
+
+1. all applicable repository and Windows workflow jobs pass for the exact commit;
+2. the complete downloaded candidate verifies against its source and format manifests;
+3. the guided two-profile physical acceptance produces a valid version 2 PASS report;
+4. release assets are derived from that accepted candidate without rebuilding or patching product bytes;
+5. final checksums, manifests, release notes, known limitations and rollback wording are reviewed;
+6. publication receives an explicit stop/go.
+
+The public acceptance contract is [`docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md). The version-scoped preparation record is [`release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md`](release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md).
+
+A GitHub pre-release must state that portable and installer assets are unsigned, may trigger SmartScreen, require manual updates and are not Microsoft Store certified. It must not be presented as the stable release merely because GitHub labels it as a release object.
+
 ## Versioning and notes
 
 Metrora uses semantic versioning. The first independent candidate line is `1.0.0-rc.N`; the first official stable release is `1.0.0`. A release change updates every version-bearing package and generated metadata deliberately. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
