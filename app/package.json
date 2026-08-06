@@ -18,7 +18,7 @@
     "package:arm64": "npm run stage-cli && npm run build && electron-builder --mac --arm64",
     "package:x64": "npm run stage-cli && npm run build && electron-builder --mac --x64",
     "package:win": "npm run stage-cli && npm run build && electron-builder --win",
-    "package:store": "npm run stage-cli && npm run build && electron-builder --win appx --x64",
+    "package:store": "npm run stage-cli && npm run build && electron-builder --win appx --x64 --publish never",
     "package:linux": "npm run stage-cli && npm run build && electron-builder --linux"
   },
   "dependencies": {
