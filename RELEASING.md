@@ -8,8 +8,9 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Current development version: `1.0.0-rc.7`
-- Current desktop build version: `1.0.0.7`
+- Current source candidate: `1.0.0-rc.8`
+- Current desktop build version: `1.0.0.8`
+- Latest published GitHub technical preview: `1.0.0-rc.7`
 
 Temporary compatibility commands are governed by the technical compatibility register. They are not release brands or names for new artifacts.
 
@@ -17,13 +18,23 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-The active source line is `1.0.0-rc.7`, with desktop build metadata `1.0.0.7`. No artifact at this version is accepted, signed or published merely because the metadata exists.
+`1.0.0-rc.8` is the current **source/pre-submission candidate line**. Its metadata does not by itself make any artifact accepted, signed, submitted or published.
 
-The accepted Windows 0.9.19 candidate remains bound to reviewed public source, independently verifiable manifests and a sanitized physical-acceptance report.
+`1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
-It passed existing-state, clean-install and migration lifecycle validation. It remains unsigned engineering evidence and is not an official stable release.
+The Microsoft Store path is separate. Metrora has an assigned Store identity and a non-publishing AppX build/local-acceptance workflow, but no Store certification or publication is claimed until Microsoft has accepted the corresponding submission.
 
-Exact accepted source and artifact digests remain recorded in the applicable Windows acceptance contract and GitHub workflow record rather than repeated across general release guidance.
+Exact source commits and artifact digests belong in the applicable workflow/release acceptance evidence rather than being copied into general release guidance.
+
+## Version authorities
+
+Metrora deliberately separates three version forms:
+
+- product/source SemVer: `1.0.0-rc.8`;
+- desktop build version: `1.0.0.8`;
+- Microsoft Store AppX package identity version for the `1.0.0` line: `1.0.0.0`.
+
+The Store's four-component package identity is a platform contract and must not be confused with the desktop build counter or the SemVer pre-release label. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Release responsibilities
 
@@ -62,20 +73,27 @@ Platform workflows add their own manifest, payload, installation, update, rollba
 
 An unsigned Windows GitHub pre-release is a technical-evaluation channel. It is separate from Microsoft Store signing and certification.
 
-The final candidate must come from an explicit `Metrora Windows Candidate` workflow dispatch on one exact reviewed `main` commit with classification `unsigned-release-candidate`. A pull-request merge ref, ordinary development artifact or local rebuild is not publication authority.
+The published `v1.0.0-rc.7` pre-release remains bound to its accepted source commit and release evidence. New source changes do not retroactively alter that release.
 
-Before a GitHub pre-release may be published:
+Any later GitHub pre-release must again come from one exact reviewed source commit and must pass the applicable candidate, artifact-binding and physical-acceptance boundaries before publication.
 
-1. all applicable repository and Windows workflow jobs pass for the exact commit;
-2. the complete downloaded candidate verifies against its source and format manifests;
-3. the guided two-profile physical acceptance produces a valid version 2 PASS report;
-4. release assets are derived from that accepted candidate without rebuilding or patching product bytes;
-5. final checksums, manifests, release notes, known limitations and rollback wording are reviewed;
-6. publication receives an explicit stop/go.
+The public acceptance contract is [`docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md). The immutable RC7 publication record is [`release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md`](release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md).
 
-The public acceptance contract is [`docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md). The version-scoped preparation record is [`release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md`](release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md).
+An unsigned GitHub pre-release must state that its portable/installer assets are unsigned, may trigger SmartScreen, require manual updates and are not Microsoft Store certified. It must not be presented as stable merely because GitHub represents it as a release object.
 
-A GitHub pre-release must state that portable and installer assets are unsigned, may trigger SmartScreen, require manual updates and are not Microsoft Store certified. It must not be presented as the stable release merely because GitHub labels it as a release object.
+## Microsoft Store pre-submission
+
+The Store candidate must be built from the exact reviewed source commit using the non-publishing Store workflow. Before Partner Center submission:
+
+1. the exact AppX artifact and workflow manifest must verify;
+2. Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
+3. the unsigned submission candidate must remain byte-identical to the workflow output;
+4. a separately test-signed copy may be used only for bounded local physical acceptance;
+5. local-test package/certificate/private-key material must be removed afterward;
+6. the sanitized local acceptance report must pass;
+7. submission requires an explicit stop/go after those checks.
+
+A passing local test is not Microsoft certification and does not authorize a publication claim.
 
 ## Versioning and notes
 
@@ -94,7 +112,7 @@ Every public release note states:
 
 ## Rollback
 
-Do not rewrite or replace a broadly distributed release under the same version. Publish a new patch version and retain the previous accepted artifact long enough to support rollback.
+Do not rewrite or replace a broadly distributed release under the same version. Publish a new version and retain the previous accepted artifact long enough to support rollback.
 
 Rollback preserves endpoint identity, OS-vault material, analytics, Workspace state, evidence, exports and user-owned local files according to the accepted migration contract.
 
@@ -112,4 +130,5 @@ Rollback preserves endpoint identity, OS-vault material, analytics, Workspace st
 - no protected credentials in untrusted pull requests;
 - no publication from an unverified local build;
 - no silent replacement of accepted artifacts;
-- no claim of an official release before the relevant channel passes acceptance.
+- no claim of Microsoft Store certification/publication before Microsoft actually accepts that channel;
+- no claim of an official stable release before the relevant channel passes acceptance.
