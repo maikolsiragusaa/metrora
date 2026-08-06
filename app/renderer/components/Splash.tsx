@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { ProviderLogo } from './ProviderLogo'
 import { MetroraMark } from './MetroraMark'
 import { motionClass, reducedMotion } from '../lib/motion'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { ScanProgressEvent } from '../lib/types'
 import { version } from '../../package.json'
 
@@ -73,7 +73,7 @@ function SplashStatus({ progress }: { progress: Progress }) {
   )
 }
 
-/** Full-window Metrora startup surface over the inherited local scan. */
+/** Full-window Metrora startup surface over the local scan. */
 export function Splash({ hasData, hasError }: { hasData: boolean; hasError: boolean }) {
   const [phase, setPhase] = useState<Phase>('lit')
   const [progress, setProgress] = useState<Progress>(EMPTY)
@@ -82,8 +82,8 @@ export function Splash({ hasData, hasError }: { hasData: boolean; hasError: bool
   const done = useRef(false)
 
   useEffect(() => {
-    if (!codeburn || typeof codeburn.onProgress !== 'function') return
-    return codeburn.onProgress(event => setProgress(previous => reduceProgress(previous, event)))
+    if (!metrora || typeof metrora.onProgress !== 'function') return
+    return metrora.onProgress(event => setProgress(previous => reduceProgress(previous, event)))
   }, [])
 
   useEffect(() => { if (progress.cold) setReveal(true) }, [progress.cold])
