@@ -5,6 +5,9 @@ import { delimiter, join } from 'path'
 export const PERSISTENT_CLI_REQUIRED_MESSAGE =
   'CodeBurn needs a persistent codeburn command. Install CodeBurn globally first: npm install -g codeburn'
 
+export const PERSISTENT_METRORA_CLI_REQUIRED_MESSAGE =
+  'Metrora needs a persistent metrora command. Install Metrora so metrora is available on PATH. The legacy codeburn alias is accepted for compatibility.'
+
 const DEFAULT_CLI_LOOKUP_PATHS = process.platform === 'win32'
   ? []
   : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin']
@@ -17,13 +20,25 @@ export function buildPersistentCodeburnLookupPath(existingPath = process.env.PAT
   return parts.join(delimiter)
 }
 
+export function buildPersistentMetroraLookupPath(existingPath = process.env.PATH ?? ''): string {
+  return buildPersistentCodeburnLookupPath(existingPath)
+}
+
 export function isTransientNpxPath(path: string): boolean {
   return path.includes('/_npx/') || path.includes('/.npm/_npx/') || path.includes('\\_npx\\')
 }
 
+function commandExecutableNames(command: string): string[] {
+  if (process.platform !== 'win32') return [command]
+  return [`${command}.cmd`, `${command}.exe`, `${command}.bat`, command]
+}
+
 function codeburnExecutableNames(): string[] {
-  if (process.platform !== 'win32') return ['codeburn']
-  return ['codeburn.cmd', 'codeburn.exe', 'codeburn.bat', 'codeburn']
+  return commandExecutableNames('codeburn')
+}
+
+function metroraExecutableNames(): string[] {
+  return commandExecutableNames('metrora')
 }
 
 async function executableExists(path: string): Promise<boolean> {
@@ -35,13 +50,14 @@ async function executableExists(path: string): Promise<boolean> {
   }
 }
 
-export async function resolvePersistentCodeburnPathFromPath(
+async function resolvePersistentExecutableFromPath(
   lookupPath: string,
-  message: string = PERSISTENT_CLI_REQUIRED_MESSAGE,
-): Promise<string> {
+  executableNames: readonly string[],
+): Promise<string | undefined> {
+  const directories = lookupPath.split(delimiter).filter(Boolean)
   const seen = new Set<string>()
-  for (const dir of lookupPath.split(delimiter).filter(Boolean)) {
-    for (const executable of codeburnExecutableNames()) {
+  for (const dir of directories) {
+    for (const executable of executableNames) {
       const candidate = join(dir, executable)
       if (seen.has(candidate)) continue
       seen.add(candidate)
@@ -49,7 +65,25 @@ export async function resolvePersistentCodeburnPathFromPath(
       if (await executableExists(candidate)) return candidate
     }
   }
+  return undefined
+}
+
+export async function resolvePersistentCodeburnPathFromPath(
+  lookupPath: string,
+  message: string = PERSISTENT_CLI_REQUIRED_MESSAGE,
+): Promise<string> {
+  const persistentPath = await resolvePersistentExecutableFromPath(lookupPath, codeburnExecutableNames())
+  if (persistentPath) return persistentPath
   throw new Error(message)
+}
+
+export async function resolvePersistentMetroraPathFromPath(
+  lookupPath: string,
+  message: string = PERSISTENT_METRORA_CLI_REQUIRED_MESSAGE,
+): Promise<string> {
+  const canonicalPath = await resolvePersistentExecutableFromPath(lookupPath, metroraExecutableNames())
+  if (canonicalPath) return canonicalPath
+  return resolvePersistentCodeburnPathFromPath(lookupPath, message)
 }
 
 export function resolvePersistentCodeburnPathFromWhichOutput(
