@@ -8,6 +8,7 @@ import https from 'https'
 
 import { calculateCost } from '../models.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
+import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 type AntigravityConversationRoot = {
@@ -52,6 +53,7 @@ const CACHE_VERSION = 5
 
 const RPC_TIMEOUT_MS = 5000
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+const SERVER_DISCOVERY_NEGATIVE_TTL_MS = 5000
 
 export type ServerInfo = {
   port: number
@@ -159,7 +161,7 @@ type AntigravityGenMetadataRow = {
   data: Uint8Array | string
 }
 
-const cachedServers = new Map<string, ServerInfo | null>()
+const cachedServers = new ExpiringServerDiscoveryCache<string, ServerInfo>(SERVER_DISCOVERY_NEGATIVE_TTL_MS)
 const cachedModelMaps = new Map<string, ModelMap>()
 let memCache: AntigravityCache | null = null
 let cacheDirty = false
@@ -488,24 +490,31 @@ export function antigravityAppDataDirFromSourcePath(path: string): 'antigravity'
   return 'antigravity'
 }
 
-async function detectServer(appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide' = 'antigravity'): Promise<ServerInfo | null> {
-  if (cachedServers.has(appDataDir)) return cachedServers.get(appDataDir)!
+async function discoverServer(appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide'): Promise<ServerInfo | null> {
   try {
     const candidates = parseAntigravityServerCandidates(await readProcessCommandLines())
     const info = candidates.find(candidate => candidate.appDataDir === appDataDir)
       ?? (appDataDir === 'antigravity' ? candidates.find(candidate => candidate.appDataDir === undefined) : undefined)
       ?? null
     if (info && info.port > 0 && appDataDir !== 'antigravity-ide') {
-      cachedServers.set(appDataDir, { port: info.port, csrfToken: info.csrfToken })
-    } else if (info) {
-      cachedServers.set(appDataDir, await resolveEphemeralPort(info.csrfToken, appDataDir))
-    } else {
-      cachedServers.set(appDataDir, null)
+      return { port: info.port, csrfToken: info.csrfToken }
     }
-    return cachedServers.get(appDataDir)!
+    if (info) return resolveEphemeralPort(info.csrfToken, appDataDir)
+    return null
   } catch { /* process discovery failed or timed out */ }
-  cachedServers.set(appDataDir, null)
   return null
+}
+
+async function detectServer(appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide' = 'antigravity'): Promise<ServerInfo | null> {
+  return cachedServers.getOrDiscover(appDataDir, () => discoverServer(appDataDir))
+}
+
+function invalidateServer(
+  appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide',
+  server: ServerInfo,
+): void {
+  cachedModelMaps.delete(`${server.port}:${server.csrfToken}`)
+  cachedServers.invalidate(appDataDir, server)
 }
 
 async function rpc(server: ServerInfo, method: string, body: Record<string, unknown> = {}): Promise<unknown> {
@@ -567,6 +576,23 @@ async function getModelMap(server: ServerInfo): Promise<ModelMap> {
   } catch { /* best-effort */ }
   cachedModelMaps.set(cacheKey, {})
   return {}
+}
+
+async function fetchCascadeRpcData(
+  appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide',
+  cascadeId: string,
+): Promise<{ metadata: GeneratorMetadata[]; modelMap: ModelMap } | null> {
+  return runWithSingleServerRediscovery({
+    detect: () => detectServer(appDataDir),
+    invalidate: server => invalidateServer(appDataDir, server),
+    operation: async server => {
+      const metadata = extractAntigravityGeneratorMetadata(
+        await rpc(server, 'GetCascadeTrajectoryGeneratorMetadata', { cascadeId }),
+      )
+      const modelMap = await getModelMap(server)
+      return { metadata, modelMap }
+    },
+  })
 }
 
 // Strip Antigravity-specific suffixes so the pricing DB can match
@@ -1179,28 +1205,19 @@ export async function snapshotAntigravityStatusLinePayload(input: unknown): Prom
     return true
   }
 
-  const server = await detectServer(antigravityAppDataDirFromSourcePath(source.path))
-  if (!server) return false
+  const rpcData = await fetchCascadeRpcData(antigravityAppDataDirFromSourcePath(source.path), cascadeId)
+  if (!rpcData) return false
 
-  let metadata: GeneratorMetadata[]
-  try {
-    const modelMap = await getModelMap(server)
-    metadata = extractAntigravityGeneratorMetadata(
-      await rpc(server, 'GetCascadeTrajectoryGeneratorMetadata', { cascadeId }),
-    )
-    const snapshotCalls = buildCallsFromGeneratorMetadata(cascadeId, metadata, modelMap)
-    assignStableTimestamps(snapshotCalls, cached?.calls, new Date(s.mtimeMs).toISOString())
-    cache.cascades[cascadeId] = {
-      mtimeMs: s.mtimeMs,
-      sizeBytes: s.size,
-      calls: snapshotCalls,
-    }
-    cacheDirty = true
-    await flushCache()
-    return cache.cascades[cascadeId]!.calls.length > 0
-  } catch {
-    return false
+  const snapshotCalls = buildCallsFromGeneratorMetadata(cascadeId, rpcData.metadata, rpcData.modelMap)
+  assignStableTimestamps(snapshotCalls, cached?.calls, new Date(s.mtimeMs).toISOString())
+  cache.cascades[cascadeId] = {
+    mtimeMs: s.mtimeMs,
+    sizeBytes: s.size,
+    calls: snapshotCalls,
   }
+  cacheDirty = true
+  await flushCache()
+  return cache.cascades[cascadeId]!.calls.length > 0
 }
 
 async function extractWorkspacePath(filePath: string): Promise<string | undefined> {
@@ -1341,8 +1358,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         return
       }
 
-      const server = await detectServer(antigravityAppDataDirFromSourcePath(source.path))
-      if (!server) {
+      const rpcData = await fetchCascadeRpcData(antigravityAppDataDirFromSourcePath(source.path), cascadeId)
+      if (!rpcData) {
         if (cached) {
           for (const call of cached.calls) {
             applyAntigravityProject(call, source, projectPath)
@@ -1354,26 +1371,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         return
       }
 
-      const modelMap = await getModelMap(server)
-
-      let metadata: GeneratorMetadata[]
-      try {
-        metadata = extractAntigravityGeneratorMetadata(
-          await rpc(server, 'GetCascadeTrajectoryGeneratorMetadata', { cascadeId }),
-        )
-      } catch {
-        if (cached) {
-          for (const call of cached.calls) {
-            applyAntigravityProject(call, source, projectPath)
-            if (seenKeys.has(call.deduplicationKey)) continue
-            seenKeys.add(call.deduplicationKey)
-            yield withFallbackTimestamp(call, fallbackTimestamp)
-          }
-        }
-        return
-      }
-
-      const results = buildCallsFromGeneratorMetadata(cascadeId, metadata, modelMap)
+      const results = buildCallsFromGeneratorMetadata(cascadeId, rpcData.metadata, rpcData.modelMap)
       assignStableTimestamps(results, cached?.calls, fallbackTimestamp)
       for (const call of results) {
         applyAntigravityProject(call, source, projectPath)
