@@ -16,6 +16,7 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-store-local-test-lib.ps1')
 
+Assert-MetroraStoreAdministrator
 $repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot $ExpectedCommit
 $archive = (Resolve-Path -LiteralPath $ArtifactArchive).Path
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
@@ -141,7 +142,7 @@ try {
 
   Export-PfxCertificate -Cert $certificate -FilePath $pfxPath -Password $password | Out-Null
   Export-Certificate -Cert $certificate -FilePath $cerPath -Type CERT | Out-Null
-  Import-Certificate -FilePath $cerPath -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+  Import-Certificate -FilePath $cerPath -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
 
   $signOutput = (& $signTool sign /fd SHA256 /f $pfxPath /p $passwordPlain $signed 2>&1 | Out-String).Trim()
   if ($LASTEXITCODE -ne 0) {
