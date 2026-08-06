@@ -2,9 +2,30 @@
 
 This file records Metrora-originated public changes. Required upstream provenance and licence notices are maintained separately in [`UPSTREAM.md`](UPSTREAM.md), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
-## Unreleased — current source line `1.0.0-rc.7`
+## Unreleased — current source line `1.0.0-rc.8`
 
-The current version identifies public source under development. It is not a claim that an accepted, signed or published `rc.7` artifact exists.
+RC8 is the current source/pre-submission candidate. It is not yet a Microsoft Store submission, certification or publication.
+
+### Windows Store readiness
+
+- Added the assigned Microsoft Store AppX identity and a non-publishing x64 Store-package workflow with exact artifact/source binding.
+- Added bounded local AppX acceptance that test-signs only a copy, verifies launch/local collection/no-external-Node behavior and removes the temporary package/certificate/private key afterward.
+- Added Windows PowerShell 5.1-compatible physical-test platform detection.
+- Reconciled persisted Workspace endpoint software metadata to the current packaged Metrora/collector version without replacing endpoint identity, membership or evidence history.
+- Removed legacy product/version wording from the Store-facing About surface while retaining required upstream licence/provenance notices in their dedicated locations.
+- Clarified the distinction between product SemVer, desktop build version and Microsoft Store AppX package identity version.
+
+### Public identity and local paths
+
+- Made Metrora the canonical sync command/documentation surface while retaining the v1 inherited discovery route only as a compatibility wire identifier.
+- Removed inherited developer deployment identifiers from public sync documentation.
+- Made fresh config/sync state use canonical Metrora roots while adopting an existing Qovrion/CodeBurn root in place when necessary to avoid stranding user state.
+- Made sync credential identity Metrora-first with bounded legacy keychain adoption.
+- Hardened the existing public-identity check so legacy branding/version text cannot reappear in the Store-facing About surface.
+
+## `1.0.0-rc.7` — published unsigned Windows technical preview
+
+RC7 was published as an **unsigned Windows x64 GitHub technical preview**. It remains manually updated, is not Microsoft Store certified and is not the stable `1.0.0` release. Its release assets and evidence remain bound to their exact published source and are not rewritten by later source work.
 
 ### Product identity and public documentation
 
@@ -59,7 +80,7 @@ The current version identifies public source under development. It is not a clai
 - Validated clean installation, removal, upgrade, repair, controlled rollback, interruption recovery and user-owned state preservation.
 - Completed bounded physical Windows keyboard, scaling, theme, reduced-motion and Narrator acceptance for the unsigned engineering candidate.
 - Added physical-acceptance report v2 with an explicit migration baseline and candidate-derived transitions while preserving historical report v1 verification.
-- Added a public unsigned GitHub pre-release acceptance contract and version-scoped `1.0.0-rc.7` preparation record.
+- Added a public unsigned GitHub pre-release acceptance contract and version-scoped `1.0.0-rc.7` preparation/publication record.
 
 ## 0.9.19 — Metrora public source baseline
 
