@@ -102,7 +102,7 @@ jobs:
             throw "unexpected application Id: $($application.Id)"
           }
 
-          $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.Name })
+          $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.GetAttribute('Name') })
           if ($capabilities.Count -ne 1 -or $capabilities[0] -cne 'runFullTrust') {
             throw "unexpected capability set: $($capabilities -join ', ')"
           }
