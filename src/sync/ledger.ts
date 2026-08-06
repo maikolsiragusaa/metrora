@@ -7,7 +7,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { getMetroraCacheDir } from '../product-paths.js'
 
 export interface LedgerEntry {
   key: string  // deduplicationKey
@@ -17,10 +17,7 @@ export interface LedgerEntry {
 const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000
 
 function cacheDir(): string {
-  // Honor XDG_CACHE_HOME — the ledger is reconstructible state, not config
-  const xdg = process.env.XDG_CACHE_HOME
-  const base = xdg && xdg.trim() ? xdg : join(homedir(), '.cache')
-  return join(base, 'codeburn')
+  return getMetroraCacheDir()
 }
 
 function ledgerPath(): string {
