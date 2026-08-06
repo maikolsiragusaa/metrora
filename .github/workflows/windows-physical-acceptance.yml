@@ -22,7 +22,7 @@ on:
       - 'scripts/verify-windows-store-local-test-report.mjs'
       - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
   push:
-    branches: [main]
+    branches: [main, test/windows-store-physical]
     paths:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'AVVIA-TEST-FISICO-METRORA.cmd'
