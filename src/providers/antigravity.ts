@@ -8,10 +8,7 @@ import https from 'https'
 
 import { calculateCost } from '../models.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
-import {
-  ExpiringServerDiscoveryCache,
-  runWithSingleServerRediscovery,
-} from './antigravity-server-recovery.js'
+import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 type AntigravityConversationRoot = {
