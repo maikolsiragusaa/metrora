@@ -3,6 +3,14 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'windows-physical-acceptance-lib.ps1')
 . (Join-Path $PSScriptRoot 'windows-physical-artifact-lib.ps1')
 
+function Assert-MetroraStoreAdministrator {
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+  if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'Store local package testing requires an elevated PowerShell session'
+  }
+}
+
 function Find-MetroraStoreSignTool {
   $command = Get-Command 'signtool.exe' -ErrorAction SilentlyContinue
   if ($command) { return $command.Source }
@@ -128,7 +136,7 @@ function Get-MetroraStoreLocalTestState([string]$AcceptanceDirectory, [string]$R
 }
 
 function Remove-MetroraStoreLocalCertificate([string]$Thumbprint) {
-  foreach ($store in @('Cert:\CurrentUser\TrustedPeople', 'Cert:\CurrentUser\My')) {
+  foreach ($store in @('Cert:\LocalMachine\TrustedPeople', 'Cert:\CurrentUser\My')) {
     $path = Join-Path $store $Thumbprint
     if (Test-Path -LiteralPath $path) {
       Remove-Item -LiteralPath $path -Force
