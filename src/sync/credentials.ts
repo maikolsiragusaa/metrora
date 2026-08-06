@@ -8,9 +8,10 @@
 import { execFileSync } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, chmodSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { getMetroraConfigDir } from '../product-paths.js'
 
-const SERVICE_NAME = 'codeburn-sync'
+const SERVICE_NAME = 'metrora-sync'
+const LEGACY_SERVICE_NAMES = ['qovrion-sync', 'codeburn-sync'] as const
 const ACCOUNT_NAME = 'refresh-token'
 
 export type StorageMethod = 'keychain' | 'secret-tool' | 'dpapi' | 'file'
@@ -24,36 +25,50 @@ export interface CredentialStore {
 
 // --- macOS Keychain ---
 
+function readMacKeychain(service: string): string | null {
+  try {
+    const result = execFileSync(
+      'security',
+      ['find-generic-password', '-s', service, '-a', ACCOUNT_NAME, '-w'],
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    )
+    return result.trim() || null
+  } catch {
+    return null
+  }
+}
+
+function deleteMacKeychain(service: string): void {
+  try {
+    execFileSync('security', ['delete-generic-password', '-s', service, '-a', ACCOUNT_NAME], { stdio: 'pipe' })
+  } catch { /* may not exist */ }
+}
+
 class KeychainStore implements CredentialStore {
   store(token: string): void {
-    // Delete existing first (add-generic-password fails if entry exists)
-    try {
-      execFileSync('security', ['delete-generic-password', '-s', SERVICE_NAME, '-a', ACCOUNT_NAME], { stdio: 'pipe' })
-    } catch { /* may not exist */ }
-
-    // Token passed as arg to execFileSync (no shell interpolation).
-    // Note: still briefly visible in process args on macOS; `security` has no
-    // stdin mode for -w with non-interactive use, so this is the best available.
+    deleteMacKeychain(SERVICE_NAME)
     execFileSync('security', ['add-generic-password', '-s', SERVICE_NAME, '-a', ACCOUNT_NAME, '-w', token], { stdio: 'pipe' })
   }
 
   retrieve(): string | null {
-    try {
-      const result = execFileSync(
-        'security',
-        ['find-generic-password', '-s', SERVICE_NAME, '-a', ACCOUNT_NAME, '-w'],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      )
-      return result.trim() || null
-    } catch {
-      return null
+    const canonical = readMacKeychain(SERVICE_NAME)
+    if (canonical) return canonical
+
+    for (const legacy of LEGACY_SERVICE_NAMES) {
+      const token = readMacKeychain(legacy)
+      if (!token) continue
+      // Adopt the credential into the canonical service while preserving the
+      // source entry until the canonical write succeeds.
+      this.store(token)
+      deleteMacKeychain(legacy)
+      return token
     }
+    return null
   }
 
   delete(): void {
-    try {
-      execFileSync('security', ['delete-generic-password', '-s', SERVICE_NAME, '-a', ACCOUNT_NAME], { stdio: 'pipe' })
-    } catch { /* may not exist */ }
+    deleteMacKeychain(SERVICE_NAME)
+    for (const legacy of LEGACY_SERVICE_NAMES) deleteMacKeychain(legacy)
   }
 
   method(): StorageMethod { return 'keychain' }
@@ -61,33 +76,51 @@ class KeychainStore implements CredentialStore {
 
 // --- Linux libsecret ---
 
+function readSecretTool(service: string): string | null {
+  try {
+    const result = execFileSync(
+      'secret-tool',
+      ['lookup', 'service', service, 'account', ACCOUNT_NAME],
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    )
+    return result.trim() || null
+  } catch {
+    return null
+  }
+}
+
+function deleteSecretTool(service: string): void {
+  try {
+    execFileSync('secret-tool', ['clear', 'service', service, 'account', ACCOUNT_NAME], { stdio: 'pipe' })
+  } catch { /* may not exist */ }
+}
+
 class SecretToolStore implements CredentialStore {
   store(token: string): void {
-    // Token passed via stdin — never appears in argv or shell string
     execFileSync(
       'secret-tool',
       ['store', `--label=${SERVICE_NAME}`, 'service', SERVICE_NAME, 'account', ACCOUNT_NAME],
-      { input: token, stdio: ['pipe', 'pipe', 'pipe'] }
+      { input: token, stdio: ['pipe', 'pipe', 'pipe'] },
     )
   }
 
   retrieve(): string | null {
-    try {
-      const result = execFileSync(
-        'secret-tool',
-        ['lookup', 'service', SERVICE_NAME, 'account', ACCOUNT_NAME],
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      )
-      return result.trim() || null
-    } catch {
-      return null
+    const canonical = readSecretTool(SERVICE_NAME)
+    if (canonical) return canonical
+
+    for (const legacy of LEGACY_SERVICE_NAMES) {
+      const token = readSecretTool(legacy)
+      if (!token) continue
+      this.store(token)
+      deleteSecretTool(legacy)
+      return token
     }
+    return null
   }
 
   delete(): void {
-    try {
-      execFileSync('secret-tool', ['clear', 'service', SERVICE_NAME, 'account', ACCOUNT_NAME], { stdio: 'pipe' })
-    } catch { /* may not exist */ }
+    deleteSecretTool(SERVICE_NAME)
+    for (const legacy of LEGACY_SERVICE_NAMES) deleteSecretTool(legacy)
   }
 
   method(): StorageMethod { return 'secret-tool' }
@@ -99,19 +132,19 @@ class DpapiStore implements CredentialStore {
   private filePath: string
 
   constructor() {
-    this.filePath = join(homedir(), '.config', 'codeburn', '.sync-token-dpapi')
+    this.filePath = join(getMetroraConfigDir(), '.sync-token-dpapi')
   }
 
   store(token: string): void {
-    // Token passed via environment variable — never in argv or command string
-    const ps = `$s = ConvertTo-SecureString $env:CODEBURN_SYNC_TOKEN -AsPlainText -Force; ConvertFrom-SecureString $s`
+    // Token passed via environment variable — never in argv or command string.
+    const ps = `$s = ConvertTo-SecureString $env:METRORA_SYNC_TOKEN -AsPlainText -Force; ConvertFrom-SecureString $s`
     const encrypted = execFileSync('powershell', ['-NoProfile', '-Command', ps], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, CODEBURN_SYNC_TOKEN: token },
+      env: { ...process.env, METRORA_SYNC_TOKEN: token },
     }).trim()
 
-    const dir = join(homedir(), '.config', 'codeburn')
+    const dir = getMetroraConfigDir()
     mkdirSync(dir, { recursive: true })
     writeFileSync(this.filePath, encrypted, { mode: 0o600 })
   }
@@ -120,11 +153,11 @@ class DpapiStore implements CredentialStore {
     if (!existsSync(this.filePath)) return null
     try {
       const encrypted = readFileSync(this.filePath, 'utf-8').trim()
-      const ps = `$s = ConvertTo-SecureString $env:CODEBURN_SYNC_BLOB; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))`
+      const ps = `$s = ConvertTo-SecureString $env:METRORA_SYNC_BLOB; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))`
       const result = execFileSync('powershell', ['-NoProfile', '-Command', ps], {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, CODEBURN_SYNC_BLOB: encrypted },
+        env: { ...process.env, METRORA_SYNC_BLOB: encrypted },
       })
       return result.trim() || null
     } catch {
@@ -145,11 +178,11 @@ class FileStore implements CredentialStore {
   private filePath: string
 
   constructor() {
-    this.filePath = join(homedir(), '.config', 'codeburn', '.sync-token')
+    this.filePath = join(getMetroraConfigDir(), '.sync-token')
   }
 
   store(token: string): void {
-    const dir = join(homedir(), '.config', 'codeburn')
+    const dir = getMetroraConfigDir()
     mkdirSync(dir, { recursive: true })
     writeFileSync(this.filePath, token, { mode: 0o600 })
     // Ensure permissions (writeFile mode doesn't always work on existing files)
@@ -186,9 +219,12 @@ function isCommandAvailable(cmd: string): boolean {
 
 export function createCredentialStore(): CredentialStore {
   // Test/CI escape hatch: force the file store (respects $HOME, so tests
-  // can fully isolate with a temp HOME). Without this, darwin machines
-  // would hit the real login keychain during the offline test suite.
-  if (process.env.CODEBURN_SYNC_TOKEN_STORE === 'file') {
+  // can fully isolate with a temp HOME). Canonical env wins; legacy names stay
+  // accepted only as temporary compatibility aliases.
+  const forcedStore = process.env.METRORA_SYNC_TOKEN_STORE
+    ?? process.env.QOVRION_SYNC_TOKEN_STORE
+    ?? process.env.CODEBURN_SYNC_TOKEN_STORE
+  if (forcedStore === 'file') {
     return new FileStore()
   }
 
@@ -202,9 +238,9 @@ export function createCredentialStore(): CredentialStore {
 
   // Linux: try secret-tool, fall back to file
   if (isCommandAvailable('secret-tool')) {
-    // Also verify the keyring daemon is running
+    // Also verify the keyring daemon is running.
     try {
-      execFileSync('secret-tool', ['lookup', 'service', '__codeburn_probe__', 'account', '__probe__'], { stdio: 'pipe' })
+      execFileSync('secret-tool', ['lookup', 'service', '__metrora_probe__', 'account', '__probe__'], { stdio: 'pipe' })
       return new SecretToolStore()
     } catch (err) {
       // Exit code 1 = not found (keyring works). Other errors = keyring not running.
