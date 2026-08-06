@@ -82,11 +82,13 @@ try {
     migrationBaseline = [ordered]@{
       commit = '80c3a5a1a116a0bc2fd5352b9fee2afc58207f15'
       productVersion = '0.9.19'
+      fileVersion = '0.9.19'
     }
     candidate = [ordered]@{
       artifactName = "metrora-windows-candidate-$commit.zip"
       artifactSha256 = $digest
       productVersion = '1.0.0-rc.7'
+      fileVersion = '1.0.0.7'
       releaseManifestSha256 = $digest
       formatManifestSha256 = $digest
     }
@@ -119,11 +121,11 @@ try {
         status = 'pass'
         transitions = @(
           'installed-0.9.19'
-          'upgraded-1.0.0-rc.7'
-          'reinstalled-1.0.0-rc.7'
+          'upgraded-1.0.0.7'
+          'reinstalled-1.0.0.7'
           'uninstalled-for-rollback'
           'rolled-back-0.9.19'
-          're-upgraded-1.0.0-rc.7'
+          're-upgraded-1.0.0.7'
           'uninstalled'
         )
         sentinelPreserved = $true
