@@ -26,13 +26,13 @@ function Get-MetroraPhysicalAcceptanceState([string]$AcceptanceDirectory, [strin
     Assert-MetroraPhysicalContextKeys $context @('kind', 'version', 'source', 'candidate', 'platform', 'sentinel') 'context'
   } elseif ($contextVersion -eq 2) {
     Assert-MetroraPhysicalContextKeys $context @('kind', 'version', 'source', 'migrationBaseline', 'candidate', 'platform', 'sentinel') 'context'
-    Assert-MetroraPhysicalContextKeys $context.migrationBaseline @('commit', 'productVersion') 'context.migrationBaseline'
+    Assert-MetroraPhysicalContextKeys $context.migrationBaseline @('commit', 'productVersion', 'fileVersion') 'context.migrationBaseline'
   } else {
     throw 'physical acceptance context version is unsupported'
   }
 
   Assert-MetroraPhysicalContextKeys $context.source @('repository', 'commit') 'context.source'
-  Assert-MetroraPhysicalContextKeys $context.candidate @(
+  $candidateKeys = @(
     'directory',
     'archive',
     'artifactName',
@@ -44,7 +44,9 @@ function Get-MetroraPhysicalAcceptanceState([string]$AcceptanceDirectory, [strin
     'formatManifestSha256',
     'canonicalFileCount',
     'canonicalInventorySha256'
-  ) 'context.candidate'
+  )
+  if ($contextVersion -eq 2) { $candidateKeys += 'fileVersion' }
+  Assert-MetroraPhysicalContextKeys $context.candidate $candidateKeys 'context.candidate'
   Assert-MetroraPhysicalContextKeys $context.platform @('edition', 'version', 'build', 'architecture') 'context.platform'
   Assert-MetroraPhysicalContextKeys $context.sentinel @('file', 'sha256') 'context.sentinel'
 
@@ -63,7 +65,9 @@ function Get-MetroraPhysicalAcceptanceState([string]$AcceptanceDirectory, [strin
     if (
       $context.migrationBaseline.commit -notmatch '^[a-f0-9]{40}$' -or
       $context.migrationBaseline.productVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$' -or
-      $context.migrationBaseline.productVersion -eq $context.candidate.productVersion
+      $context.migrationBaseline.fileVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$' -or
+      $context.candidate.fileVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$' -or
+      $context.migrationBaseline.fileVersion -eq $context.candidate.fileVersion
     ) {
       throw 'physical acceptance migration baseline authority is invalid'
     }
