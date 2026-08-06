@@ -6,8 +6,9 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const desktopPackagePath = resolve(repositoryRoot, 'app/package.json')
-const desktopPackage = JSON.parse(readFileSync(desktopPackagePath, 'utf8'))
+const desktopPackage = JSON.parse(readFileSync(resolve(repositoryRoot, 'app/package.json'), 'utf8'))
+const brandGenerator = readFileSync(resolve(repositoryRoot, 'scripts/generate-brand-assets.mjs'), 'utf8')
+const identityDocument = readFileSync(resolve(repositoryRoot, 'docs/WINDOWS_STORE_IDENTITY_V1.md'), 'utf8')
 
 const expected = Object.freeze({
   applicationId: 'eu.metrora.desktop',
@@ -20,8 +21,8 @@ const expected = Object.freeze({
 
 assert.equal(
   desktopPackage.scripts?.['package:store'],
-  'npm run stage-cli && npm run build && electron-builder --win appx --x64',
-  'the Store build must remain an explicit x64 AppX target',
+  'npm run stage-cli && npm run build && electron-builder --win appx --x64 --publish never',
+  'the Store build must remain an explicit non-publishing x64 AppX target',
 )
 
 assert.equal(
@@ -73,4 +74,29 @@ assert.equal(
   'the current Windows package version authority must remain 1.0.0.7',
 )
 
-console.log('Windows Store package identity and channel separation are valid.')
+for (const asset of [
+  'app/build/appx/StoreLogo.png',
+  'app/build/appx/Square44x44Logo.png',
+  'app/build/appx/Square150x150Logo.png',
+  'app/build/appx/Wide310x150Logo.png',
+]) {
+  assert.ok(brandGenerator.includes(asset), `the deterministic brand generator must emit ${asset}`)
+}
+
+for (const marker of [
+  'Package/Identity/Name: Vensent.Metrora',
+  'Package/Identity/Publisher: CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F',
+  'Package/Properties/PublisherDisplayName: Vensent',
+  'Package Family Name: Vensent.Metrora_1xcj95baterfy',
+  'Store ID: 9NXSZFQSBBDX',
+]) {
+  assert.ok(identityDocument.includes(marker), `the Store identity document must include ${marker}`)
+}
+
+assert.equal(
+  identityDocument.includes('S-1-15-2-'),
+  false,
+  'the Package SID must not be copied into the public identity document',
+)
+
+console.log('Windows Store package identity, assets and channel separation are valid.')
