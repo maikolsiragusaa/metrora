@@ -6,21 +6,33 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - '.github/workflows/windows-store-package.yml'
+      - '.github/workflows/windows-physical-acceptance.yml'
       - 'app/package.json'
       - 'app/package-lock.json'
       - 'scripts/generate-brand-assets.mjs'
       - 'scripts/windows-store-identity.node-test.mjs'
+      - 'scripts/windows-store-local-test*'
+      - 'scripts/verify-windows-store-local-test-report.mjs'
+      - 'scripts/*Windows-Store-Local-Test*.ps1'
+      - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
       - 'docs/WINDOWS_STORE_IDENTITY_V1.md'
+      - 'docs/WINDOWS_STORE_LOCAL_TEST_GUIDED.md'
       - 'package.json'
   push:
     branches: [main]
     paths:
       - '.github/workflows/windows-store-package.yml'
+      - '.github/workflows/windows-physical-acceptance.yml'
       - 'app/package.json'
       - 'app/package-lock.json'
       - 'scripts/generate-brand-assets.mjs'
       - 'scripts/windows-store-identity.node-test.mjs'
+      - 'scripts/windows-store-local-test*'
+      - 'scripts/verify-windows-store-local-test-report.mjs'
+      - 'scripts/*Windows-Store-Local-Test*.ps1'
+      - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
       - 'docs/WINDOWS_STORE_IDENTITY_V1.md'
+      - 'docs/WINDOWS_STORE_LOCAL_TEST_GUIDED.md'
       - 'package.json'
 
 permissions:

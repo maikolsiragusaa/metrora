@@ -14,6 +14,7 @@ $paths = @(
   'scripts\windows-physical-artifact-lib.ps1',
   'scripts\windows-physical-context-lib.ps1',
   'scripts\windows-physical-guide-lib.ps1',
+  'scripts\windows-store-local-test-lib.ps1',
   'scripts\Test-Metrora-Windows-Install.ps1',
   'scripts\Test-Metrora-Windows-Migration.ps1',
   'scripts\Test-Metrora-Windows-Interrupted-Migration.ps1',
@@ -25,7 +26,10 @@ $paths = @(
   'scripts\Complete-Metrora-Windows-Physical-Acceptance.ps1',
   'scripts\Invoke-Metrora-Windows-Physical-Acceptance.ps1',
   'scripts\Test-Metrora-Windows-Physical-Report-Runtime.ps1',
-  'scripts\Test-Metrora-Windows-Physical-Guide-Runtime.ps1'
+  'scripts\Test-Metrora-Windows-Physical-Guide-Runtime.ps1',
+  'scripts\Prepare-Metrora-Windows-Store-Local-Test.ps1',
+  'scripts\Complete-Metrora-Windows-Store-Local-Test.ps1',
+  'scripts\Test-Metrora-Windows-Store-Local-Test-Runtime.ps1'
 )
 
 $failures = @()
