@@ -1,13 +1,15 @@
 # Getting started
 
-Metrora does not yet have an official stable desktop distribution. The supported public evaluation path is currently a clean build from this repository.
+Metrora does not yet have an official stable desktop distribution. You can evaluate it from source, or use the published **unsigned Windows x64 technical preview `v1.0.0-rc.7`** from GitHub Releases. RC7 is not signed, Microsoft Store certified, automatically updated or the stable `1.0.0` release.
+
+The repository's active source/pre-submission line may be newer than the latest published technical preview. Source builds must therefore be identified by their exact commit/version rather than treated as RC7 release assets.
 
 ## Requirements
 
-Use:
+For repository development and source evaluation use:
 
 - Git;
-- Node.js 22.15 or newer for repository development and validation;
+- Node.js 22.15 or newer;
 - npm;
 - at least one supported AI tool with local usage records.
 
@@ -140,15 +142,15 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Development builds are not official signed releases. Windows is the first official desktop distribution target; the exact product and publisher identity, signing status and channel must be verified before an artifact is presented as official.
+Development builds are not official signed releases. Windows is the first official desktop distribution target. Metrora has an assigned Microsoft Store identity and a non-publishing AppX pre-submission path, but no Store certification/publication is claimed until Microsoft accepts a submission.
 
-See [Windows distribution](WINDOWS_DISTRIBUTION.md) and [`RELEASING.md`](../RELEASING.md).
+See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
 
 ## Local files and compatibility
 
 The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases so existing local state, scripts and integrations can migrate without abrupt breakage.
 
-Some internal directories, environment variables and persisted identifiers also retain historical names. Their presence does not make them current product names or distribution channels.
+Fresh configuration paths use Metrora identity. Existing Qovrion/CodeBurn roots remain readable where required to avoid stranding user state. Some frozen v1 protocol fields, environment aliases and platform-specific integration identifiers also retain historical names; they are compatibility details, not current product names or distribution channels.
 
 Do not rename or delete compatibility state manually unless the relevant migration documentation explicitly instructs you to do so.
 
