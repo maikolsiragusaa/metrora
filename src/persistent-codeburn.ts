@@ -56,8 +56,8 @@ async function resolvePersistentExecutableFromPath(
 ): Promise<string | undefined> {
   const directories = lookupPath.split(delimiter).filter(Boolean)
   const seen = new Set<string>()
-  for (const executable of executableNames) {
-    for (const dir of directories) {
+  for (const dir of directories) {
+    for (const executable of executableNames) {
       const candidate = join(dir, executable)
       if (seen.has(candidate)) continue
       seen.add(candidate)
