@@ -1,0 +1,146 @@
+# Canonical history parity observer v1
+
+## Status
+
+Implemented as a non-authoritative diagnostic boundary.
+
+The parity observer validates one canonical history read projection against the two current local authorities before that projection may advance the removable shadow store.
+
+It does not change what Metrora reports, display a new history surface, or make the shadow store a product dependency.
+
+## Invocation boundary
+
+The observer runs after the trusted reviewed-production scanner has:
+
+1. explicitly refreshed the canonical session cache;
+2. loaded a complete current-version session cache;
+3. received the endpoint identifier from the protected desktop runtime.
+
+The observer then loads the current daily cache. It runs only when that cache is both complete and backed by a trusted watermark.
+
+Renderer code cannot supply:
+
+- session or daily cache payloads;
+- source paths;
+- provider identities;
+- deduplication keys;
+- observations or activity groupings;
+- cost assignments;
+- shadow-store records.
+
+## Independent parity checks
+
+### Observation parity
+
+The observer independently walks the current session cache and derives one expected path-free observation payload for every endpoint-scoped source fingerprint.
+
+It compares those expected payloads with the projection by identity and canonical RFC 8785 content.
+
+The comparison covers:
+
+- collector and model identity;
+- timestamp;
+- token accounting;
+- immutable cost assignment and numeric cost state;
+- explicit unavailable cost;
+- estimation state;
+- speed.
+
+Exact duplicate source records are counted once. Reuse of one source identity with a conflicting payload fails closed.
+
+### Activity parity
+
+The observer independently reconstructs the activity partition as ordered sets of observation identities anchored to collector and turn timestamp.
+
+It requires:
+
+- every projected observation to belong to exactly one activity;
+- no activity to reference an absent observation;
+- no duplicate or conflicting activity payload;
+- the projected partition to equal the partition derived from the session cache.
+
+The observer does not expose private session identifiers.
+
+### Daily-history parity
+
+The observer independently removes project paths from the trusted daily cache and compares the complete canonical daily payload with the projection.
+
+This comparison includes:
+
+- headline totals;
+- token totals;
+- models and categories;
+- provider slices;
+- project statistics without paths;
+- carried-history markers;
+- the timezone used for day bucketing.
+
+The observation collection and daily snapshots remain separate authorities and are never added together.
+
+## Publication rule
+
+The order is strict:
+
+1. validate current cache versions and trust;
+2. build the read projection;
+3. prove observation, activity and daily parity;
+4. persist the projection through the canonical shadow store.
+
+A parity mismatch therefore cannot advance the shadow head.
+
+A successful result records only:
+
+- projection digest;
+- shadow publication outcome;
+- entity counts;
+- reconciliation counts;
+- the non-additive authority marker.
+
+## Failure behavior
+
+Parity is diagnostic, not a production gate.
+
+When the observer is invoked through reviewed production:
+
+- a mismatch or shadow-store integrity error leaves current analytics and reviewed production unchanged;
+- a generic sanitized warning is written to stderr;
+- the detailed exception is not copied into renderer, public event, report or telemetry output;
+- a diagnostic reporter failure is also prevented from becoming a production failure.
+
+An incomplete or untrusted daily cache does not mint a shadow snapshot. A later trusted refresh retries the observation through the same bounded path.
+
+## Privacy boundary
+
+The observer and shadow store do not persist:
+
+- prompts or responses;
+- source code or patches;
+- source or project paths;
+- private session identifiers;
+- private deduplication material;
+- commands, tool inputs or tool arguments;
+- secrets.
+
+Endpoint-scoped source fingerprints remain the public observation identity.
+
+## Authority boundary
+
+Current product authority remains unchanged:
+
+- session cache: source-present normalized call materialization;
+- trusted daily cache: durable daily totals and carried aggregate-only history;
+- canonical history shadow: removable diagnostic snapshots only;
+- CLI, desktop reports, Workspace, Android and APIs: no reads from the shadow store.
+
+Deleting the complete `history-shadow/v1` directory must leave current product behavior unchanged.
+
+## Deferred work
+
+This observer does not authorize:
+
+- consumer parity claims based on real-world observation duration;
+- CLI or desktop cutover;
+- replacement of session or daily caches;
+- migration or historical backfill;
+- database introduction;
+- remote sync, accounts, billing or managed infrastructure.
