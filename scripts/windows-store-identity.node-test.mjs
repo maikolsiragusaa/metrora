@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url'
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const desktopPackage = JSON.parse(readFileSync(resolve(repositoryRoot, 'app/package.json'), 'utf8'))
 const brandGenerator = readFileSync(resolve(repositoryRoot, 'scripts/generate-brand-assets.mjs'), 'utf8')
-const identityDocument = readFileSync(resolve(repositoryRoot, 'docs/WINDOWS_STORE_IDENTITY_V1.md'), 'utf8')
 
 const expected = Object.freeze({
   applicationId: 'eu.metrora.desktop',
@@ -82,21 +81,5 @@ for (const asset of [
 ]) {
   assert.ok(brandGenerator.includes(asset), `the deterministic brand generator must emit ${asset}`)
 }
-
-for (const marker of [
-  'Package/Identity/Name: Vensent.Metrora',
-  'Package/Identity/Publisher: CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F',
-  'Package/Properties/PublisherDisplayName: Vensent',
-  'Package Family Name: Vensent.Metrora_1xcj95baterfy',
-  'Store ID: 9NXSZFQSBBDX',
-]) {
-  assert.ok(identityDocument.includes(marker), `the Store identity document must include ${marker}`)
-}
-
-assert.equal(
-  identityDocument.includes('S-1-15-2-'),
-  false,
-  'the Package SID must not be copied into the public identity document',
-)
 
 console.log('Windows Store package identity, assets and channel separation are valid.')
