@@ -20,8 +20,13 @@ function existingOrCanonical(canonical: string, legacy: string[]): string {
   return canonical
 }
 
+function standardBase(env: MetroraPathEnvironment, xdgName: string, home: string, fallback: string): string {
+  const xdg = env[xdgName]?.trim()
+  return xdg || join(home, fallback)
+}
+
 /**
- * New installations use ~/.config/metrora. Existing development-name or
+ * New installations use the Metrora config root. Existing development-name or
  * inherited roots remain readable in place until a separately reviewed data
  * migration can copy/merge them without risking user state.
  */
@@ -36,16 +41,17 @@ export function getMetroraConfigDir(
   ])
   if (explicit) return explicit
 
+  const base = standardBase(env, 'XDG_CONFIG_HOME', home, '.config')
   return existingOrCanonical(
-    join(home, '.config', 'metrora'),
-    [join(home, '.config', 'qovrion'), join(home, '.config', 'codeburn')],
+    join(base, 'metrora'),
+    [join(base, 'qovrion'), join(base, 'codeburn')],
   )
 }
 
 /**
- * New installations use ~/.cache/metrora. Explicit Metrora overrides win,
- * followed by temporary compatibility aliases; an existing legacy default is
- * adopted in place rather than abandoned, preserving durable history.
+ * New installations use the Metrora cache root. Explicit Metrora overrides
+ * win, followed by temporary compatibility aliases; an existing legacy default
+ * is adopted in place rather than abandoned, preserving durable history.
  */
 export function getMetroraCacheDir(
   env: MetroraPathEnvironment = process.env,
@@ -58,8 +64,9 @@ export function getMetroraCacheDir(
   ])
   if (explicit) return explicit
 
+  const base = standardBase(env, 'XDG_CACHE_HOME', home, '.cache')
   return existingOrCanonical(
-    join(home, '.cache', 'metrora'),
-    [join(home, '.cache', 'qovrion'), join(home, '.cache', 'codeburn')],
+    join(base, 'metrora'),
+    [join(base, 'qovrion'), join(base, 'codeburn')],
   )
 }
