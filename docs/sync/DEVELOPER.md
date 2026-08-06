@@ -1,215 +1,137 @@
-# Sync — Developer Documentation
+# Metrora sync — developer contract
 
-Architecture, protocol, server contract, and testing for `codeburn sync`.
+This document describes the current opt-in sync client, its v1 compatibility wire contract and its offline test boundaries. It is not a production-backend deployment guide.
 
-## Architecture
+## Client flow
 
-```
-Developer machine                          Remote backend
-──────────────────                         ──────────────
-~/.config/codeburn/sync.json  (config)
-~/.config/codeburn/.sync-token (credential)
-~/.cache/codeburn/sync-ledger.json (sent-ledger)
+```text
+Metrora client                              Configured remote endpoint
+──────────────                              ──────────────────────────
+config root/sync.json       (non-secret)
+credential backend          (refresh token)
+cache root/sync-ledger.json (sent ledger)
 
-codeburn sync push
+metrora sync push
   │
-  ├─ Read config → baseUrl, clientId, issuer, tracesPath
-  ├─ Read refresh token from OS store
-  ├─ POST {issuer}/oauth2/token (refresh_token grant) → access_token
-  ├─ Collect ParsedProviderCall[] for window
-  ├─ Filter against sent-ledger (only unsent calls)
-  ├─ Build OTLP/HTTP JSON payload
-  ├─ POST {baseUrl}{tracesPath} with Bearer token
-  ├─ On success → append deduplicationKeys to ledger
-  └─ Update lastSync in config
+  ├─ read endpoint configuration
+  ├─ refresh the OIDC access token
+  ├─ collect eligible local usage records for the requested window
+  ├─ subtract records already present in the sent-ledger
+  ├─ build OTLP/HTTP JSON
+  ├─ POST to the configured endpoint with a Bearer token
+  ├─ append successful record identities to the ledger
+  └─ update lastSync
 ```
 
-## Discovery Protocol
+Fresh installations use canonical Metrora config/cache roots. Existing Qovrion or CodeBurn roots are adopted in place when present so upgrades do not silently abandon state.
 
-### Server discovery document
+## Discovery protocol
 
-```
+The v1 protocol currently discovers endpoint metadata at:
+
+```text
 GET {baseUrl}/.well-known/codeburn-export.json
 ```
+
+The `codeburn-export.json` route name is a **frozen compatibility wire identifier**. It remains only to avoid breaking already compatible endpoints and must not be treated as current product branding.
+
+Example shape:
 
 ```json
 {
   "version": 1,
-  "issuer": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_XXXX",
-  "client_id": "70e6sgst2ju6ff9dnrmv4l1tcb",
+  "issuer": "https://auth.example.com",
+  "client_id": "example-client-id",
   "scopes": ["openid", "email"],
   "traces_path": "/v1/traces",
   "max_batch_size": 1000
 }
 ```
 
-| Field | Required | Default | Description |
+| Field | Required | Default | Meaning |
 |---|---|---|---|
-| `version` | No | `1` | Client rejects `version > 1` |
-| `issuer` | Yes | — | OIDC issuer URL. Client fetches `{issuer}/.well-known/openid-configuration` |
-| `client_id` | Yes | — | OAuth client ID for this deployment |
-| `scopes` | No | `["openid"]` | Scopes to request. `offline_access` added dynamically if IdP supports it |
-| `traces_path` | No | `/v1/traces` | Path for OTLP POST |
-| `max_batch_size` | No | `1000` | Max spans per HTTP request |
+| `version` | No | `1` | Client rejects versions newer than it understands. |
+| `issuer` | Yes | — | OIDC issuer URL. |
+| `client_id` | Yes | — | OAuth client ID for the deployment. |
+| `scopes` | No | `["openid"]` | Requested OIDC scopes. |
+| `traces_path` | No | `/v1/traces` | OTLP HTTP POST path. |
+| `max_batch_size` | No | `1000` | Maximum spans per request. |
 
-### Why not proxy `.well-known/openid-configuration`?
+Remote endpoint and issuer URLs must use HTTPS. Plain HTTP is accepted only for loopback development/testing.
 
-OIDC requires the `issuer` claim inside the discovery doc to match the URL it was fetched from. Serving Cognito's doc from a different domain violates this constraint. The `codeburn-export.json` doc decouples the metrics endpoint from the identity provider.
+## OIDC authentication
 
-## OIDC Authentication
+The client uses Authorization Code + PKCE:
 
-### Flow: Authorization Code + PKCE
+1. generate a random verifier and SHA-256 challenge;
+2. start a loopback callback listener on one of the reviewed fixed ports;
+3. open the authorization endpoint in the browser;
+4. validate the returned `state` and authorization code;
+5. exchange the code using the verifier;
+6. store the refresh token using the platform credential backend.
 
-1. Client generates `code_verifier` (32 random bytes, base64url) and `code_challenge` (SHA-256 of verifier, base64url)
-2. Client starts callback server on `127.0.0.1:19876` (fallback: 19877, 19878)
-3. Browser opens `{authorization_endpoint}?response_type=code&client_id=...&redirect_uri=http://127.0.0.1:{port}/callback&code_challenge=...&code_challenge_method=S256&state=...&scope=...`
-4. User logs in at IdP → IdP redirects to `http://127.0.0.1:{port}/callback?code=...&state=...`
-5. Callback server validates `state`, extracts `code`
-6. Client POSTs to `{token_endpoint}` with `grant_type=authorization_code`, `code`, `code_verifier`, `redirect_uri`, `client_id`
-7. IdP returns `access_token` + `refresh_token`
+On a later `metrora sync push`, the refresh token is exchanged for a current access token. An invalid/expired refresh grant stops the push and requires the user to run `metrora sync setup <url>` again.
 
-### Fixed ports
+## Credential boundary
 
-Cognito (and Okta) do exact string comparison on callback URLs. Ephemeral ports fail. We register three fixed ports: `19876`, `19877`, `19878`. The client tries in order, falling back if a port is in use.
+Supported storage backends are:
 
-RFC 8252 recommends `127.0.0.1` (IP literal) over `localhost` to avoid IPv6 `::1` resolution.
+| Platform | Preferred storage |
+|---|---|
+| macOS | Keychain |
+| Linux | libsecret, with permission-restricted file fallback |
+| Windows | DPAPI-protected local file |
 
-### Token refresh
+Canonical credential identity is `metrora-sync`. Existing Qovrion/CodeBurn keychain service entries can be adopted into the canonical service after a successful read. Legacy files remain readable through the shared config-root compatibility boundary.
 
-On every `sync push`:
-1. Read refresh token from OS store
-2. POST `{token_endpoint}` with `grant_type=refresh_token`
-3. Store whatever refresh token the server returns (handles rotation transparently)
-4. On `invalid_grant` → stop, prompt user to re-run `sync setup`
+Secrets are never written to `sync.json` or the sent-ledger.
 
-### Scope resolution
+## OTLP encoding
 
-- Request scopes from `codeburn-export.json`
-- Add `offline_access` only if `scopes_supported` in OIDC discovery includes it
-- Cognito rejects `offline_access` as `invalid_scope` — it issues refresh tokens without it
+The payload follows protobuf-JSON mapping for `ExportTraceServiceRequest`.
 
-## Credential Storage
+Deterministic span identity is derived from local record identity so retries remain stable:
 
-| Platform | Method | Implementation |
-|---|---|---|
-| macOS | Keychain | `security add-generic-password` / `find-generic-password` |
-| Linux | libsecret | `secret-tool store` / `secret-tool lookup` |
-| Windows | DPAPI | PowerShell `ConvertTo-SecureString` / `ConvertFrom-SecureString` |
-| Fallback | File | `~/.config/codeburn/.sync-token` with `0600` permissions |
-
-No native modules (`keytar` is archived). Shell out to OS CLIs. Fallback reported honestly in `sync status`.
-
-## OTLP Encoding
-
-Strict protobuf-JSON mapping of `ExportTraceServiceRequest`. lowerCamelCase fields, hex-encoded IDs, integer enums.
-
-### Span identity (deterministic)
-
-```
-span_id   = first 8 bytes of SHA-256(deduplicationKey) → hex (16 chars)
-trace_id  = first 16 bytes of SHA-256(sessionId)       → hex (32 chars)
+```text
+span_id  = first 8 bytes of SHA-256(deduplicationKey)
+trace_id = first 16 bytes of SHA-256(sessionId)
 ```
 
-Re-sends are byte-identical. Server-side dedup is defense-in-depth.
+The v1 payload may still contain inherited wire attribute names that are frozen for compatibility. Those identifiers are protocol details, not current UI/product names, and require a separately versioned migration before removal.
 
-### Resource attributes
+## Privacy boundary
 
-```json
-{
-  "resource": {
-    "attributes": [
-      { "key": "codeburn.device_id", "value": { "stringValue": "<SHA-256(hostname+username)[:16]>" } }
-    ]
-  }
-}
+The sync payload is metadata-oriented. It does not include prompt bodies, response bodies, source-code contents, diffs, shell-command text, API keys, secrets or unrestricted local paths.
+
+Identity for a remote deployment comes from the authenticated token; the client does not send a user's local account name as a dedicated identity field.
+
+## Sent-ledger
+
+`sync-ledger.json` records successfully sent deduplication keys. Push behavior is:
+
+```text
+selected local records
+  minus sent-ledger
+  = records eligible for this push
 ```
 
-### Span attributes
+Entries older than the supported retention window are pruned. A partially rejected OTLP batch is not ledgered as successful because the response does not identify exactly which spans were rejected; the batch can therefore retry with deterministic span IDs.
 
-```json
-{
-  "attributes": [
-    { "key": "ai.provider", "value": { "stringValue": "kiro" } },
-    { "key": "ai.model", "value": { "stringValue": "claude-sonnet-4-6" } },
-    { "key": "ai.input_tokens", "value": { "intValue": "12500" } },
-    { "key": "ai.output_tokens", "value": { "intValue": "3200" } },
-    { "key": "ai.cost_usd", "value": { "doubleValue": 0.085 } },
-    { "key": "ai.project", "value": { "stringValue": "my-app" } },
-    { "key": "ai.tools", "value": { "arrayValue": { "values": [{ "stringValue": "Edit" }] } } },
-    { "key": "ai.speed", "value": { "stringValue": "standard" } },
-    { "key": "ai.cost_estimated", "value": { "boolValue": true } }
-  ]
-}
-```
+HTTP 429 handling honors bounded `Retry-After` delays. Authentication or server failures stop the current push without falsely ledgering unsent records.
 
-## Sent-Ledger
+## Server contract
 
-Client-side deduplication source of truth at `~/.cache/codeburn/sync-ledger.json`.
+A compatible endpoint implements:
 
-Format: JSON array of `{ key: string, ts: string }` objects.
+1. `GET {baseUrl}/.well-known/codeburn-export.json` for the v1 discovery document;
+2. `POST {baseUrl}{traces_path}` accepting OTLP/HTTP JSON with Bearer authentication.
 
-**Push logic**: collect all calls in window → subtract ledger entries → send remainder → append to ledger on success.
+The server is responsible for validating tokens, applying its own authorization/retention policy and handling deterministic span IDs idempotently.
 
-**Pruning**: entries older than 6 months removed on every push.
-
-**Why not a watermark?** Timestamp watermarks silently skip late-arriving calls (long sessions, providers that update rows). The ledger is exact.
-
-### Partial success
-
-OTLP returns `partial_success.rejected_spans` in the response body. Because OTLP does not identify *which* spans were rejected, the client ledgers nothing for a partially-rejected batch — the entire batch retries on the next push. This is safe: span IDs are deterministic (derived from the deduplication key), so servers that store by span ID treat re-sent spans as idempotent upserts.
-
-### Rate limiting (429)
-
-A push runs to completion — there is no routine per-push cap (only a 50,000-call safety valve). Server rate limits are the intended brake:
-
-- On HTTP 429 the client honors `Retry-After` (delta-seconds or HTTP-date), capped at 120 seconds per wait, defaulting to 5 seconds when the header is absent
-- The same batch is retried up to 3 consecutive times; if the server is still rate-limiting after that, the push stops and the remaining (unledgered) calls are sent on the next push
-- On 401 or 5xx the push stops immediately with the same resume-on-next-push behavior
-
-### Server contract
-
-The backend must implement:
-
-1. `GET {baseUrl}/.well-known/codeburn-export.json` — returns the discovery doc (public, no auth)
-2. `POST {baseUrl}{traces_path}` — accepts OTLP/HTTP JSON with Bearer token
-   - Validate JWT (issued by the configured IdP)
-   - Derive developer identity from token's `sub` claim
-   - Accept `startTimeUnixNano` up to 6 months in the past
-   - Return standard OTLP response body
-
-No PII is included in the payload. The server derives identity solely from the authenticated token.
+Metrora does not ship or require a public hosted Community backend as part of this contract.
 
 ## Testing
 
-### Unit tests (`tests/sync.test.ts`)
+The repository's sync tests are expected to cover discovery parsing, PKCE helpers, callback validation, config read/write, token refresh behavior, sent-ledger semantics and loopback/mock-server flows without requiring a production endpoint.
 
-26 tests covering pure functions: discovery parsing, PKCE generation, auth URL construction, scope resolution, callback server, config read/write. No network, no browser.
-
-### Mock IdP e2e (`tests/sync-e2e.test.ts`)
-
-6 tests with a localhost mock IdP server. Exercises the full auth round-trip, token refresh, rotation, revocation — fully offline, runs in CI.
-
-### Headless browser e2e (`tests/sync-headless-e2e.test.ts`)
-
-1 test with Playwright headless Chromium against real Cognito. Proves the actual browser PKCE flow works including Cognito Hosted UI form submission and localhost redirect.
-
-**Developer-only** — requires:
-- Deployed test backend (CDK stack at `../codeburn-sync-backend/`)
-- Cognito user with confirmed password
-- Environment variables: `CODEBURN_SYNC_URL`, `CODEBURN_SYNC_EMAIL`, `CODEBURN_SYNC_PASSWORD`
-- Playwright Chromium installed (`PLAYWRIGHT_BROWSERS_PATH`)
-
-Skipped by default when env vars are not set. Never runs in CI.
-
-### Test CDK stack (`codeburn-sync-backend/`)
-
-Minimal AWS backend for the headless e2e test:
-- Cognito User Pool (PKCE, fixed callback ports)
-- HTTP API with JWT authorizer
-- Discovery Lambda (serves `codeburn-export.json`)
-- Ingest Lambda (logs OTLP spans to CloudWatch)
-
-Deploy: `npx cdk deploy --profile andklee-dev`
-Cost: ~$0/mo idle (pay-per-request)
-
-This is a **test fixture**, not a production reference. Any OIDC provider + OTLP-accepting endpoint satisfies the server contract.
+Tests that require external credentials or a live deployment are developer-controlled and must remain opt-in. Public documentation must not contain real deployment identifiers, private profiles, passwords, test-user credentials or production secrets.
