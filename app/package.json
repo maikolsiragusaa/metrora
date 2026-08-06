@@ -18,6 +18,7 @@
     "package:arm64": "npm run stage-cli && npm run build && electron-builder --mac --arm64",
     "package:x64": "npm run stage-cli && npm run build && electron-builder --mac --x64",
     "package:win": "npm run stage-cli && npm run build && electron-builder --win",
+    "package:store": "npm run stage-cli && npm run build && electron-builder --win appx --x64 --publish never",
     "package:linux": "npm run stage-cli && npm run build && electron-builder --linux"
   },
   "dependencies": {
@@ -102,6 +103,17 @@
       "perMachine": false,
       "deleteAppDataOnUninstall": false,
       "artifactName": "Metrora-Setup-${version}.${ext}"
+    },
+    "appx": {
+      "applicationId": "eu.metrora.desktop",
+      "identityName": "Vensent.Metrora",
+      "publisher": "CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F",
+      "publisherDisplayName": "Vensent",
+      "displayName": "Metrora",
+      "artifactName": "Metrora-${version}-Windows-Store-${arch}.${ext}",
+      "capabilities": [
+        "runFullTrust"
+      ]
     },
     "linux": {
       "target": [

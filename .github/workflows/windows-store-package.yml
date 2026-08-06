@@ -1,0 +1,175 @@
+name: Metrora Windows Store Package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - '.github/workflows/windows-store-package.yml'
+      - 'app/package.json'
+      - 'app/package-lock.json'
+      - 'scripts/generate-brand-assets.mjs'
+      - 'scripts/windows-store-identity.node-test.mjs'
+      - 'docs/WINDOWS_STORE_IDENTITY_V1.md'
+      - 'package.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-store-package.yml'
+      - 'app/package.json'
+      - 'app/package-lock.json'
+      - 'scripts/generate-brand-assets.mjs'
+      - 'scripts/windows-store-identity.node-test.mjs'
+      - 'docs/WINDOWS_STORE_IDENTITY_V1.md'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrora-windows-store-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Build and inspect non-publishing AppX candidate
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+
+      - name: Validate Store identity and channel separation
+        run: node scripts/windows-store-identity.node-test.mjs
+
+      - name: Install core dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install desktop dependencies
+        run: npm --prefix app ci --no-audit --no-fund
+
+      - name: Build unsigned AppX candidate without publication
+        run: npm --prefix app run package:store
+
+      - name: Inspect package boundary
+        id: inspect
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath 'app\release' -File -Filter '*.appx')
+          if ($packages.Count -ne 1) {
+            throw "expected exactly one AppX package, found $($packages.Count)"
+          }
+
+          $package = $packages[0]
+          $archive = Join-Path $env:RUNNER_TEMP 'metrora-store-candidate.zip'
+          $unpacked = Join-Path $env:RUNNER_TEMP 'metrora-store-candidate'
+          Copy-Item -LiteralPath $package.FullName -Destination $archive -Force
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpacked -Force
+
+          $manifestPath = Join-Path $unpacked 'AppxManifest.xml'
+          if (-not (Test-Path -LiteralPath $manifestPath)) {
+            throw 'AppxManifest.xml is missing from the candidate'
+          }
+
+          [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+          $identity = $manifest.Package.Identity
+          $properties = $manifest.Package.Properties
+          $application = $manifest.Package.Applications.Application
+
+          if ($identity.Name -cne 'Vensent.Metrora') {
+            throw 'unexpected package identity name'
+          }
+          if ($identity.Publisher -cne 'CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F') {
+            throw 'unexpected package publisher'
+          }
+          if ($identity.ProcessorArchitecture -cne 'x64') {
+            throw 'unexpected package architecture'
+          }
+          if ([string]$properties.PublisherDisplayName -cne 'Vensent') {
+            throw 'unexpected publisher display name'
+          }
+          if ([string]$properties.DisplayName -cne 'Metrora') {
+            throw 'unexpected package display name'
+          }
+          if ($application.Id -cne 'eu.metrora.desktop') {
+            throw 'unexpected application identifier'
+          }
+
+          $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.GetAttribute('Name') })
+          if ($capabilities.Count -ne 1 -or $capabilities[0] -cne 'runFullTrust') {
+            throw 'unexpected capability set'
+          }
+
+          if (Test-Path -LiteralPath (Join-Path $unpacked 'AppxSignature.p7x')) {
+            throw 'the pre-submission candidate must remain unsigned'
+          }
+
+          Add-Type -AssemblyName System.Drawing
+          function Assert-PngDimensions([string]$name, [int]$width, [int]$height) {
+            $matches = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File -Filter $name)
+            if ($matches.Count -ne 1) {
+              throw "expected one $name asset, found $($matches.Count)"
+            }
+            $image = [System.Drawing.Image]::FromFile($matches[0].FullName)
+            try {
+              if ($image.Width -ne $width -or $image.Height -ne $height) {
+                throw "$name has unexpected dimensions"
+              }
+            } finally {
+              $image.Dispose()
+            }
+          }
+
+          Assert-PngDimensions 'StoreLogo.png' 50 50
+          Assert-PngDimensions 'Square44x44Logo.png' 44 44
+          Assert-PngDimensions 'Square150x150Logo.png' 150 150
+          Assert-PngDimensions 'Wide310x150Logo.png' 310 150
+
+          $candidateDirectory = Join-Path $PWD 'app\release\Metrora-Windows-Store-Candidate'
+          New-Item -ItemType Directory -Path $candidateDirectory -Force | Out-Null
+          Copy-Item -LiteralPath $package.FullName -Destination $candidateDirectory -Force
+
+          $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $summary = [ordered]@{
+            schemaVersion = 1
+            sourceCommit = $env:GITHUB_SHA
+            artifactName = $package.Name
+            sha256 = $hash
+            packageVersion = [string]$identity.Version
+            architecture = [string]$identity.ProcessorArchitecture
+            signed = $false
+            submitted = $false
+            published = $false
+          }
+          $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $candidateDirectory 'STORE_PACKAGE_MANIFEST.json') -Encoding utf8NoBOM
+
+          "artifact_name=$($package.Name)" >> $env:GITHUB_OUTPUT
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Upload short-lived Store candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrora-windows-store-${{ github.sha }}
+          path: app/release/Metrora-Windows-Store-Candidate
+          if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 6
+          retention-days: 14
+
+      - name: Summarize candidate boundary
+        shell: pwsh
+        run: |
+          @"
+          ## Metrora Windows Store candidate
+
+          - Artifact: `${{ steps.inspect.outputs.artifact_name }}`
+          - SHA-256: `${{ steps.inspect.outputs.sha256 }}`
+          - State: unsigned, not submitted, not published
+          "@ >> $env:GITHUB_STEP_SUMMARY
