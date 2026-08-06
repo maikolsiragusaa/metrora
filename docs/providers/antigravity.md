@@ -1,6 +1,6 @@
 # Antigravity
 
-Google Antigravity (CLI and IDE). CodeBurn discovers session files on disk and queries the local language-server RPC endpoint to parse them.
+Google Antigravity (CLI and IDE). Metrora discovers session files on disk and queries the local language-server RPC endpoint to parse them.
 
 - **Source:** `src/providers/antigravity.ts`
 - **Loading:** lazy via `src/providers/index.ts`. Lazy because the protobuf dependency is heavy.
@@ -8,7 +8,7 @@ Google Antigravity (CLI and IDE). CodeBurn discovers session files on disk and q
 
 ## Where it reads from
 
-CodeBurn discovers Antigravity sessions from local directories on disk, then queries the live language-server process (if running) to fetch detailed trajectory generator metadata:
+Metrora discovers Antigravity sessions from local directories on disk, then queries the live language-server process (if running) to fetch detailed trajectory generator metadata:
 
 1. **Session Discovery:** It scans the following folders for `.pb` or `.db` files:
    - **Antigravity CLI:** `%USERPROFILE%\.gemini\antigravity-cli\conversations` (and `implicit`)
@@ -21,18 +21,30 @@ Antigravity exposes slightly different process flags across platforms:
 POSIX builds have used `--https_server_port` and `--csrf_token`; Windows
 builds can expose `--extension_server_port` and
 `--extension_server_csrf_token`. Both space-separated and `--flag=value`
-forms are supported. The parser identifies the target app type using the `--app-data-dir` flag (e.g., `antigravity`, `antigravity-cli`, or `antigravity-ide`).
+forms are supported. The parser identifies the target app type using the `--app-data-dir` flag (for example, `antigravity`, `antigravity-cli`, or `antigravity-ide`).
 
-For Antigravity CLI (`agy`), CodeBurn can also install an opt-in status line
-hook with `codeburn antigravity-hook install`. The hook records the CLI's
-sanitized `context_window.current_usage` payload while `agy` is still alive,
-without prompts or local working-directory paths. It also attempts a best-effort
-RPC snapshot for full response metadata. The installed command points at a
-persistent `codeburn` binary from PATH rather than a local build artifact, and
-running `codeburn antigravity-hook install` again repairs older CodeBurn-owned
-statusLine commands that used stale absolute paths. Remove it with `codeburn
-antigravity-hook uninstall`; if `--force` replaced an existing statusLine
-command, uninstall restores that previous command.
+For Antigravity CLI (`agy`), Metrora can install an opt-in status line hook:
+
+```bash
+metrora antigravity-hook install
+```
+
+The hook records the CLI's sanitized `context_window.current_usage` payload
+while `agy` is still alive, without prompts or local working-directory paths.
+It also attempts a best-effort RPC snapshot for full response metadata.
+
+The installed command resolves a persistent `metrora` executable from `PATH`.
+The historical `codeburn` alias remains an accepted fallback for compatible
+existing installations, and running the install command again repairs an older
+Metrora-owned hook that points at a stale alias or build path. Remove the hook
+with:
+
+```bash
+metrora antigravity-hook uninstall
+```
+
+If `--force` replaced an existing custom status line, uninstall restores that
+previous command.
 
 ## Storage format
 
@@ -40,7 +52,7 @@ Protobuf. Cascade and response objects map to `ParsedProviderCall` directly.
 
 ## Caching
 
-Custom file cache at `$CODEBURN_CACHE_DIR/antigravity-results.json` (defaults to `~/.cache/codeburn/`). The cache is also used as the data source when the RPC endpoint is unavailable, not just as an optimization. Bumping the cache version forces a recompute.
+Custom file cache at `$CODEBURN_CACHE_DIR/antigravity-results.json` (defaults to `~/.cache/codeburn/`). These retained names are compatibility identifiers. The cache is also used as the data source when the RPC endpoint is unavailable, not just as an optimization. Bumping the cache version forces a recompute.
 
 ## Deduplication
 
