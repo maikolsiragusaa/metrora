@@ -1,0 +1,41 @@
+name: Temporary Antigravity line-ratchet adjustment
+
+on:
+  push:
+    branches:
+      - fix/antigravity-rpc-rediscovery
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply verified line-ratchet patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_path=.github/temporary/antigravity-line-ratchet.patch
+          test -f "$patch_path"
+          git apply --check "$patch_path"
+          git apply "$patch_path"
+          test "$(wc -l < src/providers/antigravity.ts)" -le 1445
+          git diff --check
+          rm -f "$patch_path" .github/workflows/temporary-antigravity-line-ratchet.yml
+          rmdir .github/temporary 2>/dev/null || true
+
+      - name: Commit final branch state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/providers/antigravity.ts .github
+          git commit -m "refactor(antigravity): stay within source-size ratchet"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
