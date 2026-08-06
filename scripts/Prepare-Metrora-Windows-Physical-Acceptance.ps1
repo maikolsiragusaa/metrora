@@ -17,10 +17,18 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'windows-physical-context-lib.ps1')
 . (Join-Path $PSScriptRoot 'windows-physical-artifact-lib.ps1')
 
+$migrationBaselineCommit = '80c3a5a1a116a0bc2fd5352b9fee2afc58207f15'
+$migrationBaselineVersion = '0.9.19'
+
 if ($ExpectedCommit -notmatch '^[a-f0-9]{40}$') {
   throw 'ExpectedCommit must be a full lowercase Git SHA-1'
 }
 $repository = Assert-MetroraPhysicalRepositoryAuthority $RepositoryRoot $ExpectedCommit
+
+& git -C $repository cat-file -e "$migrationBaselineCommit`^{commit}"
+if ($LASTEXITCODE -ne 0) {
+  throw 'physical migration baseline commit is unavailable locally'
+}
 
 $archive = (Resolve-Path -LiteralPath $ArtifactArchive).Path
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
@@ -60,6 +68,9 @@ $preparation = $preparationText | ConvertFrom-Json
 if ($preparation.status -ne 'pass' -or $preparation.sourceCommit -ne $ExpectedCommit) {
   throw 'physical candidate preparation returned an invalid authority'
 }
+if ([string]$preparation.productVersion -eq $migrationBaselineVersion) {
+  throw 'physical candidate version must differ from the migration baseline version'
+}
 
 $platform = Get-MetroraWindowsPlatform
 if ($platform.architecture -ne 'x64') {
@@ -80,10 +91,14 @@ $sentinelSha256 = Get-MetroraFileSha256 $sentinelPath
 
 $context = [ordered]@{
   kind = 'metrora.windows-physical-acceptance-context'
-  version = 1
+  version = 2
   source = [ordered]@{
     repository = 'maikolsiragusaa/metrora'
     commit = $ExpectedCommit
+  }
+  migrationBaseline = [ordered]@{
+    commit = $migrationBaselineCommit
+    productVersion = $migrationBaselineVersion
   }
   candidate = [ordered]@{
     directory = 'downloaded-candidate'
@@ -110,9 +125,10 @@ Get-MetroraPhysicalAcceptanceState $output $repository | Out-Null
 
 $report = [ordered]@{
   kind = 'metrora.windows-physical-acceptance-report'
-  version = 1
+  version = 2
   generatedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
   source = $context.source
+  migrationBaseline = $context.migrationBaseline
   candidate = [ordered]@{
     artifactName = $context.candidate.artifactName
     artifactSha256 = $context.candidate.artifactSha256
@@ -150,6 +166,7 @@ if ($LASTEXITCODE -ne 0) {
 [ordered]@{
   status = 'prepared'
   sourceCommit = $ExpectedCommit
+  migrationBaselineVersion = $migrationBaselineVersion
   productVersion = $context.candidate.productVersion
   canonicalFileCount = $context.candidate.canonicalFileCount
   archiveEntryCount = $context.candidate.archiveEntryCount
