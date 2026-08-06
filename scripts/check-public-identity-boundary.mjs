@@ -42,6 +42,10 @@ const requiredFiles = {
     'Metrora is independently maintained',
     'Metrora™ — published by Vensent™',
   ],
+  'app/renderer/components/AboutModal.tsx': [
+    'Metrora · Published by Vensent',
+    'Updates are handled by the active distribution channel',
+  ],
   'CONTRIBUTING.md': [
     '## Public repository hygiene',
   ],
@@ -64,6 +68,22 @@ for (const [path, markers] of Object.entries(requiredFiles)) {
   }
 }
 
+const forbiddenStoreSurfaceMarkers = {
+  'app/renderer/components/AboutModal.tsx': [
+    'CodeBurn',
+    'Qovrion',
+    '0.9.19',
+  ],
+}
+
+for (const [path, markers] of Object.entries(forbiddenStoreSurfaceMarkers)) {
+  const text = readTrackedText(path)
+  for (const marker of markers) {
+    if (!text.includes(marker)) continue
+    findings.push({ path, line: 1, message: `legacy identity marker must not appear on the Store-facing surface: ${marker}` })
+  }
+}
+
 const rootLicense = readTrackedText('LICENSE')
 if (rootLicense.includes('AgentSeal')) {
   findings.push({
@@ -80,4 +100,4 @@ if (findings.length > 0) {
   process.exit(1)
 }
 
-console.log('Canonical public identity, licensing and contribution markers are present.')
+console.log('Canonical public identity, licensing, Store-facing and contribution markers are present.')
