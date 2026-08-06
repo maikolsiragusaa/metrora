@@ -19,6 +19,7 @@ Set-StrictMode -Version Latest
 
 $migrationBaselineCommit = '80c3a5a1a116a0bc2fd5352b9fee2afc58207f15'
 $migrationBaselineVersion = '0.9.19'
+$migrationBaselineFileVersion = '0.9.19'
 
 if ($ExpectedCommit -notmatch '^[a-f0-9]{40}$') {
   throw 'ExpectedCommit must be a full lowercase Git SHA-1'
@@ -72,6 +73,15 @@ if ([string]$preparation.productVersion -eq $migrationBaselineVersion) {
   throw 'physical candidate version must differ from the migration baseline version'
 }
 
+$candidateFileVersion = (& node (Join-Path $repository 'scripts\resolve-metrora-build-version.mjs') `
+  $preparation.productVersion 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $candidateFileVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$') {
+  throw 'physical candidate file version could not be resolved from version authority'
+}
+if ($candidateFileVersion -eq $migrationBaselineFileVersion) {
+  throw 'physical candidate file version must differ from the migration baseline file version'
+}
+
 $platform = Get-MetroraWindowsPlatform
 if ($platform.architecture -ne 'x64') {
   throw "physical acceptance requires Windows x64, found $($platform.architecture)"
@@ -99,6 +109,7 @@ $context = [ordered]@{
   migrationBaseline = [ordered]@{
     commit = $migrationBaselineCommit
     productVersion = $migrationBaselineVersion
+    fileVersion = $migrationBaselineFileVersion
   }
   candidate = [ordered]@{
     directory = 'downloaded-candidate'
@@ -108,6 +119,7 @@ $context = [ordered]@{
     archiveEntryCount = [int]$extraction.EntryCount
     archiveUncompressedBytes = [int64]$extraction.UncompressedBytes
     productVersion = [string]$preparation.productVersion
+    fileVersion = $candidateFileVersion
     releaseManifestSha256 = [string]$preparation.releaseManifestSha256
     formatManifestSha256 = [string]$preparation.formatManifestSha256
     canonicalFileCount = [int]$preparation.canonicalFileCount
@@ -133,6 +145,7 @@ $report = [ordered]@{
     artifactName = $context.candidate.artifactName
     artifactSha256 = $context.candidate.artifactSha256
     productVersion = $context.candidate.productVersion
+    fileVersion = $context.candidate.fileVersion
     releaseManifestSha256 = $context.candidate.releaseManifestSha256
     formatManifestSha256 = $context.candidate.formatManifestSha256
   }
