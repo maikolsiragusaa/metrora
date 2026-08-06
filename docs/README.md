@@ -36,6 +36,7 @@ Component references in this section explain bounded implementation responsibili
 ## Distribution and releases
 
 - [Windows distribution](WINDOWS_DISTRIBUTION.md) — canonical current Windows package, identity and publication boundary.
+- [Windows Store package identity v1](WINDOWS_STORE_IDENTITY_V1.md) — exact Partner Center identity and separate AppX/MSIX build boundary.
 - [Windows release candidate v1](WINDOWS_RELEASE_CANDIDATE_V1.md) — unsigned candidate manifest and independent verification contract.
 - [Windows format derivation v1](WINDOWS_FORMAT_DERIVATION_V1.md) — one-payload portable and installer derivation.
 - [Windows clean install v1](WINDOWS_CLEAN_INSTALL_V1.md) — isolated NSIS installation and state-preservation contract.
