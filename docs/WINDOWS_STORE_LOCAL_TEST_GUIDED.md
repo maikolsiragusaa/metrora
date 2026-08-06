@@ -2,7 +2,7 @@
 
 This guide validates the current AppX candidate on physical Windows before any Partner Center submission.
 
-It does not imitate Microsoft certification. The submission candidate remains unsigned and unchanged. A separate copy is signed with a temporary, locally trusted certificate only so Windows can install it for testing.
+It does not imitate Microsoft certification. The submission candidate remains unsigned and unchanged. A separate copy is signed with a temporary test certificate only so Windows can install it locally.
 
 ## Scope
 
@@ -22,6 +22,7 @@ It does not verify Store signing, certification, publication, Store-managed upda
 
 Use a dedicated Windows x64 test user with:
 
+- an elevated PowerShell session;
 - a clean checkout at the exact accepted source commit;
 - the complete `metrora-windows-store-<commit>.zip` artifact from the matching workflow run;
 - Windows SDK SignTool installed;
@@ -32,7 +33,7 @@ Do not use this path on a profile that already has a real Store-delivered Metror
 
 ## Prepare and launch
 
-From PowerShell in the repository root:
+From elevated PowerShell in the repository root:
 
 ```powershell
 ./scripts/Prepare-Metrora-Windows-Store-Local-Test.ps1 `
@@ -48,13 +49,13 @@ The script:
 3. performs bounded extraction;
 4. verifies the workflow manifest and exact package configuration;
 5. rejects an already installed package with the same identity;
-6. creates a seven-day local test certificate in the current-user store;
+6. creates a seven-day local test certificate with its private key in the current-user personal store;
 7. signs only a copied package;
-8. trusts that certificate only for the current user;
+8. trusts only the public certificate in the machine TrustedPeople store;
 9. installs and launches the copied package;
 10. writes a local cleanup context.
 
-Temporary PFX and CER files are deleted before the script exits. The certificate and private key remain in the current-user certificate stores only until completion so the installed test package can run.
+Temporary PFX and CER files are deleted before the script exits. The trusted public certificate and current-user private key remain only until completion so the installed test package can run.
 
 ## Manual observations
 
@@ -69,7 +70,7 @@ Do not enter prompts, keys, account data or other private material into the repo
 
 ## Complete and clean up
 
-Record each observation as `pass` or `fail`:
+From the same elevated PowerShell session, record each observation as `pass` or `fail`:
 
 ```powershell
 ./scripts/Complete-Metrora-Windows-Store-Local-Test.ps1 `
@@ -83,8 +84,8 @@ Record each observation as `pass` or `fail`:
 Completion removes:
 
 - the installed local test package;
-- the trusted test certificate;
-- the certificate and private key from the personal store;
+- the trusted public certificate from the machine store;
+- the certificate and private key from the current-user personal store;
 - the test-signed package and local identity context.
 
 It preserves:
@@ -94,6 +95,8 @@ METRORA-WINDOWS-STORE-LOCAL-TEST.json
 ```
 
 A failed observation still triggers cleanup and produces a sanitized FAIL report. It must not be reinterpreted as a PASS.
+
+When cleanup is incomplete, the local context is deliberately preserved. Do not delete the acceptance directory until the package, trusted certificate and private key have all been removed.
 
 ## Boundaries
 
