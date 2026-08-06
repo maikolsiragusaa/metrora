@@ -1,0 +1,132 @@
+name: Temporary PR139 validation
+
+on:
+  push:
+    branches: [test/windows-store-physical]
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: temporary-pr139-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Validate report contracts
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - run: >-
+          node --test
+          scripts/windows-physical-acceptance-report.node-test.mjs
+          scripts/windows-physical-candidate.node-test.mjs
+          scripts/windows-store-local-test-report.node-test.mjs
+
+  powershell:
+    name: Validate Windows runtime helpers
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - shell: pwsh
+        run: ./scripts/Test-Metrora-Windows-Release-Syntax.ps1 -RepositoryRoot $PWD
+      - shell: pwsh
+        run: ./scripts/Test-Metrora-Windows-Store-Local-Test-Runtime.ps1 -RepositoryRoot $PWD
+
+  package:
+    name: Build and inspect AppX
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+      - run: node scripts/windows-store-identity.node-test.mjs
+      - run: npm ci --no-audit --no-fund
+      - run: npm --prefix app ci --no-audit --no-fund
+      - run: npm --prefix app run package:store
+      - shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath 'app\release' -File -Filter '*.appx')
+          if ($packages.Count -ne 1) { throw 'expected exactly one AppX package' }
+
+          $archive = Join-Path $env:RUNNER_TEMP 'candidate.zip'
+          $unpacked = Join-Path $env:RUNNER_TEMP 'candidate'
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $archive -Force
+          Expand-Archive -LiteralPath $archive -DestinationPath $unpacked -Force
+          if (Test-Path -LiteralPath (Join-Path $unpacked 'AppxSignature.p7x')) {
+            throw 'pre-submission candidate must remain unsigned'
+          }
+
+          [xml]$manifest = Get-Content -LiteralPath (Join-Path $unpacked 'AppxManifest.xml') -Raw
+          $desktop = Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json
+          $expected = $desktop.build.appx
+          $identity = $manifest.Package.Identity
+          $properties = $manifest.Package.Properties
+          $application = $manifest.Package.Applications.Application
+
+          if (
+            $identity.Name -cne [string]$expected.identityName -or
+            $identity.Publisher -cne [string]$expected.publisher -or
+            $identity.ProcessorArchitecture -cne 'x64' -or
+            [string]$properties.PublisherDisplayName -cne [string]$expected.publisherDisplayName -or
+            [string]$properties.DisplayName -cne [string]$expected.displayName -or
+            $application.Id -cne [string]$expected.applicationId
+          ) { throw 'package manifest does not match reviewed build authority' }
+
+          $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.GetAttribute('Name') })
+          if ($capabilities.Count -ne 1 -or $capabilities[0] -cne 'runFullTrust') {
+            throw 'unexpected package capability set'
+          }
+
+  status:
+    name: Record temporary validation status
+    if: always()
+    needs: [contracts, powershell, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTRACTS: ${{ needs.contracts.result }}
+          POWERSHELL: ${{ needs.powershell.result }}
+          PACKAGE: ${{ needs.package.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state=failure
+          if [ "$CONTRACTS" = success ] && [ "$POWERSHELL" = success ] && [ "$PACKAGE" = success ]; then
+            state=success
+          fi
+          description="contracts=$CONTRACTS powershell=$POWERSHELL package=$PACKAGE"
+          payload=$(jq -n \
+            --arg state "$state" \
+            --arg context 'temporary/pr139-validation' \
+            --arg description "$description" \
+            '{state:$state,context:$context,description:$description}')
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$payload"
+          [ "$state" = success ]
