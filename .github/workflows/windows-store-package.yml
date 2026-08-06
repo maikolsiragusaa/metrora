@@ -114,6 +114,16 @@ jobs:
             throw 'unexpected application identifier'
           }
 
+          $productVersion = [string](Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
+          $productCore = $productVersion -replace '-rc\.\d+$', ''
+          if ($productCore -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'product version cannot be mapped to the Store package version'
+          }
+          $expectedStoreVersion = "$productCore.0"
+          if ([string]$identity.Version -cne $expectedStoreVersion) {
+            throw "unexpected Store package version: expected $expectedStoreVersion, got $($identity.Version)"
+          }
+
           $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.GetAttribute('Name') })
           if ($capabilities.Count -ne 1 -or $capabilities[0] -cne 'runFullTrust') {
             throw 'unexpected capability set'
