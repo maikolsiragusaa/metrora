@@ -1,6 +1,6 @@
 # Windows Store package identity v1
 
-**Status:** identity assigned / packaging only / not submitted
+**Status:** identity assigned / packaging and local-test path implemented / not submitted
 
 ## Purpose
 
@@ -27,6 +27,14 @@ npm --prefix app run package:win
 ```
 
 Neither channel inherits the signature, certification or publication status of the other.
+
+## Local test boundary
+
+The guided local path is documented in [`WINDOWS_STORE_LOCAL_TEST_GUIDED.md`](WINDOWS_STORE_LOCAL_TEST_GUIDED.md).
+
+It signs only a temporary copy with a current-user test certificate, installs that copy for physical validation and then removes the package, trusted certificate and private key. The unsigned candidate intended for Partner Center is not modified.
+
+A local PASS is not Store certification and does not authorize submission.
 
 ## Current limitations
 
