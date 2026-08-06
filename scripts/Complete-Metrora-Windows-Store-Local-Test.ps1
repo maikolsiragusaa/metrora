@@ -26,6 +26,7 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'windows-store-local-test-lib.ps1')
 
+Assert-MetroraStoreAdministrator
 $state = Get-MetroraStoreLocalTestState $AcceptanceDirectory $RepositoryRoot
 $context = $state.Context
 $thumbprint = [string]$context.localTest.certificateThumbprint
@@ -51,7 +52,7 @@ try {
 
 try {
   Remove-MetroraStoreLocalCertificate $thumbprint
-  $trustedPath = Join-Path 'Cert:\CurrentUser\TrustedPeople' $thumbprint
+  $trustedPath = Join-Path 'Cert:\LocalMachine\TrustedPeople' $thumbprint
   $personalPath = Join-Path 'Cert:\CurrentUser\My' $thumbprint
   $certificateRemoved = -not (Test-Path -LiteralPath $trustedPath)
   $privateKeyRemoved = -not (Test-Path -LiteralPath $personalPath)
