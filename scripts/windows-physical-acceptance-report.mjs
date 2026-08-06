@@ -1,6 +1,9 @@
+import { buildVersionFor } from './version-authority-lib.mjs'
+
 const sha256Pattern = /^[a-f0-9]{64}$/
 const gitSha1Pattern = /^[a-f0-9]{40}$/
 const semverPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/
+const fileVersionPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
 const safeTextPattern = /^[^\\/\r\n\0]{1,160}$/
 const artifactNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,195}\.zip$/
@@ -24,20 +27,20 @@ export const EXPECTED_MIGRATION_TRANSITIONS = Object.freeze([
   'uninstalled',
 ])
 
-export function expectedMigrationTransitions(baselineVersion, candidateVersion) {
-  if (!semverPattern.test(baselineVersion) || !semverPattern.test(candidateVersion)) {
-    throw new Error('migration versions must be semantic versions')
+export function expectedMigrationTransitions(baselineFileVersion, candidateFileVersion) {
+  if (!fileVersionPattern.test(baselineFileVersion) || !fileVersionPattern.test(candidateFileVersion)) {
+    throw new Error('migration file versions are invalid')
   }
-  if (baselineVersion === candidateVersion) {
-    throw new Error('migration baseline and candidate versions must differ')
+  if (baselineFileVersion === candidateFileVersion) {
+    throw new Error('migration baseline and candidate file versions must differ')
   }
   return Object.freeze([
-    `installed-${baselineVersion}`,
-    `upgraded-${candidateVersion}`,
-    `reinstalled-${candidateVersion}`,
+    `installed-${baselineFileVersion}`,
+    `upgraded-${candidateFileVersion}`,
+    `reinstalled-${candidateFileVersion}`,
     'uninstalled-for-rollback',
-    `rolled-back-${baselineVersion}`,
-    `re-upgraded-${candidateVersion}`,
+    `rolled-back-${baselineFileVersion}`,
+    `re-upgraded-${candidateFileVersion}`,
     'uninstalled',
   ])
 }
@@ -215,12 +218,15 @@ function validateMigrationProfile(profile, expectedTransitions) {
 }
 
 function validateMigrationBaseline(migrationBaseline) {
-  assertExactKeys(migrationBaseline, ['commit', 'productVersion'], 'migrationBaseline')
+  assertExactKeys(migrationBaseline, ['commit', 'productVersion', 'fileVersion'], 'migrationBaseline')
   if (!gitSha1Pattern.test(migrationBaseline.commit)) {
     throw new Error('migration baseline commit is invalid')
   }
   if (!semverPattern.test(migrationBaseline.productVersion)) {
     throw new Error('migration baseline product version is invalid')
+  }
+  if (!fileVersionPattern.test(migrationBaseline.fileVersion)) {
+    throw new Error('migration baseline file version is invalid')
   }
 }
 
@@ -263,10 +269,17 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     throw new Error('report source commit does not match the expected commit')
   }
 
-  assertExactKeys(report.candidate, [
+  assertExactKeys(report.candidate, report.version === 1 ? [
     'artifactName',
     'artifactSha256',
     'productVersion',
+    'releaseManifestSha256',
+    'formatManifestSha256',
+  ] : [
+    'artifactName',
+    'artifactSha256',
+    'productVersion',
+    'fileVersion',
     'releaseManifestSha256',
     'formatManifestSha256',
   ], 'candidate')
@@ -279,6 +292,14 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
   if (!semverPattern.test(report.candidate.productVersion)) {
     throw new Error('candidate product version is invalid')
   }
+  if (report.version === 2) {
+    if (!fileVersionPattern.test(report.candidate.fileVersion)) {
+      throw new Error('candidate file version is invalid')
+    }
+    if (report.candidate.fileVersion !== buildVersionFor(report.candidate.productVersion)) {
+      throw new Error('candidate file version does not match version authority')
+    }
+  }
   for (const field of ['releaseManifestSha256', 'formatManifestSha256']) {
     if (!sha256Pattern.test(report.candidate[field])) {
       throw new Error(`candidate ${field} is invalid`)
@@ -290,8 +311,8 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     : (() => {
         validateMigrationBaseline(report.migrationBaseline)
         return expectedMigrationTransitions(
-          report.migrationBaseline.productVersion,
-          report.candidate.productVersion,
+          report.migrationBaseline.fileVersion,
+          report.candidate.fileVersion,
         )
       })()
 
