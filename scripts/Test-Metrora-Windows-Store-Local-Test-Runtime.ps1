@@ -14,14 +14,14 @@ try {
   $manifest = @'
 <?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
-  <Identity Name="Vensent.Metrora" Publisher="CN=LOCAL-TEST" Version="1.0.0.7" ProcessorArchitecture="x64" />
+  <Identity Name="Example.Package" Publisher="CN=LOCAL-TEST" Version="1.0.0.7" ProcessorArchitecture="x64" />
   <Properties>
-    <DisplayName>Metrora</DisplayName>
-    <PublisherDisplayName>Vensent</PublisherDisplayName>
+    <DisplayName>Example App</DisplayName>
+    <PublisherDisplayName>Example Publisher</PublisherDisplayName>
     <Logo>assets\StoreLogo.png</Logo>
   </Properties>
   <Applications>
-    <Application Id="eu.metrora.desktop" Executable="Metrora.exe" EntryPoint="Windows.FullTrustApplication" />
+    <Application Id="example.app" Executable="Example.exe" EntryPoint="Windows.FullTrustApplication" />
   </Applications>
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
@@ -36,13 +36,13 @@ try {
 
   $info = Get-MetroraStoreManifestInfo $temporary
   if (
-    $info.IdentityName -ne 'Vensent.Metrora' -or
+    $info.IdentityName -ne 'Example.Package' -or
     $info.Publisher -ne 'CN=LOCAL-TEST' -or
     $info.Version -ne '1.0.0.7' -or
     $info.Architecture -ne 'x64' -or
-    $info.DisplayName -ne 'Metrora' -or
-    $info.PublisherDisplayName -ne 'Vensent' -or
-    $info.ApplicationId -ne 'eu.metrora.desktop'
+    $info.DisplayName -ne 'Example App' -or
+    $info.PublisherDisplayName -ne 'Example Publisher' -or
+    $info.ApplicationId -ne 'example.app'
   ) {
     throw 'Store manifest runtime parser returned unexpected values'
   }
