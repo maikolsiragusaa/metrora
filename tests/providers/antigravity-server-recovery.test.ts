@@ -48,7 +48,7 @@ describe('Antigravity language-server recovery', () => {
     await expect(cache.getOrDiscover('antigravity-ide', async () => FIRST)).resolves.toEqual(FIRST)
   })
 
-  it('rediscoveries once after a stale endpoint fails and uses the restarted server', async () => {
+  it('rediscovers once after a stale endpoint fails and uses the restarted server', async () => {
     const detect = vi.fn<() => Promise<RecoverableServer | null>>()
       .mockResolvedValueOnce(FIRST)
       .mockResolvedValueOnce(SECOND)
