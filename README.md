@@ -6,7 +6,7 @@
 
 Understand where AI time, tokens and money go across tools, models, projects and sessions — without routing your work through another service.
 
-[Website](https://metrora.eu) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
+[Website](https://metrora.eu) · [Windows preview](https://github.com/maikolsiragusaa/metrora/releases/tag/v1.0.0-rc.7) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
@@ -14,7 +14,17 @@ Understand where AI time, tokens and money go across tools, models, projects and
 </div>
 
 > [!IMPORTANT]
-> Official desktop distribution is in preparation. Metrora does not yet have an official stable desktop release. The current public source line is `1.0.0-rc.7`; build and evaluate it from this canonical repository. Official artifacts will be announced through [metrora.eu](https://metrora.eu) and GitHub Releases only after the applicable distribution checks pass.
+> Metrora `1.0.0-rc.7` is available as an **unsigned Windows x64 technical preview**. It is not the stable `1.0.0` release, a signed package, a Microsoft Store package or an automatic update channel. Windows SmartScreen may show a warning. Verify `SHA256SUMS.txt` before running downloaded binaries.
+
+## Download the Windows technical preview
+
+Download the accepted installer or portable bundle from the [Metrora 1.0.0-rc.7 GitHub pre-release](https://github.com/maikolsiragusaa/metrora/releases/tag/v1.0.0-rc.7):
+
+- `Metrora-Setup-1.0.0-rc.7.exe` — unsigned Windows installer;
+- `Metrora-1.0.0-rc.7-Windows-x64-portable.zip` — portable Windows bundle;
+- `SHA256SUMS.txt` — checksums for the published payload assets.
+
+The published binaries were derived from one accepted candidate at commit `e158ee34e570161c778162be77629b3a4dbb74fe`, passed the documented automated and physical Windows acceptance, and remain subject to the limitations above. See the [version-scoped publication record](release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md).
 
 ## What Metrora helps you understand
 
@@ -140,7 +150,7 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 
 | Surface | Role | Current status |
 | --- | --- | --- |
-| Desktop | Primary local analysis and configuration | Windows official distribution in preparation; development builds available from source |
+| Desktop | Primary local analysis and configuration | Unsigned Windows x64 technical preview available; stable and Microsoft Store distributions are not yet available |
 | CLI | Automation, inspection, export and keyboard-first analysis | Available from source |
 | Local web dashboard | Browser view served from the local machine | Available from source |
 | Android companion | Read-only local-network companion foundation | Experimental |

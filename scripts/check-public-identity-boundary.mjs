@@ -36,7 +36,9 @@ const requiredFiles = {
     'Vensent™',
   ],
   'README.md': [
-    'Official desktop distribution is in preparation',
+    'Metrora `1.0.0-rc.7` is available as an **unsigned Windows x64 technical preview**',
+    'https://github.com/maikolsiragusaa/metrora/releases/tag/v1.0.0-rc.7',
+    'It is not the stable `1.0.0` release, a signed package, a Microsoft Store package or an automatic update channel',
     'Metrora is independently maintained',
     'Metrora™ — published by Vensent™',
   ],
