@@ -73,16 +73,20 @@ try {
 
   $report = [ordered]@{
     kind = 'metrora.windows-physical-acceptance-report'
-    version = 1
+    version = 2
     generatedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
     source = [ordered]@{
       repository = 'maikolsiragusaa/metrora'
       commit = $commit
     }
+    migrationBaseline = [ordered]@{
+      commit = '80c3a5a1a116a0bc2fd5352b9fee2afc58207f15'
+      productVersion = '0.9.19'
+    }
     candidate = [ordered]@{
       artifactName = "metrora-windows-candidate-$commit.zip"
       artifactSha256 = $digest
-      productVersion = '0.9.19'
+      productVersion = '1.0.0-rc.7'
       releaseManifestSha256 = $digest
       formatManifestSha256 = $digest
     }
@@ -106,7 +110,7 @@ try {
         status = 'pass'
         registrationCount = 1
         shortcutCount = 1
-        cliVersion = '0.9.19'
+        cliVersion = '1.0.0-rc.7'
         firstLaunchPassed = $true
         uninstallPassed = $true
         sentinelPreserved = $true
@@ -114,12 +118,12 @@ try {
       migration = [ordered]@{
         status = 'pass'
         transitions = @(
-          'installed-0.9.18'
-          'upgraded-0.9.19'
-          'reinstalled-0.9.19'
+          'installed-0.9.19'
+          'upgraded-1.0.0-rc.7'
+          'reinstalled-1.0.0-rc.7'
           'uninstalled-for-rollback'
-          'rolled-back-0.9.18'
-          're-upgraded-0.9.19'
+          'rolled-back-0.9.19'
+          're-upgraded-1.0.0-rc.7'
           'uninstalled'
         )
         sentinelPreserved = $true
