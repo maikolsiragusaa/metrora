@@ -1,0 +1,158 @@
+param(
+  [Parameter(Mandatory = $true)]
+  [string]$AcceptanceDirectory,
+
+  [Parameter(Mandatory = $true)]
+  [ValidateSet('pass', 'fail')]
+  [string]$Launch,
+
+  [Parameter(Mandatory = $true)]
+  [ValidateSet('pass', 'fail')]
+  [string]$IdentityPresentation,
+
+  [Parameter(Mandatory = $true)]
+  [ValidateSet('pass', 'fail')]
+  [string]$LocalCollection,
+
+  [Parameter(Mandatory = $true)]
+  [ValidateSet('pass', 'fail')]
+  [string]$NoExternalNode,
+
+  [string]$RepositoryRoot = (Get-Location).Path
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+. (Join-Path $PSScriptRoot 'windows-store-local-test-lib.ps1')
+
+$state = Get-MetroraStoreLocalTestState $AcceptanceDirectory $RepositoryRoot
+$context = $state.Context
+$thumbprint = [string]$context.localTest.certificateThumbprint
+$packageFullName = [string]$context.localTest.installedPackageFullName
+
+$packageRemoved = $false
+$certificateRemoved = $false
+$privateKeyRemoved = $false
+$cleanupErrors = @()
+
+try {
+  $installed = @(Get-AppxPackage -Name ([string]$context.package.identityName) -ErrorAction SilentlyContinue |
+    Where-Object { $_.PackageFullName -eq $packageFullName })
+  foreach ($package in $installed) {
+    Remove-AppxPackage -Package $package.PackageFullName -ErrorAction Stop
+  }
+  $remaining = @(Get-AppxPackage -Name ([string]$context.package.identityName) -ErrorAction SilentlyContinue |
+    Where-Object { $_.PackageFullName -eq $packageFullName })
+  $packageRemoved = $remaining.Count -eq 0
+} catch {
+  $cleanupErrors += 'package removal failed'
+}
+
+try {
+  Remove-MetroraStoreLocalCertificate $thumbprint
+  $trustedPath = Join-Path 'Cert:\CurrentUser\TrustedPeople' $thumbprint
+  $personalPath = Join-Path 'Cert:\CurrentUser\My' $thumbprint
+  $certificateRemoved = -not (Test-Path -LiteralPath $trustedPath)
+  $privateKeyRemoved = -not (Test-Path -LiteralPath $personalPath)
+} catch {
+  $cleanupErrors += 'certificate removal failed'
+}
+
+$observations = [ordered]@{
+  launch = $Launch
+  identityPresentation = $IdentityPresentation
+  localCollection = $LocalCollection
+  noExternalNode = $NoExternalNode
+}
+$allObservationsPass = @($observations.Values | Where-Object { $_ -ne 'pass' }).Count -eq 0
+$status = if (
+  $allObservationsPass -and
+  $packageRemoved -and
+  $certificateRemoved -and
+  $privateKeyRemoved -and
+  $cleanupErrors.Count -eq 0
+) { 'pass' } else { 'fail' }
+
+$report = [ordered]@{
+  kind = 'metrora.windows-store-local-test-report'
+  version = 1
+  status = $status
+  generatedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+  source = [ordered]@{
+    repository = 'maikolsiragusaa/metrora'
+    commit = [string]$context.source.commit
+  }
+  package = [ordered]@{
+    artifactName = [string]$context.package.artifactName
+    unsignedSha256 = [string]$context.package.unsignedSha256
+    testSignedSha256 = [string]$context.package.testSignedSha256
+    version = [string]$context.package.version
+    architecture = [string]$context.package.architecture
+  }
+  platform = [ordered]@{
+    edition = [string]$context.platform.edition
+    version = [string]$context.platform.version
+    build = [string]$context.platform.build
+    architecture = [string]$context.platform.architecture
+  }
+  observations = $observations
+  cleanup = [ordered]@{
+    packageRemoved = $packageRemoved
+    certificateRemoved = $certificateRemoved
+    privateKeyRemoved = $privateKeyRemoved
+  }
+  privacy = [ordered]@{
+    containsPrivatePaths = $false
+    containsUsernames = $false
+    containsPromptsOrResponses = $false
+    containsPackageIdentityValues = $false
+    containsKeysOrCertificates = $false
+  }
+  limitations = @(
+    'local-test-signature'
+    'not-store-signed'
+    'not-submitted'
+    'not-published'
+    'single-windows-host'
+    'no-update-flight'
+  )
+}
+
+$reportPath = Join-Path $state.Acceptance 'METRORA-WINDOWS-STORE-LOCAL-TEST.json'
+Write-MetroraUtf8Json $reportPath $report
+
+$arguments = @(
+  (Join-Path $state.Repository 'scripts\verify-windows-store-local-test-report.mjs'),
+  $reportPath,
+  '--expected-commit',
+  [string]$context.source.commit
+)
+if ($status -eq 'pass') { $arguments += '--require-pass' }
+$verification = (& node @arguments 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+  throw "Store local-test report verification failed: $verification"
+}
+
+foreach ($relative in @(
+  'STORE_LOCAL_TEST_CONTEXT.json',
+  'local-test-signed.appx',
+  'unsigned-package',
+  'downloaded-artifact'
+)) {
+  $path = Join-Path $state.Acceptance $relative
+  if (Test-Path -LiteralPath $path) {
+    Remove-Item -LiteralPath $path -Recurse -Force
+  }
+}
+
+if ($status -ne 'pass') {
+  throw "Store local test failed. A sanitized report was preserved at $reportPath"
+}
+
+[ordered]@{
+  status = 'pass'
+  sourceCommit = [string]$context.source.commit
+  packageVersion = [string]$context.package.version
+  report = 'METRORA-WINDOWS-STORE-LOCAL-TEST.json'
+} | ConvertTo-Json -Compress
