@@ -1,10 +1,18 @@
 // Narrow runtime entry loaded by Electron's main process. It deliberately
 // exposes desktop-host initialization and public Workspace DTOs/actions;
 // raw private identity material never crosses into the renderer or an IPC response.
+import {
+  initializeDesktopWorkspaceRuntimeV1 as initializeDesktopWorkspaceRuntimeV1Base,
+} from './local-state/desktop-host.js'
+import type {
+  InitializedDesktopWorkspaceRuntimeV1,
+  InitializeDesktopWorkspaceRuntimeV1Options,
+} from './local-state/desktop-host.js'
+import { reconcileLocalWorkspaceSoftwareV1 } from './local-state/workspace-software-reconciliation.js'
+
 export {
   DesktopVaultUnavailableError,
   initializeDesktopLocalStateV1,
-  initializeDesktopWorkspaceRuntimeV1,
 } from './local-state/desktop-host.js'
 export type {
   DesktopSafeStorageProvider,
@@ -14,6 +22,20 @@ export type {
   InitializeDesktopLocalStateV1Options,
   InitializeDesktopWorkspaceRuntimeV1Options,
 } from './local-state/desktop-host.js'
+
+export async function initializeDesktopWorkspaceRuntimeV1(
+  input: InitializeDesktopWorkspaceRuntimeV1Options,
+): Promise<InitializedDesktopWorkspaceRuntimeV1> {
+  const initialized = await initializeDesktopWorkspaceRuntimeV1Base(input)
+  await reconcileLocalWorkspaceSoftwareV1({
+    endpointIdentity: initialized.endpoint,
+    metroraVersion: input.metroraVersion,
+    collectorVersion: input.collectorVersion,
+    ...(input.dataDir !== undefined ? { dataDir: input.dataDir } : {}),
+    ...(input.now !== undefined ? { now: input.now } : {}),
+  })
+  return initialized
+}
 
 export {
   DesktopReviewedProductionUnavailableError,
@@ -54,6 +76,14 @@ export type {
   LocalPersonalWorkspaceStateV1,
   LocalPersonalWorkspaceStoreOptions,
 } from './local-state/local-workspace.js'
+
+export {
+  reconcileLocalWorkspaceSoftwareV1,
+} from './local-state/workspace-software-reconciliation.js'
+export type {
+  ReconcileLocalWorkspaceSoftwareV1Options,
+  ReconcileLocalWorkspaceSoftwareV1Result,
+} from './local-state/workspace-software-reconciliation.js'
 
 export {
   inspectLocalWorkspaceProductionLifecycleV1,
