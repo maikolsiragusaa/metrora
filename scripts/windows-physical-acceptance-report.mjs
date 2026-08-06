@@ -24,6 +24,24 @@ export const EXPECTED_MIGRATION_TRANSITIONS = Object.freeze([
   'uninstalled',
 ])
 
+export function expectedMigrationTransitions(baselineVersion, candidateVersion) {
+  if (!semverPattern.test(baselineVersion) || !semverPattern.test(candidateVersion)) {
+    throw new Error('migration versions must be semantic versions')
+  }
+  if (baselineVersion === candidateVersion) {
+    throw new Error('migration baseline and candidate versions must differ')
+  }
+  return Object.freeze([
+    `installed-${baselineVersion}`,
+    `upgraded-${candidateVersion}`,
+    `reinstalled-${candidateVersion}`,
+    'uninstalled-for-rollback',
+    `rolled-back-${baselineVersion}`,
+    `re-upgraded-${candidateVersion}`,
+    'uninstalled',
+  ])
+}
+
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${label} must be an object`)
@@ -167,7 +185,7 @@ function validateCleanProfile(profile, candidateVersion) {
   }
 }
 
-function validateMigrationProfile(profile) {
+function validateMigrationProfile(profile, expectedTransitions) {
   assertExactKeys(profile, [
     'status',
     'transitions',
@@ -182,7 +200,7 @@ function validateMigrationProfile(profile) {
   assertBoolean(profile.fixtureRemoved, 'profiles.migration.fixtureRemoved')
   if (profile.status === 'pass') {
     assertPassCondition(
-      JSON.stringify(profile.transitions) === JSON.stringify(EXPECTED_MIGRATION_TRANSITIONS),
+      JSON.stringify(profile.transitions) === JSON.stringify(expectedTransitions),
       'migration-profile PASS requires the complete declared transition sequence',
     )
     assertPassCondition(profile.sentinelPreserved, 'migration-profile PASS requires preserved sentinel')
@@ -196,8 +214,22 @@ function validateMigrationProfile(profile) {
   }
 }
 
+function validateMigrationBaseline(migrationBaseline) {
+  assertExactKeys(migrationBaseline, ['commit', 'productVersion'], 'migrationBaseline')
+  if (!gitSha1Pattern.test(migrationBaseline.commit)) {
+    throw new Error('migration baseline commit is invalid')
+  }
+  if (!semverPattern.test(migrationBaseline.productVersion)) {
+    throw new Error('migration baseline product version is invalid')
+  }
+}
+
 export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
-  assertExactKeys(report, [
+  assertObject(report, 'report')
+  if (report.kind !== 'metrora.windows-physical-acceptance-report' || ![1, 2].includes(report.version)) {
+    throw new Error('report kind or version is unsupported')
+  }
+  assertExactKeys(report, report.version === 1 ? [
     'kind',
     'version',
     'generatedAt',
@@ -207,10 +239,18 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     'profiles',
     'privacy',
     'limitations',
+  ] : [
+    'kind',
+    'version',
+    'generatedAt',
+    'source',
+    'migrationBaseline',
+    'candidate',
+    'platform',
+    'profiles',
+    'privacy',
+    'limitations',
   ], 'report')
-  if (report.kind !== 'metrora.windows-physical-acceptance-report' || report.version !== 1) {
-    throw new Error('report kind or version is unsupported')
-  }
   if (typeof report.generatedAt !== 'string' || !timestampPattern.test(report.generatedAt)) {
     throw new Error('generatedAt must be a UTC timestamp')
   }
@@ -245,6 +285,16 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
     }
   }
 
+  const migrationTransitions = report.version === 1
+    ? EXPECTED_MIGRATION_TRANSITIONS
+    : (() => {
+        validateMigrationBaseline(report.migrationBaseline)
+        return expectedMigrationTransitions(
+          report.migrationBaseline.productVersion,
+          report.candidate.productVersion,
+        )
+      })()
+
   assertExactKeys(report.platform, ['edition', 'version', 'build', 'architecture'], 'platform')
   for (const field of ['edition', 'version', 'build', 'architecture']) {
     assertSafeText(report.platform[field], `platform.${field}`)
@@ -256,7 +306,7 @@ export function validateWindowsPhysicalAcceptanceReport(report, options = {}) {
   assertExactKeys(report.profiles, ['existing', 'clean', 'migration'], 'profiles')
   validateExistingProfile(report.profiles.existing)
   validateCleanProfile(report.profiles.clean, report.candidate.productVersion)
-  validateMigrationProfile(report.profiles.migration)
+  validateMigrationProfile(report.profiles.migration, migrationTransitions)
 
   assertExactKeys(report.privacy, [
     'containsPrivatePaths',
