@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
-const verifier = new URL('./verify-windows-store-local-test-report.mjs', import.meta.url)
+const verifier = fileURLToPath(new URL('./verify-windows-store-local-test-report.mjs', import.meta.url))
 const commit = 'a'.repeat(40)
 
 function validReport() {
@@ -65,7 +66,7 @@ function verify(report, extra = []) {
   const path = join(directory, 'report.json')
   writeFileSync(path, JSON.stringify(report))
   return spawnSync(process.execPath, [
-    verifier.pathname,
+    verifier,
     path,
     '--expected-commit',
     commit,
