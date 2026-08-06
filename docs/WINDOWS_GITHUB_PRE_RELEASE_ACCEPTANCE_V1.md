@@ -35,7 +35,7 @@ The candidate authority is:
 
 A pull-request merge ref, locally rebuilt candidate, manually reconstructed directory or artifact from another commit is not release authority.
 
-The product version and desktop build version come from the repository version authority. They may not be patched after the product build.
+The public product version and Windows file version come from the repository version authority. They may not be patched after the product build.
 
 ## Automated gates
 
@@ -60,8 +60,8 @@ Current candidates use `metrora.windows-physical-acceptance-report` version 2.
 
 Version 2 records both:
 
-- the exact candidate source commit and product version;
-- the exact historical migration baseline commit and product version.
+- the exact candidate source commit, public product version and Windows file version;
+- the exact historical migration baseline commit, public product version and Windows file version.
 
 The current migration baseline is the accepted Metrora `0.9.19` Windows source at commit:
 
@@ -69,15 +69,17 @@ The current migration baseline is the accepted Metrora `0.9.19` Windows source a
 80c3a5a1a116a0bc2fd5352b9fee2afc58207f15
 ```
 
-Migration transitions are derived from the declared baseline and candidate versions. For `1.0.0-rc.7`, a PASS requires:
+The active candidate has public product version `1.0.0-rc.7` and Windows file version `1.0.0.7`. Migration lifecycle labels use the installed Windows file versions because that is the executable identity verified by the installer harness.
+
+A PASS therefore requires:
 
 ```text
 installed-0.9.19
-upgraded-1.0.0-rc.7
-reinstalled-1.0.0-rc.7
+upgraded-1.0.0.7
+reinstalled-1.0.0.7
 uninstalled-for-rollback
 rolled-back-0.9.19
-re-upgraded-1.0.0-rc.7
+re-upgraded-1.0.0.7
 uninstalled
 ```
 
@@ -109,7 +111,7 @@ After physical PASS, release assets must be derived only from the accepted downl
 Published assets must remain traceable to:
 
 - source commit;
-- product version;
+- public product version and Windows file version;
 - workflow run and attempt;
 - release manifest digest;
 - format manifest digest;
