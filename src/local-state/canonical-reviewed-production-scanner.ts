@@ -4,6 +4,7 @@ import * as z from 'zod/v4'
 
 import { collectorProvenanceProfileForCall } from '../contracts/v1/collector-provenance.js'
 import { OpaqueIdSchema, TimestampSchema } from '../contracts/v1/common.js'
+import { loadDailyCache } from '../daily-cache.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { cachedCallToApiCall, clearSessionCache, parseAllSessions } from '../parser.js'
 import { readCodexSessionModelProvider } from '../providers/codex-model-provider.js'
@@ -35,6 +36,11 @@ export type CanonicalReviewedProductionScannerDependenciesV1 = {
   sourceExists(path: string): boolean
   providerDisplayName(provider: string): Promise<string | undefined>
   codexModelProvider?(path: string): Promise<string | undefined>
+  observeCanonicalHistoryParity?(input: {
+    endpointId: string
+    sessionCache: SessionCache
+  }): Promise<void>
+  reportCanonicalHistoryParityFailure?(error: unknown): void
 }
 
 export class CanonicalReviewedProductionScannerIntegrityError extends Error {
@@ -99,6 +105,13 @@ function canonicalApiCall(cachedCall: CachedCall): ParsedApiCall {
   }
 }
 
+function reportParityFailure(error: unknown): void {
+  void error
+  process.stderr.write(
+    'metrora: canonical history parity observation failed; current analytics remain authoritative.\n',
+  )
+}
+
 function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1 {
   return {
     refreshCanonicalCache: async () => {
@@ -112,6 +125,34 @@ function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1
     sourceExists: existsSync,
     providerDisplayName: async provider => (await getProvider(provider))?.displayName,
     codexModelProvider: readCodexSessionModelProvider,
+    observeCanonicalHistoryParity: async ({ endpointId, sessionCache }) => {
+      const dailyCache = await loadDailyCache()
+      // The parity observer is diagnostic and must never mint authority from an
+      // incomplete or unstamped daily history. A later trusted refresh will run
+      // it automatically through this same path.
+      if (dailyCache.complete !== true || dailyCache.watermarkTrusted !== true) return
+      const { observeCanonicalHistoryParityV1 } = await import('./canonical-history-parity-observer.js')
+      await observeCanonicalHistoryParityV1({ endpointId, sessionCache, dailyCache }, {
+        sourceFingerprint: canonicalSourceRecordFingerprintSha256V1,
+      })
+    },
+    reportCanonicalHistoryParityFailure: reportParityFailure,
+  }
+}
+
+async function observeParityWithoutChangingProduction(
+  input: { endpointId: string; sessionCache: SessionCache },
+  dependencies: CanonicalReviewedProductionScannerDependenciesV1,
+): Promise<void> {
+  if (!dependencies.observeCanonicalHistoryParity) return
+  try {
+    await dependencies.observeCanonicalHistoryParity(input)
+  } catch (error) {
+    try {
+      dependencies.reportCanonicalHistoryParityFailure?.(error)
+    } catch {
+      // Diagnostics are not allowed to become a second production gate.
+    }
   }
 }
 
@@ -142,6 +183,8 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
       'canonical session cache is incomplete after explicit refresh',
     )
   }
+
+  await observeParityWithoutChangingProduction({ endpointId, sessionCache: cache }, dependencies)
 
   const candidates: CanonicalReviewedProductionCandidateV1[] = []
   let withheldCount = 0
