@@ -100,6 +100,23 @@ describe('Antigravity CLI statusLine hook installer', () => {
     })
   })
 
+  it('preserves PATH order between canonical metrora executables', async () => {
+    await withTempSettings(async ({ dir }) => {
+      const firstBin = join(dir, 'first-bin')
+      const secondBin = join(dir, 'second-bin')
+      const firstMetrora = join(firstBin, executableName('metrora'))
+      const secondMetrora = join(secondBin, executableName('metrora'))
+      await mkdir(firstBin, { recursive: true })
+      await mkdir(secondBin, { recursive: true })
+      await writeExecutable(firstMetrora)
+      await writeExecutable(secondMetrora)
+
+      const resolved = await resolvePersistentMetroraPathFromPath([firstBin, secondBin].join(delimiter))
+
+      expect(resolved).toBe(firstMetrora)
+    })
+  })
+
   it('falls back to a persistent codeburn alias when metrora is unavailable', async () => {
     await withTempSettings(async ({ dir }) => {
       const legacyBin = join(dir, 'legacy-only')
