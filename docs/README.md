@@ -40,6 +40,9 @@ Component references in this section explain bounded implementation responsibili
 - [Windows format derivation v1](WINDOWS_FORMAT_DERIVATION_V1.md) — one-payload portable and installer derivation.
 - [Windows clean install v1](WINDOWS_CLEAN_INSTALL_V1.md) — isolated NSIS installation and state-preservation contract.
 - [Windows interrupted upgrade recovery v1](WINDOWS_INTERRUPTED_UPGRADE_RECOVERY_V1.md) — deterministic interruption fixture and recovery contract.
+- [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md) — current unsigned technical-preview source, candidate, physical and publication gates.
+- [Windows physical acceptance guided path](WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md) — two-profile guided execution for the current candidate.
+- [Windows physical acceptance R1.B.D](WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md) — historical `0.9.19` acceptance contract and evidence boundary.
 - [Versioning](VERSIONING.md) — release-candidate and platform build-version authority.
 - [Releasing Metrora](../RELEASING.md) — public release responsibilities and prohibitions.
 - [Changelog](../CHANGELOG.md) — Metrora-originated public changes.
