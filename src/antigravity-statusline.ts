@@ -8,12 +8,15 @@ import {
   snapshotAntigravityStatusLinePayload,
 } from './providers/antigravity.js'
 import {
-  buildPersistentCodeburnLookupPath,
-  resolvePersistentCodeburnPathFromPath,
+  buildPersistentMetroraLookupPath,
+  resolvePersistentMetroraPathFromPath,
 } from './persistent-codeburn.js'
 
-export { buildPersistentCodeburnLookupPath as buildAntigravityHookLookupPath } from './persistent-codeburn.js'
-export { resolvePersistentCodeburnPathFromPath } from './persistent-codeburn.js'
+export { buildPersistentMetroraLookupPath as buildAntigravityHookLookupPath } from './persistent-codeburn.js'
+export {
+  resolvePersistentCodeburnPathFromPath,
+  resolvePersistentMetroraPathFromPath,
+} from './persistent-codeburn.js'
 
 type Settings = Record<string, unknown> & {
   statusLine?: {
@@ -26,13 +29,13 @@ type Settings = Record<string, unknown> & {
 type StatusLineSettings = NonNullable<Settings['statusLine']>
 
 const PERSISTENT_CLI_REQUIRED_MESSAGE =
-  'The Antigravity hook needs a persistent codeburn command. Install CodeBurn globally first: npm install -g codeburn'
+  'The Antigravity hook needs a persistent metrora command. Install Metrora so metrora is available on PATH. Existing codeburn installs remain supported.'
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isCodeBurnHook(command: unknown): boolean {
+function isMetroraHook(command: unknown): boolean {
   return typeof command === 'string' && /(?:^|\s)agy-statusline-hook$/.test(command.trim())
 }
 
@@ -42,11 +45,11 @@ function shellQuote(value: string): string {
 }
 
 async function hookCommand(): Promise<string> {
-  const codeburnPath = await resolvePersistentCodeburnPathFromPath(
-    buildPersistentCodeburnLookupPath(),
+  const metroraPath = await resolvePersistentMetroraPathFromPath(
+    buildPersistentMetroraLookupPath(),
     PERSISTENT_CLI_REQUIRED_MESSAGE,
   )
-  return `${shellQuote(codeburnPath)} agy-statusline-hook`
+  return `${shellQuote(metroraPath)} agy-statusline-hook`
 }
 
 function settingsPath(): string {
@@ -121,17 +124,17 @@ async function clearPreviousStatusLine(): Promise<void> {
 export async function installAntigravityStatusLineHook(force = false): Promise<'installed' | 'already-installed'> {
   const settings = await readSettings()
   const existing = settings.statusLine
-  if (existing && !isCodeBurnHook(existing.command) && !force) {
+  if (existing && !isMetroraHook(existing.command) && !force) {
     throw new Error(
       'Antigravity CLI already has a custom statusLine command. Re-run with --force to replace it.'
     )
   }
 
   const command = await hookCommand()
-  if (isCodeBurnHook(existing?.command) && existing?.command === command && existing.type === 'command' && existing.padding === 0) {
+  if (isMetroraHook(existing?.command) && existing?.command === command && existing.type === 'command' && existing.padding === 0) {
     return 'already-installed'
   }
-  if (existing && !isCodeBurnHook(existing.command)) await savePreviousStatusLine(existing)
+  if (existing && !isMetroraHook(existing.command)) await savePreviousStatusLine(existing)
 
   settings.statusLine = {
     type: 'command',
@@ -144,7 +147,7 @@ export async function installAntigravityStatusLineHook(force = false): Promise<'
 
 export async function uninstallAntigravityStatusLineHook(): Promise<'removed' | 'restored' | 'not-installed'> {
   const settings = await readSettings()
-  if (!isCodeBurnHook(settings.statusLine?.command)) return 'not-installed'
+  if (!isMetroraHook(settings.statusLine?.command)) return 'not-installed'
 
   const previous = await readPreviousStatusLine()
   if (previous) settings.statusLine = previous
