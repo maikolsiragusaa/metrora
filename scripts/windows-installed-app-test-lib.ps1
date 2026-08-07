@@ -54,11 +54,33 @@ function Assert-MetroraInstalledApplication(
   $shortcuts = @(Get-MetroraShortcuts $executable)
   if ($shortcuts.Count -lt 1) { throw 'canonical Metrora Start Menu shortcut was not created' }
 
-  $cli = Join-Path $InstallDirectory 'resources\cli\dist\cli.js'
-  if (-not (Test-Path -LiteralPath $cli)) { throw 'installed compatibility CLI is missing' }
-  $cliVersion = (& node $cli --version 2>&1 | Out-String).Trim()
+  # Historical migration fixtures predate the sealed runtime and intentionally
+  # retain their original loose CLI layout. Current candidates must exercise the
+  # exact installed Electron/ASAR runtime instead of relying on the runner's Node.
+  if ($AllowHistoricalPublisher) {
+    $cli = Join-Path $InstallDirectory 'resources\cli\dist\cli.js'
+    if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) { throw 'installed historical compatibility CLI is missing' }
+    $cliVersion = (& node $cli --version 2>&1 | Out-String).Trim()
+  } else {
+    $cliRoot = Join-Path $InstallDirectory 'resources\cli'
+    $cli = Join-Path $cliRoot 'dist\launch.js'
+    $cliArchive = Join-Path $InstallDirectory 'resources\cli.asar'
+    if (-not (Test-Path -LiteralPath $cli -PathType Leaf)) { throw 'installed bundled CLI launcher is missing' }
+    if (-not (Test-Path -LiteralPath $cliArchive -PathType Leaf)) { throw 'installed bundled CLI archive is missing' }
+    if (Test-Path -LiteralPath (Join-Path $cliRoot 'node_modules')) {
+      throw 'installed bundled CLI must not expose a loose node_modules tree'
+    }
+
+    $previousRunAsNode = $env:ELECTRON_RUN_AS_NODE
+    try {
+      $env:ELECTRON_RUN_AS_NODE = '1'
+      $cliVersion = (& $executable $cli --version 2>&1 | Out-String).Trim()
+    } finally {
+      $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode
+    }
+  }
   if ($LASTEXITCODE -ne 0 -or $cliVersion -ne $ExpectedVersion) {
-    throw "installed compatibility CLI version is not ${ExpectedVersion}: $cliVersion"
+    throw "installed bundled CLI version is not ${ExpectedVersion}: $cliVersion"
   }
 
   if ($Launch) {

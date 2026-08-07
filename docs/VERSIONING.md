@@ -4,8 +4,8 @@ Metrora uses semantic versioning for public product identity and separate numeri
 
 ## Current line
 
-- Current source candidate: `1.0.0-rc.8`
-- Desktop build version: `1.0.0.8`
+- Current source candidate: `1.0.0-rc.9`
+- Desktop build version: `1.0.0.9`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - First intended stable release: `1.0.0`
 
@@ -35,8 +35,8 @@ The final component is `0` for the Store package contract. The SemVer pre-releas
 
 For the current `1.0.0` pre-submission line:
 
-- source/product candidate: `1.0.0-rc.8`;
-- desktop build version: `1.0.0.8`;
+- source/product candidate: `1.0.0-rc.9`;
+- desktop build version: `1.0.0.9`;
 - local/non-publishing Store AppX identity version: `1.0.0.0`.
 
 A locally validated `1.0.0.0` AppX does not mean that version has been submitted, certified or published. Once a package version is actually submitted to Microsoft, later Store updates must advance according to the Store's package-version rules rather than reusing an already submitted identity.
@@ -54,7 +54,7 @@ For the same core version, release candidates are ordered by `N` and the stable 
 
 Advance `rc.N` whenever source changes can alter user-visible accounting, historical reconciliation, persisted-state interpretation, security or trust evidence, packaging, installation, migration, rollback or platform behavior.
 
-Parser and provider corrections that can change tokens, costs, calls, projects or other reported usage are material even when their code delta is small. Persisted endpoint-software reconciliation is also material because it changes the interpretation/presentation of stored Workspace state.
+Parser and provider corrections that can change tokens, costs, calls, projects or other reported usage are material even when their code delta is small. Persisted endpoint-software reconciliation is also material because it changes the interpretation/presentation of stored Workspace state. Accounting-authority presentation changes and packaged-runtime changes are likewise material because they can change what the user sees or whether the distributed application can execute its bundled collector.
 
 Documentation-only clarification, test-only determinism and other changes proven not to alter shipped behavior do not automatically require a new candidate. The applicable validation still follows the changed surface.
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { DailyHistoryEntry, MenubarPayload, YieldJsonReport } from '../lib/types'
 import { deriveEfficiency } from './overviewEfficiency'
-import { aggregateModels, buildModelIndex, sessionModelKey, topModelsToAggregated } from './overviewModels'
+import { aggregateModels, buildModelIndex, OTHER_MODELS_HISTORY_GAP, sessionModelKey, topModelsToAggregated } from './overviewModels'
 import { deriveCostPerOutcome } from './overviewOutcome'
 import { deriveSignals, deriveStats } from './overviewTrends'
 import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
@@ -123,5 +123,29 @@ describe('Overview derivations', () => {
       }],
     })
     expect(buildModelIndex(data).get(sessionModelKey('project-a', '2026-08-02', 4, 7))).toBe('model-b')
+  })
+
+  it('never lets daily top-N truncation silently reduce model accounting', () => {
+    const truncated: DailyHistoryEntry = {
+      date: '2026-08-01',
+      cost: 12,
+      savingsUSD: 0,
+      calls: 12,
+      inputTokens: 120,
+      outputTokens: 60,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      topModels: [
+        { name: 'model-a', cost: 10, savingsUSD: 0, calls: 10, inputTokens: 100, outputTokens: 50 },
+      ],
+    }
+
+    const rows = aggregateModels([truncated])
+    expect(rows).toEqual([
+      { name: 'model-a', cost: 10, calls: 10, inputTokens: 100, outputTokens: 50 },
+      { name: OTHER_MODELS_HISTORY_GAP, cost: 2, calls: 2, inputTokens: 20, outputTokens: 10 },
+    ])
+    expect(rows.reduce((sum, row) => sum + row.cost, 0)).toBe(12)
+    expect(rows.reduce((sum, row) => sum + row.calls, 0)).toBe(12)
   })
 })

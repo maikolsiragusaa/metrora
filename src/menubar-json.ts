@@ -134,6 +134,14 @@ export type LocalModelSavings = {
   byProvider: Array<{ name: string; calls: number; savingsUSD: number }>
 }
 
+export type ModelAccounting = {
+  /** Full, untruncated model rows from the same PeriodData authority as current.cost. */
+  rows: Array<{ name: string; cost: number; savingsUSD: number; calls: number }>
+  /** Historical total that cannot be assigned to a retained model without guessing. */
+  gap: { cost: number; savingsUSD: number; calls: number }
+  coverage: { cost: number; calls: number }
+}
+
 export type DeviceSummary = {
   id: string
   name: string
@@ -216,6 +224,10 @@ export type MenubarPayload = {
       /// from estimated tokens. Optional for payload back-compat.
       estimatedCostUSD?: number
     }>
+    /// Untruncated model accounting. Optional only for compatibility with older
+    /// payloads; current producers always emit it from the same PeriodData used
+    /// by headline cost/calls.
+    modelAccounting?: ModelAccounting
     /// See PeriodData.unpricedModels: usage priced at $0 for lack of pricing
     /// data. Empty when every model in the period resolved a price. Optional
     /// so payload producers that predate the field stay source-compatible.
@@ -369,7 +381,7 @@ function buildTopActivities(categories: PeriodData['categories']): MenubarPayloa
   }))
 }
 
-function buildTopModels(models: PeriodData['models']): MenubarPayload['current']['topModels'] {
+function mergedModelRows(models: PeriodData['models']): Array<{ name: string; cost: number; calls: number; savingsUSD: number; estimatedCostUSD: number }> {
   // Day entries key models by the raw provider id (day-aggregator), so resolve
   // display names here — the menubar shows "Kimi K3" rather than "k3". Ids that
   // collapse to one display name (e.g. k3 and kimi-k3) merge into a single row.
@@ -386,8 +398,32 @@ function buildTopModels(models: PeriodData['models']): MenubarPayload['current']
   }
   return [...merged.entries()]
     .sort(([, a], [, b]) => b.cost - a.cost)
+    .map(([name, data]) => ({ name, ...data }))
+}
+
+function buildTopModels(models: PeriodData['models']): MenubarPayload['current']['topModels'] {
+  return mergedModelRows(models)
     .slice(0, TOP_MODELS_LIMIT)
-    .map(([name, d]) => ({ name, cost: d.cost, calls: d.calls, savingsUSD: d.savingsUSD, savingsBaselineModel: '', estimatedCostUSD: d.estimatedCostUSD }))
+    .map(row => ({ ...row, savingsBaselineModel: '' }))
+}
+
+function buildModelAccounting(models: PeriodData['models'], totalCost: number, totalCalls: number): ModelAccounting {
+  const rows = mergedModelRows(models).map(({ name, cost, savingsUSD, calls }) => ({ name, cost, savingsUSD, calls }))
+  const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
+  const representedSavings = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
+  const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
+  const gapCost = Math.max(0, totalCost - representedCost)
+  const gapCalls = Math.max(0, totalCalls - representedCalls)
+  const totalSavings = models.reduce((sum, model) => sum + (model.savingsUSD ?? 0), 0)
+  const gapSavings = Math.max(0, totalSavings - representedSavings)
+  return {
+    rows,
+    gap: { cost: gapCost > 1e-9 ? gapCost : 0, savingsUSD: gapSavings > 1e-9 ? gapSavings : 0, calls: gapCalls },
+    coverage: {
+      cost: totalCost > 1e-9 ? Math.max(0, Math.min(1, representedCost / totalCost)) : 1,
+      calls: totalCalls > 0 ? Math.max(0, Math.min(1, representedCalls / totalCalls)) : 1,
+    },
+  }
 }
 
 function buildOptimize(optimize: OptimizeResult | null): MenubarPayload['optimize'] {
@@ -525,6 +561,7 @@ export function buildMenubarPayload(
       estimatedCostUSD: current.estimatedCostUSD ?? 0,
       topActivities: buildTopActivities(current.categories),
       topModels: buildTopModels(current.models),
+      modelAccounting: buildModelAccounting(current.models, current.cost, current.calls),
       unpricedModels: current.unpricedModels ?? [],
       localModelSavings: breakdowns?.localModelSavings ?? { totalUSD: 0, calls: 0, byModel: [], byProvider: [] },
       providers: buildProviders(providers),

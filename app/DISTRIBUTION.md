@@ -7,8 +7,8 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Product: `Metrora`
 - Desktop app ID: `eu.metrora.desktop`
 - Website: `https://metrora.eu`
-- Current source/desktop candidate: `1.0.0-rc.8`
-- Current desktop build version: `1.0.0.8`
+- Current source/desktop candidate: `1.0.0-rc.9`
+- Current desktop build version: `1.0.0.9`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - Current non-publishing Store AppX identity version: `1.0.0.0`
 
@@ -18,7 +18,9 @@ Inherited names may remain only where required for compatibility or upstream pro
 
 Packaged desktop builds include the required Metrora command-line runtime and do not require a separate Node.js installation.
 
-Packaging stages the current root runtime and copies it into Electron resources through `scripts/after-pack.cjs`. The packaged application uses this version-matched runtime before consulting any user-installed compatibility command.
+The root CLI build keeps its normal production dependency closure external. `app/scripts/stage-cli.mjs` copies that exact production closure into a version-matched staging layout, and `app/scripts/after-pack.cjs` seals it into `cli.asar` inside Electron resources. A tiny stable launcher remains outside the archive and loads the runtime through Electron's ASAR-aware Node loader before any user-installed compatibility command is considered.
+
+The Store payload must not expose a loose CLI `node_modules` tree. Keeping `@scope/package` paths inside `cli.asar` prevents AppX packaging from rewriting those path segments. The Store package workflow executes the CLI from the extracted AppX layout with packaged `Metrora.exe`, so module resolution is tested as shipped rather than inferred from file presence.
 
 Persisted Workspace endpoint metadata is reconciled to the current packaged Metrora/collector version without replacing endpoint identity, Workspace membership or evidence history.
 

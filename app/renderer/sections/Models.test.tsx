@@ -2,16 +2,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuditRow, ModelPricingState, ModelPricingSummary, ModelReportRow } from '../lib/types'
+import type { AuditRow, DateRange, ModelPricingState, ModelPricingSummary, ModelReportRow } from '../lib/types'
 import { Models } from './Models'
 
-const { getModels, getAudit } = vi.hoisted(() => ({
-  getModels: vi.fn<(period: string, provider: string, byTask: boolean) => Promise<ModelReportRow[]>>(),
-  getAudit: vi.fn<(period: string, provider: string) => Promise<AuditRow[]>>(),
+const { getModels, getAudit, getOverview } = vi.hoisted(() => ({
+  getModels: vi.fn<(period: string, provider: string, byTask: boolean, range?: DateRange) => Promise<ModelReportRow[]>>(),
+  getAudit: vi.fn<(period: string, provider: string, range?: DateRange) => Promise<AuditRow[]>>(),
+  getOverview: vi.fn<(period: string, provider: string, range?: DateRange) => Promise<any>>(),
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getModels, getAudit } }
+  return { ...actual, codeburn: { getModels, getAudit, getOverview } }
 })
 
 function pricing(state: ModelPricingState, totalCalls: number): ModelPricingSummary {
@@ -155,13 +156,19 @@ const auditRows: AuditRow[] = [
   },
 ]
 
+function emptyDurable() {
+  return { current: { topModels: [], cost: 0, calls: 0 } }
+}
+
 describe('Models', () => {
   beforeEach(() => {
     getModels.mockReset()
     getAudit.mockReset()
+    getOverview.mockReset()
+    getOverview.mockResolvedValue(emptyDurable())
   })
 
-  it('renders priced model rows with series dots, costs, and savings', async () => {
+  it('renders priced surviving-session rows with series dots, costs, and savings', async () => {
     getModels.mockResolvedValue(rows)
 
     const { container } = render(<Models period="30days" provider="all" />)
@@ -178,11 +185,41 @@ describe('Models', () => {
     expect(screen.getByText('$35.10')).toHaveClass('pos')
 
     const dots = [...container.querySelectorAll('.mdot')]
-    expect(dots[0]).toHaveAttribute('style', expect.stringContaining('var(--s-opus)'))
-    expect(dots[1]).toHaveAttribute('style', expect.stringContaining('var(--s-gpt)'))
+    expect(dots.some(dot => dot.getAttribute('style')?.includes('var(--s-opus)'))).toBe(true)
+    expect(dots.some(dot => dot.getAttribute('style')?.includes('var(--s-gpt)'))).toBe(true)
   })
 
-  it('names the provider on each model row so duplicate model names stay distinguishable', async () => {
+  it('uses durable accounting as the primary by-model authority without hiding narrower detail', async () => {
+    getOverview.mockResolvedValue({
+      current: {
+        cost: 1456.252943,
+        calls: 22275,
+        topModels: [
+          { name: 'GPT-5.4', cost: 1456.252943, savingsUSD: 0, savingsBaselineModel: '', calls: 22275 },
+        ],
+      },
+    })
+    getModels.mockResolvedValue([{
+      ...rows[1],
+      model: 'gpt-5.4',
+      modelDisplayName: 'GPT-5.4',
+      calls: 6439,
+      costUSD: 409.300054,
+      pricing: pricing('priced', 6439),
+    }])
+
+    render(<Models period="lifetime" provider="all" />)
+
+    expect(await screen.findByText('Historical accounting')).toBeInTheDocument()
+    expect(screen.getByText('$1,456.25')).toBeInTheDocument()
+    expect(screen.getByText('22,275')).toBeInTheDocument()
+    expect(screen.getByText(/same accounting authority used by Home/i)).toBeInTheDocument()
+    expect(await screen.findByText('$409.30')).toBeInTheDocument()
+    expect(screen.getByText('6,439')).toBeInTheDocument()
+    expect(screen.getByText(/may be a subset of historical accounting/i)).toBeInTheDocument()
+  })
+
+  it('names the provider on each surviving model row so duplicate model names stay distinguishable', async () => {
     const dupRows: ModelReportRow[] = [
       { ...rows[0], provider: 'minimax', providerDisplayName: 'MiniMax', model: 'minimax-m3', modelDisplayName: 'MiniMax M3' },
       { ...rows[1], provider: 'openrouter', providerDisplayName: 'OpenRouter', model: 'minimax-m3', modelDisplayName: 'MiniMax M3' },
@@ -191,13 +228,12 @@ describe('Models', () => {
 
     render(<Models period="30days" provider="all" />)
 
-    // Same display name, two rows — each tagged with its own provider.
     expect(await screen.findAllByText('MiniMax M3')).toHaveLength(2)
     expect(screen.getByText('MiniMax')).toBeInTheDocument()
     expect(screen.getByText('OpenRouter')).toBeInTheDocument()
   })
 
-  it('names the provider on each by-task model group', async () => {
+  it('names the provider on each by-task model group and labels it as available detail', async () => {
     getModels.mockResolvedValueOnce([rows[0]]).mockResolvedValueOnce(byTaskRows)
 
     render(<Models period="week" provider="all" />)
@@ -207,6 +243,7 @@ describe('Models', () => {
 
     expect(await screen.findByText('coding')).toBeInTheDocument()
     expect(screen.getByText('Anthropic')).toBeInTheDocument()
+    expect(screen.getByText(/Task attribution requires original session records/i)).toBeInTheDocument()
   })
 
   it('renders codex rows with credits and real cost as priced', async () => {
@@ -280,12 +317,10 @@ describe('Models', () => {
 
     expect(await screen.findByText('my-proxy-model')).toBeInTheDocument()
     expect(getAudit).toHaveBeenCalledWith('30days', 'all')
-    // Raw output (3.1M) and normalized output (4M = output + reasoning) both show.
     expect(screen.getByText('3.1M')).toBeInTheDocument()
     expect(screen.getByText('900K')).toBeInTheDocument()
     expect(screen.getByText('4M')).toBeInTheDocument()
     expect(screen.getByText('$252.00')).toBeInTheDocument()
-    // Only the unpriced row (rates: null) is flagged estimated.
     expect(screen.getAllByText('est')).toHaveLength(1)
   })
 
@@ -299,5 +334,16 @@ describe('Models', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Audit' }))
 
     expect(await screen.findByText('No model usage to audit in this range yet.')).toBeInTheDocument()
+  })
+
+  it('passes the exact custom range to both durable and surviving authorities', async () => {
+    const range = { from: '2026-07-01', to: '2026-07-31' }
+    getModels.mockResolvedValue(rows)
+
+    render(<Models period="30days" provider="codex" range={range} />)
+
+    await screen.findByText('Claude Opus 4.8')
+    expect(getOverview).toHaveBeenCalledWith('30days', 'codex', range)
+    expect(getModels).toHaveBeenCalledWith('30days', 'codex', false, range)
   })
 })

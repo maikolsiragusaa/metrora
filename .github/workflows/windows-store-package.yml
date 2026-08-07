@@ -9,6 +9,9 @@ on:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'app/package.json'
       - 'app/package-lock.json'
+      - 'app/scripts/stage-cli.mjs'
+      - 'app/scripts/after-pack.cjs'
+      - 'tsup.config.ts'
       - 'scripts/generate-brand-assets.mjs'
       - 'scripts/windows-store-identity.node-test.mjs'
       - 'scripts/windows-store-local-test*'
@@ -25,6 +28,9 @@ on:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'app/package.json'
       - 'app/package-lock.json'
+      - 'app/scripts/stage-cli.mjs'
+      - 'app/scripts/after-pack.cjs'
+      - 'tsup.config.ts'
       - 'scripts/generate-brand-assets.mjs'
       - 'scripts/windows-store-identity.node-test.mjs'
       - 'scripts/windows-store-local-test*'
@@ -70,7 +76,7 @@ jobs:
       - name: Build unsigned AppX candidate without publication
         run: npm --prefix app run package:store
 
-      - name: Inspect package boundary
+      - name: Inspect package boundary and execute packaged CLI
         id: inspect
         shell: pwsh
         run: |
@@ -154,6 +160,54 @@ jobs:
           Assert-PngDimensions 'Square150x150Logo.png' 150 150
           Assert-PngDimensions 'Wide310x150Logo.png' 310 150
 
+          # The production dependency tree is sealed inside cli.asar so MakeAppx
+          # never sees @scope path segments. Keep only the stable launcher loose.
+          $cliRoot = Join-Path $unpacked 'app\resources\cli'
+          $cliLauncher = Join-Path $cliRoot 'dist\launch.js'
+          $cliArchive = Join-Path $unpacked 'app\resources\cli.asar'
+          $electron = Join-Path $unpacked 'app\Metrora.exe'
+          foreach ($requiredPath in @($cliLauncher, $cliArchive, $electron)) {
+            if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+              throw "packaged CLI runtime is missing: $requiredPath"
+            }
+          }
+          if (Test-Path -LiteralPath (Join-Path $cliRoot 'node_modules')) {
+            throw 'packaged CLI must not expose a loose node_modules tree'
+          }
+          $encodedScopes = @(Get-ChildItem -LiteralPath $unpacked -Recurse -Force | Where-Object {
+            $_.Name -match '^(?i:%40|%2540)'
+          })
+          if ($encodedScopes.Count -gt 0) {
+            throw "AppX contains percent-encoded scoped-package paths: $($encodedScopes[0].FullName)"
+          }
+
+          # Exercise the exact runtime/layout shipped in the AppX. No separately
+          # installed Node is involved: Metrora.exe runs the loose proxy, which
+          # loads main.js and its dependency closure from cli.asar.
+          $previousRunAsNode = $env:ELECTRON_RUN_AS_NODE
+          try {
+            $env:ELECTRON_RUN_AS_NODE = '1'
+            $versionOutput = (& $electron $cliLauncher --version | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^\d+\.\d+\.\d+') {
+              throw "packaged CLI --version failed: $versionOutput"
+            }
+
+            $statusOutput = (& $electron $cliLauncher status --format json | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) {
+              throw "packaged CLI status failed with exit code $LASTEXITCODE"
+            }
+            try {
+              $status = $statusOutput | ConvertFrom-Json
+            } catch {
+              throw "packaged CLI status did not return JSON: $statusOutput"
+            }
+            if ($null -eq $status.today -or $null -eq $status.month) {
+              throw 'packaged CLI status JSON is missing expected accounting fields'
+            }
+          } finally {
+            $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode
+          }
+
           $candidateDirectory = Join-Path $PWD 'app\release\Metrora-Windows-Store-Candidate'
           New-Item -ItemType Directory -Path $candidateDirectory -Force | Out-Null
           Copy-Item -LiteralPath $package.FullName -Destination $candidateDirectory -Force
@@ -166,6 +220,9 @@ jobs:
             sha256 = $hash
             packageVersion = [string]$identity.Version
             architecture = [string]$identity.ProcessorArchitecture
+            packagedCliSmoke = 'pass'
+            cliRuntimeContainer = 'asar'
+            looseCliNodeModules = $false
             signed = $false
             submitted = $false
             published = $false
@@ -193,5 +250,6 @@ jobs:
 
           - Artifact: `${{ steps.inspect.outputs.artifact_name }}`
           - SHA-256: `${{ steps.inspect.outputs.sha256 }}`
+          - Packaged CLI: sealed ASAR executed with bundled Electron runtime
           - State: unsigned, not submitted, not published
           "@ >> $env:GITHUB_STEP_SUMMARY
