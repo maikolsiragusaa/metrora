@@ -18,6 +18,26 @@ Subscription quotas, bundled credits and reseller prices are separate economic r
 
 ## Current reviewed gaps
 
+### DeepSeek V4 — peak/valley pricing is time-dependent
+
+DeepSeek's direct API currently publishes the normal V4 Flash and V4 Pro token rates. The final V4 Flash release does not by itself require a new historical price interval when those economic rates are unchanged: the reviewed book versions pricing conditions, not model weights.
+
+Current reference:
+
+- `https://api-docs.deepseek.com/quick_start/pricing/`
+
+Separate provider/customer notices and cloud-partner announcements have described peak/valley pricing for V4, with higher rates during specified Beijing-time windows. A time-of-day modifier is not expressible by V1's token-threshold `rateBands`.
+
+Do not pre-apply an announced future tariff before its effective terms are verified, and do not flatten a temporal tariff into one average rate.
+
+A future compatible representation should define at least:
+
+- an effective date for the temporal rule;
+- an authoritative timezone;
+- one or more local-clock windows and applicable days;
+- the rates or multiplier within each window;
+- deterministic precedence when a temporal rule combines with another modifier.
+
 ### Google Gemini — cache storage depends on time
 
 Official Gemini API pricing includes context-cache storage charged per cached token per hour in addition to cached-token processing. Current references:
@@ -47,6 +67,33 @@ Official Model Studio pricing documents direct API pricing, deployment scopes, t
 Metrora's Qwen collector currently exposes the provider's full `promptTokenCount` as `inputTokens` and also exposes `cachedContentTokenCount` as cache-read tokens. Because the provider's prompt count contains cached tokens, historical settlement would risk charging cached tokens once at the normal input rate and again at the cache-read rate.
 
 Before adding reviewed Qwen pricing, normalize the collector/accounting evidence so uncached input and cached input are disjoint. Preserve the raw provider counters or provenance needed to audit that normalization.
+
+### OpenAI pre-cache models — input/output known, cache semantics absent
+
+Older OpenAI models such as GPT-4 Turbo, GPT-4 and GPT-3.5 Turbo have authoritative historical input/output prices, but the reviewed evidence for their pre-prompt-caching periods does not provide the cache-read/cache-write dimensions required by the current V1 record shape.
+
+Current V1 requires all four token rates. Encoding missing cache dimensions as zero, or copying the input rate into them, would confuse `not applicable`, `not supported` and `unknown`.
+
+A future schema should be able to state cache behavior explicitly, for example by distinguishing:
+
+- cache unsupported/not applicable;
+- cache supported but non-billable;
+- cache price unknown;
+- cache price known.
+
+Until then, leave those pre-cache intervals uncovered rather than manufacture cache economics.
+
+### Anthropic Claude 3 Haiku — one-hour cache write is an exception
+
+Anthropic's historical pricing table publishes Claude 3 Haiku at $0.25/M normal input, $0.30/M five-minute cache writes, $0.50/M one-hour cache writes, $0.03/M cache reads and $1.25/M output.
+
+Reference:
+
+- `https://docs.anthropic.com/en/docs/about-claude/pricing`
+
+Metrora V1 currently derives a one-hour Anthropic cache write from the five-minute rate using the standard 1.6x relationship. That relationship is exact for the other reviewed Anthropic models in this tranche, but for Claude 3 Haiku it would produce $0.48/M instead of the published $0.50/M.
+
+Do not add Claude 3 Haiku until the record can carry the exact one-hour rate, for example with a `cacheWriteOneHourPerToken` field or a generalized cache-duration-rate representation.
 
 ### MiniMax M3 — cache-write economics not established by the reviewed source
 
@@ -98,6 +145,7 @@ The following should remain distinct pricing identities or future modifiers rath
 - batch discounts;
 - regional or data-residency premiums;
 - priority/flex/low-latency routes;
+- time-of-day / peak-valley pricing;
 - subscriptions and bundled token plans;
 - reseller or gateway markups;
 - per-tool charges not represented by observed tool-request counts;
