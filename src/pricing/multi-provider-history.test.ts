@@ -64,7 +64,7 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     }
   })
 
-  it('does not backdate DeepSeek V4 first-observed prices or resurrect retired legacy keys', () => {
+  it('does not backdate DeepSeek V4 first-observed prices or fill unreviewed legacy intervals', () => {
     expect(lookupAt('deepseek', 'deepseek-v4-flash', '2026-08-07T17:12:59Z')).toBeUndefined()
     expect(lookupAt('deepseek', 'deepseek-v4-flash', '2026-08-07T17:13:00Z')).toBeDefined()
 
@@ -90,17 +90,26 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     expect(pro.rates.cacheReadPerToken).toBeCloseTo(0.003625 / 1_000_000, 16)
   })
 
-  it('ends retired xAI identities instead of inventing a same-identity redirect price', () => {
-    expect(lookupAt('xai', 'grok-3', '2026-05-15T18:59:59Z')?.rates.inputPerToken)
-      .toBeCloseTo(3 / 1_000_000, 16)
-    expect(lookupAt('xai', 'grok-3', '2026-05-15T19:00:00Z')).toBeUndefined()
+  it('switches retired xAI slugs to their official redirect economics at the exact boundary', () => {
+    const grok3Before = lookupAt('xai', 'grok-3', '2026-05-15T18:59:59Z')
+    const grok3After = lookupAt('xai', 'grok-3', '2026-05-15T19:00:00Z')
+    expect(grok3Before?.rates.inputPerToken).toBeCloseTo(3 / 1_000_000, 16)
+    expect(grok3After?.rates.inputPerToken).toBeCloseTo(1.25 / 1_000_000, 16)
+    expect(grok3After?.rates.outputPerToken).toBeCloseTo(2.5 / 1_000_000, 16)
+    expect(grok3After?.supersedes).toBe(grok3Before?.priceRecordId)
 
-    expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T18:59:59Z')?.rates.outputPerToken)
-      .toBeCloseTo(1.5 / 1_000_000, 16)
-    expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T19:00:00Z')).toBeUndefined()
+    const codeBefore = lookupAt('xai', 'grok-code-fast-1', '2026-05-15T18:59:59Z')
+    const codeAfter = lookupAt('xai', 'grok-code-fast-1', '2026-05-15T19:00:00Z')
+    expect(codeBefore?.rates.outputPerToken).toBeCloseTo(1.5 / 1_000_000, 16)
+    expect(codeAfter?.rates.inputPerToken).toBeCloseTo(1 / 1_000_000, 16)
+    expect(codeAfter?.rates.outputPerToken).toBeCloseTo(2 / 1_000_000, 16)
+    expect(codeAfter?.supersedes).toBe(codeBefore?.priceRecordId)
+
+    expect(lookupAt('xai', 'grok-4-0709', '2026-05-15T19:00:00Z')?.rates.inputPerToken)
+      .toBeCloseTo(1.25 / 1_000_000, 16)
   })
 
-  it('selects Grok 4 0709 long-context pricing at the inclusive 128K boundary', () => {
+  it('selects Grok 4 0709 long-context pricing at the inclusive 128K boundary before redirect', () => {
     const record = lookupAt('xai', 'grok-4-0709', '2026-01-01T00:00:00Z')
     if (!record) throw new Error('missing historical grok-4-0709')
 
