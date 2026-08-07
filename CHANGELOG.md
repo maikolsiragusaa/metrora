@@ -15,7 +15,8 @@ RC9 is the current source/pre-submission candidate. It is not yet a Microsoft St
 
 ### Windows Store runtime
 
-- Made the packaged desktop CLI self-contained at the JavaScript runtime boundary instead of shipping a loose dependency tree whose scoped npm path names can be rewritten by AppX packaging.
+- Sealed the packaged CLI and its normal production dependency closure inside a dedicated `cli.asar`, so scoped npm paths such as `@scope/package` are not exposed to AppX path rewriting.
+- Kept only a tiny stable launcher outside the archive; no loose CLI `node_modules` tree is shipped.
 - Strengthened the existing Store-package workflow to execute the CLI from the extracted AppX layout with the packaged Electron runtime, verify read-only accounting JSON startup, reject loose CLI `node_modules`, and reject percent-encoded scoped-package paths.
 - Kept the Store candidate unsigned, non-publishing and bound to the existing assigned Store identity.
 
@@ -79,17 +80,15 @@ RC7 was published as an **unsigned Windows x64 GitHub technical preview**. It re
 
 ### Windows candidate integrity
 
-- Bound Windows candidates to reviewed public source, canonical payload inventories, manifests and independent post-download verification.
-- Derived portable and installer formats from one canonical application payload.
-- Validated clean installation, removal, upgrade, repair, controlled rollback, interruption recovery and user-owned state preservation.
-- Completed bounded physical Windows keyboard, scaling, theme, reduced-motion and Narrator acceptance for the unsigned engineering candidate.
-- Added physical-acceptance report v2 with an explicit migration baseline and candidate-derived transitions while preserving historical report v1 verification.
-- Added a public unsigned GitHub pre-release acceptance contract and version-scoped `1.0.0-rc.7` preparation/publication record.
+- Bound Windows candidate artifacts to exact reviewed source and explicit manifests.
+- Added reproducible package-integrity checks and deterministic candidate naming.
+- Validated clean install, upgrade, reinstall, rollback, re-upgrade and interrupted-transition recovery against preserved local state.
+- Added migration-baseline and candidate-version authority checks.
+- Added physical Windows accessibility, keyboard, scaling, theme and reduced-motion acceptance evidence.
 
-## 0.9.19 — Metrora public source baseline
+### Collector reliability
 
-- Introduced the Metrora-branded public source tree from the reviewed CodeBurn 0.9.19 baseline.
-- Preserved local-first multi-tool collection, CLI, desktop, dashboard, pricing, export and compatibility behavior while establishing an independent product identity and development history.
-- Retained temporary compatibility identifiers where immediate removal would break local state, packaging or integrations.
-
-This source baseline is not itself a claim that an official signed desktop release was published.
+- Made parser fixtures deterministic and durable across test environments.
+- Recovered restarted Antigravity RPC endpoints without requiring a full application restart.
+- Preserved trusted daily-cache watermarks across safe cache reconciliation.
+- Reconciled durable project filters against retained historical state.
