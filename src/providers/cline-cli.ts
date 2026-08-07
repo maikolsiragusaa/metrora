@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import { readdir } from 'fs/promises'
 import { homedir } from 'os'
 import { basename, join } from 'path'
@@ -234,23 +235,38 @@ async function readJson(path: string): Promise<unknown> {
   }
 }
 
+function isMessagesPath(path: string): boolean {
+  return path.endsWith('.messages.json')
+}
+
+function metadataPathForSource(path: string): string {
+  return isMessagesPath(path) ? path.replace(/\.messages\.json$/, '.json') : path
+}
+
+function messagesPathForMetadata(metaPath: string): string {
+  return metaPath.replace(/\.json$/, '.messages.json')
+}
+
 function createParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
-      const meta = await readJson(source.path)
+      const metaPath = metadataPathForSource(source.path)
+      const meta = await readJson(metaPath)
       if (!isRecord(meta)) return
 
-      const sessionId = nonEmptyString(meta['session_id']) ?? basename(source.path).replace(/\.json$/, '')
+      const sessionId = nonEmptyString(meta['session_id']) ?? basename(metaPath, '.json')
       const metadata = isRecord(meta['metadata']) ? meta['metadata'] : {}
       const workspace = nonEmptyString(meta['workspace_root']) ?? nonEmptyString(meta['cwd'])
       const sessionModel = nonEmptyString(meta['model']) ?? 'unknown'
       const startedAt = isoTimestamp(meta['started_at'], new Date(0).toISOString())
       const project = source.project
 
-      // Prefer the co-located message file. The recorded messages_path can be
-      // absolute and stale after a directory is moved or copied to another host.
-      const sibling = source.path.replace(/\.json$/, '.messages.json')
-      let doc = await readJson(sibling)
+      // The messages file is the fingerprint authority whenever it exists: it
+      // grows as the CLI session progresses while metadata can remain unchanged.
+      // Prefer the discovered source path, then the canonical sibling, then the
+      // recorded path (which can become stale after a session directory moves).
+      let doc = isMessagesPath(source.path) ? await readJson(source.path) : null
+      if (!isRecord(doc)) doc = await readJson(messagesPathForMetadata(metaPath))
       if (!isRecord(doc)) {
         const recorded = nonEmptyString(meta['messages_path'])
         if (recorded) doc = await readJson(recorded)
@@ -391,8 +407,11 @@ export function createClineCliProvider(overrideDir?: string): Provider {
         if (!isRecord(meta)) continue
 
         const workspace = nonEmptyString(meta['workspace_root']) ?? nonEmptyString(meta['cwd'])
+        const messagesPath = messagesPathForMetadata(metaPath)
         sources.push({
-          path: metaPath,
+          // Cache/freshness follows the file that actually grows during a live
+          // session. Metadata remains the authority for rollup-only sessions.
+          path: existsSync(messagesPath) ? messagesPath : metaPath,
           project: projectName(workspace),
           provider: PROVIDER_NAME,
         })
