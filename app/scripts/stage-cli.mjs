@@ -1,11 +1,10 @@
-// Stage the root Metrora runtime into app/build/cli so electron-builder can ship
-// the compatibility CLI and the narrow desktop main-process entries.
+// Stage a complete copy of the root Metrora runtime into app/build/cli so
+// electron-builder can seal it into a CLI-specific ASAR during afterPack.
 //
-// `tsup.config.ts` deliberately bundles every production dependency into the
-// emitted runtime. Keep the staged Store payload free of a loose node_modules
-// tree: AppX packaging may rewrite `@scope` directory segments, which breaks
-// Node module resolution after installation. A self-contained JS bundle avoids
-// that packaging ambiguity entirely while preserving the public npm launcher.
+// Keep the runtime's normal external production dependencies here. Packaging
+// them inside cli.asar preserves scoped npm paths such as @scope/package without
+// exposing those path segments to MakeAppx, which had rewritten them to %40scope
+// in the RC8 loose-file payload.
 //
 //   build/cli/package.json
 //   build/cli/THIRD_PARTY_NOTICES.md
@@ -15,9 +14,14 @@
 //   build/cli/dist/desktop-local-state.js
 //   build/cli/dist/desktop-reviewed-production.js
 //   build/cli/dist/launch.js
+//   build/cli/node_modules/
+//
+// The production closure is copied out of the already-installed root
+// node_modules (offline, no reinstall). Run the root CLI build first so dist/ is
+// fresh — the app `stage-cli` script does exactly that.
 
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, copyFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -25,6 +29,7 @@ const here = dirname(fileURLToPath(import.meta.url)) // app/scripts
 const appDir = join(here, '..') // app
 const root = join(appDir, '..') // repo root
 const dist = join(root, 'dist')
+const rootModules = join(root, 'node_modules')
 const stage = join(appDir, 'build', 'cli')
 const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js', 'desktop-reviewed-production.js']
 const noticeFiles = [
@@ -49,15 +54,9 @@ copyFileSync(join(root, 'package.json'), join(stage, 'package.json'))
 for (const file of emittedFiles) copyFileSync(join(dist, file), join(stage, 'dist', file))
 for (const [source, destination] of noticeFiles) copyFileSync(join(root, source), join(stage, destination))
 
-// Desktop-app launch shim (the app spawns this, not cli.js). The packaged app
-// runs the CLI with Electron's own binary as Node (ELECTRON_RUN_AS_NODE=1).
-// Because process.versions.electron is then set, commander's argv auto-detection
-// treats a packaged (non-defaultApp) Electron as `from: 'electron'` and slices
-// argv by 1 instead of 2 — leaving this script's own path among the parsed args
-// and shifting every real argument. Drop that element before handing off so the
-// CLI's `program.parse()` sees the true args. Guarded so the shim also works if
-// ever run under plain Node. Kept in the app (not the shared CLI source) so the
-// published CLI is untouched.
+// Desktop-app launch shim. In the staged layout it is also used for a plain-Node
+// smoke check; afterPack writes an equivalent tiny proxy outside cli.asar so the
+// packaged app can keep its stable resources/cli/dist/launch.js entry path.
 const launch = join(stage, 'dist', 'launch.js')
 writeFileSync(
   launch,
@@ -72,10 +71,63 @@ writeFileSync(
   ].join('\n'),
 )
 
-// Fail during staging if the emitted runtime still needs an external package in
-// order to perform the most basic import/Commander startup. This is intentionally
-// a local Node check; the Store workflow additionally runs the packaged copy with
-// Electron-as-Node so the final distribution layout is exercised too.
+// `npm ls` prints the tree to stdout even when it exits non-zero on peer/
+// extraneous warnings, so capture stdout regardless of exit code.
+let listed = ''
+try {
+  // Execute npm's JavaScript entry point with the current Node binary. Windows
+  // exposes npm as a .cmd shim, which execFile cannot launch without a shell.
+  const npmCli = process.env.npm_execpath
+  if (!npmCli) throw new Error('npm_execpath is unavailable')
+  listed = execFileSync(process.execPath, [npmCli, 'ls', '--omit=dev', '--all', '--parseable'], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  })
+} catch (err) {
+  listed = err.stdout ? String(err.stdout) : ''
+}
+
+// Every parseable line is an absolute path to a production package instance.
+// Map each back to its top-level node_modules entry (`name` or `@scope/name`),
+// then copy those dirs whole — a package's own nested node_modules comes with
+// it, which is exactly the closure it needs.
+const prefix = rootModules.replaceAll('\\', '/') + '/'
+const comparisonPrefix = process.platform === 'win32' ? prefix.toLowerCase() : prefix
+const topLevel = new Set()
+for (const line of listed.split('\n')) {
+  const normalizedLine = line.trim().replaceAll('\\', '/')
+  const comparisonLine = process.platform === 'win32' ? normalizedLine.toLowerCase() : normalizedLine
+  if (!comparisonLine.startsWith(comparisonPrefix)) continue
+  const rest = normalizedLine.slice(prefix.length)
+  const match = rest.match(/^(@[^/]+\/[^/]+|[^/]+)/)
+  if (match) topLevel.add(match[1])
+}
+if (topLevel.size === 0) {
+  throw new Error('stage-cli: production dependency closure is empty — is the root `npm install`ed?')
+}
+
+mkdirSync(join(stage, 'node_modules'), { recursive: true })
+for (const pkg of topLevel) {
+  const src = join(rootModules, pkg)
+  if (!existsSync(src) || !statSync(src).isDirectory()) continue
+  cpSync(src, join(stage, 'node_modules', pkg), { recursive: true, dereference: true })
+}
+
+// A partially-copied runtime that crashes on import is worse than none: fail the
+// build if any external runtime dependency did not land.
+const required = [
+  'chalk', 'react', 'ink', 'strip-ansi', 'zod', 'undici',
+  'selfsigned', 'commander', 'bonjour-service', '@modelcontextprotocol/sdk',
+]
+const missing = required.filter(pkg => !existsSync(join(stage, 'node_modules', pkg)))
+if (missing.length) {
+  throw new Error(`stage-cli: staged bundle is missing runtime deps: ${missing.join(', ')}`)
+}
+
+// Exercise the staged production closure before Electron packaging. The Store
+// workflow separately executes the sealed cli.asar copy with Metrora.exe, so
+// both the pre-package closure and the exact AppX runtime are covered.
 let versionOutput = ''
 try {
   versionOutput = execFileSync(process.execPath, [launch, '--version'], {
@@ -86,10 +138,10 @@ try {
   }).trim()
 } catch (error) {
   const stderr = error?.stderr ? String(error.stderr).trim() : ''
-  throw new Error(`stage-cli: bundled CLI smoke test failed${stderr ? `: ${stderr}` : ''}`)
+  throw new Error(`stage-cli: staged CLI smoke test failed${stderr ? `: ${stderr}` : ''}`)
 }
 if (!/^\d+\.\d+\.\d+/.test(versionOutput)) {
-  throw new Error(`stage-cli: bundled CLI returned an unexpected version: ${versionOutput || '<empty>'}`)
+  throw new Error(`stage-cli: staged CLI returned an unexpected version: ${versionOutput || '<empty>'}`)
 }
 
-console.log(`stage-cli: staged self-contained CLI runtime (${emittedFiles.length} emitted files) -> ${stage}`)
+console.log(`stage-cli: staged ${topLevel.size} production packages, ${emittedFiles.length} runtime files and third-party notices -> ${stage}`)
