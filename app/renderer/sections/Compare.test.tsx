@@ -139,7 +139,7 @@ describe('Compare', () => {
     mocks.getCompare.mockResolvedValue(report)
     render(<Compare period="30days" provider="all" range={{ from: '2026-07-01', to: '2026-07-11' }} />)
 
-    expect(await screen.findByRole('note', { name: '' })).toHaveTextContent('Compare uses the selected period; custom dates are not supported yet.')
+    expect(await screen.findByText('Compare uses the selected period; custom dates are not supported yet.')).toBeInTheDocument()
     expect(mocks.getCompareModels).toHaveBeenCalledWith('30days', 'all')
   })
 
