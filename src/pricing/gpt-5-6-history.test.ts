@@ -8,6 +8,11 @@ import {
 } from './history.js'
 
 const catalog = parseHistoricalPriceBookV1(catalogData)
+const gpt56Records = catalog.records.filter(record =>
+  record.pricingAuthority === 'openai'
+  && record.pricingModel.startsWith('gpt-5.6-')
+  && record.route === 'standard'
+)
 
 const lookup = (model: string, timestamp: string) => resolveHistoricalPriceRecordV1(catalog, {
   pricingAuthority: 'openai',
@@ -35,11 +40,11 @@ function calculatedCost(model: string, timestamp: string): number {
 }
 
 describe('reviewed GPT-5.6 standard price history', () => {
-  it('contains only the five reviewed standard-route intervals in this tranche', () => {
-    expect(catalog.records).toHaveLength(5)
-    expect(catalog.records.every(record => record.pricingAuthority === 'openai')).toBe(true)
-    expect(catalog.records.every(record => record.route === 'standard')).toBe(true)
-    expect(catalog.records.every(record => record.validFrom.basis === 'first-observed')).toBe(true)
+  it('keeps this tranche scoped to the six reviewed GPT-5.6 standard-route intervals', () => {
+    expect(gpt56Records).toHaveLength(6)
+    expect(gpt56Records.every(record => record.pricingAuthority === 'openai')).toBe(true)
+    expect(gpt56Records.every(record => record.route === 'standard')).toBe(true)
+    expect(gpt56Records.every(record => record.validFrom.basis === 'first-observed')).toBe(true)
   })
 
   it('does not invent coverage before GPT-5.6 prices were first observed', () => {
@@ -65,13 +70,21 @@ describe('reviewed GPT-5.6 standard price history', () => {
     expect(newCost).toBeCloseTo(oldCost * 0.8, 12)
   })
 
-  it('keeps Sol on the same reviewed interval because its standard price did not change', () => {
+  it('adds Sol fast-mode evidence without changing its standard price', () => {
     const before = lookup('gpt-5.6-sol', '2026-07-30T20:08:00Z')
-    const after = lookup('gpt-5.6-sol', '2026-07-31T20:08:01Z')
+    const after = lookup('gpt-5.6-sol', '2026-07-30T20:08:01Z')
     expect(before?.priceRecordId).toBe('openai:gpt-5.6-sol:standard:litellm-a874de6')
-    expect(after?.priceRecordId).toBe(before?.priceRecordId)
-    expect(calculatedCost('gpt-5.6-sol', '2026-07-31T20:08:01Z'))
-      .toBeCloseTo(calculatedCost('gpt-5.6-sol', '2026-07-30T20:08:00Z'), 12)
+    expect(after?.priceRecordId).toBe('openai:gpt-5.6-sol:standard:official-2026-07-30')
+
+    if (!after) throw new Error('missing post-fast-mode Sol record')
+    const standard = calculateHistoricalCostV1(after, representativeUsage)
+    const fast = calculateHistoricalCostV1(after, { ...representativeUsage, speed: 'fast' })
+    expect(standard.kind).toBe('calculated')
+    expect(fast.kind).toBe('calculated')
+    if (standard.kind !== 'calculated' || fast.kind !== 'calculated') {
+      throw new Error('expected standard and fast Sol calculations')
+    }
+    expect(fast.costUSD).toBeCloseTo(standard.costUSD * 2, 12)
   })
 
   it('selects the reviewed long-context band only above 272K prompt input tokens', () => {
