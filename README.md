@@ -44,7 +44,7 @@ No wrapper or proxy is required, and AI traffic does not pass through Metrora.
 
 | Capability | What it provides |
 | --- | --- |
-| **Collect** | Local collection from 38 registered AI-tool and gateway integrations, with provider-specific discovery and parsing. |
+| **Collect** | Local collection from 39 registered AI-tool and gateway integrations, with provider-specific discovery and parsing. |
 | **Understand** | Cost, tokens, cache, projects, sessions, tools, task categories, timing and model breakdowns. |
 | **Compare** | Model efficiency and observed working-style comparisons, with missing evidence kept explicit. |
 | **Optimize** | Waste findings, reversible configuration changes and realized-versus-estimated savings reporting. |
@@ -121,7 +121,7 @@ Most analytical commands support provider, project and date filters. The [CLI re
 
 ## Supported tools
 
-Metrora currently registers **38 local collectors**, including Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Roo Code, KiloCode, Qwen, Kimi, Warp and other supported clients and gateways.
+Metrora currently registers **39 local collectors**, including Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Cline CLI, Roo Code, KiloCode, Qwen, Kimi, Warp and other supported clients and gateways.
 
 Support is reported with three separate facts:
 
