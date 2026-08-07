@@ -22,7 +22,7 @@ import type {
 import { deriveEfficiency } from './overviewEfficiency'
 import { OverviewHomeSummary } from './OverviewHomeSummary'
 import { deriveOverviewDecision } from './overviewDecision'
-import { aggregateModels, buildModelIndex, sessionModelKey, topModelsToAggregated, type AggregatedModel } from './overviewModels'
+import { aggregateModels, buildModelIndex, modelAccountingToAggregated, sessionModelKey, topModelsToAggregated, type AggregatedModel } from './overviewModels'
 import { deriveCostPerOutcome } from './overviewOutcome'
 import { deriveSignals, deriveStats, mean, streakDays, type SignalGroups } from './overviewTrends'
 import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
@@ -200,8 +200,16 @@ function formatShortDay(date: string): string {
   return `${month}/${day}`
 }
 
+function formatModelShare(cost: number, totalCost: number): string {
+  if (totalCost <= 0) return '—'
+  const percent = cost / totalCost * 100
+  if (percent > 0 && percent < 1) return '<1%'
+  return `${Math.round(percent)}%`
+}
+
 function ModelsTable({ models }: { models: AggregatedModel[] }) {
   if (!models.length) return <EmptyNote>No model usage in this range yet.</EmptyNote>
+  const totalCost = models.reduce((sum, model) => sum + model.cost, 0)
 
   return (
     <div className="ov-model-scroll">
@@ -209,20 +217,18 @@ function ModelsTable({ models }: { models: AggregatedModel[] }) {
         <thead>
           <tr>
             <th>Model</th>
-            <th className="num">Input tok</th>
-            <th className="num">Output tok</th>
             <th className="num">Cost</th>
             <th className="num">Calls</th>
+            <th className="num">Share</th>
           </tr>
         </thead>
         <tbody>
           {models.map(model => (
             <tr key={model.name}>
               <td className="ov-model-name">{model.name}</td>
-              <td className="num mono">{model.inputTokens === undefined ? '—' : formatCompact(model.inputTokens)}</td>
-              <td className="num mono">{model.outputTokens === undefined ? '—' : formatCompact(model.outputTokens)}</td>
               <td className="num mono">{formatUsd(model.cost)}</td>
               <td className="num">{model.calls.toLocaleString('en-US')}</td>
+              <td className="num">{formatModelShare(model.cost, totalCost)}</td>
             </tr>
           ))}
         </tbody>
@@ -394,9 +400,11 @@ export function OverviewContent({
         periodDaily[0] && periodDaily[0].date < defaultChartStart ? periodDaily[0].date : defaultChartStart,
         localDateKey(now),
       )
-  const models = provider !== 'all'
-    ? topModelsToAggregated(data.current.topModels)
-    : aggregateModels(rangeActive ? sliceDailyToRange(data.history.daily, range.from, range.to) : periodDaily)
+  const models = modelAccountingToAggregated(data.current) ?? (
+    provider !== 'all'
+      ? topModelsToAggregated(data.current.topModels, data.current)
+      : aggregateModels(rangeActive ? sliceDailyToRange(data.history.daily, range.from, range.to) : periodDaily)
+  )
   const topModel = data.current.topModels[0]
   const saved = actReport.data?.totals.realizedCostUSD ?? 0
   const applied = saved > 0 ? (actReport.data?.totals.measuredActions ?? 0) : 0
@@ -446,7 +454,7 @@ export function OverviewContent({
       <div className="ov-body-grid">
         <div className="ov-main-column">
           <div className="ov-card ov-panel ov-models-widget">
-            <div className="ov-panel-head"><h3>Models this period</h3><span className="r">Sorted by cost</span></div>
+            <div className="ov-panel-head"><h3>Models this period</h3><span className="r">Complete cost & call totals</span></div>
             <div className="ov-panel-body ov-model-panel"><ModelsTable models={models} /></div>
           </div>
 
