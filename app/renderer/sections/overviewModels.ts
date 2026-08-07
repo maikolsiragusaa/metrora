@@ -25,10 +25,30 @@ export function buildModelIndex(data: MenubarPayload): Map<string, string> {
   return index
 }
 
-export function topModelsToAggregated(models: MenubarPayload['current']['topModels']): AggregatedModel[] {
-  return models
+/**
+ * Convert the current payload's presentation-sized top-model list without
+ * treating it as a complete accounting ledger. When headline totals are
+ * supplied, any omitted tail is represented explicitly rather than silently
+ * disappearing from a model table.
+ */
+export function topModelsToAggregated(
+  models: MenubarPayload['current']['topModels'],
+  totals?: Pick<MenubarPayload['current'], 'cost' | 'calls'>,
+): AggregatedModel[] {
+  const rows = models
     .map(model => ({ name: model.name, cost: model.cost, calls: model.calls }))
     .sort((a, b) => b.cost - a.cost)
+
+  if (!totals) return rows
+
+  const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
+  const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
+  const gapCost = Math.max(0, totals.cost - representedCost)
+  const gapCalls = Math.max(0, totals.calls - representedCalls)
+  if (gapCost > 0.000001 || gapCalls > 0) {
+    rows.push({ name: OTHER_MODELS_HISTORY_GAP, cost: gapCost, calls: gapCalls })
+  }
+  return rows.sort((a, b) => b.cost - a.cost)
 }
 
 /**
