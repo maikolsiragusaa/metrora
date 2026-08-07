@@ -8,7 +8,7 @@ import {
 } from './history.js'
 
 const catalog = parseHistoricalPriceBookV1(catalogData)
-const observedAt = '2026-08-07T17:39:00Z'
+const observedAt = '2026-08-07T17:51:00Z'
 
 function lookup(authority: string, model: string) {
   const record = resolveHistoricalPriceRecordV1(catalog, {
@@ -34,9 +34,9 @@ const zeroUsage = {
 
 describe('reviewed multi-provider historical pricing tranche', () => {
   it('includes the intended reviewed authorities and compatibility pricing keys', () => {
-    expect(catalog.records).toHaveLength(35)
+    expect(catalog.records).toHaveLength(43)
     expect(new Set(catalog.records.map(record => record.pricingAuthority))).toEqual(
-      new Set(['openai', 'anthropic', 'deepseek', 'xai', 'kimi', 'minimax', 'zai']),
+      new Set(['openai', 'anthropic', 'deepseek', 'xai', 'kimi', 'minimax', 'mistral', 'zai']),
     )
 
     for (const [authority, model] of [
@@ -52,7 +52,15 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       ['kimi', 'kimi-k2p6'],
       ['minimax', 'MiniMax-M2.7'],
       ['minimax', 'MiniMax-M2.7-highspeed'],
+      ['mistral', 'mistral-medium-3.5'],
       ['zai', 'glm-5p1'],
+      ['openai', 'gpt-4.1'],
+      ['openai', 'gpt-4.1-mini'],
+      ['openai', 'gpt-4.1-nano'],
+      ['openai', 'gpt-4o'],
+      ['openai', 'gpt-4o-mini'],
+      ['openai', 'o3'],
+      ['openai', 'o4-mini'],
       ['openai', 'gpt-5.5'],
       ['openai', 'gpt-5.4'],
       ['openai', 'gpt-5.4-mini'],
@@ -134,6 +142,18 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     expect(result.costUSD).toBeCloseTo(1.935, 12)
   })
 
+  it('prices Mistral Medium 3.5 cached input at 10% of standard input', () => {
+    const result = calculateHistoricalCostV1(lookup('mistral', 'mistral-medium-3.5'), {
+      ...zeroUsage,
+      inputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      billableOutputTokens: 1_000_000,
+    })
+    expect(result.kind).toBe('calculated')
+    if (result.kind !== 'calculated') throw new Error(result.reason)
+    expect(result.costUSD).toBeCloseTo(9.15, 12)
+  })
+
   it('prices the GLM-5.2 compatibility key from current Z.ai API rates', () => {
     const result = calculateHistoricalCostV1(lookup('zai', 'glm-5p1'), {
       ...zeroUsage,
@@ -145,6 +165,27 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     expect(result.kind).toBe('calculated')
     if (result.kind !== 'calculated') throw new Error(result.reason)
     expect(result.costUSD).toBeCloseTo(6.07, 12)
+  })
+
+  it('prices older OpenAI cached input without rewriting it as normal input', () => {
+    const cases: Array<[string, number]> = [
+      ['gpt-4.1', 0.5],
+      ['gpt-4.1-mini', 0.1],
+      ['gpt-4.1-nano', 0.025],
+      ['gpt-4o', 1.25],
+      ['gpt-4o-mini', 0.075],
+      ['o3', 0.5],
+      ['o4-mini', 0.275],
+    ]
+    for (const [model, expected] of cases) {
+      const result = calculateHistoricalCostV1(lookup('openai', model), {
+        ...zeroUsage,
+        cacheReadTokens: 1_000_000,
+      })
+      expect(result.kind).toBe('calculated')
+      if (result.kind !== 'calculated') throw new Error(result.reason)
+      expect(result.costUSD).toBeCloseTo(expected, 12)
+    }
   })
 
   it('selects GPT-5.5 long-context pricing only above 272K prompt input tokens', () => {
