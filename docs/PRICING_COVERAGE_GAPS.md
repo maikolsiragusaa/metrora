@@ -69,7 +69,7 @@ References:
 
 The current direct-API-equivalent calculation is representable while storage is free. If Z.ai later charges cache storage by duration, add a new date-effective interval only after Metrora can represent the new component. Do not rewrite the current interval retroactively.
 
-### Mistral — representable pricing, collector evidence varies by route
+### Mistral — direct API covered; collector evidence varies by route
 
 Mistral's API documents prompt caching explicitly: cached prompt tokens are billed at 10% of normal input, `prompt_tokens` includes cached tokens, and uncached input is `prompt_tokens - cached_tokens`.
 
@@ -78,7 +78,7 @@ References:
 - `https://docs.mistral.ai/studio-api/conversations/advanced/prompt-caching`
 - `https://mistral.ai/pricing/api/`
 
-This pricing structure is representable in V1. However, Metrora's Vibe collector can also receive an already-computed `session_cost` or configured per-million prices from the client. Those stronger client-provided values should remain distinct from a direct API-equivalent historical valuation. A reviewed direct API model record may be added when its pricing identity is exact; do not reinterpret subscription quota economics as API pricing.
+The direct API pricing structure is representable in V1 and `mistral-medium-3.5` is now covered by a reviewed direct API-equivalent record. Metrora's Vibe collector can also receive an already-computed `session_cost` or configured per-million prices from the client. Those stronger client-provided values remain distinct from direct API-equivalent historical valuation and must not be reinterpreted as subscription or API pricing for another route.
 
 ### Cohere — cache semantics not established for the required V1 fields
 
