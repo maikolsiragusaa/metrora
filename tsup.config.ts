@@ -13,5 +13,10 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   dts: false,
-  external: ['@modelcontextprotocol/sdk', 'zod'],
+  // The desktop/Store runtime is copied into an Electron package and must be
+  // self-contained. AppX rewrites `@scope` path segments in loose node_modules
+  // trees, which makes Node resolution fail after packaging. Bundle every
+  // production dependency into the emitted runtime instead; Node built-ins stay
+  // external automatically. The public npm launcher still imports ./main.js.
+  noExternal: [/.*/],
 })
