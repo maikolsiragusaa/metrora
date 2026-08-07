@@ -11,7 +11,7 @@ import type { Section } from '../components/Sidebar'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
-import type { AuditRow, DateRange, ModelReportRow, Period } from '../lib/types'
+import type { AuditRow, DateRange, MenubarPayload, ModelReportRow, Period } from '../lib/types'
 import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
 
@@ -30,6 +30,7 @@ function fmtInt(n: number): string {
 // Muted secondary tag naming a row's provider, so the same model name coming
 // from different providers reads as distinct rows.
 const providerTagStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', fontWeight: 450 } as const
+const authorityNoteStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', lineHeight: 1.45 } as const
 
 export function Models({
   period,
@@ -93,28 +94,108 @@ function ModelsUsage({
   onAddAlias: () => void
   ready: boolean
 }) {
+  // The normal model lens is an accounting surface. Its primary values come
+  // from the same durable Overview authority as Home, so expired source
+  // transcripts cannot silently make lifetime model spend shrink. The detailed
+  // report remains useful for token/task inspection, but it is explicitly
+  // presented as surviving-session detail below.
+  const durable = usePolled<MenubarPayload>(
+    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
+    [period, provider, range?.from, range?.to, refreshToken],
+    { enabled: ready && !byTask, memoKey: `models-durable|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
+  )
   const report = usePolled<ModelReportRow[]>(
     () => range ? codeburn.getModels(period, provider, byTask, range) : codeburn.getModels(period, provider, byTask),
     [period, provider, byTask, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `models|${period}|${provider}|${byTask}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
-  if (!report.data) {
-    if (report.error) return <CliErrorPanel error={report.error} subject="model usage" />
-    return <SectionSkeleton label="Scanning model usage…" rows={5} />
+  if (byTask) {
+    if (!report.data) {
+      if (report.error) return <CliErrorPanel error={report.error} subject="model task detail" />
+      return <SectionSkeleton label="Scanning available task detail…" rows={5} />
+    }
+    return (
+      <>
+        {report.error && <StaleBanner error={report.error} />}
+        <Panel className="scroll-x">
+          <div style={{ padding: '12px 14px 4px' }}>
+            <strong>Available session detail</strong>
+            <div style={authorityNoteStyle}>Task attribution requires original session records. Older durable spend can remain in By model after those source sessions expire.</div>
+          </div>
+          {report.data.length ? (
+            <ModelsTable rows={report.data} byTask onAddAlias={onAddAlias} />
+          ) : (
+            <EmptyNote>No surviving task detail in this range yet.</EmptyNote>
+          )}
+        </Panel>
+      </>
+    )
+  }
+
+  if (!durable.data) {
+    if (durable.error) return <CliErrorPanel error={durable.error} subject="durable model usage" />
+    return <SectionSkeleton label="Loading durable model accounting…" rows={5} />
   }
 
   return (
     <>
-      {report.error && <StaleBanner error={report.error} />}
+      {durable.error && <StaleBanner error={durable.error} />}
       <Panel className="scroll-x">
-        {report.data.length ? (
-          <ModelsTable rows={report.data} byTask={byTask} onAddAlias={onAddAlias} />
+        <div style={{ padding: '12px 14px 4px' }}>
+          <strong>Historical accounting</strong>
+          <div style={authorityNoteStyle}>Durable totals preserve model spend after original session files expire. This is the same accounting authority used by Home.</div>
+        </div>
+        {durable.data.current.topModels.length ? (
+          <DurableModelsTable models={durable.data.current.topModels} />
         ) : (
-          <EmptyNote>No model usage in this range yet.</EmptyNote>
+          <EmptyNote>No durable model usage in this range yet.</EmptyNote>
+        )}
+      </Panel>
+
+      <Panel className="scroll-x">
+        <div style={{ padding: '12px 14px 4px' }}>
+          <strong>Available session detail</strong>
+          <div style={authorityNoteStyle}>Token columns and call-level pricing evidence below cover source sessions that are still locally reconstructible. They may be a subset of historical accounting.</div>
+        </div>
+        {report.error && <StaleBanner error={report.error} />}
+        {!report.data ? (
+          <SectionSkeleton label="Scanning available session detail…" rows={4} />
+        ) : report.data.length ? (
+          <ModelsTable rows={report.data} byTask={false} onAddAlias={onAddAlias} />
+        ) : (
+          <EmptyNote>No surviving session detail in this range yet.</EmptyNote>
         )}
       </Panel>
     </>
+  )
+}
+
+function DurableModelsTable({ models }: { models: MenubarPayload['current']['topModels'] }) {
+  return (
+    <table aria-label="Durable model accounting">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Calls</th>
+          <th>Cost</th>
+          <th>Saved</th>
+        </tr>
+      </thead>
+      <tbody>
+        {models.map((model, index) => (
+          <tr key={`${model.name}-${index}`}>
+            <td>
+              <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(model.name), marginRight: 8 }} />
+              {model.name}
+            </td>
+            <td>{fmtInt(model.calls)}</td>
+            <td>{formatUsd(model.cost)}</td>
+            <td className={model.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(model.savingsUSD)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
