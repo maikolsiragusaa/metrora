@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { DailyHistoryEntry, MenubarPayload, YieldJsonReport } from '../lib/types'
 import { deriveEfficiency } from './overviewEfficiency'
-import { aggregateModels, buildModelIndex, OTHER_MODELS_HISTORY_GAP, sessionModelKey, topModelsToAggregated } from './overviewModels'
+import { aggregateModels, buildModelIndex, modelAccountingToAggregated, OTHER_MODELS_HISTORY_GAP, sessionModelKey, topModelsToAggregated } from './overviewModels'
 import { deriveCostPerOutcome } from './overviewOutcome'
 import { deriveSignals, deriveStats } from './overviewTrends'
 import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
@@ -123,6 +123,31 @@ describe('Overview derivations', () => {
       }],
     })
     expect(buildModelIndex(data).get(sessionModelKey('project-a', '2026-08-02', 4, 7))).toBe('model-b')
+  })
+
+  it('prefers the complete current model accounting over presentation-sized top models', () => {
+    const value = current({
+      cost: 12,
+      calls: 12,
+      topModels: [{ name: 'model-a', cost: 10, savingsUSD: 0, savingsBaselineModel: '', calls: 10 }],
+    })
+    ;(value as MenubarPayload['current'] & { modelAccounting: unknown }).modelAccounting = {
+      rows: [
+        { name: 'model-a', cost: 10, savingsUSD: 0, calls: 10 },
+        { name: 'model-b', cost: 1.5, savingsUSD: 0, calls: 1 },
+      ],
+      gap: { cost: 0.5, savingsUSD: 0, calls: 1 },
+      coverage: { cost: 0.958333, calls: 0.916667 },
+    }
+
+    const rows = modelAccountingToAggregated(value)
+    expect(rows).toEqual([
+      { name: 'model-a', cost: 10, calls: 10 },
+      { name: 'model-b', cost: 1.5, calls: 1 },
+      { name: OTHER_MODELS_HISTORY_GAP, cost: 0.5, calls: 1 },
+    ])
+    expect(rows?.reduce((sum, row) => sum + row.cost, 0)).toBe(12)
+    expect(rows?.reduce((sum, row) => sum + row.calls, 0)).toBe(12)
   })
 
   it('never lets daily top-N truncation silently reduce model accounting', () => {
