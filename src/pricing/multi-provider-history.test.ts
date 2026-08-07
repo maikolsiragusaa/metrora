@@ -8,7 +8,7 @@ import {
 } from './history.js'
 
 const catalog = parseHistoricalPriceBookV1(catalogData)
-const observedAt = '2026-08-07T17:51:00Z'
+const observedAt = '2026-08-07T19:06:00Z'
 
 function lookup(authority: string, model: string) {
   const record = resolveHistoricalPriceRecordV1(catalog, {
@@ -34,7 +34,7 @@ const zeroUsage = {
 
 describe('reviewed multi-provider historical pricing tranche', () => {
   it('includes the intended reviewed authorities and compatibility pricing keys', () => {
-    expect(catalog.records).toHaveLength(43)
+    expect(catalog.records).toHaveLength(65)
     expect(new Set(catalog.records.map(record => record.pricingAuthority))).toEqual(
       new Set(['openai', 'anthropic', 'deepseek', 'xai', 'kimi', 'minimax', 'mistral', 'zai']),
     )
@@ -59,24 +59,46 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       ['openai', 'gpt-4.1-nano'],
       ['openai', 'gpt-4o'],
       ['openai', 'gpt-4o-mini'],
+      ['openai', 'gpt-4.5-preview'],
+      ['openai', 'o1'],
+      ['openai', 'o1-preview'],
+      ['openai', 'o1-mini'],
       ['openai', 'o3'],
+      ['openai', 'o3-mini'],
       ['openai', 'o4-mini'],
-      ['openai', 'gpt-5.5'],
+      ['openai', 'gpt-5'],
+      ['openai', 'gpt-5-mini'],
+      ['openai', 'gpt-5-nano'],
+      ['openai', 'gpt-5-chat-latest'],
+      ['openai', 'gpt-5-codex'],
+      ['openai', 'gpt-5.1'],
+      ['openai', 'gpt-5.1-codex'],
+      ['openai', 'gpt-5.1-codex-max'],
+      ['openai', 'gpt-5.1-codex-mini'],
+      ['openai', 'codex-mini-latest'],
+      ['openai', 'gpt-5.2'],
+      ['openai', 'gpt-5.3-codex'],
       ['openai', 'gpt-5.4'],
       ['openai', 'gpt-5.4-mini'],
       ['openai', 'gpt-5.4-nano'],
-      ['openai', 'gpt-5.3-codex'],
-      ['openai', 'gpt-5.2'],
+      ['openai', 'gpt-5.5'],
+      ['anthropic', 'claude-opus-3'],
+      ['anthropic', 'claude-haiku-3-5'],
+      ['anthropic', 'claude-sonnet-3-5'],
+      ['anthropic', 'claude-sonnet-3-7'],
+      ['anthropic', 'claude-opus-4'],
+      ['anthropic', 'claude-opus-4-1'],
+      ['anthropic', 'claude-sonnet-4'],
+      ['anthropic', 'claude-opus-4-5'],
+      ['anthropic', 'claude-opus-4-6'],
+      ['anthropic', 'claude-opus-4-7'],
+      ['anthropic', 'claude-opus-4-8'],
+      ['anthropic', 'claude-sonnet-4-5'],
+      ['anthropic', 'claude-sonnet-4-6'],
+      ['anthropic', 'claude-haiku-4-5'],
       ['anthropic', 'claude-fable-5'],
       ['anthropic', 'claude-opus-5'],
       ['anthropic', 'claude-sonnet-5'],
-      ['anthropic', 'claude-haiku-4-5'],
-      ['anthropic', 'claude-opus-4-8'],
-      ['anthropic', 'claude-opus-4-7'],
-      ['anthropic', 'claude-opus-4-6'],
-      ['anthropic', 'claude-opus-4-5'],
-      ['anthropic', 'claude-sonnet-4-6'],
-      ['anthropic', 'claude-sonnet-4-5'],
     ]) {
       expect(lookup(authority, model).valuation.kind).toBe('priced')
     }
@@ -113,10 +135,7 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     }
     expect(short.costUSD).toBeCloseTo(2, 12)
     expect(long.costUSD).toBeCloseTo(4, 12)
-    expect(long.rateSelection).toEqual({
-      kind: 'prompt-input-tokens-above',
-      tokens: 199_999,
-    })
+    expect(long.rateSelection).toEqual({ kind: 'prompt-input-tokens-above', tokens: 199_999 })
   })
 
   it('keeps Kimi web-search billing additive to token pricing', () => {
@@ -174,7 +193,11 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       ['gpt-4.1-nano', 0.025],
       ['gpt-4o', 1.25],
       ['gpt-4o-mini', 0.075],
+      ['gpt-4.5-preview', 37.5],
+      ['o1', 7.5],
+      ['o1-mini', 0.55],
       ['o3', 0.5],
+      ['o3-mini', 0.55],
       ['o4-mini', 0.275],
     ]
     for (const [model, expected] of cases) {
@@ -186,6 +209,18 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       if (result.kind !== 'calculated') throw new Error(result.reason)
       expect(result.costUSD).toBeCloseTo(expected, 12)
     }
+  })
+
+  it('prices Codex Mini Latest from its reviewed direct API rates', () => {
+    const result = calculateHistoricalCostV1(lookup('openai', 'codex-mini-latest'), {
+      ...zeroUsage,
+      inputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      billableOutputTokens: 1_000_000,
+    })
+    expect(result.kind).toBe('calculated')
+    if (result.kind !== 'calculated') throw new Error(result.reason)
+    expect(result.costUSD).toBeCloseTo(7.875, 12)
   })
 
   it('selects GPT-5.5 long-context pricing only above 272K prompt input tokens', () => {
@@ -207,21 +242,37 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     }
     expect(atThreshold.costUSD).toBeCloseTo(5, 12)
     expect(aboveThreshold.costUSD).toBeCloseTo(10, 12)
-    expect(aboveThreshold.rateSelection).toEqual({
-      kind: 'prompt-input-tokens-above',
-      tokens: 272_000,
-    })
+    expect(aboveThreshold.rateSelection).toEqual({ kind: 'prompt-input-tokens-above', tokens: 272_000 })
   })
 
   it('accounts for Anthropic one-hour prompt-cache writes from the five-minute rate', () => {
-    const result = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-5'), {
+    const current = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-5'), {
       ...zeroUsage,
       cacheWriteTokens: 1_000_000,
       oneHourCacheWriteTokens: 1_000_000,
     })
+    expect(current.kind).toBe('calculated')
+    if (current.kind !== 'calculated') throw new Error(current.reason)
+    expect(current.costUSD).toBeCloseTo(10, 12)
+
+    const legacy = calculateHistoricalCostV1(lookup('anthropic', 'claude-haiku-3-5'), {
+      ...zeroUsage,
+      cacheWriteTokens: 1_000_000,
+      oneHourCacheWriteTokens: 1_000_000,
+    })
+    expect(legacy.kind).toBe('calculated')
+    if (legacy.kind !== 'calculated') throw new Error(legacy.reason)
+    expect(legacy.costUSD).toBeCloseTo(1.6, 12)
+  })
+
+  it('keeps legacy Anthropic cache-read pricing exact', () => {
+    const result = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-4'), {
+      ...zeroUsage,
+      cacheReadTokens: 1_000_000,
+    })
     expect(result.kind).toBe('calculated')
     if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(10, 12)
+    expect(result.costUSD).toBeCloseTo(1.5, 12)
   })
 
   it('keeps Anthropic web-search billing explicit instead of hiding it in token rates', () => {
@@ -251,9 +302,6 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       inputTokens: 1_000_000,
       speed: 'fast',
     })
-    expect(unavailable).toMatchObject({
-      kind: 'unavailable',
-      reason: 'missing-fast-rate',
-    })
+    expect(unavailable).toMatchObject({ kind: 'unavailable', reason: 'missing-fast-rate' })
   })
 })
