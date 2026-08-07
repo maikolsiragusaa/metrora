@@ -98,6 +98,8 @@ function loadedOverview(overrides: Record<string, unknown> = {}) {
               cacheReadTokens: 4_500_000,
               cacheWriteTokens: 0,
               tokenDetail: true,
+              activeDurationMs: 2500,
+              activeGeneratedTokens: 10_000,
             },
             {
               name: 'Claude Opus 4.8',
@@ -109,6 +111,8 @@ function loadedOverview(overrides: Record<string, unknown> = {}) {
               cacheReadTokens: 150_000,
               cacheWriteTokens: 0,
               tokenDetail: true,
+              activeDurationMs: 3000,
+              activeGeneratedTokens: 10_000,
             },
           ],
           gap: { cost: 0, savingsUSD: 0, calls: 0 },
@@ -132,21 +136,25 @@ describe('Models', () => {
     getAudit.mockReset()
   })
 
-  it('renders one durable model table with shared token/cache/unit-cost metrics without spawning the detail report', () => {
+  it('renders one durable model table with shared token/cache/unit-cost/performance metrics without spawning the detail report', () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
 
     expect(screen.getByText('Model usage')).toBeInTheDocument()
     expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
     expect(screen.getByText('Claude Opus 4.8')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'ms / 1K' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
     expect(screen.getByText('9×')).toBeInTheDocument()
     expect(screen.getByText('5.1M')).toBeInTheDocument()
+    expect(screen.getByText('250.0ms')).toBeInTheDocument()
+    expect(screen.getByText('300.0ms')).toBeInTheDocument()
+    expect(screen.getByText(/observed active-generation timing/i)).toBeInTheDocument()
     expect(screen.queryByText(/Detailed token breakdown/i)).not.toBeInTheDocument()
     expect(getModels).not.toHaveBeenCalled()
   })
 
-  it('shows unavailable token-derived metrics instead of fake zeros for legacy durable rows', () => {
+  it('shows unavailable token-derived and timing metrics instead of fake zeros for legacy durable rows', () => {
     const overview = loadedOverview({
       modelAccounting: {
         rows: [{
@@ -170,7 +178,7 @@ describe('Models', () => {
 
     expect(screen.getByText(/Legacy rows without a durable token split show/i)).toBeInTheDocument()
     const row = screen.getByText('Legacy model').closest('tr')!
-    expect(row.textContent?.match(/—/g)?.length).toBeGreaterThanOrEqual(7)
+    expect(row.textContent?.match(/—/g)?.length).toBeGreaterThanOrEqual(8)
     expect(container.querySelector('.provider-mono')).toBeInTheDocument()
   })
 
@@ -180,6 +188,39 @@ describe('Models', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Total tokens' }))
     const modelRows = screen.getAllByRole('row').filter(row => row.querySelector('tbody') == null).slice(1)
     expect(modelRows[0]).toHaveTextContent('GPT-5.4')
+  })
+
+  it('sorts observed ms per 1K fastest-first and leaves untimed rows at the bottom', () => {
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: [
+          {
+            name: 'Untimed model', cost: 9, savingsUSD: 0, calls: 9,
+            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: true,
+          },
+          {
+            name: 'Slower model', cost: 8, savingsUSD: 0, calls: 8,
+            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: true,
+            activeDurationMs: 4000, activeGeneratedTokens: 10_000,
+          },
+          {
+            name: 'Faster model', cost: 7, savingsUSD: 0, calls: 7,
+            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: true,
+            activeDurationMs: 2000, activeGeneratedTokens: 10_000,
+          },
+        ],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'ms / 1K' }))
+    const bodyRows = screen.getAllByRole('row').slice(1)
+    expect(bodyRows[0]).toHaveTextContent('Faster model')
+    expect(bodyRows[1]).toHaveTextContent('Slower model')
+    expect(bodyRows[2]).toHaveTextContent('Untimed model')
   })
 
   it('loads surviving session detail only when By task is requested', async () => {
