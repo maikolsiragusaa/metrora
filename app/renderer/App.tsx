@@ -181,7 +181,7 @@ function AppMain() {
               ) : section === 'optimize' ? (
                 <OptimizeContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} ready={ready} />
               ) : section === 'models' ? (
-                <Models period={period} provider={provider} range={customRange} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
+                <Models period={period} provider={provider} range={customRange} refreshToken={refreshToken} onNavigate={navigate} overview={overview} ready={ready} />
               ) : section === 'compare' ? (
                 <Compare period={period} provider={provider} range={customRange} refreshToken={refreshToken} ready={ready} />
               ) : section === 'workspace' ? (
