@@ -16,6 +16,11 @@ import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
 
 type ModelsLens = 'model' | 'task' | 'audit'
+type DurableModelAccounting = {
+  rows: Array<{ name: string; cost: number; savingsUSD: number; calls: number }>
+  gap: { cost: number; savingsUSD: number; calls: number }
+  coverage: { cost: number; calls: number }
+}
 
 const LENSES = [
   { value: 'model', label: 'By model' },
@@ -31,6 +36,36 @@ function fmtInt(n: number): string {
 // from different providers reads as distinct rows.
 const providerTagStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', fontWeight: 450 } as const
 const authorityNoteStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', lineHeight: 1.45 } as const
+
+function durableAccounting(data: MenubarPayload): DurableModelAccounting {
+  const emitted = (data.current as MenubarPayload['current'] & { modelAccounting?: DurableModelAccounting }).modelAccounting
+  if (emitted) return emitted
+
+  // Compatibility fallback for an older CLI payload: retain the durable headline
+  // and make any top-N tail explicit rather than pretending topModels is complete.
+  const rows = data.current.topModels.map(model => ({
+    name: model.name,
+    cost: model.cost,
+    savingsUSD: model.savingsUSD,
+    calls: model.calls,
+  }))
+  const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
+  const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
+  const gapCost = Math.max(0, data.current.cost - representedCost)
+  const gapCalls = Math.max(0, data.current.calls - representedCalls)
+  return {
+    rows,
+    gap: { cost: gapCost, savingsUSD: 0, calls: gapCalls },
+    coverage: {
+      cost: data.current.cost > 0 ? Math.max(0, Math.min(1, representedCost / data.current.cost)) : 1,
+      calls: data.current.calls > 0 ? Math.max(0, Math.min(1, representedCalls / data.current.calls)) : 1,
+    },
+  }
+}
+
+function hasAccountingValue(accounting: DurableModelAccounting): boolean {
+  return accounting.rows.length > 0 || accounting.gap.cost > 0.000001 || accounting.gap.calls > 0 || accounting.gap.savingsUSD > 0.000001
+}
 
 export function Models({
   period,
@@ -138,6 +173,9 @@ function ModelsUsage({
     return <SectionSkeleton label="Loading durable model accounting…" rows={5} />
   }
 
+  const accounting = durableAccounting(durable.data)
+  const incomplete = accounting.coverage.cost < 0.999999 || accounting.coverage.calls < 0.999999
+
   return (
     <>
       {durable.error && <StaleBanner error={durable.error} />}
@@ -145,9 +183,10 @@ function ModelsUsage({
         <div style={{ padding: '12px 14px 4px' }}>
           <strong>Historical accounting</strong>
           <div style={authorityNoteStyle}>Durable totals preserve model spend after original session files expire. This is the same accounting authority used by Home.</div>
+          {incomplete ? <div style={authorityNoteStyle}>Some older durable usage no longer retains a provable model split; that remainder is shown as Other models.</div> : null}
         </div>
-        {durable.data.current.topModels.length ? (
-          <DurableModelsTable models={durable.data.current.topModels} />
+        {hasAccountingValue(accounting) ? (
+          <DurableModelsTable accounting={accounting} />
         ) : (
           <EmptyNote>No durable model usage in this range yet.</EmptyNote>
         )}
@@ -171,7 +210,13 @@ function ModelsUsage({
   )
 }
 
-function DurableModelsTable({ models }: { models: MenubarPayload['current']['topModels'] }) {
+function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting }) {
+  const rows = [...accounting.rows]
+  if (accounting.gap.cost > 0.000001 || accounting.gap.calls > 0 || accounting.gap.savingsUSD > 0.000001) {
+    rows.push({ name: 'Other models', ...accounting.gap })
+  }
+  rows.sort((left, right) => (right.cost - left.cost) || (right.calls - left.calls))
+
   return (
     <table aria-label="Durable model accounting">
       <thead>
@@ -183,7 +228,7 @@ function DurableModelsTable({ models }: { models: MenubarPayload['current']['top
         </tr>
       </thead>
       <tbody>
-        {models.map((model, index) => (
+        {rows.map((model, index) => (
           <tr key={`${model.name}-${index}`}>
             <td>
               <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(model.name), marginRight: 8 }} />
