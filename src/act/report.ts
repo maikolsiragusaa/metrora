@@ -21,6 +21,7 @@ import {
 import { parseAllSessions } from '../parser.js'
 import { computeYield, type YieldSummary } from '../yield.js'
 import { defaultActionsDir, readRecords } from './journal.js'
+import { DEFER_KINDS, captureDeferBaseline, measureDeferAction } from './defer-report.js'
 import { renderTable } from '../text-table.js'
 import { formatTokens } from '../format.js'
 import { formatCost } from '../currency.js'
@@ -42,7 +43,6 @@ const HONEST_FOOTER =
   + 'Guard rows are correlation, not attribution. Realized numbers are rounded down.'
 
 const MCP_KINDS = new Set<ActionKind>(['mcp-remove', 'mcp-project-scope'])
-const DEFER_KINDS = new Set<ActionKind>(['defer-enable', 'defer-alwaysload', 'defer-threshold'])
 const ARCHIVE_DEF_TOKENS: Partial<Record<ActionKind, number>> = {
   'archive-skill': TOKENS_PER_SKILL_DEF,
   'archive-agent': TOKENS_PER_AGENT_DEF,
@@ -179,35 +179,6 @@ function countSessionsLoading(projects: ProjectSummary[], servers: string[]): nu
   return allSessions(projects).filter(s => sessionLoadsAny(s, servers)).length
 }
 
-// In Metrora's Claude parser, mcpInventory is populated only from
-// deferred_tools_delta attachments. The optimize detector uses this same
-// source-bound signal: inventory presence means tool deferral was active in
-// that session. It is evidence of observed post-action state, not proof that
-// the action alone caused the state transition.
-function sessionHasDeferralActive(s: SessionSummary): boolean {
-  return (s.mcpInventory?.length ?? 0) > 0
-}
-
-function sessionHasDeferredServer(s: SessionSummary, servers: ReadonlySet<string>): boolean {
-  for (const fqn of s.mcpInventory ?? []) {
-    const server = fqn.split('__')[1]
-    if (server && servers.has(server)) return true
-  }
-  return false
-}
-
-function observedMcpServers(projects: ProjectSummary[]): string[] {
-  const servers = new Set<string>()
-  for (const session of allSessions(projects)) {
-    for (const fqn of session.mcpInventory ?? []) {
-      const segment = fqn.split('__')[1]
-      if (segment) servers.add(segment)
-    }
-    for (const server of Object.keys(session.mcpBreakdown)) servers.add(server)
-  }
-  return [...servers]
-}
-
 // A kind whose realized effect is a token saving (everything except guard,
 // which is a dollars/yield correlation, and out-of-scope kinds).
 function isTokenKind(kind: ActionKind): boolean {
@@ -254,46 +225,6 @@ function mcpRow(
   }
   const savedSessions = Math.max(0, sessions.length - stillLoading)
   return { ...base, estimatedForWindow, status: 'measured', realizedTokens: Math.floor(perSessionTokens * savedSessions), confidence }
-}
-
-function deferRow(
-  base: ActReportRow, rec: ActionRecord, sessions: SessionSummary[], baseline: ActionBaseline,
-  afterStart: Date, now: Date,
-): ActReportRow {
-  const servers = Object.keys(baseline.metrics)
-  const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
-  if (servers.length === 0 || perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
-  if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
-
-  const estimatedForWindow = Math.floor(perSessionTokens * sessions.length)
-  const targetServers = new Set(servers)
-  // defer-enable/defer-threshold switch the mechanism for the whole observed MCP
-  // surface, so any deferred-tools inventory proves activation. AlwaysLoad is
-  // narrower: only inventory for one of the targeted servers proves that server
-  // actually left the upfront set. Another server becoming deferred is not enough.
-  const activeSessions = rec.kind === 'defer-alwaysload'
-    ? sessions.filter(session => sessionHasDeferredServer(session, targetServers)).length
-    : sessions.filter(sessionHasDeferralActive).length
-  const confidence = confidenceFor(sessions.length, baseline, afterStart, now)
-
-  if (activeSessions === 0) {
-    return {
-      ...base,
-      estimatedForWindow,
-      status: 'reverted',
-      confidence,
-      note: `not yet observed: ${rec.kind === 'defer-alwaysload' ? 'targeted server deferral' : 'deferral'} remains inactive in ${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; the client may not have restarted or the change may have been reverted`,
-    }
-  }
-
-  return {
-    ...base,
-    estimatedForWindow,
-    status: 'measured',
-    realizedTokens: Math.floor(perSessionTokens * activeSessions),
-    confidence,
-    note: `observed ${rec.kind === 'defer-alwaysload' ? 'targeted server deferral' : 'deferral'} active in ${activeSessions}/${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; derived from session evidence, not independently metered`,
-  }
 }
 
 function archiveRow(
@@ -448,7 +379,16 @@ async function computeRow(
   if (!baseline) return { ...base, note: 'not measurable: no baseline captured at apply time' }
 
   if (MCP_KINDS.has(rec.kind)) return mcpRow(base, rec, sessions, baseline, afterStart, now)
-  if (DEFER_KINDS.has(rec.kind)) return deferRow(base, rec, sessions, baseline, afterStart, now)
+  if (DEFER_KINDS.has(rec.kind)) {
+    const measured = measureDeferAction(rec, sessions, baseline)
+    return {
+      ...base,
+      ...measured,
+      confidence: measured.status === 'measured' || measured.status === 'reverted'
+        ? confidenceFor(sessions.length, baseline, afterStart, now)
+        : base.confidence,
+    }
+  }
   if (rec.kind in ARCHIVE_DEF_TOKENS) return archiveRow(base, rec, sessions, baseline, afterStart, now)
   if (rec.kind === 'claude-md-rule') return readEditRow(base, sessions, baseline, afterStart, now)
   if (rec.kind === 'shell-config') return { ...base, note: 'not measurable: bash result token sizes are not retained in the summary' }
@@ -655,11 +595,6 @@ function mcpServersFromApply(finding: WasteFinding): string[] {
   return []
 }
 
-function deferServers(finding: WasteFinding, ctx: CaptureCtx): string[] {
-  if (finding.apply?.kind === 'defer-alwaysload') return finding.apply.servers.map(server => server.server)
-  return observedMcpServers(ctx.projects)
-}
-
 function needsConfigBaseline(kind: ActionKind): boolean {
   return MCP_KINDS.has(kind) || DEFER_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
 }
@@ -684,18 +619,7 @@ export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: Ca
     return { ...common, sessions: countSessionsLoading(ctx.projects, servers), metrics }
   }
 
-  if (DEFER_KINDS.has(kind)) {
-    const servers = deferServers(finding, ctx)
-    if (servers.length === 0) return undefined
-    const covByServer = new Map(ctx.coverage.map(c => [c.server, c]))
-    const metrics: Record<string, number> = {}
-    for (const server of servers) {
-      const cov = covByServer.get(server)
-      const tools = cov && cov.toolsAvailable > 0 ? cov.toolsAvailable : TOOLS_PER_MCP_SERVER
-      metrics[server] = tools * TOKENS_PER_MCP_TOOL
-    }
-    return { ...common, sessions: countSessionsLoading(ctx.projects, servers), metrics }
-  }
+  if (DEFER_KINDS.has(kind)) return captureDeferBaseline(finding, ctx)
 
   const defTokens = ARCHIVE_DEF_TOKENS[kind]
   if (defTokens !== undefined) {
