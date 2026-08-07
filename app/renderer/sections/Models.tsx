@@ -363,7 +363,7 @@ function ModelsTable({ rows, byTask, onAddAlias }: { rows: ModelReportRow[]; byT
   )
 }
 
-function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; byTask: boolean; onAddAlias: () => void }) {
+function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
   const groups = groupTaskRows(rows)
 
   return (
