@@ -10,21 +10,21 @@ type Evidence = DesktopWorkspaceSnapshot['evidence']
 type Inspection = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>['inspection']
 
 const EVIDENCE_LABELS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Workspace required',
-  empty: 'No reviewed evidence yet',
+  'workspace-required': 'Setup needed',
+  empty: 'Nothing waiting',
   ready: 'Ready to sign',
-  acknowledged: 'Evidence acknowledged',
-  quarantined: 'Evidence quarantined',
+  acknowledged: 'Signed and ready',
+  quarantined: 'Needs attention',
   blocked: 'Action required',
 }
 
 const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
-  'workspace-required': 'Create the local Workspace before preparing verifiable activity.',
-  empty: 'No reviewed local activity is currently waiting for signing.',
-  ready: 'Reviewed local activity is waiting to be signed.',
-  acknowledged: 'The current signed local evidence is available for explicit export.',
-  quarantined: 'Some local evidence was isolated and cannot be signed or exported.',
-  blocked: 'A local condition must be resolved before signing or export.',
+  'workspace-required': 'Set up your personal workspace before creating signed usage exports.',
+  empty: 'There is no reviewed local activity waiting to be signed.',
+  ready: 'Reviewed local activity is ready to be signed on this device.',
+  acknowledged: 'Your latest signed usage evidence is ready for an explicit export.',
+  quarantined: 'Some local records need attention before they can be signed or exported.',
+  blocked: 'Resolve the local issue shown below before signing or exporting.',
 }
 
 export type WorkspaceEvidenceViewState = {
@@ -47,14 +47,14 @@ export function workspaceEvidenceViewState(
     inspectionPending,
     inspectionComplete,
     label: inspectionError
-      ? 'Verification unavailable'
+      ? 'Check unavailable'
       : inspectionPending
         ? 'Checking local data'
         : EVIDENCE_LABELS[evidence.state],
     description: inspectionError
-      ? 'The read-only evidence inspection could not complete. Existing files were not changed.'
+      ? 'Metrora could not finish the local integrity check. Existing files were not changed.'
       : inspectionPending
-        ? 'Metrora is verifying local evidence in the background. Details will appear after the read-only check finishes.'
+        ? 'Metrora is checking local workspace data in the background. Nothing is being uploaded.'
         : EVIDENCE_DESCRIPTIONS[evidence.state],
     blocked: !inspectionComplete || evidence.state === 'blocked' || evidence.state === 'quarantined',
     stateClass: inspectionComplete ? evidence.state : 'blocked',
@@ -71,28 +71,28 @@ export function WorkspaceEvidencePanel({
   inspectionError: boolean
 }) {
   return (
-    <Panel title="Local verification" right={view.label}>
+    <Panel title="Signed exports" right={view.label}>
       <p className="workspace-evidence-copy">{view.description}</p>
       {view.inspectionPending ? (
         <div className="workspace-source-line" role="status" data-testid="workspace-evidence-inspection">
-          Read-only evidence verification in progress…
+          Checking local workspace data…
         </div>
       ) : null}
       {inspectionError ? (
         <div className="workspace-source-line" role="alert" data-testid="workspace-evidence-inspection-error">
-          Verification could not complete. Use the explicit recovery action for a bounded retry; no files were deleted or reset.
+          The check could not complete. Use Check &amp; recover below to retry safely; no files were deleted or reset.
         </div>
       ) : null}
       {view.inspectionComplete && evidence.blockers.length > 0 ? (
         <div className="workspace-visible-blockers" role="alert">
-          <b>Blocking conditions</b>
+          <b>What needs attention</b>
           <ul className="workspace-blockers">
             {evidence.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
           </ul>
         </div>
       ) : null}
       <details className="workspace-disclosure">
-        <summary>Audit counts</summary>
+        <summary>Technical details</summary>
         <div className="workspace-counts workspace-disclosure-body" aria-busy={view.inspectionPending}>
           <EvidenceCount label="Pending events" value={view.inspectionComplete ? evidence.pendingEventCount : null} />
           <EvidenceCount label="Unbatched events" value={view.inspectionComplete ? evidence.unbatchedEventCount : null} />
