@@ -160,19 +160,19 @@ jobs:
           Assert-PngDimensions 'Square150x150Logo.png' 150 150
           Assert-PngDimensions 'Wide310x150Logo.png' 310 150
 
-          # The packaged CLI must be self-contained. A loose node_modules tree is
-          # exactly what allowed AppX to rewrite scoped package paths to %40scope.
+          # The production dependency tree is sealed inside cli.asar so MakeAppx
+          # never sees @scope path segments. Keep only the stable launcher loose.
           $cliRoot = Join-Path $unpacked 'app\resources\cli'
           $cliLauncher = Join-Path $cliRoot 'dist\launch.js'
-          $cliMain = Join-Path $cliRoot 'dist\main.js'
+          $cliArchive = Join-Path $unpacked 'app\resources\cli.asar'
           $electron = Join-Path $unpacked 'app\Metrora.exe'
-          foreach ($requiredPath in @($cliLauncher, $cliMain, $electron)) {
+          foreach ($requiredPath in @($cliLauncher, $cliArchive, $electron)) {
             if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
               throw "packaged CLI runtime is missing: $requiredPath"
             }
           }
           if (Test-Path -LiteralPath (Join-Path $cliRoot 'node_modules')) {
-            throw 'packaged CLI must not contain a loose node_modules tree'
+            throw 'packaged CLI must not expose a loose node_modules tree'
           }
           $encodedScopes = @(Get-ChildItem -LiteralPath $unpacked -Recurse -Force | Where-Object {
             $_.Name -match '^(?i:%40|%2540)'
@@ -182,7 +182,8 @@ jobs:
           }
 
           # Exercise the exact runtime/layout shipped in the AppX. No separately
-          # installed Node is involved: Metrora.exe runs the bundled CLI as Node.
+          # installed Node is involved: Metrora.exe runs the loose proxy, which
+          # loads main.js and its dependency closure from cli.asar.
           $previousRunAsNode = $env:ELECTRON_RUN_AS_NODE
           try {
             $env:ELECTRON_RUN_AS_NODE = '1'
@@ -220,6 +221,7 @@ jobs:
             packageVersion = [string]$identity.Version
             architecture = [string]$identity.ProcessorArchitecture
             packagedCliSmoke = 'pass'
+            cliRuntimeContainer = 'asar'
             looseCliNodeModules = $false
             signed = $false
             submitted = $false
@@ -248,6 +250,6 @@ jobs:
 
           - Artifact: `${{ steps.inspect.outputs.artifact_name }}`
           - SHA-256: `${{ steps.inspect.outputs.sha256 }}`
-          - Packaged CLI: executed with bundled Electron runtime
+          - Packaged CLI: sealed ASAR executed with bundled Electron runtime
           - State: unsigned, not submitted, not published
           "@ >> $env:GITHUB_STEP_SUMMARY
