@@ -86,7 +86,7 @@ describe('model accounting payload', () => {
     expect(payload.current.modelAccounting?.gap.cost).toBe(0)
   })
 
-  it('preserves and merges durable token detail when the period authority carries it', () => {
+  it('preserves and merges durable token detail plus observed timing when the period authority carries it', () => {
     const payload = buildMenubarPayload(period([
       {
         name: 'gpt-5.4',
@@ -97,6 +97,8 @@ describe('model accounting payload', () => {
         outputTokens: 20,
         cacheReadTokens: 900,
         cacheWriteTokens: 50,
+        activeDurationMs: 1000,
+        activeGeneratedTokens: 2000,
       },
       {
         name: 'gpt-5.4',
@@ -107,6 +109,8 @@ describe('model accounting payload', () => {
         outputTokens: 10,
         cacheReadTokens: 450,
         cacheWriteTokens: 25,
+        activeDurationMs: 500,
+        activeGeneratedTokens: 1000,
       },
     ], 15, 3), [], null)
 
@@ -121,9 +125,29 @@ describe('model accounting payload', () => {
         cacheReadTokens: 1350,
         cacheWriteTokens: 75,
         tokenDetail: true,
+        activeDurationMs: 1500,
+        activeGeneratedTokens: 3000,
       },
     ])
     expect(payload.current.modelAccounting?.tokenCoverage).toEqual({ cost: 1, calls: 1 })
+  })
+
+  it('omits timing fields rather than fabricating zero-speed evidence', () => {
+    const payload = buildMenubarPayload(period([
+      {
+        name: 'gpt-5.4',
+        cost: 10,
+        savingsUSD: 0,
+        calls: 2,
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 900,
+        cacheWriteTokens: 50,
+      },
+    ], 10, 2), [], null)
+
+    expect(payload.current.modelAccounting?.rows[0]).not.toHaveProperty('activeDurationMs')
+    expect(payload.current.modelAccounting?.rows[0]).not.toHaveProperty('activeGeneratedTokens')
   })
 
   it('marks merged token detail unavailable when any contributing row lacks its split', () => {
