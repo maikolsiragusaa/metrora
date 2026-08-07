@@ -27,6 +27,9 @@ export type PeriodData = {
   /// Token fields are add-only for compatibility with older PeriodData fixtures
   /// and producers. Durable day-backed producers populate all four; callers must
   /// treat their absence as unavailable detail, never as zero usage.
+  /// Timing fields are also optional: they come only from surviving source
+  /// sessions whose collector exposes active-generation timing. They never make
+  /// historical cost/call/token totals less durable.
   models: Array<{
     name: string
     cost: number
@@ -37,6 +40,8 @@ export type PeriodData = {
     outputTokens?: number
     cacheReadTokens?: number
     cacheWriteTokens?: number
+    activeDurationMs?: number
+    activeGeneratedTokens?: number
   }>
   /// Models with usage in the period whose pricing lookup fails against the
   /// current tables (#638): their calls contribute $0 to `cost`. Optional so
@@ -158,6 +163,9 @@ export type ModelAccountingRow = {
   cacheWriteTokens: number
   /** False means an older source could preserve cost/calls but not token split. */
   tokenDetail: boolean
+  /** Active generation timing from surviving source evidence only. */
+  activeDurationMs?: number
+  activeGeneratedTokens?: number
 }
 
 export type ModelAccounting = {
@@ -420,6 +428,8 @@ type MergedModelRow = {
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
+  activeDurationMs: number
+  activeGeneratedTokens: number
 }
 
 function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
@@ -442,6 +452,8 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       tokenDetail: true,
+      activeDurationMs: 0,
+      activeGeneratedTokens: 0,
     }
     acc.cost += m.cost
     acc.calls += m.calls
@@ -453,6 +465,11 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       acc.outputTokens += m.outputTokens!
       acc.cacheReadTokens += m.cacheReadTokens!
       acc.cacheWriteTokens += m.cacheWriteTokens!
+    }
+    if (typeof m.activeDurationMs === 'number' && Number.isFinite(m.activeDurationMs) && m.activeDurationMs > 0
+      && typeof m.activeGeneratedTokens === 'number' && Number.isFinite(m.activeGeneratedTokens) && m.activeGeneratedTokens > 0) {
+      acc.activeDurationMs += m.activeDurationMs
+      acc.activeGeneratedTokens += m.activeGeneratedTokens
     }
     merged.set(name, acc)
   }
@@ -486,6 +503,9 @@ function buildModelAccounting(models: PeriodData['models'], totalCost: number, t
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
     tokenDetail: row.tokenDetail,
+    ...(row.activeDurationMs > 0 && row.activeGeneratedTokens > 0
+      ? { activeDurationMs: row.activeDurationMs, activeGeneratedTokens: row.activeGeneratedTokens }
+      : {}),
   }))
   const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
   const representedSavings = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
