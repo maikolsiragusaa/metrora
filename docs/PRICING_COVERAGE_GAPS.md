@@ -18,6 +18,23 @@ Subscription quotas, bundled credits and reseller prices are separate economic r
 
 ## Current reviewed gaps
 
+### DeepSeek historical continuity after the September 2025 pricing change
+
+The reviewed book contains the earlier `deepseek-chat` V3 interval and `deepseek-reasoner` R1 interval only through the provider's documented pricing-change boundary at `2025-09-05T16:00:00Z`. It also contains the current V4 Flash and V4 Pro rates only from the instant at which those prices were directly reviewed.
+
+References:
+
+- `https://api-docs.deepseek.com/news/news250821`
+- `https://api-docs.deepseek.com/news/news250922`
+- `https://api-docs.deepseek.com/news/news250929`
+- `https://api-docs.deepseek.com/news/news251201`
+- `https://api-docs.deepseek.com/news/news260424`
+- `https://api-docs.deepseek.com/quick_start/pricing/`
+
+The model-transition chronology is documented, but that is not sufficient by itself to reconstruct every intervening historical price table and exact economic boundary. Do not extend the older V3/R1 rates past the documented September boundary and do not backfill later periods using today's V4 rates merely because a legacy API alias eventually routed to a V4 model.
+
+Close these intervals only when stable evidence establishes both the applicable rates and the effective boundary for the corresponding pricing identity.
+
 ### DeepSeek V4 — peak/valley pricing is time-dependent
 
 DeepSeek's direct API currently publishes the normal V4 Flash and V4 Pro token rates. The final V4 Flash release does not by itself require a new historical price interval when those economic rates are unchanged: the reviewed book versions pricing conditions, not model weights.
@@ -137,6 +154,19 @@ References:
 - `https://cohere.com/pricing`
 
 Keep these models uncovered until either the cache economics are documented or the schema can express a model/route for which caching is explicitly not a billable dimension without pretending that unknown equals zero.
+
+## Reviewed redirect behavior
+
+Retired provider slugs can remain relevant historical pricing identities when usage evidence continues to contain those exact slugs after a provider-side redirect.
+
+For xAI's May 15, 2026 retirement boundary, the reviewed book keeps the original slug as the pricing identity and starts a new `official-route` interval at the documented redirect instant using the replacement model's billed economics. The new interval `supersedes` the preceding interval for the same identity.
+
+References:
+
+- `https://docs.x.ai/developers/migration/may-15-retirement`
+- `https://docs.x.ai/developers/pricing`
+
+Do not rename already-observed usage to the replacement model merely to make pricing resolve. The observed label and the economic route are separate facts.
 
 ## Route and modifier gaps to keep separate
 
