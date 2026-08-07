@@ -130,6 +130,7 @@ describe('buildOtlpPayload', () => {
     const payload = buildOtlpPayload([makeCallWithSession()])
 
     expect(payload.resourceSpans).toHaveLength(1)
+    // Protocol attribute retained for backward-compatible remote ingestion.
     expect(payload.resourceSpans[0]!.resource.attributes).toEqual([
       { key: 'codeburn.device_id', value: { stringValue: expect.stringMatching(/^[0-9a-f]{16}$/) } },
     ])
@@ -235,10 +236,10 @@ describe('ledger', () => {
   const originalHome = process.env.HOME
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'codeburn-ledger-'))
+    tmpDir = await mkdtemp(join(tmpdir(), 'metrora-ledger-'))
     process.env.HOME = tmpDir
-    // env-isolation.ts redirects XDG_CACHE_HOME to a per-worker sandbox shared
-    // across tests — the ledger honors XDG, so point it at the per-test dir.
+    // Pin XDG cache to this test's own root. Global isolation deliberately
+    // clears XDG roots so custom HOME tests do not share worker-wide state.
     process.env.XDG_CACHE_HOME = join(tmpDir, '.cache')
   })
 
@@ -308,7 +309,7 @@ describe('ledger', () => {
     expect(clearLedger()).toBe(0)
   })
 
-  it('corrupt ledger file reads as empty (crash-safe recovery)', async () => {
+  it('adopts a corrupt legacy ledger path and fails safe to empty', async () => {
     const { readLedger } = await import('../src/sync/ledger.js')
     const { mkdirSync, writeFileSync } = await import('fs')
     const { join } = await import('path')
@@ -323,12 +324,12 @@ describe('ledger', () => {
     const { existsSync } = await import('fs')
     const { join } = await import('path')
     writeLedger([{ key: 'a', ts: '2026-07-01T00:00:00Z' }])
-    const dir = join(process.env.HOME!, '.cache', 'codeburn')
+    const dir = join(process.env.HOME!, '.cache', 'metrora')
     expect(existsSync(join(dir, 'sync-ledger.json'))).toBe(true)
     expect(existsSync(join(dir, 'sync-ledger.json.tmp'))).toBe(false)
   })
 
-  it('honors XDG_CACHE_HOME when set', async () => {
+  it('honors XDG_CACHE_HOME with the canonical Metrora directory', async () => {
     const { writeLedger, readLedger } = await import('../src/sync/ledger.js')
     const { existsSync } = await import('fs')
     const { join } = await import('path')
@@ -337,7 +338,7 @@ describe('ledger', () => {
     process.env.XDG_CACHE_HOME = xdgDir
     try {
       writeLedger([{ key: 'xdg-entry', ts: '2026-07-01T00:00:00Z' }])
-      expect(existsSync(join(xdgDir, 'codeburn', 'sync-ledger.json'))).toBe(true)
+      expect(existsSync(join(xdgDir, 'metrora', 'sync-ledger.json'))).toBe(true)
       expect(readLedger().map(e => e.key)).toEqual(['xdg-entry'])
     } finally {
       if (original === undefined) delete process.env.XDG_CACHE_HOME

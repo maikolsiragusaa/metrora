@@ -2,7 +2,7 @@ import { useEffect, type MouseEvent, type ReactNode } from 'react'
 
 import { version } from '../../package.json'
 import { BUILD_STAMP } from '../lib/build'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { MetroraMark } from './MetroraMark'
 
 export type SocialLink = {
@@ -13,7 +13,7 @@ export type SocialLink = {
 
 function openExternal(event: MouseEvent<HTMLAnchorElement>, url: string): void {
   event.preventDefault()
-  void codeburn.openExternal(url)
+  void metrora.openExternal(url)
 }
 
 export function AboutModal({ socials, onClose }: { socials: SocialLink[]; onClose: () => void }) {
@@ -63,13 +63,13 @@ export function AboutModal({ socials, onClose }: { socials: SocialLink[]; onClos
             <div className="about-modal-section about-modal-updates">
               <div className="about-modal-section-title">Updates</div>
               <p className="about-modal-update-note" role="status">
-                Metrora does not yet publish an automatic update channel. This build never checks or downloads CodeBurn releases.
+                Updates are handled by the active distribution channel. This build does not use a separate in-app updater.
               </p>
             </div>
           </div>
         </div>
         <div className="about-modal-credit">
-          Independent Metrora build · Based on CodeBurn 0.9.19 under the MIT License
+          Metrora · Published by Vensent
         </div>
       </div>
     </div>

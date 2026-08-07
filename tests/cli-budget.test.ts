@@ -27,7 +27,7 @@ function runCli(args: string[], home: string) {
 }
 
 async function readConfig(home: string): Promise<{ budget?: { daily?: number; weekly?: number; monthly?: number } }> {
-  const raw = await readFile(join(home, '.config', 'codeburn', 'config.json'), 'utf-8')
+  const raw = await readFile(join(home, '.config', 'metrora', 'config.json'), 'utf-8')
   return JSON.parse(raw) as { budget?: { daily?: number; weekly?: number; monthly?: number } }
 }
 
@@ -51,7 +51,7 @@ function userLine(sessionId: string, timestamp: string): string {
     type: 'user',
     sessionId,
     timestamp,
-    cwd: '/tmp/codeburn-budget-app',
+    cwd: '/tmp/metrora-budget-app',
     message: { role: 'user', content: 'ship budget check' },
   })
 }
@@ -61,7 +61,7 @@ function assistantLine(sessionId: string, timestamp: string): string {
     type: 'assistant',
     sessionId,
     timestamp,
-    cwd: '/tmp/codeburn-budget-app',
+    cwd: '/tmp/metrora-budget-app',
     message: {
       id: `msg-${sessionId}`,
       type: 'message',
@@ -97,7 +97,7 @@ async function seedCurrentMonthSpend(home: string): Promise<void> {
 
 describe('metrora budget command', () => {
   it('saves, lists, and removes a monthly budget', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       const set = runCli(['budget', '--monthly', '123.45'], home)
       expect(set.status, `stderr: ${set.stderr}`).toBe(0)
@@ -122,7 +122,7 @@ describe('metrora budget command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('rejects an invalid amount without writing a budget', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       const result = runCli(['budget', '--daily', '0'], home)
       expect(result.status).toBe(1)
@@ -137,7 +137,7 @@ describe('metrora budget command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('exits 1 when the current month is over budget', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       await seedCurrentMonthSpend(home)
       expect(runCli(['budget', '--monthly', '0.01'], home).status).toBe(0)
@@ -152,7 +152,7 @@ describe('metrora budget command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('floors a 99.x percent budget check without reporting over', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       await seedCurrentMonthSpend(home)
       expect(runCli(['budget', '--monthly', '4.52'], home).status).toBe(0)
@@ -168,8 +168,8 @@ describe('metrora budget command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('exits 0 when the current month is under budget or no budget is configured', async () => {
-    const noneHome = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
-    const underHome = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const noneHome = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
+    const underHome = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       const none = runCli(['budget', '--check'], noneHome)
       expect(none.status).toBe(0)
@@ -189,7 +189,7 @@ describe('metrora budget command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('keeps overview budget lines only on unfiltered overviews', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       await seedCurrentMonthSpend(home)
       expect(runCli(['budget', '--monthly', '100000'], home).status).toBe(0)
@@ -214,7 +214,7 @@ describe('metrora budget command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('uses the same weekly spend window for budget --check and overview -p week', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-budget-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-budget-'))
     try {
       const weekStart = getDateRange('week').range.start
       await seedClaudeSpend(home, {

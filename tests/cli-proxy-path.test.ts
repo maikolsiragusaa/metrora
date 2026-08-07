@@ -21,7 +21,7 @@ afterEach(async () => {
 })
 
 async function makeHome(): Promise<string> {
-  const home = await mkdtemp(join(tmpdir(), 'codeburn-proxy-cli-'))
+  const home = await mkdtemp(join(tmpdir(), 'metrora-proxy-cli-'))
   homes.push(home)
   return home
 }
@@ -35,12 +35,12 @@ function runCli(args: string[], home: string) {
   })
 }
 
-const configPath = (home: string) => join(home, '.config', 'codeburn', 'config.json')
+const configPath = (home: string) => join(home, '.config', 'metrora', 'config.json')
 async function readConfig(home: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(configPath(home), 'utf-8'))
 }
 async function writeConfig(home: string, obj: unknown): Promise<void> {
-  await mkdir(join(home, '.config', 'codeburn'), { recursive: true })
+  await mkdir(join(home, '.config', 'metrora'), { recursive: true })
   await writeFile(configPath(home), JSON.stringify(obj), 'utf-8')
 }
 

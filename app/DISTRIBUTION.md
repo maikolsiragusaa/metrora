@@ -7,8 +7,10 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Product: `Metrora`
 - Desktop app ID: `eu.metrora.desktop`
 - Website: `https://metrora.eu`
-- Current desktop version: `1.0.0-rc.7`
-- Current desktop build version: `1.0.0.7`
+- Current source/desktop candidate: `1.0.0-rc.8`
+- Current desktop build version: `1.0.0.8`
+- Latest published GitHub technical preview: `1.0.0-rc.7`
+- Current non-publishing Store AppX identity version: `1.0.0.0`
 
 Inherited names may remain only where required for compatibility or upstream provenance. They are not Metrora distribution names.
 
@@ -18,6 +20,8 @@ Packaged desktop builds include the required Metrora command-line runtime and do
 
 Packaging stages the current root runtime and copies it into Electron resources through `scripts/after-pack.cjs`. The packaged application uses this version-matched runtime before consulting any user-installed compatibility command.
 
+Persisted Workspace endpoint metadata is reconciled to the current packaged Metrora/collector version without replacing endpoint identity, Workspace membership or evidence history.
+
 ## Development packaging commands
 
 ```sh
@@ -26,10 +30,11 @@ npm --prefix app run package          # macOS
 npm --prefix app run package:arm64    # macOS arm64
 npm --prefix app run package:x64      # macOS x64
 npm --prefix app run package:win      # Windows NSIS x64
+npm --prefix app run package:store    # Windows AppX x64, non-publishing
 npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
 ```
 
-These commands create development or engineering artifacts. They do not by themselves create an official release.
+These commands create development or engineering artifacts. They do not by themselves create an official release or a Store submission.
 
 ## Official distribution requirements
 
@@ -39,7 +44,7 @@ An official desktop package must:
 - use exact Metrora product and publisher identity;
 - contain only declared product bytes and metadata;
 - preserve endpoint identity, Workspace state, secure-storage material and user-owned files;
-- state its exact version, format, platform and signature status;
+- state its exact product version, package version, format, platform and signature status;
 - remain independently traceable through checksums, manifests and provenance;
 - pass clean installation, first launch, update, rollback, removal and state-preservation acceptance;
 - keep private user data out of package metadata and reports.
@@ -49,6 +54,8 @@ An official desktop package must:
 ### Windows
 
 The development Windows installer is x64, per-user, assisted rather than one-click, non-destructive to application data on uninstall and named `Metrora-Setup-<version>.exe`.
+
+The Microsoft Store path builds an x64 AppX with the assigned Store identity and `runFullTrust`, without publishing it. The Store manifest's four-part package identity is separate from the desktop build counter; see [`../docs/VERSIONING.md`](../docs/VERSIONING.md).
 
 Unsigned engineering artifacts may trigger platform reputation warnings. Their signature status must remain explicit and they must not be represented as channel-certified packages.
 

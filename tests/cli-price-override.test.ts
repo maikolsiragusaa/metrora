@@ -22,13 +22,13 @@ function runCli(args: string[], home: string) {
 }
 
 function readConfig(home: string): Promise<Record<string, unknown>> {
-  return readFile(join(home, '.config', 'codeburn', 'config.json'), 'utf-8')
+  return readFile(join(home, '.config', 'metrora', 'config.json'), 'utf-8')
     .then(raw => JSON.parse(raw) as Record<string, unknown>)
 }
 
 describe('metrora price-override command', () => {
   it('saves, lists, and removes a model price override', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-price-override-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-price-override-'))
     try {
       const set = runCli([
         'price-override',
@@ -73,7 +73,7 @@ describe('metrora price-override command', () => {
   }, CLI_TIMEOUT_MS)
 
   it('rejects an invalid rate', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-price-override-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-price-override-'))
     try {
       const result = runCli(['price-override', 'bad-rate-model', '--input', 'abc', '--output', '1'], home)
       expect(result.status).toBe(1)

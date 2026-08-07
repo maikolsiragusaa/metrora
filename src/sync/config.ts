@@ -1,12 +1,14 @@
 /**
  * metrora sync — config file management.
  *
- * Stores non-secret sync configuration at ~/.config/codeburn/sync.json
+ * New installations store non-secret sync configuration under the canonical
+ * Metrora config root. Existing legacy roots are adopted in place by the shared
+ * product-path authority so upgrades do not silently lose configuration.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { getMetroraConfigDir } from '../product-paths.js'
 
 export interface SyncConfig {
   baseUrl: string
@@ -17,7 +19,7 @@ export interface SyncConfig {
 }
 
 function configDir(): string {
-  return join(homedir(), '.config', 'codeburn')
+  return getMetroraConfigDir()
 }
 
 function configPath(): string {

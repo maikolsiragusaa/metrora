@@ -1,7 +1,8 @@
 /**
  * metrora sync — discovery document parser.
  *
- * Fetches and validates {baseUrl}/.well-known/codeburn-export.json
+ * The v1 compatibility wire route remains {baseUrl}/.well-known/codeburn-export.json
+ * until a separately versioned protocol migration is available.
  */
 
 export interface CodeburnDiscoveryDoc {
@@ -55,7 +56,7 @@ export function parseDiscoveryDoc(raw: unknown): CodeburnDiscoveryDoc {
   const version = typeof doc.version === 'number' ? doc.version : 1
   if (version > SUPPORTED_VERSION) {
     throw new DiscoveryError(
-      `This endpoint requires metrora sync v${version}. Please update codeburn.`
+      `This endpoint requires metrora sync v${version}. Please update Metrora.`
     )
   }
 

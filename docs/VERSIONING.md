@@ -1,16 +1,17 @@
 # Versioning authority
 
-Metrora uses semantic versioning for public product identity and a separate numeric build version where platform metadata requires one.
+Metrora uses semantic versioning for public product identity and separate numeric versions where desktop/platform packaging requires them.
 
 ## Current line
 
-- Public development version: `1.0.0-rc.7`
-- Desktop build version: `1.0.0.7`
+- Current source candidate: `1.0.0-rc.8`
+- Desktop build version: `1.0.0.8`
+- Latest published GitHub technical preview: `1.0.0-rc.7`
 - First intended stable release: `1.0.0`
 
 Changing metadata does not create an accepted artifact. Candidate identity always consists of the version, exact source commit, payload manifest and checksums, plus the applicable platform acceptance.
 
-## Mapping
+## Product and desktop build mapping
 
 For a candidate `MAJOR.MINOR.PATCH-rc.N`, the desktop build version is:
 
@@ -22,7 +23,23 @@ For a stable `MAJOR.MINOR.PATCH`, the desktop build version is:
 
 `MAJOR.MINOR.PATCH.10000`
 
-This keeps the stable build numerically above its release candidates while leaving room for later patch versions. Every numeric build-version component is limited to the Windows four-part version range.
+This keeps the stable desktop build numerically above its release candidates while leaving room for later patch versions. Every numeric build-version component remains inside the supported four-part range.
+
+## Microsoft Store package version
+
+The Microsoft Store AppX/MSIX manifest has a separate four-component package identity. For the Windows 10/11 Store package, Metrora uses:
+
+`MAJOR.MINOR.PATCH.0`
+
+The final component is `0` for the Store package contract. The SemVer pre-release suffix (`-rc.N`) is **not** encoded into the AppX identity version, and the desktop build counter (`MAJOR.MINOR.PATCH.N`) must not be presented as the Store package version.
+
+For the current `1.0.0` pre-submission line:
+
+- source/product candidate: `1.0.0-rc.8`;
+- desktop build version: `1.0.0.8`;
+- local/non-publishing Store AppX identity version: `1.0.0.0`.
+
+A locally validated `1.0.0.0` AppX does not mean that version has been submitted, certified or published. Once a package version is actually submitted to Microsoft, later Store updates must advance according to the Store's package-version rules rather than reusing an already submitted identity.
 
 ## Ordering
 
@@ -31,25 +48,24 @@ Metrora accepts only stable versions and numbered release candidates in the form
 - `MAJOR.MINOR.PATCH`
 - `MAJOR.MINOR.PATCH-rc.N`
 
-For the same core version, release candidates are ordered by `N` and the stable release sorts after every candidate. Release and migration tooling must use the shared authority in `scripts/version-authority-lib.mjs`; platform-native parsers that reject SemVer prerelease identifiers are not authoritative.
+For the same core version, release candidates are ordered by `N` and the stable release sorts after every candidate. Release and migration tooling must use the shared authority in `scripts/version-authority-lib.mjs`; platform-native parsers that reject SemVer prerelease identifiers are not authoritative for Metrora product ordering.
 
 ## Material candidate changes
 
 Advance `rc.N` whenever source changes can alter user-visible accounting, historical reconciliation, persisted-state interpretation, security or trust evidence, packaging, installation, migration, rollback or platform behavior.
 
-Parser and provider corrections that can change tokens, costs, calls, projects or other reported usage are material even when their code delta is small. They require a new source-bound candidate rather than reusing an artifact built from an earlier commit.
+Parser and provider corrections that can change tokens, costs, calls, projects or other reported usage are material even when their code delta is small. Persisted endpoint-software reconciliation is also material because it changes the interpretation/presentation of stored Workspace state.
 
 Documentation-only clarification, test-only determinism and other changes proven not to alter shipped behavior do not automatically require a new candidate. The applicable validation still follows the changed surface.
 
 ## Authorities
 
-The following values must agree:
+The following values must agree where they represent the same authority:
 
-- root `package.json`;
-- root `package-lock.json`;
-- desktop `app/package.json`;
-- desktop `app/package-lock.json`;
-- desktop `buildVersion` mapping;
+- root `package.json` and root `package-lock.json` — product SemVer;
+- desktop `app/package.json` and `app/package-lock.json` — product SemVer;
+- desktop `buildVersion` — desktop numeric build mapping;
+- Store AppX manifest — Store package-version mapping;
 - current-version declarations in `RELEASING.md`;
 - current desktop declarations in `app/DISTRIBUTION.md`;
 - current release-line declarations in this document and `docs/WINDOWS_DISTRIBUTION.md`.
@@ -62,6 +78,6 @@ CI executes the same check on pull requests and pushes to `main`.
 
 ## Historical evidence
 
-Historical version references are immutable evidence, not active version authorities. In particular, accepted 0.9.19 candidate reports, manifests, migration fixtures, provenance notices and changelog history must retain their original version and source binding.
+Historical version references are immutable evidence, not active version authorities. Published RC7 release records and accepted 0.9.19 candidate reports, manifests, migration fixtures, provenance notices and changelog history retain their original version/source binding.
 
 Never rename an old report or artifact to the current version, and never treat an accepted artifact as evidence for a later source commit.

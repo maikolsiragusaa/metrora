@@ -23,7 +23,7 @@ function runCli(args: string[], home: string) {
 
 describe('metrora plan command', () => {
   it('persists provider-keyed plans and clears on reset', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       const setResult = runCli(['plan', 'set', 'claude-max'], home)
@@ -32,7 +32,7 @@ describe('metrora plan command', () => {
       const setCodexResult = runCli(['plan', 'set', 'custom', '--monthly-usd', '200', '--provider', 'codex'], home)
       expect(setCodexResult.status).toBe(0)
 
-      const configPath = join(home, '.config', 'codeburn', 'config.json')
+      const configPath = join(home, '.config', 'metrora', 'config.json')
       const configRaw = await readFile(configPath, 'utf-8')
       const config = JSON.parse(configRaw) as { plans?: { claude?: { id?: string; monthlyUsd?: number }; codex?: { id?: string; monthlyUsd?: number } } }
       expect(config.plans?.claude?.id).toBe('claude-max')
@@ -53,14 +53,14 @@ describe('metrora plan command', () => {
   }, CLI_PLAN_TIMEOUT_MS)
 
   it('resets one provider without removing other plans', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       expect(runCli(['plan', 'set', 'claude-max'], home).status).toBe(0)
       expect(runCli(['plan', 'set', 'custom', '--monthly-usd', '200', '--provider', 'codex'], home).status).toBe(0)
       expect(runCli(['plan', 'reset', '--provider', 'codex'], home).status).toBe(0)
 
-      const configPath = join(home, '.config', 'codeburn', 'config.json')
+      const configPath = join(home, '.config', 'metrora', 'config.json')
       const configRaw = await readFile(configPath, 'utf-8')
       const config = JSON.parse(configRaw) as { plans?: { claude?: { id?: string }; codex?: unknown } }
       expect(config.plans?.claude?.id).toBe('claude-max')
@@ -71,13 +71,13 @@ describe('metrora plan command', () => {
   }, CLI_PLAN_TIMEOUT_MS)
 
   it('resets the all-provider plan without removing provider-specific plans', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       expect(runCli(['plan', 'set', 'claude-max'], home).status).toBe(0)
       expect(runCli(['plan', 'reset', '--provider', 'all'], home).status).toBe(0)
 
-      const configPath = join(home, '.config', 'codeburn', 'config.json')
+      const configPath = join(home, '.config', 'metrora', 'config.json')
       const configRaw = await readFile(configPath, 'utf-8')
       const config = JSON.parse(configRaw) as { plans?: { claude?: { id?: string }; all?: unknown } }
       expect(config.plans?.claude?.id).toBe('claude-max')
@@ -88,7 +88,7 @@ describe('metrora plan command', () => {
   }, CLI_PLAN_TIMEOUT_MS)
 
   it('shows all configured plans as json', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       expect(runCli(['plan', 'set', 'claude-max'], home).status).toBe(0)
@@ -107,7 +107,7 @@ describe('metrora plan command', () => {
   }, CLI_PLAN_TIMEOUT_MS)
 
   it('filters shown plans by provider', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       expect(runCli(['plan', 'set', 'claude-max'], home).status).toBe(0)
@@ -125,7 +125,7 @@ describe('metrora plan command', () => {
   }, CLI_PLAN_TIMEOUT_MS)
 
   it('rejects all-provider scope for preset plans', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       const result = runCli(['plan', 'set', 'claude-max', '--provider', 'all'], home)
@@ -137,7 +137,7 @@ describe('metrora plan command', () => {
   }, CLI_PLAN_TIMEOUT_MS)
 
   it('shows invalid reset-day value in error output', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-plan-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-plan-'))
 
     try {
       const result = runCli(['plan', 'set', 'claude-max', '--reset-day', '99'], home)

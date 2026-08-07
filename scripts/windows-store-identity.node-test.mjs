@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const rootPackage = JSON.parse(readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const desktopPackage = JSON.parse(readFileSync(resolve(repositoryRoot, 'app/package.json'), 'utf8'))
 const brandGenerator = readFileSync(resolve(repositoryRoot, 'scripts/generate-brand-assets.mjs'), 'utf8')
 
@@ -67,10 +68,19 @@ assert.equal(
   'the desktop build must not gain an implicit publication target',
 )
 
+assert.equal(desktopPackage.version, rootPackage.version, 'desktop and root product SemVer must match')
 assert.equal(
   desktopPackage.build?.buildVersion,
-  '1.0.0.7',
-  'the current Windows package version authority must remain 1.0.0.7',
+  '1.0.0.8',
+  'the current desktop build version authority must remain 1.0.0.8',
+)
+
+const productCore = rootPackage.version.replace(/-rc\.\d+$/, '')
+assert.match(productCore, /^\d+\.\d+\.\d+$/)
+assert.equal(
+  `${productCore}.0`,
+  '1.0.0.0',
+  'the current Microsoft Store AppX identity version mapping must remain 1.0.0.0',
 )
 
 for (const asset of [
@@ -82,4 +92,4 @@ for (const asset of [
   assert.ok(brandGenerator.includes(asset), `the deterministic brand generator must emit ${asset}`)
 }
 
-console.log('Windows Store package identity, assets and channel separation are valid.')
+console.log('Windows Store identity, version authorities, assets and channel separation are valid.')

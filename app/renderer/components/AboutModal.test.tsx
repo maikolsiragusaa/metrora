@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { ...actual.codeburn, openExternal: mocks.openExternal } }
+  return { ...actual, metrora: { ...actual.metrora, openExternal: mocks.openExternal } }
 })
 
 const SOCIALS: SocialLink[] = [
@@ -32,13 +32,17 @@ describe('Metrora About modal', () => {
 
   afterEach(cleanup)
 
-  it('shows Metrora identity and the static no-update-channel status', () => {
+  it('shows only current Metrora distribution identity', () => {
     renderAbout()
 
     expect(screen.getByRole('dialog', { name: 'Metrora' })).toBeInTheDocument()
     expect(screen.getByText('Local-first intelligence for AI usage, cost and efficiency.')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('does not yet publish an automatic update channel')
-    expect(screen.getByRole('status')).toHaveTextContent('never checks or downloads CodeBurn releases')
+    expect(screen.getByRole('status')).toHaveTextContent('active distribution channel')
+    expect(screen.getByRole('status')).toHaveTextContent('does not use a separate in-app updater')
+    expect(screen.getByText('Metrora · Published by Vensent')).toBeInTheDocument()
+    expect(screen.queryByText(/CodeBurn/i)).toBeNull()
+    expect(screen.queryByText(/Qovrion/i)).toBeNull()
+    expect(screen.queryByText(/0\.9\.19/)).toBeNull()
   })
 
   it('does not expose inherited update or download controls', () => {

@@ -2,11 +2,15 @@
 
 ## Status
 
-Official Windows distribution is in preparation.
+Metrora does not yet have an official stable Windows release.
 
-The accepted 0.9.19 Windows artifacts remain unsigned engineering candidates used for validation. They are not an official release, signed package or active update channel.
+The latest public Windows technical preview is the **unsigned** GitHub pre-release `v1.0.0-rc.7`. It remains bound to its accepted source, manifests, checksums and publication evidence. It is not a signed stable package, a Microsoft Store package or an automatic update channel.
 
-The active source line is `1.0.0-rc.7`, with numeric desktop build version `1.0.0.7`. It does not have an accepted artifact yet and does not supersede the source-bound 0.9.19 evidence.
+The active source/pre-submission line is `1.0.0-rc.8`, with desktop build version `1.0.0.8`. RC8 exists because Store-readiness work changes persisted Workspace software metadata and Store-facing presentation; it cannot reuse RC7 product identity.
+
+Metrora has an assigned Microsoft Store identity and a reviewed non-publishing AppX workflow/local-test path. No Store submission, certification or publication is claimed until Microsoft actually accepts that channel.
+
+Historical 0.9.19 acceptance material remains immutable engineering evidence for its own source line only.
 
 ## Identity
 
@@ -15,6 +19,16 @@ An official distribution must use the exact product and publisher identity issue
 Identity values must never be guessed, copied from another project or patched into an artifact after the reviewed product build.
 
 Protected credentials and verification material remain outside untrusted public pull-request workflows.
+
+## Version boundary
+
+Windows uses multiple version authorities deliberately:
+
+- product/source candidate: `1.0.0-rc.8`;
+- desktop build version: `1.0.0.8`;
+- current non-publishing Microsoft Store AppX identity version: `1.0.0.0`.
+
+The Store AppX four-part identity is not the desktop build counter. See [Versioning authority](VERSIONING.md).
 
 ## Package requirements
 
@@ -29,13 +43,17 @@ An official Windows package must:
 - pass clean installation, first launch, update, removal and rollback acceptance;
 - keep private user data out of package metadata, reports and provenance.
 
-## Technical artifacts
-
-Portable and installer candidates may be published only as clearly labelled technical artifacts with their exact signature status, checksums and source binding.
+## GitHub technical preview
 
 An unsigned GitHub pre-release follows the separate source, candidate, physical and publication gates in [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md).
 
-Technical artifacts must not be described as an official signed distribution or as equivalent to a channel-certified package.
+The existing RC7 release remains immutable. New RC8 Store-readiness changes do not retroactively modify or re-label those artifacts.
+
+## Microsoft Store pre-submission
+
+The Store workflow builds an unsigned AppX candidate and inspects its identity, architecture, capabilities and payload boundary without publishing it. A separate copy may be signed with a temporary local certificate only for physical acceptance.
+
+Before Partner Center submission, the exact source-bound candidate must pass the bounded local Store test and cleanup. A local PASS is pre-submission evidence only; it is not Microsoft certification.
 
 ## Acceptance gates
 
