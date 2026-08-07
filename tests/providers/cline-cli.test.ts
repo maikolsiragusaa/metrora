@@ -89,8 +89,12 @@ async function collect(seen = new Set<string>()): Promise<ParsedProviderCall[]> 
 }
 
 describe('cline-cli provider', () => {
-  it('discovers only CLI session metadata under the isolated sessions root', async () => {
-    await writeSession({ sessionId: 'sess-a', workspace: '/Users/dev/work/example' })
+  it('uses the growing messages file as source authority when it exists', async () => {
+    await writeSession({
+      sessionId: 'sess-a',
+      workspace: '/Users/dev/work/example',
+      messages: [assistant('a1', { inputTokens: 1, outputTokens: 1, cost: 0.001 })],
+    })
     await mkdir(join(root, 'not-a-session'), { recursive: true })
     await writeFile(join(root, 'not-a-session', 'other.json'), '{}')
 
@@ -99,8 +103,20 @@ describe('cline-cli provider', () => {
 
     expect(sources).toHaveLength(1)
     expect(sources[0]).toMatchObject({ provider: 'cline-cli', project: 'example' })
-    expect(sources[0]!.path).toBe(join(root, 'sess-a', 'sess-a.json'))
+    expect(sources[0]!.path).toBe(join(root, 'sess-a', 'sess-a.messages.json'))
     await expect(provider.probeRoots!()).resolves.toEqual([{ path: root, label: 'Cline CLI sessions' }])
+  })
+
+  it('uses metadata as source authority for rollup-only sessions', async () => {
+    await writeSession({
+      sessionId: 'rollup-only',
+      usage: { inputTokens: 10, outputTokens: 2, totalCost: 0.001 },
+    })
+
+    const provider = createClineCliProvider(root)
+    const sources = await provider.discoverSessions()
+    expect(sources).toHaveLength(1)
+    expect(sources[0]!.path).toBe(join(root, 'rollup-only', 'rollup-only.json'))
   })
 
   it('emits one call per assistant metrics block and binds reported cost as client-metered evidence', async () => {
