@@ -157,13 +157,22 @@ export function spawnEnvFor(bin: string): NodeJS.ProcessEnv {
   return { ...process.env, PATH: path }
 }
 
+function isJavaScriptEntry(path: string): boolean {
+  return /\.[cm]?js$/i.test(path)
+}
+
 /** Convert a resolved target into the exact child-process invocation. */
 export function spawnSpecFor(target: CliTarget, args: string[]): SpawnSpec {
-  if (target.kind === 'bundled') {
+  const entry = target.kind === 'bundled' ? target.entry : target.bin
+  if (target.kind === 'bundled' || isJavaScriptEntry(entry)) {
+    // Electron's process.execPath can execute JavaScript portably when switched
+    // into Node mode. This also covers the Vite dev CLI (`dist/cli.js`): spawning
+    // that .js file directly works through a POSIX shebang but fails with EFTYPE
+    // on Windows, where .js is not a native executable.
     return {
       bin: process.execPath,
-      args: [target.entry, ...args],
-      env: { ...spawnEnvFor(target.entry), ELECTRON_RUN_AS_NODE: '1' },
+      args: [entry, ...args],
+      env: { ...spawnEnvFor(entry), ELECTRON_RUN_AS_NODE: '1' },
     }
   }
   return { bin: target.bin, args, env: spawnEnvFor(target.bin) }
