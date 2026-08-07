@@ -41,6 +41,8 @@ Provider-specific integrations may be deep, but canonical reporting should remai
 
 Collection, canonical history, historical pricing, provenance, evidence and deterministic analytics must retain one public semantic authority.
 
+When the source exposes enough evidence, cost valuation should use the pricing conditions that applied to the individual call at the time it occurred — including relevant cache, context, route or speed tiers — rather than flattening historical usage onto one current rate table. Missing evidence must remain explicit instead of forcing an unsupported tier.
+
 A new interface must not reparse the same source data, invent missing facts, reprice settled history or introduce a competing measurement engine.
 
 ## Sharing is explicit and inspectable
