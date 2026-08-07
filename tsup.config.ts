@@ -17,6 +17,9 @@ export default defineConfig({
   // self-contained. AppX rewrites `@scope` path segments in loose node_modules
   // trees, which makes Node resolution fail after packaging. Bundle every
   // production dependency into the emitted runtime instead; Node built-ins stay
-  // external automatically. The public npm launcher still imports ./main.js.
+  // external automatically. Ink's React DevTools integration is deliberately
+  // optional and only loaded when DEV=true, so keep that development-only module
+  // external rather than turning it into a packaged runtime dependency.
   noExternal: [/.*/],
+  external: ['react-devtools-core'],
 })
