@@ -18,7 +18,7 @@ import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
 
 type ModelsLens = 'model' | 'task' | 'audit'
-type ModelSort = 'cost' | 'tokens' | 'calls' | 'cache' | 'unitCost'
+type ModelSort = 'cost' | 'tokens' | 'calls' | 'cache' | 'speed' | 'unitCost'
 type DurableModelRow = {
   name: string
   cost: number
@@ -29,6 +29,8 @@ type DurableModelRow = {
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
+  activeDurationMs?: number
+  activeGeneratedTokens?: number
 }
 type DurableModelAccounting = {
   rows: DurableModelRow[]
@@ -48,6 +50,7 @@ const MODEL_SORTS = [
   { value: 'tokens', label: 'Total tokens' },
   { value: 'calls', label: 'Calls' },
   { value: 'cache', label: 'Cache reuse' },
+  { value: 'speed', label: 'ms / 1K' },
   { value: 'unitCost', label: 'Cost / 1M' },
 ]
 
@@ -132,6 +135,17 @@ function modelUnitCost(row: DurableModelRow): number | null {
   return row.tokenDetail ? costPerMillionObserved(row.cost, tokenTotal(row)) : null
 }
 
+function modelMsPer1K(row: DurableModelRow): number | null {
+  const duration = row.activeDurationMs ?? 0
+  const tokens = row.activeGeneratedTokens ?? 0
+  if (!(duration > 0) || !(tokens > 0)) return null
+  return duration * 1000 / tokens
+}
+
+function formatMsPer1K(value: number | null): string {
+  return value == null ? '—' : `${value.toFixed(1)}ms`
+}
+
 function compareNullableDescending(a: number | null, b: number | null): number {
   if (a == null && b == null) return 0
   if (a == null) return 1
@@ -139,11 +153,19 @@ function compareNullableDescending(a: number | null, b: number | null): number {
   return b - a
 }
 
+function compareNullableAscending(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0
+  if (a == null) return 1
+  if (b == null) return -1
+  return a - b
+}
+
 function sortDurableRows(rows: DurableModelRow[], sort: ModelSort): DurableModelRow[] {
   return [...rows].sort((a, b) => {
     if (sort === 'tokens') return tokenTotal(b) - tokenTotal(a)
     if (sort === 'calls') return b.calls - a.calls
     if (sort === 'cache') return compareNullableDescending(modelCacheReuse(a), modelCacheReuse(b))
+    if (sort === 'speed') return compareNullableAscending(modelMsPer1K(a), modelMsPer1K(b))
     if (sort === 'unitCost') return compareNullableDescending(modelUnitCost(a), modelUnitCost(b))
     return (b.cost - a.cost) || (b.calls - a.calls)
   })
@@ -264,6 +286,7 @@ function ModelsUsage({
         <div style={{ padding: '12px 14px 4px' }}>
           <strong>Model usage</strong>
           <div style={authorityNoteStyle}>Historical cost, calls and retained token detail from Metrora&apos;s durable local ledger.</div>
+          <div style={authorityNoteStyle}>ms / 1K uses observed active-generation timing from source sessions still available on this device; lower is faster and — means no reliable timing evidence.</div>
           {incomplete ? <div style={authorityNoteStyle}>Some older usage no longer has a reliable model identity; that remainder is shown as Other models.</div> : null}
           {tokenIncomplete ? <div style={authorityNoteStyle}>Legacy rows without a durable token split show — for token-derived metrics instead of guessing.</div> : null}
         </div>
@@ -312,6 +335,7 @@ function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting
             <th>Cache W</th>
             <th title="Cached input read per uncached input token">Cache ×</th>
             <th>Total</th>
+            <th title="Active generation milliseconds per 1,000 generated tokens. Lower is faster; tool wait is excluded where the collector supplies active timing.">ms / 1K</th>
             <th>Cost</th>
             <th title="Effective API-equivalent value per 1M observed tokens">Cost / 1M</th>
             {hasSavings ? <th>Saved</th> : null}
@@ -323,6 +347,7 @@ function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting
             const reuse = modelCacheReuse(model)
             const share = model.tokenDetail ? cacheShare(model.inputTokens, model.cacheReadTokens) : null
             const unitCost = modelUnitCost(model)
+            const speed = modelMsPer1K(model)
             return (
               <tr key={`${model.name}-${index}`}>
                 <td title={model.name}><ModelIdentity name={model.name} /></td>
@@ -333,6 +358,7 @@ function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting
                 <td>{model.tokenDetail ? formatCompact(model.cacheWriteTokens) : '—'}</td>
                 <td title={share == null ? undefined : `${Math.round(share * 1000) / 10}% of input served from cache`}>{formatReuseMultiple(reuse)}</td>
                 <td>{total == null ? '—' : formatCompact(total)}</td>
+                <td title={speed == null ? 'No reliable active-generation timing for this model in the available source sessions.' : `${formatCompact(model.activeGeneratedTokens ?? 0)} timed generated tokens from available source sessions.`}>{formatMsPer1K(speed)}</td>
                 <td>{formatUsd(model.cost)}</td>
                 <td>{unitCost == null ? '—' : formatUsd(unitCost)}</td>
                 {hasSavings ? <td className={model.savingsUSD > 0 ? 'pos' : undefined}>{model.savingsUSD > 0 ? formatUsd(model.savingsUSD) : '—'}</td> : null}
