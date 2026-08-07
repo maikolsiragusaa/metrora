@@ -47,7 +47,7 @@ function session(id: string, active: boolean): Session {
     turns: [],
     modelBreakdown: {},
     toolBreakdown: {},
-    mcpBreakdown: active ? {} : { everything: { calls: 1, savingsUSD: 0, costUSD: 0 } },
+    mcpBreakdown: active ? {} : { everything: { calls: 1 } },
     bashBreakdown: {},
     categoryBreakdown: {} as Session['categoryBreakdown'],
     skillBreakdown: {},
@@ -132,14 +132,11 @@ describe('defer baseline capture', () => {
   const coverage: McpServerCoverage[] = [{
     server: 'heavy-server',
     toolsAvailable: 12,
-    toolsUsed: 1,
-    loadedSessions: 2,
-    invokedSessions: 1,
+    toolsInvoked: 1,
+    unusedTools: Array.from({ length: 11 }, (_, index) => `mcp__heavy-server__unused-${index}`),
     invocations: 1,
+    loadedSessions: 2,
     coverageRatio: 1 / 12,
-    tokensLoaded: 0,
-    tokensUseful: 0,
-    tokensUnused: 0,
   }]
 
   it('uses named server coverage for defer-alwaysload', () => {
