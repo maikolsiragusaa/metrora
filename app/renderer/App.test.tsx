@@ -234,7 +234,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByText('No waste findings in this range yet.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '6', metaKey: true })
-    expect(await screen.findByText('No model usage in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('Other models')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '7', metaKey: true })
     expect(await screen.findByText('Need at least two models with usage in this range to compare.')).toBeInTheDocument()
