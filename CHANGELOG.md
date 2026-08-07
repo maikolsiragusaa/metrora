@@ -80,15 +80,17 @@ RC7 was published as an **unsigned Windows x64 GitHub technical preview**. It re
 
 ### Windows candidate integrity
 
-- Bound Windows candidate artifacts to exact reviewed source and explicit manifests.
-- Added reproducible package-integrity checks and deterministic candidate naming.
-- Validated clean install, upgrade, reinstall, rollback, re-upgrade and interrupted-transition recovery against preserved local state.
-- Added migration-baseline and candidate-version authority checks.
-- Added physical Windows accessibility, keyboard, scaling, theme and reduced-motion acceptance evidence.
+- Bound Windows candidates to reviewed public source, canonical payload inventories, manifests and independent post-download verification.
+- Derived portable and installer formats from one canonical application payload.
+- Validated clean installation, removal, upgrade, repair, controlled rollback, interruption recovery and user-owned state preservation.
+- Completed bounded physical Windows keyboard, scaling, theme, reduced-motion and Narrator acceptance for the unsigned engineering candidate.
+- Added physical-acceptance report v2 with an explicit migration baseline and candidate-derived transitions while preserving historical report v1 verification.
+- Added a public unsigned GitHub pre-release acceptance contract and version-scoped `1.0.0-rc.7` preparation/publication record.
 
-### Collector reliability
+## 0.9.19 — Metrora public source baseline
 
-- Made parser fixtures deterministic and durable across test environments.
-- Recovered restarted Antigravity RPC endpoints without requiring a full application restart.
-- Preserved trusted daily-cache watermarks across safe cache reconciliation.
-- Reconciled durable project filters against retained historical state.
+- Introduced the Metrora-branded public source tree from the reviewed CodeBurn 0.9.19 baseline.
+- Preserved local-first multi-tool collection, CLI, desktop, dashboard, pricing, export and compatibility behavior while establishing an independent product identity and development history.
+- Retained temporary compatibility identifiers where immediate removal would break local state, packaging or integrations.
+
+This source baseline is not itself a claim that an official signed desktop release was published.
