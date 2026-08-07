@@ -321,7 +321,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
 
   return {
     'codeburn:getQuota': async (force?: boolean) => {
-      try { return { ok: true, value: await deps.getQuota({ force: Boolean(force) }) } }
+      try { return { ok: true, value: await deps.getQuota({ force: Boolean(force) }) }
       catch (error) { return { ok: false, error: { kind: 'nonzero', message: sanitizeError(error) } } }
     },
     'codeburn:getOverview': getOverview,
@@ -487,7 +487,15 @@ export function createApplicationMenuTemplate(isDev = Boolean(process.env.VITE_D
 }
 
 function installApplicationMenu(): void {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate()))
+  // macOS convention expects an application menu. Windows/Linux do not need the
+  // legacy File/Edit/View/Window strip for Metrora's dashboard UI; removing it
+  // restores the vertical space and native-app feel while keyboard shortcuts and
+  // the renderer navigation remain available.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate()))
+  } else {
+    Menu.setApplicationMenu(null)
+  }
 }
 
 function createWindow(): BrowserWindow {
