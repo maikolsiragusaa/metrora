@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import snapshotData from './data/litellm-snapshot.json'
 import fallbackData from './data/pricing-fallback.json'
 import { fetchWithTimeout } from './fetch-utils.js'
+import { REVIEWED_MODEL_DISPLAY_NAMES } from './model-display-labels.js'
 
 export type ModelCosts = {
   inputCostPerToken: number
@@ -578,7 +579,7 @@ export function isProxiedPath(cwd: string | undefined | null): boolean {
 /// (menubar) that re-reads config could serve attribution from a stale set.
 export function getProxyPathsConfigHash(): string {
   if (userProxyPaths.length === 0) return ''
-  return [...userProxyPaths].sort().join('')
+  return [...userProxyPaths].sort().join('\u0002')
 }
 
 function resolveAlias(model: string): string {
@@ -879,11 +880,6 @@ const SHORT_NAMES: Record<string, string> = {
   'gpt-4.1-mini': 'GPT-4.1 Mini',
   'gpt-4.1': 'GPT-4.1',
   'codex-auto-review': 'Codex Auto Review',
-  // Keep GPT-5.6 variants explicit. A bare gpt-5.6 entry would swallow future
-  // unknown variants through the prefix rule and present an invented identity.
-  'gpt-5.6-sol': 'GPT-5.6 Sol',
-  'gpt-5.6-terra': 'GPT-5.6 Terra',
-  'gpt-5.6-luna': 'GPT-5.6 Luna',
   'gpt-5.5-pro': 'GPT-5.5 Pro',
   'gpt-5.5': 'GPT-5.5',
   'gpt-5.4-pro': 'GPT-5.4 Pro',
@@ -930,25 +926,7 @@ const SHORT_NAMES: Record<string, string> = {
   'o3': 'o3',
   'MiniMax-M2.7-highspeed': 'MiniMax M2.7 Highspeed',
   'MiniMax-M2.7': 'MiniMax M2.7',
-  // Grok (xAI) and GLM ids that otherwise surface raw or as a pricing key in
-  // reports. grok-build and GLM-5.2 price via sibling aliases, so
-  // getShortModelName resolves to the pricing key before this lookup; map each
-  // back to the real model name. grok-composer has no alias, it just lacked an
-  // entry.
-  'glm-5p1': 'GLM-5.2',                               // ZCode/Hermes run GLM-5.2 (priced as the GLM-5.1 sibling)
-  'grok-build-0.1': 'Grok Build',                     // Grok Build prices through the 0.1 sibling
-  'grok-composer-2.5-fast': 'Grok Composer 2.5 Fast',
-  'grok-4.5': 'Grok 4.5',
-  // Fireworks/ClinePass-hosted fleet models can arrive under a provider path;
-  // getShortModelName strips to the final slug and re-resolves it through this
-  // display-only table. No pricing semantics are changed here.
-  'glm-5p2': 'GLM-5.2',
-  'qwen3p7-plus': 'Qwen 3.7 Plus',
-  'qwen3.7-max': 'Qwen 3.7 Max',
-  'kimi-k2p7-code': 'Kimi K2.7 Code',
-  'mimo-v2.5-pro': 'MiMo v2.5 Pro',
-  'minimax-m3': 'MiniMax M3',
-  'MiniMax-M3': 'MiniMax M3',
+  ...REVIEWED_MODEL_DISPLAY_NAMES,
 }
 
 // Sorted longest-first so more-specific prefixes match before shorter ones.
