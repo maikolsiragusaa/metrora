@@ -24,6 +24,7 @@ import type { ActionResult, AliasRow, ClaudeConfigSelector, CliError, CombinedUs
 export type SettingsPane = 'general' | 'providers' | 'aliases' | 'pricing' | 'plans' | 'devices' | 'export' | 'privacy'
 type Pane = SettingsPane
 type Theme = 'system' | 'light' | 'dark'
+type ConfigMutationHandler = (kind?: 'accounting' | 'display') => void
 
 type PlanPreset = { id: Exclude<PlanId, 'custom' | 'none'>; label: string; provider: Exclude<PlanProvider, 'all' | 'codex'> }
 
@@ -64,7 +65,7 @@ const RAIL_ITEMS: Array<{ id: Pane; label: string; icon: React.ReactNode }> = [
   { id: 'providers', label: 'Providers', icon: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></> },
   { id: 'aliases', label: 'Model aliases', icon: <><path d="M20 12l-8 8-9-9V3h8z" /><circle cx="7.5" cy="7.5" r="1.4" /></> },
   { id: 'pricing', label: 'Pricing', icon: <><circle cx="12" cy="12" r="9" /><path d="M14.5 9a2.5 2.5 0 0 0-2.5-1.6c-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.9 2.5 2-1 2-2.5 2A2.5 2.5 0 0 1 9.5 15" /><line x1="12" y1="6" x2="12" y2="18" /></> },
-  { id: 'plans', label: 'Plans', icon: <><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></> },
+  { id: 'plans', label: 'AI plans', icon: <><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></> },
   { id: 'devices', label: 'Devices', icon: <><rect x="3" y="4" width="18" height="12" rx="1.5" /><line x1="8" y1="20" x2="16" y2="20" /><line x1="12" y1="16" x2="12" y2="20" /></> },
   { id: 'export', label: 'Export', icon: <><path d="M12 3v12" /><path d="M7 11l5 5 5-5" /><path d="M4 21h16" /></> },
   { id: 'privacy', label: 'Privacy & data', icon: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" /> },
@@ -104,8 +105,9 @@ function ConfirmButton({ label, prompt, onConfirm }: { label: string; prompt: st
   )
 }
 
-export function Settings({ period, refreshToken = 0, onNavigate, initialPane, claudeConfigs, claudeConfigSource = null, onConfigMutated }: { period: Period; refreshToken?: number; onNavigate?: (section: Section) => void; initialPane?: SettingsPane; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource?: string | null; onConfigMutated?: () => void }) {
+export function Settings({ period, refreshToken = 0, onNavigate, initialPane, claudeConfigs, claudeConfigSource = null, onConfigMutated }: { period: Period; refreshToken?: number; onNavigate?: (section: Section) => void; initialPane?: SettingsPane; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource?: string | null; onConfigMutated?: ConfigMutationHandler }) {
   const [pane, setPane] = useState<Pane>(initialPane ?? 'general')
+  void onNavigate
 
   return (
     <>
@@ -124,18 +126,18 @@ export function Settings({ period, refreshToken = 0, onNavigate, initialPane, cl
           {pane === 'providers' && <ProvidersPane period={period} refreshToken={refreshToken} />}
           {pane === 'aliases' && <AliasesPane refreshToken={refreshToken} onConfigMutated={onConfigMutated} />}
           {pane === 'pricing' && <PricingPane refreshToken={refreshToken} onConfigMutated={onConfigMutated} />}
-          {pane === 'plans' && <PlansPane period={period} refreshToken={refreshToken} onNavigate={onNavigate} onConfigMutated={onConfigMutated} />}
+          {pane === 'plans' && <PlansPane period={period} refreshToken={refreshToken} onConfigMutated={onConfigMutated} />}
           {pane === 'devices' && <DevicesPane period={period} refreshToken={refreshToken} />}
           {pane === 'export' && <ExportPane period={period} refreshToken={refreshToken} />}
           {pane === 'privacy' && <PrivacyPane />}
         </main>
       </div>
-      <Hint items={[{ k: shortcutRangeLabel('1', '9'), label: 'Navigate' }, { k: shortcutLabel('R'), label: 'Refresh' }]} right="pairing uses mutual TLS · approve-style, no PIN" />
+      <Hint items={[{ k: shortcutRangeLabel('1', '8'), label: 'Navigate' }, { k: shortcutLabel('R'), label: 'Refresh' }]} right="Local settings · nothing is uploaded automatically" />
     </>
   )
 }
 
-function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, onConfigMutated }: { period: Period; refreshToken: number; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource: string | null; onConfigMutated?: () => void }) {
+function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, onConfigMutated }: { period: Period; refreshToken: number; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource: string | null; onConfigMutated?: ConfigMutationHandler }) {
   const [currencyNonce, setCurrencyNonce] = useState(0)
   const plans = usePolled<StatusJson>(() => codeburn.getPlans(period), [period, refreshToken, currencyNonce])
   const [theme, setTheme] = useState<Theme>(() => {
@@ -170,7 +172,12 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
   }
   const finishCurrency = (result: ActionResult) => {
     showToast(result.ok ? 'Updated' : result.stderr || 'Unable to update currency', result.ok ? 'ok' : 'error')
-    if (result.ok) { setCurrencyNonce(value => value + 1); onConfigMutated?.() }
+    if (result.ok) {
+      setCurrencyNonce(value => value + 1)
+      // Display currency does not change raw USD accounting. Keep warmed section
+      // data and refresh only the canonical currency descriptor.
+      onConfigMutated?.('display')
+    }
   }
   const currencies = [...CURRENCIES]
   if (plans.data?.currency && !currencies.includes(plans.data.currency)) currencies.push(plans.data.currency)
@@ -230,7 +237,7 @@ function ProvidersPane({ period, refreshToken }: { period: Period; refreshToken:
   </section>
 }
 
-function AliasesPane({ refreshToken, onConfigMutated }: { refreshToken: number; onConfigMutated?: () => void }) {
+function AliasesPane({ refreshToken, onConfigMutated }: { refreshToken: number; onConfigMutated?: ConfigMutationHandler }) {
   const [actionNonce, setActionNonce] = useState(0)
   const aliases = usePolled<AliasRow[]>(() => codeburn.getAliases(), [refreshToken, actionNonce])
   const [from, setFrom] = useState('')
@@ -241,7 +248,7 @@ function AliasesPane({ refreshToken, onConfigMutated }: { refreshToken: number; 
     setError('')
     if (added) { setFrom(''); setTo('') }
     setActionNonce(value => value + 1)
-    onConfigMutated?.()
+    onConfigMutated?.('accounting')
   }
   return <section className="set-p on">
     <div><h3 className="set-h">Model aliases</h3><p className="set-sub">Map an unrecognized model name to a priced model so its cost shows up.</p></div>
@@ -270,7 +277,7 @@ function parseRate(raw: string): number | undefined | 'invalid' {
   return value
 }
 
-function PricingPane({ refreshToken, onConfigMutated }: { refreshToken: number; onConfigMutated?: () => void }) {
+function PricingPane({ refreshToken, onConfigMutated }: { refreshToken: number; onConfigMutated?: ConfigMutationHandler }) {
   const [actionNonce, setActionNonce] = useState(0)
   const overrides = usePolled<PriceOverrideList>(() => codeburn.getPriceOverrides(), [refreshToken, actionNonce])
   const [model, setModel] = useState('')
@@ -285,7 +292,7 @@ function PricingPane({ refreshToken, onConfigMutated }: { refreshToken: number; 
     setError('')
     if (added) { setModel(''); setInput(''); setOutput(''); setCacheRead(''); setCacheCreation('') }
     setActionNonce(value => value + 1)
-    onConfigMutated?.()
+    onConfigMutated?.('accounting')
   }
 
   const add = () => {
@@ -338,7 +345,7 @@ function DetectedRow({ quota, onReconnect }: { quota: QuotaProvider; onReconnect
   </div>
 }
 
-function PlansPane({ period, refreshToken, onNavigate, onConfigMutated }: { period: Period; refreshToken: number; onNavigate?: (section: Section) => void; onConfigMutated?: () => void }) {
+function PlansPane({ period, refreshToken, onConfigMutated }: { period: Period; refreshToken: number; onConfigMutated?: ConfigMutationHandler }) {
   const [nonce, setNonce] = useState(0)
   // Steady poll serves cached quota (force=false); the Connect affordance's
   // Refresh forces a keychain-allowed fetch via the same path as Plans.tsx.
@@ -356,7 +363,7 @@ function PlansPane({ period, refreshToken, onNavigate, onConfigMutated }: { peri
 
   const finish = (result: ActionResult) => {
     showToast(result.ok ? (result.stdout.trim() || 'Plan updated') : (result.stderr || 'Plan action failed'), result.ok ? 'ok' : 'error')
-    if (result.ok) { setNonce(value => value + 1); onConfigMutated?.() }
+    if (result.ok) { setNonce(value => value + 1); onConfigMutated?.('accounting') }
   }
   const remove = (plan: JsonPlanSummary) => {
     void codeburn.resetPlan(plan.provider).then(finish)
@@ -367,7 +374,7 @@ function PlansPane({ period, refreshToken, onNavigate, onConfigMutated }: { peri
   }
 
   return <section className="set-p on">
-    <div><h3 className="set-h">Plans</h3><p className="set-sub">Claude and Codex subscriptions connect and auto-detect your tier. Set a manual budget plan for any other provider.</p></div>
+    <div><h3 className="set-h">AI plans</h3><p className="set-sub">Track provider subscriptions and usage budgets. These are your AI-provider plans, not a Metrora subscription.</p></div>
     <div className="card">
       <div className="about-sec set-last-sec">
         <div className="about-sec-h">Detected subscriptions</div>
@@ -376,14 +383,14 @@ function PlansPane({ period, refreshToken, onNavigate, onConfigMutated }: { peri
     </div>
     <div className="card">
       <div className="about-sec">
-        <div className="about-sec-h">Budget plans (manual)</div>
-        {plans.error ? <SettingsErrorText error={plans.error} /> : !plans.data ? <p className="set-cap">Loading plans…</p> : configured.length === 0 ? <p className="set-cap">No manual plans configured.</p> : configured.map(plan => <div className="about-row" key={plan.provider}><span className="tx">{PLAN_PRESETS.find(item => item.id === plan.id)?.label ?? plan.id}<small>{formatConverted(plan.budget)}/month · {plan.provider} · {plan.percentUsed}% used</small>{(plan.provider === 'claude' || plan.provider === 'codex') && <small>superseded by the detected subscription</small>}</span><span className="r"><ConfirmButton label="Remove" prompt="Remove?" onConfirm={() => remove(plan)} /></span></div>)}
+        <div className="about-sec-h">Manual provider budgets</div>
+        {plans.error ? <SettingsErrorText error={plans.error} /> : !plans.data ? <p className="set-cap">Loading plans…</p> : configured.length === 0 ? <p className="set-cap">No manual provider budgets configured.</p> : configured.map(plan => <div className="about-row" key={plan.provider}><span className="tx">{PLAN_PRESETS.find(item => item.id === plan.id)?.label ?? plan.id}<small>{formatConverted(plan.budget)}/month · {plan.provider} · {plan.percentUsed}% used</small>{(plan.provider === 'claude' || plan.provider === 'codex') && <small>superseded by the detected subscription</small>}</span><span className="r"><ConfirmButton label="Remove" prompt="Remove?" onConfirm={() => remove(plan)} /></span></div>)}
       </div>
       <div className="about-sec set-last-sec">
-        <div className="about-row"><label className="tx" htmlFor="settings-plan-preset">Add a plan</label><span className="r"><Dropdown id="settings-plan-preset" ariaLabel="Add a plan" value={presetId} options={MANUAL_PLAN_PRESETS.map(preset => ({ value: preset.id, label: preset.label }))} onChange={value => setPresetId(value as PlanPreset['id'])} width={160} /><button className="btnp btnp-primary" onClick={add}>Add</button></span></div>
+        <div className="about-row"><label className="tx" htmlFor="settings-plan-preset">Add a provider plan</label><span className="r"><Dropdown id="settings-plan-preset" ariaLabel="Add a provider plan" value={presetId} options={MANUAL_PLAN_PRESETS.map(preset => ({ value: preset.id, label: preset.label }))} onChange={value => setPresetId(value as PlanPreset['id'])} width={160} /><button className="btnp btnp-primary" onClick={add}>Add</button></span></div>
       </div>
     </div>
-    <p className="set-cap">Claude and Codex plans are detected automatically from your login. <button className="set-text-button" onClick={() => onNavigate?.('plans')}>Open Plans →</button></p>
+    <p className="set-cap">Claude and Codex tiers are detected from your existing login. Manual presets are shown only for provider plans Metrora can currently model reliably.</p>
   </section>
 }
 
@@ -436,9 +443,9 @@ function DevicesPane({ period, refreshToken }: { period: Period; refreshToken: n
 
 function PrivacyPane() {
   return <section className="set-p on"><div><h3 className="set-h">Privacy &amp; data</h3><p className="set-sub">What Metrora does, and does not do, with your data.</p></div><div className="card">
-    <PrivacyClaim title="Local-only" detail="Usage analysis runs on your machine and reads local session files." icon={<><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>} />
-    <PrivacyClaim title="No API keys" detail="Usage is detected from local files; no provider API keys are required." icon={<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />} />
-    <PrivacyClaim title="No product telemetry" detail="This build does not transmit product telemetry or query legacy update services." icon={<path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" />} />
+    <PrivacyClaim title="Local usage analysis" detail="Usage analysis runs on your machine and reads local session files." icon={<><rect x="4.5" y="10" width="15" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>} />
+    <PrivacyClaim title="No provider API keys" detail="Usage is detected from local files; no provider API keys are required." icon={<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />} />
+    <PrivacyClaim title="Optional anonymous telemetry" detail="Desktop product telemetry is consent-gated and never includes prompts, responses, source code, or local usage content." icon={<path d="M4 19v-5M9 19V9M14 19v-8M19 19V5" />} />
   </div></section>
 }
 
