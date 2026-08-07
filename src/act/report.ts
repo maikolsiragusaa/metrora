@@ -188,6 +188,14 @@ function sessionHasDeferralActive(s: SessionSummary): boolean {
   return (s.mcpInventory?.length ?? 0) > 0
 }
 
+function sessionHasDeferredServer(s: SessionSummary, servers: ReadonlySet<string>): boolean {
+  for (const fqn of s.mcpInventory ?? []) {
+    const server = fqn.split('__')[1]
+    if (server && servers.has(server)) return true
+  }
+  return false
+}
+
 function observedMcpServers(projects: ProjectSummary[]): string[] {
   const servers = new Set<string>()
   for (const session of allSessions(projects)) {
@@ -249,15 +257,23 @@ function mcpRow(
 }
 
 function deferRow(
-  base: ActReportRow, sessions: SessionSummary[], baseline: ActionBaseline,
+  base: ActReportRow, rec: ActionRecord, sessions: SessionSummary[], baseline: ActionBaseline,
   afterStart: Date, now: Date,
 ): ActReportRow {
+  const servers = Object.keys(baseline.metrics)
   const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
-  if (perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
+  if (servers.length === 0 || perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
   if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
 
   const estimatedForWindow = Math.floor(perSessionTokens * sessions.length)
-  const activeSessions = sessions.filter(sessionHasDeferralActive).length
+  const targetServers = new Set(servers)
+  // defer-enable/defer-threshold switch the mechanism for the whole observed MCP
+  // surface, so any deferred-tools inventory proves activation. AlwaysLoad is
+  // narrower: only inventory for one of the targeted servers proves that server
+  // actually left the upfront set. Another server becoming deferred is not enough.
+  const activeSessions = rec.kind === 'defer-alwaysload'
+    ? sessions.filter(session => sessionHasDeferredServer(session, targetServers)).length
+    : sessions.filter(sessionHasDeferralActive).length
   const confidence = confidenceFor(sessions.length, baseline, afterStart, now)
 
   if (activeSessions === 0) {
@@ -266,7 +282,7 @@ function deferRow(
       estimatedForWindow,
       status: 'reverted',
       confidence,
-      note: `not yet observed: deferral remains inactive in ${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; the client may not have restarted or the change may have been reverted`,
+      note: `not yet observed: ${rec.kind === 'defer-alwaysload' ? 'targeted server deferral' : 'deferral'} remains inactive in ${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; the client may not have restarted or the change may have been reverted`,
     }
   }
 
@@ -276,7 +292,7 @@ function deferRow(
     status: 'measured',
     realizedTokens: Math.floor(perSessionTokens * activeSessions),
     confidence,
-    note: `observed deferral active in ${activeSessions}/${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; derived from session evidence, not independently metered`,
+    note: `observed ${rec.kind === 'defer-alwaysload' ? 'targeted server deferral' : 'deferral'} active in ${activeSessions}/${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; derived from session evidence, not independently metered`,
   }
 }
 
@@ -432,7 +448,7 @@ async function computeRow(
   if (!baseline) return { ...base, note: 'not measurable: no baseline captured at apply time' }
 
   if (MCP_KINDS.has(rec.kind)) return mcpRow(base, rec, sessions, baseline, afterStart, now)
-  if (DEFER_KINDS.has(rec.kind)) return deferRow(base, sessions, baseline, afterStart, now)
+  if (DEFER_KINDS.has(rec.kind)) return deferRow(base, rec, sessions, baseline, afterStart, now)
   if (rec.kind in ARCHIVE_DEF_TOKENS) return archiveRow(base, rec, sessions, baseline, afterStart, now)
   if (rec.kind === 'claude-md-rule') return readEditRow(base, sessions, baseline, afterStart, now)
   if (rec.kind === 'shell-config') return { ...base, note: 'not measurable: bash result token sizes are not retained in the summary' }
