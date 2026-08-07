@@ -188,7 +188,7 @@ function ModelsUsage({
         {hasAccountingValue(accounting) ? (
           <DurableModelsTable accounting={accounting} />
         ) : (
-          <EmptyNote>No durable model usage in this range yet.</EmptyNote>
+          <EmptyNote>No model usage in this range yet.</EmptyNote>
         )}
       </Panel>
 
@@ -363,7 +363,7 @@ function ModelsTable({ rows, byTask, onAddAlias }: { rows: ModelReportRow[]; byT
   )
 }
 
-function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
+function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; byTask: boolean; onAddAlias: () => void }) {
   const groups = groupTaskRows(rows)
 
   return (
