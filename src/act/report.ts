@@ -32,16 +32,17 @@ const REPORT_MIN_AGE_DAYS = 3
 const MIN_POST_WINDOW_SESSIONS = 20
 const VOLUME_SHIFT_FACTOR = 2
 
-// Encode the epic's honest-accounting rules where they are seen: estimates are
+// Encode the honest-accounting rules where they are seen: estimates are
 // window-scaled so both columns share a scale, each kind measures only its own
 // metric, guard is correlation, and realized figures are rounded down.
 const HONEST_FOOTER =
   'Estimates are scaled to the measured window for comparability; the at-apply estimate is kept in --json. '
-  + 'MCP and archive realized figures are derived from per-session baselines times session counts, not independently measured. '
+  + 'MCP, defer and archive realized figures are derived from per-session baselines times observed session state, not independently metered token deltas. '
   + 'Each fix measures only its own metric; effects are never attributed across signals. '
   + 'Guard rows are correlation, not attribution. Realized numbers are rounded down.'
 
 const MCP_KINDS = new Set<ActionKind>(['mcp-remove', 'mcp-project-scope'])
+const DEFER_KINDS = new Set<ActionKind>(['defer-enable', 'defer-alwaysload', 'defer-threshold'])
 const ARCHIVE_DEF_TOKENS: Partial<Record<ActionKind, number>> = {
   'archive-skill': TOKENS_PER_SKILL_DEF,
   'archive-agent': TOKENS_PER_AGENT_DEF,
@@ -178,6 +179,27 @@ function countSessionsLoading(projects: ProjectSummary[], servers: string[]): nu
   return allSessions(projects).filter(s => sessionLoadsAny(s, servers)).length
 }
 
+// In Metrora's Claude parser, mcpInventory is populated only from
+// deferred_tools_delta attachments. The optimize detector uses this same
+// source-bound signal: inventory presence means tool deferral was active in
+// that session. It is evidence of observed post-action state, not proof that
+// the action alone caused the state transition.
+function sessionHasDeferralActive(s: SessionSummary): boolean {
+  return (s.mcpInventory?.length ?? 0) > 0
+}
+
+function observedMcpServers(projects: ProjectSummary[]): string[] {
+  const servers = new Set<string>()
+  for (const session of allSessions(projects)) {
+    for (const fqn of session.mcpInventory ?? []) {
+      const segment = fqn.split('__')[1]
+      if (segment) servers.add(segment)
+    }
+    for (const server of Object.keys(session.mcpBreakdown)) servers.add(server)
+  }
+  return [...servers]
+}
+
 // A kind whose realized effect is a token saving (everything except guard,
 // which is a dollars/yield correlation, and out-of-scope kinds).
 function isTokenKind(kind: ActionKind): boolean {
@@ -224,6 +246,38 @@ function mcpRow(
   }
   const savedSessions = Math.max(0, sessions.length - stillLoading)
   return { ...base, estimatedForWindow, status: 'measured', realizedTokens: Math.floor(perSessionTokens * savedSessions), confidence }
+}
+
+function deferRow(
+  base: ActReportRow, sessions: SessionSummary[], baseline: ActionBaseline,
+  afterStart: Date, now: Date,
+): ActReportRow {
+  const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
+  if (perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
+  if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
+
+  const estimatedForWindow = Math.floor(perSessionTokens * sessions.length)
+  const activeSessions = sessions.filter(sessionHasDeferralActive).length
+  const confidence = confidenceFor(sessions.length, baseline, afterStart, now)
+
+  if (activeSessions === 0) {
+    return {
+      ...base,
+      estimatedForWindow,
+      status: 'reverted',
+      confidence,
+      note: `not yet observed: deferral remains inactive in ${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; the client may not have restarted or the change may have been reverted`,
+    }
+  }
+
+  return {
+    ...base,
+    estimatedForWindow,
+    status: 'measured',
+    realizedTokens: Math.floor(perSessionTokens * activeSessions),
+    confidence,
+    note: `observed deferral active in ${activeSessions}/${sessions.length} post-apply session${sessions.length === 1 ? '' : 's'}; derived from session evidence, not independently metered`,
+  }
 }
 
 function archiveRow(
@@ -317,7 +371,7 @@ async function modelDefaultRow(
   const candidateModel = baseline.candidateModel ?? models[0]!
   const preApplyRate = baseline.metrics[candidateModel]
   if (preApplyRate === undefined) return { ...base, note: 'not measurable: invalid baseline' }
-  
+
   const mockProject: ProjectSummary = {
     project: 'mock',
     projectPath: 'mock',
@@ -327,16 +381,16 @@ async function modelDefaultRow(
     totalProxiedCostUSD: 0,
     sessions,
   }
-  
+
   const { aggregateModelStats } = await import('../compare-stats.js')
   const stats = aggregateModelStats([mockProject]).find(s => s.model === candidateModel)
-  
+
   if (!stats || stats.editTurns < 20) {
     return { ...base, note: `not measurable: < 20 edit turns for ${candidateModel} since apply` }
   }
-  
+
   const postApplyRate = stats.oneShotTurns / stats.editTurns
-  
+
   if (postApplyRate < preApplyRate - 0.05) {
     return {
       ...base,
@@ -378,6 +432,7 @@ async function computeRow(
   if (!baseline) return { ...base, note: 'not measurable: no baseline captured at apply time' }
 
   if (MCP_KINDS.has(rec.kind)) return mcpRow(base, rec, sessions, baseline, afterStart, now)
+  if (DEFER_KINDS.has(rec.kind)) return deferRow(base, sessions, baseline, afterStart, now)
   if (rec.kind in ARCHIVE_DEF_TOKENS) return archiveRow(base, rec, sessions, baseline, afterStart, now)
   if (rec.kind === 'claude-md-rule') return readEditRow(base, sessions, baseline, afterStart, now)
   if (rec.kind === 'shell-config') return { ...base, note: 'not measurable: bash result token sizes are not retained in the summary' }
@@ -584,8 +639,13 @@ function mcpServersFromApply(finding: WasteFinding): string[] {
   return []
 }
 
+function deferServers(finding: WasteFinding, ctx: CaptureCtx): string[] {
+  if (finding.apply?.kind === 'defer-alwaysload') return finding.apply.servers.map(server => server.server)
+  return observedMcpServers(ctx.projects)
+}
+
 function needsConfigBaseline(kind: ActionKind): boolean {
-  return MCP_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
+  return MCP_KINDS.has(kind) || DEFER_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
 }
 
 export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: CaptureCtx): ActionBaseline | undefined {
@@ -597,6 +657,19 @@ export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: Ca
 
   if (MCP_KINDS.has(kind)) {
     const servers = mcpServersFromApply(finding)
+    if (servers.length === 0) return undefined
+    const covByServer = new Map(ctx.coverage.map(c => [c.server, c]))
+    const metrics: Record<string, number> = {}
+    for (const server of servers) {
+      const cov = covByServer.get(server)
+      const tools = cov && cov.toolsAvailable > 0 ? cov.toolsAvailable : TOOLS_PER_MCP_SERVER
+      metrics[server] = tools * TOKENS_PER_MCP_TOOL
+    }
+    return { ...common, sessions: countSessionsLoading(ctx.projects, servers), metrics }
+  }
+
+  if (DEFER_KINDS.has(kind)) {
+    const servers = deferServers(finding, ctx)
     if (servers.length === 0) return undefined
     const covByServer = new Map(ctx.coverage.map(c => [c.server, c]))
     const metrics: Record<string, number> = {}
