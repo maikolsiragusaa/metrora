@@ -51,6 +51,8 @@ A record is identified economically by:
 
 Keep direct-provider pricing distinct from reseller, free, batch, priority, regional, subscription, or other billing routes when their economics differ.
 
+A provider redirect or retirement does not automatically create a new price interval for the retired pricing identity. End the old identity when its reviewed route stops applying; add a replacement price only under the pricing identity that Metrora can actually resolve from evidence.
+
 ## Time and history
 
 Choose `validFrom.basis` deliberately:
@@ -61,7 +63,7 @@ Choose `validFrom.basis` deliberately:
 
 Never rewrite an older interval just because the price changed. Add a new record with the same pricing identity and set `supersedes` to the immediately preceding record.
 
-If the exact start of an old price cannot be established, leave the earlier period uncovered rather than inventing a boundary.
+If the exact start of an old price cannot be established, leave the earlier period uncovered rather than inventing a boundary. A publication date is not automatically an exact pricing-effective timestamp.
 
 ## Rates and modifiers
 
@@ -100,6 +102,20 @@ Each record must keep enough provenance for another reviewer to reproduce the de
 - `source.revision` or digest when a pinned revision exists.
 
 Use `manual-reviewed` when the record depends on an explicit reviewed compatibility mapping rather than a provider's literal pricing model identifier.
+
+## Coverage tests
+
+Tests should protect economic behavior, not a catalog-size target. Prefer assertions for:
+
+- representative provider/model identities that must resolve;
+- exact effective/retirement boundaries;
+- `supersedes` chains when a price changes under the same identity;
+- cache, tool, fast-mode and threshold economics;
+- exclusions whose omission is intentional and documented.
+
+Do not use a fixed total record count as the acceptance criterion for catalog quality. A count can increase while coverage gets worse, or change legitimately when duplicate, superseded or unsupported records are corrected.
+
+Whenever the catalog changes, regenerate `docs/PRICING_HISTORY.md` in the same contribution and run `pricing:docs:check`. A catalog change whose generated book is stale is incomplete even if the pricing tests pass.
 
 ## Minimal record example
 
@@ -149,4 +165,5 @@ Before opening a pull request, verify that:
 - units are USD/token in JSON and render correctly per 1M in the generated book;
 - cache and tool charges match the provider's actual billing semantics;
 - unsupported components remain explicit gaps rather than approximations;
+- coverage tests describe actual reviewed records rather than planned additions;
 - the generated pricing history is committed with the catalog change.
