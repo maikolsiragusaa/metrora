@@ -1,4 +1,6 @@
-node_modules/
+# No trailing slash: linked worktrees may use a node_modules symlink, which the
+# directory-only pattern would not ignore.
+node_modules
 dist/
 *.tgz
 

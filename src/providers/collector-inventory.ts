@@ -34,7 +34,7 @@ export const CollectorInventoryEntryV1Schema = z.strictObject({
 export const CollectorInventoryV1Schema = z.strictObject({
   kind: z.literal(COLLECTOR_INVENTORY_KIND),
   version: z.literal(1),
-  entries: z.array(CollectorInventoryEntryV1Schema).length(38),
+  entries: z.array(CollectorInventoryEntryV1Schema).length(39),
 })
 
 export type CollectorInventoryEntryV1 = z.infer<typeof CollectorInventoryEntryV1Schema>
@@ -130,6 +130,7 @@ const entries = [
   priority('warp', 'src/providers/warp.ts', 'docs/providers/warp.md', 'lazy', 'sqlite-weighted-estimation', 2),
 
   pending('cline', 'src/providers/cline.ts', 'docs/providers/cline.md', 'core'),
+  pending('cline-cli', 'src/providers/cline-cli.ts', 'docs/providers/cline-cli.md', 'core'),
   pending('codebuff', 'src/providers/codebuff.ts', 'docs/providers/codebuff.md', 'core'),
   pending('codewhale', 'src/providers/codewhale.ts', 'docs/providers/codewhale.md', 'core'),
   pending('crush', 'src/providers/crush.ts', 'docs/providers/crush.md', 'lazy'),

@@ -12,6 +12,7 @@ For the architectural picture, see `../architecture.md`.
 |---|---|---|---|
 | [Claude](claude.md) | JSONL (no parser) | `src/providers/claude.ts` | none (covered indirectly) |
 | [Cline](cline.md) | JSON | `src/providers/cline.ts` | `tests/providers/cline.test.ts` |
+| [Cline CLI](cline-cli.md) | JSON | `src/providers/cline-cli.ts` | `tests/providers/cline-cli.test.ts` |
 | [Codebuff](codebuff.md) | JSON | `src/providers/codebuff.ts` | `tests/providers/codebuff.test.ts` |
 | [CodeWhale](codewhale.md) | JSON | `src/providers/codewhale.ts` | `tests/providers/codewhale.test.ts` |
 | [Codex](codex.md) | JSONL | `src/providers/codex.ts` | `tests/providers/codex.test.ts` |

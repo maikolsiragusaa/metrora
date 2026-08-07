@@ -8,9 +8,6 @@ import {
   HEALTHY_READ_EDIT_RATIO,
   TOKENS_PER_MCP_TOOL,
   TOOLS_PER_MCP_SERVER,
-  TOKENS_PER_SKILL_DEF,
-  TOKENS_PER_AGENT_DEF,
-  TOKENS_PER_COMMAND_DEF,
   READ_TOOL_NAMES,
   EDIT_TOOL_NAMES,
   aggregateMcpCoverage,
@@ -21,6 +18,8 @@ import {
 import { parseAllSessions } from '../parser.js'
 import { computeYield, type YieldSummary } from '../yield.js'
 import { defaultActionsDir, readRecords } from './journal.js'
+import { DEFER_KINDS, captureDeferBaseline, measureDeferAction } from './defer-report.js'
+import { ARCHIVE_DEF_TOKENS, HONEST_FOOTER, MCP_KINDS } from './report-policy.js'
 import { renderTable } from '../text-table.js'
 import { formatTokens } from '../format.js'
 import { formatCost } from '../currency.js'
@@ -31,22 +30,6 @@ const BASELINE_WINDOW_DAYS = 14
 const REPORT_MIN_AGE_DAYS = 3
 const MIN_POST_WINDOW_SESSIONS = 20
 const VOLUME_SHIFT_FACTOR = 2
-
-// Encode the epic's honest-accounting rules where they are seen: estimates are
-// window-scaled so both columns share a scale, each kind measures only its own
-// metric, guard is correlation, and realized figures are rounded down.
-const HONEST_FOOTER =
-  'Estimates are scaled to the measured window for comparability; the at-apply estimate is kept in --json. '
-  + 'MCP and archive realized figures are derived from per-session baselines times session counts, not independently measured. '
-  + 'Each fix measures only its own metric; effects are never attributed across signals. '
-  + 'Guard rows are correlation, not attribution. Realized numbers are rounded down.'
-
-const MCP_KINDS = new Set<ActionKind>(['mcp-remove', 'mcp-project-scope'])
-const ARCHIVE_DEF_TOKENS: Partial<Record<ActionKind, number>> = {
-  'archive-skill': TOKENS_PER_SKILL_DEF,
-  'archive-agent': TOKENS_PER_AGENT_DEF,
-  'archive-command': TOKENS_PER_COMMAND_DEF,
-}
 
 export type RealizedStatus = 'measured' | 'reverted' | 'not-measurable'
 
@@ -317,7 +300,7 @@ async function modelDefaultRow(
   const candidateModel = baseline.candidateModel ?? models[0]!
   const preApplyRate = baseline.metrics[candidateModel]
   if (preApplyRate === undefined) return { ...base, note: 'not measurable: invalid baseline' }
-  
+
   const mockProject: ProjectSummary = {
     project: 'mock',
     projectPath: 'mock',
@@ -327,16 +310,16 @@ async function modelDefaultRow(
     totalProxiedCostUSD: 0,
     sessions,
   }
-  
+
   const { aggregateModelStats } = await import('../compare-stats.js')
   const stats = aggregateModelStats([mockProject]).find(s => s.model === candidateModel)
-  
+
   if (!stats || stats.editTurns < 20) {
     return { ...base, note: `not measurable: < 20 edit turns for ${candidateModel} since apply` }
   }
-  
+
   const postApplyRate = stats.oneShotTurns / stats.editTurns
-  
+
   if (postApplyRate < preApplyRate - 0.05) {
     return {
       ...base,
@@ -378,6 +361,16 @@ async function computeRow(
   if (!baseline) return { ...base, note: 'not measurable: no baseline captured at apply time' }
 
   if (MCP_KINDS.has(rec.kind)) return mcpRow(base, rec, sessions, baseline, afterStart, now)
+  if (DEFER_KINDS.has(rec.kind)) {
+    const measured = measureDeferAction(rec, sessions, baseline)
+    return {
+      ...base,
+      ...measured,
+      confidence: measured.status === 'measured' || measured.status === 'reverted'
+        ? confidenceFor(sessions.length, baseline, afterStart, now)
+        : base.confidence,
+    }
+  }
   if (rec.kind in ARCHIVE_DEF_TOKENS) return archiveRow(base, rec, sessions, baseline, afterStart, now)
   if (rec.kind === 'claude-md-rule') return readEditRow(base, sessions, baseline, afterStart, now)
   if (rec.kind === 'shell-config') return { ...base, note: 'not measurable: bash result token sizes are not retained in the summary' }
@@ -585,7 +578,7 @@ function mcpServersFromApply(finding: WasteFinding): string[] {
 }
 
 function needsConfigBaseline(kind: ActionKind): boolean {
-  return MCP_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
+  return MCP_KINDS.has(kind) || DEFER_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
 }
 
 export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: CaptureCtx): ActionBaseline | undefined {
@@ -607,6 +600,8 @@ export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: Ca
     }
     return { ...common, sessions: countSessionsLoading(ctx.projects, servers), metrics }
   }
+
+  if (DEFER_KINDS.has(kind)) return captureDeferBaseline(finding, ctx)
 
   const defTokens = ARCHIVE_DEF_TOKENS[kind]
   if (defTokens !== undefined) {

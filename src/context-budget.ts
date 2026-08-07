@@ -1,6 +1,6 @@
 import { readdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { homedir } from 'os'
 
 import { readSessionFile } from './fs-utils.js'
@@ -60,8 +60,14 @@ async function countMcpTools(projectPath?: string): Promise<number> {
 }
 
 async function countSkills(projectPath?: string): Promise<number> {
-  const dirs = [join(homedir(), '.claude', 'skills')]
-  if (projectPath) dirs.push(join(projectPath, '.claude', 'skills'))
+  // Path identity matters here, not conceptual scope. When the project itself is
+  // the home directory, home and project skill roots are the same directory and
+  // must contribute once. resolve() also collapses harmless trailing-dot/slash
+  // spellings before the set comparison.
+  const dirs = [...new Set([
+    resolve(join(homedir(), '.claude', 'skills')),
+    ...(projectPath ? [resolve(join(projectPath, '.claude', 'skills'))] : []),
+  ])]
 
   let count = 0
   for (const dir of dirs) {
@@ -91,9 +97,13 @@ async function scanMemoryFiles(projectPath?: string): Promise<Array<{ name: stri
     paths.push({ path: join(projectPath, 'CLAUDE.local.md'), name: 'CLAUDE.local.md' })
   }
 
+  const seenPaths = new Set<string>()
   for (const { path, name } of paths) {
-    if (!existsSync(path)) continue
-    const content = await readSessionFile(path)
+    const canonicalPath = resolve(path)
+    if (seenPaths.has(canonicalPath)) continue
+    seenPaths.add(canonicalPath)
+    if (!existsSync(canonicalPath)) continue
+    const content = await readSessionFile(canonicalPath)
     if (content === null) continue
     files.push({ name, tokens: estimateTokens(content) })
   }
