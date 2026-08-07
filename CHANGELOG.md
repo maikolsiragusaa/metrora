@@ -2,26 +2,30 @@
 
 This file records Metrora-originated public changes. Required upstream provenance and licence notices are maintained separately in [`UPSTREAM.md`](UPSTREAM.md), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
-## Unreleased — current source line `1.0.0-rc.8`
+## Unreleased — current source line `1.0.0-rc.9`
 
-RC8 is the current source/pre-submission candidate. It is not yet a Microsoft Store submission, certification or publication.
+RC9 is the current source/pre-submission candidate. It is not yet a Microsoft Store submission, certification or publication.
 
-### Windows Store readiness
+### Accounting reconciliation
 
-- Added the assigned Microsoft Store AppX identity and a non-publishing x64 Store-package workflow with exact artifact/source binding.
-- Added bounded local AppX acceptance that test-signs only a copy, verifies launch/local collection/no-external-Node behavior and removes the temporary package/certificate/private key afterward.
-- Added Windows PowerShell 5.1-compatible physical-test platform detection.
-- Reconciled persisted Workspace endpoint software metadata to the current packaged Metrora/collector version without replacing endpoint identity, membership or evidence history.
-- Removed legacy product/version wording from the Store-facing About surface while retaining required upstream licence/provenance notices in their dedicated locations.
-- Clarified the distinction between product SemVer, desktop build version and Microsoft Store AppX package identity version.
+- Made the desktop Models surface lead with the same durable historical model accounting used by Home, while keeping call-level/token/task information from surviving source sessions as explicitly narrower detail.
+- Kept source-only task attribution available without presenting it as complete lifetime history after original session files expire.
+- Made Overview expose any model-history tail omitted by presentation-sized daily top-N lists as an explicit `Other models` remainder so the table reconciles to the durable daily headline instead of silently dropping spend or calls.
+- Preserved provider/session parsing, deduplication and historical pricing authority; the reconciliation does not force Metrora totals to match a different product's current-price valuation.
 
-### Public identity and local paths
+### Windows Store runtime
 
-- Made Metrora the canonical sync command/documentation surface while retaining the v1 inherited discovery route only as a compatibility wire identifier.
-- Removed inherited developer deployment identifiers from public sync documentation.
-- Made fresh config/sync state use canonical Metrora roots while adopting an existing Qovrion/CodeBurn root in place when necessary to avoid stranding user state.
-- Made sync credential identity Metrora-first with bounded legacy keychain adoption.
-- Hardened the existing public-identity check so legacy branding/version text cannot reappear in the Store-facing About surface.
+- Made the packaged desktop CLI self-contained at the JavaScript runtime boundary instead of shipping a loose dependency tree whose scoped npm path names can be rewritten by AppX packaging.
+- Strengthened the existing Store-package workflow to execute the CLI from the extracted AppX layout with the packaged Electron runtime, verify read-only accounting JSON startup, reject loose CLI `node_modules`, and reject percent-encoded scoped-package paths.
+- Kept the Store candidate unsigned, non-publishing and bound to the existing assigned Store identity.
+
+### RC8 foundation retained
+
+- Retained the assigned Microsoft Store AppX identity and non-publishing x64 Store-package workflow with exact artifact/source binding.
+- Retained bounded local AppX acceptance that test-signs only a copy, verifies launch/local collection/no-external-Node behavior and removes the temporary package/certificate/private key afterward.
+- Retained Windows PowerShell 5.1-compatible physical-test platform detection.
+- Retained persisted Workspace endpoint software reconciliation to the current packaged Metrora/collector version without replacing endpoint identity, membership or evidence history.
+- Retained Store-facing product identity cleanup, canonical Metrora local paths, sync credential adoption and public-identity regression checks introduced on the RC8 source line.
 
 ## `1.0.0-rc.7` — published unsigned Windows technical preview
 
