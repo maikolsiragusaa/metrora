@@ -540,7 +540,7 @@ function buildProviders(providers: ProviderCost[]): Record<string, number> {
 function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['current']['providerDetails'] {
   return providers
     .filter(p => p.cost >= 0)
-    .map(p => ({ id: p.name, label: p.displayName, cost }))
+    .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
 }
 
 function buildHistory(daily: DailyHistoryEntry[] | undefined, timeline?: GranularHistory): MenubarPayload['history'] {
@@ -611,7 +611,7 @@ export type BreakdownArrays = {
   mcpServers?: MenubarPayload['current']['mcpServers']
   /// Optional rollup of per-model and per-provider local-model savings.
   /// Computed by the CLI from the parsed projects (we have raw token
-  /// + baseline info there, not in PeriodData). When omitted, the
+  /// + baseline info there, not in `PeriodData`). When omitted, the
   /// menubar payload defaults to an empty savings block — keeping the
   /// schema stable for consumers that don't care about local savings.
   localModelSavings?: LocalModelSavings
