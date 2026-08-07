@@ -14,7 +14,7 @@ import {
   sliceDayToProvider,
 } from './durable-project-reconciliation.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
-import { aggregateModelTotals } from './model-breakdown.js'
+import { enrichModelsWithObservedPerformance } from './model-performance.js'
 import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
@@ -446,27 +446,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     (sum, r) => sum + (r.provider === 'codex' && r.credits != null ? r.credits : 0),
     0,
   )
-
-  // Performance is deliberately an available-source enrichment, never another
-  // accounting authority. The durable row keeps its historical cost/calls/token
-  // totals; active timing is attached only when surviving source evidence has a
-  // positive active duration and generated-token count. This matches the desktop
-  // promise that an unavailable speed metric renders as — rather than a guess.
-  const performanceByModel = new Map(
-    Object.entries(aggregateModelTotals(scanProjects))
-      .filter(([, totals]) => totals.activeDurationMs > 0 && totals.activeGeneratedTokens > 0)
-      .map(([name, totals]) => [getShortModelName(name), {
-        activeDurationMs: totals.activeDurationMs,
-        activeGeneratedTokens: totals.activeGeneratedTokens,
-      }] as const),
-  )
-  if (performanceByModel.size > 0) {
-    currentData.models = currentData.models.map(model => {
-      const performance = performanceByModel.get(getShortModelName(model.name))
-      return performance ? { ...model, ...performance } : model
-    })
-  }
-
+  currentData.models = enrichModelsWithObservedPerformance(currentData.models, scanProjects)
   // PROVIDERS
   // For .all: enumerate every provider with cost across the period (from cache) + installed-but-zero.
   // For specific: just this single provider with its scoped cost.
