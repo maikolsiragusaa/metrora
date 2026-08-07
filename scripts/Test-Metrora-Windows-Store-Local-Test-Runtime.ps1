@@ -69,6 +69,41 @@ try {
   if (-not $rejected) {
     throw 'Store context key validation accepted an extra field'
   }
+
+  $artifactManifest = [pscustomobject]@{
+    schemaVersion = 1
+    sourceCommit = ('a' * 40)
+    artifactName = 'Metrora-1.0.0-rc.9-Windows-Store-x64.appx'
+    sha256 = ('b' * 64)
+    packageVersion = '1.0.0.0'
+    architecture = 'x64'
+    signed = $false
+    submitted = $false
+    published = $false
+    packagedCliSmoke = 'pass'
+    cliRuntimeContainer = 'asar'
+    looseCliNodeModules = $false
+    futureAdditiveField = 'allowed'
+  }
+  Assert-MetroraStoreLocalContextKeys $artifactManifest @(
+    'schemaVersion', 'sourceCommit', 'artifactName', 'sha256', 'packageVersion',
+    'architecture', 'signed', 'submitted', 'published'
+  ) 'Store artifact manifest'
+
+  $invalidArtifact = $artifactManifest | ConvertTo-Json -Depth 4 | ConvertFrom-Json
+  $invalidArtifact.looseCliNodeModules = $true
+  $rejectedArtifact = $false
+  try {
+    Assert-MetroraStoreLocalContextKeys $invalidArtifact @(
+      'schemaVersion', 'sourceCommit', 'artifactName', 'sha256', 'packageVersion',
+      'architecture', 'signed', 'submitted', 'published'
+    ) 'Store artifact manifest'
+  } catch {
+    $rejectedArtifact = $true
+  }
+  if (-not $rejectedArtifact) {
+    throw 'Store artifact manifest validation accepted loose CLI node_modules'
+  }
 }
 finally {
   if (Test-Path -LiteralPath $temporary) {
