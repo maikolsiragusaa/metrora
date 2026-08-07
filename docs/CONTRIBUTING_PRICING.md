@@ -21,6 +21,8 @@ The JSON stores USD **per token**. Provider pages commonly publish USD per 1M to
 
 For example, `$3 / 1M` becomes `0.000003`.
 
+Reviewed models that are deliberately not representable yet, or whose usage evidence is not safe to settle yet, are tracked in [`PRICING_COVERAGE_GAPS.md`](PRICING_COVERAGE_GAPS.md). Check that file before inventing a workaround for a missing model.
+
 ## Evidence bar
 
 Prefer evidence in this order:
@@ -33,6 +35,8 @@ Prefer evidence in this order:
 A current pricing page can establish a current `first-observed` record. It does not, by itself, justify backdating that price.
 
 Do not use search snippets, AI-generated values, reseller prices, or an unpinned rolling table as sole evidence for historical pricing.
+
+Community discussion and social posts can help discover stale integrations, route differences or undocumented edge cases, but they are corroboration and discovery signals rather than pricing authority unless a stronger source independently establishes the number.
 
 ## Pricing identity
 
