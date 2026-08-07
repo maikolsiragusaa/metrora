@@ -294,7 +294,7 @@ export type MenubarPayload = {
         date: string
         models: Array<{ name: string; cost: number; savingsUSD: number }>
       }>
-    }
+    }>
     modelEfficiency: Array<{
       name: string
       costPerEdit: number | null
