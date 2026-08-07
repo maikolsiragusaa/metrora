@@ -24,7 +24,20 @@ export type PeriodData = {
   /// non-menubar PeriodData producers don't have to compute it.
   codexCredits?: number
   categories: Array<{ name: string; cost: number; savingsUSD: number; turns: number; editTurns: number; oneShotTurns: number }>
-  models: Array<{ name: string; cost: number; savingsUSD: number; calls: number; estimatedCostUSD?: number }>
+  /// Token fields are add-only for compatibility with older PeriodData fixtures
+  /// and producers. Durable day-backed producers populate all four; callers must
+  /// treat their absence as unavailable detail, never as zero usage.
+  models: Array<{
+    name: string
+    cost: number
+    savingsUSD: number
+    calls: number
+    estimatedCostUSD?: number
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }>
   /// Models with usage in the period whose pricing lookup fails against the
   /// current tables (#638): their calls contribute $0 to `cost`. Optional so
   /// PeriodData producers that predate the field keep compiling.
@@ -134,12 +147,27 @@ export type LocalModelSavings = {
   byProvider: Array<{ name: string; calls: number; savingsUSD: number }>
 }
 
+export type ModelAccountingRow = {
+  name: string
+  cost: number
+  savingsUSD: number
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** False means an older source could preserve cost/calls but not token split. */
+  tokenDetail: boolean
+}
+
 export type ModelAccounting = {
   /** Full, untruncated model rows from the same PeriodData authority as current.cost. */
-  rows: Array<{ name: string; cost: number; savingsUSD: number; calls: number }>
+  rows: ModelAccountingRow[]
   /** Historical total that cannot be assigned to a retained model without guessing. */
   gap: { cost: number; savingsUSD: number; calls: number }
   coverage: { cost: number; calls: number }
+  /** Share of represented model accounting that also has durable token detail. */
+  tokenCoverage: { cost: number; calls: number }
 }
 
 export type DeviceSummary = {
@@ -240,7 +268,7 @@ export type MenubarPayload = {
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
     /// Provider identity alongside the `providers` map: `id` is the internal
-    /// provider name (round-trips as `--provider`), `label` the display name.
+    /// provider name (round-trips as --provider), `label` the display name.
     /// The `providers` map keys stay lowercased display names for compatibility.
     providerDetails: Array<{ id: string; label: string; cost: number }>
     topProjects: Array<{
@@ -258,7 +286,7 @@ export type MenubarPayload = {
         date: string
         models: Array<{ name: string; cost: number; savingsUSD: number }>
       }>
-    }>
+    }
     modelEfficiency: Array<{
       name: string
       costPerEdit: number | null
@@ -285,7 +313,7 @@ export type MenubarPayload = {
     /// for privacy; distinct sessions and total edit calls per file.
     topReworkedFiles: Array<{ path: string; sessions: number; edits: number }>
     /// Share (0-1) of cost-bearing calls that resolved a price.
-    /// null when not computable (no scan data on this path) — "unknown" must
+    /// null when not computable (no scan data on this path) — unknown must
     /// never render as 100% coverage.
     pricingCoverage: number | null
     retryTax: {
@@ -381,19 +409,51 @@ function buildTopActivities(categories: PeriodData['categories']): MenubarPayloa
   }))
 }
 
-function mergedModelRows(models: PeriodData['models']): Array<{ name: string; cost: number; calls: number; savingsUSD: number; estimatedCostUSD: number }> {
+type MergedModelRow = {
+  name: string
+  cost: number
+  calls: number
+  savingsUSD: number
+  estimatedCostUSD: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  tokenDetail: boolean
+}
+
+function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
   // Day entries key models by the raw provider id (day-aggregator), so resolve
-  // display names here — the menubar shows "Kimi K3" rather than "k3". Ids that
+  // display names here — the menubar shows Kimi K3 rather than k3. Ids that
   // collapse to one display name (e.g. k3 and kimi-k3) merge into a single row.
-  const merged = new Map<string, { cost: number; calls: number; savingsUSD: number; estimatedCostUSD: number }>()
+  const merged = new Map<string, Omit<MergedModelRow, 'name'>>()
   for (const m of models) {
     if (m.name === SYNTHETIC_MODEL_NAME) continue
     const name = getShortModelName(m.name)
-    const acc = merged.get(name) ?? { cost: 0, calls: 0, savingsUSD: 0, estimatedCostUSD: 0 }
+    const hasTokenDetail = [m.inputTokens, m.outputTokens, m.cacheReadTokens, m.cacheWriteTokens]
+      .every(value => typeof value === 'number' && Number.isFinite(value))
+    const acc = merged.get(name) ?? {
+      cost: 0,
+      calls: 0,
+      savingsUSD: 0,
+      estimatedCostUSD: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      tokenDetail: true,
+    }
     acc.cost += m.cost
     acc.calls += m.calls
     acc.savingsUSD += m.savingsUSD ?? 0
     acc.estimatedCostUSD += m.estimatedCostUSD ?? 0
+    acc.tokenDetail = acc.tokenDetail && hasTokenDetail
+    if (hasTokenDetail) {
+      acc.inputTokens += m.inputTokens!
+      acc.outputTokens += m.outputTokens!
+      acc.cacheReadTokens += m.cacheReadTokens!
+      acc.cacheWriteTokens += m.cacheWriteTokens!
+    }
     merged.set(name, acc)
   }
   return [...merged.entries()]
@@ -404,14 +464,34 @@ function mergedModelRows(models: PeriodData['models']): Array<{ name: string; co
 function buildTopModels(models: PeriodData['models']): MenubarPayload['current']['topModels'] {
   return mergedModelRows(models)
     .slice(0, TOP_MODELS_LIMIT)
-    .map(row => ({ ...row, savingsBaselineModel: '' }))
+    .map(row => ({
+      name: row.name,
+      cost: row.cost,
+      calls: row.calls,
+      savingsUSD: row.savingsUSD,
+      estimatedCostUSD: row.estimatedCostUSD,
+      savingsBaselineModel: '',
+    }))
 }
 
 function buildModelAccounting(models: PeriodData['models'], totalCost: number, totalCalls: number): ModelAccounting {
-  const rows = mergedModelRows(models).map(({ name, cost, savingsUSD, calls }) => ({ name, cost, savingsUSD, calls }))
+  const merged = mergedModelRows(models)
+  const rows: ModelAccountingRow[] = merged.map(row => ({
+    name: row.name,
+    cost: row.cost,
+    savingsUSD: row.savingsUSD,
+    calls: row.calls,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+    tokenDetail: row.tokenDetail,
+  }))
   const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
   const representedSavings = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
   const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
+  const tokenDetailedCost = rows.reduce((sum, row) => sum + (row.tokenDetail ? row.cost : 0), 0)
+  const tokenDetailedCalls = rows.reduce((sum, row) => sum + (row.tokenDetail ? row.calls : 0), 0)
   const gapCost = Math.max(0, totalCost - representedCost)
   const gapCalls = Math.max(0, totalCalls - representedCalls)
   const totalSavings = models.reduce((sum, model) => sum + (model.savingsUSD ?? 0), 0)
@@ -422,6 +502,10 @@ function buildModelAccounting(models: PeriodData['models'], totalCost: number, t
     coverage: {
       cost: totalCost > 1e-9 ? Math.max(0, Math.min(1, representedCost / totalCost)) : 1,
       calls: totalCalls > 0 ? Math.max(0, Math.min(1, representedCalls / totalCalls)) : 1,
+    },
+    tokenCoverage: {
+      cost: representedCost > 1e-9 ? Math.max(0, Math.min(1, tokenDetailedCost / representedCost)) : 1,
+      calls: representedCalls > 0 ? Math.max(0, Math.min(1, tokenDetailedCalls / representedCalls)) : 1,
     },
   }
 }
@@ -456,7 +540,7 @@ function buildProviders(providers: ProviderCost[]): Record<string, number> {
 function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['current']['providerDetails'] {
   return providers
     .filter(p => p.cost >= 0)
-    .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
+    .map(p => ({ id: p.name, label: p.displayName, cost }))
 }
 
 function buildHistory(daily: DailyHistoryEntry[] | undefined, timeline?: GranularHistory): MenubarPayload['history'] {
@@ -527,7 +611,7 @@ export type BreakdownArrays = {
   mcpServers?: MenubarPayload['current']['mcpServers']
   /// Optional rollup of per-model and per-provider local-model savings.
   /// Computed by the CLI from the parsed projects (we have raw token
-  /// + baseline info there, not in `PeriodData`). When omitted, the
+  /// + baseline info there, not in PeriodData). When omitted, the
   /// menubar payload defaults to an empty savings block — keeping the
   /// schema stable for consumers that don't care about local savings.
   localModelSavings?: LocalModelSavings
