@@ -18,7 +18,7 @@ The sessions root follows the CLI's override chain:
 
 A directory is considered a CLI session only when it contains `<session-id>/<session-id>.json`. `probeRoots()` exposes the resolved sessions directory to `metrora doctor`.
 
-## Storage format
+## Storage format and cache authority
 
 ```text
 sessions/<session-id>/
@@ -27,6 +27,10 @@ sessions/<session-id>/
 ```
 
 The session file carries metadata such as the session id, model, workspace/cwd, timestamps and a parent-session `metadata.usage` rollup. The messages file carries user/assistant messages; assistant messages can expose a `metrics` block with input, output, cache-read, cache-write and cost values.
+
+When `<session-id>.messages.json` exists, it is the `SessionSource.path` and therefore the cache/freshness fingerprint authority. This matters because the CLI can append new assistant metrics while the metadata file remains unchanged. A rollup-only session with no messages file keeps `<session-id>.json` as its source authority.
+
+The parser still reads the metadata sibling for session identity, workspace and rollup information. If a recorded absolute `messages_path` has gone stale because a session directory moved, the co-located file wins.
 
 Each assistant metrics block becomes one Metrora call. The deduplication key is `cline-cli:<session-id>:<message-id>`.
 
@@ -54,13 +58,18 @@ The original source content is not persisted merely to support these summaries.
 
 ## Boundaries and deduplication
 
-The VS Code Cline provider scans `tasks/<id>/ui_messages.json`; Cline CLI scans `sessions/<id>/<id>.json`. Keeping the collectors separate prevents a CLI-format change from altering the shared Cline-family parser.
+The VS Code Cline provider scans `tasks/<id>/ui_messages.json`; Cline CLI scans the separate `sessions/<id>/` tree. Keeping the collectors separate prevents a CLI-format change from altering the shared Cline-family parser.
 
 If duplicate CLI session directories reuse the same internal session and message ids, the shared dedup set suppresses the duplicate message calls. The rollup fallback is also disabled whenever per-message metrics were present, even if every message call was deduplicated, preventing a duplicate copy from reappearing through the rollup.
+
+## Signed sharing boundary
+
+Registration as a local collector does not make Cline CLI eligible for signed Workspace measurements. Its collector inventory entry remains fail-closed with signed sharing withheld until a separate path-specific provenance, privacy and fixture review approves it.
 
 ## When fixing a bug here
 
 1. Reproduce with a minimal `<id>.json` plus `<id>.messages.json` fixture.
-2. Preserve the distinction between reported/metered and estimated cost.
-3. Check duplicate session ids before changing rollup behavior.
-4. Run `tests/providers/cline-cli.test.ts` plus provider registry/parser regressions.
+2. Preserve the messages file as fingerprint authority whenever it exists.
+3. Preserve the distinction between reported/metered and estimated cost.
+4. Check duplicate session ids before changing rollup behavior.
+5. Run `tests/providers/cline-cli.test.ts` plus provider registry/parser regressions.
