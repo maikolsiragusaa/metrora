@@ -70,6 +70,30 @@ function Assert-MetroraStoreLocalContextKeys($Value, [string[]]$Expected, [strin
   }
   $actual = @($Value.PSObject.Properties.Name | Sort-Object)
   $wanted = @($Expected | Sort-Object)
+
+  if ($Label -eq 'Store artifact manifest') {
+    $missing = @($wanted | Where-Object { $actual -notcontains $_ })
+    if ($missing.Count -gt 0) {
+      throw "$Label fields are invalid"
+    }
+
+    $runtimeFields = @('packagedCliSmoke', 'cliRuntimeContainer', 'looseCliNodeModules')
+    $runtimePresent = @($runtimeFields | Where-Object { $actual -contains $_ })
+    if ($runtimePresent.Count -ne 0 -and $runtimePresent.Count -ne $runtimeFields.Count) {
+      throw "$Label fields are invalid"
+    }
+    if ($runtimePresent.Count -eq $runtimeFields.Count) {
+      if (
+        [string]$Value.packagedCliSmoke -ne 'pass' -or
+        [string]$Value.cliRuntimeContainer -ne 'asar' -or
+        [bool]$Value.looseCliNodeModules
+      ) {
+        throw 'Store artifact manifest packaged CLI authority is invalid'
+      }
+    }
+    return
+  }
+
   if (($actual -join [char]0) -ne ($wanted -join [char]0)) {
     throw "$Label fields are invalid"
   }
