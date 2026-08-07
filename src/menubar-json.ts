@@ -102,15 +102,13 @@ export type ProviderCost = {
 import type { OptimizeResult } from './optimize.js'
 import { getCurrency } from './currency.js'
 import type { GranularHistory } from './granular-history.js'
-import { getShortModelName } from './models.js'
+import { buildModelAccounting, buildTopModels } from './model-accounting.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
 
 const TOP_ACTIVITIES_LIMIT = 20
-const TOP_MODELS_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
 const HISTORY_DAYS_LIMIT = 365
-const SYNTHETIC_MODEL_NAME = '<synthetic>'
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
@@ -415,119 +413,6 @@ function buildTopActivities(categories: PeriodData['categories']): MenubarPayloa
     turns: cat.turns,
     oneShotRate: oneShotRateFor(cat.editTurns, cat.oneShotTurns),
   }))
-}
-
-type MergedModelRow = {
-  name: string
-  cost: number
-  calls: number
-  savingsUSD: number
-  estimatedCostUSD: number
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  tokenDetail: boolean
-  activeDurationMs: number
-  activeGeneratedTokens: number
-}
-
-function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
-  // Day entries key models by the raw provider id (day-aggregator), so resolve
-  // display names here — the menubar shows Kimi K3 rather than k3. Ids that
-  // collapse to one display name (e.g. k3 and kimi-k3) merge into a single row.
-  const merged = new Map<string, Omit<MergedModelRow, 'name'>>()
-  for (const m of models) {
-    if (m.name === SYNTHETIC_MODEL_NAME) continue
-    const name = getShortModelName(m.name)
-    const hasTokenDetail = [m.inputTokens, m.outputTokens, m.cacheReadTokens, m.cacheWriteTokens]
-      .every(value => typeof value === 'number' && Number.isFinite(value))
-    const acc = merged.get(name) ?? {
-      cost: 0,
-      calls: 0,
-      savingsUSD: 0,
-      estimatedCostUSD: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      tokenDetail: true,
-      activeDurationMs: 0,
-      activeGeneratedTokens: 0,
-    }
-    acc.cost += m.cost
-    acc.calls += m.calls
-    acc.savingsUSD += m.savingsUSD ?? 0
-    acc.estimatedCostUSD += m.estimatedCostUSD ?? 0
-    acc.tokenDetail = acc.tokenDetail && hasTokenDetail
-    if (hasTokenDetail) {
-      acc.inputTokens += m.inputTokens!
-      acc.outputTokens += m.outputTokens!
-      acc.cacheReadTokens += m.cacheReadTokens!
-      acc.cacheWriteTokens += m.cacheWriteTokens!
-    }
-    if (typeof m.activeDurationMs === 'number' && Number.isFinite(m.activeDurationMs) && m.activeDurationMs > 0
-      && typeof m.activeGeneratedTokens === 'number' && Number.isFinite(m.activeGeneratedTokens) && m.activeGeneratedTokens > 0) {
-      acc.activeDurationMs += m.activeDurationMs
-      acc.activeGeneratedTokens += m.activeGeneratedTokens
-    }
-    merged.set(name, acc)
-  }
-  return [...merged.entries()]
-    .sort(([, a], [, b]) => b.cost - a.cost)
-    .map(([name, data]) => ({ name, ...data }))
-}
-
-function buildTopModels(models: PeriodData['models']): MenubarPayload['current']['topModels'] {
-  return mergedModelRows(models)
-    .slice(0, TOP_MODELS_LIMIT)
-    .map(row => ({
-      name: row.name,
-      cost: row.cost,
-      calls: row.calls,
-      savingsUSD: row.savingsUSD,
-      estimatedCostUSD: row.estimatedCostUSD,
-      savingsBaselineModel: '',
-    }))
-}
-
-function buildModelAccounting(models: PeriodData['models'], totalCost: number, totalCalls: number): ModelAccounting {
-  const merged = mergedModelRows(models)
-  const rows: ModelAccountingRow[] = merged.map(row => ({
-    name: row.name,
-    cost: row.cost,
-    savingsUSD: row.savingsUSD,
-    calls: row.calls,
-    inputTokens: row.inputTokens,
-    outputTokens: row.outputTokens,
-    cacheReadTokens: row.cacheReadTokens,
-    cacheWriteTokens: row.cacheWriteTokens,
-    tokenDetail: row.tokenDetail,
-    ...(row.activeDurationMs > 0 && row.activeGeneratedTokens > 0
-      ? { activeDurationMs: row.activeDurationMs, activeGeneratedTokens: row.activeGeneratedTokens }
-      : {}),
-  }))
-  const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
-  const representedSavings = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
-  const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
-  const tokenDetailedCost = rows.reduce((sum, row) => sum + (row.tokenDetail ? row.cost : 0), 0)
-  const tokenDetailedCalls = rows.reduce((sum, row) => sum + (row.tokenDetail ? row.calls : 0), 0)
-  const gapCost = Math.max(0, totalCost - representedCost)
-  const gapCalls = Math.max(0, totalCalls - representedCalls)
-  const totalSavings = models.reduce((sum, model) => sum + (model.savingsUSD ?? 0), 0)
-  const gapSavings = Math.max(0, totalSavings - representedSavings)
-  return {
-    rows,
-    gap: { cost: gapCost > 1e-9 ? gapCost : 0, savingsUSD: gapSavings > 1e-9 ? gapSavings : 0, calls: gapCalls },
-    coverage: {
-      cost: totalCost > 1e-9 ? Math.max(0, Math.min(1, representedCost / totalCost)) : 1,
-      calls: totalCalls > 0 ? Math.max(0, Math.min(1, representedCalls / totalCalls)) : 1,
-    },
-    tokenCoverage: {
-      cost: representedCost > 1e-9 ? Math.max(0, Math.min(1, tokenDetailedCost / representedCost)) : 1,
-      calls: representedCalls > 0 ? Math.max(0, Math.min(1, tokenDetailedCalls / representedCalls)) : 1,
-    },
-  }
 }
 
 function buildOptimize(optimize: OptimizeResult | null): MenubarPayload['optimize'] {
