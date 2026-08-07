@@ -578,7 +578,7 @@ export function isProxiedPath(cwd: string | undefined | null): boolean {
 /// (menubar) that re-reads config could serve attribution from a stale set.
 export function getProxyPathsConfigHash(): string {
   if (userProxyPaths.length === 0) return ''
-  return [...userProxyPaths].sort().join('\u0002')
+  return [...userProxyPaths].sort().join('')
 }
 
 function resolveAlias(model: string): string {
