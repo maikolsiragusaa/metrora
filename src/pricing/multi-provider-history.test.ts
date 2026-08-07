@@ -56,7 +56,7 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       ['mistral', 'mistral-medium-3.5'],
       ['openai', 'gpt-5.3-codex'],
       ['openai', 'gpt-4.1'],
-      ['anthropic', 'claude-opus-3'],
+      ['anthropic', 'claude-3-opus'],
       ['anthropic', 'claude-opus-4-1'],
       ['zai', 'glm-5p1'],
     ]) {
