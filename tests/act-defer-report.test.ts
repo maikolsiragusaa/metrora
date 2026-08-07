@@ -30,7 +30,7 @@ async function writeJournal(records: ActionRecord[]): Promise<string> {
   return actionsDir
 }
 
-function session(id: string, active: boolean): Session {
+function session(id: string, active: boolean, server = 'everything'): Session {
   return {
     sessionId: id,
     project: 'app',
@@ -47,12 +47,12 @@ function session(id: string, active: boolean): Session {
     turns: [],
     modelBreakdown: {},
     toolBreakdown: {},
-    mcpBreakdown: active ? {} : { everything: { calls: 1 } },
+    mcpBreakdown: active ? {} : { [server]: { calls: 1 } },
     bashBreakdown: {},
     categoryBreakdown: {} as Session['categoryBreakdown'],
     skillBreakdown: {},
     subagentBreakdown: {},
-    ...(active ? { mcpInventory: ['mcp__everything__sum'] } : {}),
+    ...(active ? { mcpInventory: [`mcp__${server}__sum`] } : {}),
   }
 }
 
@@ -68,7 +68,7 @@ function project(sessions: Session[]): ProjectSummary {
   }
 }
 
-function deferRecord(kind: ActionRecord['kind'] = 'defer-enable'): ActionRecord {
+function deferRecord(kind: ActionRecord['kind'] = 'defer-enable', metrics: Record<string, number> = { everything: 4000 }): ActionRecord {
   const at = daysAgo(10)
   return {
     id: `defer-${kind}`,
@@ -83,7 +83,7 @@ function deferRecord(kind: ActionRecord['kind'] = 'defer-enable'): ActionRecord 
       capturedAt: at,
       estimatedTokens: 40_000,
       sessions: 5,
-      metrics: { everything: 4000 },
+      metrics,
     },
   }
 }
@@ -116,6 +116,37 @@ describe('act report defer evidence', () => {
     expect(row.realizedTokens).toBe(0)
     expect(row.note).toMatch(/not yet observed/)
     expect(report.totalRealizedTokens).toBe(0)
+  })
+
+  it('requires the targeted server to be observed for defer-alwaysload', async () => {
+    const record = deferRecord('defer-alwaysload', { 'heavy-server': 4800 })
+    const actionsDir = await writeJournal([record])
+    const sessions = [
+      session('other-only', true, 'other-server'),
+      session('target', true, 'heavy-server'),
+      session('off', false, 'heavy-server'),
+    ]
+
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
+    const row = report.rows[0]!
+
+    expect(row.status).toBe('measured')
+    expect(row.estimatedForWindow).toBe(14_400)
+    expect(row.realizedTokens).toBe(4_800)
+    expect(row.note).toMatch(/targeted server deferral active in 1\/3/)
+  })
+
+  it('does not treat another deferred server as evidence for defer-alwaysload', async () => {
+    const record = deferRecord('defer-alwaysload', { 'heavy-server': 4800 })
+    const actionsDir = await writeJournal([record])
+    const sessions = [session('other-a', true, 'other-server'), session('other-b', true, 'another-server')]
+
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
+    const row = report.rows[0]!
+
+    expect(row.status).toBe('reverted')
+    expect(row.realizedTokens).toBe(0)
+    expect(row.note).toMatch(/targeted server deferral remains inactive/)
   })
 
   it('remains not measurable when the action predates baseline capture support', async () => {
@@ -151,7 +182,7 @@ describe('defer baseline capture', () => {
     } satisfies WasteFinding
 
     const baseline = captureBaseline(finding, 'defer-alwaysload', {
-      projects: [project([session('loading', false), session('active', true)])],
+      projects: [project([session('loading', false, 'heavy-server'), session('active', true, 'heavy-server')])],
       coverage,
       windowDays: 14,
       now: NOW,
