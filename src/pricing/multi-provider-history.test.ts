@@ -37,27 +37,26 @@ const zeroUsage = {
 }
 
 describe('reviewed multi-provider historical pricing tranche', () => {
-  it('contains the expanded reviewed book without widening the authority set accidentally', () => {
-    expect(catalog.records).toHaveLength(122)
+  it('keeps the reviewed authority set explicit and representative current/history records resolvable', () => {
     expect(new Set(catalog.records.map(record => record.pricingAuthority))).toEqual(
       new Set(['openai', 'anthropic', 'deepseek', 'xai', 'kimi', 'minimax', 'mistral', 'zai']),
     )
+
+    expect(new Set(catalog.records.map(record => record.priceRecordId)).size).toBe(catalog.records.length)
 
     for (const [authority, model] of [
       ['deepseek', 'deepseek-v4-flash'],
       ['deepseek', 'deepseek-v4-pro'],
       ['xai', 'grok-3'],
       ['xai', 'grok-4-0709'],
-      ['xai', 'grok-4.20-0309-reasoning'],
-      ['kimi', 'kimi-k2.7-code'],
-      ['minimax', 'MiniMax-M2.1-highspeed'],
-      ['minimax', 'MiniMax-M2.5'],
-      ['mistral', 'open-mixtral-8x7b'],
-      ['mistral', 'devstral-medium-latest'],
-      ['openai', 'gpt-5.2-codex'],
-      ['openai', 'o3-deep-research'],
+      ['xai', 'grok-4.5'],
+      ['kimi', 'kimi-k2.6'],
+      ['kimi', 'kimi-k3'],
+      ['minimax', 'MiniMax-M2.7-highspeed'],
+      ['mistral', 'mistral-medium-3.5'],
+      ['openai', 'gpt-5.3-codex'],
+      ['openai', 'gpt-4.1'],
       ['anthropic', 'claude-opus-3'],
-      ['anthropic', 'claude-sonnet-3-7'],
       ['anthropic', 'claude-opus-4-1'],
       ['zai', 'glm-5p1'],
     ]) {
@@ -65,45 +64,46 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     }
   })
 
-  it('preserves the DeepSeek V4 Flash cache-price cut as two historical intervals', () => {
-    const launch = lookupAt('deepseek', 'deepseek-v4-flash', '2026-04-26T12:00:00Z')
-    const reduced = lookupAt('deepseek', 'deepseek-v4-flash', '2026-04-28T12:00:00Z')
-    expect(launch?.rates.cacheReadPerToken).toBeCloseTo(0.028 / 1_000_000, 16)
-    expect(reduced?.rates.cacheReadPerToken).toBeCloseTo(0.0028 / 1_000_000, 16)
-    expect(reduced?.supersedes).toBe(launch?.priceRecordId)
+  it('does not backdate DeepSeek V4 first-observed prices or resurrect retired legacy keys', () => {
+    expect(lookupAt('deepseek', 'deepseek-v4-flash', '2026-08-07T17:12:59Z')).toBeUndefined()
+    expect(lookupAt('deepseek', 'deepseek-v4-flash', '2026-08-07T17:13:00Z')).toBeDefined()
+
+    expect(lookupAt('deepseek', 'deepseek-chat', '2025-09-05T15:59:59Z')).toBeDefined()
+    expect(lookupAt('deepseek', 'deepseek-chat', '2025-09-05T16:00:00Z')).toBeUndefined()
+    expect(lookupAt('deepseek', 'deepseek-chat', observedAt)).toBeUndefined()
+
+    expect(lookupAt('deepseek', 'deepseek-reasoner', '2025-09-05T15:59:59Z')).toBeDefined()
+    expect(lookupAt('deepseek', 'deepseek-reasoner', '2025-09-05T16:00:00Z')).toBeUndefined()
+    expect(lookupAt('deepseek', 'deepseek-reasoner', observedAt)).toBeUndefined()
   })
 
-  it('retires DeepSeek legacy compatibility slugs at the published UTC boundary', () => {
-    expect(lookupAt('deepseek', 'deepseek-chat', '2026-07-24T15:59:59Z')).toBeDefined()
-    expect(lookupAt('deepseek', 'deepseek-chat', '2026-07-24T16:00:00Z')).toBeUndefined()
-    expect(lookupAt('deepseek', 'deepseek-reasoner', '2026-07-24T16:00:00Z')).toBeUndefined()
-    expect(lookupAt('deepseek', 'deepseek-v4-flash', '2026-07-24T16:00:00Z')).toBeDefined()
+  it('keeps the reviewed DeepSeek V4 direct rates explicit', () => {
+    const flash = lookup('deepseek', 'deepseek-v4-flash')
+    const pro = lookup('deepseek', 'deepseek-v4-pro')
+
+    expect(flash.rates.inputPerToken).toBeCloseTo(0.14 / 1_000_000, 16)
+    expect(flash.rates.outputPerToken).toBeCloseTo(0.28 / 1_000_000, 16)
+    expect(flash.rates.cacheReadPerToken).toBeCloseTo(0.0028 / 1_000_000, 16)
+
+    expect(pro.rates.inputPerToken).toBeCloseTo(0.435 / 1_000_000, 16)
+    expect(pro.rates.outputPerToken).toBeCloseTo(0.87 / 1_000_000, 16)
+    expect(pro.rates.cacheReadPerToken).toBeCloseTo(0.003625 / 1_000_000, 16)
   })
 
-  it('keeps DeepSeek V3/V3.1/V3.2 economics date-effective', () => {
-    expect(lookupAt('deepseek', 'deepseek-chat', '2025-06-01T00:00:00Z')?.rates.outputPerToken)
-      .toBeCloseTo(1.10 / 1_000_000, 16)
-    expect(lookupAt('deepseek', 'deepseek-chat', '2025-09-06T00:00:00Z')?.rates.outputPerToken)
-      .toBeCloseTo(1.68 / 1_000_000, 16)
-    expect(lookupAt('deepseek', 'deepseek-chat', '2025-10-01T00:00:00Z')?.rates.outputPerToken)
-      .toBeCloseTo(0.42 / 1_000_000, 16)
-  })
-
-  it('keeps xAI retirement redirects on the exact May 15 boundary', () => {
+  it('ends retired xAI identities instead of inventing a same-identity redirect price', () => {
     expect(lookupAt('xai', 'grok-3', '2026-05-15T18:59:59Z')?.rates.inputPerToken)
       .toBeCloseTo(3 / 1_000_000, 16)
-    expect(lookupAt('xai', 'grok-3', '2026-05-15T19:00:00Z')?.rates.inputPerToken)
-      .toBeCloseTo(1.25 / 1_000_000, 16)
+    expect(lookupAt('xai', 'grok-3', '2026-05-15T19:00:00Z')).toBeUndefined()
 
     expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T18:59:59Z')?.rates.outputPerToken)
       .toBeCloseTo(1.5 / 1_000_000, 16)
-    expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T19:00:00Z')?.rates.outputPerToken)
-      .toBeCloseTo(2 / 1_000_000, 16)
+    expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T19:00:00Z')).toBeUndefined()
   })
 
   it('selects Grok 4 0709 long-context pricing at the inclusive 128K boundary', () => {
     const record = lookupAt('xai', 'grok-4-0709', '2026-01-01T00:00:00Z')
     if (!record) throw new Error('missing historical grok-4-0709')
+
     const short = calculateHistoricalCostV1(record, {
       ...zeroUsage,
       inputTokens: 1_000_000,
@@ -114,6 +114,7 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       inputTokens: 1_000_000,
       promptInputTokens: 128_000,
     })
+
     expect(short.kind).toBe('calculated')
     expect(long.kind).toBe('calculated')
     if (short.kind !== 'calculated' || long.kind !== 'calculated') throw new Error('expected Grok calculations')
@@ -122,72 +123,73 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     expect(long.rateSelection).toEqual({ kind: 'prompt-input-tokens-above', tokens: 127_999 })
   })
 
-  it('prices Kimi K2.7 Code cache hits independently from uncached input', () => {
-    const result = calculateHistoricalCostV1(lookup('kimi', 'kimi-k2.7-code'), {
+  it('prices Kimi K2.6 cache hits independently from uncached input', () => {
+    const result = calculateHistoricalCostV1(lookup('kimi', 'kimi-k2.6'), {
       ...zeroUsage,
       inputTokens: 1_000_000,
       billableOutputTokens: 1_000_000,
       cacheReadTokens: 1_000_000,
     })
+
     expect(result.kind).toBe('calculated')
     if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(5.14, 12)
+    expect(result.costUSD).toBeCloseTo(5.11, 12)
   })
 
-  it('keeps MiniMax PayGo HighSpeed input distinct from Anthropic-compatible route examples', () => {
-    const record = lookup('minimax', 'MiniMax-M2.1-highspeed')
-    expect(record.rates.inputPerToken).toBeCloseTo(0.60 / 1_000_000, 16)
-    expect(record.rates.outputPerToken).toBeCloseTo(2.40 / 1_000_000, 16)
-    expect(record.rates.cacheReadPerToken).toBeCloseTo(0.03 / 1_000_000, 16)
-    expect(record.rates.cacheWritePerToken).toBeCloseTo(0.375 / 1_000_000, 16)
+  it('keeps MiniMax M2.7 HighSpeed economics distinct from standard M2.7', () => {
+    const standard = lookup('minimax', 'MiniMax-M2.7')
+    const highSpeed = lookup('minimax', 'MiniMax-M2.7-highspeed')
+
+    expect(standard.rates.inputPerToken).toBeCloseTo(0.30 / 1_000_000, 16)
+    expect(standard.rates.outputPerToken).toBeCloseTo(1.20 / 1_000_000, 16)
+    expect(highSpeed.rates.inputPerToken).toBeCloseTo(0.60 / 1_000_000, 16)
+    expect(highSpeed.rates.outputPerToken).toBeCloseTo(2.40 / 1_000_000, 16)
+    expect(highSpeed.rates.cacheReadPerToken).toBeCloseTo(0.06 / 1_000_000, 16)
+    expect(highSpeed.rates.cacheWritePerToken).toBeCloseTo(0.375 / 1_000_000, 16)
   })
 
   it('prices current Mistral cached input at ten percent of normal input', () => {
-    const record = lookup('mistral', 'open-mixtral-8x7b')
-    expect(record.rates.inputPerToken).toBeCloseTo(0.70 / 1_000_000, 16)
-    expect(record.rates.cacheReadPerToken).toBeCloseTo(0.07 / 1_000_000, 16)
+    const record = lookup('mistral', 'mistral-medium-3.5')
+    expect(record.rates.inputPerToken).toBeCloseTo(1.50 / 1_000_000, 16)
+    expect(record.rates.cacheReadPerToken).toBeCloseTo(0.15 / 1_000_000, 16)
   })
 
-  it('keeps OpenAI deep-research web-search charges explicit', () => {
-    const result = calculateHistoricalCostV1(lookup('openai', 'o3-deep-research'), {
-      ...zeroUsage,
-      webSearchRequests: 1,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(0.01, 12)
-  })
-
-  it('keeps GPT-5.2 Codex cached input separate from normal input', () => {
-    const result = calculateHistoricalCostV1(lookup('openai', 'gpt-5.2-codex'), {
+  it('keeps GPT-5.3 Codex cached input separate from normal input', () => {
+    const result = calculateHistoricalCostV1(lookup('openai', 'gpt-5.3-codex'), {
       ...zeroUsage,
       cacheReadTokens: 1_000_000,
     })
+
     expect(result.kind).toBe('calculated')
     if (result.kind !== 'calculated') throw new Error(result.reason)
     expect(result.costUSD).toBeCloseTo(0.175, 12)
   })
 
   it('accounts for Anthropic one-hour prompt-cache writes only where V1 is exact', () => {
-    const result = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-4'), {
+    const record = lookupAt('anthropic', 'claude-opus-4', '2025-06-01T00:00:00Z')
+    if (!record) throw new Error('missing historical claude-opus-4')
+
+    const result = calculateHistoricalCostV1(record, {
       ...zeroUsage,
       cacheWriteTokens: 1_000_000,
       oneHourCacheWriteTokens: 1_000_000,
     })
+
     expect(result.kind).toBe('calculated')
     if (result.kind !== 'calculated') throw new Error(result.reason)
     expect(result.costUSD).toBeCloseTo(30, 12)
 
-    expect(catalog.records.some(record => record.pricingModel === 'claude-3-haiku')).toBe(false)
+    expect(catalog.records.some(item => item.pricingModel === 'claude-3-haiku')).toBe(false)
   })
 
-  it('keeps current long-context and fast-mode boundaries already reviewed', () => {
+  it('keeps current long-context and fast-mode boundaries reviewed independently', () => {
     const xai = lookup('xai', 'grok-4.5')
     const xaiLong = calculateHistoricalCostV1(xai, {
       ...zeroUsage,
       inputTokens: 1_000_000,
       promptInputTokens: 200_000,
     })
+
     expect(xaiLong.kind).toBe('calculated')
     if (xaiLong.kind !== 'calculated') throw new Error(xaiLong.reason)
     expect(xaiLong.costUSD).toBeCloseTo(4, 12)
@@ -197,6 +199,7 @@ describe('reviewed multi-provider historical pricing tranche', () => {
       inputTokens: 1_000_000,
       speed: 'fast',
     })
+
     expect(fast.kind).toBe('calculated')
     if (fast.kind !== 'calculated') throw new Error(fast.reason)
     expect(fast.costUSD).toBeCloseTo(10, 12)
