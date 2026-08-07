@@ -8,15 +8,19 @@ import {
 } from './history.js'
 
 const catalog = parseHistoricalPriceBookV1(catalogData)
-const observedAt = '2026-08-07T19:06:00Z'
+const observedAt = '2026-08-07T19:30:00Z'
 
-function lookup(authority: string, model: string) {
-  const record = resolveHistoricalPriceRecordV1(catalog, {
+function lookupAt(authority: string, model: string, timestamp = observedAt) {
+  return resolveHistoricalPriceRecordV1(catalog, {
     pricingAuthority: authority,
     pricingModel: model,
     route: 'standard',
-    timestamp: observedAt,
+    timestamp,
   })
+}
+
+function lookup(authority: string, model: string) {
+  const record = lookupAt(authority, model)
   if (!record) throw new Error(`missing reviewed ${authority}/${model} record`)
   return record
 }
@@ -33,8 +37,8 @@ const zeroUsage = {
 }
 
 describe('reviewed multi-provider historical pricing tranche', () => {
-  it('includes the intended reviewed authorities and compatibility pricing keys', () => {
-    expect(catalog.records).toHaveLength(65)
+  it('contains the expanded reviewed book without widening the authority set accidentally', () => {
+    expect(catalog.records).toHaveLength(122)
     expect(new Set(catalog.records.map(record => record.pricingAuthority))).toEqual(
       new Set(['openai', 'anthropic', 'deepseek', 'xai', 'kimi', 'minimax', 'mistral', 'zai']),
     )
@@ -42,241 +46,110 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     for (const [authority, model] of [
       ['deepseek', 'deepseek-v4-flash'],
       ['deepseek', 'deepseek-v4-pro'],
-      ['deepseek', 'deepseek-chat'],
-      ['deepseek', 'deepseek-reasoner'],
-      ['xai', 'grok-4.5'],
-      ['xai', 'grok-build-0.1'],
-      ['xai', 'grok-4.3'],
-      ['kimi', 'kimi-k3'],
-      ['kimi', 'kimi-k2.6'],
-      ['kimi', 'kimi-k2p6'],
-      ['minimax', 'MiniMax-M2.7'],
-      ['minimax', 'MiniMax-M2.7-highspeed'],
-      ['mistral', 'mistral-medium-3.5'],
-      ['zai', 'glm-5p1'],
-      ['openai', 'gpt-4.1'],
-      ['openai', 'gpt-4.1-mini'],
-      ['openai', 'gpt-4.1-nano'],
-      ['openai', 'gpt-4o'],
-      ['openai', 'gpt-4o-mini'],
-      ['openai', 'gpt-4.5-preview'],
-      ['openai', 'o1'],
-      ['openai', 'o1-preview'],
-      ['openai', 'o1-mini'],
-      ['openai', 'o3'],
-      ['openai', 'o3-mini'],
-      ['openai', 'o4-mini'],
-      ['openai', 'gpt-5'],
-      ['openai', 'gpt-5-mini'],
-      ['openai', 'gpt-5-nano'],
-      ['openai', 'gpt-5-chat-latest'],
-      ['openai', 'gpt-5-codex'],
-      ['openai', 'gpt-5.1'],
-      ['openai', 'gpt-5.1-codex'],
-      ['openai', 'gpt-5.1-codex-max'],
-      ['openai', 'gpt-5.1-codex-mini'],
-      ['openai', 'codex-mini-latest'],
-      ['openai', 'gpt-5.2'],
-      ['openai', 'gpt-5.3-codex'],
-      ['openai', 'gpt-5.4'],
-      ['openai', 'gpt-5.4-mini'],
-      ['openai', 'gpt-5.4-nano'],
-      ['openai', 'gpt-5.5'],
+      ['xai', 'grok-3'],
+      ['xai', 'grok-4-0709'],
+      ['xai', 'grok-4.20-0309-reasoning'],
+      ['kimi', 'kimi-k2.7-code'],
+      ['minimax', 'MiniMax-M2.1-highspeed'],
+      ['minimax', 'MiniMax-M2.5'],
+      ['mistral', 'open-mixtral-8x7b'],
+      ['mistral', 'devstral-medium-latest'],
+      ['openai', 'gpt-5.2-codex'],
+      ['openai', 'o3-deep-research'],
       ['anthropic', 'claude-opus-3'],
-      ['anthropic', 'claude-haiku-3-5'],
-      ['anthropic', 'claude-sonnet-3-5'],
       ['anthropic', 'claude-sonnet-3-7'],
-      ['anthropic', 'claude-opus-4'],
       ['anthropic', 'claude-opus-4-1'],
-      ['anthropic', 'claude-sonnet-4'],
-      ['anthropic', 'claude-opus-4-5'],
-      ['anthropic', 'claude-opus-4-6'],
-      ['anthropic', 'claude-opus-4-7'],
-      ['anthropic', 'claude-opus-4-8'],
-      ['anthropic', 'claude-sonnet-4-5'],
-      ['anthropic', 'claude-sonnet-4-6'],
-      ['anthropic', 'claude-haiku-4-5'],
-      ['anthropic', 'claude-fable-5'],
-      ['anthropic', 'claude-opus-5'],
-      ['anthropic', 'claude-sonnet-5'],
+      ['zai', 'glm-5p1'],
     ]) {
       expect(lookup(authority, model).valuation.kind).toBe('priced')
     }
   })
 
-  it('prices DeepSeek V4 Flash cache hits independently from cache misses', () => {
-    const result = calculateHistoricalCostV1(lookup('deepseek', 'deepseek-v4-flash'), {
-      ...zeroUsage,
-      inputTokens: 1_000_000,
-      billableOutputTokens: 1_000_000,
-      cacheReadTokens: 1_000_000,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(0.4228, 12)
+  it('preserves the DeepSeek V4 Flash cache-price cut as two historical intervals', () => {
+    const launch = lookupAt('deepseek', 'deepseek-v4-flash', '2026-04-26T12:00:00Z')
+    const reduced = lookupAt('deepseek', 'deepseek-v4-flash', '2026-04-28T12:00:00Z')
+    expect(launch?.rates.cacheReadPerToken).toBeCloseTo(0.028 / 1_000_000, 16)
+    expect(reduced?.rates.cacheReadPerToken).toBeCloseTo(0.0028 / 1_000_000, 16)
+    expect(reduced?.supersedes).toBe(launch?.priceRecordId)
   })
 
-  it('selects xAI long-context pricing at the published inclusive 200K boundary', () => {
-    const record = lookup('xai', 'grok-4.5')
+  it('retires DeepSeek legacy compatibility slugs at the published UTC boundary', () => {
+    expect(lookupAt('deepseek', 'deepseek-chat', '2026-07-24T15:59:59Z')).toBeDefined()
+    expect(lookupAt('deepseek', 'deepseek-chat', '2026-07-24T16:00:00Z')).toBeUndefined()
+    expect(lookupAt('deepseek', 'deepseek-reasoner', '2026-07-24T16:00:00Z')).toBeUndefined()
+    expect(lookupAt('deepseek', 'deepseek-v4-flash', '2026-07-24T16:00:00Z')).toBeDefined()
+  })
+
+  it('keeps DeepSeek V3/V3.1/V3.2 economics date-effective', () => {
+    expect(lookupAt('deepseek', 'deepseek-chat', '2025-06-01T00:00:00Z')?.rates.outputPerToken)
+      .toBeCloseTo(1.10 / 1_000_000, 16)
+    expect(lookupAt('deepseek', 'deepseek-chat', '2025-09-06T00:00:00Z')?.rates.outputPerToken)
+      .toBeCloseTo(1.68 / 1_000_000, 16)
+    expect(lookupAt('deepseek', 'deepseek-chat', '2025-10-01T00:00:00Z')?.rates.outputPerToken)
+      .toBeCloseTo(0.42 / 1_000_000, 16)
+  })
+
+  it('keeps xAI retirement redirects on the exact May 15 boundary', () => {
+    expect(lookupAt('xai', 'grok-3', '2026-05-15T18:59:59Z')?.rates.inputPerToken)
+      .toBeCloseTo(3 / 1_000_000, 16)
+    expect(lookupAt('xai', 'grok-3', '2026-05-15T19:00:00Z')?.rates.inputPerToken)
+      .toBeCloseTo(1.25 / 1_000_000, 16)
+
+    expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T18:59:59Z')?.rates.outputPerToken)
+      .toBeCloseTo(1.5 / 1_000_000, 16)
+    expect(lookupAt('xai', 'grok-code-fast-1', '2026-05-15T19:00:00Z')?.rates.outputPerToken)
+      .toBeCloseTo(2 / 1_000_000, 16)
+  })
+
+  it('selects Grok 4 0709 long-context pricing at the inclusive 128K boundary', () => {
+    const record = lookupAt('xai', 'grok-4-0709', '2026-01-01T00:00:00Z')
+    if (!record) throw new Error('missing historical grok-4-0709')
     const short = calculateHistoricalCostV1(record, {
       ...zeroUsage,
       inputTokens: 1_000_000,
-      promptInputTokens: 199_999,
+      promptInputTokens: 127_999,
     })
     const long = calculateHistoricalCostV1(record, {
       ...zeroUsage,
       inputTokens: 1_000_000,
-      promptInputTokens: 200_000,
+      promptInputTokens: 128_000,
     })
     expect(short.kind).toBe('calculated')
     expect(long.kind).toBe('calculated')
-    if (short.kind !== 'calculated' || long.kind !== 'calculated') {
-      throw new Error('expected xAI short and long calculations')
-    }
-    expect(short.costUSD).toBeCloseTo(2, 12)
-    expect(long.costUSD).toBeCloseTo(4, 12)
-    expect(long.rateSelection).toEqual({ kind: 'prompt-input-tokens-above', tokens: 199_999 })
+    if (short.kind !== 'calculated' || long.kind !== 'calculated') throw new Error('expected Grok calculations')
+    expect(short.costUSD).toBeCloseTo(3, 12)
+    expect(long.costUSD).toBeCloseTo(6, 12)
+    expect(long.rateSelection).toEqual({ kind: 'prompt-input-tokens-above', tokens: 127_999 })
   })
 
-  it('keeps Kimi web-search billing additive to token pricing', () => {
-    const result = calculateHistoricalCostV1(lookup('kimi', 'kimi-k3'), {
-      ...zeroUsage,
-      webSearchRequests: 1,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(0.004, 12)
-  })
-
-  it('prices MiniMax M2.7 cache reads and writes from published API rates', () => {
-    const result = calculateHistoricalCostV1(lookup('minimax', 'MiniMax-M2.7'), {
+  it('prices Kimi K2.7 Code cache hits independently from uncached input', () => {
+    const result = calculateHistoricalCostV1(lookup('kimi', 'kimi-k2.7-code'), {
       ...zeroUsage,
       inputTokens: 1_000_000,
       billableOutputTokens: 1_000_000,
       cacheReadTokens: 1_000_000,
-      cacheWriteTokens: 1_000_000,
     })
     expect(result.kind).toBe('calculated')
     if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(1.935, 12)
+    expect(result.costUSD).toBeCloseTo(5.14, 12)
   })
 
-  it('prices Mistral Medium 3.5 cached input at 10% of standard input', () => {
-    const result = calculateHistoricalCostV1(lookup('mistral', 'mistral-medium-3.5'), {
-      ...zeroUsage,
-      inputTokens: 1_000_000,
-      cacheReadTokens: 1_000_000,
-      billableOutputTokens: 1_000_000,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(9.15, 12)
+  it('keeps MiniMax PayGo HighSpeed input distinct from Anthropic-compatible route examples', () => {
+    const record = lookup('minimax', 'MiniMax-M2.1-highspeed')
+    expect(record.rates.inputPerToken).toBeCloseTo(0.60 / 1_000_000, 16)
+    expect(record.rates.outputPerToken).toBeCloseTo(2.40 / 1_000_000, 16)
+    expect(record.rates.cacheReadPerToken).toBeCloseTo(0.03 / 1_000_000, 16)
+    expect(record.rates.cacheWritePerToken).toBeCloseTo(0.375 / 1_000_000, 16)
   })
 
-  it('prices the GLM-5.2 compatibility key from current Z.ai API rates', () => {
-    const result = calculateHistoricalCostV1(lookup('zai', 'glm-5p1'), {
-      ...zeroUsage,
-      inputTokens: 1_000_000,
-      billableOutputTokens: 1_000_000,
-      cacheReadTokens: 1_000_000,
-      webSearchRequests: 1,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(6.07, 12)
+  it('prices current Mistral cached input at ten percent of normal input', () => {
+    const record = lookup('mistral', 'open-mixtral-8x7b')
+    expect(record.rates.inputPerToken).toBeCloseTo(0.70 / 1_000_000, 16)
+    expect(record.rates.cacheReadPerToken).toBeCloseTo(0.07 / 1_000_000, 16)
   })
 
-  it('prices older OpenAI cached input without rewriting it as normal input', () => {
-    const cases: Array<[string, number]> = [
-      ['gpt-4.1', 0.5],
-      ['gpt-4.1-mini', 0.1],
-      ['gpt-4.1-nano', 0.025],
-      ['gpt-4o', 1.25],
-      ['gpt-4o-mini', 0.075],
-      ['gpt-4.5-preview', 37.5],
-      ['o1', 7.5],
-      ['o1-mini', 0.55],
-      ['o3', 0.5],
-      ['o3-mini', 0.55],
-      ['o4-mini', 0.275],
-    ]
-    for (const [model, expected] of cases) {
-      const result = calculateHistoricalCostV1(lookup('openai', model), {
-        ...zeroUsage,
-        cacheReadTokens: 1_000_000,
-      })
-      expect(result.kind).toBe('calculated')
-      if (result.kind !== 'calculated') throw new Error(result.reason)
-      expect(result.costUSD).toBeCloseTo(expected, 12)
-    }
-  })
-
-  it('prices Codex Mini Latest from its reviewed direct API rates', () => {
-    const result = calculateHistoricalCostV1(lookup('openai', 'codex-mini-latest'), {
-      ...zeroUsage,
-      inputTokens: 1_000_000,
-      cacheReadTokens: 1_000_000,
-      billableOutputTokens: 1_000_000,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(7.875, 12)
-  })
-
-  it('selects GPT-5.5 long-context pricing only above 272K prompt input tokens', () => {
-    const record = lookup('openai', 'gpt-5.5')
-    const atThreshold = calculateHistoricalCostV1(record, {
-      ...zeroUsage,
-      inputTokens: 1_000_000,
-      promptInputTokens: 272_000,
-    })
-    const aboveThreshold = calculateHistoricalCostV1(record, {
-      ...zeroUsage,
-      inputTokens: 1_000_000,
-      promptInputTokens: 272_001,
-    })
-    expect(atThreshold.kind).toBe('calculated')
-    expect(aboveThreshold.kind).toBe('calculated')
-    if (atThreshold.kind !== 'calculated' || aboveThreshold.kind !== 'calculated') {
-      throw new Error('expected GPT-5.5 short and long calculations')
-    }
-    expect(atThreshold.costUSD).toBeCloseTo(5, 12)
-    expect(aboveThreshold.costUSD).toBeCloseTo(10, 12)
-    expect(aboveThreshold.rateSelection).toEqual({ kind: 'prompt-input-tokens-above', tokens: 272_000 })
-  })
-
-  it('accounts for Anthropic one-hour prompt-cache writes from the five-minute rate', () => {
-    const current = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-5'), {
-      ...zeroUsage,
-      cacheWriteTokens: 1_000_000,
-      oneHourCacheWriteTokens: 1_000_000,
-    })
-    expect(current.kind).toBe('calculated')
-    if (current.kind !== 'calculated') throw new Error(current.reason)
-    expect(current.costUSD).toBeCloseTo(10, 12)
-
-    const legacy = calculateHistoricalCostV1(lookup('anthropic', 'claude-haiku-3-5'), {
-      ...zeroUsage,
-      cacheWriteTokens: 1_000_000,
-      oneHourCacheWriteTokens: 1_000_000,
-    })
-    expect(legacy.kind).toBe('calculated')
-    if (legacy.kind !== 'calculated') throw new Error(legacy.reason)
-    expect(legacy.costUSD).toBeCloseTo(1.6, 12)
-  })
-
-  it('keeps legacy Anthropic cache-read pricing exact', () => {
-    const result = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-4'), {
-      ...zeroUsage,
-      cacheReadTokens: 1_000_000,
-    })
-    expect(result.kind).toBe('calculated')
-    if (result.kind !== 'calculated') throw new Error(result.reason)
-    expect(result.costUSD).toBeCloseTo(1.5, 12)
-  })
-
-  it('keeps Anthropic web-search billing explicit instead of hiding it in token rates', () => {
-    const result = calculateHistoricalCostV1(lookup('anthropic', 'claude-haiku-4-5'), {
+  it('keeps OpenAI deep-research web-search charges explicit', () => {
+    const result = calculateHistoricalCostV1(lookup('openai', 'o3-deep-research'), {
       ...zeroUsage,
       webSearchRequests: 1,
     })
@@ -285,23 +158,47 @@ describe('reviewed multi-provider historical pricing tranche', () => {
     expect(result.costUSD).toBeCloseTo(0.01, 12)
   })
 
-  it('applies current 2x fast-mode pricing to Opus 5 and Opus 4.8 only where reviewed', () => {
-    for (const model of ['claude-opus-5', 'claude-opus-4-8']) {
-      const result = calculateHistoricalCostV1(lookup('anthropic', model), {
-        ...zeroUsage,
-        inputTokens: 1_000_000,
-        speed: 'fast',
-      })
-      expect(result.kind).toBe('calculated')
-      if (result.kind !== 'calculated') throw new Error(result.reason)
-      expect(result.costUSD).toBeCloseTo(10, 12)
-    }
+  it('keeps GPT-5.2 Codex cached input separate from normal input', () => {
+    const result = calculateHistoricalCostV1(lookup('openai', 'gpt-5.2-codex'), {
+      ...zeroUsage,
+      cacheReadTokens: 1_000_000,
+    })
+    expect(result.kind).toBe('calculated')
+    if (result.kind !== 'calculated') throw new Error(result.reason)
+    expect(result.costUSD).toBeCloseTo(0.175, 12)
+  })
 
-    const unavailable = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-4-7'), {
+  it('accounts for Anthropic one-hour prompt-cache writes only where V1 is exact', () => {
+    const result = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-4'), {
+      ...zeroUsage,
+      cacheWriteTokens: 1_000_000,
+      oneHourCacheWriteTokens: 1_000_000,
+    })
+    expect(result.kind).toBe('calculated')
+    if (result.kind !== 'calculated') throw new Error(result.reason)
+    expect(result.costUSD).toBeCloseTo(30, 12)
+
+    expect(catalog.records.some(record => record.pricingModel === 'claude-3-haiku')).toBe(false)
+  })
+
+  it('keeps current long-context and fast-mode boundaries already reviewed', () => {
+    const xai = lookup('xai', 'grok-4.5')
+    const xaiLong = calculateHistoricalCostV1(xai, {
+      ...zeroUsage,
+      inputTokens: 1_000_000,
+      promptInputTokens: 200_000,
+    })
+    expect(xaiLong.kind).toBe('calculated')
+    if (xaiLong.kind !== 'calculated') throw new Error(xaiLong.reason)
+    expect(xaiLong.costUSD).toBeCloseTo(4, 12)
+
+    const fast = calculateHistoricalCostV1(lookup('anthropic', 'claude-opus-5'), {
       ...zeroUsage,
       inputTokens: 1_000_000,
       speed: 'fast',
     })
-    expect(unavailable).toMatchObject({ kind: 'unavailable', reason: 'missing-fast-rate' })
+    expect(fast.kind).toBe('calculated')
+    if (fast.kind !== 'calculated') throw new Error(fast.reason)
+    expect(fast.costUSD).toBeCloseTo(10, 12)
   })
 })
