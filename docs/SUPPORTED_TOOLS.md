@@ -1,6 +1,6 @@
 # Supported tools
 
-Metrora currently registers **38 local collectors**. A registered collector can discover and analyze supported local records, but that does not automatically mean every field is measured directly or approved for signed Workspace measurements.
+Metrora currently registers **39 local collectors**. A registered collector can discover and analyze supported local records, but that does not automatically mean every field is measured directly or approved for signed Workspace measurements.
 
 ## How to read this page
 
@@ -18,6 +18,7 @@ This is an evidence boundary, not a product-priority ranking.
 | `antigravity` | Available | Protobuf/RPC cache and status-line sources documented; path-specific signed review incomplete | Withheld |
 | `claude` | Available | JSONL and desktop session evidence reviewed | Approved |
 | `cline` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
+| `cline-cli` | Available | CLI session/message JSON with metered-cost preservation documented; signed-evidence audit incomplete | Withheld |
 | `codebuff` | Available | Chat JSON, token fields, credit fallback and tool normalization documented; signed-evidence audit incomplete | Withheld |
 | `codewhale` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `codex` | Available | Rollout JSONL measured and fallback evidence reviewed | Approved |
@@ -69,7 +70,7 @@ Metrora must preserve those differences in downstream reporting. A source that e
 
 ## Provider documentation
 
-Every registered collector now has a public provider guide under [`docs/providers`](providers/). Each guide records the current source location, storage format, caching, deduplication behavior and known limitations supported by the implementation and tests.
+Every registered collector has a public provider guide under [`docs/providers`](providers/). Each guide records the current source location, storage format, caching, deduplication behavior and known limitations supported by the implementation and tests.
 
 Complete guide coverage does **not** promote a collector to signed Workspace approval. Signed approval remains limited to concrete source paths with fixture parity, field-level provenance, pricing reconciliation, privacy review and required manual validation.
 
