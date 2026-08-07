@@ -11,6 +11,7 @@ import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import { contiguousDailyWindow, dataStartKey, formatChartDate, localDateKey, sliceDailyToPeriod, sliceDailyToRange } from '../lib/period'
+import { cacheReuseMultiple, formatReuseMultiple } from '../lib/usageMetrics'
 import type {
   ActReportJson,
   DailyHistoryEntry,
@@ -24,38 +25,41 @@ import { OverviewHomeSummary } from './OverviewHomeSummary'
 import { deriveOverviewDecision } from './overviewDecision'
 import { aggregateModels, buildModelIndex, modelAccountingToAggregated, sessionModelKey, topModelsToAggregated, type AggregatedModel } from './overviewModels'
 import { deriveCostPerOutcome } from './overviewOutcome'
-import { deriveSignals, deriveStats, mean, streakDays, type SignalGroups } from './overviewTrends'
+import { deriveSignals, deriveStats, mean, streakDays } from './overviewTrends'
 import { formatWorkflowDuration, workflowCoachingNote } from './overviewWorkflow'
 
 export { localDateKey } from '../lib/period'
 export { sessionModelKey } from './overviewModels'
 export { deriveSignals } from './overviewTrends'
 
-function EfficiencyScorecard({ current, bare = false }: { current: MenubarPayload['current']; bare?: boolean }) {
-  const { oneShot, cacheFraction: cacheFrac, retrySpendFraction, retryPenalty, score, grade, gradeTone } = deriveEfficiency(current)
+function EfficiencyDiagnostics({ current }: { current: MenubarPayload['current'] }) {
+  const { oneShot, cacheFraction: cacheFrac, retrySpendFraction, retryPenalty, score, grade } = deriveEfficiency(current)
+  const cacheReuse = cacheReuseMultiple(current.inputTokens, current.cacheReadTokens)
 
   return (
-    <div className={`${bare ? '' : 'ov-card '}ov-efficiency`}>
-      <div className="ov-efficiency-head">
-        <div><div className="ov-label">Efficiency</div><div className="ov-efficiency-score">{Math.round(score)} / 100</div></div>
-        <div className={`ov-grade ${gradeTone}`} aria-label={`Efficiency grade ${grade}`}>{grade}</div>
+    <details className="ov-card ov-panel ov-efficiency-disclosure">
+      <summary className="ov-panel-head">
+        <h3>Efficiency diagnostics · Experimental</h3>
+        <span className="r">Composite {Math.round(score)}/100 · {grade}</span>
+      </summary>
+      <div className="ov-panel-body ov-efficiency">
+        <div className="ov-component-list">
+          <div className="ov-component-row">
+            <div><span>Cache reuse</span><strong>{formatReuseMultiple(cacheReuse)} · {Math.round(current.cacheHitPercent)}% share</strong></div>
+            <div className="ov-component-track"><span style={{ width: `${cacheFrac * 100}%` }} /></div>
+          </div>
+          <div className="ov-component-row">
+            <div><span>One-shot</span><strong>{formatRate(current.oneShotRate)}</strong></div>
+            <div className="ov-component-track"><span style={{ width: `${oneShot * 100}%` }} /></div>
+          </div>
+          <div className="ov-component-row">
+            <div><span>Retry tax</span><strong>{formatUsd(current.retryTax.totalUSD)} · {(retrySpendFraction * 100).toFixed(1)}% of spend</strong></div>
+            <div className="ov-component-track adverse"><span style={{ width: `${retryPenalty * 100}%` }} /></div>
+          </div>
+        </div>
+        <p className="ov-widget-caption">Secondary workflow heuristics, not model-quality scores.{current.oneShotRate === null ? ' One-shot attribution is unavailable for part of this scope.' : ''}</p>
       </div>
-      <div className="ov-component-list">
-        <div className="ov-component-row">
-          <div><span>One-shot</span><strong>{formatRate(current.oneShotRate)}</strong></div>
-          <div className="ov-component-track"><span style={{ width: `${oneShot * 100}%` }} /></div>
-        </div>
-        <div className="ov-component-row">
-          <div><span>Cache hit</span><strong>{Math.round(current.cacheHitPercent)}%</strong></div>
-          <div className="ov-component-track"><span style={{ width: `${cacheFrac * 100}%` }} /></div>
-        </div>
-        <div className="ov-component-row">
-          <div><span>Retry tax</span><strong>{formatUsd(current.retryTax.totalUSD)} · {(retrySpendFraction * 100).toFixed(1)}% of spend</strong></div>
-          <div className="ov-component-track adverse"><span style={{ width: `${retryPenalty * 100}%` }} /></div>
-        </div>
-      </div>
-      <p className="ov-widget-caption">Composite of one-shot, cache hit, and retry tax.{current.oneShotRate === null ? ' Partial grade: one-shot is unavailable.' : ''}</p>
-    </div>
+    </details>
   )
 }
 
@@ -84,10 +88,10 @@ function CostPerOutcome({ outcome }: { outcome: Polled<YieldJsonReport> }) {
 
   return (
     <div className="ov-card ov-panel">
-      <div className="ov-panel-head"><h3>Cost per outcome</h3><span className="r">Yield</span></div>
+      <div className="ov-panel-head"><h3>Cost per outcome</h3><span className="r">Git-correlated</span></div>
       <div className="ov-panel-body">
         {body}
-        <p className="ov-widget-caption">Git-correlated. Reverted/abandoned = spend that didn't ship.</p>
+        <p className="ov-widget-caption">Reverted and abandoned work is shown separately from spend that shipped.</p>
       </div>
     </div>
   )
@@ -135,62 +139,6 @@ function WorkflowCard({ current }: { current: MenubarPayload['current'] }) {
         )}
         <p className="ov-widget-caption">{note ?? 'Corrections, first-edit latency, and file churn across your sessions.'}</p>
       </div>
-    </div>
-  )
-}
-
-const SIGNAL_GROUPS = [
-  {
-    key: 'wins' as const,
-    label: 'Wins',
-    icon: <><circle cx="12" cy="12" r="9" /><polyline points="8 12 11 15 16 9" /></>,
-  },
-  {
-    key: 'improvements' as const,
-    label: 'Improvements',
-    icon: <><polyline points="7 17 17 7" /><polyline points="9 7 17 7 17 15" /></>,
-  },
-  {
-    key: 'risks' as const,
-    label: 'Risks',
-    icon: <><path d="M12 4 21 19 3 19Z" /><line x1="12" y1="10" x2="12" y2="14" /><line x1="12" y1="16.5" x2="12" y2="16.6" /></>,
-  },
-]
-
-function SignalsCard({ signals }: { signals: SignalGroups }) {
-  const groups = SIGNAL_GROUPS.filter(group => signals[group.key].length > 0)
-  if (!groups.length) return null
-  return (
-    <div className="ov-card ov-signals" aria-label="Coaching signals">
-      {groups.map(group => (
-        <div className={`ov-signal-group ${group.key}`} key={group.key}>
-          <div className="ov-signal-head">
-            <svg viewBox="0 0 24 24" aria-hidden="true">{group.icon}</svg>
-            <span>{group.label}</span>
-          </div>
-          <ul className="ov-signal-list">
-            {signals[group.key].map((signal, index) => (
-              <li className="ov-signal" key={`${signal.text}-${index}`}>
-                <span title={signal.text}>{signal.text}</span>
-                {signal.trailing && <span className="ov-signal-trailing">{signal.trailing}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function RoutingWhatIf({ routing, onNavigate }: {
-  routing: MenubarPayload['current']['routingWaste']
-  onNavigate?: (section: 'optimize') => void
-}) {
-  if (routing.totalSavingsUSD <= 0 || !routing.baselineModel) return null
-  return (
-    <div className="ov-card ov-routing">
-      <div><span className="ov-label">Routing what-if</span><p>Routing to <strong>{routing.baselineModel}</strong> could save ~<strong>{formatUsd(routing.totalSavingsUSD)}</strong> this period.</p></div>
-      <button className="ov-link" type="button" onClick={() => onNavigate?.('optimize')}>Optimize →</button>
     </div>
   )
 }
@@ -349,7 +297,6 @@ function TopActivities({ activities }: { activities: MenubarPayload['current']['
           </div>
           <div className="ov-activity-meta">
             <span>{activity.turns.toLocaleString('en-US')} turns</span>
-            <span>{formatRate(activity.oneShotRate)} one-shot</span>
           </div>
         </div>
       ))}
@@ -384,7 +331,7 @@ export function OverviewContent({
 
   if (!data) {
     if (error) return <CliErrorPanel error={error} subject="your usage" />
-    return <SectionSkeleton label="Scanning sessions…" rows={3} chart />
+    return <SectionSkeleton label="Loading your usage…" rows={3} chart />
   }
 
   const now = new Date()
@@ -427,7 +374,6 @@ export function OverviewContent({
           onNavigate={onNavigate}
         />
         <ActivityHeatmap daily={data.history.daily} bare />
-        <EfficiencyScorecard current={data.current} bare />
       </div>
 
       {!rangeActive && (
@@ -444,12 +390,7 @@ export function OverviewContent({
 
       <WorkflowCard current={data.current} />
 
-      <SignalsCard signals={signals} />
-
-      <div className="ov-analytics-row">
-        <CostPerOutcome outcome={yieldReport} />
-        <RoutingWhatIf routing={data.current.routingWaste} onNavigate={onNavigate} />
-      </div>
+      <CostPerOutcome outcome={yieldReport} />
 
       <div className="ov-body-grid">
         <div className="ov-main-column">
@@ -475,6 +416,7 @@ export function OverviewContent({
             <div className="ov-panel-head"><h3>Top activities</h3><span className="r">Sorted by cost</span></div>
             <div className="ov-panel-body"><TopActivities activities={data.current.topActivities} /></div>
           </div>
+          <EfficiencyDiagnostics current={data.current} />
         </div>
       </div>
     </div>
