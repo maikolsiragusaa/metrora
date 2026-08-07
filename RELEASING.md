@@ -8,8 +8,8 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Current source candidate: `1.0.0-rc.8`
-- Current desktop build version: `1.0.0.8`
+- Current source candidate: `1.0.0-rc.9`
+- Current desktop build version: `1.0.0.9`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 
 Temporary compatibility commands are governed by the technical compatibility register. They are not release brands or names for new artifacts.
@@ -18,7 +18,7 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-`1.0.0-rc.8` is the current **source/pre-submission candidate line**. Its metadata does not by itself make any artifact accepted, signed, submitted or published.
+`1.0.0-rc.9` is the current **source/pre-submission candidate line**. It advances RC8 because accounting presentation and the packaged Store CLI runtime changed materially after physical pre-submission review. Its metadata does not by itself make any artifact accepted, signed, submitted or published.
 
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
@@ -30,8 +30,8 @@ Exact source commits and artifact digests belong in the applicable workflow/rele
 
 Metrora deliberately separates three version forms:
 
-- product/source SemVer: `1.0.0-rc.8`;
-- desktop build version: `1.0.0.8`;
+- product/source SemVer: `1.0.0-rc.9`;
+- desktop build version: `1.0.0.9`;
 - Microsoft Store AppX package identity version for the `1.0.0` line: `1.0.0.0`.
 
 The Store's four-component package identity is a platform contract and must not be confused with the desktop build counter or the SemVer pre-release label. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
@@ -67,7 +67,7 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Platform workflows add their own manifest, payload, installation, update, rollback and state-preservation checks.
+Platform workflows add their own manifest, payload, runtime, installation, update, rollback and state-preservation checks. The Store package check must execute the bundled CLI from the packaged AppX layout using the bundled Electron runtime; file presence alone is not sufficient.
 
 ## GitHub Windows pre-release
 
@@ -87,11 +87,12 @@ The Store candidate must be built from the exact reviewed source commit using th
 
 1. the exact AppX artifact and workflow manifest must verify;
 2. Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
-3. the unsigned submission candidate must remain byte-identical to the workflow output;
-4. a separately test-signed copy may be used only for bounded local physical acceptance;
-5. local-test package/certificate/private-key material must be removed afterward;
-6. the sanitized local acceptance report must pass;
-7. submission requires an explicit stop/go after those checks.
+3. the packaged CLI must execute successfully from the AppX payload without a separately installed Node.js or a loose scoped `node_modules` runtime tree;
+4. the unsigned submission candidate must remain byte-identical to the workflow output;
+5. a separately test-signed copy may be used only for bounded local physical acceptance;
+6. local-test package/certificate/private-key material must be removed afterward;
+7. the sanitized local acceptance report must pass;
+8. submission requires an explicit stop/go after those checks.
 
 A passing local test is not Microsoft certification and does not authorize a publication claim.
 
