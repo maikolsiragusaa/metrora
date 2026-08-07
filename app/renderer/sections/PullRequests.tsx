@@ -14,8 +14,6 @@ import type { CliError, DateRange, MenubarPayload, Period } from '../lib/types'
 type PullRequests = NonNullable<MenubarPayload['current']['pullRequests']>
 type PrRow = PullRequests['rows'][number]
 
-// A PR's active window: one day collapses to a single label, otherwise the two
-// endpoints joined with a hyphen (never an en/em dash, per repo copy rules).
 function spanLabel(firstStarted: string, lastEnded: string): string {
   const start = formatDayShort(firstStarted)
   const end = formatDayShort(lastEnded)
@@ -41,8 +39,6 @@ function openPr(event: MouseEvent<HTMLAnchorElement>, url: string): void {
   void codeburn.openExternal(url)
 }
 
-// Keyboard activation for the button-role row, guarded so Enter/Space fired on
-// the inner link (its own control) never doubles up as a row toggle.
 function rowKeyDown(event: KeyboardEvent<HTMLDivElement>, toggle: () => void): void {
   if (event.target !== event.currentTarget) return
   if (event.key === 'Enter' || event.key === ' ') {
@@ -51,15 +47,11 @@ function rowKeyDown(event: KeyboardEvent<HTMLDivElement>, toggle: () => void): v
   }
 }
 
-/** Standalone entry: self-fetches the overview payload (used in tests). The App
- *  passes its shared overview poll straight into PullRequestsContent instead. */
 export function PullRequests({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
     () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
     [period, provider, range?.from, range?.to],
   )
-  // The key remounts the content on a period/provider/range switch so row state
-  // (an open expansion) never survives onto the same PR rendered from new data.
   return <PullRequestsContent key={`${period}|${provider}|${range?.from ?? ''}|${range?.to ?? ''}`} overview={overview} />
 }
 
@@ -78,7 +70,7 @@ function PullRequestsPage({ pullRequests, staleError }: { pullRequests?: PullReq
       <Panel title="Pull request spend">
         {pullRequests && pullRequests.rows.length > 0
           ? <PrTable pullRequests={pullRequests} />
-          : <EmptyNote>PR links are captured as sessions are parsed. Once a session references a pull request, it appears here.</EmptyNote>}
+          : <EmptyNote>No PR-linked work yet. When Metrora detects a pull request reference in a session, its spend will appear here.</EmptyNote>}
       </Panel>
     </>
   )
@@ -87,18 +79,11 @@ function PullRequestsPage({ pullRequests, staleError }: { pullRequests?: PullReq
 function PrTable({ pullRequests }: { pullRequests: PullRequests }) {
   const { rows, distinctCost, distinctSessions, subagentSessions, attributedCost, unattributedCost } = pullRequests
   const [expandedUrl, setExpandedUrl] = useState<string | null>(null)
-  // Reset any open expansion when the PR set changes (a period/provider switch or
-  // a refresh that alters the list): a stale expandedUrl would otherwise linger
-  // pointing at a row that is no longer present.
   const rowKey = rows.map(row => row.url).join('|')
   useEffect(() => { setExpandedUrl(null) }, [rowKey])
 
-  // A new-attribution payload carries `attributedCost`; an older by-reference
-  // payload omits it, so the rows are not summable and the footer must differ.
   const summable = attributedCost !== undefined
   const unattributed = unattributedCost ?? 0
-  // Reconcile to the visible numbers: every PR is present, so the summary is
-  // exactly the sum of the rounded cards a person can inspect below.
   const displayedAttributed = rows.reduce((sum, row) => sum + Number(row.cost.toFixed(2)), 0)
 
   return (
