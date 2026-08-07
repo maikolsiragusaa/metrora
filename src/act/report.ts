@@ -8,9 +8,6 @@ import {
   HEALTHY_READ_EDIT_RATIO,
   TOKENS_PER_MCP_TOOL,
   TOOLS_PER_MCP_SERVER,
-  TOKENS_PER_SKILL_DEF,
-  TOKENS_PER_AGENT_DEF,
-  TOKENS_PER_COMMAND_DEF,
   READ_TOOL_NAMES,
   EDIT_TOOL_NAMES,
   aggregateMcpCoverage,
@@ -22,6 +19,7 @@ import { parseAllSessions } from '../parser.js'
 import { computeYield, type YieldSummary } from '../yield.js'
 import { defaultActionsDir, readRecords } from './journal.js'
 import { DEFER_KINDS, captureDeferBaseline, measureDeferAction } from './defer-report.js'
+import { ARCHIVE_DEF_TOKENS, HONEST_FOOTER, MCP_KINDS } from './report-policy.js'
 import { renderTable } from '../text-table.js'
 import { formatTokens } from '../format.js'
 import { formatCost } from '../currency.js'
@@ -32,22 +30,6 @@ const BASELINE_WINDOW_DAYS = 14
 const REPORT_MIN_AGE_DAYS = 3
 const MIN_POST_WINDOW_SESSIONS = 20
 const VOLUME_SHIFT_FACTOR = 2
-
-// Encode the honest-accounting rules where they are seen: estimates are
-// window-scaled so both columns share a scale, each kind measures only its own
-// metric, guard is correlation, and realized figures are rounded down.
-const HONEST_FOOTER =
-  'Estimates are scaled to the measured window for comparability; the at-apply estimate is kept in --json. '
-  + 'MCP, defer and archive realized figures are derived from per-session baselines times observed session state, not independently metered token deltas. '
-  + 'Each fix measures only its own metric; effects are never attributed across signals. '
-  + 'Guard rows are correlation, not attribution. Realized numbers are rounded down.'
-
-const MCP_KINDS = new Set<ActionKind>(['mcp-remove', 'mcp-project-scope'])
-const ARCHIVE_DEF_TOKENS: Partial<Record<ActionKind, number>> = {
-  'archive-skill': TOKENS_PER_SKILL_DEF,
-  'archive-agent': TOKENS_PER_AGENT_DEF,
-  'archive-command': TOKENS_PER_COMMAND_DEF,
-}
 
 export type RealizedStatus = 'measured' | 'reverted' | 'not-measurable'
 
