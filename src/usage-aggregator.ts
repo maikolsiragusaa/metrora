@@ -14,6 +14,7 @@ import {
   sliceDayToProvider,
 } from './durable-project-reconciliation.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
+import { enrichModelsWithObservedPerformance } from './model-performance.js'
 import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
@@ -24,7 +25,6 @@ import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
 import { buildGranularHistory } from './granular-history.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
-
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
   const sessions = projects.flatMap(p => p.sessions)
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
@@ -445,7 +445,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     (sum, r) => sum + (r.provider === 'codex' && r.credits != null ? r.credits : 0),
     0,
   )
-
+  currentData.models = enrichModelsWithObservedPerformance(currentData.models, scanProjects)
   // PROVIDERS
   // For .all: enumerate every provider with cost across the period (from cache) + installed-but-zero.
   // For specific: just this single provider with its scoped cost.

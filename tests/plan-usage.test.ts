@@ -135,8 +135,8 @@ describe('getPlanUsage', () => {
       setAt: '2026-04-01T00:00:00.000Z',
     }, [
       {
-        project: 'codeburn',
-        projectPath: '/tmp/codeburn',
+        project: 'metrora',
+        projectPath: '/tmp/metrora',
         totalCostUSD: 10,
         totalApiCalls: 1,
         sessions: [
@@ -184,8 +184,11 @@ describe('getPlanUsage', () => {
   })
 
   it('keeps the provider-specific parser filter for one active plan', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-plan-usage-test-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-plan-usage-test-'))
+    const originalHome = process.env['HOME']
+    const originalConfigDir = process.env['METRORA_CONFIG_DIR']
     process.env['HOME'] = dir
+    process.env['METRORA_CONFIG_DIR'] = join(dir, '.config')
 
     try {
       await savePlan({
@@ -198,8 +201,8 @@ describe('getPlanUsage', () => {
 
       parseAllSessionsMock.mockResolvedValue([
         {
-          project: 'codeburn',
-          projectPath: '/tmp/codeburn',
+          project: 'metrora',
+          projectPath: '/tmp/metrora',
           totalCostUSD: 80,
           totalApiCalls: 1,
           sessions: [],
@@ -216,13 +219,20 @@ describe('getPlanUsage', () => {
       expect(usages).toHaveLength(1)
       expect(usages[0]?.spentApiEquivalentUsd).toBe(80)
     } finally {
+      if (originalHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = originalHome
+      if (originalConfigDir === undefined) delete process.env['METRORA_CONFIG_DIR']
+      else process.env['METRORA_CONFIG_DIR'] = originalConfigDir
       await rm(dir, { recursive: true, force: true })
     }
   })
 
   it('computes multiple active plan usages from one all-provider parse', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-plan-usage-test-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-plan-usage-test-'))
+    const originalHome = process.env['HOME']
+    const originalConfigDir = process.env['METRORA_CONFIG_DIR']
     process.env['HOME'] = dir
+    process.env['METRORA_CONFIG_DIR'] = join(dir, '.config')
 
     try {
       await savePlan({
@@ -242,14 +252,14 @@ describe('getPlanUsage', () => {
 
       parseAllSessionsMock.mockResolvedValue([
         {
-          project: 'codeburn',
-          projectPath: '/tmp/codeburn',
+          project: 'metrora',
+          projectPath: '/tmp/metrora',
           totalCostUSD: 150,
           totalApiCalls: 2,
           sessions: [
             {
               sessionId: 'session-1',
-              project: 'codeburn',
+              project: 'metrora',
               firstTimestamp: '2026-04-03T10:00:00.000Z',
               lastTimestamp: '2026-04-03T11:00:00.000Z',
               totalCostUSD: 150,
@@ -337,6 +347,10 @@ describe('getPlanUsage', () => {
       expect(usages.map(usage => usage.plan.provider)).toEqual(['claude', 'codex'])
       expect(usages.map(usage => usage.spentApiEquivalentUsd)).toEqual([100, 50])
     } finally {
+      if (originalHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = originalHome
+      if (originalConfigDir === undefined) delete process.env['METRORA_CONFIG_DIR']
+      else process.env['METRORA_CONFIG_DIR'] = originalConfigDir
       await rm(dir, { recursive: true, force: true })
     }
   })

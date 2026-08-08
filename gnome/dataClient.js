@@ -22,16 +22,16 @@ function buildAdditionalPaths() {
 export class DataClient {
   _cache = new Map();
   _inFlight = null;
-  _codeburnPath;
+  _metroraPath;
   _augmentedPath;
 
-  constructor(codeburnPath) {
-    this._codeburnPath = codeburnPath || '';
+  constructor(metroraPath) {
+    this._metroraPath = metroraPath || '';
     this._augmentedPath = this._buildAugmentedPath();
   }
 
-  setCodeburnPath(path) {
-    this._codeburnPath = path || '';
+  setMetroraPath(path) {
+    this._metroraPath = path || '';
   }
 
   cancelInFlight() {
@@ -65,10 +65,10 @@ export class DataClient {
 
   _buildArgv(period, provider) {
     let base;
-    if (this._codeburnPath && SAFE_ARG_RE.test(this._codeburnPath)) {
-      base = this._codeburnPath.split(' ').filter(s => s.length > 0);
+    if (this._metroraPath && SAFE_ARG_RE.test(this._metroraPath)) {
+      base = this._metroraPath.split(' ').filter(s => s.length > 0);
     } else {
-      base = ['codeburn'];
+      base = ['metrora'];
     }
 
     const args = [

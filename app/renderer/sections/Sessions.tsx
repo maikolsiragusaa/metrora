@@ -9,30 +9,33 @@ import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
 import { Stat } from '../components/Stat'
 import { usePolled } from '../hooks/usePolled'
-import { formatCompact, formatDayLong, formatDayShort, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { formatCompact, formatDayLong, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
+import { metrora } from '../lib/ipc'
+import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
 import type { DateRange, Period, ReasoningMix, ReasoningLevelOrUnknown, SessionRow } from '../lib/types'
 
 export const INITIAL_VISIBLE = 120
 const STEP = 120
 
-type SessionSort = 'cost' | 'recent' | 'turns' | 'tokens'
+type SessionSort = 'recent' | 'cost' | 'tokens' | 'cache' | 'unitCost'
 type SequenceEntry =
   | { type: 'header'; provider: string; count: number; cost: number }
   | { type: 'row'; row: SessionRow }
 
 const SORT_OPTIONS = [
-  { value: 'cost', label: 'Cost' },
   { value: 'recent', label: 'Recent' },
-  { value: 'turns', label: 'Turns' },
-  { value: 'tokens', label: 'Tokens' },
+  { value: 'cost', label: 'Cost' },
+  { value: 'tokens', label: 'Total tokens' },
+  { value: 'cache', label: 'Cache reuse' },
+  { value: 'unitCost', label: 'Cost / 1M' },
 ]
 
 const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
-  cost: 'highest cost',
   recent: 'most recent',
-  turns: 'turn count',
-  tokens: 'token count',
+  cost: 'highest cost',
+  tokens: 'total observed tokens',
+  cache: 'cache reuse',
+  unitCost: 'effective cost per one million observed tokens',
 }
 
 function providerName(provider: string): string {
@@ -79,20 +82,44 @@ function endedAtTime(row: SessionRow): number {
   return Number.isNaN(time) ? 0 : time
 }
 
+function sessionTotalTokens(row: SessionRow): number {
+  return observedTokenTotal(row)
+}
+
+function sessionCacheReuse(row: SessionRow): number | null {
+  return cacheReuseMultiple(row.inputTokens, row.cacheReadTokens)
+}
+
+function sessionUnitCost(row: SessionRow): number | null {
+  return costPerMillionObserved(row.cost, sessionTotalTokens(row))
+}
+
+function compareNullableDescending(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0
+  if (a == null) return 1
+  if (b == null) return -1
+  return b - a
+}
+
 function compareRows(sort: SessionSort, a: SessionRow, b: SessionRow): number {
   if (sort === 'cost') return b.cost - a.cost
-  if (sort === 'turns') return b.turns - a.turns
-  if (sort === 'tokens') {
-    return (b.inputTokens + b.outputTokens) - (a.inputTokens + a.outputTokens)
-  }
+  if (sort === 'tokens') return sessionTotalTokens(b) - sessionTotalTokens(a)
+  if (sort === 'cache') return compareNullableDescending(sessionCacheReuse(a), sessionCacheReuse(b))
+  if (sort === 'unitCost') return compareNullableDescending(sessionUnitCost(a), sessionUnitCost(b))
   return endedAtTime(b) - endedAtTime(a)
 }
 
 function groupSortValue(sort: SessionSort, rows: SessionRow[]): number {
   if (sort === 'cost') return rows.reduce((sum, row) => sum + row.cost, 0)
-  if (sort === 'turns') return rows.reduce((sum, row) => sum + row.turns, 0)
-  if (sort === 'tokens') {
-    return rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0)
+  if (sort === 'tokens') return rows.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
+  if (sort === 'cache') {
+    const values = rows.map(sessionCacheReuse).filter((value): value is number => value != null)
+    return values.length > 0 ? Math.max(...values) : 0
+  }
+  if (sort === 'unitCost') {
+    const cost = rows.reduce((sum, row) => sum + row.cost, 0)
+    const tokens = rows.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
+    return costPerMillionObserved(cost, tokens) ?? 0
   }
   return rows.reduce((latest, row) => Math.max(latest, endedAtTime(row)), 0)
 }
@@ -117,9 +144,24 @@ function sessionRowLabel(row: SessionRow, expanded: boolean): string {
     `Reasoning ${reasoningMixLabel(row.reasoningMix)}.`,
     `${row.turns.toLocaleString('en-US')} turns.`,
     `Cost ${formatUsd(row.cost)}.`,
-    `${formatCompact(row.inputTokens + row.outputTokens)} tokens.`,
+    `${formatCompact(sessionTotalTokens(row))} observed tokens.`,
   )
   return parts.join(' ')
+}
+
+function formatStartedAt(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatUnitCost(value: number | null): string {
+  return value == null ? '—' : formatUsd(value)
 }
 
 function ProviderFilterRow({
@@ -140,7 +182,7 @@ function ProviderFilterRow({
         aria-pressed={provider === 'all'}
         onClick={() => onProviderChange('all')}
       >
-        All
+        All providers
       </button>
       {detectedProviders.map(entry => (
         <button
@@ -165,6 +207,7 @@ export function Sessions({
   refreshToken = 0,
   detectedProviders = [],
   onProviderChange = () => {},
+  historicalSessionCount,
   ready = true,
 }: {
   period: Period
@@ -173,15 +216,16 @@ export function Sessions({
   refreshToken?: number
   detectedProviders?: Array<{ id: string; label: string }>
   onProviderChange?: (value: string) => void
+  historicalSessionCount?: number | null
   ready?: boolean
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<SessionSort>('cost')
-  const [grouped, setGrouped] = useState(true)
+  const [sort, setSort] = useState<SessionSort>('recent')
+  const [grouped, setGrouped] = useState(false)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
   const report = usePolled<SessionRow[]>(
-    () => range ? codeburn.getSessions(period, provider, range) : codeburn.getSessions(period, provider),
+    () => range ? metrora.getSessions(period, provider, range) : metrora.getSessions(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `sessions|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
@@ -192,6 +236,7 @@ export function Sessions({
     row.project,
     row.sessionId,
     row.models.join(' '),
+    row.provider,
     row.reasoningMix?.rows.map(item => item.level).join(' ') ?? '',
   ].some(value => value.toLowerCase().includes(q)))
 
@@ -246,22 +291,32 @@ export function Sessions({
 
   if (!report.data) {
     if (report.error) return <CliErrorPanel error={report.error} subject="sessions" />
-    return <SectionSkeleton label="Scanning sessions…" rows={5} />
+    return <SectionSkeleton label="Loading available session detail…" rows={5} />
   }
 
   if (!report.data.length) {
     return (
       <Panel title="Sessions">
         <ProviderFilterRow provider={provider} detectedProviders={detectedProviders} onProviderChange={onProviderChange} />
-        <EmptyNote>No sessions in this range yet.</EmptyNote>
+        <EmptyNote>No detailed sessions are available in this range.</EmptyNote>
       </Panel>
     )
   }
 
   const totalCost = filtered.reduce((sum, row) => sum + row.cost, 0)
-  const totalTokens = filtered.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0)
+  const totalTokens = filtered.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
   const remaining = filtered.length - renderedRows
+  const historicalCount = Math.max(report.data.length, historicalSessionCount ?? report.data.length)
+  const unavailableDetail = Math.max(0, historicalCount - report.data.length)
   const sessionCountLabel = `${filtered.length} ${filtered.length === 1 ? 'session' : 'sessions'}`
+
+  const onSortChange = (value: string) => {
+    const next = value as SessionSort
+    setSort(next)
+    // "Recent" means a genuine global newest-first chronology. A provider group
+    // is a different lens, so selecting Recent explicitly exits grouping.
+    if (next === 'recent') setGrouped(false)
+  }
 
   return (
     <div className="sessions-list-view">
@@ -271,15 +326,11 @@ export function Sessions({
         <input
           className="sessions-search"
           aria-label="Search sessions"
-          placeholder="Search title, project, model, or session ID…"
+          placeholder="Search title, project, model, provider, or session ID…"
           value={query}
           onChange={event => setQuery(event.target.value)}
         />
-        <SegTabs
-          options={SORT_OPTIONS}
-          value={sort}
-          onChange={value => setSort(value as SessionSort)}
-        />
+        <SegTabs options={SORT_OPTIONS} value={sort} onChange={onSortChange} />
         <button
           className="sessions-toggle"
           type="button"
@@ -293,8 +344,14 @@ export function Sessions({
         {`Sessions sorted by ${SORT_ANNOUNCEMENTS[sort]}, ${grouped ? 'grouped by provider' : 'not grouped by provider'}. ${sessionCountLabel} after filters.`}
       </div>
       <div className="sessions-summary">
-        {filtered.length} sessions · {formatUsd(totalCost)} · {formatCompact(totalTokens)} tokens
+        {filtered.length.toLocaleString('en-US')} detailed sessions · {formatUsd(totalCost)} · {formatCompact(totalTokens)} observed tokens
+        {unavailableDetail > 0 ? ` · ${historicalCount.toLocaleString('en-US')} sessions in historical totals` : ''}
       </div>
+      {unavailableDetail > 0 && query === '' ? (
+        <div className="stale-banner">
+          {unavailableDetail.toLocaleString('en-US')} older session{unavailableDetail === 1 ? '' : 's'} remain in durable historical totals but no longer have source detail on this device.
+        </div>
+      ) : null}
       {filtered.length === 0 ? (
         <div className="sessions-empty">
           <EmptyNote>No sessions match &quot;{query}&quot;.</EmptyNote>
@@ -302,51 +359,75 @@ export function Sessions({
         </div>
       ) : (
         <>
-          <div className="session-list">
-            {renderedSequence.map(entry => entry.type === 'header' ? (
-              <div
-                className="provider-h"
-                key={`provider-${entry.provider}`}
-                role="heading"
-                aria-level={3}
-                aria-label={`${providerName(entry.provider)}: ${entry.count.toLocaleString('en-US')} sessions, ${formatUsd(entry.cost)}`}
-              >
-                <span>{providerName(entry.provider)}</span>
-                <span className="provider-count">{entry.count.toLocaleString('en-US')} sessions</span>
-                <span className="provider-cost">{formatUsd(entry.cost)}</span>
-              </div>
-            ) : (
-              <Fragment key={entry.row.sessionId}>
-                <button
-                  className="session-row"
-                  type="button"
-                  aria-label={sessionRowLabel(entry.row, selectedId === entry.row.sessionId)}
-                  aria-expanded={selectedId === entry.row.sessionId}
-                  aria-controls={sessionDetailId(entry.row.sessionId)}
-                  onClick={() => setSelectedId(current => current === entry.row.sessionId ? null : entry.row.sessionId)}
-                >
-                  <span className="session-primary">
-                    <span className="session-chevron" aria-hidden="true">›</span>
-                    <span className="session-project-copy">
-                      <span className="session-title" title={entry.row.title || undefined}>{sessionHeadline(entry.row)}</span>
-                      <span className="session-project">Session ID · {entry.row.sessionId.slice(0, 18)}</span>
-                    </span>
-                  </span>
-                  <span className="session-when">{formatDayShort(entry.row.endedAt)}</span>
-                  <span className="session-models">
-                    <span className="session-model-list">{entry.row.models.join(', ')}</span>
-                    <span className="session-reasoning-mix">{reasoningMixLabel(entry.row.reasoningMix)}</span>
-                  </span>
-                  <span>{entry.row.turns}</span>
-                  <span>{formatUsd(entry.row.cost)}</span>
-                  <span>{formatCompact(entry.row.inputTokens + entry.row.outputTokens)}</span>
-                </button>
-                {selectedId === entry.row.sessionId && (
-                  <SessionDetail session={entry.row} onCollapse={() => setSelectedId(null)} />
-                )}
-              </Fragment>
-            ))}
-          </div>
+          <Panel className="scroll-x">
+            <table aria-label="Detailed sessions">
+              <thead>
+                <tr>
+                  <th>Session</th>
+                  <th>Client</th>
+                  <th>Started</th>
+                  <th>Model</th>
+                  <th>Calls</th>
+                  <th>Input</th>
+                  <th>Output</th>
+                  <th>Cache R</th>
+                  <th>Cache W</th>
+                  <th title="Cached input read per uncached input token">Cache ×</th>
+                  <th>Total</th>
+                  <th>Cost</th>
+                  <th title="Effective API-equivalent value per 1M observed tokens">Cost / 1M</th>
+                </tr>
+              </thead>
+              <tbody>
+                {renderedSequence.map(entry => entry.type === 'header' ? (
+                  <tr key={`provider-${entry.provider}`}>
+                    <td colSpan={13}>
+                      <strong>{providerName(entry.provider)}</strong>
+                      <span style={{ color: 'var(--mut)', marginLeft: 8 }}>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span>
+                    </td>
+                  </tr>
+                ) : (
+                  <Fragment key={entry.row.sessionId}>
+                    <tr>
+                      <td>
+                        <button
+                          className="alias"
+                          type="button"
+                          aria-label={sessionRowLabel(entry.row, selectedId === entry.row.sessionId)}
+                          aria-expanded={selectedId === entry.row.sessionId}
+                          aria-controls={sessionDetailId(entry.row.sessionId)}
+                          title={entry.row.title || entry.row.sessionId}
+                          onClick={() => setSelectedId(current => current === entry.row.sessionId ? null : entry.row.sessionId)}
+                        >
+                          {sessionHeadline(entry.row)}
+                        </button>
+                        <div style={{ color: 'var(--mut2)', fontSize: 'var(--fs-micro)', marginTop: 2 }}>{entry.row.sessionId.slice(0, 18)}</div>
+                      </td>
+                      <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ProviderLogo provider={entry.row.provider} size={14} />{providerName(entry.row.provider)}</span></td>
+                      <td>{formatStartedAt(entry.row.startedAt)}</td>
+                      <td title={entry.row.models.join(', ')}>{entry.row.models.join(', ') || '—'}</td>
+                      <td>{entry.row.calls.toLocaleString('en-US')}</td>
+                      <td>{formatCompact(entry.row.inputTokens)}</td>
+                      <td>{formatCompact(entry.row.outputTokens)}</td>
+                      <td>{formatCompact(entry.row.cacheReadTokens)}</td>
+                      <td>{formatCompact(entry.row.cacheWriteTokens)}</td>
+                      <td title={cacheShare(entry.row.inputTokens, entry.row.cacheReadTokens) == null ? undefined : `${Math.round((cacheShare(entry.row.inputTokens, entry.row.cacheReadTokens) ?? 0) * 1000) / 10}% of input served from cache`}>{formatReuseMultiple(sessionCacheReuse(entry.row))}</td>
+                      <td>{formatCompact(sessionTotalTokens(entry.row))}</td>
+                      <td>{formatUsd(entry.row.cost)}</td>
+                      <td>{formatUnitCost(sessionUnitCost(entry.row))}</td>
+                    </tr>
+                    {selectedId === entry.row.sessionId && (
+                      <tr>
+                        <td colSpan={13} id={sessionDetailId(entry.row.sessionId)}>
+                          <SessionDetail session={entry.row} onCollapse={() => setSelectedId(null)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </Panel>
           <div className="sessions-more-caption">Showing {renderedRows} of {filtered.length}</div>
           {remaining > 0 && (
             <button className="sessions-more" type="button" onClick={() => setVisibleCount(value => value + STEP)}>
@@ -360,8 +441,10 @@ export function Sessions({
 }
 
 function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollapse: () => void }) {
-  const cacheTotal = session.inputTokens + session.cacheReadTokens
-  const cacheHit = cacheTotal > 0 ? Math.round(session.cacheReadTokens / cacheTotal * 100) : null
+  const totalTokens = sessionTotalTokens(session)
+  const reuse = sessionCacheReuse(session)
+  const share = cacheShare(session.inputTokens, session.cacheReadTokens)
+  const unitCost = sessionUnitCost(session)
   const reasoningTokenSummary = session.reasoningTokens === undefined
     ? 'Reasoning-token count unavailable'
     : `${formatCompact(session.reasoningTokens)} dedicated reasoning tokens`
@@ -375,29 +458,27 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
   }, [onCollapse])
 
   return (
-    <div
-      id={sessionDetailId(session.sessionId)}
-      className="session-inline-detail"
-      role="region"
-      aria-label={`${shortenProjectPath(session.project)} session details`}
-    >
+    <div className="session-inline-detail" role="region" aria-label={`${shortenProjectPath(session.project)} session details`}>
       <div className="detail-head">
         <h3 className="detail-title">{shortenProjectPath(session.project)}</h3>
-        <div className="detail-line">{session.provider} · {session.models.join(', ')}</div>
+        <div className="detail-line">{providerName(session.provider)} · {session.models.join(', ')}</div>
         <div className="detail-line">Reasoning · {reasoningMixLabel(session.reasoningMix)} · {reasoningCoverageLabel(session.reasoningMix)}</div>
         <div className="detail-line">
-          {formatDayLong(session.startedAt)} → {formatDayLong(session.endedAt)} · {formatDuration(session.durationMs)}
+          {formatStartedAt(session.startedAt)} → {formatStartedAt(session.endedAt)} · {formatDuration(session.durationMs)}
         </div>
       </div>
       <div className="stats">
-        <Stat label="Cost" value={formatUsd(session.cost)} delta="this session" />
+        <Stat label="Cost" value={formatUsd(session.cost)} delta="API-equivalent value" />
+        <Stat label="Cost / 1M" value={formatUnitCost(unitCost)} delta="observed tokens" />
         <Stat label="Calls" value={session.calls.toLocaleString()} delta="API calls" />
         <Stat label="Turns" value={session.turns.toLocaleString()} delta="assistant turns" />
-        <Stat label="Saved" value={formatUsd(session.savingsUSD)} delta="vs baseline" />
-        <Stat label="Input" value={formatCompact(session.inputTokens)} delta="tokens sent" />
-        <Stat label="Output" value={formatCompact(session.outputTokens)} delta="tokens generated" />
-        <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta={cacheHit === null ? 'No cacheable input' : `${cacheHit}% hit`} />
-        <Stat label="Cache write" value={formatCompact(session.cacheWriteTokens)} delta="tokens cached" />
+        <Stat label="Input" value={formatCompact(session.inputTokens)} delta="uncached input" />
+        <Stat label="Output" value={formatCompact(session.outputTokens)} delta="generated" />
+        <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta="reused input" />
+        <Stat label="Cache write" value={formatCompact(session.cacheWriteTokens)} delta="written to cache" />
+        <Stat label="Cache reuse" value={formatReuseMultiple(reuse)} delta={share == null ? 'No comparable input' : `${Math.round(share * 1000) / 10}% cache share`} />
+        <Stat label="Total" value={formatCompact(totalTokens)} delta="observed tokens" />
+        {session.savingsUSD > 0 ? <Stat label="Saved" value={formatUsd(session.savingsUSD)} delta="configured baseline" /> : null}
       </div>
       {session.reasoningMix && session.reasoningMix.rows.length > 0 && (
         <div className="reasoning-detail">

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: mocks }
+  return { ...actual, metrora: mocks }
 })
 
 const modelA: ModelStats = {
@@ -33,7 +33,9 @@ const report: CompareJsonReport = {
   modelB,
   metrics: [
     { section: 'Performance', label: 'One-shot rate', valueA: 71, valueB: 63, formatFn: 'percent', winner: 'a' },
+    { section: 'Performance', label: 'Retry rate', valueA: 8, valueB: 12, formatFn: 'percent', winner: 'a' },
     { section: 'Efficiency', label: 'Cost / call', valueA: 0.069, valueB: 0.033, formatFn: 'cost', winner: 'b' },
+    { section: 'Efficiency', label: 'Cache hit rate', valueA: 44, valueB: 45, formatFn: 'percent', winner: 'b' },
   ],
   categories: [
     { category: 'Coding', turnsA: 400, editTurnsA: 312, oneShotRateA: 74, turnsB: 350, editTurnsB: 280, oneShotRateB: 66, winner: 'a' },
@@ -49,7 +51,7 @@ describe('Compare', () => {
     mocks.getCompare.mockReset()
   })
 
-  it('defaults to the top two and renders formatted report panels and explicit winners', async () => {
+  it('defaults to the top two and makes observed usage the primary comparison', async () => {
     const user = userEvent.setup()
     mocks.getCompareModels.mockResolvedValue([modelA, modelB])
     mocks.getCompare.mockResolvedValue(report)
@@ -62,20 +64,24 @@ describe('Compare', () => {
       expect(second).toHaveTextContent('Sonnet 5 · 3,318 calls')
     })
 
-    expect(await screen.findByRole('table', { name: 'Performance comparison' })).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: 'Observed usage comparison' })).toBeInTheDocument()
     expect(mocks.getCompare).toHaveBeenCalledWith('30days', 'all', 'Opus 4.8', 'Sonnet 5')
-    expect(screen.getByRole('table', { name: 'Efficiency comparison' })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Comparison context' })).toBeInTheDocument()
-    expect(screen.getByLabelText(/Opus 4\.8, One-shot rate: 71%\. Better value/)).toHaveClass('cmp-best')
-    expect(screen.getByLabelText(/Sonnet 5, Cost \/ call: \$0\.03\. Better value/)).toHaveClass('cmp-best')
-    expect(screen.getAllByTitle('Better value').length).toBeGreaterThanOrEqual(3)
-    expect(screen.getByText('$331.20')).toBeInTheDocument()
-    expect(screen.getByText('152.6M')).toBeInTheDocument()
-    expect(screen.getByText('9.6M')).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Observed efficiency comparison' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Comparison observation context' })).toBeInTheDocument()
+    expect(screen.getByText(/not a benchmark score or a claim about general model quality/i)).toBeInTheDocument()
 
-    const context = screen.getByText('Context').closest<HTMLElement>('.cmp-card')!
-    expect(within(context).getByText('Cache hit rate')).toBeInTheDocument()
-    expect(within(context).getByText('Days of data')).toBeInTheDocument()
+    const usage = screen.getByRole('table', { name: 'Observed usage comparison' })
+    expect(within(usage).getByText('Cache ×')).toBeInTheDocument()
+    expect(within(usage).getByText('Total tokens')).toBeInTheDocument()
+    expect(within(usage).getByText('Cost / 1M')).toBeInTheDocument()
+    expect(within(usage).getByLabelText('Opus 4.8, Cache ×: 0.78×')).toBeInTheDocument()
+    expect(within(usage).getByLabelText('Opus 4.8, Total tokens: 297.6M')).toBeInTheDocument()
+    expect(within(usage).getByLabelText('Opus 4.8, Cost / 1M: $1.11')).toBeInTheDocument()
+
+    // The old backend Cache hit rate is deliberately not duplicated in the
+    // primary efficiency block now that Cache × is the shared user-facing metric.
+    expect(screen.getByRole('table', { name: 'Observed efficiency comparison' })).not.toHaveTextContent('Cache hit rate')
+    expect(screen.queryByTitle('Better value')).not.toBeInTheDocument()
 
     await user.click(second)
     await user.click(screen.getByRole('option', { name: 'Opus 4.8 · 4,812 calls' }))
@@ -83,23 +89,28 @@ describe('Compare', () => {
     expect(mocks.getCompare).toHaveBeenCalledWith('30days', 'all', 'Sonnet 5', 'Opus 4.8')
   })
 
-  it('computes cache hit rate over input + cache reads (excludes cache writes)', async () => {
+  it('keeps workflow heuristics collapsed and explicitly experimental', async () => {
+    const user = userEvent.setup()
     mocks.getCompareModels.mockResolvedValue([modelA, modelB])
     mocks.getCompare.mockResolvedValue(report)
     render(<Compare period="30days" provider="all" />)
 
-    const context = (await screen.findByText('Context')).closest<HTMLElement>('.cmp-card')!
-    const row = within(context).getByText('Cache hit rate').closest('.cmp-metric')!
-    // 119.4M / (152.6M + 119.4M) = 44%, not 119.4 / (152.6 + 119.4 + 16) = 41%.
-    expect(row).toHaveTextContent('44%')
-    expect(row).not.toHaveTextContent('41%')
+    const disclosure = await screen.findByText('Workflow diagnostics · Experimental')
+    expect(disclosure.closest('details')).not.toHaveAttribute('open')
+
+    await user.click(disclosure)
+    const diagnostics = screen.getByRole('table', { name: 'Editing signals comparison' })
+    expect(within(diagnostics).getByText('One-shot rate')).toBeInTheDocument()
+    expect(within(diagnostics).getByText('Retry rate')).toBeInTheDocument()
+    expect(screen.getByText(/Secondary signals, not model quality scores/i)).toBeInTheDocument()
+    expect(screen.queryByTitle('Better value')).not.toBeInTheDocument()
   })
 
-  it('keeps unavailable evidence distinct from zero and does not rank it', async () => {
+  it('keeps unavailable cache reuse distinct from zero', async () => {
     const sparseModelA: ModelStats = {
       ...modelA,
       inputTokens: 0,
-      cacheReadTokens: 0,
+      cacheReadTokens: 20_000,
       firstSeen: '',
       lastSeen: '',
     }
@@ -108,7 +119,7 @@ describe('Compare', () => {
       modelA: sparseModelA,
       metrics: [
         { section: 'Performance', label: 'One-shot rate', valueA: null, valueB: 63, formatFn: 'percent', winner: 'b' },
-        report.metrics[1]!,
+        report.metrics[2]!,
       ],
       categories: [
         { ...report.categories[0]!, oneShotRateA: null, winner: 'b' },
@@ -118,16 +129,9 @@ describe('Compare', () => {
     mocks.getCompare.mockResolvedValue(sparseReport)
     render(<Compare period="30days" provider="all" />)
 
-    const unavailableMetric = await screen.findByLabelText('Opus 4.8, One-shot rate: Not available')
-    expect(unavailableMetric).toHaveTextContent('—')
-    expect(unavailableMetric).not.toHaveClass('cmp-best')
-    expect(screen.getByText('Not available')).toBeInTheDocument()
-    expect(screen.queryByText('0%')).not.toBeInTheDocument()
-
-    const context = screen.getByRole('table', { name: 'Comparison context' })
-    expect(within(context).getByLabelText('Opus 4.8, Cache hit rate: Not available')).toHaveTextContent('—')
-    expect(within(context).getByLabelText('Opus 4.8, Days of data: Not available')).toHaveTextContent('—')
-    expect(screen.getByLabelText(/Sonnet 5: 66% one-shot rate; 280 edit turns\. Better value/)).toHaveClass('cmp-best')
+    const usage = await screen.findByRole('table', { name: 'Observed usage comparison' })
+    expect(within(usage).getByLabelText('Opus 4.8, Cache ×: —')).toHaveTextContent('—')
+    expect(screen.getByLabelText('Opus 4.8, Days observed: Not available')).toBeInTheDocument()
   })
 
   it('notes that custom ranges are unsupported and still compares by period', async () => {
@@ -135,7 +139,7 @@ describe('Compare', () => {
     mocks.getCompare.mockResolvedValue(report)
     render(<Compare period="30days" provider="all" range={{ from: '2026-07-01', to: '2026-07-11' }} />)
 
-    expect(await screen.findByRole('note')).toHaveTextContent('Compare uses the selected period, custom dates are not supported yet.')
+    expect(await screen.findByText('Compare uses the selected period; custom dates are not supported yet.')).toBeInTheDocument()
     expect(mocks.getCompareModels).toHaveBeenCalledWith('30days', 'all')
   })
 

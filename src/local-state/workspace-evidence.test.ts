@@ -48,7 +48,7 @@ function event(
   return {
     specversion: '1.0',
     id,
-    source: `urn:qovrion:endpoint:${endpointId}`,
+    source: `urn:metrora:endpoint:${endpointId}`,
     type: USAGE_MEASUREMENT_EVENT_TYPE,
     time: NOW,
     subject: `workspace/${workspaceId}/endpoint/${endpointId}`,
@@ -124,7 +124,7 @@ function batchOptions(dataDir: string, identity: Awaited<ReturnType<typeof loadO
   return {
     dataDir,
     identity,
-    qovrionVersion: '0.9.19',
+    metroraVersion: '0.9.19',
     adapterSetSha256: 'a'.repeat(64),
     openTelemetryGenAiVersion: '1.37.0',
     now: () => new Date('2026-08-01T14:05:00.000Z'),

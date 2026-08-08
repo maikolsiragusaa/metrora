@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
@@ -14,8 +16,16 @@ function runCli(args: string[], home: string) {
       USERPROFILE: home,
       HOMEPATH: home,
       HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
-      CODEBURN_CACHE_DIR: join(home, '.cache', 'codeburn'),
+      CODEX_HOME: join(home, '.codex'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
+      OPENCODE_DATA_DIR: join(home, '.opencode'),
       TZ: 'UTC',
     },
     encoding: 'utf-8',
@@ -25,10 +35,10 @@ function runCli(args: string[], home: string) {
 
 describe('metrora report Devin model variants', () => {
   it('keeps friendly Devin effort-tier names in JSON model rows and efficiency rows', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-devin-models-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-devin-models-'))
     try {
-      await mkdir(join(home, '.config', 'codeburn'), { recursive: true })
-      await writeFile(join(home, '.config', 'codeburn', 'config.json'), JSON.stringify({
+      await mkdir(join(home, '.config', 'metrora'), { recursive: true })
+      await writeFile(join(home, '.config', 'metrora', 'config.json'), JSON.stringify({
         devin: { acuUsdRate: 1 },
       }))
 

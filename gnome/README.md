@@ -8,7 +8,7 @@ Monitor local AI coding usage, tokens and costs from the GNOME desktop panel.
 - Metrora CLI installed from this repository
 - `glib-compile-schemas` (usually part of `glib2-devel` or `libglib2.0-dev`)
 
-The extension currently retains the inherited UUID `codeburn@codeburn.dev`, settings schema and `codeburn` CLI fallback so existing GNOME installations and local state continue to work. Its product-facing identity is Metrora.
+The extension uses the canonical UUID `metrora@metrora.dev`, Metrora settings schema and `metrora` CLI. Its product-facing identity is Metrora.
 
 ## Install
 
@@ -25,7 +25,7 @@ Then restart GNOME Shell:
 Enable the extension:
 
 ```bash
-gnome-extensions enable codeburn@codeburn.dev
+gnome-extensions enable metrora@metrora.dev
 ```
 
 ## Configure
@@ -33,7 +33,7 @@ gnome-extensions enable codeburn@codeburn.dev
 Open preferences:
 
 ```bash
-gnome-extensions prefs codeburn@codeburn.dev
+gnome-extensions prefs metrora@metrora.dev
 ```
 
 Or use the GNOME Extensions app.
@@ -52,8 +52,8 @@ Or use the GNOME Extensions app.
 ## Uninstall
 
 ```bash
-gnome-extensions disable codeburn@codeburn.dev
-rm -r ~/.local/share/gnome-shell/extensions/codeburn@codeburn.dev
+gnome-extensions disable metrora@metrora.dev
+rm -r ~/.local/share/gnome-shell/extensions/metrora@metrora.dev
 ```
 
 ## Development
@@ -63,7 +63,7 @@ rm -r ~/.local/share/gnome-shell/extensions/codeburn@codeburn.dev
 glib-compile-schemas schemas/
 
 # Symlink for development
-ln -sf "$(pwd)" ~/.local/share/gnome-shell/extensions/codeburn@codeburn.dev
+ln -sf "$(pwd)" ~/.local/share/gnome-shell/extensions/metrora@metrora.dev
 
 # Watch logs
 journalctl -f -o cat /usr/bin/gnome-shell

@@ -73,7 +73,7 @@ function makeProject(calls: ParsedApiCall[]): ProjectSummary {
 }
 
 describe('aggregateAudit', () => {
-  it('keeps raw fields and exposes codeburn normalizations', async () => {
+  it('keeps raw fields and exposes metrora normalizations', async () => {
     const anthropicCall = makeCall({ inputTokens: 100, outputTokens: 50, reasoningTokens: 10, cacheReadInputTokens: 200 }, 0.5)
     const openaiCall = makeCall({ inputTokens: 100, outputTokens: 50, cachedInputTokens: 300 }, 0.5)
     const rows = await aggregateAudit([makeProject([anthropicCall, openaiCall])])

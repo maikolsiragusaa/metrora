@@ -32,11 +32,15 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
   sessions: { id: 'sessions', label: 'Sessions', title: 'Sessions', shortcut: '2' },
   pullRequests: { id: 'pullRequests', label: 'Pull requests', title: 'Pull requests', shortcut: '3' },
   spend: { id: 'spend', label: 'Spend', title: 'Spend', shortcut: '4' },
-  optimize: { id: 'optimize', label: 'Optimize', title: 'Optimize', shortcut: '5' },
+  optimize: { id: 'optimize', label: 'Insights', title: 'Insights', shortcut: '5' },
   models: { id: 'models', label: 'Models', title: 'Models', shortcut: '6' },
   compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '7' },
-  plans: { id: 'plans', label: 'Plans', title: 'Plans', shortcut: '8' },
-  workspace: { id: 'workspace', label: 'Workspace', title: 'Workspace', shortcut: '9' },
+  // Plans remains a routable internal surface for compatibility and Settings
+  // deep-links, but it is intentionally not a first-class sidebar destination.
+  // Provider subscriptions belong in Home + Settings; reserving "plan" in the
+  // main product navigation avoids colliding with future Metrora billing plans.
+  plans: { id: 'plans', label: 'Plans', title: 'Provider plans', shortcut: '' },
+  workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '8' },
   settings: { id: 'settings', label: 'Settings', title: 'Settings', shortcut: ',' },
 }
 
@@ -44,7 +48,7 @@ export const DESKTOP_NAVIGATION_GROUPS: readonly DesktopNavigationGroup[] = [
   { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
   { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
   { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare'] },
-  { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
+  { id: 'control', label: 'Control', placement: 'primary', sections: ['workspace'] },
   { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
 ]
 
@@ -55,5 +59,7 @@ export const SECTION_TITLES: Record<Section, string> = Object.fromEntries(
 ) as Record<Section, string>
 
 export const SECTION_BY_SHORTCUT: Readonly<Record<string, Section>> = Object.fromEntries(
-  SECTION_IDS.map(id => [DESKTOP_NAVIGATION_ITEMS[id].shortcut, id]),
+  DESKTOP_NAVIGATION_ORDER
+    .map(id => [DESKTOP_NAVIGATION_ITEMS[id].shortcut, id] as const)
+    .filter(([shortcut]) => shortcut.length > 0),
 )

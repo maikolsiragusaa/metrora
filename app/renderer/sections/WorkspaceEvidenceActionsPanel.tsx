@@ -37,23 +37,23 @@ export function WorkspaceEvidenceActionsPanel({
 }) {
   const exportBlocked = evidenceView.blocked || evidence.unbatchedEventCount > 0
   return (
-    <Panel title="Evidence actions" right={availability.vault.backend === 'windows-dpapi' ? 'Windows DPAPI' : 'macOS Keychain'}>
+    <Panel title="Export & recovery" right="This device">
       <div className="workspace-actions">
         <button type="button" className="btn btn-s" onClick={() => void onReload()} disabled={busy}>
-          {action === 'reload' ? 'Refreshing…' : 'Refresh status'}
+          {action === 'reload' ? 'Refreshing…' : 'Refresh'}
         </button>
         <button type="button" className="btn btn-s" onClick={() => void onRecover()} disabled={busy || evidenceView.inspectionPending}>
-          {action === 'recover' ? 'Checking…' : 'Check & recover local state'}
+          {action === 'recover' ? 'Checking…' : 'Check & recover'}
         </button>
         <button type="button" className="btn btn-s" onClick={() => void onBatch()} disabled={busy || !workspace || evidenceView.blocked}>
-          {action === 'batch' ? 'Signing…' : 'Create signed batch'}
+          {action === 'batch' ? 'Signing…' : 'Sign pending usage'}
         </button>
         <button type="button" className="btn btn-p" onClick={() => void onExport()} disabled={busy || !workspace || exportBlocked}>
-          {action === 'export' ? 'Exporting…' : 'Export verifiable evidence'}
+          {action === 'export' ? 'Exporting…' : 'Export signed data'}
         </button>
       </div>
       <p className="workspace-action-note">
-        Evidence verification is automatic and read-only. Recovery remains explicit and bounded; it never deletes, resets, unblocks, reprices, batches, exports, or uploads evidence automatically.
+        Metrora checks workspace integrity automatically. Recovery, signing, and export only happen when you request them.
       </p>
       {lastRecovery ? (
         <div className="workspace-source-line" data-testid="workspace-recovery-summary">
@@ -62,11 +62,17 @@ export function WorkspaceEvidenceActionsPanel({
       ) : null}
       <p className="workspace-action-note">
         {evidenceView.inspectionPending
-          ? 'Wait for local verification before producing, signing, or exporting.'
+          ? 'Wait for the local check to finish before signing or exporting.'
           : evidence.unbatchedEventCount > 0
-            ? 'Create a signed batch before export. Production, batching, and export are always explicit.'
-            : 'Production, batching, and export are always explicit. Nothing is uploaded or published automatically.'}
+            ? 'Sign the pending usage before exporting it.'
+            : 'Nothing is uploaded or published automatically.'}
       </p>
+      <details className="workspace-disclosure">
+        <summary>Security details</summary>
+        <div className="workspace-disclosure-body workspace-action-note">
+          Signing keys are protected by {availability.vault.backend === 'windows-dpapi' ? 'Windows DPAPI' : 'macOS Keychain'}. Integrity checks are read-only; recovery never silently deletes, reprices, signs, exports, or uploads data.
+        </div>
+      </details>
     </Panel>
   )
 }

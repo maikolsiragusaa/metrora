@@ -30,7 +30,7 @@ function event(): UsageMeasurementEventV1 {
   return {
     specversion: '1.0',
     id: 'evt_interrupted_publication',
-    source: 'urn:qovrion:endpoint:ep_test',
+    source: 'urn:metrora:endpoint:ep_test',
     type: USAGE_MEASUREMENT_EVENT_TYPE,
     time: '2026-08-01T14:00:00.000Z',
     subject: 'workspace/ws_test/endpoint/ep_test',

@@ -82,7 +82,7 @@ function loadDriver(): boolean {
     loadError =
       'SQLite-based providers (Cursor, OpenCode) need Node 22+ with the node:sqlite module.\n' +
       `Current Node: ${process.version}.\n` +
-      'Upgrade Node (https://nodejs.org) and run codeburn again.\n' +
+      'Upgrade Node (https://nodejs.org) and run metrora again.\n' +
       `(underlying error: ${message})`
     return false
   } finally {

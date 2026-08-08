@@ -24,49 +24,47 @@ function memoryStorage(seed: Record<string, string> = {}): MemoryStorage {
 }
 
 describe('renderer storage compatibility', () => {
-  it('prefers Metrora over Qovrion and CodeBurn', () => {
+  it('prefers Metrora over the legacy compatibility key', () => {
     const keys = storageKeys('theme')
-    const storage = memoryStorage({ [keys.canonical]: 'dark', [keys.qovrion]: 'light', [keys.codeburn]: 'system' })
+    const storage = memoryStorage({ [keys.canonical]: 'dark', [keys.legacy]: 'system' })
     expect(readCompatStorage('theme', storage)).toBe('dark')
   })
 
-  it('copies a Qovrion value forward without deleting it', () => {
+  it('copies a legacy value forward without deleting it', () => {
     const keys = storageKeys('defaultPeriod')
-    const storage = memoryStorage({ [keys.qovrion]: '30days', [keys.codeburn]: 'week' })
+    const storage = memoryStorage({ [keys.legacy]: '30days' })
     expect(readCompatStorage('defaultPeriod', storage)).toBe('30days')
     expect(storage.getItem(keys.canonical)).toBe('30days')
-    expect(storage.getItem(keys.qovrion)).toBe('30days')
+    expect(storage.getItem(keys.legacy)).toBe('30days')
   })
 
-  it('falls through to CodeBurn when no newer value exists', () => {
+  it('returns null when no canonical or legacy value exists', () => {
     const keys = storageKeys('theme')
-    const storage = memoryStorage({ [keys.codeburn]: 'light' })
-    expect(readCompatStorage('theme', storage)).toBe('light')
-    expect(storage.getItem(keys.canonical)).toBe('light')
+    const storage = memoryStorage()
+    expect(readCompatStorage('theme', storage)).toBeNull()
+    expect(storage.getItem(keys.canonical)).toBeNull()
   })
 
-  it('writes every supported generation for rollback compatibility', () => {
+  it('writes only the canonical Metrora generation', () => {
     const keys = storageKeys('refreshInterval')
     const storage = memoryStorage()
     writeCompatStorage('refreshInterval', '5m', storage)
     expect(storage.getItem(keys.canonical)).toBe('5m')
-    expect(storage.getItem(keys.qovrion)).toBe('5m')
-    expect(storage.getItem(keys.codeburn)).toBe('5m')
+    expect(storage.getItem(keys.legacy)).toBeNull()
   })
 
-  it('removes every generation only for an explicit removal', () => {
+  it('removes canonical and legacy keys only for an explicit removal', () => {
     const keys = storageKeys('dailyBudget')
-    const storage = memoryStorage({ [keys.canonical]: 'a', [keys.qovrion]: 'a', [keys.codeburn]: 'a' })
+    const storage = memoryStorage({ [keys.canonical]: 'a', [keys.legacy]: 'a' })
     removeCompatStorage('dailyBudget', storage)
     expect(storage.getItem(keys.canonical)).toBeNull()
-    expect(storage.getItem(keys.qovrion)).toBeNull()
-    expect(storage.getItem(keys.codeburn)).toBeNull()
+    expect(storage.getItem(keys.legacy)).toBeNull()
   })
 
   it('migrates the known key set idempotently', () => {
     const theme = storageKeys('theme')
     const budget = storageKeys('dailyBudget')
-    const storage = memoryStorage({ [theme.qovrion]: 'dark', [budget.codeburn]: '{"kind":"usd","value":10}' })
+    const storage = memoryStorage({ [theme.legacy]: 'dark', [budget.legacy]: '{"kind":"usd","value":10}' })
     migrateKnownStorage(storage)
     migrateKnownStorage(storage)
     expect(storage.getItem(theme.canonical)).toBe('dark')

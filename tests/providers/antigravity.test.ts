@@ -243,7 +243,7 @@ describe('antigravity provider helpers', () => {
   })
 
   it('discovers legacy .pb files and Antigravity 2 .db files only', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-'))
 
     try {
       await writeFile(join(dir, 'legacy.pb'), '')
@@ -269,7 +269,7 @@ describe('antigravity provider helpers', () => {
   })
 
   it('discovers antigravity-ide conversation and implicit files', async () => {
-    const tempHome = await mkdtemp(join(tmpdir(), 'codeburn-home-'))
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-home-'))
     const conversationsDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
     const implicitDir = join(tempHome, '.gemini', 'antigravity-ide', 'implicit')
 
@@ -312,8 +312,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('captures exact Antigravity CLI statusLine usage as fallback calls', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     try {
       const payload = {
@@ -371,8 +371,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('skips statusLine fallback calls when RPC cache already covered the conversation', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-rpc-dedup-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-rpc-dedup-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     try {
       expect(await recordAntigravityStatusLinePayload({
@@ -405,8 +405,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('skips singleton statusLine snapshots and deltas monotonic usage', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-runs-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-runs-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     const basePayload = {
       conversation_id: 'statusline-runs',
@@ -457,8 +457,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('treats non-monotonic statusLine usage as a new request snapshot', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-reset-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-reset-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     const payload = (
       input_tokens: number,
@@ -513,10 +513,10 @@ describe('antigravity provider helpers', () => {
   it('parses current Antigravity CLI SQLite conversations with non-zero token usage', async () => {
     if (!isSqliteAvailable()) return
 
-    const tempHome = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-current-cli-'))
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-current-cli-'))
     const cacheDir = join(tempHome, 'cache')
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = cacheDir
 
     try {
       const fixture = JSON.parse(await readFile(
@@ -572,8 +572,8 @@ describe('antigravity provider helpers', () => {
       expect(calls[0]!.projectPath).toBeUndefined()
       expect(calls[0]!.costUSD).toBeGreaterThan(0)
     } finally {
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       await rm(tempHome, { recursive: true, force: true })
     }
   })
@@ -581,10 +581,10 @@ describe('antigravity provider helpers', () => {
   it('deduplicates current SQLite rows against RPC response ids with hyphens', async () => {
     if (!isSqliteAvailable()) return
 
-    const tempHome = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-current-cli-dedup-'))
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-current-cli-dedup-'))
     const cacheDir = join(tempHome, 'cache')
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = cacheDir
 
     try {
       const fixture = JSON.parse(await readFile(
@@ -608,21 +608,21 @@ describe('antigravity provider helpers', () => {
 
       expect(calls).toEqual([])
     } finally {
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       await rm(tempHome, { recursive: true, force: true })
     }
   })
 
   async function withTempAntigravityHome(prefix: string, fn: (tempHome: string) => Promise<void>): Promise<void> {
     const tempHome = await mkdtemp(join(tmpdir(), prefix))
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = join(tempHome, 'cache')
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = join(tempHome, 'cache')
     try {
       await fn(tempHome)
     } finally {
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       await rm(tempHome, { recursive: true, force: true })
     }
   }
@@ -630,7 +630,7 @@ describe('antigravity provider helpers', () => {
   it('stamps file mtime as fallback timestamp for SQLite-parsed calls', async () => {
     if (!isSqliteAvailable()) return
 
-    await withTempAntigravityHome('codeburn-antigravity-timestamp-', async (tempHome) => {
+    await withTempAntigravityHome('metrora-antigravity-timestamp-', async (tempHome) => {
       const fixture = JSON.parse(await readFile(
         new URL('../fixtures/antigravity-cli-current/gen-metadata.json', import.meta.url),
         'utf-8',
@@ -664,7 +664,7 @@ describe('antigravity provider helpers', () => {
   it('decodes ChatStartMetadata.created_at and prefers it over the file mtime', async () => {
     if (!isSqliteAvailable()) return
 
-    await withTempAntigravityHome('codeburn-antigravity-createdat-', async (tempHome) => {
+    await withTempAntigravityHome('metrora-antigravity-createdat-', async (tempHome) => {
       // Encode a gen_metadata blob matching the real on-disk shape:
       //   GeneratorMetadata.chatModel(#1) {
       //     usage(#4) { input(#2), totalOutput(#3) }

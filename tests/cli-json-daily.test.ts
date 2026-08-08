@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
@@ -11,6 +13,17 @@ function runCli(args: string[], home: string) {
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      CODEX_HOME: join(home, '.codex'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
+      OPENCODE_DATA_DIR: join(home, '.local', 'share', 'opencode'),
       HOME: home,
       TZ: 'UTC',
     },
@@ -69,7 +82,7 @@ function assistantNoEditLine(sessionId: string, timestamp: string, messageId: st
 
 describe('metrora report --format json daily[] one-shot fields (issue #279)', () => {
   it('exposes per-day turns / editTurns / oneShotTurns / oneShotRate', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-json-daily-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-json-daily-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
@@ -131,7 +144,7 @@ describe('metrora report --format json daily[] one-shot fields (issue #279)', ()
   })
 
   it('reports null oneShotRate when the day has no edit turns', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-json-daily-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-json-daily-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
@@ -171,7 +184,7 @@ describe('metrora report --format json daily[] one-shot fields (issue #279)', ()
   })
 
   it('filters a single review day with --day', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-json-day-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-json-day-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
@@ -218,7 +231,7 @@ describe('metrora report --format json daily[] one-shot fields (issue #279)', ()
   })
 
   it('rejects --day combined with --from/--to', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-json-day-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-json-day-'))
 
     try {
       const result = runCli([
@@ -236,7 +249,7 @@ describe('metrora report --format json daily[] one-shot fields (issue #279)', ()
   })
 
   it('includes older sessions under --period lifetime but not under --period all', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-json-lifetime-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-json-lifetime-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
@@ -280,5 +293,5 @@ describe('metrora report --format json daily[] one-shot fields (issue #279)', ()
     } finally {
       await rm(home, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 })

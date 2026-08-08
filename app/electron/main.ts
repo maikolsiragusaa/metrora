@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron'
 import path from 'node:path'
 
-import { CliError, killAll, resolveCodeburnPath, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
+import { CliError, killAll, resolveMetroraPath, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
 import { getQuota, sanitizeError } from './quota'
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
@@ -79,15 +79,11 @@ export type Envelope<T = unknown> = { ok: true; value: T } | { ok: false; error:
 // the cold hydration runs ONCE, not once per section in parallel.
 const WARMUP_TIMEOUT_MS = 10 * 60_000
 // Wire marker for CLI scan-progress lines (src/parser.ts: PROGRESS_LINE_PREFIX).
-const PROGRESS_LINE_PREFIX = 'CODEBURN_PROGRESS '
+const PROGRESS_LINE_PREFIX = 'METRORA_PROGRESS '
 // IPC channel carrying cold-start scan-progress events to the splash.
 export const PROGRESS_CHANNEL = 'metrora:progress'
-export const LEGACY_QOVRION_PROGRESS_CHANNEL = 'qovrion:progress'
-export const LEGACY_PROGRESS_CHANNEL = 'codeburn:progress'
 // IPC channel pushing update-availability status to open windows (launch + 24h).
 export const UPDATE_CHANNEL = 'metrora:update'
-export const LEGACY_QOVRION_UPDATE_CHANNEL = 'qovrion:update'
-export const LEGACY_UPDATE_CHANNEL = 'codeburn:update'
 
 /** Line-buffer a spawn's stderr and forward each parsed scan-progress event. */
 export function makeProgressReader(emit: (event: unknown) => void): (chunk: string) => void {
@@ -110,8 +106,6 @@ function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(PROGRESS_CHANNEL, event)
-    win.webContents.send(LEGACY_QOVRION_PROGRESS_CHANNEL, event)
-    win.webContents.send(LEGACY_PROGRESS_CHANNEL, event)
   }
 }
 
@@ -119,8 +113,6 @@ function broadcastUpdateStatus(status: UpdateStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(UPDATE_CHANNEL, status)
-    win.webContents.send(LEGACY_QOVRION_UPDATE_CHANNEL, status)
-    win.webContents.send(LEGACY_UPDATE_CHANNEL, status)
   }
 }
 
@@ -226,7 +218,7 @@ function cliErrorProps(err: unknown, cmd: string | undefined): Record<string, un
 type Deps = {
   spawnCli: (args: string[], opts?: { timeoutMs?: number; onStderr?: (chunk: string) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority }) => Promise<unknown>
   spawnCliAction: (args: string[], opts?: { timeoutMs?: number }) => Promise<ActionResult>
-  resolveCodeburnPath: () => string | null
+  resolveMetroraPath: () => string | null
   getQuota: typeof getQuota
   /** Forward cold-start scan-progress events to the renderer splash. */
   emitProgress?: (event: unknown) => void
@@ -239,11 +231,11 @@ type Deps = {
 type Handler = (...args: any[]) => Promise<Envelope>
 
 /**
- * Maps every CodeburnBridge channel to its `codeburn` argv (plain args, no
+ * Maps every MetroraBridge channel to its `metrora` argv (plain args, no
  * shell) and returns a result envelope. Pure + injectable so the wiring is
  * unit-testable without launching Electron.
  */
-export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, resolveCodeburnPath, getQuota, emitProgress: broadcastProgress, telemetry: telemetryInstance, getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS) }): Record<string, Handler> {
+export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, resolveMetroraPath, getQuota, emitProgress: broadcastProgress, telemetry: telemetryInstance, getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS) }): Record<string, Handler> {
   const emitProgress = deps.emitProgress ?? (() => {})
   const telemetry = deps.telemetry ?? null
   // Flips true after the first overview fetch succeeds. Until then, every
@@ -295,7 +287,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
       if (overviewWarmed) return { ok: true, value: await deps.spawnCli(args, priority ? { priority } : undefined) }
       const value = await deps.spawnCli(args, {
         timeoutMs: WARMUP_TIMEOUT_MS,
-        extraEnv: { METRORA_PROGRESS: '1', QOVRION_PROGRESS: '1', CODEBURN_PROGRESS: '1' },
+        extraEnv: { METRORA_PROGRESS: '1' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
       })
@@ -320,78 +312,77 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
   }
 
   return {
-    'codeburn:getQuota': async (force?: boolean) => {
+    'metrora:getQuota': async (force?: boolean) => {
       try { return { ok: true, value: await deps.getQuota({ force: Boolean(force) }) } }
       catch (error) { return { ok: false, error: { kind: 'nonzero', message: sanitizeError(error) } } }
     },
-    'codeburn:getOverview': getOverview,
-    'codeburn:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
-    'codeburn:getActReport': run(() => ['act', 'report', '--json']),
-    'codeburn:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange) => [
+    'metrora:getOverview': getOverview,
+    'metrora:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
+    'metrora:getActReport': run(() => ['act', 'report', '--json']),
+    'metrora:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange) => [
       'models', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...(byTask ? ['--by-task'] : []), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getSessions': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getSessions': run((period: string, provider: string, range?: DateRange) => [
       'sessions', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getCompareModels': run((period: string, provider: string) => [
+    'metrora:getCompareModels': run((period: string, provider: string) => [
       'compare', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)),
     ]),
-    'codeburn:getCompare': run((period: string, provider: string, modelA: string, modelB: string) => [
+    'metrora:getCompare': run((period: string, provider: string, modelA: string, modelB: string) => [
       'compare', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), '--model-a', vToken(modelA), '--model-b', vToken(modelB),
     ]),
-    'codeburn:getYield': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getYield': run((period: string, provider: string, range?: DateRange) => [
       'yield', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getSpendFlow': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getSpendFlow': run((period: string, provider: string, range?: DateRange) => [
       'spend', '--format', 'flow-json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getOptimizeReport': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getOptimizeReport': run((period: string, provider: string, range?: DateRange) => [
       'optimize', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getDevices': run((period: string) => ['devices', '--format', 'json', '--period', vPeriod(period)]),
-    'codeburn:getDevicesScan': run(() => ['devices', 'scan', '--format', 'json']),
-    'codeburn:getShareStatus': run(() => ['share', 'status', '--format', 'json']),
-    'codeburn:getIdentity': run(() => ['identity', '--format', 'json']),
-    'codeburn:getAliases': run(() => ['model-alias', '--list', '--format', 'json']),
-    'codeburn:getProxyPaths': run(() => ['proxy-path', '--list', '--format', 'json']),
-    'codeburn:getAudit': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getDevices': run((period: string) => ['devices', '--format', 'json', '--period', vPeriod(period)]),
+    'metrora:getDevicesScan': run(() => ['devices', 'scan', '--format', 'json']),
+    'metrora:getShareStatus': run(() => ['share', 'status', '--format', 'json']),
+    'metrora:getIdentity': run(() => ['identity', '--format', 'json']),
+    'metrora:getAliases': run(() => ['model-alias', '--list', '--format', 'json']),
+    'metrora:getProxyPaths': run(() => ['proxy-path', '--list', '--format', 'json']),
+    'metrora:getAudit': run((period: string, provider: string, range?: DateRange) => [
       'audit', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getPriceOverrides': run(() => ['price-override', '--list', '--format', 'json']),
-    'codeburn:setCurrency': runAction((code: string) => ['currency', vCurrency(code)]),
-    'codeburn:resetCurrency': runAction(() => ['currency', '--reset']),
-    'codeburn:addAlias': runAction((from: string, to: string) => ['model-alias', vToken(from), vToken(to)]),
-    'codeburn:removeAlias': runAction((from: string) => ['model-alias', '--remove', vToken(from)]),
-    'codeburn:setPriceOverride': runAction((model: string, rates: PriceRates) => priceOverrideArgs(model, rates)),
-    'codeburn:removePriceOverride': runAction((model: string) => ['price-override', '--remove', vToken(model)]),
-    'codeburn:removeDevice': runAction((name: string) => ['devices', 'rm', vToken(name)]),
-    'codeburn:setPlan': runAction((id: string, provider: string) => ['plan', 'set', vToken(id), '--provider', vProvider(provider)]),
-    'codeburn:resetPlan': runAction((provider: string) => ['plan', 'reset', '--provider', vProvider(provider)]),
-    'codeburn:exportData': runAction((format: string, provider: string, outPath: string) => [
+    'metrora:getPriceOverrides': run(() => ['price-override', '--list', '--format', 'json']),
+    'metrora:setCurrency': runAction((code: string) => ['currency', vCurrency(code)]),
+    'metrora:resetCurrency': runAction(() => ['currency', '--reset']),
+    'metrora:addAlias': runAction((from: string, to: string) => ['model-alias', vToken(from), vToken(to)]),
+    'metrora:removeAlias': runAction((from: string) => ['model-alias', '--remove', vToken(from)]),
+    'metrora:setPriceOverride': runAction((model: string, rates: PriceRates) => priceOverrideArgs(model, rates)),
+    'metrora:removePriceOverride': runAction((model: string) => ['price-override', '--remove', vToken(model)]),
+    'metrora:removeDevice': runAction((name: string) => ['devices', 'rm', vToken(name)]),
+    'metrora:setPlan': runAction((id: string, provider: string) => ['plan', 'set', vToken(id), '--provider', vProvider(provider)]),
+    'metrora:resetPlan': runAction((provider: string) => ['plan', 'reset', '--provider', vProvider(provider)]),
+    'metrora:exportData': runAction((format: string, provider: string, outPath: string) => [
       'export', '-f', vToken(format), '-o', vOutPath(outPath), '--provider', vProvider(provider),
     ]),
-    'codeburn:cliStatus': async () => {
-      const p = deps.resolveCodeburnPath()
+    'metrora:cliStatus': async () => {
+      const p = deps.resolveMetroraPath()
       return { ok: true, value: { found: p !== null, path: p } }
     },
     // Telemetry consent + events. Value is null when telemetry is unavailable
     // (tests, or init failure) — the renderer treats null as "no onboarding".
-    'codeburn:telemetryStatus': async () => ({ ok: true, value: telemetry ? telemetry.status() : null }),
-    'codeburn:telemetrySetEnabled': async (enabled?: boolean) => ({ ok: true, value: telemetry ? telemetry.setEnabled(Boolean(enabled)) : null }),
-    'codeburn:telemetryOnboarded': async (enabled?: boolean) => ({ ok: true, value: telemetry ? telemetry.completeOnboarding(Boolean(enabled)) : null }),
-    'codeburn:telemetryTrack': async (name?: string, props?: unknown) => {
+    'metrora:telemetryStatus': async () => ({ ok: true, value: telemetry ? telemetry.status() : null }),
+    'metrora:telemetrySetEnabled': async (enabled?: boolean) => ({ ok: true, value: telemetry ? telemetry.setEnabled(Boolean(enabled)) : null }),
+    'metrora:telemetryOnboarded': async (enabled?: boolean) => ({ ok: true, value: telemetry ? telemetry.completeOnboarding(Boolean(enabled)) : null }),
+    'metrora:telemetryTrack': async (name?: string, props?: unknown) => {
       telemetry?.track(String(name ?? ''), props)
       return { ok: true, value: true }
     },
     // One-shot read of the cached update-availability status. The check itself
     // runs in the background (launch + 24h); this returns whatever is known.
-    'codeburn:getUpdateStatus': async () => ({ ok: true, value: deps.getUpdateStatus ? await deps.getUpdateStatus() : NO_UPDATE_STATUS }),
+    'metrora:getUpdateStatus': async () => ({ ok: true, value: deps.getUpdateStatus ? await deps.getUpdateStatus() : NO_UPDATE_STATUS }),
   }
 }
 
 export function ipcChannelAliases(channel: string): string[] {
-  if (!channel.startsWith('codeburn:')) return [channel]
-  return [channel.replace(/^codeburn:/, 'metrora:'), channel.replace(/^codeburn:/, 'qovrion:'), channel]
+  return [channel]
 }
 
 function registerHandlers(): void {
@@ -405,7 +396,7 @@ function registerHandlers(): void {
     const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }
   }
-  for (const channel of ipcChannelAliases('codeburn:chooseDirectory')) ipcMain.handle(channel, chooseDirectory)
+  ipcMain.handle('metrora:chooseDirectory', chooseDirectory)
   ipcMain.handle('open-external', (_event, url: string) => {
     try {
       const { protocol } = new URL(url)
@@ -487,7 +478,7 @@ export function createApplicationMenuTemplate(isDev = Boolean(process.env.VITE_D
 }
 
 function installApplicationMenu(): void {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(createApplicationMenuTemplate()))
+  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate(createApplicationMenuTemplate()) : null)
 }
 
 function createWindow(): BrowserWindow {
@@ -548,7 +539,7 @@ function bootstrap(): void {
   if (app.isPackaged) {
     const bundledCli = path.join(process.resourcesPath, 'cli', 'dist', 'launch.js')
     process.env.METRORA_BUNDLED_CLI = bundledCli
-    if (process.env.CODEBURN_BUNDLED_CLI === undefined) process.env.CODEBURN_BUNDLED_CLI = bundledCli
+    if (process.env.METRORA_BUNDLED_CLI === undefined) process.env.METRORA_BUNDLED_CLI = bundledCli
   }
 
   // A second launch focuses the running window instead of opening a rival one.

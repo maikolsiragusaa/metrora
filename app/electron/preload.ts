@@ -14,7 +14,7 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 
 // The legacy IPC channel names remain behind this adapter until main-process
 // aliases are installed. Renderer code receives Metrora as the canonical bridge
-// immediately, while old windows/integrations can keep using window.codeburn.
+// immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean) => invoke('metrora:getOverview', period, provider, range, configSource, background),
@@ -81,5 +81,3 @@ const bridge = {
 }
 
 contextBridge.exposeInMainWorld('metrora', bridge)
-contextBridge.exposeInMainWorld('qovrion', bridge)
-contextBridge.exposeInMainWorld('codeburn', bridge)

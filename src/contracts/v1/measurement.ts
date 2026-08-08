@@ -11,8 +11,8 @@ import {
   schemaUri,
 } from './common.js'
 
-export const MEASUREMENT_BATCH_KIND = 'qovrion.measurement-batch' as const
-export const USAGE_MEASUREMENT_EVENT_TYPE = 'dev.qovrion.measurement.ai-usage.v1' as const
+export const MEASUREMENT_BATCH_KIND = 'metrora.measurement-batch' as const
+export const USAGE_MEASUREMENT_EVENT_TYPE = 'dev.metrora.measurement.ai-usage.v1' as const
 export const USAGE_MEASUREMENT_DATA_SCHEMA_URI = schemaUri('usage-measurement')
 
 export const GenAiOperationNameSchema = z.enum([
@@ -150,7 +150,7 @@ export const MeasurementBatchV1Schema = z.strictObject({
   createdAt: TimestampSchema,
   producer: z.strictObject({
     endpointId: OpaqueIdSchema,
-    qovrionVersion: z.string().trim().min(1).max(64),
+    metroraVersion: z.string().trim().min(1).max(64),
     adapterSetSha256: Sha256DigestSchema,
   }),
   semanticConventions: z.strictObject({
@@ -159,7 +159,7 @@ export const MeasurementBatchV1Schema = z.strictObject({
       version: z.string().trim().min(1).max(64),
       stability: z.literal('development'),
     }),
-    qovrion: z.literal('1'),
+    metrora: z.literal('1'),
   }),
   previousBatchSha256: Sha256DigestSchema.optional(),
   events: z.array(UsageMeasurementEventV1Schema).min(1).max(10_000),

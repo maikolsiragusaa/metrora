@@ -1,6 +1,6 @@
 import { Bonjour, type Service } from 'bonjour-service'
 
-const SERVICE_TYPE = 'codeburn'
+const SERVICE_TYPE = 'metrora'
 
 export type DiscoveredDevice = { name: string; host: string; port: number; fingerprint: string }
 

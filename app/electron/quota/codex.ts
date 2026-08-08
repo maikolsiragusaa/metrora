@@ -9,11 +9,11 @@ const USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage'
 const TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token'
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const EIGHT_DAYS = 8 * 24 * 60 * 60_000
-// The CodeBurn menubar caches its ChatGPT-mode Codex OAuth here as a
+// The Metrora menubar caches its ChatGPT-mode Codex OAuth here as a
 // `CredentialRecord` JSON blob (accessToken/refreshToken/idToken/accountId/…),
 // account "default". Same brand, same machine, already consented — preferred
 // over any OpenAI-owned storage.
-const MENUBAR_KEYCHAIN_SERVICE = 'org.agentseal.codeburn.menubar.codex.oauth.v1'
+const MENUBAR_KEYCHAIN_SERVICE = 'org.agentseal.metrora.menubar.codex.oauth.v1'
 
 type AuthDoc = Record<string, any> & {
   auth_mode?: string
@@ -81,7 +81,7 @@ function authFromMenubarRecord(raw: string): AuthDoc | null {
 
 async function discoverSource(deps: CodexDeps, allowKeychain: boolean): Promise<CodexSource | 'accessDenied' | null> {
   let denied = false
-  // (a) CodeBurn menubar's own cached Codex OAuth. Read-only: the menubar owns
+  // (a) Metrora menubar's own cached Codex OAuth. Read-only: the menubar owns
   // rotation, so we never write it back and never proactively refresh it.
   if (allowKeychain && process.platform === 'darwin') {
     const outcome = await deps.keychain(MENUBAR_KEYCHAIN_SERVICE)
@@ -201,7 +201,7 @@ async function refresh(auth: AuthDoc, deps: CodexDeps, signal?: AbortSignal): Pr
 async function usage(auth: AuthDoc, deps: CodexDeps, signal?: AbortSignal): Promise<Response | null> {
   const token = auth.tokens?.access_token
   if (!token) return null
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': 'CodeBurn' }
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json', 'User-Agent': 'Metrora' }
   if (auth.tokens?.account_id) headers['ChatGPT-Account-Id'] = auth.tokens.account_id
   return deps.fetch(USAGE_ENDPOINT, { method: 'GET', headers, signal: quotaRequestSignal(signal) })
 }

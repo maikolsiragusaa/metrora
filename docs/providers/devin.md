@@ -32,7 +32,7 @@ or billing.
 
 ## Configuration
 
-Devin reports spend in ACUs. CodeBurn reports provider cost through `costUSD`,
+Devin reports spend in ACUs. Metrora reports provider cost through `costUSD`,
 so Devin stays disabled until a positive finite ACU-to-USD rate is configured:
 
 ```json
@@ -46,7 +46,7 @@ so Devin stays disabled until a positive finite ACU-to-USD rate is configured:
 The config file is:
 
 ```text
-~/.config/codeburn/config.json
+~/.config/metrora/config.json
 ```
 
 The macOS Settings window writes this value from the Devin tab. There is no
@@ -174,7 +174,7 @@ The provider name is part of the key via the `devin:` prefix.
 
 ## When fixing a bug here
 
-1. First check whether `~/.config/codeburn/config.json` contains a valid
+1. First check whether `~/.config/metrora/config.json` contains a valid
    `devin.acuUsdRate`. Without it, no Devin sessions should appear.
 2. For usage total bugs, compare against (ACU cost can live in `metadata` or `extra`):
 

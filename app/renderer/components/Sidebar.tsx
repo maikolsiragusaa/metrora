@@ -6,7 +6,7 @@ import {
   type DesktopNavigationGroup,
   type Section,
 } from '../lib/desktopNavigation'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { shortcutLabel } from '../lib/shortcuts'
 import { AboutModal, type SocialLink } from './AboutModal'
 import { MetroraMark } from './MetroraMark'
@@ -137,7 +137,7 @@ export function Sidebar({ active, onNavigate }: {
                 href={social.url}
                 title={social.label}
                 aria-label={social.label}
-                onClick={event => { event.preventDefault(); void codeburn.openExternal(social.url) }}
+                onClick={event => { event.preventDefault(); void metrora.openExternal(social.url) }}
               >
                 {social.icon}
               </a>

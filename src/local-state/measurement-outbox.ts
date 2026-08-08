@@ -21,9 +21,9 @@ import {
 import { defaultMetroraDataDir } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 
-export const LOCAL_OUTBOX_RECORD_KIND = 'qovrion.local-measurement-outbox-record' as const
-export const LOCAL_OUTBOX_ACK_KIND = 'qovrion.local-measurement-outbox-ack' as const
-export const LOCAL_OUTBOX_QUARANTINE_KIND = 'qovrion.local-measurement-outbox-quarantine' as const
+export const LOCAL_OUTBOX_RECORD_KIND = 'metrora.local-measurement-outbox-record' as const
+export const LOCAL_OUTBOX_ACK_KIND = 'metrora.local-measurement-outbox-ack' as const
+export const LOCAL_OUTBOX_QUARANTINE_KIND = 'metrora.local-measurement-outbox-quarantine' as const
 export const LOCAL_OUTBOX_PRODUCTION_RECEIPT_KIND = 'metrora.local-measurement-production-receipt' as const
 
 const OutboxEventIdSchema = z.string().min(3).max(128)
@@ -34,7 +34,7 @@ export const LocalMeasurementOutboxRecordV1Schema = z.strictObject({
   version: z.literal(1),
   sequence: PositiveIntegerSchema,
   enqueuedAt: TimestampSchema,
-  canonicalization: z.literal('qovrion-sorted-json-v1'),
+  canonicalization: z.literal('metrora-sorted-json-v1'),
   eventSha256: Sha256DigestSchema,
   event: UsageMeasurementEventV1Schema,
 })
@@ -150,7 +150,7 @@ function semanticEventDigest(event: UsageMeasurementEventV1): string {
 }
 
 function eventFileName(eventId: string): string {
-  return `${sha256(`qovrion-outbox-event-v1\0${eventId}`)}.json`
+  return `${sha256(`metrora-outbox-event-v1\0${eventId}`)}.json`
 }
 
 function productionReceiptFileName(productionKeySha256: string): string {
@@ -318,7 +318,7 @@ export async function enqueueMeasurementEventV1(
       version: 1,
       sequence,
       enqueuedAt: now().toISOString(),
-      canonicalization: 'qovrion-sorted-json-v1',
+      canonicalization: 'metrora-sorted-json-v1',
       eventSha256: digest,
       event,
     })

@@ -32,7 +32,7 @@ function identity(
   fingerprint = 'a'.repeat(64),
 ): LocalEndpointIdentityMetadataV1 {
   return {
-    kind: 'qovrion.local-endpoint-identity',
+    kind: 'metrora.local-endpoint-identity',
     version: 1,
     endpointId: 'ep_11111111-2222-4333-8444-555555555555',
     generation,

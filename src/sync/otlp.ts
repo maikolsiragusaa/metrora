@@ -123,7 +123,7 @@ export function buildOtlpPayload(calls: CallWithSession[]): OtlpPayload {
     resourceSpans: [{
       resource: {
         attributes: [
-          { key: 'codeburn.device_id', value: { stringValue: deviceId } },
+          { key: 'metrora.device_id', value: { stringValue: deviceId } },
         ],
       },
       scopeSpans: [{

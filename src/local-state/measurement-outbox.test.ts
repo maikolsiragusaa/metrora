@@ -19,7 +19,7 @@ import {
 const roots: string[] = []
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), 'qovrion-outbox-'))
+  const value = await mkdtemp(join(tmpdir(), 'metrora-outbox-'))
   roots.push(value)
   return value
 }
@@ -32,7 +32,7 @@ function event(id: string, outputTokens = 20): UsageMeasurementEventV1 {
   return {
     specversion: '1.0',
     id,
-    source: 'urn:qovrion:endpoint:ep_test',
+    source: 'urn:metrora:endpoint:ep_test',
     type: USAGE_MEASUREMENT_EVENT_TYPE,
     time: '2026-07-31T14:00:00.000Z',
     subject: 'workspace/ws_test/endpoint/ep_test',

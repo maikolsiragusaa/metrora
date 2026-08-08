@@ -3,7 +3,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 import { DEFAULT_REFRESH_VALUE, readRefreshValue, refreshValueToMs } from './refreshCadence'
 
-const STORAGE_KEY = 'codeburn.refreshInterval'
+const STORAGE_KEY = 'metrora.refreshInterval'
 
 // The project's jsdom does not expose a working localStorage (see App.test.tsx),
 // so back it with a Map for these persistence tests.

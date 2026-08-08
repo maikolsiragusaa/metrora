@@ -10,7 +10,6 @@ object MetroraProtocol {
     const val REVOKE_PATH = "/api/v1/peer/revoke"
     const val USAGE_PATH = "/api/v1/usage"
     const val USAGE_KIND = "metrora.companion.usage"
-    const val LEGACY_USAGE_KIND = "qovrion.companion.usage"
 
     private val allowedPeriods = setOf("today", "week", "30days", "month", "all", "lifetime")
 

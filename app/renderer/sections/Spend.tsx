@@ -10,7 +10,7 @@ import { StackedBars } from '../components/StackedBars'
 import { StaleBanner } from '../components/StaleBanner'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { contiguousDailyWindow, dataStartKey, localDateKey } from '../lib/period'
 import type { CliError, DateRange, MenubarPayload, Period, SpendFlow } from '../lib/types'
 
@@ -47,7 +47,7 @@ function providerLabel(provider: string): string {
 
 export function Spend({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
-    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
+    () => range ? metrora.getOverview(period, provider, range) : metrora.getOverview(period, provider),
     [period, provider, range?.from, range?.to],
   )
   return <SpendContent period={period} provider={provider} range={range} overview={overview} />
@@ -68,17 +68,18 @@ export function SpendContent({
   refreshToken?: number
   ready?: boolean
 }) {
-  // Gate on app-level readiness so boot hydrates the cache once (default true
-  // keeps standalone renders/tests polling normally).
+  // Spend's main surfaces paint from the already-loaded Overview. The expensive
+  // model→project relationship graph is deliberately progressive: it fills its
+  // reserved panel when ready instead of holding the rest of the page hostage.
   const flow = usePolled<SpendFlow>(
-    () => range ? codeburn.getSpendFlow(period, provider, range) : codeburn.getSpendFlow(period, provider),
+    () => range ? metrora.getSpendFlow(period, provider, range) : metrora.getSpendFlow(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `spendflow|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
   if (!overview.data) {
     if (overview.error) return <CliErrorPanel error={overview.error} subject="spend" />
-    return <SectionSkeleton label="Scanning spend…" rows={3} chart />
+    return <SectionSkeleton label="Loading spend history…" rows={3} chart />
   }
 
   const animateKey = `${period}|${provider}|${range?.from ?? ''}|${range?.to ?? ''}`
@@ -164,30 +165,36 @@ function SpendPage({
   return (
     <>
       {staleError && <StaleBanner error={staleError} />}
-      <div className="spend-top-row">
-        <Panel title="Daily spend by model" className="spend-chart-panel">
-          {chartHasSpend ? <StackedBars daily={chartDaily} fallbackLabel={providerLabel(provider)} animateKey={animateKey} dataStart={dataStart} /> : <EmptyNote>No model spend in this range yet.</EmptyNote>}
-        </Panel>
-        <ProjectBreakdown projects={projects} />
-      </div>
 
-      <Panel title="Cost flow · model → project" right="model → project flow for this range" className="scroll-x">
+      <Panel title="Daily spend by model" right="Cost over time" className="spend-chart-panel">
+        {chartHasSpend
+          ? <StackedBars daily={chartDaily} fallbackLabel={providerLabel(provider)} animateKey={animateKey} dataStart={dataStart} />
+          : <EmptyNote>No model spend in this range yet.</EmptyNote>}
+      </Panel>
+
+      <Panel title="Cost flow · model → project" right={flow.switching ? 'Refreshing flow…' : flow.data ? 'Observed cost allocation' : 'Building flow…'} className="scroll-x spend-flow-panel">
         {flow.data && flow.data.links.length ? (
           <Sankey flow={flow.data} />
         ) : flow.error ? (
           <CliErrorText error={flow.error} />
+        ) : flow.loading ? (
+          <div className="spend-flow-loading" role="status" aria-live="polite">
+            <SectionSkeleton label="Building model → project flow…" rows={2} chart />
+          </div>
         ) : (
-          <EmptyNote>{flow.loading ? 'Loading cost flow…' : 'No model-project flow in this range yet.'}</EmptyNote>
+          <EmptyNote>No model-project flow in this range yet.</EmptyNote>
         )}
       </Panel>
 
       <div className="spend-breakdowns">
-        {breakdowns.length ? (
-          breakdowns.map(section => <RowsPanel key={section.title} title={section.title} rows={section.rows} />)
-        ) : (
-          <EmptyNote>No activity, tool, MCP, or subagent data in this range yet.</EmptyNote>
-        )}
+        <ProjectBreakdown projects={projects} />
+        {breakdowns.length
+          ? breakdowns.map(section => <RowsPanel key={section.title} title={section.title} rows={section.rows} />)
+          : null}
       </div>
+      {!projects.length && !breakdowns.length ? (
+        <EmptyNote>No project, activity, tool, MCP, or subagent detail in this range yet.</EmptyNote>
+      ) : null}
     </>
   )
 }
@@ -196,7 +203,7 @@ function ProjectBreakdown({ projects }: { projects: Project[] }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   return (
-    <Panel title="By project" right={projects.length ? `top ${projects.length}` : undefined} className="spend-scroll">
+    <Panel title="Projects" right={projects.length ? `top ${projects.length}` : undefined} className="spend-scroll">
       {projects.length ? (
         projects.map((project, i) => {
           const open = expanded === project.name

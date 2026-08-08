@@ -13,7 +13,7 @@ import type { DateRange } from '../../src/types.js'
 /// most-recent MAX_BUBBLES rows *by ROWID* and warned unconditionally; the new
 /// code pages the requested time window and only truncates (with a warning)
 /// when the in-range scan genuinely exceeds the budget. We shrink the budget
-/// via CODEBURN_CURSOR_MAX_BUBBLES so a tiny fixture exercises the capped path.
+/// via METRORA_CURSOR_MAX_BUBBLES so a tiny fixture exercises the capped path.
 
 const skipReason = isSqliteAvailable() ? null : 'node:sqlite not available — needs Node 22+; skipping'
 
@@ -93,7 +93,7 @@ describe.skipIf(skipReason !== null)('cursor large-DB scan cap (#482)', () => {
       { conversationId: 'old-C', createdAt: iso(300), model: 'gpt-5', tokens: 100 },
       { conversationId: 'old-D', createdAt: iso(300), model: 'gpt-5', tokens: 100 },
     ])
-    process.env['CODEBURN_CURSOR_MAX_BUBBLES'] = '2' // total 4 > budget 2 -> capped path
+    process.env['METRORA_CURSOR_MAX_BUBBLES'] = '2' // total 4 > budget 2 -> capped path
 
     const calls = await parse(dbPath, last30Days())
     // Both in-range sessions are present (the old ROWID cap returned 0 here).
@@ -107,7 +107,7 @@ describe.skipIf(skipReason !== null)('cursor large-DB scan cap (#482)', () => {
       { conversationId: 'old', createdAt: iso(300), model: 'gpt-5', tokens: 100 },
       { conversationId: 'older', createdAt: iso(301), model: 'gpt-5', tokens: 100 },
     ])
-    process.env['CODEBURN_CURSOR_MAX_BUBBLES'] = '3' // total 4 > budget 3, but in-range 2 <= 3
+    process.env['METRORA_CURSOR_MAX_BUBBLES'] = '3' // total 4 > budget 3, but in-range 2 <= 3
     const calls = await parse(dbPath, last30Days())
     expect(calls.length).toBe(2) // both in-range, none truncated
   })
@@ -120,7 +120,7 @@ describe.skipIf(skipReason !== null)('cursor large-DB scan cap (#482)', () => {
       { conversationId: 'd3', createdAt: iso(2), model: 'new-model', tokens: 100 },
       { conversationId: 'd4', createdAt: iso(1), model: 'new-model', tokens: 100 },
     ])
-    process.env['CODEBURN_CURSOR_MAX_BUBBLES'] = '2' // total 4 > budget 2
+    process.env['METRORA_CURSOR_MAX_BUBBLES'] = '2' // total 4 > budget 2
     const calls = await parse(dbPath, last120Days())
     expect(calls.length).toBe(2)
     // Budget keeps the highest-ROWID (newest-inserted) bubbles.

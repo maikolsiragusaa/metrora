@@ -12,7 +12,7 @@ import {
 
 const roots: string[] = []
 async function makeRoot(): Promise<{ settings: string; actionsDir: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'codeburn-guard-install-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-guard-install-'))
   roots.push(root)
   await mkdir(join(root, '.claude'), { recursive: true })
   return { settings: join(root, '.claude', 'settings.json'), actionsDir: join(root, 'actions') }

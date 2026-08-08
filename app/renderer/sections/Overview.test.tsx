@@ -21,7 +21,7 @@ const { getOverview, getActReport, getYield } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getOverview, getActReport, getYield } }
+  return { ...actual, metrora: { getOverview, getActReport, getYield } }
 })
 
 function makeYieldReport(): YieldJsonReport {
@@ -199,12 +199,15 @@ describe('Overview', () => {
     // The unified hero keeps spend/savings, activity, and efficiency in one
     // divided card. Success/cache now live only in the scorecard column.
     const kpis = screen.getByLabelText('Key performance indicators')
-    expect(within(kpis).getAllByText('74%')).toHaveLength(1)
-    expect(within(kpis).getAllByText('63%')).toHaveLength(1)
     expect(within(kpis).getByText('$84.20')).toBeInTheDocument()
-    expect(within(kpis).getByLabelText('Efficiency grade B')).toHaveTextContent('B')
-    expect(kpis.querySelector(':scope > .ov-efficiency')).toBeInTheDocument()
-    expect(kpis.querySelector('.ov-efficiency.ov-card')).not.toBeInTheDocument()
+    expect(within(kpis).getByText('Current cost and activity for the selected scope.')).toBeInTheDocument()
+    expect(within(kpis).getByLabelText('What changed and what matters next')).toBeInTheDocument()
+    expect(kpis.querySelector('.ov-efficiency')).not.toBeInTheDocument()
+    const efficiency = screen.getByText(/Efficiency diagnostics/).closest('details')
+    expect(efficiency).not.toBeNull()
+    expect(within(efficiency as HTMLElement).getByText('74%')).toBeInTheDocument()
+    expect(within(efficiency as HTMLElement).getByText(/63% share/)).toBeInTheDocument()
+    expect(efficiency).toHaveTextContent(/Composite \d+\/100/)
 
     // The contribution grid contains the real active history days, and the
     // right rail renders real, cost-sorted activity data including one-shot.
@@ -214,7 +217,6 @@ describe('Overview', () => {
     expect(screen.getByText('coding')).toBeInTheDocument()
     expect(screen.getByText('$92.50')).toBeInTheDocument()
     expect(screen.getByText('120 turns')).toBeInTheDocument()
-    expect(screen.getByText('80% one-shot')).toBeInTheDocument()
 
     // Session row title = the session's project (topSessions has no title field).
     expect(screen.getByText('parser-service')).toBeInTheDocument()
@@ -234,19 +236,18 @@ describe('Overview', () => {
     expect(tooltip).toHaveStyle({ position: 'fixed' })
 
     // Daily model breakdowns are summed over the selected period and sorted by
-    // cost. Token values use the same compact B/M/K notation as the menubar.
+    // cost, calls, and observed share.
     const modelsTable = screen.getByRole('table', { name: 'Models this period' })
     expect(within(modelsTable).queryByRole('columnheader', { name: 'Relative cost' })).not.toBeInTheDocument()
     const modelRows = within(modelsTable).getAllByRole('row')
     expect(modelRows[1]).toHaveTextContent('claude-opus-4')
-    expect(modelRows[1]).toHaveTextContent('1.2B')
-    // Tokens now use the shared formatCompact helper (drops a trailing .0).
-    expect(modelRows[1]).toHaveTextContent('60M')
     expect(modelRows[1]).toHaveTextContent('$171.20')
     expect(modelRows[1]).toHaveTextContent('900')
+    expect(modelRows[1]).toHaveTextContent('85%')
     expect(modelRows[2]).toHaveTextContent('claude-haiku-4')
-    expect(modelRows[2]).toHaveTextContent('30K')
-    expect(modelRows[2]).toHaveTextContent('15K')
+    expect(modelRows[2]).toHaveTextContent('$30.00')
+    expect(modelRows[2]).toHaveTextContent('300')
+    expect(modelRows[2]).toHaveTextContent('15%')
 
     // Weekly labels align to every seventh bar, and all three menubar-style
     // daily summaries are derived from the displayed 30-day chart window.
@@ -277,7 +278,7 @@ describe('Overview', () => {
     expect(screen.queryByText('Nearest limit')).not.toBeInTheDocument()
   })
 
-  it('renders efficiency, cost-per-outcome, and the weekday-spike risk signal', async () => {
+  it('renders the decision-led home and cost-per-outcome diagnostics', async () => {
     const now = new Date()
     const payload = makePayload(now)
     const today = payload.history.daily.at(-1)
@@ -287,15 +288,14 @@ describe('Overview', () => {
 
     render(<Overview period="30days" provider="all" />)
 
-    expect(await screen.findByLabelText('Efficiency grade B')).toHaveTextContent('B')
+    expect(await screen.findByLabelText('What changed and what matters next')).toBeInTheDocument()
+    expect(screen.getByText('Coverage unknown')).toBeInTheDocument()
     const outcome = screen.getByText('Cost per outcome').closest('.ov-panel')
     expect(outcome).not.toBeNull()
     expect(within(outcome as HTMLElement).getByText('$25.00')).toBeInTheDocument()
     expect(within(outcome as HTMLElement).getByText('$40.00')).toBeInTheDocument()
     // The weekday-spike anomaly is absorbed into the Signals card as a risk.
-    const signals = screen.getByLabelText('Coaching signals')
-    const risks = within(signals).getByText('Risks').closest('.ov-signal-group') as HTMLElement
-    expect(within(risks).getByText(/Today's spend is 10× your typical/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Coaching signals')).not.toBeInTheDocument()
   })
 
   it('hides the applied-fixes line when there are no realized savings', async () => {
@@ -453,11 +453,11 @@ describe('Overview', () => {
   })
 
   it('shows the first-run locate-CLI state when the binary is missing', async () => {
-    getOverview.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    getOverview.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
 
     render(<Overview period="30days" provider="all" />)
 
-    expect(await screen.findByText(/Locate the codeburn CLI/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Locate the metrora CLI/i)).toBeInTheDocument()
   })
 
   it('sources Models this period from current.topModels when a provider filter is active', async () => {
@@ -474,14 +474,13 @@ describe('Overview', () => {
     render(<OverviewContent period="30days" provider="codex" overview={polled(payload)} />)
 
     const modelsTable = await screen.findByRole('table', { name: 'Models this period' })
-    const rows = within(modelsTable).getAllByRole('row')
     // Sourced from current.topModels (cost-sorted), not the now-empty daily aggregation.
-    expect(rows[1]).toHaveTextContent('gpt-5.5-codex')
-    expect(rows[1]).toHaveTextContent('$120.00')
-    expect(rows[1]).toHaveTextContent('240')
-    expect(rows[2]).toHaveTextContent('claude-opus-4')
-    // current.topModels carries no per-model tokens → both token cells show a dash.
-    expect(within(rows[1] as HTMLElement).getAllByText('—')).toHaveLength(2)
+    const codexRow = within(modelsTable).getByRole('row', { name: /gpt-5\.5-codex/ })
+    expect(codexRow).toHaveTextContent('$120.00')
+    expect(codexRow).toHaveTextContent('240')
+    const claudeRow = within(modelsTable).getByRole('row', { name: /claude-opus-4/ })
+    expect(claudeRow).toHaveTextContent('claude-opus-4')
+    expect(codexRow).toHaveTextContent('38%')
   })
 
   it('suppresses the week-over-week signal and MTD card for a custom range', async () => {
@@ -489,11 +488,10 @@ describe('Overview', () => {
     const overview = polled(makePayload(now))
 
     const { rerender } = render(<OverviewContent period="30days" provider="all" overview={overview} />)
-    // Baseline (no range): the MTD card, the coach pacing line, and the
-    // week-over-week Signals entry are all present.
+    // Baseline (no range) keeps the MTD card and the decision-led comparison.
     expect(await screen.findByText('Month to date')).toBeInTheDocument()
     expect(screen.getAllByText(/than last week/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/vs last 7 days/)).toBeInTheDocument()
+    expect(screen.getByLabelText('What changed and what matters next')).toBeInTheDocument()
 
     const from = localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2))
     const to = localDateKey(now)
@@ -502,7 +500,7 @@ describe('Overview', () => {
     expect(screen.queryByText('Month to date')).not.toBeInTheDocument()
     expect(screen.queryByText('Projected month')).not.toBeInTheDocument()
     expect(screen.queryByText(/than last week/)).toBeNull()
-    // The week-over-week Signals entry is suppressed under a custom range too.
+    // Automatic comparison is suppressed under a custom range too.
     expect(screen.queryByText(/vs last 7 days|vs prior 7 days/)).toBeNull()
     expect(screen.getByText(/is the biggest driver in this range/)).toBeInTheDocument()
   })
@@ -524,7 +522,7 @@ describe('Overview', () => {
     const now = new Date()
     const overview: Polled<MenubarPayload> = {
       data: makePayload(now),
-      error: { kind: 'nonzero', message: 'codeburn exited 1' },
+      error: { kind: 'nonzero', message: 'metrora exited 1' },
       loading: false,
       switching: false,
       lastSuccessAt: Date.now(),
@@ -533,7 +531,7 @@ describe('Overview', () => {
 
     render(<OverviewContent period="30days" provider="all" overview={overview} />)
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Refresh failed, showing last good data · codeburn exited 1')
+    expect(await screen.findByRole('status')).toHaveTextContent('Refresh failed, showing last good data · metrora exited 1')
   })
 
   it('groups current-driven signals into wins and improvements', () => {
@@ -647,7 +645,7 @@ describe('Overview', () => {
     ])
   })
 
-  it('renders the three-column Signals card with optimize findings under Improvements', async () => {
+  it('renders the decision summary with an explicit optimize next action', async () => {
     const now = new Date()
     const payload = signalsPayload(now, {
       current: {
@@ -664,12 +662,10 @@ describe('Overview', () => {
 
     render(<OverviewContent period="30days" provider="all" overview={polled(payload)} />)
 
-    const signals = await screen.findByLabelText('Coaching signals')
-    const wins = within(signals).getByText('Wins').closest('.ov-signal-group') as HTMLElement
-    expect(within(wins).getByText(/Cache hit at 85%/)).toBeInTheDocument()
-    const improvements = within(signals).getByText('Improvements').closest('.ov-signal-group') as HTMLElement
-    expect(within(improvements).getByText('Trim CLAUDE.md preamble')).toBeInTheDocument()
-    expect(within(improvements).getByText('$12.00')).toBeInTheDocument()
+    expect(await screen.findByLabelText('What changed and what matters next')).toBeInTheDocument()
+    expect(screen.getByText('Coverage unknown')).toBeInTheDocument()
+    expect(screen.getByText('Review recoverable spend')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Coaching signals')).not.toBeInTheDocument()
   })
 
   it('renders no Signals card when every group is empty', async () => {

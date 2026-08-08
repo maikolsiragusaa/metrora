@@ -102,7 +102,7 @@ const PARSE_SPAWNS = new Set(['antigravity'])
 // Metrora's own cache location: listed in PROVIDER_ENV_VARS for cache
 // fingerprinting, but it is not a discovery path, so it must never be blamed
 // in a NOTHING FOUND hint.
-const NON_DISCOVERY_ENV_VARS = new Set(['CODEBURN_CACHE_DIR'])
+const NON_DISCOVERY_ENV_VARS = new Set(['METRORA_CACHE_DIR'])
 
 // ── Collect (pure, testable) ─────────────────────────────────────────────
 
@@ -290,8 +290,8 @@ export async function collectDoctorReport(
   // first yield. The flag tells cache writers to stand down for this process
   // while doctor collects; restored afterwards so long-lived embedders (tests,
   // MCP) keep normal behavior.
-  const prevSuppress = process.env['CODEBURN_SUPPRESS_CACHE_WRITES']
-  process.env['CODEBURN_SUPPRESS_CACHE_WRITES'] = '1'
+  const prevSuppress = process.env['METRORA_SUPPRESS_CACHE_WRITES']
+  process.env['METRORA_SUPPRESS_CACHE_WRITES'] = '1'
   try {
     const providers: DoctorProviderReport[] = []
     for (const provider of filtered) {
@@ -306,8 +306,8 @@ export async function collectDoctorReport(
     }
     return report
   } finally {
-    if (prevSuppress === undefined) delete process.env['CODEBURN_SUPPRESS_CACHE_WRITES']
-    else process.env['CODEBURN_SUPPRESS_CACHE_WRITES'] = prevSuppress
+    if (prevSuppress === undefined) delete process.env['METRORA_SUPPRESS_CACHE_WRITES']
+    else process.env['METRORA_SUPPRESS_CACHE_WRITES'] = prevSuppress
   }
 }
 

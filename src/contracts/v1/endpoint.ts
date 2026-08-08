@@ -7,7 +7,7 @@ import {
   TimestampSchema,
 } from './common.js'
 
-export const ENDPOINT_KIND = 'qovrion.endpoint' as const
+export const ENDPOINT_KIND = 'metrora.endpoint' as const
 
 export const EndpointTypeSchema = z.enum(['desktop', 'server', 'companion'])
 export const EndpointOsSchema = z.enum(['windows', 'macos', 'linux', 'android', 'other'])
@@ -62,7 +62,7 @@ export const EndpointV1Schema = z.strictObject({
     publicKeyFingerprintSha256: Sha256DigestSchema,
   }),
   software: z.strictObject({
-    qovrionVersion: z.string().trim().min(1).max(64),
+    metroraVersion: z.string().trim().min(1).max(64),
     collectorVersion: z.string().trim().min(1).max(64),
   }),
   capabilities: z.array(EndpointCapabilitySchema).min(1).max(8),

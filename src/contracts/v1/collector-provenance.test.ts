@@ -98,7 +98,7 @@ describe('collector provenance registry v1', () => {
 
   it('keeps the v1 schema extensible without registering unreviewed collectors', () => {
     const futureMeteredProfile = {
-      kind: 'qovrion.collector-provenance-profile', version: 1,
+      kind: 'metrora.collector-provenance-profile', version: 1,
       profileId: 'future-metered-source-v1', collector: 'future-tool', parserVersion: 'reviewed-parser-v1',
       sourceKind: 'future-metered-ledger',
       facts: {

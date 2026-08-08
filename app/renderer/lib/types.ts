@@ -372,7 +372,7 @@ export type JsonPlanSummary = {
   periodEnd: string
 }
 
-/** `codeburn status --format json` payload (src/main.ts:751), with plan summaries attached. */
+/** `metrora status --format json` payload (src/main.ts:751), with plan summaries attached. */
 export type StatusJson = {
   currency: string
   today: { cost: number; savings: number; calls: number }
@@ -570,7 +570,7 @@ export type ModelCosts = {
 }
 
 /** One (provider, model) audit bucket (src/audit-report.ts AuditRow): raw
- * provider token fields vs the normalized totals codeburn prices. */
+ * provider token fields vs the normalized totals metrora prices. */
 export type AuditRow = {
   provider: string
   providerDisplayName: string
@@ -618,7 +618,7 @@ export type PriceOverrideList = { overrides: PriceOverrideRow[]; configPath: str
 /** A partial set of the four price-override rates, USD per 1M tokens. */
 export type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 
-// ————— IPC surface (preload contextBridge → window.codeburn) —————
+// ————— IPC surface (preload contextBridge → window.metrora) —————
 
 /** Anonymous-telemetry consent state (app/electron/telemetry.ts). Null when
  * telemetry is unavailable in the main process. */
@@ -647,7 +647,7 @@ export type UpdateStatus = {
   tag: string | null
 }
 
-export interface CodeburnBridge {
+export interface MetroraBridge {
   /** Subscribe to cold-start scan progress; returns an unsubscribe fn. */
   onProgress(cb: (event: ScanProgressEvent) => void): () => void
   /** Read the cached update-availability status (launch + 24h background check). */

@@ -48,7 +48,7 @@ function assistantLine(sessionId: string, timestamp: string, messageId: string):
 
 describe('metrora export custom date range', () => {
   it('exports a single custom period filtered by --from/--to', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-export-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-cli-export-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')

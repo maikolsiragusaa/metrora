@@ -4,6 +4,10 @@ import { join } from 'node:path'
 
 export type MetroraPathEnvironment = NodeJS.ProcessEnv
 
+export const LEGACY_CONFIG_DIR_ENV = 'CODEBURN_CONFIG_DIR'
+export const LEGACY_CACHE_DIR_ENV = 'CODEBURN_CACHE_DIR'
+export const LEGACY_PRODUCT_ROOT = 'codeburn'
+
 function firstExplicit(env: MetroraPathEnvironment, names: string[]): string | undefined {
   for (const name of names) {
     const value = env[name]?.trim()
@@ -36,15 +40,14 @@ export function getMetroraConfigDir(
 ): string {
   const explicit = firstExplicit(env, [
     'METRORA_CONFIG_DIR',
-    'QOVRION_CONFIG_DIR',
-    'CODEBURN_CONFIG_DIR',
+    LEGACY_CONFIG_DIR_ENV,
   ])
   if (explicit) return explicit
 
   const base = standardBase(env, 'XDG_CONFIG_HOME', home, '.config')
   return existingOrCanonical(
     join(base, 'metrora'),
-    [join(base, 'qovrion'), join(base, 'codeburn')],
+    [join(base, LEGACY_PRODUCT_ROOT)],
   )
 }
 
@@ -59,14 +62,13 @@ export function getMetroraCacheDir(
 ): string {
   const explicit = firstExplicit(env, [
     'METRORA_CACHE_DIR',
-    'QOVRION_CACHE_DIR',
-    'CODEBURN_CACHE_DIR',
+    LEGACY_CACHE_DIR_ENV,
   ])
   if (explicit) return explicit
 
   const base = standardBase(env, 'XDG_CACHE_HOME', home, '.cache')
   return existingOrCanonical(
     join(base, 'metrora'),
-    [join(base, 'qovrion'), join(base, 'codeburn')],
+    [join(base, LEGACY_PRODUCT_ROOT)],
   )
 }

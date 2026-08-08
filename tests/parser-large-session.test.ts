@@ -10,7 +10,7 @@ import type { DateRange } from '../src/types.js'
 let home: string
 
 beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), 'codeburn-large-'))
+  home = await mkdtemp(join(tmpdir(), 'metrora-large-'))
   process.env['CLAUDE_CONFIG_DIR'] = join(home, '.claude')
 })
 

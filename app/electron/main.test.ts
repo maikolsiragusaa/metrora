@@ -31,88 +31,88 @@ function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
   return { spawnCli, spawnCliAction, calls }
 }
 
-// Every codeburn:* channel with a representative arg tuple → the exact argv it
+// Every metrora:* channel with a representative arg tuple → the exact argv it
 // must spawn. cliStatus is the one channel that resolves without spawning.
 const CHANNELS = [
-  'codeburn:getOverview',
-  'codeburn:getQuota',
-  'codeburn:getPlans',
-  'codeburn:getActReport',
-  'codeburn:getModels',
-  'codeburn:getSessions',
-  'codeburn:getCompareModels',
-  'codeburn:getCompare',
-  'codeburn:getYield',
-  'codeburn:getSpendFlow',
-  'codeburn:getOptimizeReport',
-  'codeburn:getDevices',
-  'codeburn:getDevicesScan',
-  'codeburn:getShareStatus',
-  'codeburn:getIdentity',
-  'codeburn:getAliases',
-  'codeburn:getProxyPaths',
-  'codeburn:getAudit',
-  'codeburn:getPriceOverrides',
-  'codeburn:setCurrency',
-  'codeburn:resetCurrency',
-  'codeburn:addAlias',
-  'codeburn:removeAlias',
-  'codeburn:setPriceOverride',
-  'codeburn:removePriceOverride',
-  'codeburn:removeDevice',
-  'codeburn:setPlan',
-  'codeburn:resetPlan',
-  'codeburn:exportData',
-  'codeburn:cliStatus',
-  'codeburn:telemetryStatus',
-  'codeburn:telemetrySetEnabled',
-  'codeburn:telemetryOnboarded',
-  'codeburn:telemetryTrack',
-  'codeburn:getUpdateStatus',
+  'metrora:getOverview',
+  'metrora:getQuota',
+  'metrora:getPlans',
+  'metrora:getActReport',
+  'metrora:getModels',
+  'metrora:getSessions',
+  'metrora:getCompareModels',
+  'metrora:getCompare',
+  'metrora:getYield',
+  'metrora:getSpendFlow',
+  'metrora:getOptimizeReport',
+  'metrora:getDevices',
+  'metrora:getDevicesScan',
+  'metrora:getShareStatus',
+  'metrora:getIdentity',
+  'metrora:getAliases',
+  'metrora:getProxyPaths',
+  'metrora:getAudit',
+  'metrora:getPriceOverrides',
+  'metrora:setCurrency',
+  'metrora:resetCurrency',
+  'metrora:addAlias',
+  'metrora:removeAlias',
+  'metrora:setPriceOverride',
+  'metrora:removePriceOverride',
+  'metrora:removeDevice',
+  'metrora:setPlan',
+  'metrora:resetPlan',
+  'metrora:exportData',
+  'metrora:cliStatus',
+  'metrora:telemetryStatus',
+  'metrora:telemetrySetEnabled',
+  'metrora:telemetryOnboarded',
+  'metrora:telemetryTrack',
+  'metrora:getUpdateStatus',
 ] as const
 
 const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = [
-  { channel: 'codeburn:getOverview', args: ['30days', 'claude'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--provider', 'claude'] },
-  { channel: 'codeburn:getOverview', args: ['30days', 'all'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline'] },
-  { channel: 'codeburn:getPlans', args: ['week'], argv: ['status', '--format', 'json', '--period', 'week'] },
-  { channel: 'codeburn:getActReport', args: [], argv: ['act', 'report', '--json'] },
-  { channel: 'codeburn:getModels', args: ['week', 'claude', true], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'] },
-  { channel: 'codeburn:getModels', args: ['week', 'all', false], argv: ['models', '--format', 'json', '--period', 'week'] },
-  { channel: 'codeburn:getSessions', args: ['week', 'all'], argv: ['sessions', '--format', 'json', '--period', 'week'] },
-  { channel: 'codeburn:getSessions', args: ['30days', 'claude', { from: '2026-07-01', to: '2026-07-11' }], argv: ['sessions', '--format', 'json', '--period', '30days', '--provider', 'claude', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getCompareModels', args: ['month', 'codex'], argv: ['compare', '--format', 'json', '--period', 'month', '--provider', 'codex'] },
-  { channel: 'codeburn:getCompare', args: ['month', 'all', 'model-a', 'model-b'], argv: ['compare', '--format', 'json', '--period', 'month', '--model-a', 'model-a', '--model-b', 'model-b'] },
-  { channel: 'codeburn:getYield', args: ['today', 'all'], argv: ['yield', '--format', 'json', '--period', 'today'] },
-  { channel: 'codeburn:getYield', args: ['today', 'claude'], argv: ['yield', '--format', 'json', '--period', 'today', '--provider', 'claude'] },
-  { channel: 'codeburn:getSpendFlow', args: ['month', 'openai'], argv: ['spend', '--format', 'flow-json', '--period', 'month', '--provider', 'openai'] },
-  { channel: 'codeburn:getOptimizeReport', args: ['month', 'openai'], argv: ['optimize', '--format', 'json', '--period', 'month', '--provider', 'openai'] },
-  { channel: 'codeburn:getOverview', args: ['30days', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getOverview', args: ['30days', 'all', undefined, 'claude-config:91dda17e8cf35193'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--claude-config-source', 'claude-config:91dda17e8cf35193'] },
-  { channel: 'codeburn:getOverview', args: ['month', 'claude', { from: '2026-07-01', to: '2026-07-11' }, 'claude-desktop:980e1e488a654830'], argv: ['status', '--format', 'menubar-json', '--period', 'month', '--no-timeline', '--provider', 'claude', '--from', '2026-07-01', '--to', '2026-07-11', '--claude-config-source', 'claude-desktop:980e1e488a654830'] },
-  { channel: 'codeburn:getModels', args: ['week', 'claude', true, { from: '2026-07-01', to: '2026-07-11' }], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getYield', args: ['today', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['yield', '--format', 'json', '--period', 'today', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getSpendFlow', args: ['month', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['spend', '--format', 'flow-json', '--period', 'month', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getOptimizeReport', args: ['month', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['optimize', '--format', 'json', '--period', 'month', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getDevices', args: ['week'], argv: ['devices', '--format', 'json', '--period', 'week'] },
-  { channel: 'codeburn:getDevicesScan', args: [], argv: ['devices', 'scan', '--format', 'json'] },
-  { channel: 'codeburn:getShareStatus', args: [], argv: ['share', 'status', '--format', 'json'] },
-  { channel: 'codeburn:getIdentity', args: [], argv: ['identity', '--format', 'json'] },
-  { channel: 'codeburn:getAliases', args: [], argv: ['model-alias', '--list', '--format', 'json'] },
-  { channel: 'codeburn:getProxyPaths', args: [], argv: ['proxy-path', '--list', '--format', 'json'] },
-  { channel: 'codeburn:getAudit', args: ['month', 'claude'], argv: ['audit', '--format', 'json', '--period', 'month', '--provider', 'claude'] },
-  { channel: 'codeburn:getAudit', args: ['30days', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['audit', '--format', 'json', '--period', '30days', '--from', '2026-07-01', '--to', '2026-07-11'] },
-  { channel: 'codeburn:getPriceOverrides', args: [], argv: ['price-override', '--list', '--format', 'json'] },
-  { channel: 'codeburn:setPriceOverride', args: ['unpriced/test-model', { input: 0.27, output: 1.1 }], argv: ['price-override', 'unpriced/test-model', '--input', '0.27', '--output', '1.1'] },
-  { channel: 'codeburn:setPriceOverride', args: ['unpriced/test-model', { input: 0.27, output: 1.1, cacheRead: 0.03, cacheCreation: 0.42 }], argv: ['price-override', 'unpriced/test-model', '--input', '0.27', '--output', '1.1', '--cache-read', '0.03', '--cache-creation', '0.42'] },
-  { channel: 'codeburn:removePriceOverride', args: ['unpriced/test-model'], argv: ['price-override', '--remove', 'unpriced/test-model'] },
-  { channel: 'codeburn:setCurrency', args: ['EUR'], argv: ['currency', 'EUR'] },
-  { channel: 'codeburn:resetCurrency', args: [], argv: ['currency', '--reset'] },
-  { channel: 'codeburn:addAlias', args: ['unknown-model', 'priced-model'], argv: ['model-alias', 'unknown-model', 'priced-model'] },
-  { channel: 'codeburn:removeAlias', args: ['unknown-model'], argv: ['model-alias', '--remove', 'unknown-model'] },
-  { channel: 'codeburn:removeDevice', args: ['studio-mac'], argv: ['devices', 'rm', 'studio-mac'] },
-  { channel: 'codeburn:setPlan', args: ['claude-max', 'claude'], argv: ['plan', 'set', 'claude-max', '--provider', 'claude'] },
-  { channel: 'codeburn:resetPlan', args: ['cursor'], argv: ['plan', 'reset', '--provider', 'cursor'] },
-  { channel: 'codeburn:exportData', args: ['json', 'all', '/tmp/codeburn-export'], argv: ['export', '-f', 'json', '-o', '/tmp/codeburn-export', '--provider', 'all'] },
+  { channel: 'metrora:getOverview', args: ['30days', 'claude'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--provider', 'claude'] },
+  { channel: 'metrora:getOverview', args: ['30days', 'all'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline'] },
+  { channel: 'metrora:getPlans', args: ['week'], argv: ['status', '--format', 'json', '--period', 'week'] },
+  { channel: 'metrora:getActReport', args: [], argv: ['act', 'report', '--json'] },
+  { channel: 'metrora:getModels', args: ['week', 'claude', true], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'] },
+  { channel: 'metrora:getModels', args: ['week', 'all', false], argv: ['models', '--format', 'json', '--period', 'week'] },
+  { channel: 'metrora:getSessions', args: ['week', 'all'], argv: ['sessions', '--format', 'json', '--period', 'week'] },
+  { channel: 'metrora:getSessions', args: ['30days', 'claude', { from: '2026-07-01', to: '2026-07-11' }], argv: ['sessions', '--format', 'json', '--period', '30days', '--provider', 'claude', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getCompareModels', args: ['month', 'codex'], argv: ['compare', '--format', 'json', '--period', 'month', '--provider', 'codex'] },
+  { channel: 'metrora:getCompare', args: ['month', 'all', 'model-a', 'model-b'], argv: ['compare', '--format', 'json', '--period', 'month', '--model-a', 'model-a', '--model-b', 'model-b'] },
+  { channel: 'metrora:getYield', args: ['today', 'all'], argv: ['yield', '--format', 'json', '--period', 'today'] },
+  { channel: 'metrora:getYield', args: ['today', 'claude'], argv: ['yield', '--format', 'json', '--period', 'today', '--provider', 'claude'] },
+  { channel: 'metrora:getSpendFlow', args: ['month', 'openai'], argv: ['spend', '--format', 'flow-json', '--period', 'month', '--provider', 'openai'] },
+  { channel: 'metrora:getOptimizeReport', args: ['month', 'openai'], argv: ['optimize', '--format', 'json', '--period', 'month', '--provider', 'openai'] },
+  { channel: 'metrora:getOverview', args: ['30days', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getOverview', args: ['30days', 'all', undefined, 'claude-config:91dda17e8cf35193'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--claude-config-source', 'claude-config:91dda17e8cf35193'] },
+  { channel: 'metrora:getOverview', args: ['month', 'claude', { from: '2026-07-01', to: '2026-07-11' }, 'claude-desktop:980e1e488a654830'], argv: ['status', '--format', 'menubar-json', '--period', 'month', '--no-timeline', '--provider', 'claude', '--from', '2026-07-01', '--to', '2026-07-11', '--claude-config-source', 'claude-desktop:980e1e488a654830'] },
+  { channel: 'metrora:getModels', args: ['week', 'claude', true, { from: '2026-07-01', to: '2026-07-11' }], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getYield', args: ['today', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['yield', '--format', 'json', '--period', 'today', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getSpendFlow', args: ['month', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['spend', '--format', 'flow-json', '--period', 'month', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getOptimizeReport', args: ['month', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['optimize', '--format', 'json', '--period', 'month', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getDevices', args: ['week'], argv: ['devices', '--format', 'json', '--period', 'week'] },
+  { channel: 'metrora:getDevicesScan', args: [], argv: ['devices', 'scan', '--format', 'json'] },
+  { channel: 'metrora:getShareStatus', args: [], argv: ['share', 'status', '--format', 'json'] },
+  { channel: 'metrora:getIdentity', args: [], argv: ['identity', '--format', 'json'] },
+  { channel: 'metrora:getAliases', args: [], argv: ['model-alias', '--list', '--format', 'json'] },
+  { channel: 'metrora:getProxyPaths', args: [], argv: ['proxy-path', '--list', '--format', 'json'] },
+  { channel: 'metrora:getAudit', args: ['month', 'claude'], argv: ['audit', '--format', 'json', '--period', 'month', '--provider', 'claude'] },
+  { channel: 'metrora:getAudit', args: ['30days', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['audit', '--format', 'json', '--period', '30days', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'metrora:getPriceOverrides', args: [], argv: ['price-override', '--list', '--format', 'json'] },
+  { channel: 'metrora:setPriceOverride', args: ['unpriced/test-model', { input: 0.27, output: 1.1 }], argv: ['price-override', 'unpriced/test-model', '--input', '0.27', '--output', '1.1'] },
+  { channel: 'metrora:setPriceOverride', args: ['unpriced/test-model', { input: 0.27, output: 1.1, cacheRead: 0.03, cacheCreation: 0.42 }], argv: ['price-override', 'unpriced/test-model', '--input', '0.27', '--output', '1.1', '--cache-read', '0.03', '--cache-creation', '0.42'] },
+  { channel: 'metrora:removePriceOverride', args: ['unpriced/test-model'], argv: ['price-override', '--remove', 'unpriced/test-model'] },
+  { channel: 'metrora:setCurrency', args: ['EUR'], argv: ['currency', 'EUR'] },
+  { channel: 'metrora:resetCurrency', args: [], argv: ['currency', '--reset'] },
+  { channel: 'metrora:addAlias', args: ['unknown-model', 'priced-model'], argv: ['model-alias', 'unknown-model', 'priced-model'] },
+  { channel: 'metrora:removeAlias', args: ['unknown-model'], argv: ['model-alias', '--remove', 'unknown-model'] },
+  { channel: 'metrora:removeDevice', args: ['studio-mac'], argv: ['devices', 'rm', 'studio-mac'] },
+  { channel: 'metrora:setPlan', args: ['claude-max', 'claude'], argv: ['plan', 'set', 'claude-max', '--provider', 'claude'] },
+  { channel: 'metrora:resetPlan', args: ['cursor'], argv: ['plan', 'reset', '--provider', 'cursor'] },
+  { channel: 'metrora:exportData', args: ['json', 'all', '/tmp/metrora-export'], argv: ['export', '-f', 'json', '-o', '/tmp/metrora-export', '--provider', 'all'] },
 ]
 
 function flattenMenuItems(items: any[]): any[] {
@@ -123,7 +123,7 @@ function flattenMenuItems(items: any[]): any[] {
 }
 
 describe('createBridgeHandlers (channel → argv for all channels)', () => {
-  const deps = (extra = {}) => ({ spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveCodeburnPath: () => null, getQuota: vi.fn(async () => []), ...extra })
+  const deps = (extra = {}) => ({ spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => null, getQuota: vi.fn(async () => []), ...extra })
   it('exposes exactly the bridge channels', () => {
     const handlers = createBridgeHandlers(deps())
     expect(Object.keys(handlers).sort()).toEqual([...CHANNELS].sort())
@@ -131,46 +131,46 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
 
   it.each(ARGV_CASES)('$channel with $args spawns the expected argv', async ({ channel, args, argv }) => {
     const { spawnCli, spawnCliAction, calls } = fakeSpawn()
-    const handlers = createBridgeHandlers(deps({ spawnCli, spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn' }))
+    const handlers = createBridgeHandlers(deps({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
     const res = await handlers[channel]!(...args)
     expect(calls[0]).toEqual(argv)
     expect(res).toMatchObject({ ok: true })
   })
 
-  it('codeburn:cliStatus resolves from resolveCodeburnPath without spawning', async () => {
+  it('metrora:cliStatus resolves from resolveMetroraPath without spawning', async () => {
     const spawnCli = vi.fn()
-    const handlers = createBridgeHandlers(deps({ spawnCli, resolveCodeburnPath: () => '/opt/homebrew/bin/codeburn' }))
-    const res = await handlers['codeburn:cliStatus']!()
+    const handlers = createBridgeHandlers(deps({ spawnCli, resolveMetroraPath: () => '/opt/homebrew/bin/metrora' }))
+    const res = await handlers['metrora:cliStatus']!()
     expect(spawnCli).not.toHaveBeenCalled()
-    expect(res).toEqual({ ok: true, value: { found: true, path: '/opt/homebrew/bin/codeburn' } })
+    expect(res).toEqual({ ok: true, value: { found: true, path: '/opt/homebrew/bin/metrora' } })
   })
 })
 
 describe('createBridgeHandlers (IPC wiring)', () => {
   const withQuota = <T extends object>(value: T) => ({ ...value, getQuota: vi.fn(async () => []) })
   it('returns normalized quota through its own IPC channel and sanitizes unexpected failures', async () => {
-    const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveCodeburnPath: () => null }
+    const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => null }
     const value = [{ provider: 'claude' as const, connection: 'connected' as const, primary: null, details: [], planLabel: 'Pro', footerLines: [] }]
     const ok = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => value) })
-    expect(await ok['codeburn:getQuota']!()).toEqual({ ok: true, value })
+    expect(await ok['metrora:getQuota']!()).toEqual({ ok: true, value })
 
     const failed = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => { throw new Error('Bearer secret sk-ant-leak') }) })
-    const result = await failed['codeburn:getQuota']!()
+    const result = await failed['metrora:getQuota']!()
     expect(result).toMatchObject({ ok: false, error: { kind: 'nonzero' } })
     expect(JSON.stringify(result)).not.toMatch(/secret|sk-ant-leak/)
   })
   it('getOverview spawns menubar-json for the period, omitting --provider for "all"', async () => {
     const { spawnCli, spawnCliAction, calls } = fakeSpawn()
-    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn' }))
-    const res = await handlers['codeburn:getOverview']!('30days', 'all')
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
+    const res = await handlers['metrora:getOverview']!('30days', 'all')
     expect(calls[0]).toEqual(['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline'])
     expect(res).toEqual({ ok: true, value: { current: { cost: 12.34 } } })
   })
 
   it('adds --provider and --by-task when requested', async () => {
     const { spawnCli, spawnCliAction, calls } = fakeSpawn([])
-    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveCodeburnPath: () => null }))
-    await handlers['codeburn:getModels']!('week', 'claude', true)
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveMetroraPath: () => null }))
+    await handlers['metrora:getModels']!('week', 'claude', true)
     expect(calls[0]).toEqual(['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'])
   })
 
@@ -178,8 +178,8 @@ describe('createBridgeHandlers (IPC wiring)', () => {
     const spawnCli = vi.fn(async () => {
       throw new CliError('nonzero', 'boom')
     })
-    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction: vi.fn(), resolveCodeburnPath: () => '/bin/codeburn' }))
-    const res = await handlers['codeburn:getYield']!('today', 'all')
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction: vi.fn(), resolveMetroraPath: () => '/bin/metrora' }))
+    const res = await handlers['metrora:getYield']!('today', 'all')
     expect(res).toEqual({ ok: false, error: { kind: 'nonzero', message: 'boom' } })
   })
 
@@ -187,36 +187,36 @@ describe('createBridgeHandlers (IPC wiring)', () => {
     const handlers = createBridgeHandlers(withQuota({
       spawnCli: vi.fn(),
       spawnCliAction: vi.fn(),
-      resolveCodeburnPath: () => '/opt/homebrew/bin/codeburn',
+      resolveMetroraPath: () => '/opt/homebrew/bin/metrora',
     }))
-    const res = await handlers['codeburn:cliStatus']!()
-    expect(res).toEqual({ ok: true, value: { found: true, path: '/opt/homebrew/bin/codeburn' } })
+    const res = await handlers['metrora:cliStatus']!()
+    expect(res).toEqual({ ok: true, value: { found: true, path: '/opt/homebrew/bin/metrora' } })
   })
 })
 
 describe('createBridgeHandlers (IPC input validation)', () => {
   const withQuota = <T extends object>(value: T) => ({ ...value, getQuota: vi.fn(async () => []) })
   const REJECTIONS: Array<{ name: string; channel: string; args: unknown[] }> = [
-    { name: 'unknown period', channel: 'codeburn:getOverview', args: ['yesterday', 'all'] },
-    { name: 'provider with shell metacharacters', channel: 'codeburn:getOverview', args: ['30days', 'claude; rm -rf'] },
-    { name: 'uppercase provider', channel: 'codeburn:getModels', args: ['week', 'Claude', false] },
-    { name: 'malformed date range', channel: 'codeburn:getYield', args: ['today', 'all', { from: '2026/07/01', to: '2026-07-11' }] },
-    { name: 'lowercase currency code', channel: 'codeburn:setCurrency', args: ['eur'] },
-    { name: 'alias token that looks like a flag', channel: 'codeburn:addAlias', args: ['--evil', 'safe'] },
-    { name: 'device name that looks like a flag', channel: 'codeburn:removeDevice', args: ['-rf'] },
-    { name: 'relative export path', channel: 'codeburn:exportData', args: ['json', 'all', 'relative/out'] },
-    { name: 'compare model that looks like a flag', channel: 'codeburn:getCompare', args: ['month', 'all', '-a', 'model-b'] },
-    { name: 'price override model that looks like a flag', channel: 'codeburn:setPriceOverride', args: ['-x', { input: 1, output: 2 }] },
-    { name: 'non-positive price override rate', channel: 'codeburn:setPriceOverride', args: ['my-model', { input: 0, output: 2 }] },
-    { name: 'non-finite price override rate', channel: 'codeburn:setPriceOverride', args: ['my-model', { input: 1, output: Number.POSITIVE_INFINITY }] },
-    { name: 'remove price override model that looks like a flag', channel: 'codeburn:removePriceOverride', args: ['--all'] },
-    { name: 'claude config source that looks like a flag', channel: 'codeburn:getOverview', args: ['30days', 'all', undefined, '-rf'] },
-    { name: 'claude config source with shell metacharacters', channel: 'codeburn:getOverview', args: ['30days', 'all', undefined, 'id; rm -rf'] },
+    { name: 'unknown period', channel: 'metrora:getOverview', args: ['yesterday', 'all'] },
+    { name: 'provider with shell metacharacters', channel: 'metrora:getOverview', args: ['30days', 'claude; rm -rf'] },
+    { name: 'uppercase provider', channel: 'metrora:getModels', args: ['week', 'Claude', false] },
+    { name: 'malformed date range', channel: 'metrora:getYield', args: ['today', 'all', { from: '2026/07/01', to: '2026-07-11' }] },
+    { name: 'lowercase currency code', channel: 'metrora:setCurrency', args: ['eur'] },
+    { name: 'alias token that looks like a flag', channel: 'metrora:addAlias', args: ['--evil', 'safe'] },
+    { name: 'device name that looks like a flag', channel: 'metrora:removeDevice', args: ['-rf'] },
+    { name: 'relative export path', channel: 'metrora:exportData', args: ['json', 'all', 'relative/out'] },
+    { name: 'compare model that looks like a flag', channel: 'metrora:getCompare', args: ['month', 'all', '-a', 'model-b'] },
+    { name: 'price override model that looks like a flag', channel: 'metrora:setPriceOverride', args: ['-x', { input: 1, output: 2 }] },
+    { name: 'non-positive price override rate', channel: 'metrora:setPriceOverride', args: ['my-model', { input: 0, output: 2 }] },
+    { name: 'non-finite price override rate', channel: 'metrora:setPriceOverride', args: ['my-model', { input: 1, output: Number.POSITIVE_INFINITY }] },
+    { name: 'remove price override model that looks like a flag', channel: 'metrora:removePriceOverride', args: ['--all'] },
+    { name: 'claude config source that looks like a flag', channel: 'metrora:getOverview', args: ['30days', 'all', undefined, '-rf'] },
+    { name: 'claude config source with shell metacharacters', channel: 'metrora:getOverview', args: ['30days', 'all', undefined, 'id; rm -rf'] },
   ]
 
   it.each(REJECTIONS)('rejects $name with a bad-args envelope and never spawns', async ({ channel, args }) => {
     const { spawnCli, spawnCliAction } = fakeSpawn()
-    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn' }))
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
     const res = await handlers[channel]!(...args)
     expect(res).toMatchObject({ ok: false, error: { kind: 'bad-args' } })
     expect(spawnCli).not.toHaveBeenCalled()
@@ -225,27 +225,27 @@ describe('createBridgeHandlers (IPC input validation)', () => {
 
   it('still accepts the valid values those cases mutate', async () => {
     const { spawnCli, spawnCliAction, calls } = fakeSpawn()
-    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn' }))
-    await handlers['codeburn:exportData']!('json', 'all', '/tmp/out')
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
+    await handlers['metrora:exportData']!('json', 'all', '/tmp/out')
     expect(calls[0]).toEqual(['export', '-f', 'json', '-o', '/tmp/out', '--provider', 'all'])
   })
 })
 
 describe('createBridgeHandlers (quota force + redaction)', () => {
   it('threads the renderer force flag into getQuota', async () => {
-    const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveCodeburnPath: () => null }
+    const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => null }
     const getQuota = vi.fn(async () => [])
     const handlers = createBridgeHandlers({ ...base, getQuota })
-    await handlers['codeburn:getQuota']!(true)
+    await handlers['metrora:getQuota']!(true)
     expect(getQuota).toHaveBeenLastCalledWith({ force: true })
-    await handlers['codeburn:getQuota']!()
+    await handlers['metrora:getQuota']!()
     expect(getQuota).toHaveBeenLastCalledWith({ force: false })
   })
 
   it('redacts secrets in ActionResult.stderr before it crosses IPC', async () => {
     const spawnCliAction = vi.fn(async () => ({ ok: false, stdout: '', stderr: 'auth failed: Bearer sk-ant-leak12345', code: 1 }))
-    const handlers = createBridgeHandlers({ spawnCli: vi.fn(), spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn', getQuota: vi.fn(async () => []) })
-    const res = await handlers['codeburn:setCurrency']!('EUR') as { ok: true; value: { stderr: string } }
+    const handlers = createBridgeHandlers({ spawnCli: vi.fn(), spawnCliAction, resolveMetroraPath: () => '/bin/metrora', getQuota: vi.fn(async () => []) })
+    const res = await handlers['metrora:setCurrency']!('EUR') as { ok: true; value: { stderr: string } }
     expect(res.ok).toBe(true)
     expect(res.value.stderr).not.toMatch(/sk-ant-leak|Bearer sk-ant/)
     expect(res.value.stderr).toContain('[REDACTED]')
@@ -403,7 +403,7 @@ describe('createBeforeQuitHandler', () => {
 })
 
 describe('createBridgeHandlers (cold-start warmup)', () => {
-  const base = (extra: object) => ({ spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveCodeburnPath: () => '/bin/codeburn', getQuota: vi.fn(async () => []), ...extra })
+  const base = (extra: object) => ({ spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => '/bin/metrora', getQuota: vi.fn(async () => []), ...extra })
 
   it('gives the first overview a long timeout + progress env, then reverts once warmed', async () => {
     const opts: Array<Record<string, unknown> | undefined> = []
@@ -411,13 +411,13 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
     const emitProgress = vi.fn()
     const handlers = createBridgeHandlers(base({ spawnCli, emitProgress }))
 
-    await handlers['codeburn:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
     expect(opts[0]?.timeoutMs).toBe(10 * 60_000)
-    expect((opts[0]?.extraEnv as Record<string, string> | undefined)?.CODEBURN_PROGRESS).toBe('1')
+    expect((opts[0]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
     expect(typeof opts[0]?.onStderr).toBe('function')
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'done' })
 
-    await handlers['codeburn:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
     expect(opts[1]?.timeoutMs).toBeUndefined()
     expect(opts[1]?.extraEnv).toBeUndefined()
   })
@@ -427,9 +427,9 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
     const spawnCli = vi.fn(async (_args: string[], o?: Record<string, unknown>) => { opts.push(o); return { current: { cost: 1 } } })
     const handlers = createBridgeHandlers(base({ spawnCli, emitProgress: vi.fn() }))
 
-    await handlers['codeburn:getOverview']!('30days', 'all') // cold warmup → interactive
-    await handlers['codeburn:getOverview']!('30days', 'claude') // warmed, no flag → interactive
-    await handlers['codeburn:getOverview']!('30days', 'grok', undefined, null, true) // prefetch → background
+    await handlers['metrora:getOverview']!('30days', 'all') // cold warmup → interactive
+    await handlers['metrora:getOverview']!('30days', 'claude') // warmed, no flag → interactive
+    await handlers['metrora:getOverview']!('30days', 'grok', undefined, null, true) // prefetch → background
 
     expect(opts[0]?.priority).toBeUndefined()
     expect(opts[1]?.priority).toBeUndefined()
@@ -446,8 +446,8 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
     })
     const handlers = createBridgeHandlers(base({ spawnCli, emitProgress: vi.fn() }))
 
-    expect(await handlers['codeburn:getOverview']!('30days', 'all')).toMatchObject({ ok: false })
-    expect(await handlers['codeburn:getOverview']!('30days', 'all')).toMatchObject({ ok: true })
+    expect(await handlers['metrora:getOverview']!('30days', 'all')).toMatchObject({ ok: false })
+    expect(await handlers['metrora:getOverview']!('30days', 'all')).toMatchObject({ ok: true })
     expect(opts[0]?.timeoutMs).toBe(10 * 60_000)
     expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
   })
@@ -455,13 +455,13 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
   it('parses CLI scan-progress stderr lines and forwards them to emitProgress', async () => {
     const spawnCli = vi.fn(async (_args: string[], o?: { onStderr?: (chunk: string) => void }) => {
       // A split line proves the reader buffers across chunks.
-      o?.onStderr?.('CODEBURN_PROGRESS {"kind":"providers","providers":["claude","codex"]}\nCODEBURN_PROG')
+      o?.onStderr?.('METRORA_PROGRESS {"kind":"providers","providers":["claude","codex"]}\nMETRORA_PROG')
       o?.onStderr?.('RESS {"kind":"tick","provider":"claude","done":5,"total":10}\nnoise line\n')
       return { current: { cost: 1 } }
     })
     const emitProgress = vi.fn()
     const handlers = createBridgeHandlers(base({ spawnCli, emitProgress }))
-    await handlers['codeburn:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
 
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'providers', providers: ['claude', 'codex'] })
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'tick', provider: 'claude', done: 5, total: 10 })
@@ -478,7 +478,7 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
   const deps = (telemetry: ReturnType<typeof fakeTelemetry> | null) => ({
     spawnCli: vi.fn(async () => ({ current: { cost: 1 } })),
     spawnCliAction: vi.fn(),
-    resolveCodeburnPath: () => '/bin/codeburn',
+    resolveMetroraPath: () => '/bin/metrora',
     getQuota: vi.fn(async () => []),
     emitProgress: vi.fn(),
     telemetry,
@@ -488,26 +488,26 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
     const telemetry = fakeTelemetry()
     const handlers = createBridgeHandlers(deps(telemetry))
 
-    expect(await handlers['codeburn:telemetryStatus']!()).toMatchObject({ ok: true, value: { installId: 'id-1', onboarded: false } })
-    expect(await handlers['codeburn:telemetrySetEnabled']!(false)).toMatchObject({ ok: true, value: { enabled: false } })
+    expect(await handlers['metrora:telemetryStatus']!()).toMatchObject({ ok: true, value: { installId: 'id-1', onboarded: false } })
+    expect(await handlers['metrora:telemetrySetEnabled']!(false)).toMatchObject({ ok: true, value: { enabled: false } })
     expect(telemetry.setEnabled).toHaveBeenCalledWith(false)
-    expect(await handlers['codeburn:telemetryOnboarded']!(true)).toMatchObject({ ok: true, value: { onboarded: true } })
+    expect(await handlers['metrora:telemetryOnboarded']!(true)).toMatchObject({ ok: true, value: { onboarded: true } })
     expect(telemetry.completeOnboarding).toHaveBeenCalledWith(true)
-    await handlers['codeburn:telemetryTrack']!('section_view', { section: 'spend' })
+    await handlers['metrora:telemetryTrack']!('section_view', { section: 'spend' })
     expect(telemetry.track).toHaveBeenCalledWith('section_view', { section: 'spend' })
   })
 
   it('returns null (not an error) when telemetry is unavailable', async () => {
     const handlers = createBridgeHandlers(deps(null))
-    expect(await handlers['codeburn:telemetryStatus']!()).toEqual({ ok: true, value: null })
-    expect(await handlers['codeburn:telemetryTrack']!('section_view', {})).toEqual({ ok: true, value: true })
+    expect(await handlers['metrora:telemetryStatus']!()).toEqual({ ok: true, value: null })
+    expect(await handlers['metrora:telemetryTrack']!('section_view', {})).toEqual({ ok: true, value: true })
   })
 
   it('tracks cold_start once on the first overview success, with duration', async () => {
     const telemetry = fakeTelemetry()
     const handlers = createBridgeHandlers(deps(telemetry))
-    await handlers['codeburn:getOverview']!('30days', 'all')
-    await handlers['codeburn:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
     const coldStarts = telemetry.track.mock.calls.filter(([name]) => name === 'cold_start')
     expect(coldStarts.length).toBe(1)
     expect(coldStarts[0]![1]).toMatchObject({ timedOut: false })
@@ -525,11 +525,11 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
       const spawnCli = vi.fn(() => shared)
       const handlers = createBridgeHandlers({ ...deps(telemetry), spawnCli })
 
-      const p1 = handlers['codeburn:getOverview']!('30days', 'all') // anchors cold clock at t=0
+      const p1 = handlers['metrora:getOverview']!('30days', 'all') // anchors cold clock at t=0
       vi.setSystemTime(30_000)
-      const p2 = handlers['codeburn:getOverview']!('30days', 'all')
+      const p2 = handlers['metrora:getOverview']!('30days', 'all')
       vi.setSystemTime(60_000)
-      const p3 = handlers['codeburn:getOverview']!('30days', 'all')
+      const p3 = handlers['metrora:getOverview']!('30days', 'all')
 
       // The stuck child finally settles ~102.8s after launch.
       vi.setSystemTime(102_801)
@@ -549,7 +549,7 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
     const telemetry = fakeTelemetry()
     const spawnCli = vi.fn(async () => { throw new CliError('timeout', 'timed out') })
     const handlers = createBridgeHandlers({ ...deps(telemetry), spawnCli })
-    await handlers['codeburn:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
     const coldStarts = telemetry.track.mock.calls.filter(([name]) => name === 'cold_start')
     expect(coldStarts.length).toBe(1)
     expect(coldStarts[0]![1]).toMatchObject({ timedOut: true })
@@ -563,8 +563,8 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
       return { current: { cost: 1 } } // re-armed cold attempt succeeds
     })
     const handlers = createBridgeHandlers({ ...deps(telemetry), spawnCli })
-    await handlers['codeburn:getOverview']!('30days', 'all')
-    await handlers['codeburn:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all')
     const coldStarts = telemetry.track.mock.calls.filter(([name]) => name === 'cold_start')
     expect(coldStarts.length).toBe(1)
     expect(coldStarts[0]![1]).toMatchObject({ timedOut: true })
@@ -577,7 +577,7 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
       spawnCli: vi.fn(async () => { throw new CliError('timeout', 'timed out') }),
     }
     const handlers = createBridgeHandlers(failing)
-    await handlers['codeburn:getSessions']!('week', 'all')
+    await handlers['metrora:getSessions']!('week', 'all')
     expect(telemetry.track).toHaveBeenCalledWith('cli_error', { cmd: 'sessions', kind: 'timeout' })
   })
 
@@ -586,10 +586,10 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
     const failing = {
       ...deps(telemetry),
       // Mirrors the Windows P0: bundled path present but rejected by the resolver.
-      spawnCli: vi.fn(async () => { throw new CliError('not-found', 'codeburn CLI not found', 'bundled-not-absolute') }),
+      spawnCli: vi.fn(async () => { throw new CliError('not-found', 'metrora CLI not found', 'bundled-not-absolute') }),
     }
     const handlers = createBridgeHandlers(failing)
-    await handlers['codeburn:getPlans']!('week')
+    await handlers['metrora:getPlans']!('week')
     expect(telemetry.track).toHaveBeenCalledWith('cli_error', { cmd: 'status', kind: 'not-found', detail: 'bundled-not-absolute' })
   })
 
@@ -599,11 +599,11 @@ describe('createBridgeHandlers (telemetry wiring)', () => {
       ...deps(telemetry),
       // A spawn-time ENOENT whose message embeds a filesystem path.
       spawnCli: vi.fn(async () => {
-        throw new CliError('not-found', 'spawn C:\\Users\\alice\\secret\\codeburn.exe ENOENT', 'spawn-error')
+        throw new CliError('not-found', 'spawn C:\\Users\\alice\\secret\\metrora.exe ENOENT', 'spawn-error')
       }),
     }
     const handlers = createBridgeHandlers(failing)
-    await handlers['codeburn:getSessions']!('week', 'all')
+    await handlers['metrora:getSessions']!('week', 'all')
     const props = telemetry.track.mock.calls.find(([name]) => name === 'cli_error')![1] as Record<string, unknown>
     expect(props).toEqual({ cmd: 'sessions', kind: 'not-found', detail: 'spawn-error' })
     expect(JSON.stringify(props)).not.toContain('secret')

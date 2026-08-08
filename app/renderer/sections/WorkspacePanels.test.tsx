@@ -205,9 +205,9 @@ describe('Workspace focused panels', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
 
     const batched = snapshot()
     batched.evidence.unbatchedEventCount = 0
@@ -228,8 +228,8 @@ describe('Workspace focused panels', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeEnabled()
   })
 })

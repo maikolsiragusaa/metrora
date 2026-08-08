@@ -280,7 +280,7 @@ describe('scanSelfCorrections', () => {
   let tmpDir: string
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'codeburn-test-'))
+    tmpDir = await mkdtemp(join(tmpdir(), 'metrora-test-'))
   })
 
   afterEach(async () => {
@@ -385,7 +385,7 @@ describe('scanSelfCorrections', () => {
   })
 
   it('accepts multiple sessionDirs and merges counts', async () => {
-    const dir2 = await mkdtemp(join(tmpdir(), 'codeburn-test2-'))
+    const dir2 = await mkdtemp(join(tmpdir(), 'metrora-test2-'))
     try {
       const sessionA = join(tmpDir, 'session-a')
       const sessionB = join(dir2, 'session-b')

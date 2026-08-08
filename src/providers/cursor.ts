@@ -688,8 +688,8 @@ function parseBubbles(
   // comfortably. Instead, for large DBs we page the requested window
   // (ROWID-descending, stopping past the window floor) and only fall back to a
   // hard budget — warning — when the in-range scan genuinely exceeds it.
-  // Override the budget in tests via CODEBURN_CURSOR_MAX_BUBBLES.
-  const MAX_BUBBLES = Number(process.env['CODEBURN_CURSOR_MAX_BUBBLES']) || 250_000
+  // Override the budget in tests via METRORA_CURSOR_MAX_BUBBLES.
+  const MAX_BUBBLES = Number(process.env['METRORA_CURSOR_MAX_BUBBLES']) || 250_000
 
   let total = 0
   try {

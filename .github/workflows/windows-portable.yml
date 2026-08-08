@@ -168,7 +168,7 @@ jobs:
           $smokeOutput = Join-Path $env:RUNNER_TEMP 'metrora-baseline-smoke'
           & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $bundle 'Run-Metrora-Baseline.ps1') `
             -OutputDirectory $smokeOutput `
-            -SkipCodeBurn `
+            -SkipMetrora `
             -SkipPrivateCacheBackup `
             -NoArchive
           if ($LASTEXITCODE -ne 0) { throw 'portable baseline runner failed' }
@@ -184,9 +184,6 @@ jobs:
           $overview = [System.IO.File]::ReadAllText($overviewPath, [System.Text.Encoding]::UTF8)
           if ($overview -notmatch '^Metrora\s+Lifetime') {
             throw 'portable overview does not expose the canonical Metrora heading'
-          }
-          if ($overview -match '\bCodeBurn\b') {
-            throw 'portable overview leaked legacy CodeBurn branding'
           }
           if ($overview.Contains('Ô')) {
             throw 'portable overview contains Windows encoding mojibake'

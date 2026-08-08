@@ -1,11 +1,51 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setProxyPaths, isProxiedPath, getProxyPathsConfigHash, setLocalModelSavings, setModelAliases, loadPricing } from '../src/models.js'
 import { parseAllSessions, clearSessionCache, filterProjectsByDateRange } from '../src/parser.js'
 import type { DateRange, ProjectSummary } from '../src/types.js'
+
+const { ORIGINAL_ENV } = vi.hoisted(() => {
+  const envKeys = [
+    'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE',
+    'APPDATA', 'LOCALAPPDATA', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',
+    'METRORA_CACHE_DIR', 'METRORA_CONFIG_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS',
+    'CODEX_HOME', 'OPENCODE_DATA_DIR',
+  ] as const
+  const original = Object.fromEntries(envKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.env['TMPDIR'] ?? process.env['TMP'] ?? process.env['TEMP'] ?? '.'
+  const root = `${base}${base.endsWith(separator) ? '' : separator}metrora-proxy-test-home`
+  const home = `${root}${separator}home`
+  const isolated: Record<string, string> = {
+    HOME: home,
+    USERPROFILE: home,
+    HOMEPATH: home,
+    HOMEDRIVE: '',
+    APPDATA: `${home}${separator}AppData${separator}Roaming`,
+    LOCALAPPDATA: `${home}${separator}AppData${separator}Local`,
+    XDG_DATA_HOME: `${home}${separator}.local${separator}share`,
+    XDG_CONFIG_HOME: `${home}${separator}.config`,
+    XDG_CACHE_HOME: `${home}${separator}.cache`,
+    METRORA_CACHE_DIR: `${root}${separator}cache`,
+    METRORA_CONFIG_DIR: `${home}${separator}.config${separator}metrora`,
+    CLAUDE_CONFIG_DIR: `${home}${separator}.claude`,
+    CODEX_HOME: `${home}${separator}.codex`,
+    OPENCODE_DATA_DIR: `${home}${separator}.local${separator}share${separator}opencode`,
+  }
+  for (const [key, value] of Object.entries(isolated)) process.env[key] = value
+  delete process.env['CLAUDE_CONFIG_DIRS']
+  return { ORIGINAL_ENV: original }
+})
+
+afterAll(() => {
+  for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
 
 // ── Part A: isProxiedPath matching rule (pure) ─────────────────────────────
 
@@ -138,7 +178,7 @@ afterEach(async () => {
 })
 
 async function setupProxiedSession(cwd: string = FIXTURE_CWD): Promise<void> {
-  const base = await mkdtemp(join(tmpdir(), 'codeburn-proxy-'))
+  const base = await mkdtemp(join(tmpdir(), 'metrora-proxy-'))
   tmpDirs.push(base)
   const projectDir = join(base, 'projects', 'p')
   await mkdir(projectDir, { recursive: true })

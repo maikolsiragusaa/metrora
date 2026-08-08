@@ -22,7 +22,7 @@ async function root(): Promise<string> {
 
 function identity(): LocalEndpointIdentityMetadataV1 {
   return {
-    kind: 'qovrion.local-endpoint-identity',
+    kind: 'metrora.local-endpoint-identity',
     version: 1,
     endpointId: 'ep_11111111-2222-4333-8444-555555555555',
     generation: 1,
@@ -79,7 +79,7 @@ describe.sequential('local Workspace software reconciliation', () => {
     expect(loaded?.endpoint.identity).toEqual(created.state.endpoint.identity)
     expect(loaded?.endpointIdentityGeneration).toBe(created.state.endpointIdentityGeneration)
     expect(loaded?.endpoint.software).toEqual({
-      qovrionVersion: '1.0.0-rc.8',
+      metroraVersion: '1.0.0-rc.8',
       collectorVersion: '1.0.0-rc.8',
     })
     expect(loaded?.endpoint.updatedAt).toBe(UPDATED)

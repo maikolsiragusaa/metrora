@@ -27,7 +27,7 @@ SQLite. The parser requires these tables:
 
 ## Caching
 
-No provider-specific cache. Standard CodeBurn session cache applies.
+No provider-specific cache. Standard Metrora session cache applies.
 
 ## Deduplication
 
@@ -35,7 +35,7 @@ Per exchange: `warp:<conversationId>:<exchangeId>`.
 
 ## What we extract
 
-| codeburn field | Warp source |
+| metrora field | Warp source |
 |---|---|
 | `sessionId` | `agent_conversations.conversation_id` |
 | `timestamp` | `ai_queries.start_ts` |

@@ -19,7 +19,7 @@ SQLite. The provider reads Hermes' aggregate `sessions` token/cost counters and 
 
 ## Parser
 
-Hermes stores durable token accounting at the session level, so CodeBurn emits one parsed call per Hermes session instead of one call per LLM API request. The call contains the aggregate session totals:
+Hermes stores durable token accounting at the session level, so Metrora emits one parsed call per Hermes session instead of one call per LLM API request. The call contains the aggregate session totals:
 
 - input tokens
 - output tokens
@@ -28,15 +28,15 @@ Hermes stores durable token accounting at the session level, so CodeBurn emits o
 - reasoning tokens
 - actual or estimated cost when Hermes recorded one
 
-If Hermes recorded no positive cost, CodeBurn falls back to its normal model pricing table.
+If Hermes recorded no positive cost, Metrora falls back to its normal model pricing table.
 
 ## Project grouping
 
-Discovery groups sessions by Hermes profile (`default`, `coder`, `analytics`, etc.). When a session message includes a clean `Current working directory: /path` line, parsing can attach that project path so CodeBurn can canonicalize worktrees. The parser deliberately ignores quoted or escaped prompt text that merely contains the phrase `Current working directory:`.
+Discovery groups sessions by Hermes profile (`default`, `coder`, `analytics`, etc.). When a session message includes a clean `Current working directory: /path` line, parsing can attach that project path so Metrora can canonicalize worktrees. The parser deliberately ignores quoted or escaped prompt text that merely contains the phrase `Current working directory:`.
 
 ## Tool mapping
 
-Hermes `tool_calls` are normalized to CodeBurn display names where possible:
+Hermes `tool_calls` are normalized to Metrora display names where possible:
 
 - `terminal` -> `Bash`
 - `read_file` -> `Read`
@@ -47,7 +47,7 @@ Hermes `tool_calls` are normalized to CodeBurn display names where possible:
 - web tools -> `WebSearch` / `WebFetch`
 - skill tools -> `Skill`
 
-Terminal command arguments are exposed as `bashCommands` for CodeBurn's command breakdowns.
+Terminal command arguments are exposed as `bashCommands` for Metrora's command breakdowns.
 
 ## Caching
 
@@ -64,4 +64,4 @@ The shared session cache fingerprints Hermes state DB files. `HERMES_HOME` is in
 1. Reproduce against a real Hermes `state.db` or a minimal SQLite fixture.
 2. Run `npm test -- tests/providers/hermes.test.ts --run`.
 3. For local smoke testing, use an isolated cache directory, for example:
-   `CODEBURN_CACHE_DIR=/tmp/codeburn-hermes-cache node --import tsx -e "import { parseAllSessions } from './src/parser.ts'; console.log(await parseAllSessions(undefined, 'hermes'))"`.
+   `METRORA_CACHE_DIR=/tmp/metrora-hermes-cache node --import tsx -e "import { parseAllSessions } from './src/parser.ts'; console.log(await parseAllSessions(undefined, 'hermes'))"`.

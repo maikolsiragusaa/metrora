@@ -1,4 +1,4 @@
-// Metrora does not query CodeBurn releases or download channels.
+// Metrora does not query Metrora releases or download channels.
 //
 // The inherited Electron main process expects an UpdateChecker-compatible
 // object. This module keeps that interface but deliberately performs no network

@@ -7,10 +7,13 @@ import { clearSessionCache, parseAllSessions } from '../src/parser.js'
 import { sessionCachePath } from '../src/session-cache.js'
 
 const testRoot = vi.hoisted(() => {
-  const root = `${process.env['TMPDIR'] || '/tmp'}/codex-kimi-context-${process.pid}-${Date.now()}`
-  process.env['HOME'] = `${root}/home`
-  process.env['USERPROFILE'] = `${root}/home`
-  process.env['CODEX_HOME'] = `${root}/codex`
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.env['TMPDIR'] ?? process.env['TMP'] ?? process.env['TEMP'] ?? '.'
+  const root = `${base}${base.endsWith(separator) ? '' : separator}codex-kimi-context-${process.pid}-${Date.now()}`
+  const home = `${root}${separator}home`
+  process.env['HOME'] = home
+  process.env['USERPROFILE'] = home
+  process.env['CODEX_HOME'] = `${root}${separator}codex`
   return root
 })
 
@@ -47,7 +50,7 @@ beforeEach(async () => {
   process.env['HOME'] = join(testRoot, 'home')
   process.env['USERPROFILE'] = join(testRoot, 'home')
   process.env['CODEX_HOME'] = CODEX_HOME
-  process.env['CODEBURN_CACHE_DIR'] = CACHE_DIR
+  process.env['METRORA_CACHE_DIR'] = CACHE_DIR
   clearSessionCache()
   await rm(testRoot, { recursive: true, force: true })
   await seedRollout()

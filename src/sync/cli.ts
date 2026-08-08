@@ -38,7 +38,7 @@ export function registerSyncCommands(program: Command): void {
         const baseUrl = url.replace(/\/$/, '')
         process.stderr.write(`Fetching discovery doc from ${baseUrl}...\n`)
 
-        // 1. Fetch codeburn discovery doc
+        // 1. Fetch metrora discovery doc
         const discovery = await fetchDiscoveryDoc(baseUrl)
         process.stderr.write(`  Issuer: ${discovery.issuer}\n`)
         process.stderr.write(`  Client: ${discovery.client_id}\n`)

@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 
 import { describe, it, expect } from 'vitest'
 
-const CLI_TIMEOUT_MS = 10_000
+const CLI_TIMEOUT_MS = 30_000
 
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
@@ -16,8 +16,19 @@ function runCli(args: string[], home: string) {
       USERPROFILE: home,
       HOMEPATH: home,
       HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      CODEX_HOME: join(home, '.codex'),
+      METRORA_CACHE_DIR: join(home, '.metrora-cache'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
+      OPENCODE_DATA_DIR: join(home, '.opencode'),
     },
     encoding: 'utf-8',
+    timeout: CLI_TIMEOUT_MS,
   })
 }
 

@@ -122,7 +122,7 @@ describe('Workspace recovery IPC', () => {
       chooseExportPath: async () => null,
     })
 
-    const result = await handlers['codeburn:recoverWorkspaceState']!({
+    const result = await handlers['metrora:recoverWorkspaceState']!({
       reset: true,
       deleteEvidence: true,
       sourcePath: '/private/path',
@@ -153,7 +153,7 @@ describe('Workspace recovery IPC', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:recoverWorkspaceState']!()).resolves.toEqual({
+    await expect(handlers['metrora:recoverWorkspaceState']!()).resolves.toEqual({
       ok: false,
       error: {
         kind: 'workspace-recovery-unavailable',
@@ -174,7 +174,7 @@ describe('Workspace recovery IPC', () => {
       chooseExportPath: async () => null,
     })
 
-    const result = await handlers['codeburn:recoverWorkspaceState']!()
+    const result = await handlers['metrora:recoverWorkspaceState']!()
     expect(result).toEqual({
       ok: false,
       error: {

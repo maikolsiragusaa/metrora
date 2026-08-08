@@ -101,7 +101,7 @@ describe('advisor usage parsing', () => {
 
 describe('advisor usage end-to-end through parseAllSessions', () => {
   let tmpDir: string | null = null
-  const savedEnv = { config: process.env['CLAUDE_CONFIG_DIR'], cache: process.env['CODEBURN_CACHE_DIR'] }
+  const savedEnv = { config: process.env['CLAUDE_CONFIG_DIR'], cache: process.env['METRORA_CACHE_DIR'] }
 
   beforeAll(async () => {
     await loadPricing()
@@ -111,8 +111,8 @@ describe('advisor usage end-to-end through parseAllSessions', () => {
     clearSessionCache()
     if (savedEnv.config === undefined) delete process.env['CLAUDE_CONFIG_DIR']
     else process.env['CLAUDE_CONFIG_DIR'] = savedEnv.config
-    if (savedEnv.cache === undefined) delete process.env['CODEBURN_CACHE_DIR']
-    else process.env['CODEBURN_CACHE_DIR'] = savedEnv.cache
+    if (savedEnv.cache === undefined) delete process.env['METRORA_CACHE_DIR']
+    else process.env['METRORA_CACHE_DIR'] = savedEnv.cache
     if (tmpDir) {
       await rm(tmpDir, { recursive: true, force: true })
       tmpDir = null
@@ -120,9 +120,9 @@ describe('advisor usage end-to-end through parseAllSessions', () => {
   })
 
   it('attributes advisor spend to the advisor model in the session breakdown', async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'codeburn-advisor-'))
+    tmpDir = await mkdtemp(join(tmpdir(), 'metrora-advisor-'))
     process.env['CLAUDE_CONFIG_DIR'] = tmpDir
-    process.env['CODEBURN_CACHE_DIR'] = join(tmpDir, 'cache')
+    process.env['METRORA_CACHE_DIR'] = join(tmpDir, 'cache')
     const proj = join(tmpDir, 'projects', 'p')
     await mkdir(proj, { recursive: true })
     const user = JSON.stringify({ type: 'user', timestamp: '2026-07-10T09:59:59.000Z', sessionId: 's1', message: { role: 'user', content: 'hi' } })
@@ -148,9 +148,9 @@ describe('advisor usage end-to-end through parseAllSessions', () => {
   })
 
   it('counts advisor spend even when the assistant line exceeds the large-line (32KB) threshold', async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'codeburn-advisor-big-'))
+    tmpDir = await mkdtemp(join(tmpdir(), 'metrora-advisor-big-'))
     process.env['CLAUDE_CONFIG_DIR'] = tmpDir
-    process.env['CODEBURN_CACHE_DIR'] = join(tmpDir, 'cache')
+    process.env['METRORA_CACHE_DIR'] = join(tmpDir, 'cache')
     const proj = join(tmpDir, 'projects', 'p')
     await mkdir(proj, { recursive: true })
 

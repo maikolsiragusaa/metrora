@@ -15,7 +15,7 @@ import { Aes256GcmSecretProtector } from './secret-protector.js'
 const roots: string[] = []
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), 'qovrion-endpoint-identity-'))
+  const value = await mkdtemp(join(tmpdir(), 'metrora-endpoint-identity-'))
   roots.push(value)
   return value
 }
@@ -169,7 +169,7 @@ describe.sequential('local endpoint identity v1', () => {
     expect(rotated.metadata.publicKeyFingerprintSha256).not.toBe(first.metadata.publicKeyFingerprintSha256)
     expect(Buffer.from(rotated.eventIdentityKey)).not.toEqual(Buffer.from(first.eventIdentityKey))
 
-    const payload = Buffer.from('qovrion endpoint proof')
+    const payload = Buffer.from('metrora endpoint proof')
     const signature = signWithLocalEndpointIdentityV1(rotated, payload)
     expect(verifyLocalEndpointIdentitySignatureV1(rotated.metadata, payload, signature)).toBe(true)
     expect(verifyLocalEndpointIdentitySignatureV1(first.metadata, payload, signature)).toBe(false)

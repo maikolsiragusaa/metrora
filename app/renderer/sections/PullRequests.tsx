@@ -8,7 +8,7 @@ import { SectionSkeleton } from '../components/Skeleton'
 import { StaleBanner } from '../components/StaleBanner'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatDayShort, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { CliError, DateRange, MenubarPayload, Period } from '../lib/types'
 
 type PullRequests = NonNullable<MenubarPayload['current']['pullRequests']>
@@ -38,7 +38,7 @@ function ModelChips({ models }: { models: string[] }) {
 function openPr(event: MouseEvent<HTMLAnchorElement>, url: string): void {
   event.preventDefault()
   event.stopPropagation()
-  void codeburn.openExternal(url)
+  void metrora.openExternal(url)
 }
 
 // Keyboard activation for the button-role row, guarded so Enter/Space fired on
@@ -55,7 +55,7 @@ function rowKeyDown(event: KeyboardEvent<HTMLDivElement>, toggle: () => void): v
  *  passes its shared overview poll straight into PullRequestsContent instead. */
 export function PullRequests({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
-    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
+    () => range ? metrora.getOverview(period, provider, range) : metrora.getOverview(period, provider),
     [period, provider, range?.from, range?.to],
   )
   // The key remounts the content on a period/provider/range switch so row state
@@ -78,7 +78,7 @@ function PullRequestsPage({ pullRequests, staleError }: { pullRequests?: PullReq
       <Panel title="Pull request spend">
         {pullRequests && pullRequests.rows.length > 0
           ? <PrTable pullRequests={pullRequests} />
-          : <EmptyNote>PR links are captured as sessions are parsed. Once a session references a pull request, it appears here.</EmptyNote>}
+          : <EmptyNote>No PR-linked work yet. When Metrora detects a pull request reference in a session, its spend will appear here.</EmptyNote>}
       </Panel>
     </>
   )

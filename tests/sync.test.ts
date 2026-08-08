@@ -20,14 +20,14 @@ describe('parseDiscoveryDoc', () => {
       version: 1,
       issuer: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_XXXX',
       client_id: 'abc123',
-      scopes: ['openid', 'codeburn:write'],
+      scopes: ['openid', 'metrora:write'],
       traces_path: '/v1/traces',
       max_batch_size: 500,
     })
     expect(doc.version).toBe(1)
     expect(doc.issuer).toBe('https://cognito-idp.us-east-1.amazonaws.com/us-east-1_XXXX')
     expect(doc.client_id).toBe('abc123')
-    expect(doc.scopes).toEqual(['openid', 'codeburn:write'])
+    expect(doc.scopes).toEqual(['openid', 'metrora:write'])
     expect(doc.traces_path).toBe('/v1/traces')
     expect(doc.max_batch_size).toBe(500)
   })
@@ -113,7 +113,7 @@ describe('buildAuthUrl', () => {
     authorization_endpoint: 'https://idp.example.com/oauth2/authorize',
     client_id: 'test-client',
     redirect_uri: 'http://127.0.0.1:19876/callback',
-    scopes: ['openid', 'codeburn:write'],
+    scopes: ['openid', 'metrora:write'],
     state: 'random-state-value',
     pkce: generatePkce(),
   }
@@ -129,7 +129,7 @@ describe('buildAuthUrl', () => {
 
   it('joins scopes with space', () => {
     const url = new URL(buildAuthUrl(baseParams))
-    expect(url.searchParams.get('scope')).toBe('openid codeburn:write')
+    expect(url.searchParams.get('scope')).toBe('openid metrora:write')
   })
 
   it('uses 127.0.0.1 literal (not localhost)', () => {
@@ -158,8 +158,8 @@ describe('resolveScopes', () => {
   })
 
   it('passes through scopes unchanged when IdP scopes unknown', () => {
-    const result = resolveScopes(['openid', 'codeburn:write'], undefined)
-    expect(result).toEqual(['openid', 'codeburn:write'])
+    const result = resolveScopes(['openid', 'metrora:write'], undefined)
+    expect(result).toEqual(['openid', 'metrora:write'])
   })
 })
 
@@ -197,14 +197,19 @@ describe('startCallbackServer', () => {
 describe('syncConfig', () => {
   let tmpDir: string
   const originalHome = process.env.HOME
+  const originalConfigDir = process.env.METRORA_CONFIG_DIR
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'metrora-sync-config-'))
     process.env.HOME = tmpDir
+    process.env.METRORA_CONFIG_DIR = join(tmpDir, '.config', 'metrora')
   })
 
   afterEach(async () => {
-    process.env.HOME = originalHome
+    if (originalHome === undefined) delete process.env.HOME
+    else process.env.HOME = originalHome
+    if (originalConfigDir === undefined) delete process.env.METRORA_CONFIG_DIR
+    else process.env.METRORA_CONFIG_DIR = originalConfigDir
     await rm(tmpDir, { recursive: true, force: true })
   })
 

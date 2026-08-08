@@ -70,7 +70,7 @@ describe('CollectorInventoryV1', () => {
   })
 
   it('keeps the checked-in audit document generated from the executable inventory', () => {
-    const document = readFileSync(join(process.cwd(), 'docs/COLLECTOR_INVENTORY_V1.md'), 'utf-8')
+    const document = readFileSync(join(process.cwd(), 'docs/COLLECTOR_INVENTORY_V1.md'), 'utf-8').replace(/\r\n/g, '\n')
     expect(document).toBe(renderCollectorInventoryMarkdownV1())
   })
 

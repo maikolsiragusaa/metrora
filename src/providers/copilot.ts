@@ -1,12 +1,12 @@
 // =============================================================================
-// copilot.ts — Modified CodeBurn Copilot provider
+// copilot.ts — Modified Metrora Copilot provider
 // =============================================================================
 //
 // WHAT CHANGED:
 //   The original provider only reads Copilot's JSONL session-state files from
 //   ~/.copilot/session-state/, which only log output tokens. Input tokens,
 //   cache-read tokens, and cache-creation tokens are never written there, so
-//   CodeBurn underreports Copilot costs by 60-80%.
+//   Metrora underreports Copilot costs by 60-80%.
 //
 //   This modified version adds VS Code sources that can carry fuller token
 //   data: the OTel SQLite store (agent-traces.db), VS Code core chatSessions
@@ -35,11 +35,11 @@
 //     ~/Library/Application Support/Code/User/globalStorage/github.copilot-chat/agent-traces.db
 //
 // ENVIRONMENT VARIABLES:
-//   CODEBURN_COPILOT_OTEL_DB    — Override the agent-traces.db path
-//   CODEBURN_COPILOT_DISABLE_OTEL=1 — Skip OTel entirely, use only JSONL
-//   CODEBURN_COPILOT_WS_STORAGE_DIR — Override VS Code workspaceStorage
-//   CODEBURN_COPILOT_GLOBAL_STORAGE_DIR — Override VS Code globalStorage
-//   CODEBURN_COPILOT_JETBRAINS_DIR — Override the JetBrains github-copilot root
+//   METRORA_COPILOT_OTEL_DB    — Override the agent-traces.db path
+//   METRORA_COPILOT_DISABLE_OTEL=1 — Skip OTel entirely, use only JSONL
+//   METRORA_COPILOT_WS_STORAGE_DIR — Override VS Code workspaceStorage
+//   METRORA_COPILOT_GLOBAL_STORAGE_DIR — Override VS Code globalStorage
+//   METRORA_COPILOT_JETBRAINS_DIR — Override the JetBrains github-copilot root
 //
 // ARCHITECTURE:
 //   discoverSessions() returns OTel sessions and legacy JSONL sessions. When
@@ -250,24 +250,22 @@ interface SpanAttributes {
 }
 
 // ---------------------------------------------------------------------------
-// Paths
-// ---------------------------------------------------------------------------
 
 function getCopilotSessionStateDir(override?: string): string {
-  return override ?? process.env['CODEBURN_COPILOT_SESSION_STATE_DIR'] ?? join(homedir(), '.copilot', 'session-state')
+  return override ?? process.env['METRORA_COPILOT_SESSION_STATE_DIR'] ?? join(homedir(), '.copilot', 'session-state')
 }
 
 /**
  * Locate the agent-traces.db file.
  *
  * Priority:
- *   1. CODEBURN_COPILOT_OTEL_DB env var
+ *   1. METRORA_COPILOT_OTEL_DB env var
  *   2. Platform-specific default VS Code global storage path
  *   3. VSCodium variant paths
  */
 function getAgentTracesDbPath(): string | null {
   // Allow explicit override
-  const envOverride = process.env['CODEBURN_COPILOT_OTEL_DB']
+  const envOverride = process.env['METRORA_COPILOT_OTEL_DB']
   if (envOverride) {
     return existsSync(envOverride) ? envOverride : null
   }
@@ -311,7 +309,7 @@ function getAgentTracesDbPath(): string | null {
  * (IntelliJ IDEA, PyCharm, RubyMine, …). The JetBrains Copilot agent persists
  * chat/agent sessions here — a location none of the VS Code or CLI sources
  * touch, so this is the only way JetBrains-driven Copilot usage becomes
- * visible to CodeBurn.
+ * visible to Metrora.
  *
  * The path mirrors the plugin's own `getXdgConfigPath` logic (observed in the
  * bundled copilot-agent language server):
@@ -324,7 +322,7 @@ function getAgentTracesDbPath(): string | null {
  * chat-agent-sessions/, chat-sessions/, and chat-edit-sessions/.
  */
 function getJetBrainsCopilotRoot(override?: string): string {
-  const envOverride = override ?? process.env['CODEBURN_COPILOT_JETBRAINS_DIR']
+  const envOverride = override ?? process.env['METRORA_COPILOT_JETBRAINS_DIR']
   if (envOverride) return envOverride
 
   const xdg = process.env['XDG_CONFIG_HOME']
@@ -999,7 +997,7 @@ function createChatSessionParser(
 // The JetBrains Copilot plugin stores each chat/agent session in a Nitrite
 // (H2 MVStore) .db of Java-serialized documents. There is NO token accounting
 // anywhere in the store, so we estimate output tokens from the assistant reply
-// text (the same char-count approach CodeBurn already uses for Cursor and
+// text (the same char-count approach Metrora already uses for Cursor and
 // legacy Copilot JSONL). Cost is therefore marked costIsEstimated.
 //
 // The model (e.g. "claude-opus-4.5", "gpt-4.1") is not always tagged on each
@@ -1032,7 +1030,7 @@ const JETBRAINS_MODEL_TOKENS = [
 ]
 
 /**
- * Normalise a raw JetBrains model token to CodeBurn's canonical model id.
+ * Normalise a raw JetBrains model token to Metrora's canonical model id.
  * Claude names use dots on disk (claude-opus-4.5) but dashes in the pricing
  * tables (claude-opus-4-5); GPT/Gemini names are kept verbatim.
  */
@@ -1076,15 +1074,16 @@ function inferJetBrainsModel(raw: string): string {
  */
 function inferJetBrainsProject(raw: string): string | undefined {
   // Capture referenced absolute paths (original case — we hit the real FS).
-  const re = /file:\/\/(\/[^"\\]+?)(?:\\|")/g
+  const re = /file:\/\/(\/[^"]+?|[A-Za-z]:[^"]+?)(?:\\+"|")/g
   const seen = new Set<string>()
   let m: RegExpExecArray | null
   while ((m = re.exec(raw))) {
     // Decode %20 etc. and strip a trailing .rej/.orig suffix noise; keep the dir.
     let p = m[1]
     try { p = decodeURIComponent(p) } catch { /* leave as-is */ }
+    if (/^[A-Za-z]:[\\/]/.test(p)) p = p.replaceAll('\\', '/')
     const dir = p.slice(0, p.lastIndexOf('/'))
-    if (dir.startsWith('/')) seen.add(dir)
+    if (dir.startsWith('/') || /^[A-Za-z]:\//.test(dir)) seen.add(dir)
   }
   if (seen.size === 0) return undefined
 
@@ -1115,7 +1114,7 @@ function findGitRepoRoot(dir: string): string | undefined {
  * Recover the plugin-recorded project label from a Nitrite .db.
  *
  * JetBrains Copilot 1.12+ serialises a `projectName` field on the session doc
- * (e.g. `my-service`, `codeburn`). It is the plugin's OWN authoritative
+ * (e.g. `my-service`, `metrora`). It is the plugin's OWN authoritative
  * label — the JetBrains analogue of the OTel source's
  * `github.copilot.git.repository` — so it is preferred over the file-path
  * git-walk heuristic when present.
@@ -2296,20 +2295,20 @@ export function createCopilotProvider(
   /**
    * Returns the workspaceStorage directories to scan for transcript sessions.
    * When workspaceStorageDir is explicitly provided (e.g. in tests), that single
-   * directory is used. The CODEBURN_COPILOT_WS_STORAGE_DIR env var provides a
+   * directory is used. The METRORA_COPILOT_WS_STORAGE_DIR env var provides a
    * single-dir override (useful for tests). Otherwise all platform-default VS
    * Code variant paths are returned.
    */
   function getWsDirs(): string[] {
     if (workspaceStorageDir !== undefined) return [workspaceStorageDir]
-    const envDir = process.env['CODEBURN_COPILOT_WS_STORAGE_DIR']
+    const envDir = process.env['METRORA_COPILOT_WS_STORAGE_DIR']
     if (envDir) return [envDir]
     return getVSCodeWorkspaceStorageDirs(homedir(), platform())
   }
 
   function getGlobalDirs(): string[] {
     if (globalStorageDir !== undefined) return [globalStorageDir]
-    const envDir = process.env['CODEBURN_COPILOT_GLOBAL_STORAGE_DIR']
+    const envDir = process.env['METRORA_COPILOT_GLOBAL_STORAGE_DIR']
     if (envDir) return [envDir]
     return getVSCodeGlobalStorageDirs(homedir(), platform())
   }
@@ -2335,7 +2334,7 @@ export function createCopilotProvider(
       let discoveredOtel = false
 
       // 1. Discover OTel sessions (preferred — full token data)
-      const disableOtel = process.env['CODEBURN_COPILOT_DISABLE_OTEL'] === '1'
+      const disableOtel = process.env['METRORA_COPILOT_DISABLE_OTEL'] === '1'
       if (!disableOtel) {
         const dbPath = getAgentTracesDbPath()
         if (dbPath) {

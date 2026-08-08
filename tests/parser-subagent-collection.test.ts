@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { collectJsonlFiles, readAgentType } from '../src/parser.js'
 
 let root: string
-beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'codeburn-collect-')) })
+beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'metrora-collect-')) })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
 describe('collectJsonlFiles', () => {

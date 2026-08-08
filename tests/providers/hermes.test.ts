@@ -21,20 +21,20 @@ type TestDb = {
 let tmpDir: string
 let cacheDir: string
 let originalHermesHome: string | undefined
-let originalCodeburnCacheDir: string | undefined
+let originalMetroraCacheDir: string | undefined
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'hermes-provider-test-'))
   cacheDir = await mkdtemp(join(tmpdir(), 'hermes-provider-cache-'))
   originalHermesHome = process.env['HERMES_HOME']
-  originalCodeburnCacheDir = process.env['CODEBURN_CACHE_DIR']
+  originalMetroraCacheDir = process.env['METRORA_CACHE_DIR']
 })
 
 afterEach(async () => {
   if (originalHermesHome === undefined) delete process.env['HERMES_HOME']
   else process.env['HERMES_HOME'] = originalHermesHome
-  if (originalCodeburnCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-  else process.env['CODEBURN_CACHE_DIR'] = originalCodeburnCacheDir
+  if (originalMetroraCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+  else process.env['METRORA_CACHE_DIR'] = originalMetroraCacheDir
   await rm(tmpDir, { recursive: true, force: true })
   await rm(cacheDir, { recursive: true, force: true })
 })
@@ -178,9 +178,9 @@ function dayRange(): DateRange {
   }
 }
 
-async function loadParserWithHermesHome(hermesHome: string, codeburnCacheDir: string) {
+async function loadParserWithHermesHome(hermesHome: string, metroraCacheDir: string) {
   process.env['HERMES_HOME'] = hermesHome
-  process.env['CODEBURN_CACHE_DIR'] = codeburnCacheDir
+  process.env['METRORA_CACHE_DIR'] = metroraCacheDir
   vi.resetModules()
   const parser = await import('../../src/parser.js')
   return parser
@@ -486,7 +486,7 @@ skipUnlessSqlite('hermes provider', () => {
     withTestDb(dbPath, (db) => {
       insertSession(db, {
         id: 'cwd-session',
-        cwd: '/Users/me/projects/codeburn',
+        cwd: '/Users/me/projects/metrora',
         inputTokens: 30,
         outputTokens: 10,
         cacheReadTokens: 0,
@@ -500,8 +500,8 @@ skipUnlessSqlite('hermes provider', () => {
 
     const calls = await collectCalls(tmpDir, `${dbPath}#hermes-session=cwd-session`)
     expect(calls[0]).toMatchObject({
-      project: 'Users-me-projects-codeburn',
-      projectPath: '/Users/me/projects/codeburn',
+      project: 'Users-me-projects-metrora',
+      projectPath: '/Users/me/projects/metrora',
     })
   })
 

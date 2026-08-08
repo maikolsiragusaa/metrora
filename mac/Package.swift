@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodeBurnMenubar",
+    name: "MetroraMenubar",
     platforms: [
         // macOS 14 (Sonoma) is the floor: matches Info.plist LSMinimumSystemVersion,
         // the CLI install guard (MIN_MACOS_MAJOR=14), and mac/README. The earlier .v15
@@ -11,20 +11,20 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "CodeBurnMenubar", targets: ["CodeBurnMenubar"])
+        .executable(name: "MetroraMenubar", targets: ["MetroraMenubar"])
     ],
     targets: [
         .executableTarget(
-            name: "CodeBurnMenubar",
-            path: "Sources/CodeBurnMenubar",
+            name: "MetroraMenubar",
+            path: "Sources/MetroraMenubar",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         .testTarget(
-            name: "CodeBurnMenubarTests",
-            dependencies: ["CodeBurnMenubar"],
-            path: "Tests/CodeBurnMenubarTests"
+            name: "MetroraMenubarTests",
+            dependencies: ["MetroraMenubar"],
+            path: "Tests/MetroraMenubarTests"
         )
     ]
 )

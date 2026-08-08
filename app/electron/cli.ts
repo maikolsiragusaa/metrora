@@ -6,8 +6,7 @@ import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import {
   cliExecutableNames,
   compatEnv,
-  LEGACY_CODEBURN_ENV,
-  LEGACY_QOVRION_ENV,
+  LEGACY_COMPAT_ENV,
   METRORA_ENV,
   readPersistedCliPath,
 } from './identity'
@@ -143,7 +142,7 @@ export function nodeManagerDirs(): string[] {
 }
 
 function searchDirs(): string[] {
-  const override = compatEnv(process.env, METRORA_ENV.pathDirs, LEGACY_QOVRION_ENV.pathDirs, LEGACY_CODEBURN_ENV.pathDirs)
+  const override = compatEnv(process.env, METRORA_ENV.pathDirs, LEGACY_COMPAT_ENV.pathDirs)
   if (override !== undefined) return override.split(delimiter).filter(Boolean)
   const pathDirs = (process.env.PATH || '').split(delimiter).filter(Boolean)
   return [...pathDirs, ...nodeManagerDirs()]
@@ -157,13 +156,22 @@ export function spawnEnvFor(bin: string): NodeJS.ProcessEnv {
   return { ...process.env, PATH: path }
 }
 
+function isJavaScriptEntry(path: string): boolean {
+  return /\.[cm]?js$/i.test(path)
+}
+
 /** Convert a resolved target into the exact child-process invocation. */
 export function spawnSpecFor(target: CliTarget, args: string[]): SpawnSpec {
-  if (target.kind === 'bundled') {
+  const entry = target.kind === 'bundled' ? target.entry : target.bin
+  if (target.kind === 'bundled' || isJavaScriptEntry(entry)) {
+    // Electron's process.execPath can execute JavaScript portably when switched
+    // into Node mode. This also covers the Vite dev CLI (`dist/cli.js`): spawning
+    // that .js file directly works through a POSIX shebang but fails with EFTYPE
+    // on Windows, where .js is not a native executable.
     return {
       bin: process.execPath,
-      args: [target.entry, ...args],
-      env: { ...spawnEnvFor(target.entry), ELECTRON_RUN_AS_NODE: '1' },
+      args: [entry, ...args],
+      env: { ...spawnEnvFor(entry), ELECTRON_RUN_AS_NODE: '1' },
     }
   }
   return { bin: target.bin, args, env: spawnEnvFor(target.bin) }
@@ -175,17 +183,17 @@ function readPersistedPath(): string | null {
 
 /**
  * Resolution order:
- * METRORA_BIN/CODEBURN_BIN → dev repository → packaged bundle → persisted
+ * METRORA_BIN plus compatibility fallback → dev repository → packaged bundle → persisted
  * canonical/legacy pointer → PATH. Canonical values always take precedence.
  */
 export function resolveTarget(): CliTarget | null {
-  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)
+  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_COMPAT_ENV.bin)
   if (override && isAbsolute(override) && isExecutableFile(override)) {
     return { kind: 'external', bin: override }
   }
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    const devRepoRoot = compatEnv(process.env, METRORA_ENV.devRepoRoot, LEGACY_QOVRION_ENV.devRepoRoot, LEGACY_CODEBURN_ENV.devRepoRoot)
+    const devRepoRoot = compatEnv(process.env, METRORA_ENV.devRepoRoot, LEGACY_COMPAT_ENV.devRepoRoot)
     if (devRepoRoot) {
       const devBin = join(devRepoRoot, 'dist', 'cli.js')
       if (isExecutableFile(devBin)) return { kind: 'external', bin: devBin }
@@ -198,7 +206,7 @@ export function resolveTarget(): CliTarget | null {
     }
   }
 
-  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)
+  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_COMPAT_ENV.bundledCli)
   if (bundled && isAbsolute(bundled) && isFile(bundled)) {
     return { kind: 'bundled', entry: bundled }
   }
@@ -220,24 +228,15 @@ export function resolveMetroraPath(): string | null {
   return target.kind === 'bundled' ? target.entry : target.bin
 }
 
-/** Temporary API aliases retained for old desktop integrations. */
-export function resolveQovrionPath(): string | null {
-  return resolveMetroraPath()
-}
-
-export function resolveCodeburnPath(): string | null {
-  return resolveMetroraPath()
-}
-
 /** Return a bounded, non-sensitive reason for a resolution failure. */
 export function notFoundStage(): NotFoundStage {
-  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_QOVRION_ENV.bin, LEGACY_CODEBURN_ENV.bin)
+  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_COMPAT_ENV.bin)
   if (override) {
     if (!isAbsolute(override)) return 'bin-not-absolute'
     if (!isExecutableFile(override)) return 'bin-not-executable'
   }
 
-  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_QOVRION_ENV.bundledCli, LEGACY_CODEBURN_ENV.bundledCli)
+  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_COMPAT_ENV.bundledCli)
   if (bundled) {
     if (!isAbsolute(bundled)) return 'bundled-not-absolute'
     if (!isFile(bundled)) return 'bundled-missing'

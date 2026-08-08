@@ -24,12 +24,12 @@ The `Bob-IDE` paths cover the preview-era app name that some installs used befor
 
 Each task is a directory under `tasks/<task-id>/` and must contain `ui_messages.json`.
 
-CodeBurn parses the same Cline-family UI event format used by Roo Code and KiloCode:
+Metrora parses the same Cline-family UI event format used by Roo Code and KiloCode:
 
 - `ui_messages.json` entries with `type: "say"` and `say: "api_req_started"` contain serialized token/cost metrics.
 - `ui_messages.json` user text entries seed the turn's first user message.
 - `api_conversation_history.json` is optional and is used to extract the selected model from `<model>...</model>` environment details when present.
-- `task_metadata.json` may exist upstream, but CodeBurn does not need it for usage math today.
+- `task_metadata.json` may exist upstream, but Metrora does not need it for usage math today.
 
 If no model tag is present, the parser uses `ibm-bob-auto`, which is priced through the same conservative Sonnet fallback used for Cline-family auto modes.
 

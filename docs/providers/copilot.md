@@ -26,12 +26,12 @@ JSONL in the first three locations (schemas differ; the parser switches by sourc
 
 When VS Code Copilot Chat's `agent-traces.db` exists, the parser reads per-LLM-call token
 breakdowns (input, output, cache-read, cache-creation) from it, which the JSONL sources do
-not record. Discovery is skipped with `CODEBURN_COPILOT_DISABLE_OTEL=1`, and the DB path
-can be overridden with `CODEBURN_COPILOT_OTEL_DB`.
+not record. Discovery is skipped with `METRORA_COPILOT_DISABLE_OTEL=1`, and the DB path
+can be overridden with `METRORA_COPILOT_OTEL_DB`.
 
 If OTel discovery finds at least one source, workspace `chatSessions/*.jsonl` and
 `emptyWindowChatSessions/*.jsonl` are skipped. Those journals can mirror the same Copilot
-turns under IDs that do not match OTel turn IDs, so CodeBurn prefers the richer OTel data
+turns under IDs that do not match OTel turn IDs, so Metrora prefers the richer OTel data
 instead of trying to dedupe across stores.
 
 - **Requires Node 22+.** The OTel source uses the built-in `node:sqlite` module (the same
@@ -106,7 +106,7 @@ nothing, so current sessions are never affected or double-counted.
 
 (Store dirs may also contain a legacy `00000000000.xd` Xodus log from older
 plugin versions. On every installation observed it is either empty or shadowed
-by the `.db`, so CodeBurn reads only the `.db`. If a real `.xd`-only session ever
+by the `.db`, so Metrora reads only the `.db`. If a real `.xd`-only session ever
 surfaces, add a reader with a captured fixture.)
 
 - **No token accounting.** No store records token counts. Output tokens are
@@ -126,7 +126,7 @@ surfaces, add a reader with a captured fixture.)
   lowercased, revisions); assistant turns are de-duplicated by reply content.
 - **One `.db` holds many chat tabs.** A single store `.db` contains multiple
   conversations, each with an internal GUID and an evolving title
-  (`New Agent Session` → auto-name → final title). CodeBurn recovers the
+  (`New Agent Session` → auto-name → final title). Metrora recovers the
   `GUID → title` map (`extractJetBrainsConversations`, keeping the latest
   non-default title), attributes each turn to the nearest preceding conversation
   GUID, and emits **one session per conversation** (not one per `.db`). Reply
@@ -156,7 +156,7 @@ surfaces, add a reader with a captured fixture.)
   **not** scanned: those DBs carry file snapshots and metadata, not billable
   turns, and the same session's turns are already read from
   `chat-agent-sessions`.
-- **Override the root** with `CODEBURN_COPILOT_JETBRAINS_DIR`.
+- **Override the root** with `METRORA_COPILOT_JETBRAINS_DIR`.
 
 ## Caching
 

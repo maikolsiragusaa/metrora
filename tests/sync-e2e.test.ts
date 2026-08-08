@@ -29,29 +29,34 @@ import { writeSyncConfig, readSyncConfig, deleteSyncConfig } from '../src/sync/c
 let idp: MockIdp
 let tmpHome: string
 const originalHome = process.env.HOME
-const originalStore = process.env.CODEBURN_SYNC_TOKEN_STORE
+const originalStore = process.env.METRORA_SYNC_TOKEN_STORE
+const originalConfigDir = process.env.METRORA_CONFIG_DIR
 
 beforeAll(async () => {
   idp = await startMockIdp({ rotateTokens: false })
   // Force the file store so this suite never touches the real OS keychain
   // (on darwin, createCredentialStore() would otherwise ignore HOME and
   // read/write the login keychain under the real service/account names).
-  process.env.CODEBURN_SYNC_TOKEN_STORE = 'file'
+  process.env.METRORA_SYNC_TOKEN_STORE = 'file'
 })
 
 afterAll(async () => {
   await idp.close()
-  if (originalStore === undefined) delete process.env.CODEBURN_SYNC_TOKEN_STORE
-  else process.env.CODEBURN_SYNC_TOKEN_STORE = originalStore
+  if (originalStore === undefined) delete process.env.METRORA_SYNC_TOKEN_STORE
+  else process.env.METRORA_SYNC_TOKEN_STORE = originalStore
 })
 
 beforeEach(async () => {
-  tmpHome = await mkdtemp(join(tmpdir(), 'codeburn-sync-e2e-'))
+  tmpHome = await mkdtemp(join(tmpdir(), 'metrora-sync-e2e-'))
   process.env.HOME = tmpHome
+  process.env.METRORA_CONFIG_DIR = join(tmpHome, '.config', 'metrora')
 })
 
 afterEach(async () => {
-  process.env.HOME = originalHome
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  if (originalConfigDir === undefined) delete process.env.METRORA_CONFIG_DIR
+  else process.env.METRORA_CONFIG_DIR = originalConfigDir
   await rm(tmpHome, { recursive: true, force: true })
 })
 
@@ -62,7 +67,7 @@ describe('sync e2e (mock IdP)', () => {
     expect(discovery.version).toBe(1)
     expect(discovery.issuer).toBe(idp.baseUrl)
     expect(discovery.client_id).toBe('mock-client-id')
-    expect(discovery.scopes).toContain('codeburn:write')
+    expect(discovery.scopes).toContain('metrora:write')
 
     // 2. Fetch OIDC config
     const oidc = await fetchOidcConfig(discovery.issuer)

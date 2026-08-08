@@ -15,7 +15,7 @@ const { getOverview, openExternal } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getOverview, openExternal } }
+  return { ...actual, metrora: { getOverview, openExternal } }
 })
 
 // Mirror the component's span rule so the assertion stays timezone-safe.
@@ -46,8 +46,8 @@ function makePayload(pullRequests?: PrPayload): MenubarPayload {
 
 const SAMPLE: PrPayload = {
   rows: [
-    { url: 'https://github.com/getagentseal/codeburn/pull/780', label: 'getagentseal/codeburn#780', cost: 240.5, savingsUSD: 0, sessions: 3, calls: 512, firstStarted: '2026-07-01T10:00:00Z', lastEnded: '2026-07-03T18:00:00Z', models: ['fable', 'opus', 'haiku'], categories: [{ name: 'Feature work', cost: 180.25 }, { name: 'Debugging', cost: 60.25 }] },
-    { url: 'https://github.com/getagentseal/codeburn/pull/781', label: 'getagentseal/codeburn#781', cost: 90.25, savingsUSD: 0, sessions: 1, calls: 120, firstStarted: '2026-07-05T13:00:00Z', lastEnded: '2026-07-05T15:00:00Z', models: ['sonnet'], categories: [{ name: 'Refactoring', cost: 90.25 }] },
+    { url: 'https://github.com/maikolsiragusaa/metrora/pull/780', label: 'maikolsiragusaa/metrora#780', cost: 240.5, savingsUSD: 0, sessions: 3, calls: 512, firstStarted: '2026-07-01T10:00:00Z', lastEnded: '2026-07-03T18:00:00Z', models: ['fable', 'opus', 'haiku'], categories: [{ name: 'Feature work', cost: 180.25 }, { name: 'Debugging', cost: 60.25 }] },
+    { url: 'https://github.com/maikolsiragusaa/metrora/pull/781', label: 'maikolsiragusaa/metrora#781', cost: 90.25, savingsUSD: 0, sessions: 1, calls: 120, firstStarted: '2026-07-05T13:00:00Z', lastEnded: '2026-07-05T15:00:00Z', models: ['sonnet'], categories: [{ name: 'Refactoring', cost: 90.25 }] },
   ],
   distinctCost: 376.05,
   distinctSessions: 3,
@@ -73,8 +73,8 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload(SAMPLE))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
-    expect(link).toHaveAttribute('href', 'https://github.com/getagentseal/codeburn/pull/780')
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
+    expect(link).toHaveAttribute('href', 'https://github.com/maikolsiragusaa/metrora/pull/780')
     expect(screen.getByText('$240.50')).toBeInTheDocument()
     expect(screen.getByText('512 calls')).toBeInTheDocument()
     expect(screen.getByText(expectedSpan(SAMPLE.rows[0]!.firstStarted, SAMPLE.rows[0]!.lastEnded))).toBeInTheDocument()
@@ -97,9 +97,9 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload(SAMPLE))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     await userEvent.click(link)
-    expect(openExternal).toHaveBeenCalledWith('https://github.com/getagentseal/codeburn/pull/780')
+    expect(openExternal).toHaveBeenCalledWith('https://github.com/maikolsiragusaa/metrora/pull/780')
     // Clicking the link must not expand its row.
     expect(rowForLink(link)).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Feature work')).toBeNull()
@@ -109,7 +109,7 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload(SAMPLE))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     const row = rowForLink(link)
     expect(row).toHaveAttribute('aria-expanded', 'false')
 
@@ -129,7 +129,7 @@ describe('PullRequests', () => {
     getOverview.mockImplementation((period: string) => Promise.resolve(makePayload(period === 'lifetime' ? SAMPLE : changed)))
     const { rerender } = render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     await userEvent.click(rowForLink(link))
     expect(rowForLink(link)).toHaveAttribute('aria-expanded', 'true')
 
@@ -137,7 +137,7 @@ describe('PullRequests', () => {
     // The new period drops #781, so the PR set changes and the stale expansion
     // resets once the new data lands (wait for the breakdown to disappear).
     await waitFor(() => expect(screen.queryByText('Feature work')).toBeNull())
-    const link2 = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link2 = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     expect(rowForLink(link2)).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -145,7 +145,7 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload(SAMPLE))
     const { rerender } = render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     await userEvent.click(rowForLink(link))
     expect(rowForLink(link)).toHaveAttribute('aria-expanded', 'true')
 
@@ -153,7 +153,7 @@ describe('PullRequests', () => {
     // since the row's underlying numbers may differ across periods.
     rerender(<PullRequests period="week" provider="all" />)
     await waitFor(() => expect(screen.queryByText('Feature work')).toBeNull())
-    const link2 = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link2 = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     expect(rowForLink(link2)).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -161,7 +161,7 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload(SAMPLE))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#780' })
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#780' })
     const row = rowForLink(link)
     row.focus()
 
@@ -206,7 +206,7 @@ describe('PullRequests', () => {
   it('marks an approximate (legacy) row with a ~ prefix and a tooltip', async () => {
     const approxPayload: PrPayload = {
       rows: [
-        { url: 'https://github.com/getagentseal/codeburn/pull/900', label: 'getagentseal/codeburn#900', cost: 12.5, savingsUSD: 0, sessions: 1, calls: 30, firstStarted: '2026-07-10T10:00:00Z', lastEnded: '2026-07-10T11:00:00Z', approx: true },
+        { url: 'https://github.com/maikolsiragusaa/metrora/pull/900', label: 'maikolsiragusaa/metrora#900', cost: 12.5, savingsUSD: 0, sessions: 1, calls: 30, firstStarted: '2026-07-10T10:00:00Z', lastEnded: '2026-07-10T11:00:00Z', approx: true },
       ],
       distinctCost: 12.5,
       distinctSessions: 1,
@@ -225,7 +225,7 @@ describe('PullRequests', () => {
   it('expands a category-less (legacy) row to a muted note, not an empty box', async () => {
     const approxPayload: PrPayload = {
       rows: [
-        { url: 'https://github.com/getagentseal/codeburn/pull/900', label: 'getagentseal/codeburn#900', cost: 12.5, savingsUSD: 0, sessions: 1, calls: 30, firstStarted: '2026-07-10T10:00:00Z', lastEnded: '2026-07-10T11:00:00Z', approx: true },
+        { url: 'https://github.com/maikolsiragusaa/metrora/pull/900', label: 'maikolsiragusaa/metrora#900', cost: 12.5, savingsUSD: 0, sessions: 1, calls: 30, firstStarted: '2026-07-10T10:00:00Z', lastEnded: '2026-07-10T11:00:00Z', approx: true },
       ],
       distinctCost: 12.5,
       distinctSessions: 1,
@@ -235,7 +235,7 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload(approxPayload))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    const link = await screen.findByRole('link', { name: 'getagentseal/codeburn#900' })
+    const link = await screen.findByRole('link', { name: 'maikolsiragusaa/metrora#900' })
     await userEvent.click(rowForLink(link))
     expect(screen.getByText(/No per-turn detail/)).toBeInTheDocument()
   })
@@ -243,7 +243,7 @@ describe('PullRequests', () => {
   it('renders the old-CLI by-reference footer without NaN and never claims summable', async () => {
     const oldPayload: PrPayload = {
       rows: [
-        { url: 'https://github.com/getagentseal/codeburn/pull/500', label: 'getagentseal/codeburn#500', cost: 120.4, savingsUSD: 0, sessions: 2, calls: 300, firstStarted: '2026-06-01T10:00:00Z', lastEnded: '2026-06-02T12:00:00Z' },
+        { url: 'https://github.com/maikolsiragusaa/metrora/pull/500', label: 'maikolsiragusaa/metrora#500', cost: 120.4, savingsUSD: 0, sessions: 2, calls: 300, firstStarted: '2026-06-01T10:00:00Z', lastEnded: '2026-06-02T12:00:00Z' },
       ],
       distinctCost: 120.4,
       distinctSessions: 2,
@@ -264,8 +264,8 @@ describe('PullRequests', () => {
   it('renders the complete PR list without an opaque Other row', async () => {
     const manyRows = Array.from({ length: 32 }, (_, index) => ({
       ...SAMPLE.rows[0]!,
-      url: `https://github.com/getagentseal/codeburn/pull/${800 + index}`,
-      label: `getagentseal/codeburn#${800 + index}`,
+      url: `https://github.com/maikolsiragusaa/metrora/pull/${800 + index}`,
+      label: `maikolsiragusaa/metrora#${800 + index}`,
     }))
     getOverview.mockResolvedValue(makePayload({
       ...SAMPLE,
@@ -274,8 +274,8 @@ describe('PullRequests', () => {
     }))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    expect(await screen.findByText('getagentseal/codeburn#800')).toBeInTheDocument()
-    expect(screen.getByText('getagentseal/codeburn#831')).toBeInTheDocument()
+    expect(await screen.findByText('maikolsiragusaa/metrora#800')).toBeInTheDocument()
+    expect(screen.getByText('maikolsiragusaa/metrora#831')).toBeInTheDocument()
     expect(screen.getByText('32 total')).toBeInTheDocument()
     expect(screen.queryByText(/Other \(/)).toBeNull()
   })
@@ -284,7 +284,7 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload())
     render(<PullRequests period="lifetime" provider="all" />)
 
-    expect(await screen.findByText(/PR links are captured as sessions are parsed/)).toBeInTheDocument()
+    expect(await screen.findByText(/No PR-linked work yet/)).toBeInTheDocument()
     expect(screen.queryByRole('table')).toBeNull()
   })
 
@@ -292,7 +292,7 @@ describe('PullRequests', () => {
     getOverview.mockResolvedValue(makePayload({ rows: [], distinctCost: 0, distinctSessions: 0, attributedCost: 0, unattributedCost: 0 }))
     render(<PullRequests period="lifetime" provider="all" />)
 
-    expect(await screen.findByText(/PR links are captured as sessions are parsed/)).toBeInTheDocument()
+    expect(await screen.findByText(/No PR-linked work yet/)).toBeInTheDocument()
     expect(screen.queryByRole('table')).toBeNull()
   })
 })

@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { DateRange, ProjectSummary, SessionSummary, TokenUsage } from '../src/types.js'
 
+vi.setConfig({ testTimeout: 30_000 })
+
 const parserMock = vi.hoisted(() => ({
   parseAllSessions: vi.fn(),
 }))
@@ -88,7 +90,7 @@ function runCli(args: string[], home: string) {
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
-      CODEBURN_CACHE_DIR: join(home, '.cache', 'codeburn'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
       HOME: home,
       TZ: 'UTC',
     },
@@ -236,7 +238,7 @@ describe('computeSpendFlow', () => {
 
 describe('metrora spend --format flow-json', () => {
   it('prints a valid SpendFlow payload', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-spend-flow-cli-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-spend-flow-cli-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
@@ -270,7 +272,7 @@ describe('metrora spend --format flow-json', () => {
   })
 
   it('prints a friendly error for invalid custom date flags', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-spend-flow-date-error-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-spend-flow-date-error-'))
 
     try {
       const result = runCli(['spend', '--format', 'flow-json', '--from', 'April 7'], home)

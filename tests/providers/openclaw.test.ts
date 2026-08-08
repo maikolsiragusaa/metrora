@@ -43,7 +43,7 @@ async function setupFixture(dir: string, agentName: string, sessionId: string, l
 }
 
 describe('openclaw provider', () => {
-  const baseDir = join(tmpdir(), `codeburn-openclaw-test-${Date.now()}`)
+  const baseDir = join(tmpdir(), `metrora-openclaw-test-${Date.now()}`)
 
   it('discovers sessions in agent directories', async () => {
     const dir = join(baseDir, 'discover')

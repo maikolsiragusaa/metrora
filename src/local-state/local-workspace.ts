@@ -194,7 +194,7 @@ function buildState(input: {
   const localSubjectId = opaqueId('subject', input.randomUUID)
 
   const workspace: WorkspaceV1 = WorkspaceV1Schema.parse({
-    kind: 'qovrion.workspace',
+    kind: 'metrora.workspace',
     version: 1,
     workspaceId,
     slug: input.intent.workspace.slug,
@@ -206,7 +206,7 @@ function buildState(input: {
   })
 
   const ownerMembership: WorkspaceMembershipV1 = WorkspaceMembershipV1Schema.parse({
-    kind: 'qovrion.workspace-membership',
+    kind: 'metrora.workspace-membership',
     version: 1,
     membershipId,
     workspaceId,
@@ -221,7 +221,7 @@ function buildState(input: {
   })
 
   const endpoint: EndpointV1 = EndpointV1Schema.parse({
-    kind: 'qovrion.endpoint',
+    kind: 'metrora.endpoint',
     version: 1,
     endpointId: input.identity.endpointId,
     workspaceId,
@@ -232,10 +232,10 @@ function buildState(input: {
       keyAlgorithm: 'ed25519',
       publicKeyFingerprintSha256: input.identity.publicKeyFingerprintSha256,
     },
-    // The qovrionVersion field name is frozen in public contract v1. Its value
+    // The metroraVersion field name is frozen in public contract v1. Its value
     // is the current Metrora version and must not be interpreted as old branding.
     software: {
-      qovrionVersion: input.intent.endpoint.metroraVersion,
+      metroraVersion: input.intent.endpoint.metroraVersion,
       collectorVersion: input.intent.endpoint.collectorVersion,
     },
     capabilities: input.intent.endpoint.capabilities,

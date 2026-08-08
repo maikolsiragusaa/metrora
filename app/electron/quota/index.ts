@@ -24,7 +24,7 @@ type QuotaDeps = {
 const defaultDeps: QuotaDeps = {
   claude: fetchClaudeQuota,
   codex: fetchCodexQuota,
-  statePath: path.join(os.homedir(), '.codeburn', 'quota-backoff.json'),
+  statePath: path.join(os.homedir(), '.metrora', 'quota-backoff.json'),
   readFile: readSecureFile,
   writeFile: atomicWriteSecureFile,
   now: Date.now,

@@ -164,7 +164,16 @@ function AppMain() {
               {section === 'overview' ? (
                 <OverviewContent period={period} provider={provider} range={customRange} overview={overview} onNavigate={navigate} ready={ready} />
               ) : section === 'sessions' ? (
-                <Sessions period={period} provider={provider} range={customRange} refreshToken={refreshToken} detectedProviders={detectedProviders} onProviderChange={onProviderSelect} ready={ready} />
+                <Sessions
+                  period={period}
+                  provider={provider}
+                  range={customRange}
+                  refreshToken={refreshToken}
+                  detectedProviders={detectedProviders}
+                  onProviderChange={onProviderSelect}
+                  historicalSessionCount={overview.data?.current.sessions ?? null}
+                  ready={ready}
+                />
               ) : section === 'pullRequests' ? (
                 <PullRequestsContent overview={overview} />
               ) : section === 'spend' ? (
@@ -172,7 +181,7 @@ function AppMain() {
               ) : section === 'optimize' ? (
                 <OptimizeContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} ready={ready} />
               ) : section === 'models' ? (
-                <Models period={period} provider={provider} range={customRange} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
+                <Models period={period} provider={provider} range={customRange} refreshToken={refreshToken} onNavigate={navigate} overview={overview} ready={ready} />
               ) : section === 'compare' ? (
                 <Compare period={period} provider={provider} range={customRange} refreshToken={refreshToken} ready={ready} />
               ) : section === 'workspace' ? (
@@ -187,7 +196,7 @@ function AppMain() {
         {section !== 'settings' && (
           <Hint
             items={[
-              { k: shortcutRangeLabel('1', '9'), label: 'Navigate' },
+              { k: shortcutRangeLabel('1', '8'), label: 'Navigate' },
               { k: shortcutLabel(','), label: 'Settings' },
               { k: shortcutLabel('R'), label: 'Refresh' },
             ]}

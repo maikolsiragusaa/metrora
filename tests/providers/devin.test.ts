@@ -8,19 +8,38 @@ import { createDevinProvider } from '../../src/providers/devin.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 
 let tmpDir: string
+const originalHome = process.env['HOME']
+const originalUserProfile = process.env['USERPROFILE']
+const originalHomePath = process.env['HOMEPATH']
+const originalHomeDrive = process.env['HOMEDRIVE']
+const originalConfigHome = process.env['XDG_CONFIG_HOME']
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'devin-provider-'))
   process.env['HOME'] = tmpDir
+  process.env['USERPROFILE'] = tmpDir
+  process.env['HOMEPATH'] = tmpDir
+  process.env['HOMEDRIVE'] = ''
+  process.env['XDG_CONFIG_HOME'] = join(tmpDir, '.config')
 })
 
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true })
+  if (originalHome === undefined) delete process.env['HOME']
+  else process.env['HOME'] = originalHome
+  if (originalUserProfile === undefined) delete process.env['USERPROFILE']
+  else process.env['USERPROFILE'] = originalUserProfile
+  if (originalHomePath === undefined) delete process.env['HOMEPATH']
+  else process.env['HOMEPATH'] = originalHomePath
+  if (originalHomeDrive === undefined) delete process.env['HOMEDRIVE']
+  else process.env['HOMEDRIVE'] = originalHomeDrive
+  if (originalConfigHome === undefined) delete process.env['XDG_CONFIG_HOME']
+  else process.env['XDG_CONFIG_HOME'] = originalConfigHome
 })
 
 async function configureDevinRate(rate = 1): Promise<void> {
-  await mkdir(join(tmpDir, '.config', 'codeburn'), { recursive: true })
-  await writeFile(join(tmpDir, '.config', 'codeburn', 'config.json'), JSON.stringify({
+  await mkdir(join(tmpDir, '.config', 'metrora'), { recursive: true })
+  await writeFile(join(tmpDir, '.config', 'metrora', 'config.json'), JSON.stringify({
     devin: { acuUsdRate: rate },
   }))
 }
@@ -61,7 +80,7 @@ function createSessionsDb(): void {
   db.prepare(`
     INSERT INTO sessions (id, working_directory, model, created_at, last_activity_at, title, hidden)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run('db-session', '/Users/example/work/codeburn', 'claude-sonnet-4-6', 1_800_000_000, 1_800_000_010, 'CodeBurn', 0)
+  `).run('db-session', '/Users/example/work/metrora', 'claude-sonnet-4-6', 1_800_000_000, 1_800_000_010, 'Metrora', 0)
   db.prepare(`
     INSERT INTO sessions (id, working_directory, model, created_at, last_activity_at, title, hidden)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -779,8 +798,8 @@ skipUnlessSqlite('devin provider sessions.db enrichment', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       model: 'Sonnet 4.6',
-      project: 'codeburn',
-      projectPath: '/Users/example/work/codeburn',
+      project: 'metrora',
+      projectPath: '/Users/example/work/metrora',
       timestamp: '2027-01-15T08:00:10.000Z',
       costUSD: 0.25,
     })
@@ -795,7 +814,7 @@ skipUnlessSqlite('devin provider sessions.db enrichment', () => {
     const sources = await provider.discoverSessions()
 
     expect(sources).toEqual([
-      { path: filePath, project: 'codeburn', provider: 'devin' },
+      { path: filePath, project: 'metrora', provider: 'devin' },
     ])
   })
 

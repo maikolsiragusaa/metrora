@@ -324,7 +324,7 @@ describe('buildMenubarPayload', () => {
     const timeline = {
       bucketMinutes: 15,
       modelSeries: [{ id: 'model_0', label: 'claude-opus-4-6' }],
-      sessionSeries: [{ id: 'session_0', label: 'codeburn · abc123 (claude)' }],
+      sessionSeries: [{ id: 'session_0', label: 'metrora · abc123 (claude)' }],
       points: [{
         timestamp: '2026-07-15T10:00:00.000Z',
         cost: 1.5,

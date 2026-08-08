@@ -12,7 +12,7 @@ import {
 const roots: string[] = []
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), 'qovrion-desktop-vault-'))
+  const value = await mkdtemp(join(tmpdir(), 'metrora-desktop-vault-'))
   roots.push(value)
   return value
 }

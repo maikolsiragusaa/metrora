@@ -21,12 +21,12 @@ function usageEvent() {
   return {
     specversion: '1.0',
     id: 'evt_01',
-    source: 'urn:qovrion:endpoint:endpoint_01',
-    type: 'dev.qovrion.measurement.ai-usage.v1',
+    source: 'urn:metrora:endpoint:endpoint_01',
+    type: 'dev.metrora.measurement.ai-usage.v1',
     time: NOW,
     subject: 'workspace/workspace_01/repository/repository_01',
     datacontenttype: 'application/json',
-    dataschema: 'https://schemas.qovrion.dev/v1/usage-measurement.schema.json',
+    dataschema: 'https://schemas.metrora.dev/v1/usage-measurement.schema.json',
     data: {
       version: 1,
       workspaceId: 'workspace_01',
@@ -83,7 +83,7 @@ describe('public contracts v1', () => {
   it('exports strict JSON Schema Draft 2020-12 documents', () => {
     for (const [name, schema] of Object.entries(PublicContractJsonSchemasV1)) {
       expect(schema.$schema, name).toBe(JSON_SCHEMA_DIALECT_2020_12)
-      expect(schema.$id, name).toMatch(/^https:\/\/schemas\.qovrion\.dev\/v1\/.+\.schema\.json$/)
+      expect(schema.$id, name).toMatch(/^https:\/\/schemas\.metrora\.dev\/v1\/.+\.schema\.json$/)
       expect(schema.type, name).toBe('object')
       expect(schema.additionalProperties, name).toBe(false)
     }
@@ -91,7 +91,7 @@ describe('public contracts v1', () => {
 
   it('keeps workspace records opaque and rejects undeclared data', () => {
     const workspace = {
-      kind: 'qovrion.workspace',
+      kind: 'metrora.workspace',
       version: 1,
       workspaceId: 'workspace_01',
       slug: 'maikol-lab',
@@ -107,7 +107,7 @@ describe('public contracts v1', () => {
 
   it('requires enrollment evidence appropriate to the endpoint state', () => {
     const endpoint = {
-      kind: 'qovrion.endpoint',
+      kind: 'metrora.endpoint',
       version: 1,
       endpointId: 'endpoint_01',
       workspaceId: 'workspace_01',
@@ -115,7 +115,7 @@ describe('public contracts v1', () => {
       endpointType: 'desktop',
       platform: { os: 'windows', architecture: 'x64' },
       identity: { keyAlgorithm: 'ecdsa-p256', publicKeyFingerprintSha256: SHA_A },
-      software: { qovrionVersion: '0.1.0', collectorVersion: '0.1.0' },
+      software: { metroraVersion: '0.1.0', collectorVersion: '0.1.0' },
       capabilities: ['collect', 'normalize', 'aggregate', 'serve-local-api'],
       enrollment: { state: 'active', requestedAt: NOW, enrolledAt: LATER },
       createdAt: NOW,
@@ -131,12 +131,12 @@ describe('public contracts v1', () => {
 
   it('rejects repository remotes containing embedded credentials', () => {
     const base = {
-      kind: 'qovrion.repository-identity',
+      kind: 'metrora.repository-identity',
       version: 1,
       repositoryId: 'repository_01',
       workspaceId: 'workspace_01',
       vcs: 'git',
-      displayName: 'qovrion',
+      displayName: 'metrora',
       defaultBranch: 'main',
       createdAt: NOW,
       updatedAt: NOW,
@@ -145,18 +145,18 @@ describe('public contracts v1', () => {
       ...base,
       locator: {
         mode: 'remote',
-        canonicalUrl: 'https://github.com/maikolsiragusaa/qovrion.git',
+        canonicalUrl: 'https://github.com/maikolsiragusaa/metrora.git',
         canonicalUrlSha256: SHA_A,
         host: 'github.com',
         owner: 'maikolsiragusaa',
-        name: 'qovrion',
+        name: 'metrora',
       },
     }).success).toBe(true)
     expect(RepositoryIdentityV1Schema.safeParse({
       ...base,
       locator: {
         mode: 'remote',
-        canonicalUrl: 'https://token@github.com/maikolsiragusaa/qovrion.git',
+        canonicalUrl: 'https://token@github.com/maikolsiragusaa/metrora.git',
         canonicalUrlSha256: SHA_A,
       },
     }).success).toBe(false)
@@ -164,7 +164,7 @@ describe('public contracts v1', () => {
 
   it('makes raw content impossible to authorize in sharing policy v1', () => {
     const policy = {
-      kind: 'qovrion.sharing-policy',
+      kind: 'metrora.sharing-policy',
       version: 1,
       policyId: 'policy_01',
       workspaceId: 'workspace_01',
@@ -203,19 +203,19 @@ describe('public contracts v1', () => {
     }).success).toBe(false)
 
     const batch = {
-      kind: 'qovrion.measurement-batch',
+      kind: 'metrora.measurement-batch',
       version: 1,
       batchId: 'batch_01',
       createdAt: NOW,
       producer: {
         endpointId: 'endpoint_01',
-        qovrionVersion: '0.1.0',
+        metroraVersion: '0.1.0',
         adapterSetSha256: SHA_B,
       },
       semanticConventions: {
         cloudEvents: '1.0',
         openTelemetryGenAi: { version: '1.42.0', stability: 'development' },
-        qovrion: '1',
+        metrora: '1',
       },
       events: [event],
     }
@@ -225,16 +225,16 @@ describe('public contracts v1', () => {
   it('binds an in-toto statement to the exact measurement batch digest', () => {
     const statement = {
       _type: 'https://in-toto.io/Statement/v1',
-      subject: [{ name: 'qovrion:measurement-batch:batch_01', digest: { sha256: SHA_A } }],
-      predicateType: 'https://schemas.qovrion.dev/attestations/usage-evidence/v1',
+      subject: [{ name: 'metrora:measurement-batch:batch_01', digest: { sha256: SHA_A } }],
+      predicateType: 'https://schemas.metrora.dev/attestations/usage-evidence/v1',
       predicate: {
-        kind: 'qovrion.usage-evidence',
+        kind: 'metrora.usage-evidence',
         version: 1,
         evidenceId: 'evidence_01',
         createdAt: NOW,
         workspaceId: 'workspace_01',
         endpointId: 'endpoint_01',
-        producer: { name: 'qovrion', version: '0.1.0' },
+        producer: { name: 'metrora', version: '0.1.0' },
         measurementBatch: { batchId: 'batch_01', sha256: SHA_A },
         canonicalization: 'RFC8785',
         contentPolicy: {
@@ -278,7 +278,7 @@ describe('public contracts v1', () => {
     expect(parseUsageEvidenceStatementV1(statement)).toEqual(statement)
     expect(() => parseUsageEvidenceStatementV1({
       ...statement,
-      subject: [{ name: 'qovrion:measurement-batch:batch_01', digest: { sha256: SHA_B } }],
+      subject: [{ name: 'metrora:measurement-batch:batch_01', digest: { sha256: SHA_B } }],
     })).toThrow(/bind the declared measurement batch digest/)
   })
 })

@@ -8,6 +8,11 @@ export type AggregatedModel = {
   outputTokens?: number
 }
 
+type CurrentModelAccounting = {
+  rows: Array<{ name: string; cost: number; calls: number }>
+  gap: { cost: number; calls: number }
+}
+
 export const OTHER_MODELS_HISTORY_GAP = 'Other models'
 
 export function sessionModelKey(project: string, date: string, calls: number, cost: number): string {
@@ -23,6 +28,23 @@ export function buildModelIndex(data: MenubarPayload): Map<string, string> {
     }
   }
   return index
+}
+
+/**
+ * Prefer the complete model-accounting projection emitted by current payloads.
+ * It is the same cost/call authority used by the dedicated Models surface, so a
+ * presentation-sized daily top-N cannot make one named model disagree between
+ * Home and Models. Return null only for older payloads that predate this field.
+ */
+export function modelAccountingToAggregated(current: MenubarPayload['current']): AggregatedModel[] | null {
+  const accounting = (current as MenubarPayload['current'] & { modelAccounting?: CurrentModelAccounting }).modelAccounting
+  if (!accounting) return null
+
+  const rows = accounting.rows.map(row => ({ name: row.name, cost: row.cost, calls: row.calls }))
+  if (accounting.gap.cost > 0.000001 || accounting.gap.calls > 0) {
+    rows.push({ name: OTHER_MODELS_HISTORY_GAP, cost: accounting.gap.cost, calls: accounting.gap.calls })
+  }
+  return rows.sort((a, b) => (b.cost - a.cost) || (b.calls - a.calls))
 }
 
 /**

@@ -1,6 +1,6 @@
 import { existsSync } from 'fs'
 import { lstat, readFile, readdir, stat } from 'fs/promises'
-import { basename, dirname, join, resolve, sep } from 'path'
+import { basename, dirname, join, normalize, resolve, sep } from 'path'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, calculateLocalModelSavings, getShortModelName, isProxiedPath, getProxyPathsConfigHash } from './models.js'
 import { buildReasoningMix, reasoningLevelFromModelLabel, type ReasoningMixInput } from './reasoning-level.js'
@@ -131,7 +131,7 @@ async function resolveCanonicalProjectPath(cwd: string): Promise<{ path: string;
       const worktreeMarker = '/.git/worktrees/'
       const markerIndex = normalizedGitDir.lastIndexOf(worktreeMarker)
       if (markerIndex === -1) return { path: dir === trimmed ? dir : cwd, isWorktree: false }
-      return { path: normalizedGitDir.slice(0, markerIndex), isWorktree: true }
+      return { path: normalize(normalizedGitDir.slice(0, markerIndex)), isWorktree: true }
     }
     const parent = dirname(dir)
     if (parent === dir) return { path: cwd, isWorktree: false }
@@ -2900,12 +2900,12 @@ export function setInteractiveScanUI(active = true): void {
 }
 
 // Machine-readable scan progress for the desktop app's first-run splash. Plain
-// CLI/terminal usage is untouched: emission is gated on CODEBURN_PROGRESS=1,
+// CLI/terminal usage is untouched: emission is gated on METRORA_PROGRESS=1,
 // which only the app's cold-start warmup spawn sets. Each event is one
 // newline-delimited JSON object behind a sentinel prefix so the reader can pick
 // it out of stderr that may also carry provider warnings. This is orthogonal to
 // createScanProgress's `\r` TTY line (that one never fires under a piped spawn).
-export const PROGRESS_LINE_PREFIX = 'CODEBURN_PROGRESS '
+export const PROGRESS_LINE_PREFIX = 'METRORA_PROGRESS '
 export type ScanProgressEvent =
   // `cold` is true only for a genuine full hydration (the on-disk cache was
   // empty). A warm launch's incremental re-parse of a handful of changed files
@@ -2916,7 +2916,7 @@ export type ScanProgressEvent =
   | { kind: 'tick'; provider: string; done: number; total: number }
 
 export function emitScanProgress(event: ScanProgressEvent): void {
-  if (process.env['CODEBURN_PROGRESS'] !== '1') return
+  if (process.env['METRORA_PROGRESS'] !== '1') return
   try { process.stderr.write(`${PROGRESS_LINE_PREFIX}${JSON.stringify(event)}\n`) } catch { /* stderr closed */ }
 }
 

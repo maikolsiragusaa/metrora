@@ -17,7 +17,7 @@ export type Identity = {
 }
 
 export async function generateIdentity(name: string = hostname()): Promise<Identity> {
-  const attrs = [{ name: 'commonName', value: 'codeburn-device' }]
+  const attrs = [{ name: 'commonName', value: 'metrora-device' }]
   // @types/selfsigned is missing `days`; the runtime accepts it. selfsigned >=5
   // resolves a Promise of { private, public, cert, fingerprint }.
   const genOpts = { days: 3650, keySize: 2048, algorithm: 'sha256' } as unknown as Parameters<

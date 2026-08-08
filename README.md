@@ -174,7 +174,7 @@ Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1]
 
 ## Origin and independent development
 
-Metrora began from a reviewed CodeBurn 0.9.19 MIT-licensed source baseline and preserves the required upstream copyright and licence notices.
+Metrora is independently maintained from a reviewed upstream MIT-licensed source baseline and preserves the required copyright and licence notices.
 
 The inherited baseline provided substantial local collection, reporting and interface foundations. Metrora independently maintains that code while introducing its own product identity, evidence model, durable-history rules, historical-pricing authority, Windows release discipline, local Workspace contracts and other material changes.
 
@@ -207,7 +207,7 @@ tests/     core test suite
 docs/      product, user, contract and technical documentation
 ```
 
-The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases while local state and integrations migrate safely. They are not product-facing names for new releases.
+The canonical command is `metrora`. Compatibility aliases are retained only at narrowly scoped runtime boundaries while local state and integrations migrate safely. They are not product-facing names for new releases.
 
 ## Contributing
 

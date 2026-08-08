@@ -7,7 +7,8 @@ import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
+import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
 import type { CompareJsonReport, ComparisonRow, DateRange, ModelStats, Period, WorkingStyleRow } from '../lib/types'
 
 function fmtMetric(v: number | null, fn: 'cost' | 'number' | 'percent' | 'decimal'): string | null {
@@ -48,7 +49,7 @@ function DenseMetricValue({
 function RangeNote() {
   return (
     <p className="cmp-range-note" role="note">
-      Compare uses the selected period, custom dates are not supported yet.
+      Compare uses the selected period; custom dates are not supported yet.
     </p>
   )
 }
@@ -67,7 +68,7 @@ export function Compare({
   ready?: boolean
 }) {
   const models = usePolled<ModelStats[]>(
-    () => codeburn.getCompareModels(period, provider),
+    () => metrora.getCompareModels(period, provider),
     [period, provider, refreshToken],
     { enabled: ready, memoKey: `comparemodels|${period}|${provider}` },
   )
@@ -89,7 +90,7 @@ export function Compare({
 
   if (!models.data) {
     if (models.error) return <CliErrorPanel error={models.error} subject="model comparisons" />
-    return <SectionSkeleton label="Scanning model usage…" rows={4} />
+    return <SectionSkeleton label="Loading model comparison data…" rows={4} />
   }
 
   if (models.data.length < 2) {
@@ -111,7 +112,7 @@ export function Compare({
           id="compare-first-model"
           ariaLabel="First model"
           value={modelA ?? ''}
-          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString()} calls` }))}
+          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString('en-US')} calls` }))}
           onChange={next => {
             setModelA(next)
             if (next === modelB) setModelB(nudgeDistinct(next))
@@ -122,7 +123,7 @@ export function Compare({
           id="compare-second-model"
           ariaLabel="Second model"
           value={modelB ?? ''}
-          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString()} calls` }))}
+          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString('en-US')} calls` }))}
           onChange={next => {
             setModelB(next)
             if (next === modelA) setModelA(nudgeDistinct(next))
@@ -159,7 +160,7 @@ function CompareReport({
   onError: () => void
 }) {
   const report = usePolled<CompareJsonReport>(
-    () => codeburn.getCompare(period, provider, modelA, modelB),
+    () => metrora.getCompare(period, provider, modelA, modelB),
     [period, provider, modelA, modelB, refreshToken],
     { memoKey: `compare|${period}|${provider}|${modelA}|${modelB}` },
   )
@@ -170,22 +171,69 @@ function CompareReport({
 
   if (!report.data) {
     if (report.error) return <CliErrorPanel error={report.error} subject="model comparisons" />
-    return <SectionSkeleton label="Comparing models…" rows={4} />
+    return <SectionSkeleton label="Comparing observed usage…" rows={4} />
   }
 
-  const performance = report.data.metrics.filter(metric => metric.section === 'Performance')
-  const efficiency = report.data.metrics.filter(metric => metric.section === 'Efficiency')
+  const workflowDiagnostics = report.data.metrics.filter(metric => metric.section === 'Performance')
+  const efficiency = report.data.metrics.filter(metric => metric.section === 'Efficiency' && metric.label !== 'Cache hit rate')
 
   return (
     <div className="cmp-body">
+      <p className="cmp-range-note" role="note">
+        Observed on your local workloads. Cost and usage are measured history, not a benchmark score or a claim about general model quality.
+      </p>
+      <ObservedUsageCard modelA={report.data.modelA} modelB={report.data.modelB} />
       <div className="cmp-pair">
-        <MetricCard title="Performance" rows={performance} modelA={report.data.modelA.model} modelB={report.data.modelB.model} showWinners />
-        <MetricCard title="Efficiency" rows={efficiency} modelA={report.data.modelA.model} modelB={report.data.modelB.model} showWinners />
+        <MetricCard title="Observed efficiency" rows={efficiency} modelA={report.data.modelA.model} modelB={report.data.modelB.model} />
+        <CoverageCard modelA={report.data.modelA} modelB={report.data.modelB} />
       </div>
-      <CategoryCard report={report.data} />
-      <div className="cmp-pair">
-        <MetricCard title="Working style" rows={report.data.workingStyle} modelA={report.data.modelA.model} modelB={report.data.modelB.model} />
-        <ContextCard modelA={report.data.modelA} modelB={report.data.modelB} />
+      <details className="panel cmp-card">
+        <summary className="cmp-head"><h3>Workflow diagnostics · Experimental</h3><span className="cmp-head-note">Secondary signals, not model quality scores</span></summary>
+        <div style={{ padding: '0 12px 12px' }}>
+          <div className="cmp-pair">
+            <MetricCard title="Editing signals" rows={workflowDiagnostics} modelA={report.data.modelA.model} modelB={report.data.modelB.model} />
+            <MetricCard title="Working style" rows={report.data.workingStyle} modelA={report.data.modelA.model} modelB={report.data.modelB.model} />
+          </div>
+          <CategoryCard report={report.data} />
+        </div>
+      </details>
+    </div>
+  )
+}
+
+function ObservedUsageCard({ modelA, modelB }: { modelA: ModelStats; modelB: ModelStats }) {
+  const totalA = observedTokenTotal(modelA)
+  const totalB = observedTokenTotal(modelB)
+  const reuseA = cacheReuseMultiple(modelA.inputTokens, modelA.cacheReadTokens)
+  const reuseB = cacheReuseMultiple(modelB.inputTokens, modelB.cacheReadTokens)
+  const shareA = cacheShare(modelA.inputTokens, modelA.cacheReadTokens)
+  const shareB = cacheShare(modelB.inputTokens, modelB.cacheReadTokens)
+  const unitA = costPerMillionObserved(modelA.cost, totalA)
+  const unitB = costPerMillionObserved(modelB.cost, totalB)
+  const rows: Array<{ label: string; valueA: string | null; valueB: string | null; note?: string }> = [
+    { label: 'Calls', valueA: modelA.calls.toLocaleString('en-US'), valueB: modelB.calls.toLocaleString('en-US') },
+    { label: 'Input', valueA: formatCompact(modelA.inputTokens), valueB: formatCompact(modelB.inputTokens) },
+    { label: 'Output', valueA: formatCompact(modelA.outputTokens), valueB: formatCompact(modelB.outputTokens) },
+    { label: 'Cache R', valueA: formatCompact(modelA.cacheReadTokens), valueB: formatCompact(modelB.cacheReadTokens) },
+    { label: 'Cache W', valueA: formatCompact(modelA.cacheWriteTokens), valueB: formatCompact(modelB.cacheWriteTokens) },
+    { label: 'Cache ×', valueA: formatReuseMultiple(reuseA), valueB: formatReuseMultiple(reuseB), note: `Cache share: ${shareA == null ? '—' : `${Math.round(shareA * 1000) / 10}%`} / ${shareB == null ? '—' : `${Math.round(shareB * 1000) / 10}%`}` },
+    { label: 'Total tokens', valueA: formatCompact(totalA), valueB: formatCompact(totalB) },
+    { label: 'Total cost', valueA: formatUsd(modelA.cost), valueB: formatUsd(modelB.cost) },
+    { label: 'Cost / 1M', valueA: unitA == null ? null : formatUsd(unitA), valueB: unitB == null ? null : formatUsd(unitB) },
+  ]
+
+  return (
+    <div className="panel cmp-card">
+      <div className="cmp-head"><h3>Observed usage</h3><span className="cmp-head-note">Same metric definitions as Models and Sessions</span></div>
+      <div className="cmp-metrics" role="table" aria-label="Observed usage comparison">
+        <MetricHeader modelA={modelA.model} modelB={modelB.model} />
+        {rows.map(row => (
+          <div className="cmp-metric" role="row" key={row.label} title={row.note}>
+            <span className="cmp-label" role="rowheader">{row.label}</span>
+            <DenseMetricValue value={row.valueA} model={modelA.model} metric={row.label} />
+            <DenseMetricValue value={row.valueB} model={modelB.model} metric={row.label} />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -196,41 +244,25 @@ function MetricCard({
   rows,
   modelA,
   modelB,
-  showWinners = false,
 }: {
   title: string
   rows: Array<ComparisonRow | WorkingStyleRow>
   modelA: string
   modelB: string
-  showWinners?: boolean
 }) {
   return (
     <div className="panel cmp-card">
       <div className="cmp-head"><h3>{title}</h3></div>
       <div className="cmp-metrics" role="table" aria-label={`${title} comparison`}>
         <MetricHeader modelA={modelA} modelB={modelB} />
-        {rows.map(row => {
-          const winner = 'winner' in row ? row.winner : 'none'
-          return (
-            <div className="cmp-metric" role="row" key={row.label}>
-              <span className="cmp-label" role="rowheader">{row.label}</span>
-              <DenseMetricValue
-                value={fmtMetric(row.valueA, row.formatFn)}
-                model={modelA}
-                metric={row.label}
-                better={showWinners && winner === 'a'}
-              />
-              <DenseMetricValue
-                value={fmtMetric(row.valueB, row.formatFn)}
-                model={modelB}
-                metric={row.label}
-                better={showWinners && winner === 'b'}
-              />
-            </div>
-          )
-        })}
+        {rows.map(row => (
+          <div className="cmp-metric" role="row" key={row.label}>
+            <span className="cmp-label" role="rowheader">{row.label}</span>
+            <DenseMetricValue value={fmtMetric(row.valueA, row.formatFn)} model={modelA} metric={row.label} />
+            <DenseMetricValue value={fmtMetric(row.valueB, row.formatFn)} model={modelB} metric={row.label} />
+          </div>
+        ))}
       </div>
-      {showWinners && <div className="cmp-foot">✓ marks the better value for that metric; unavailable values are not ranked.</div>}
     </div>
   )
 }
@@ -248,7 +280,7 @@ function MetricHeader({ modelA, modelB }: { modelA: string; modelB: string }) {
 function CategoryCard({ report }: { report: CompareJsonReport }) {
   return (
     <div className="panel cmp-card">
-      <div className="cmp-head"><h3>Category head-to-head</h3><span className="cmp-head-note">One-shot rate · edit turns</span></div>
+      <div className="cmp-head"><h3>Editing categories</h3><span className="cmp-head-note">One-shot rate · edit turns · diagnostic only</span></div>
       <div className="cmp-category-body">
         <div className="cmp-legend">
           <span className="cmp-legend-item"><span className="cmp-key" />{report.modelA.model}</span>
@@ -266,26 +298,16 @@ function CategoryCard({ report }: { report: CompareJsonReport }) {
                     <span className="cmp-track" aria-hidden="true">
                       {rateA !== null && <span className="cmp-bar" style={{ width: `${rateA}%` }} />}
                     </span>
-                    <span
-                      className={`cmp-bar-value${category.winner === 'a' ? ' cmp-best' : ''}`}
-                      aria-label={`${report.modelA.model}: ${rateA === null ? 'one-shot rate not available' : `${rateA.toFixed(0)}% one-shot rate`}; ${category.editTurnsA.toLocaleString('en-US')} edit turns${category.winner === 'a' ? '. Better value' : ''}`}
-                      title={rateA === null ? 'One-shot rate not available' : category.winner === 'a' ? 'Better value' : undefined}
-                    >
+                    <span className="cmp-bar-value" aria-label={`${report.modelA.model}: ${rateA === null ? 'one-shot rate not available' : `${rateA.toFixed(0)}% one-shot rate`}; ${category.editTurnsA.toLocaleString('en-US')} edit turns`}>
                       {rateA === null ? 'Not available' : `${rateA.toFixed(0)}%`} <span className="cmp-turns">({category.editTurnsA.toLocaleString('en-US')})</span>
-                      {category.winner === 'a' && <> <span aria-hidden="true">✓</span></>}
                     </span>
                   </div>
                   <div className="cmp-bar-row">
                     <span className="cmp-track" aria-hidden="true">
                       {rateB !== null && <span className="cmp-bar cmp-bar-b" style={{ width: `${rateB}%` }} />}
                     </span>
-                    <span
-                      className={`cmp-bar-value${category.winner === 'b' ? ' cmp-best' : ''}`}
-                      aria-label={`${report.modelB.model}: ${rateB === null ? 'one-shot rate not available' : `${rateB.toFixed(0)}% one-shot rate`}; ${category.editTurnsB.toLocaleString('en-US')} edit turns${category.winner === 'b' ? '. Better value' : ''}`}
-                      title={rateB === null ? 'One-shot rate not available' : category.winner === 'b' ? 'Better value' : undefined}
-                    >
+                    <span className="cmp-bar-value" aria-label={`${report.modelB.model}: ${rateB === null ? 'one-shot rate not available' : `${rateB.toFixed(0)}% one-shot rate`}; ${category.editTurnsB.toLocaleString('en-US')} edit turns`}>
                       {rateB === null ? 'Not available' : `${rateB.toFixed(0)}%`} <span className="cmp-turns">({category.editTurnsB.toLocaleString('en-US')})</span>
-                      {category.winner === 'b' && <> <span aria-hidden="true">✓</span></>}
                     </span>
                   </div>
                 </div>
@@ -298,32 +320,23 @@ function CategoryCard({ report }: { report: CompareJsonReport }) {
   )
 }
 
-function cacheHitRate(model: ModelStats): string | null {
-  // reads over reads + fresh input (matches menubar-json + compare-stats).
-  const total = model.inputTokens + model.cacheReadTokens
-  return total > 0 ? `${Math.round(model.cacheReadTokens / total * 100)}%` : null
-}
-
 function daysOfData(model: ModelStats): string | null {
   if (!model.firstSeen || !model.lastSeen) return null
   return String(Math.max(1, Math.round((new Date(model.lastSeen).getTime() - new Date(model.firstSeen).getTime()) / 86_400_000) + 1))
 }
 
-function ContextCard({ modelA, modelB }: { modelA: ModelStats; modelB: ModelStats }) {
+function CoverageCard({ modelA, modelB }: { modelA: ModelStats; modelB: ModelStats }) {
   const rows: Array<{ label: string; valueA: string | null; valueB: string | null }> = [
-    { label: 'Calls', valueA: modelA.calls.toLocaleString(), valueB: modelB.calls.toLocaleString() },
-    { label: 'Total cost', valueA: formatUsd(modelA.cost), valueB: formatUsd(modelB.cost) },
-    { label: 'Input tokens', valueA: formatCompact(modelA.inputTokens), valueB: formatCompact(modelB.inputTokens) },
-    { label: 'Output tokens', valueA: formatCompact(modelA.outputTokens), valueB: formatCompact(modelB.outputTokens) },
-    { label: 'Edit turns', valueA: modelA.editTurns.toLocaleString(), valueB: modelB.editTurns.toLocaleString() },
-    { label: 'Self-corrections', valueA: modelA.selfCorrections.toLocaleString(), valueB: modelB.selfCorrections.toLocaleString() },
-    { label: 'Cache hit rate', valueA: cacheHitRate(modelA), valueB: cacheHitRate(modelB) },
-    { label: 'Days of data', valueA: daysOfData(modelA), valueB: daysOfData(modelB) },
+    { label: 'Edit turns', valueA: modelA.editTurns.toLocaleString('en-US'), valueB: modelB.editTurns.toLocaleString('en-US') },
+    { label: 'Total turns', valueA: modelA.totalTurns.toLocaleString('en-US'), valueB: modelB.totalTurns.toLocaleString('en-US') },
+    { label: 'Days observed', valueA: daysOfData(modelA), valueB: daysOfData(modelB) },
+    { label: 'First seen', valueA: modelA.firstSeen ? new Date(modelA.firstSeen).toLocaleDateString('en-US') : null, valueB: modelB.firstSeen ? new Date(modelB.firstSeen).toLocaleDateString('en-US') : null },
+    { label: 'Last seen', valueA: modelA.lastSeen ? new Date(modelA.lastSeen).toLocaleDateString('en-US') : null, valueB: modelB.lastSeen ? new Date(modelB.lastSeen).toLocaleDateString('en-US') : null },
   ]
   return (
     <div className="panel cmp-card">
-      <div className="cmp-head"><h3>Context</h3></div>
-      <div className="cmp-metrics" role="table" aria-label="Comparison context">
+      <div className="cmp-head"><h3>Observation context</h3></div>
+      <div className="cmp-metrics" role="table" aria-label="Comparison observation context">
         <MetricHeader modelA={modelA.model} modelB={modelB.model} />
         {rows.map(row => (
           <div className="cmp-metric" role="row" key={row.label}>

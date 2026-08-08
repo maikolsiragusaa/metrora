@@ -37,20 +37,20 @@ Malformed lines and zero-token entries are skipped. Missing `model` falls back t
 
 ## Parser
 
-CodeBurn emits one parsed call per ledger entry. LingTai records provider-normalized total input plus a separate `cached` counter, so the provider maps:
+Metrora emits one parsed call per ledger entry. LingTai records provider-normalized total input plus a separate `cached` counter, so the provider maps:
 
 - `input - cached` -> fresh input tokens
 - `cached` -> cache-read tokens
 - `output` -> output tokens
 - `thinking` -> reasoning tokens
 
-Costs are calculated from CodeBurn's normal model pricing table.
+Costs are calculated from Metrora's normal model pricing table.
 
 ## Activity mapping
 
-LingTai's token ledger is an accounting source, not full chat history, so it does not include the original user prompt or per-tool transcript. CodeBurn maps the ledger `source` field conservatively:
+LingTai's token ledger is an accounting source, not full chat history, so it does not include the original user prompt or per-tool transcript. Metrora maps the ledger `source` field conservatively:
 
-| LingTai `source` | CodeBurn activity |
+| LingTai `source` | Metrora activity |
 |---|---|
 | `main` and unknown sources | Conversation |
 | `tc_wake` and other task-coordinator wake sources | Delegation |

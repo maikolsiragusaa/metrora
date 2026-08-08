@@ -13,7 +13,7 @@ beforeEach(async () => {
   process.env['CLAUDE_CONFIG_DIR'] = tmpDir
   // Point desktop sessions at an empty subdir by default so real sessions
   // on the developer's machine do not bleed into the unit tests.
-  process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
+  process.env['METRORA_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
 })
 
 afterEach(async () => {
@@ -216,9 +216,9 @@ describe('Claude cwd project paths', () => {
   })
 
   it('groups git worktrees under the main repository project', async () => {
-    const mainRepo = join(tmpDir, 'repos', 'codeburn')
-    const worktreeA = join(tmpDir, 'worktrees', 'codeburn-feature-a')
-    const worktreeB = join(tmpDir, 'worktrees', 'codeburn-feature-b')
+    const mainRepo = join(tmpDir, 'repos', 'metrora')
+    const worktreeA = join(tmpDir, 'worktrees', 'metrora-feature-a')
+    const worktreeB = join(tmpDir, 'worktrees', 'metrora-feature-b')
     await mkdir(join(mainRepo, '.git', 'worktrees', 'feature-a'), { recursive: true })
     await mkdir(join(mainRepo, '.git', 'worktrees', 'feature-b'), { recursive: true })
     await mkdir(worktreeA, { recursive: true })
@@ -227,13 +227,13 @@ describe('Claude cwd project paths', () => {
     await writeFile(join(worktreeB, '.git'), `gitdir: ${relative(worktreeB, join(mainRepo, '.git', 'worktrees', 'feature-b'))}\n`)
 
     await writeClaudeSession(
-      'tmp-worktrees-codeburn-feature-a',
+      'tmp-worktrees-metrora-feature-a',
       'worktree-a-session',
       worktreeA,
       '2099-05-07T10:00:00.000Z',
     )
     await writeClaudeSession(
-      'tmp-worktrees-codeburn-feature-b',
+      'tmp-worktrees-metrora-feature-b',
       'worktree-b-session',
       worktreeB,
       '2099-05-07T11:00:00.000Z',
@@ -242,7 +242,7 @@ describe('Claude cwd project paths', () => {
     const projects = await parseAllSessions(dayRange('2099-05-07'), 'claude')
 
     expect(projects).toHaveLength(1)
-    expect(projects[0]!.project).toBe('codeburn')
+    expect(projects[0]!.project).toBe('metrora')
     expect(projects[0]!.projectPath).toBe(mainRepo)
     expect(projects[0]!.sessions).toHaveLength(2)
     expect(projects[0]!.totalApiCalls).toBe(2)
@@ -368,7 +368,7 @@ async function writeCoworkSession(opts: {
   await writeFile(join(workspaceDir, `${sessionId}.json`), JSON.stringify(sessionMeta))
 
   // .claude/projects/<slug>/session.jsonl — the actual token-bearing session
-  const projectSlug = outputsDir.replace(/[/\\]/g, '-').replace(/^-/, '')
+  const projectSlug = outputsDir.replace(/[/\\:]/g, '-').replace(/^-/, '')
   const projectDir = join(workspaceDir, sessionId, '.claude', 'projects', projectSlug)
   await mkdir(projectDir, { recursive: true })
   const filePath = join(projectDir, `${claudeSessionId}.jsonl`)
@@ -549,7 +549,7 @@ describe('Claude Cowork local-agent-mode session grouping', () => {
     const workspaceDir = join(desktopSessionsDir, 'app-abc', 'ws-005')
     const sessionId = 'local_gggg'
     const outputsDir = join(workspaceDir, sessionId, 'outputs')
-    const projectSlug = outputsDir.replace(/[/\\]/g, '-').replace(/^-/, '')
+    const projectSlug = outputsDir.replace(/[/\\:]/g, '-').replace(/^-/, '')
     const projectDir = join(workspaceDir, sessionId, '.claude', 'projects', projectSlug)
     await mkdir(projectDir, { recursive: true })
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { setActiveCurrency } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
 import { providerName } from './useDesktopScope'
 import { overviewMemoKey, useProviderPrefetch } from './useProviderPrefetch'
@@ -11,6 +11,8 @@ export type DetectedProvider = {
   id: string
   label: string
 }
+
+export type ConfigMutationKind = 'accounting' | 'display'
 
 type OverviewRuntimeOptions = {
   period: Period
@@ -26,7 +28,7 @@ export type OverviewRuntime = {
   ready: boolean
   refreshToken: number
   refreshVisible: () => void
-  onConfigMutated: () => void
+  onConfigMutated: (kind?: ConfigMutationKind) => void
 }
 
 /** Derive stable provider picker entries from the canonical Overview payload. */
@@ -68,10 +70,10 @@ export function useOverviewRuntime({
   // only add --claude-config-source once the user selected a real config.
   const overview = usePolled<MenubarPayload>(
     () => scopedClaudeConfigSource
-      ? codeburn.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
+      ? metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
       : customRange
-      ? codeburn.getOverview(period, provider, customRange)
-      : codeburn.getOverview(period, provider),
+      ? metrora.getOverview(period, provider, customRange)
+      : metrora.getOverview(period, provider),
     [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource],
     { memoKey: overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource) },
   )
@@ -125,10 +127,21 @@ export function useOverviewRuntime({
     setRefreshToken(token => token + 1)
   }, [overview.refresh])
 
-  const onConfigMutated = useCallback(() => {
+  const onConfigMutated = useCallback((kind: ConfigMutationKind = 'accounting') => {
+    if (kind === 'display') {
+      // Currency is a presentation transform over raw USD values. Preserve every
+      // warmed section/period memo and refresh only the canonical Overview so its
+      // currency descriptor updates the global formatter. Previously this wiped
+      // all memoized views and made the app look as if it were rescanning usage.
+      overview.refresh()
+      return
+    }
+
+    // Alias/pricing/plan changes can alter computed accounting. Those genuinely
+    // invalidate warmed payloads and section reports.
     clearPolledMemo()
     refreshVisible()
-  }, [refreshVisible])
+  }, [overview.refresh, refreshVisible])
 
   return { overview, ready, refreshToken, refreshVisible, onConfigMutated }
 }

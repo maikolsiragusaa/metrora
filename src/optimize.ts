@@ -13,6 +13,7 @@ import { formatTokens } from './format.js'
 import { recommendModelDefault, type ModelDefaultRecommendation } from './act/model-defaults.js'
 import { aggregateFileChurn, buildCoachingNotes, scanUserCorrections, medianTimeToFirstEditMs, worstOneShotCategory, type ReworkedFile } from './workflow-insights.js'
 import { optimizeResultCacheKey } from './optimize-cache-key.js'
+import { shortHomePath } from './optimize-paths.js'
 
 // ============================================================================
 // Display constants
@@ -582,11 +583,6 @@ function readJsonFile(path: string): Record<string, unknown> | null {
   const raw = readSessionFileSync(path)
   if (raw === null) return null
   try { return JSON.parse(raw) } catch { return null }
-}
-
-function shortHomePath(absPath: string): string {
-  const home = homedir()
-  return absPath.startsWith(home) ? '~' + absPath.slice(home.length) : absPath
 }
 
 function isReadTool(name: string): boolean {
@@ -1785,7 +1781,7 @@ function attributeDeferralOffCause(
 ): { cause: string; fix: WasteAction; apply?: FindingApply } {
   if (enableToolSearch && isEnvValueFalse(enableToolSearch.value)) {
     return {
-      cause: `Cause: ${ENABLE_TOOL_SEARCH_VAR}=${enableToolSearch.value} is set in ${enableToolSearch.scope} (${shortHomePath(enableToolSearch.path)}), forcing all tool definitions upfront.`,
+      cause: `Cause: ${ENABLE_TOOL_SEARCH_VAR}=${enableToolSearch.value} is set in ${enableToolSearch.scope} (${enableToolSearch.path}), forcing all tool definitions upfront.`,
       fix: {
         type: 'paste',
         destination: 'prompt',

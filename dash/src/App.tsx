@@ -393,7 +393,7 @@ export function App() {
   const { data, isError, error, refetch } = useQuery({
     queryKey: ['devices', period, provider],
     queryFn: () => fetchDevices(period, provider),
-    initialData: () => (period === 'today' && provider === 'all' ? window.__CODEBURN_BOOTSTRAP__ : undefined),
+    initialData: () => (period === 'today' && provider === 'all' ? window.__METRORA_BOOTSTRAP__ : undefined),
     // Bootstrap paints instantly but is stale by definition, so refetch at once
     // (the default 30s staleTime would otherwise hide a live peer until then).
     initialDataUpdatedAt: 0,

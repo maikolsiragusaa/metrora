@@ -184,12 +184,12 @@ describe('reviewed usage measurement event factory v1', () => {
 
   it('creates an event with unavailable cost rather than dropping reviewed usage', () => {
     const result = createReviewedUsageMeasurementEventV1(
-      codexCall({ model: 'qovrion-unpriced-model', costUSD: 0 }),
+      codexCall({ model: 'metrora-unpriced-model', costUSD: 0 }),
       {
         ...context(),
         genAi: {
           ...context().genAi,
-          requestModel: 'qovrion-unpriced-model',
+          requestModel: 'metrora-unpriced-model',
         },
       },
     )

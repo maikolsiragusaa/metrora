@@ -1,7 +1,7 @@
 import { readCompatStorage } from './storage'
 
 // Renderer-only daily budget setting. Canonical storage is metrora.dailyBudget;
-// the adapter preserves the CodeBurn-era key during the compatibility window.
+// the adapter preserves the Metrora-era key during the compatibility window.
 export type DailyBudget = { kind: 'usd' | 'tokens'; value: number }
 
 /** Parse the persisted budget, returning null when absent or malformed. */

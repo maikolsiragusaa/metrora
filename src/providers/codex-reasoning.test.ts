@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createCodexProvider } from './codex.js'
 
 let root: string | undefined
-const savedCacheDir = process.env.CODEBURN_CACHE_DIR
+const savedCacheDir = process.env.METRORA_CACHE_DIR
 
 afterEach(async () => {
-  if (savedCacheDir === undefined) delete process.env.CODEBURN_CACHE_DIR
-  else process.env.CODEBURN_CACHE_DIR = savedCacheDir
+  if (savedCacheDir === undefined) delete process.env.METRORA_CACHE_DIR
+  else process.env.METRORA_CACHE_DIR = savedCacheDir
   if (root) await rm(root, { recursive: true, force: true })
   root = undefined
 })
@@ -28,7 +28,7 @@ function usage(input: number, cached: number, output: number, reasoning: number)
 describe('Codex reasoning attribution', () => {
   it('preserves effort changes per call, including a large compact turn_context line', async () => {
     root = await mkdtemp(join(tmpdir(), 'metrora-codex-reasoning-'))
-    process.env.CODEBURN_CACHE_DIR = join(root, 'cache')
+    process.env.METRORA_CACHE_DIR = join(root, 'cache')
     const day = join(root, 'sessions', '2026', '07', '31')
     await mkdir(day, { recursive: true })
     const file = join(day, 'rollout-2026-07-31T00-00-00-session.jsonl')

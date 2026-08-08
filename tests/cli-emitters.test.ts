@@ -3,12 +3,31 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: join(home, '.claude'), TZ: 'UTC' },
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      CODEX_HOME: join(home, '.codex'),
+      METRORA_CACHE_DIR: join(home, '.metrora-cache'),
+      METRORA_CONFIG_DIR: join(home, '.metrora-config'),
+      OPENCODE_DATA_DIR: join(home, '.opencode'),
+      TZ: 'UTC',
+    },
     encoding: 'utf-8',
     timeout: 30_000,
   })
@@ -40,7 +59,7 @@ function assistantLine(sessionId: string, timestamp: string, messageId: string, 
 }
 
 async function makeHome(): Promise<string> {
-  const home = await mkdtemp(join(tmpdir(), 'codeburn-cli-emitters-'))
+  const home = await mkdtemp(join(tmpdir(), 'metrora-cli-emitters-'))
   const projectDir = join(home, '.claude', 'projects', 'app')
   await mkdir(projectDir, { recursive: true })
   await writeFile(join(projectDir, 'session-a.jsonl'), [

@@ -605,10 +605,10 @@ describe('DeepSeek v4 models resolve to pricing', () => {
   })
 
   it('keeps bundled DeepSeek v4 fallback entries when runtime pricing cache is stale', async () => {
-    const cacheRoot = await mkdtemp(join(tmpdir(), 'codeburn-pricing-cache-'))
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'metrora-pricing-cache-'))
 
     try {
-      process.env['CODEBURN_CACHE_DIR'] = cacheRoot
+      process.env['METRORA_CACHE_DIR'] = cacheRoot
       await mkdir(cacheRoot, { recursive: true })
       await writeFile(join(cacheRoot, 'litellm-pricing.json'), JSON.stringify({
         timestamp: Date.now(),
@@ -732,9 +732,9 @@ describe('findUnpricedModels', () => {
   it('flags zero-rate pricing stubs but not explicit zero-rate user overrides', async () => {
     // LiteLLM ships [0,0] stubs for models it lists but has no price for;
     // a stub hit means "unknown price", not "free".
-    const cacheRoot = await mkdtemp(join(tmpdir(), 'codeburn-pricing-cache-'))
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'metrora-pricing-cache-'))
     try {
-      process.env['CODEBURN_CACHE_DIR'] = cacheRoot
+      process.env['METRORA_CACHE_DIR'] = cacheRoot
       await writeFile(join(cacheRoot, 'litellm-pricing.json'), JSON.stringify({
         timestamp: Date.now(),
         data: {
@@ -764,7 +764,7 @@ describe('findUnpricedModels', () => {
       setPriceOverrides({ 'zz-zero-stub': { input: 0, output: 0 } })
       expect(findUnpricedModels(rows)).toHaveLength(1)
     } finally {
-      delete process.env['CODEBURN_CACHE_DIR']
+      delete process.env['METRORA_CACHE_DIR']
       await rm(cacheRoot, { recursive: true, force: true })
       setPriceOverrides({})
       await loadPricing()

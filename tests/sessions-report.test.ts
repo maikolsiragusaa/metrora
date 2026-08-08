@@ -38,7 +38,7 @@ function makeProject(): ProjectSummary {
   }
   const session: SessionSummary = {
     sessionId: 'session-1',
-    project: 'codeburn',
+    project: 'metrora',
     firstTimestamp: '2026-07-10T10:00:00.000Z',
     lastTimestamp: '2026-07-10T10:05:00.000Z',
     totalCostUSD: 0.12,
@@ -61,8 +61,8 @@ function makeProject(): ProjectSummary {
     subagentBreakdown: {},
   }
   return {
-    project: 'codeburn',
-    projectPath: '/tmp/codeburn',
+    project: 'metrora',
+    projectPath: '/tmp/metrora',
     sessions: [session],
     totalCostUSD: 0.12,
     totalSavingsUSD: 0.03,
@@ -79,7 +79,7 @@ describe('sessions JSON emitter', () => {
     expect(parsed).toEqual([{
       sessionId: 'session-1',
       title: '',
-      project: 'codeburn',
+      project: 'metrora',
       provider: 'claude',
       models: ['claude-sonnet-4-5'],
       cost: 0.12,
@@ -117,10 +117,10 @@ describe('sessions JSON emitter', () => {
 
   it('normalizes Claude dot-worktree slugs without exposing the home directory', () => {
     const rows = aggregateSessions([makeProject()])
-    rows[0]!.project = 'Users-torukmakto-codeburn-.claude-worktrees-agent-a213f7c77871f483f'
+    rows[0]!.project = 'Users-torukmakto-metrora-.claude-worktrees-agent-a213f7c77871f483f'
     const output = renderTable(rows, { terminalWidth: 120 })
 
-    expect(output).toContain('codeburn · agent a213f7c7')
+    expect(output).toContain('metrora · agent a213f7c7')
     expect(output).not.toContain('Users-torukmakto')
     expect(output).not.toContain('.claude-worktrees')
   })
@@ -132,7 +132,7 @@ describe('sessions JSON emitter', () => {
       ...rows[0]!,
       sessionId: 'new',
       title: 'Review the authentication migration without exposing filesystem details',
-      project: '-Users-private-Projects-codeburn',
+      project: '-Users-private-Projects-metrora',
       startedAt: '2026-07-20T10:00:00.000Z',
     }
     const output = renderTable([older, newer], { terminalWidth: 80 })

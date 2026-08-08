@@ -42,7 +42,7 @@ type RolloutLine = {
 
 const CHUNK_BYTES = 64 * 1024
 const MAX_PENDING_LINE_CHARS = 4 * 1024 * 1024
-const TRUNCATION_MARKER = '__CODEBURN_TRUNCATED_LINE__'
+const TRUNCATION_MARKER = '__METRORA_TRUNCATED_LINE__'
 
 function rawString(source: string, field: string): string | undefined {
   const match = new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`).exec(source)

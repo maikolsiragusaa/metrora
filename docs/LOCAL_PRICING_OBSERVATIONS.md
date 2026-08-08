@@ -50,7 +50,7 @@ A price record may carry ordered rate bands for cases where the provider changes
 
 Historical calculation selects the highest threshold strictly exceeded by the observed request. At the exact threshold, the lower band still applies. When a record has conditional bands but the collector cannot provide trustworthy prompt-size evidence, calculation returns `unavailable` rather than assuming the cheaper base rate.
 
-The calculator keeps billable output explicit because some collectors expose reasoning tokens separately while providers bill them with output. It also preserves the inherited one-hour cache-write treatment and verifies formula parity against the current flat-rate CodeBurn-derived engine.
+The calculator keeps billable output explicit because some collectors expose reasoning tokens separately while providers bill them with output. It also preserves the inherited one-hour cache-write treatment and verifies formula parity against the current flat-rate pricing engine.
 
 ## Reviewed and local precedence
 

@@ -40,7 +40,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./lib/ipc', async orig => {
   const actual = await orig<typeof import('./lib/ipc')>()
-  return { ...actual, codeburn: mocks }
+  return { ...actual, metrora: mocks }
 })
 
 function dateKey(d: Date): string {
@@ -150,7 +150,7 @@ function installDefaultMocks() {
     },
     details: [],
   })
-  mocks.getIdentity.mockResolvedValue({ name: 'CodeBurn Mac', fingerprint: 'AA:BB:CC' })
+  mocks.getIdentity.mockResolvedValue({ name: 'Metrora Mac', fingerprint: 'AA:BB:CC' })
   mocks.getDevicesScan.mockResolvedValue({ found: [] })
   mocks.getDevices.mockResolvedValue({
     perDevice: [],
@@ -179,25 +179,25 @@ describe('App shortcuts', () => {
     localStorage.clear()
     // Pin the boot period so the provider/config tests below are independent of
     // the app-wide default ('today'); tests that exercise the default set it.
-    localStorage.setItem('codeburn.defaultPeriod', '30days')
+    localStorage.setItem('metrora.defaultPeriod', '30days')
     document.documentElement.removeAttribute('data-theme')
   })
 
   it('applies the persisted theme on app boot before Settings mounts', async () => {
-    localStorage.setItem('codeburn.theme', 'dark')
+    localStorage.setItem('metrora.theme', 'dark')
     render(<App />)
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
     expect(screen.queryByRole('heading', { name: 'General' })).not.toBeInTheDocument()
   })
 
   it('boots with the persisted default period from Settings', async () => {
-    localStorage.setItem('codeburn.defaultPeriod', 'week')
+    localStorage.setItem('metrora.defaultPeriod', 'week')
     render(<App />)
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('week', 'all'))
   })
 
   it('boots to today when no default period is persisted', async () => {
-    localStorage.removeItem('codeburn.defaultPeriod')
+    localStorage.removeItem('metrora.defaultPeriod')
     render(<App />)
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('today', 'all'))
   })
@@ -208,7 +208,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('No sessions in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
   })
 
   it('keeps command navigation, settings, and refresh shortcuts active without stale hints', async () => {
@@ -222,16 +222,16 @@ describe('App shortcuts', () => {
     expect(screen.queryByText('Export view')).not.toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('No sessions in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
-    expect(await screen.findByText(/PR links are captured as sessions are parsed/)).toBeInTheDocument()
+    expect(await screen.findByText(/No PR-linked work yet/)).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '4', metaKey: true })
     expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '5', metaKey: true })
-    expect(await screen.findByText('No waste findings in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No actionable opportunities detected in this range.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '6', metaKey: true })
     expect(await screen.findByText('Other models')).toBeInTheDocument()
@@ -240,7 +240,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByText('Need at least two models with usage in this range to compare.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '8', metaKey: true })
-    expect(await screen.findByText('Not connected. Log in with the Claude CLI.')).toBeInTheDocument()
+    expect(await screen.findByText(/secure Workspace runtime did not return a public status/)).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: ',', metaKey: true })
     expect((await screen.findAllByText('Settings')).length).toBeGreaterThan(0)
@@ -333,7 +333,7 @@ describe('App shortcuts', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'Default Claude' }))
 
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('30days', 'all', undefined, CONFIG_A))
-    expect(localStorage.getItem('codeburn.claudeConfigSource')).toBe(CONFIG_A)
+    expect(localStorage.getItem('metrora.claudeConfigSource')).toBe(CONFIG_A)
   })
 
   it('resets a non-Claude provider filter to all when a config is selected', async () => {
@@ -372,11 +372,11 @@ describe('App shortcuts', () => {
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('30days', 'codex'))
     // The incompatible combination must never reach the CLI.
     expect(mocks.getOverview.mock.calls).not.toContainEqual(['30days', 'codex', undefined, CONFIG_A])
-    expect(localStorage.getItem('codeburn.claudeConfigSource')).toBeNull()
+    expect(localStorage.getItem('metrora.claudeConfigSource')).toBeNull()
   })
 
   it('boots with the persisted config source and clears it via All Claude configs', async () => {
-    localStorage.setItem('codeburn.claudeConfigSource', CONFIG_A)
+    localStorage.setItem('metrora.claudeConfigSource', CONFIG_A)
     mocks.getOverview.mockResolvedValue(withConfigs(overviewPayload()))
     render(<App />)
 
@@ -386,7 +386,7 @@ describe('App shortcuts', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'All Claude configs' }))
 
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('30days', 'all'))
-    expect(localStorage.getItem('codeburn.claudeConfigSource')).toBeNull()
+    expect(localStorage.getItem('metrora.claudeConfigSource')).toBeNull()
   })
 
   it('applies a calendar range to overview and visible section polls', async () => {
@@ -421,27 +421,27 @@ describe('App shortcuts', () => {
   })
 
   it('shows no banner when today spend is under 80% of the budget', async () => {
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'usd', value: 100 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 100 }))
     render(<App />)
     expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
     expect(screen.queryByText(/daily budget/i)).not.toBeInTheDocument()
   })
 
   it('warns when today spend reaches 80% of the daily budget', async () => {
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'usd', value: 14 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 14 }))
     render(<App />)
     // 12.34 / 14 = 88.1% → warning band
     expect(await screen.findByText("Today's spend is at 88% of your daily budget")).toBeInTheDocument()
   })
 
   it('alerts and dismisses for the rest of the day when the budget is exceeded', async () => {
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'usd', value: 10 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 10 }))
     render(<App />)
     expect(await screen.findByText('Daily budget exceeded: $12.34 of $10.00')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(screen.queryByText(/Daily budget exceeded/)).not.toBeInTheDocument())
-    expect(localStorage.getItem('codeburn.dailyBudget.dismissed')).toBe(dateKey(new Date()))
+    expect(localStorage.getItem('metrora.dailyBudget.dismissed')).toBe(dateKey(new Date()))
   })
 
   it('evaluates a token budget only on the all-providers view', async () => {
@@ -449,7 +449,7 @@ describe('App shortcuts', () => {
     payload.history.daily[0]!.inputTokens = 60_000
     payload.history.daily[0]!.outputTokens = 40_000
     mocks.getOverview.mockResolvedValue(payload)
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'tokens', value: 90_000 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'tokens', value: 90_000 }))
     render(<App />)
     expect(await screen.findByText('Daily budget exceeded: 100K of 90K')).toBeInTheDocument()
 
@@ -493,10 +493,10 @@ describe('provider prefetch storm', () => {
     localStorage.clear()
     // Pin the cadence to 30s so the fake-timer soak math below is independent of
     // the app-wide default (bumped to 60s for energy).
-    localStorage.setItem('codeburn.refreshInterval', '30s')
+    localStorage.setItem('metrora.refreshInterval', '30s')
     // Pin the boot period so these prefetch assertions are independent of the
     // app-wide default ('today').
-    localStorage.setItem('codeburn.defaultPeriod', '30days')
+    localStorage.setItem('metrora.defaultPeriod', '30days')
     __resetPolledMemo()
   })
 
@@ -544,12 +544,12 @@ describe('energy: hidden-window polling', () => {
   beforeEach(() => {
     installDefaultMocks()
     localStorage.clear()
-    localStorage.setItem('codeburn.refreshInterval', '30s') // pin cadence for the soak math
+    localStorage.setItem('metrora.refreshInterval', '30s') // pin cadence for the soak math
     __resetPolledMemo()
   })
 
   // The whole app's data flows through usePolled, which is the ONLY driver of CLI
-  // spawns (each codeburn.getX → IPC → spawnCli). This measures that a hidden
+  // spawns (each metrora.getX → IPC → spawnCli). This measures that a hidden
   // window issues ZERO new interval spawns, and that visibility resumes them —
   // the unit-level stand-in for the packaged visible-vs-hidden sample.
   it('issues zero new interval spawns while hidden and resumes when visible', async () => {
@@ -597,7 +597,7 @@ describe('currency correctness', () => {
     localStorage.clear()
     // Pin the boot period so the memo keys below match the app's boot fetch,
     // independent of the app-wide default ('today').
-    localStorage.setItem('codeburn.defaultPeriod', '30days')
+    localStorage.setItem('metrora.defaultPeriod', '30days')
     __resetPolledMemo()
   })
 
@@ -625,12 +625,12 @@ describe('currency correctness', () => {
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
   })
 
-  it('clears the instant-switch memo and force-refreshes when currency is reset', async () => {
+  it('preserves warmed usage memos and refreshes the active Overview when currency is reset', async () => {
     render(<App />)
     expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
 
-    // A warmed entry (as the prefetcher would leave one) that must be purged so a
-    // later switch can't repaint a payload computed under the old currency.
+    // A warmed entry remains valid because currency is a presentation transform
+    // over raw USD accounting and must not invalidate unrelated usage views.
     primePolledMemo('sentinel-warmed-key', { stale: true })
     expect(hasPolledMemo('sentinel-warmed-key')).toBe(true)
 
@@ -639,9 +639,10 @@ describe('currency correctness', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reset to USD' }))
 
     await waitFor(() => expect(mocks.resetCurrency).toHaveBeenCalled())
-    // Memo purged and the active view force-refreshed so the new currency lands fast.
+    // Only the active Overview is refreshed so the new currency descriptor lands
+    // without rescanning every section.
     await waitFor(() => expect(mocks.getOverview.mock.calls.length).toBeGreaterThan(overviewCalls))
-    expect(hasPolledMemo('sentinel-warmed-key')).toBe(false)
+    expect(hasPolledMemo('sentinel-warmed-key')).toBe(true)
   })
 })
 

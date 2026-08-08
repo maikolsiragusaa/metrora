@@ -61,7 +61,7 @@ function makeUniqueLabels(sources: ClaudeConfigSource[]): ClaudeConfigSource[] {
 /// removed (resolved-path equality). Precedence: `CLAUDE_CONFIG_DIRS` (a
 /// `path.delimiter`-separated list, ":" on POSIX, ";" on Windows), then
 /// `CLAUDE_CONFIG_DIR` (single dir), then the `claudeConfigDirs` array in
-/// `~/.config/codeburn/config.json` (how the macOS menubar configures
+/// `~/.config/metrora/config.json` (how the macOS menubar configures
 /// multi-account aggregation, since a GUI app can't inherit the shell env),
 /// then `~/.claude`. Sessions from every returned dir are merged into one
 /// ProjectSummary per project name in `src/parser.ts:scanProjectDirs`, so two
@@ -112,11 +112,18 @@ function cacheDesktopSessionsDirs(key: string, candidates: string[]): string[] {
 }
 
 export function getDesktopSessionsDirs(): string[] {
-  const override = process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
+  const override = process.env['METRORA_DESKTOP_SESSIONS_DIR']
   const appDataInput = process.env['APPDATA']
   const localAppDataInput = process.env['LOCALAPPDATA']
   const platform = process.platform
-  const cacheKey = JSON.stringify([platform, override ?? null, appDataInput ?? null, localAppDataInput ?? null])
+  const homeDir = homedir()
+  const cacheKey = JSON.stringify([
+    platform,
+    homeDir,
+    override ?? null,
+    appDataInput ?? null,
+    localAppDataInput ?? null,
+  ])
   const cached = desktopSessionsDirsCache.get(cacheKey)
   if (cached) return [...cached]
 
@@ -124,17 +131,17 @@ export function getDesktopSessionsDirs(): string[] {
   if (platform === 'darwin') {
     return cacheDesktopSessionsDirs(
       cacheKey,
-      [join(homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')],
+      [join(homeDir, 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions')],
     )
   }
   if (platform === 'win32') {
     const appData = appDataInput?.trim()
     const candidates = [
-      join(appData || join(homedir(), 'AppData', 'Roaming'), 'Claude', 'local-agent-mode-sessions'),
+      join(appData || join(homeDir, 'AppData', 'Roaming'), 'Claude', 'local-agent-mode-sessions'),
     ]
 
     const localAppData = localAppDataInput?.trim()
-    const packagesDir = join(localAppData || join(homedir(), 'AppData', 'Local'), 'Packages')
+    const packagesDir = join(localAppData || join(homeDir, 'AppData', 'Local'), 'Packages')
     try {
       const entries = readdirSync(packagesDir, { withFileTypes: true })
         .filter(entry =>
@@ -166,7 +173,7 @@ export function getDesktopSessionsDirs(): string[] {
   }
   return cacheDesktopSessionsDirs(
     cacheKey,
-    [join(homedir(), '.config', 'Claude', 'local-agent-mode-sessions')],
+    [join(homeDir, '.config', 'Claude', 'local-agent-mode-sessions')],
   )
 }
 

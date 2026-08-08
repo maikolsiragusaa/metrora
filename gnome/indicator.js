@@ -105,14 +105,14 @@ function formatTime(date) {
   return date.toLocaleDateString();
 }
 
-export const CodeBurnIndicator = GObject.registerClass(
-class CodeBurnIndicator extends PanelMenu.Button {
+export const MetroraIndicator = GObject.registerClass(
+class MetroraIndicator extends PanelMenu.Button {
   _init(extension) {
     super._init(0.0, 'Metrora');
 
     this._extension = extension;
     this._settings = extension.getSettings();
-    this._dataClient = new DataClient(this._settings.get_string('codeburn-path'));
+    this._dataClient = new DataClient(this._settings.get_string('metrora-path'));
     this._settingsChangedIds = [];
 
     this._period = this._settings.get_string('default-period') || 'today';
@@ -148,17 +148,17 @@ class CodeBurnIndicator extends PanelMenu.Button {
   // -- Panel button --
 
   _buildPanelButton() {
-    const box = new St.BoxLayout({ style_class: 'panel-status-menu-box codeburn-panel' });
+    const box = new St.BoxLayout({ style_class: 'panel-status-menu-box metrora-panel' });
     this._panelIcon = new St.Icon({
       gicon: Gio.icon_new_for_string(`${this._extension.path}/icons/metrora-symbolic.svg`),
       icon_size: 16,
       y_align: Clutter.ActorAlign.CENTER,
-      style_class: 'system-status-icon codeburn-flame',
+      style_class: 'system-status-icon metrora-flame',
     });
     this._panelLabel = new St.Label({
       text: '...',
       y_align: Clutter.ActorAlign.CENTER,
-      style_class: 'codeburn-label',
+      style_class: 'metrora-label',
     });
     box.add_child(this._panelIcon);
     box.add_child(this._panelLabel);
@@ -170,18 +170,18 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _buildPopup() {
     try {
-      this.menu.box.add_style_class_name('codeburn-menu');
+      this.menu.box.add_style_class_name('metrora-menu');
       this._popupHost = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
-      this._popupHost.add_style_class_name('codeburn-host');
+      this._popupHost.add_style_class_name('metrora-host');
       this.menu.addMenuItem(this._popupHost);
 
-      this._root = new St.BoxLayout({ vertical: true, style_class: 'codeburn-root', x_expand: true });
+      this._root = new St.BoxLayout({ vertical: true, style_class: 'metrora-root', x_expand: true });
       this._popupHost.add_child(this._root);
 
       this._buildBrandHeader();
 
       this._scrollView = new St.ScrollView({
-        style_class: 'codeburn-scroll',
+        style_class: 'metrora-scroll',
         hscrollbar_policy: St.PolicyType.NEVER,
         vscrollbar_policy: St.PolicyType.AUTOMATIC,
         y_expand: true,
@@ -201,16 +201,16 @@ class CodeBurnIndicator extends PanelMenu.Button {
       this._buildFindingsSection();
       this._buildFooter();
     } catch (e) {
-      log(`CodeBurn: popup build error: ${e.message}\n${e.stack}`);
+      log(`Metrora: popup build error: ${e.message}\n${e.stack}`);
     }
   }
 
   _buildBrandHeader() {
-    const header = new St.BoxLayout({ vertical: true, style_class: 'codeburn-brand-header' });
-    const title = new St.BoxLayout({ style_class: 'codeburn-brand-row' });
-    title.add_child(new St.Label({ text: 'Metrora', style_class: 'codeburn-brand-primary' }));
+    const header = new St.BoxLayout({ vertical: true, style_class: 'metrora-brand-header' });
+    const title = new St.BoxLayout({ style_class: 'metrora-brand-row' });
+    title.add_child(new St.Label({ text: 'Metrora', style_class: 'metrora-brand-primary' }));
     header.add_child(title);
-    header.add_child(new St.Label({ text: 'Local AI usage intelligence', style_class: 'codeburn-brand-subhead' }));
+    header.add_child(new St.Label({ text: 'Local AI usage intelligence', style_class: 'metrora-brand-subhead' }));
     this._root.add_child(header);
   }
 
@@ -226,17 +226,17 @@ class CodeBurnIndicator extends PanelMenu.Button {
       : [PROVIDERS[0], ...PROVIDERS.slice(1).filter(p => detected.includes(p.id) && !disabled.has(p.id))];
 
     if (tabs.length === 1) {
-      const badge = new St.Label({ text: tabs[0].label, style_class: 'codeburn-agent-badge' });
-      const row = new St.BoxLayout({ style_class: 'codeburn-tab-row' });
+      const badge = new St.Label({ text: tabs[0].label, style_class: 'metrora-agent-badge' });
+      const row = new St.BoxLayout({ style_class: 'metrora-tab-row' });
       row.add_child(badge);
       this._scrollContent.add_child(row);
       return;
     }
 
     const useScroll = tabs.length > 5;
-    this._agentTabRow = new St.BoxLayout({ style_class: 'codeburn-tab-row' });
+    this._agentTabRow = new St.BoxLayout({ style_class: 'metrora-tab-row' });
     for (const p of tabs) {
-      const btn = new St.Button({ label: p.label, style_class: 'codeburn-tab', can_focus: true, x_expand: !useScroll });
+      const btn = new St.Button({ label: p.label, style_class: 'metrora-tab', can_focus: true, x_expand: !useScroll });
       btn.connect('clicked', () => {
         this._provider = p.id;
         this._updateAgentTabStyle();
@@ -247,7 +247,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
     }
     if (useScroll) {
       const agentScroll = new St.ScrollView({
-        style_class: 'codeburn-agent-scroll',
+        style_class: 'metrora-agent-scroll',
         hscrollbar_policy: St.PolicyType.AUTOMATIC,
         vscrollbar_policy: St.PolicyType.NEVER,
       });
@@ -261,20 +261,20 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _updateAgentTabStyle() {
     for (const [id, btn] of this._agentTabs) {
-      if (id === this._provider) btn.add_style_class_name('codeburn-tab-active');
-      else btn.remove_style_class_name('codeburn-tab-active');
+      if (id === this._provider) btn.add_style_class_name('metrora-tab-active');
+      else btn.remove_style_class_name('metrora-tab-active');
     }
   }
 
   _buildHero() {
-    const hero = new St.BoxLayout({ vertical: true, style_class: 'codeburn-hero' });
-    const topLine = new St.BoxLayout({ style_class: 'codeburn-hero-top' });
-    this._heroDot = new St.Widget({ style_class: 'codeburn-hero-dot' });
-    this._heroLabel = new St.Label({ text: 'Loading...', style_class: 'codeburn-hero-label' });
+    const hero = new St.BoxLayout({ vertical: true, style_class: 'metrora-hero' });
+    const topLine = new St.BoxLayout({ style_class: 'metrora-hero-top' });
+    this._heroDot = new St.Widget({ style_class: 'metrora-hero-dot' });
+    this._heroLabel = new St.Label({ text: 'Loading...', style_class: 'metrora-hero-label' });
     topLine.add_child(this._heroDot);
     topLine.add_child(this._heroLabel);
-    this._heroAmount = new St.Label({ text: '$0.00', style_class: 'codeburn-hero-amount' });
-    this._heroMeta = new St.Label({ text: '', style_class: 'codeburn-hero-meta' });
+    this._heroAmount = new St.Label({ text: '$0.00', style_class: 'metrora-hero-amount' });
+    this._heroMeta = new St.Label({ text: '', style_class: 'metrora-hero-meta' });
     hero.add_child(topLine);
     hero.add_child(this._heroAmount);
     hero.add_child(this._heroMeta);
@@ -282,10 +282,10 @@ class CodeBurnIndicator extends PanelMenu.Button {
   }
 
   _buildPeriodTabs() {
-    const row = new St.BoxLayout({ style_class: 'codeburn-tab-row codeburn-period-row' });
+    const row = new St.BoxLayout({ style_class: 'metrora-tab-row metrora-period-row' });
     this._periodTabs = new Map();
     for (const p of PERIODS) {
-      const btn = new St.Button({ label: p.label, style_class: 'codeburn-period', can_focus: true, x_expand: true });
+      const btn = new St.Button({ label: p.label, style_class: 'metrora-period', can_focus: true, x_expand: true });
       btn.connect('clicked', () => {
         this._period = p.id;
         this._updatePeriodTabStyle();
@@ -300,16 +300,16 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _updatePeriodTabStyle() {
     for (const [id, btn] of this._periodTabs) {
-      if (id === this._period) btn.add_style_class_name('codeburn-period-active');
-      else btn.remove_style_class_name('codeburn-period-active');
+      if (id === this._period) btn.add_style_class_name('metrora-period-active');
+      else btn.remove_style_class_name('metrora-period-active');
     }
   }
 
   _buildInsightPills() {
-    const row = new St.BoxLayout({ style_class: 'codeburn-insight-row' });
+    const row = new St.BoxLayout({ style_class: 'metrora-insight-row' });
     this._insightPills = new Map();
     for (const i of INSIGHTS) {
-      const btn = new St.Button({ label: i.label, style_class: 'codeburn-insight-pill', can_focus: true, x_expand: true });
+      const btn = new St.Button({ label: i.label, style_class: 'metrora-insight-pill', can_focus: true, x_expand: true });
       btn.connect('clicked', () => {
         this._insight = i.id;
         this._updateInsightPillStyle();
@@ -324,52 +324,52 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _updateInsightPillStyle() {
     for (const [id, btn] of this._insightPills) {
-      if (id === this._insight) btn.add_style_class_name('codeburn-insight-pill-active');
-      else btn.remove_style_class_name('codeburn-insight-pill-active');
+      if (id === this._insight) btn.add_style_class_name('metrora-insight-pill-active');
+      else btn.remove_style_class_name('metrora-insight-pill-active');
     }
   }
 
   _buildTokenChart() {
-    this._chartContainer = new St.BoxLayout({ vertical: true, style_class: 'codeburn-chart' });
-    const header = new St.BoxLayout({ style_class: 'codeburn-chart-header' });
-    this._chartLabel = new St.Label({ text: 'Tokens', style_class: 'codeburn-chart-label', x_expand: true });
-    this._chartTotal = new St.Label({ text: '', style_class: 'codeburn-chart-total' });
+    this._chartContainer = new St.BoxLayout({ vertical: true, style_class: 'metrora-chart' });
+    const header = new St.BoxLayout({ style_class: 'metrora-chart-header' });
+    this._chartLabel = new St.Label({ text: 'Tokens', style_class: 'metrora-chart-label', x_expand: true });
+    this._chartTotal = new St.Label({ text: '', style_class: 'metrora-chart-total' });
     header.add_child(this._chartLabel);
     header.add_child(this._chartTotal);
     this._chartContainer.add_child(header);
-    this._chartBars = new St.BoxLayout({ style_class: 'codeburn-chart-bars' });
+    this._chartBars = new St.BoxLayout({ style_class: 'metrora-chart-bars' });
     this._chartContainer.add_child(this._chartBars);
     this._scrollContent.add_child(this._chartContainer);
   }
 
   _buildContentArea() {
-    this._scrollContent.add_child(new St.Widget({ style_class: 'codeburn-divider' }));
-    this._contentArea = new St.BoxLayout({ vertical: true, style_class: 'codeburn-content' });
+    this._scrollContent.add_child(new St.Widget({ style_class: 'metrora-divider' }));
+    this._contentArea = new St.BoxLayout({ vertical: true, style_class: 'metrora-content' });
     this._scrollContent.add_child(this._contentArea);
   }
 
   _buildBudgetAlert() {
-    this._budgetLabel = new St.Label({ text: '', style_class: 'codeburn-budget-warning', visible: false });
+    this._budgetLabel = new St.Label({ text: '', style_class: 'metrora-budget-warning', visible: false });
     this._scrollContent.add_child(this._budgetLabel);
   }
 
   _buildFindingsSection() {
-    this._findingsBtn = new St.Button({ style_class: 'codeburn-findings', visible: false });
-    const box = new St.BoxLayout({ style_class: 'codeburn-findings-inner' });
-    this._findingsCount = new St.Label({ text: '', style_class: 'codeburn-findings-count' });
-    this._findingsSavings = new St.Label({ text: '', style_class: 'codeburn-findings-savings' });
+    this._findingsBtn = new St.Button({ style_class: 'metrora-findings', visible: false });
+    const box = new St.BoxLayout({ style_class: 'metrora-findings-inner' });
+    this._findingsCount = new St.Label({ text: '', style_class: 'metrora-findings-count' });
+    this._findingsSavings = new St.Label({ text: '', style_class: 'metrora-findings-savings' });
     box.add_child(this._findingsCount);
     box.add_child(this._findingsSavings);
     this._findingsBtn.set_child(box);
-    this._findingsBtn.connect('clicked', () => this._spawnTerminal(['codeburn', 'optimize']));
+    this._findingsBtn.connect('clicked', () => this._spawnTerminal(['metrora', 'optimize']));
     this._scrollContent.add_child(this._findingsBtn);
   }
 
   _buildLoadingIndicator() {
-    this._loadingBox = new St.BoxLayout({ vertical: true, style_class: 'codeburn-loading', visible: false, x_expand: true });
+    this._loadingBox = new St.BoxLayout({ vertical: true, style_class: 'metrora-loading', visible: false, x_expand: true });
     const widths = [0.85, 0.6, 0.92, 0.5, 0.75, 0.45];
     for (const w of widths) {
-      const bar = new St.Widget({ style_class: 'codeburn-skeleton-bar', x_expand: false });
+      const bar = new St.Widget({ style_class: 'metrora-skeleton-bar', x_expand: false });
       bar.set_width(Math.round(308 * w));
       bar.set_height(10);
       this._loadingBox.add_child(bar);
@@ -404,45 +404,45 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _buildFooter() {
     this._currencyPicker = new St.ScrollView({
-      style_class: 'codeburn-currency-picker',
+      style_class: 'metrora-currency-picker',
       visible: false,
       hscrollbar_policy: St.PolicyType.NEVER,
       vscrollbar_policy: St.PolicyType.AUTOMATIC,
     });
-    const pickerList = new St.BoxLayout({ vertical: true, style_class: 'codeburn-currency-list' });
+    const pickerList = new St.BoxLayout({ vertical: true, style_class: 'metrora-currency-list' });
     for (const c of CURRENCIES) {
-      const item = new St.Button({ label: `${c.symbol} ${c.code}`, style_class: 'codeburn-currency-item', can_focus: true });
-      if (c.code === this._currency.code) item.add_style_class_name('codeburn-currency-item-active');
+      const item = new St.Button({ label: `${c.symbol} ${c.code}`, style_class: 'metrora-currency-item', can_focus: true });
+      if (c.code === this._currency.code) item.add_style_class_name('metrora-currency-item-active');
       item.connect('clicked', () => {
         this._setCurrency(c.code);
         this._currencyPicker.hide();
-        pickerList.get_children().forEach(ch => ch.remove_style_class_name('codeburn-currency-item-active'));
-        item.add_style_class_name('codeburn-currency-item-active');
+        pickerList.get_children().forEach(ch => ch.remove_style_class_name('metrora-currency-item-active'));
+        item.add_style_class_name('metrora-currency-item-active');
       });
       pickerList.add_child(item);
     }
     this._currencyPicker.set_child(pickerList);
     this._root.add_child(this._currencyPicker);
 
-    const footer = new St.BoxLayout({ style_class: 'codeburn-footer' });
+    const footer = new St.BoxLayout({ style_class: 'metrora-footer' });
 
     this._currencyBtn = new St.Button({
       label: `${this._currency.code} ⌄`,
-      style_class: 'codeburn-footer-btn codeburn-currency-btn',
+      style_class: 'metrora-footer-btn metrora-currency-btn',
       can_focus: true,
     });
     this._currencyBtn.connect('clicked', () => this._toggleCurrencyPicker());
     footer.add_child(this._currencyBtn);
 
-    const refreshBtn = new St.Button({ label: 'Refresh', style_class: 'codeburn-footer-btn', can_focus: true, x_expand: true });
+    const refreshBtn = new St.Button({ label: 'Refresh', style_class: 'metrora-footer-btn', can_focus: true, x_expand: true });
     refreshBtn.connect('clicked', () => this._refresh(true));
     footer.add_child(refreshBtn);
 
-    const reportBtn = new St.Button({ label: 'Full Report', style_class: 'codeburn-footer-btn codeburn-footer-cta', can_focus: true, x_expand: true });
-    reportBtn.connect('clicked', () => this._spawnTerminal(['codeburn', 'report', '--period', this._period, '--provider', this._provider]));
+    const reportBtn = new St.Button({ label: 'Full Report', style_class: 'metrora-footer-btn metrora-footer-cta', can_focus: true, x_expand: true });
+    reportBtn.connect('clicked', () => this._spawnTerminal(['metrora', 'report', '--period', this._period, '--provider', this._provider]));
     footer.add_child(reportBtn);
 
-    const prefsBtn = new St.Button({ label: '⚙', style_class: 'codeburn-footer-btn codeburn-prefs-btn', can_focus: true });
+    const prefsBtn = new St.Button({ label: '⚙', style_class: 'metrora-footer-btn metrora-prefs-btn', can_focus: true });
     prefsBtn.connect('clicked', () => {
       this._extension.openPreferences();
       this.menu.close();
@@ -450,7 +450,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
     footer.add_child(prefsBtn);
 
     this._root.add_child(footer);
-    this._updatedLabel = new St.Label({ text: '', style_class: 'codeburn-updated' });
+    this._updatedLabel = new St.Label({ text: '', style_class: 'metrora-updated' });
     this._root.add_child(this._updatedLabel);
   }
 
@@ -463,8 +463,8 @@ class CodeBurnIndicator extends PanelMenu.Button {
     };
     watch('refresh-interval', () => this._restartRefreshLoop());
     watch('compact-mode', () => { this._panelLabel.visible = !this._settings.get_boolean('compact-mode'); });
-    watch('codeburn-path', () => {
-      this._dataClient.setCodeburnPath(this._settings.get_string('codeburn-path'));
+    watch('metrora-path', () => {
+      this._dataClient.setMetroraPath(this._settings.get_string('metrora-path'));
       this._refresh(true);
     });
     watch('default-period', () => {
@@ -569,7 +569,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
       if (this._contentArea) this._contentArea.opacity = 255;
       if (gen !== this._refreshGen) return;
       if (e.message?.includes('cancelled')) return;
-      log(`CodeBurn: refresh error: ${e.message}`);
+      log(`Metrora: refresh error: ${e.message}`);
       if (!this._payload) this._renderError(e.message);
     }
   }
@@ -635,12 +635,12 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
     for (let i = 0; i < days.length; i++) {
       const h = Math.max(2, Math.round((totals[i] / maxTotal) * CHART_HEIGHT));
-      const col = new St.BoxLayout({ vertical: true, style_class: 'codeburn-chart-col', reactive: true });
+      const col = new St.BoxLayout({ vertical: true, style_class: 'metrora-chart-col', reactive: true });
       col.set_width(barW);
       col.set_height(CHART_HEIGHT);
-      const spacer = new St.Widget({ style_class: 'codeburn-chart-spacer' });
+      const spacer = new St.Widget({ style_class: 'metrora-chart-spacer' });
       spacer.set_height(CHART_HEIGHT - h);
-      const bar = new St.Widget({ style_class: 'codeburn-chart-bar' });
+      const bar = new St.Widget({ style_class: 'metrora-chart-bar' });
       bar.set_width(barW);
       bar.set_height(h);
       col.add_child(spacer);
@@ -652,14 +652,14 @@ class CodeBurnIndicator extends PanelMenu.Button {
       const cost = days[i]?.cost != null ? this._fmt(days[i].cost) : '';
       col.connect('enter-event', () => {
         this._chartTotal.set_text(`${date}  ${inTok}/${outTok}  ${cost}`);
-        this._chartTotal.add_style_class_name('codeburn-chart-total-hover');
-        bar.add_style_class_name('codeburn-chart-bar-hover');
+        this._chartTotal.add_style_class_name('metrora-chart-total-hover');
+        bar.add_style_class_name('metrora-chart-bar-hover');
         return Clutter.EVENT_PROPAGATE;
       });
       col.connect('leave-event', () => {
         this._chartTotal.set_text(this._chartSummaryText);
-        this._chartTotal.remove_style_class_name('codeburn-chart-total-hover');
-        bar.remove_style_class_name('codeburn-chart-bar-hover');
+        this._chartTotal.remove_style_class_name('metrora-chart-total-hover');
+        bar.remove_style_class_name('metrora-chart-bar-hover');
         return Clutter.EVENT_PROPAGATE;
       });
 
@@ -681,16 +681,16 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _renderActivityView() {
     const current = this._payload?.current ?? {};
     this._contentArea.add_child(this._sectionTitle('Activity'));
-    const actHeader = new St.BoxLayout({ style_class: 'codeburn-table-header' });
-    actHeader.add_child(new St.Label({ text: 'Name', style_class: 'codeburn-th', x_expand: true }));
-    actHeader.add_child(new St.Label({ text: 'Cost', style_class: 'codeburn-th codeburn-th-right codeburn-th-cost' }));
-    actHeader.add_child(new St.Label({ text: 'Turns', style_class: 'codeburn-th codeburn-th-right codeburn-th-turns' }));
-    actHeader.add_child(new St.Label({ text: '1-shot', style_class: 'codeburn-th codeburn-th-right codeburn-th-turns' }));
+    const actHeader = new St.BoxLayout({ style_class: 'metrora-table-header' });
+    actHeader.add_child(new St.Label({ text: 'Name', style_class: 'metrora-th', x_expand: true }));
+    actHeader.add_child(new St.Label({ text: 'Cost', style_class: 'metrora-th metrora-th-right metrora-th-cost' }));
+    actHeader.add_child(new St.Label({ text: 'Turns', style_class: 'metrora-th metrora-th-right metrora-th-turns' }));
+    actHeader.add_child(new St.Label({ text: '1-shot', style_class: 'metrora-th metrora-th-right metrora-th-turns' }));
     this._contentArea.add_child(actHeader);
-    const rows = new St.BoxLayout({ vertical: true, style_class: 'codeburn-activity-rows' });
+    const rows = new St.BoxLayout({ vertical: true, style_class: 'metrora-activity-rows' });
     const activities = Array.isArray(current.topActivities) ? current.topActivities : [];
     if (!activities.length) {
-      rows.add_child(new St.Label({ text: 'No activity for this period', style_class: 'codeburn-empty' }));
+      rows.add_child(new St.Label({ text: 'No activity for this period', style_class: 'metrora-empty' }));
     } else {
       const maxCost = activities.reduce((m, a) => Math.max(m, Number(a.cost) || 0), 0) || 1;
       for (const a of activities.slice(0, TOP_ACTIVITIES)) {
@@ -702,12 +702,12 @@ class CodeBurnIndicator extends PanelMenu.Button {
     const models = Array.isArray(current.topModels) ? current.topModels : [];
     if (models.length) {
       this._contentArea.add_child(this._sectionTitle('Models'));
-      const modHeader = new St.BoxLayout({ style_class: 'codeburn-table-header' });
-      modHeader.add_child(new St.Label({ text: 'Model', style_class: 'codeburn-th', x_expand: true }));
-      modHeader.add_child(new St.Label({ text: 'Cost', style_class: 'codeburn-th codeburn-th-right codeburn-th-cost' }));
-      modHeader.add_child(new St.Label({ text: 'Calls', style_class: 'codeburn-th codeburn-th-right codeburn-th-calls' }));
+      const modHeader = new St.BoxLayout({ style_class: 'metrora-table-header' });
+      modHeader.add_child(new St.Label({ text: 'Model', style_class: 'metrora-th', x_expand: true }));
+      modHeader.add_child(new St.Label({ text: 'Cost', style_class: 'metrora-th metrora-th-right metrora-th-cost' }));
+      modHeader.add_child(new St.Label({ text: 'Calls', style_class: 'metrora-th metrora-th-right metrora-th-calls' }));
       this._contentArea.add_child(modHeader);
-      const mrows = new St.BoxLayout({ vertical: true, style_class: 'codeburn-models-rows' });
+      const mrows = new St.BoxLayout({ vertical: true, style_class: 'metrora-models-rows' });
       for (const m of models.slice(0, 3)) mrows.add_child(this._buildModelRow(m));
       this._contentArea.add_child(mrows);
     }
@@ -716,16 +716,16 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _renderTrendView() {
     const daily = this._payload?.history?.daily ?? [];
     if (!daily.length) {
-      this._contentArea.add_child(new St.Label({ text: 'Not enough history yet', style_class: 'codeburn-empty' }));
+      this._contentArea.add_child(new St.Label({ text: 'Not enough history yet', style_class: 'metrora-empty' }));
       return;
     }
     for (const d of daily.slice(-7).reverse()) {
-      const row = new St.BoxLayout({ style_class: 'codeburn-trend-row' });
-      row.add_child(new St.Label({ text: d.date, style_class: 'codeburn-trend-date', x_expand: true }));
-      const costLabel = new St.Label({ text: this._fmt(d.cost), style_class: 'codeburn-trend-cost' });
+      const row = new St.BoxLayout({ style_class: 'metrora-trend-row' });
+      row.add_child(new St.Label({ text: d.date, style_class: 'metrora-trend-date', x_expand: true }));
+      const costLabel = new St.Label({ text: this._fmt(d.cost), style_class: 'metrora-trend-cost' });
       costLabel.clutter_text.x_align = Clutter.ActorAlign.END;
       row.add_child(costLabel);
-      const callsLabel = new St.Label({ text: `${Number(d.calls).toLocaleString()} calls`, style_class: 'codeburn-trend-calls' });
+      const callsLabel = new St.Label({ text: `${Number(d.calls).toLocaleString()} calls`, style_class: 'metrora-trend-calls' });
       callsLabel.clutter_text.x_align = Clutter.ActorAlign.END;
       row.add_child(callsLabel);
       this._contentArea.add_child(row);
@@ -735,7 +735,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _renderForecastView() {
     const daily = this._payload?.history?.daily ?? [];
     if (daily.length < 3) {
-      this._contentArea.add_child(new St.Label({ text: 'Need at least 3 days of history', style_class: 'codeburn-empty' }));
+      this._contentArea.add_child(new St.Label({ text: 'Need at least 3 days of history', style_class: 'metrora-empty' }));
       return;
     }
     const last7 = daily.slice(-7);
@@ -759,7 +759,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
     const current = this._payload?.current ?? {};
     const daily = this._payload?.history?.daily ?? [];
     this._contentArea.add_child(this._sectionTitle('Pulse'));
-    const row = new St.BoxLayout({ style_class: 'codeburn-pulse-row' });
+    const row = new St.BoxLayout({ style_class: 'metrora-pulse-row' });
     row.add_child(this._pulseTile(this._fmt(current.cost), 'cost'));
     row.add_child(this._pulseTile(Number(current.calls || 0).toLocaleString(), 'calls'));
     row.add_child(this._pulseTile(`${Number(current.cacheHitPercent || 0).toFixed(0)}%`, 'cache hit'));
@@ -811,8 +811,8 @@ class CodeBurnIndicator extends PanelMenu.Button {
   _renderError(message) {
     this._panelLabel.set_text('!');
     if (message?.includes('not found') || message?.includes('No such file')) {
-      this._heroLabel.set_text('CodeBurn CLI not found');
-      this._heroMeta.set_text('Install: npm i -g codeburn');
+      this._heroLabel.set_text('Metrora CLI not found');
+      this._heroMeta.set_text('Install: npm i -g metrora');
     } else {
       this._heroLabel.set_text('Error loading data');
       this._heroMeta.set_text(message?.substring(0, 80) || 'Unknown error');
@@ -843,7 +843,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
   // -- Currency --
 
   _loadCurrency() {
-    const configPath = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'codeburn', 'config.json']);
+    const configPath = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'metrora', 'config.json']);
     try {
       const [ok, contents] = GLib.file_get_contents(configPath);
       if (ok) {
@@ -864,7 +864,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
 
   _setCurrency(code) {
     try {
-      Gio.Subprocess.new(['codeburn', 'currency', code], Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+      Gio.Subprocess.new(['metrora', 'currency', code], Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
     } catch (_) { /* CLI missing */ }
     const known = CURRENCIES.find(c => c.code === code);
     this._currency = known || { code, symbol: `${code} ` };
@@ -904,42 +904,42 @@ class CodeBurnIndicator extends PanelMenu.Button {
   // -- UI helpers --
 
   _sectionTitle(text) {
-    return new St.Label({ text, style_class: 'codeburn-section-title' });
+    return new St.Label({ text, style_class: 'metrora-section-title' });
   }
 
   _kvRow(label, value) {
-    const row = new St.BoxLayout({ style_class: 'codeburn-kv-row' });
-    row.add_child(new St.Label({ text: label, style_class: 'codeburn-kv-label', x_expand: true }));
-    row.add_child(new St.Label({ text: String(value ?? '-'), style_class: 'codeburn-kv-value' }));
+    const row = new St.BoxLayout({ style_class: 'metrora-kv-row' });
+    row.add_child(new St.Label({ text: label, style_class: 'metrora-kv-label', x_expand: true }));
+    row.add_child(new St.Label({ text: String(value ?? '-'), style_class: 'metrora-kv-value' }));
     return row;
   }
 
   _pulseTile(value, label) {
-    const tile = new St.BoxLayout({ vertical: true, style_class: 'codeburn-pulse-tile', x_expand: true });
-    tile.add_child(new St.Label({ text: value, style_class: 'codeburn-pulse-value' }));
-    tile.add_child(new St.Label({ text: label, style_class: 'codeburn-pulse-label' }));
+    const tile = new St.BoxLayout({ vertical: true, style_class: 'metrora-pulse-tile', x_expand: true });
+    tile.add_child(new St.Label({ text: value, style_class: 'metrora-pulse-value' }));
+    tile.add_child(new St.Label({ text: label, style_class: 'metrora-pulse-label' }));
     return tile;
   }
 
   _buildActivityRow(activity, maxCost) {
-    const row = new St.BoxLayout({ vertical: true, style_class: 'codeburn-activity-row' });
-    const topLine = new St.BoxLayout({ style_class: 'codeburn-activity-top' });
-    topLine.add_child(new St.Label({ text: activity.name, style_class: 'codeburn-activity-name', x_expand: true }));
-    const costLabel = new St.Label({ text: this._fmt(activity.cost), style_class: 'codeburn-activity-cost' });
+    const row = new St.BoxLayout({ vertical: true, style_class: 'metrora-activity-row' });
+    const topLine = new St.BoxLayout({ style_class: 'metrora-activity-top' });
+    topLine.add_child(new St.Label({ text: activity.name, style_class: 'metrora-activity-name', x_expand: true }));
+    const costLabel = new St.Label({ text: this._fmt(activity.cost), style_class: 'metrora-activity-cost' });
     costLabel.clutter_text.x_align = Clutter.ActorAlign.END;
     topLine.add_child(costLabel);
-    const turnsLabel = new St.Label({ text: `${Number(activity.turns) || 0}`, style_class: 'codeburn-activity-turns' });
+    const turnsLabel = new St.Label({ text: `${Number(activity.turns) || 0}`, style_class: 'metrora-activity-turns' });
     turnsLabel.clutter_text.x_align = Clutter.ActorAlign.END;
     topLine.add_child(turnsLabel);
     const osText = activity.oneShotRate != null ? `${Math.round(Number(activity.oneShotRate) * 100)}%` : '--';
-    const osLabel = new St.Label({ text: osText, style_class: 'codeburn-activity-oneshot' });
+    const osLabel = new St.Label({ text: osText, style_class: 'metrora-activity-oneshot' });
     osLabel.clutter_text.x_align = Clutter.ActorAlign.END;
     topLine.add_child(osLabel);
     row.add_child(topLine);
 
-    const track = new St.BoxLayout({ style_class: 'codeburn-bar-track' });
+    const track = new St.BoxLayout({ style_class: 'metrora-bar-track' });
     const pct = Math.max(0.02, Math.min(1, Number(activity.cost) / maxCost));
-    const fill = new St.Widget({ style_class: 'codeburn-bar-fill' });
+    const fill = new St.Widget({ style_class: 'metrora-bar-fill' });
     fill.set_width(Math.round(BAR_TRACK_WIDTH * pct));
     track.add_child(fill);
     row.add_child(track);
@@ -947,9 +947,9 @@ class CodeBurnIndicator extends PanelMenu.Button {
   }
 
   _buildModelRow(model) {
-    const row = new St.BoxLayout({ style_class: 'codeburn-model-row' });
-    row.add_child(new St.Label({ text: model.name, style_class: 'codeburn-model-name', x_expand: true }));
-    const mc = new St.Label({ text: this._fmt(model.cost), style_class: 'codeburn-model-cost' });
+    const row = new St.BoxLayout({ style_class: 'metrora-model-row' });
+    row.add_child(new St.Label({ text: model.name, style_class: 'metrora-model-name', x_expand: true }));
+    const mc = new St.Label({ text: this._fmt(model.cost), style_class: 'metrora-model-cost' });
     mc.clutter_text.x_align = Clutter.ActorAlign.END;
     row.add_child(mc);
     // Show saved counterfactual when this local model has a savings
@@ -958,11 +958,11 @@ class CodeBurnIndicator extends PanelMenu.Button {
     const savings = Number(model.savingsUSD || 0);
     const savedLabel = new St.Label({
       text: savings > 0 ? this._fmt(savings) : '—',
-      style_class: 'codeburn-model-saved',
+      style_class: 'metrora-model-saved',
     });
     savedLabel.clutter_text.x_align = Clutter.ActorAlign.END;
     row.add_child(savedLabel);
-    const mcalls = new St.Label({ text: `${Number(model.calls || 0).toLocaleString()}`, style_class: 'codeburn-model-calls' });
+    const mcalls = new St.Label({ text: `${Number(model.calls || 0).toLocaleString()}`, style_class: 'metrora-model-calls' });
     mcalls.clutter_text.x_align = Clutter.ActorAlign.END;
     row.add_child(mcalls);
     return row;
@@ -975,11 +975,11 @@ class CodeBurnIndicator extends PanelMenu.Button {
     const scheme = this._themeSettings.get_string('color-scheme');
     const isDark = forceDark || scheme === 'prefer-dark';
     if (isDark) {
-      this._root?.add_style_class_name('codeburn-dark');
-      this._root?.remove_style_class_name('codeburn-light');
+      this._root?.add_style_class_name('metrora-dark');
+      this._root?.remove_style_class_name('metrora-light');
     } else {
-      this._root?.add_style_class_name('codeburn-light');
-      this._root?.remove_style_class_name('codeburn-dark');
+      this._root?.add_style_class_name('metrora-light');
+      this._root?.remove_style_class_name('metrora-dark');
     }
   }
 
@@ -990,7 +990,7 @@ class CodeBurnIndicator extends PanelMenu.Button {
     try {
       Gio.Subprocess.new(['gnome-terminal', '--', 'bash', '-lc', command], Gio.SubprocessFlags.NONE);
     } catch (e) {
-      log(`CodeBurn: terminal spawn error: ${e.message}`);
+      log(`Metrora: terminal spawn error: ${e.message}`);
     }
     this.menu.close();
   }

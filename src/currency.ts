@@ -76,7 +76,7 @@ function getCacheDir(): string {
   // Honor the same relocation override every other cache module uses
   // (session-cache, daily-cache, codex-cache, models); this was the one
   // straggler still hardcoding the default path.
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
 }
 
 function getRateCachePath(): string {

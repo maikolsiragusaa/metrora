@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: mocks }
+  return { ...actual, metrora: mocks }
 })
 
 const identity: Identity = { name: 'Toruk MacBook Pro', fingerprint: 'AA:11:22:33:44:55:66:77' }
@@ -66,7 +66,7 @@ describe('Settings', () => {
     mocks.getPlans.mockResolvedValue({ currency: 'EUR', today: { cost: 0, savings: 0, calls: 0 }, month: { cost: 0, savings: 0, calls: 0 }, plans: { claude: { id: 'claude-max', provider: 'claude', budget: 200, spent: 48, percentUsed: 24, status: 'under', projectedMonthEnd: 120, daysUntilReset: 19, periodStart: '2026-07-01', periodEnd: '2026-08-01' } } })
     mocks.getOverview.mockResolvedValue(overview)
     mocks.getAliases.mockResolvedValue([{ from: 'proxy-opus', to: 'claude-opus-4-6' }])
-    mocks.getPriceOverrides.mockResolvedValue({ overrides: [{ model: 'local/llama', inputPerM: 0.2, outputPerM: 0.6, cacheReadPerM: 0.05 }], configPath: '/home/user/.config/codeburn/config.json' })
+    mocks.getPriceOverrides.mockResolvedValue({ overrides: [{ model: 'local/llama', inputPerM: 0.2, outputPerM: 0.6, cacheReadPerM: 0.05 }], configPath: '/home/user/.config/metrora/config.json' })
     mocks.setPriceOverride.mockResolvedValue(actionOk)
     mocks.removePriceOverride.mockResolvedValue(actionOk)
     mocks.setCurrency.mockResolvedValue(actionOk)
@@ -82,12 +82,12 @@ describe('Settings', () => {
     document.documentElement.removeAttribute('data-theme')
   })
 
-  it('switches panes from the rail and renders the completed Plans pane', async () => {
+  it('switches panes from the rail and renders the completed AI plans pane', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
-    expect(screen.getByRole('heading', { name: 'Plans' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
+    expect(screen.getByRole('heading', { name: 'AI plans' })).toBeInTheDocument()
     expect((await screen.findAllByText('Claude Max 20x')).length).toBeGreaterThan(0)
   })
 
@@ -108,7 +108,7 @@ describe('Settings', () => {
     render(<Settings period="month" />)
     await user.click(screen.getByRole('button', { name: 'Dark' }))
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
-    expect(localStorage.getItem('codeburn.theme')).toBe('dark')
+    expect(localStorage.getItem('metrora.theme')).toBe('dark')
     await user.click(screen.getByRole('button', { name: 'System' }))
     expect(document.documentElement).not.toHaveAttribute('data-theme')
   })
@@ -132,7 +132,7 @@ describe('Settings', () => {
     await user.click(screen.getByLabelText('Daily budget'))
     await user.click(screen.getByRole('option', { name: 'USD amount' }))
     await user.type(screen.getByLabelText('Daily budget amount'), '25')
-    expect(JSON.parse(localStorage.getItem('codeburn.dailyBudget')!)).toEqual({ kind: 'usd', value: 25 })
+    expect(JSON.parse(localStorage.getItem('metrora.dailyBudget')!)).toEqual({ kind: 'usd', value: 25 })
   })
 
   it('rejects a non-positive daily budget without persisting it', async () => {
@@ -142,7 +142,7 @@ describe('Settings', () => {
     await user.click(screen.getByRole('option', { name: 'Tokens' }))
     await user.type(screen.getByLabelText('Daily budget amount'), '-5')
     expect(screen.getByText('Enter a positive number.')).toBeInTheDocument()
-    expect(localStorage.getItem('codeburn.dailyBudget')).toBeFalsy()
+    expect(localStorage.getItem('metrora.dailyBudget')).toBeFalsy()
   })
 
   it('lists providers from the real overview payload', async () => {
@@ -226,13 +226,13 @@ describe('Settings', () => {
   it('lists, removes, and adds plans through the action bridge', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     expect((await screen.findAllByText('Claude Max 20x')).length).toBeGreaterThan(0)
     expect(screen.getByText('$200.00/month · claude · 24% used')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Remove' }))
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     expect(mocks.resetPlan).toHaveBeenCalledWith('claude')
-    await user.click(screen.getByLabelText('Add a plan'))
+    await user.click(screen.getByLabelText('Add a provider plan'))
     await user.click(screen.getByRole('option', { name: 'Cursor Pro' }))
     await user.click(screen.getByRole('button', { name: 'Add' }))
     expect(mocks.setPlan).toHaveBeenCalledWith('cursor-pro', 'cursor')
@@ -241,7 +241,7 @@ describe('Settings', () => {
   it('shows detected subscriptions with an auto-detected tier and a disconnected hint', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     expect(await screen.findByText('Detected subscriptions')).toBeInTheDocument()
     expect(screen.getByText('Max 20x')).toBeInTheDocument()
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
@@ -251,7 +251,7 @@ describe('Settings', () => {
   it('expands the DetectedRow Connect affordance and forces a keychain refresh', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     await screen.findByText('Detected subscriptions')
     await user.click(screen.getByRole('button', { name: 'Connect' }))
     expect(screen.getByText('codex login')).toBeInTheDocument()
@@ -263,8 +263,8 @@ describe('Settings', () => {
   it('offers only non-OAuth budget presets; Claude and Codex are excluded', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
-    await user.click(await screen.findByLabelText('Add a plan'))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
+    await user.click(await screen.findByLabelText('Add a provider plan'))
     expect(screen.getByRole('option', { name: 'Cursor Pro' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'SuperGrok' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Claude Pro' })).not.toBeInTheDocument()
@@ -275,7 +275,7 @@ describe('Settings', () => {
   it('still lists a configured Claude manual plan with Remove and a superseded note', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     expect((await screen.findAllByText('Claude Max 20x')).length).toBeGreaterThan(0)
     expect(screen.getByText('superseded by the detected subscription')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
@@ -329,12 +329,12 @@ describe('Settings', () => {
 
   it('renders not-found and permission states for device reads', async () => {
     const user = userEvent.setup()
-    mocks.getIdentity.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    mocks.getIdentity.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
     mocks.getDevicesScan.mockRejectedValue({ kind: 'nonzero', message: 'Cursor permission denied: Full Disk Access required' })
-    mocks.getDevices.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    mocks.getDevices.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
     render(<Settings period="week" />)
     await user.click(screen.getByRole('button', { name: 'Devices' }))
-    await waitFor(() => expect(screen.getAllByText('Locate the codeburn CLI')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText('Locate the metrora CLI')).toHaveLength(2))
     expect(screen.getByText('permission denied; grant Full Disk Access')).toHaveStyle({ color: 'var(--warn)' })
   })
 })

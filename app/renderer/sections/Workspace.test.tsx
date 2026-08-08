@@ -19,7 +19,7 @@ const bridge = vi.hoisted(() => ({
   exportWorkspaceEvidence: vi.fn(),
 }))
 
-vi.mock('../lib/ipc', () => ({ metrora: bridge, codeburn: bridge }))
+vi.mock('../lib/ipc', () => ({ metrora: bridge }))
 
 function overviewPayload(): MenubarPayload {
   return {
@@ -192,11 +192,11 @@ describe('Workspace desktop view', () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
     expect(await screen.findByTestId('workspace-evidence-inspection')).toHaveTextContent(
-      'Read-only evidence verification in progress',
+      'Checking local workspace data',
     )
     expect(screen.getByText('Pending events').parentElement).toHaveTextContent('—')
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeDisabled()
     expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
     expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
 
@@ -275,7 +275,7 @@ describe('Workspace desktop view', () => {
 
     await waitFor(() => expect(bridge.pauseWorkspaceProduction).toHaveBeenCalledWith())
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeEnabled()
     expect(screen.getByText(/paused before scanning/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume production' }))
@@ -286,9 +286,9 @@ describe('Workspace desktop view', () => {
   it('requires reviewed events to enter a signed batch before export', async () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    const exportButton = await screen.findByRole('button', { name: 'Export verifiable evidence' })
+    const exportButton = await screen.findByRole('button', { name: 'Export signed data' })
     expect(exportButton).toBeDisabled()
-    expect(screen.getByText(/create a signed batch before export/i)).toBeInTheDocument()
+    expect(screen.getByText(/Sign the pending usage before exporting it/i)).toBeInTheDocument()
     expect(bridge.exportWorkspaceEvidence).not.toHaveBeenCalled()
   })
 
@@ -324,10 +324,10 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Create signed batch' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign pending usage' }))
     await waitFor(() => expect(bridge.createWorkspaceBatch).toHaveBeenCalledTimes(1))
 
-    const exportButton = screen.getByRole('button', { name: 'Export verifiable evidence' })
+    const exportButton = screen.getByRole('button', { name: 'Export signed data' })
     await waitFor(() => expect(exportButton).toBeEnabled())
     fireEvent.click(exportButton)
     await waitFor(() => expect(bridge.exportWorkspaceEvidence).toHaveBeenCalledTimes(1))
@@ -348,10 +348,10 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    expect((await screen.findAllByText('Evidence quarantined')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Needs attention')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
     expect(screen.getByText('Invalid').parentElement).toHaveTextContent('2')
   })
 
@@ -363,6 +363,6 @@ describe('Workspace desktop view', () => {
     expect(await screen.findByText(/will not open a plaintext fallback/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create local Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Produce reviewed measurements' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Export verifiable evidence' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Export signed data' })).not.toBeInTheDocument()
   })
 })

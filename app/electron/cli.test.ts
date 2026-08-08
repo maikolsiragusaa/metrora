@@ -4,15 +4,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync 
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, isAbsolute, relative, win32, posix } from 'node:path'
 
-import { spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, CliError, nodeManagerDirs, notFoundStage, resolveCodeburnPath, resolveTarget } from './cli'
+import { spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, CliError, nodeManagerDirs, notFoundStage, resolveMetroraPath, resolveTarget } from './cli'
 
 let dir: string
-const originalBin = process.env.CODEBURN_BIN
-const originalPathDirs = process.env.CODEBURN_PATH_DIRS
-const originalPathFile = process.env.CODEBURN_CLI_PATH_FILE
+const originalBin = process.env.METRORA_BIN
+const originalPathDirs = process.env.METRORA_PATH_DIRS
+const originalPathFile = process.env.METRORA_CLI_PATH_FILE
 const originalViteUrl = process.env.VITE_DEV_SERVER_URL
-const originalBundled = process.env.CODEBURN_BUNDLED_CLI
-const originalDevRepoRoot = process.env.CODEBURN_DEV_REPO_ROOT
+const originalBundled = process.env.METRORA_BUNDLED_CLI
+const originalDevRepoRoot = process.env.METRORA_DEV_REPO_ROOT
 
 /**
  * Writes a Node script. Spawn-oriented tests use the same bundled-entry path as
@@ -25,11 +25,11 @@ function fakeBin(name: string, body: string, target: 'bundled' | 'external' = 'b
   writeFileSync(p, `#!/usr/bin/env node\n${body}\n`, { mode: 0o755 })
   chmodSync(p, 0o755)
   if (target === 'external') {
-    process.env.CODEBURN_BIN = p
-    delete process.env.CODEBURN_BUNDLED_CLI
+    process.env.METRORA_BIN = p
+    delete process.env.METRORA_BUNDLED_CLI
   } else {
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_BUNDLED_CLI = p
+    delete process.env.METRORA_BIN
+    process.env.METRORA_BUNDLED_CLI = p
   }
   return p
 }
@@ -41,70 +41,70 @@ function fakeDevRepoCli(): string {
   mkdirSync(dirname(p), { recursive: true })
   writeFileSync(p, '#!/usr/bin/env node\n', { mode: 0o755 })
   chmodSync(p, 0o755)
-  process.env.CODEBURN_DEV_REPO_ROOT = repoRoot
+  process.env.METRORA_DEV_REPO_ROOT = repoRoot
   return p
 }
 
 beforeEach(() => {
   // Keep fixtures on the workspace volume. On Windows, path.relative across
   // drive letters returns an absolute path and invalidates relative-path tests.
-  dir = mkdtempSync(join(process.cwd(), '.codeburn-cli-'))
+  dir = mkdtempSync(join(process.cwd(), '.metrora-cli-'))
 })
 
 afterEach(() => {
-  if (originalBin === undefined) delete process.env.CODEBURN_BIN
-  else process.env.CODEBURN_BIN = originalBin
-  if (originalPathDirs === undefined) delete process.env.CODEBURN_PATH_DIRS
-  else process.env.CODEBURN_PATH_DIRS = originalPathDirs
-  if (originalPathFile === undefined) delete process.env.CODEBURN_CLI_PATH_FILE
-  else process.env.CODEBURN_CLI_PATH_FILE = originalPathFile
+  if (originalBin === undefined) delete process.env.METRORA_BIN
+  else process.env.METRORA_BIN = originalBin
+  if (originalPathDirs === undefined) delete process.env.METRORA_PATH_DIRS
+  else process.env.METRORA_PATH_DIRS = originalPathDirs
+  if (originalPathFile === undefined) delete process.env.METRORA_CLI_PATH_FILE
+  else process.env.METRORA_CLI_PATH_FILE = originalPathFile
   if (originalViteUrl === undefined) delete process.env.VITE_DEV_SERVER_URL
   else process.env.VITE_DEV_SERVER_URL = originalViteUrl
-  if (originalBundled === undefined) delete process.env.CODEBURN_BUNDLED_CLI
-  else process.env.CODEBURN_BUNDLED_CLI = originalBundled
-  if (originalDevRepoRoot === undefined) delete process.env.CODEBURN_DEV_REPO_ROOT
-  else process.env.CODEBURN_DEV_REPO_ROOT = originalDevRepoRoot
+  if (originalBundled === undefined) delete process.env.METRORA_BUNDLED_CLI
+  else process.env.METRORA_BUNDLED_CLI = originalBundled
+  if (originalDevRepoRoot === undefined) delete process.env.METRORA_DEV_REPO_ROOT
+  else process.env.METRORA_DEV_REPO_ROOT = originalDevRepoRoot
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('resolveCodeburnPath (Vite development)', () => {
+describe('resolveMetroraPath (Vite development)', () => {
   it('prefers the executable repo dist/cli.js when the Vite dev server is set', () => {
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    delete process.env.METRORA_BIN
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
     process.env.VITE_DEV_SERVER_URL = 'http://localhost:5173'
     const devBin = fakeDevRepoCli()
 
-    expect(resolveCodeburnPath()).toBe(devBin)
+    expect(resolveMetroraPath()).toBe(devBin)
   })
 
   it('prefers the repo dev CLI over a persisted-path file (stale global) in dev', () => {
-    // A persisted global (e.g. an older Homebrew codeburn) must NOT shadow the
+    // A persisted global (e.g. an older Homebrew metrora) must NOT shadow the
     // repo build in dev, or newly-added commands break. Regression: 0.9.15
     // lacked `sessions`, so the persisted path produced a CLI error.
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_PATH_DIRS = ''
-    const persistedTarget = join(dir, 'stale-codeburn')
+    delete process.env.METRORA_BIN
+    process.env.METRORA_PATH_DIRS = ''
+    const persistedTarget = join(dir, 'stale-metrora')
     writeFileSync(persistedTarget, '#!/usr/bin/env node\n', { mode: 0o755 })
     chmodSync(persistedTarget, 0o755)
     const persistedFile = join(dir, 'cli-path.v1')
     writeFileSync(persistedFile, persistedTarget)
-    process.env.CODEBURN_CLI_PATH_FILE = persistedFile
+    process.env.METRORA_CLI_PATH_FILE = persistedFile
     process.env.VITE_DEV_SERVER_URL = 'http://localhost:5173'
     const devBin = fakeDevRepoCli()
 
-    const resolved = resolveCodeburnPath()
+    const resolved = resolveMetroraPath()
     expect(resolved).toBe(devBin)
     expect(resolved).not.toBe(persistedTarget)
   })
 
   it('does not return the repo dev CLI outside the Vite dev server', () => {
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    delete process.env.METRORA_BIN
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
     delete process.env.VITE_DEV_SERVER_URL
 
-    expect(resolveCodeburnPath()).toBeNull()
+    expect(resolveMetroraPath()).toBeNull()
   })
 })
 
@@ -117,37 +117,37 @@ describe('resolveTarget (bundled CLI in the packaged app)', () => {
   }
 
   it('resolves the bundled CLI, beating a persisted path and PATH', () => {
-    delete process.env.CODEBURN_BIN
+    delete process.env.METRORA_BIN
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = ''
+    process.env.METRORA_PATH_DIRS = ''
     // A persisted global that should NOT win once a bundled CLI is present.
     const persistedTarget = join(dir, 'stale-global')
     writeFileSync(persistedTarget, '#!/usr/bin/env node\n', { mode: 0o755 })
     chmodSync(persistedTarget, 0o755)
     const persistedFile = join(dir, 'cli-path.v1')
     writeFileSync(persistedFile, persistedTarget)
-    process.env.CODEBURN_CLI_PATH_FILE = persistedFile
+    process.env.METRORA_CLI_PATH_FILE = persistedFile
 
     const entry = bundledEntry()
-    process.env.CODEBURN_BUNDLED_CLI = entry
+    process.env.METRORA_BUNDLED_CLI = entry
 
     expect(resolveTarget()).toEqual({ kind: 'bundled', entry })
-    expect(resolveCodeburnPath()).toBe(entry)
+    expect(resolveMetroraPath()).toBe(entry)
   })
 
-  it('CODEBURN_BIN still overrides the bundled CLI', () => {
+  it('METRORA_BIN still overrides the bundled CLI', () => {
     const override = fakeBin('override.js', 'process.stdout.write("{}")', 'external')
-    process.env.CODEBURN_BUNDLED_CLI = bundledEntry('bundled.js')
+    process.env.METRORA_BUNDLED_CLI = bundledEntry('bundled.js')
     delete process.env.VITE_DEV_SERVER_URL
 
     expect(resolveTarget()).toEqual({ kind: 'external', bin: override })
   })
 
   it('the dev repo CLI beats the bundled CLI in Vite development', () => {
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
-    process.env.CODEBURN_BUNDLED_CLI = bundledEntry('bundled.js')
+    delete process.env.METRORA_BIN
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.METRORA_BUNDLED_CLI = bundledEntry('bundled.js')
     process.env.VITE_DEV_SERVER_URL = 'http://localhost:5173'
     const devBin = fakeDevRepoCli()
 
@@ -155,58 +155,58 @@ describe('resolveTarget (bundled CLI in the packaged app)', () => {
     expect(target).toEqual({ kind: 'external', bin: devBin })
   })
 
-  it('falls through when CODEBURN_BUNDLED_CLI points at a missing file', () => {
-    delete process.env.CODEBURN_BIN
+  it('falls through when METRORA_BUNDLED_CLI points at a missing file', () => {
+    delete process.env.METRORA_BIN
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = '' // force an empty PATH search space
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
-    process.env.CODEBURN_BUNDLED_CLI = join(dir, 'does-not-exist', 'cli.js')
+    process.env.METRORA_PATH_DIRS = '' // force an empty PATH search space
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.METRORA_BUNDLED_CLI = join(dir, 'does-not-exist', 'cli.js')
 
     expect(resolveTarget()).toBeNull()
-    expect(resolveCodeburnPath()).toBeNull()
+    expect(resolveMetroraPath()).toBeNull()
   })
 
-  // The Windows P0: the packaged app set CODEBURN_BUNDLED_CLI to a C:\ path, but
+  // The Windows P0: the packaged app set METRORA_BUNDLED_CLI to a C:\ path, but
   // the guard was `startsWith('/')` (POSIX-only), so the bundled CLI was skipped
   // and resolution fell through to a PATH search that finds nothing → not-found
   // on 100% of Windows installs. The guard is now `path.isAbsolute`, which is
   // the platform variant (win32 on Windows). These tests pin both the intent
   // (relative paths are still rejected as a safety guard) and the Windows fix.
-  it('resolves an absolute CODEBURN_BUNDLED_CLI (as the packaged app sets it)', () => {
-    delete process.env.CODEBURN_BIN
+  it('resolves an absolute METRORA_BUNDLED_CLI (as the packaged app sets it)', () => {
+    delete process.env.METRORA_BIN
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
     const entry = bundledEntry('launch.js')
     expect(isAbsolute(entry)).toBe(true)
-    process.env.CODEBURN_BUNDLED_CLI = entry
+    process.env.METRORA_BUNDLED_CLI = entry
     expect(resolveTarget()).toEqual({ kind: 'bundled', entry })
   })
 
-  it('rejects a relative CODEBURN_BUNDLED_CLI even when the file exists (guards relative injection)', () => {
-    delete process.env.CODEBURN_BIN
+  it('rejects a relative METRORA_BUNDLED_CLI even when the file exists (guards relative injection)', () => {
+    delete process.env.METRORA_BIN
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
     const entry = bundledEntry('rel-launch.js')
     const rel = relative(process.cwd(), entry) // resolvable via cwd, but NOT absolute
     expect(isAbsolute(rel)).toBe(false)
-    process.env.CODEBURN_BUNDLED_CLI = rel
+    process.env.METRORA_BUNDLED_CLI = rel
     // File exists (isFile true), so only the isAbsolute guard can reject it.
     expect(resolveTarget()).toBeNull()
   })
 
-  it('rejects a relative CODEBURN_BIN override even when the file exists', () => {
+  it('rejects a relative METRORA_BIN override even when the file exists', () => {
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
-    delete process.env.CODEBURN_BUNDLED_CLI
-    const bin = join(dir, 'rel-codeburn.js')
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    delete process.env.METRORA_BUNDLED_CLI
+    const bin = join(dir, 'rel-metrora.js')
     writeFileSync(bin, '#!/usr/bin/env node\n', { mode: 0o755 })
     chmodSync(bin, 0o755)
     const rel = relative(process.cwd(), bin)
     expect(isAbsolute(rel)).toBe(false)
-    process.env.CODEBURN_BIN = rel
+    process.env.METRORA_BIN = rel
     expect(resolveTarget()).toBeNull()
   })
 })
@@ -230,36 +230,36 @@ describe('absolute-path guard is cross-platform (path.isAbsolute, not startsWith
 })
 
 describe('notFoundStage (non-sensitive telemetry enum for a not-found)', () => {
-  it('reports bundled-not-absolute for a relative CODEBURN_BUNDLED_CLI', () => {
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_BUNDLED_CLI = 'cli/dist/launch.js'
+  it('reports bundled-not-absolute for a relative METRORA_BUNDLED_CLI', () => {
+    delete process.env.METRORA_BIN
+    process.env.METRORA_BUNDLED_CLI = 'cli/dist/launch.js'
     expect(notFoundStage()).toBe('bundled-not-absolute')
   })
 
-  it('reports bundled-missing for an absolute CODEBURN_BUNDLED_CLI whose file is absent', () => {
-    delete process.env.CODEBURN_BIN
-    process.env.CODEBURN_BUNDLED_CLI = join(dir, 'nope', 'cli.js')
+  it('reports bundled-missing for an absolute METRORA_BUNDLED_CLI whose file is absent', () => {
+    delete process.env.METRORA_BIN
+    process.env.METRORA_BUNDLED_CLI = join(dir, 'nope', 'cli.js')
     expect(notFoundStage()).toBe('bundled-missing')
   })
 
-  it('reports bin-not-absolute for a relative CODEBURN_BIN override', () => {
-    process.env.CODEBURN_BIN = 'relative/codeburn'
-    delete process.env.CODEBURN_BUNDLED_CLI
+  it('reports bin-not-absolute for a relative METRORA_BIN override', () => {
+    process.env.METRORA_BIN = 'relative/metrora'
+    delete process.env.METRORA_BUNDLED_CLI
     expect(notFoundStage()).toBe('bin-not-absolute')
   })
 
   it('reports no-path-match when nothing is configured', () => {
-    delete process.env.CODEBURN_BIN
-    delete process.env.CODEBURN_BUNDLED_CLI
+    delete process.env.METRORA_BIN
+    delete process.env.METRORA_BUNDLED_CLI
     expect(notFoundStage()).toBe('no-path-match')
   })
 
   it('spawnCli rejects not-found carrying the resolution stage as detail', async () => {
-    delete process.env.CODEBURN_BIN
+    delete process.env.METRORA_BIN
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
-    process.env.CODEBURN_BUNDLED_CLI = 'cli/dist/launch.js' // relative → bundled-not-absolute
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.METRORA_BUNDLED_CLI = 'cli/dist/launch.js' // relative → bundled-not-absolute
     await expect(spawnCli(['status'])).rejects.toMatchObject({ kind: 'not-found', detail: 'bundled-not-absolute' })
   })
 })
@@ -276,18 +276,18 @@ describe('spawnSpecFor (bundled CLI runs via Electron-as-node)', () => {
   })
 
   it('spawns an external CLI directly, with no run-as-node flag', () => {
-    const spec = spawnSpecFor({ kind: 'external', bin: '/some/bin/codeburn' }, ['status'])
-    expect(spec.bin).toBe('/some/bin/codeburn')
+    const spec = spawnSpecFor({ kind: 'external', bin: '/some/bin/metrora' }, ['status'])
+    expect(spec.bin).toBe('/some/bin/metrora')
     expect(spec.args).toEqual(['status'])
     expect(spec.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
     expect((spec.env.PATH ?? '').split(delimiter)[0]).toBe('/some/bin')
   })
 
   it('spawnCli runs the bundled entry end-to-end as Node', async () => {
-    delete process.env.CODEBURN_BIN
+    delete process.env.METRORA_BIN
     delete process.env.VITE_DEV_SERVER_URL
-    process.env.CODEBURN_PATH_DIRS = ''
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
     // process.execPath is the Node running vitest here; a real packaged app uses
     // Electron's binary, but the spawn shape (execPath + entry + args + env) is
     // identical, so this exercises the whole bundled path.
@@ -296,7 +296,7 @@ describe('spawnSpecFor (bundled CLI runs via Electron-as-node)', () => {
       entry,
       'process.stdout.write(JSON.stringify({ ranAsNode: process.env.ELECTRON_RUN_AS_NODE === "1", firstArg: process.argv[2] }))\n',
     )
-    process.env.CODEBURN_BUNDLED_CLI = entry
+    process.env.METRORA_BUNDLED_CLI = entry
 
     const result = (await spawnCli(['status'])) as { ranAsNode: boolean; firstArg: string }
     expect(result).toEqual({ ranAsNode: true, firstArg: 'status' })
@@ -325,15 +325,15 @@ describe('spawnCli', () => {
   })
 
   it('rejects with kind "not-found" when no binary resolves', async () => {
-    delete process.env.CODEBURN_BIN
-    delete process.env.CODEBURN_BUNDLED_CLI
-    process.env.CODEBURN_PATH_DIRS = '' // force an empty search space
-    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-such-persisted-path')
+    delete process.env.METRORA_BIN
+    delete process.env.METRORA_BUNDLED_CLI
+    process.env.METRORA_PATH_DIRS = '' // force an empty search space
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-such-persisted-path')
     try {
       await expect(spawnCli(['status'])).rejects.toMatchObject({ kind: 'not-found' })
     } finally {
-      delete process.env.CODEBURN_PATH_DIRS
-      delete process.env.CODEBURN_CLI_PATH_FILE
+      delete process.env.METRORA_PATH_DIRS
+      delete process.env.METRORA_CLI_PATH_FILE
     }
   })
 
@@ -351,7 +351,7 @@ describe('spawn PATH augmentation (GUI-launched apps have a minimal PATH)', () =
   })
 
   it('spawnEnvFor dedupes and keeps the original PATH entries', () => {
-    const env = spawnEnvFor('/some/tool/bin/codeburn')
+    const env = spawnEnvFor('/some/tool/bin/metrora')
     const parts = (env.PATH ?? '').split(delimiter)
     expect(parts[0]).toBe('/some/tool/bin')
     expect(new Set(parts).size).toBe(parts.length)
@@ -364,7 +364,7 @@ describe('spawn PATH augmentation (GUI-launched apps have a minimal PATH)', () =
 describe('spawnCli coalescing (read-only)', () => {
   it('shares one child between two concurrent identical calls', async () => {
     const countFile = join(dir, 'spawns')
-    fakeBin('counter.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+    fakeBin('counter.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
     const [a, b] = await Promise.all([spawnCli(['status']), spawnCli(['status'])])
     expect(a).toEqual({ ok: 1 })
     expect(b).toEqual({ ok: 1 })
@@ -375,7 +375,7 @@ describe('spawnCli coalescing (read-only)', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     try {
       const countFile = join(dir, 'spawns')
-      fakeBin('counter-ttl.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+      fakeBin('counter-ttl.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
       vi.setSystemTime(0)
       await spawnCli(['status'])
       vi.setSystemTime(6_000)
@@ -388,14 +388,14 @@ describe('spawnCli coalescing (read-only)', () => {
 
   it('never coalesces config-mutating action calls', async () => {
     const countFile = join(dir, 'spawns')
-    fakeBin('action-counter.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write('done')`)
+    fakeBin('action-counter.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write('done')`)
     await Promise.all([spawnCliAction(['currency', 'EUR']), spawnCliAction(['currency', 'EUR'])])
     expect(readFileSync(countFile, 'utf8')).toBe('xx') // two independent spawns
   })
 
   it('flushes the read cache when an action completes, so post-action refetches are fresh', async () => {
     const countFile = join(dir, 'spawns')
-    fakeBin('mixed.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+    fakeBin('mixed.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
     await spawnCli(['model-alias', '--list']) // primes the 5s cache
     await spawnCliAction(['model-alias', 'a', 'b']) // config change → cache flush
     await spawnCli(['model-alias', '--list']) // must NOT serve the pre-action cache
@@ -420,7 +420,7 @@ describe('spawnCli concurrency scheduler', () => {
   // exactly when each child exits and can observe how many run at once.
   function schedulerBin(startedFile: string, releaseDir: string): void {
     fakeBin(
-      'sched.js',
+      'sched.cjs',
       `const fs = require('fs'); const path = require('path');
        const cmd = process.argv[2];
        fs.appendFileSync(${JSON.stringify(startedFile)}, cmd + '\\n');
@@ -560,20 +560,20 @@ describe('nodeManagerDirs (nvm resolution)', () => {
     else process.env.NVM_DIR = savedNvm
   })
 
-  it('scans nvm version dirs newest-first and takes the first that holds codeburn', () => {
+  it('scans nvm version dirs newest-first and takes the first that holds metrora', () => {
     // Two versions; the lexicographically-"newest" (v9.0.0 > v22.0.0 as strings)
-    // has NO codeburn, while the real newer v22.0.0 does. The old `sort().reverse()[0]`
+    // has NO metrora, while the real newer v22.0.0 does. The old `sort().reverse()[0]`
     // would pick v9.0.0's bin and miss the CLI entirely.
-    const nvm = mkdtempSync(join(tmpdir(), 'codeburn-nvm-'))
+    const nvm = mkdtempSync(join(tmpdir(), 'metrora-nvm-'))
     try {
       const versions = join(nvm, 'versions', 'node')
       const v9bin = join(versions, 'v9.0.0', 'bin')
       const v22bin = join(versions, 'v22.0.0', 'bin')
       mkdirSync(v9bin, { recursive: true })
       mkdirSync(v22bin, { recursive: true })
-      const codeburn = join(v22bin, 'codeburn')
-      writeFileSync(codeburn, '#!/bin/sh\n', { mode: 0o755 })
-      chmodSync(codeburn, 0o755)
+      const metrora = join(v22bin, 'metrora')
+      writeFileSync(metrora, '#!/bin/sh\n', { mode: 0o755 })
+      chmodSync(metrora, 0o755)
 
       process.env.NVM_DIR = nvm
       const dirs = nodeManagerDirs()

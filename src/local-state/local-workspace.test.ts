@@ -31,7 +31,7 @@ function identity(
   endpointId = 'ep_11111111-2222-4333-8444-555555555555',
 ): LocalEndpointIdentityMetadataV1 {
   return {
-    kind: 'qovrion.local-endpoint-identity',
+    kind: 'metrora.local-endpoint-identity',
     version: 1,
     endpointId,
     generation,
@@ -100,7 +100,7 @@ describe.sequential('local personal workspace v1', () => {
       localSubjectId: 'subject_00000000-0000-4000-8000-000000000003',
       endpointIdentityGeneration: 1,
       workspace: {
-        kind: 'qovrion.workspace',
+        kind: 'metrora.workspace',
         workspaceId: 'workspace_00000000-0000-4000-8000-000000000001',
         displayName: 'Maikol Workspace',
         slug: 'maikol-workspace',
@@ -108,7 +108,7 @@ describe.sequential('local personal workspace v1', () => {
         status: 'active',
       },
       ownerMembership: {
-        kind: 'qovrion.workspace-membership',
+        kind: 'metrora.workspace-membership',
         membershipId: 'membership_00000000-0000-4000-8000-000000000002',
         principal: {
           type: 'user',
@@ -118,7 +118,7 @@ describe.sequential('local personal workspace v1', () => {
         status: 'active',
       },
       endpoint: {
-        kind: 'qovrion.endpoint',
+        kind: 'metrora.endpoint',
         endpointId: identity().endpointId,
         endpointType: 'desktop',
         identity: {
@@ -126,7 +126,7 @@ describe.sequential('local personal workspace v1', () => {
           publicKeyFingerprintSha256: 'a'.repeat(64),
         },
         software: {
-          qovrionVersion: '0.9.19',
+          metroraVersion: '0.9.19',
           collectorVersion: '0.9.19',
         },
         enrollment: {

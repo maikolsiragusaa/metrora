@@ -1,10 +1,10 @@
 import * as z from 'zod/v4'
 
-export const QOVRION_CONTRACT_VERSION = 1 as const
-export const QOVRION_SCHEMA_BASE_URI = 'https://schemas.qovrion.dev/v1' as const
+export const METRORA_CONTRACT_VERSION = 1 as const
+export const METRORA_SCHEMA_BASE_URI = 'https://schemas.metrora.dev/v1' as const
 export const JSON_SCHEMA_DIALECT_2020_12 = 'https://json-schema.org/draft/2020-12/schema' as const
 
-export const ContractVersionSchema = z.literal(QOVRION_CONTRACT_VERSION)
+export const ContractVersionSchema = z.literal(METRORA_CONTRACT_VERSION)
 
 export const OpaqueIdSchema = z
   .string()
@@ -45,7 +45,7 @@ export const DigestSetSchema = z.strictObject({
 export type DigestSetV1 = z.infer<typeof DigestSetSchema>
 
 export function schemaUri(name: string): string {
-  return `${QOVRION_SCHEMA_BASE_URI}/${name}.schema.json`
+  return `${METRORA_SCHEMA_BASE_URI}/${name}.schema.json`
 }
 
 export function toJsonSchema202012(schema: z.ZodType, name: string): Record<string, unknown> {

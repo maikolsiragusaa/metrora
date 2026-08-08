@@ -43,13 +43,13 @@ describe('DailyBudgetBanner', () => {
     const { rerender } = render(<DailyBudgetBanner payload={payload({ cost: 100 })} provider="all" />)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
 
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'usd', value: 100 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 100 }))
     rerender(<DailyBudgetBanner payload={payload({ cost: 79 })} provider="all" />)
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('warns at 80 percent and alerts at 100 percent', () => {
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'usd', value: 10 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 10 }))
     const { rerender } = render(<DailyBudgetBanner payload={payload({ cost: 8 })} provider="all" />)
     expect(screen.getByText("Today's spend is at 80% of your daily budget")).toBeInTheDocument()
 
@@ -58,16 +58,16 @@ describe('DailyBudgetBanner', () => {
   })
 
   it('dismisses the alert for the current local day', () => {
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'usd', value: 10 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 10 }))
     render(<DailyBudgetBanner payload={payload({ cost: 12.34 })} provider="all" />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(localStorage.getItem('codeburn.dailyBudget.dismissed')).toBe(localDateKey(new Date()))
+    expect(localStorage.getItem('metrora.dailyBudget.dismissed')).toBe(localDateKey(new Date()))
   })
 
   it('evaluates token budgets only on the all-providers scope', () => {
-    localStorage.setItem('codeburn.dailyBudget', JSON.stringify({ kind: 'tokens', value: 90_000 }))
+    localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'tokens', value: 90_000 }))
     const usage = payload({ inputTokens: 60_000, outputTokens: 40_000 })
     const { rerender } = render(<DailyBudgetBanner payload={usage} provider="all" />)
     expect(screen.getByText('Daily budget exceeded: 100K of 90K')).toBeInTheDocument()

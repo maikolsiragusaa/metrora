@@ -20,13 +20,13 @@ describe('Sidebar', () => {
     expect(within(activity).getAllByRole('button').map(item => item.textContent)).toEqual(['Sessions⌘2', 'Pull requests⌘3'])
     expect(within(analyze).getAllByRole('button').map(item => item.textContent)).toEqual([
       'Spend⌘4',
-      'Optimize⌘5',
+      'Insights⌘5',
       'Models⌘6',
       'Compare⌘7',
     ])
-    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Plans⌘8', 'Workspace⌘9'])
+    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Workspace⌘8'])
     expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(10)
+    expect(screen.getAllByRole('button')).toHaveLength(9)
   })
 
   it('routes by click and keyboard without changing section ids', async () => {

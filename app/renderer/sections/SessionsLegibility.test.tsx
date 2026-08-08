@@ -9,7 +9,7 @@ import { reasoningMixLabel, Sessions } from './Sessions'
 const getSessions = vi.hoisted(() => vi.fn())
 
 vi.mock('../lib/ipc', () => ({
-  codeburn: { getSessions },
+  metrora: { getSessions },
 }))
 
 function reasoningMix(level: 'unknown' | 'xhigh', totalCalls = 1): ReasoningMix {
@@ -70,30 +70,29 @@ describe('Sessions dense-report legibility', () => {
 
     render(<Sessions period="30days" provider="all" />)
 
-    const sessionId = await screen.findByText('Session ID · claude/abc:123')
-    const status = screen.getByRole('status')
-    expect(status).toHaveTextContent('Sessions sorted by highest cost, grouped by provider. 1 session after filters.')
-
-    const row = screen.getByRole('button', {
+    const sessionRow = await screen.findByRole('button', {
       name: /Open session: Investigate cache\. Project projects\/metrora\. Session ID claude\/abc:123\./i,
     })
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Sessions sorted by most recent, not grouped by provider. 1 session after filters.')
+
+    const row = sessionRow
     expect(row).toHaveAttribute('aria-controls', 'session-details-claude-abc-123')
     expect(row).toHaveAttribute('aria-expanded', 'false')
-    expect(within(row).getByText(sessionId.textContent ?? '')).toBeInTheDocument()
 
     await user.click(row)
 
     const detail = screen.getByRole('region', { name: 'projects/metrora session details' })
-    expect(detail).toHaveAttribute('id', 'session-details-claude-abc-123')
+    expect(detail.closest('td')).toHaveAttribute('id', 'session-details-claude-abc-123')
     expect(screen.getByRole('button', { name: /Collapse session: Investigate cache/i })).toHaveAttribute('aria-expanded', 'true')
-    expect(within(detail).getByText('No cacheable input')).toBeInTheDocument()
+    expect(within(detail).getByText('No comparable input')).toBeInTheDocument()
     expect(within(detail).getByText('Reasoning-token count unavailable')).toBeInTheDocument()
     expect(within(detail).getAllByText('Not identified').length).toBeGreaterThan(0)
 
-    await user.click(screen.getByRole('tab', { name: 'Turns' }))
-    await waitFor(() => expect(status).toHaveTextContent('Sessions sorted by turn count'))
+    await user.click(screen.getByRole('tab', { name: 'Cost' }))
+    await waitFor(() => expect(status).toHaveTextContent('Sessions sorted by highest cost'))
 
     await user.click(screen.getByRole('button', { name: 'Group by provider' }))
-    await waitFor(() => expect(status).toHaveTextContent('not grouped by provider'))
+    await waitFor(() => expect(status).toHaveTextContent('grouped by provider'))
   })
 })

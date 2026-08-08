@@ -8,7 +8,7 @@ import {
 } from './common.js'
 import { WorkspaceRoleSchema } from './workspace.js'
 
-export const SHARING_POLICY_KIND = 'qovrion.sharing-policy' as const
+export const SHARING_POLICY_KIND = 'metrora.sharing-policy' as const
 
 export const ShareableDatasetSchema = z.enum([
   'aggregate-usage',

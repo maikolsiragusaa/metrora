@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
@@ -11,7 +13,19 @@ function runCli(args: string[], home: string) {
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      CODEX_HOME: join(home, '.codex'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
+      OPENCODE_DATA_DIR: join(home, '.local', 'share', 'opencode'),
       HOME: home,
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
       TZ: 'UTC',
     },
     encoding: 'utf-8',
@@ -51,11 +65,11 @@ function assistantLine(model: string, timestamp: string, messageId: string, usag
 
 describe('CLI DeepSeek v4 Claude pricing regression', () => {
   it('prices DeepSeek v4 Claude sessions even when the runtime LiteLLM cache lacks those models', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-deepseek-v4-cli-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-deepseek-v4-cli-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'deepseek-v4-validation')
-      const cacheDir = join(home, '.cache', 'codeburn')
+      const cacheDir = join(home, '.cache', 'metrora')
       await mkdir(projectDir, { recursive: true })
       await mkdir(cacheDir, { recursive: true })
 

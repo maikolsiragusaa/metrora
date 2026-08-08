@@ -26,7 +26,7 @@ afterEach(async () => {
 })
 
 async function writeClaudeFixture(cwd: string): Promise<void> {
-  const base = await mkdtemp(join(tmpdir(), 'codeburn-merge-claude-'))
+  const base = await mkdtemp(join(tmpdir(), 'metrora-merge-claude-'))
   tmpDirs.push(base)
   const dir = join(base, 'projects', 'p')
   await mkdir(dir, { recursive: true })
@@ -45,7 +45,7 @@ async function writeClaudeFixture(cwd: string): Promise<void> {
 }
 
 async function writeCodexFixture(cwd: string): Promise<void> {
-  const home = await mkdtemp(join(tmpdir(), 'codeburn-merge-codex-'))
+  const home = await mkdtemp(join(tmpdir(), 'metrora-merge-codex-'))
   tmpDirs.push(home)
   const dir = join(home, 'sessions', '2026', '04', '16')
   await mkdir(dir, { recursive: true })

@@ -8,7 +8,7 @@ import type { Section } from '../components/Sidebar'
 import { StaleBanner } from '../components/StaleBanner'
 import { usePolled } from '../hooks/usePolled'
 import { formatConverted } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
 import type { JsonPlanSummary, Period, PlanId, PlanProvider, QuotaProvider, QuotaWindow, StatusJson } from '../lib/types'
 import type { SettingsPane } from './Settings'
@@ -79,10 +79,10 @@ export function Plans({ period, refreshToken = 0, onNavigate, ready = true }: { 
     const key = `${refreshToken}:${reconnectNonce}`
     const force = key !== lastForced.current
     lastForced.current = key
-    return codeburn.getQuota(force)
+    return metrora.getQuota(force)
   }, [refreshToken, reconnectNonce])
   const reconnect = () => setReconnectNonce(value => value + 1)
-  const budgetReport = usePolled<StatusJson>(() => codeburn.getPlans(period), [period, refreshToken], { enabled: ready })
+  const budgetReport = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken], { enabled: ready })
   const manualPlans = budgetReport.data ? manualPlanSummaries(budgetReport.data) : []
 
   return (

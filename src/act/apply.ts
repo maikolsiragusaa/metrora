@@ -62,7 +62,18 @@ export async function runAction(plan: ActionPlan, actionsDir: string = defaultAc
             // snapshotted (destBackup), so clear it and retry. Other codes
             // (e.g. a missing source) rethrow before any destination damage.
             const code = (err as NodeJS.ErrnoException).code
-            if (code !== 'ENOTEMPTY' && code !== 'EEXIST' && code !== 'EISDIR' && code !== 'ENOTDIR') throw err
+            const sourceStat = code === 'EPERM' ? await lstat(pc.path).catch(() => null) : null
+            const destinationStat = code === 'EPERM' ? await lstat(pc.movedTo).catch(() => null) : null
+            const isWindowsDirectoryReplacement = code === 'EPERM'
+              && sourceStat?.isDirectory() === true
+              && destinationStat?.isDirectory() === true
+            if (
+              code !== 'ENOTEMPTY'
+              && code !== 'EEXIST'
+              && code !== 'EISDIR'
+              && code !== 'ENOTDIR'
+              && !isWindowsDirectoryReplacement
+            ) throw err
             await rm(pc.movedTo, { recursive: true, force: true })
             await rename(pc.path, pc.movedTo)
           }

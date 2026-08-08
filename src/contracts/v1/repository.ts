@@ -7,7 +7,7 @@ import {
   TimestampSchema,
 } from './common.js'
 
-export const REPOSITORY_IDENTITY_KIND = 'qovrion.repository-identity' as const
+export const REPOSITORY_IDENTITY_KIND = 'metrora.repository-identity' as const
 
 const CredentialFreeUrlSchema = z
   .url()
