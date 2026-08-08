@@ -10,7 +10,7 @@ import { calculateCost } from '../models.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
 import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
-
+import { getMetroraCacheDir } from '../product-paths.js'
 type AntigravityConversationRoot = {
   dir: string
   project: string
@@ -178,7 +178,7 @@ function getAgent(): https.Agent {
 }
 
 function getCacheDir(): string {
-  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
+  return getMetroraCacheDir()
 }
 
 function getCachePath(): string {

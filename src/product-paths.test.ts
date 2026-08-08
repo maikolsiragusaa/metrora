@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import {
   getMetroraCacheDir,
   getMetroraConfigDir,
+  getMetroraLegacyCacheDirs,
   LEGACY_CACHE_DIR_ENV,
   LEGACY_CONFIG_DIR_ENV,
   LEGACY_PRODUCT_ROOT,
@@ -30,7 +31,7 @@ describe('Metrora product path authority', () => {
     expect(getMetroraCacheDir({}, home)).toBe(join(home, '.cache', 'metrora'))
   })
 
-  it('adopts an existing legacy root in place instead of abandoning user state', () => {
+  it('keeps the runtime canonical while exposing an existing legacy root as migration input', () => {
     const home = root()
     const oldConfig = join(home, '.config', LEGACY_PRODUCT_ROOT)
     const oldCache = join(home, '.cache', LEGACY_PRODUCT_ROOT)
@@ -38,7 +39,8 @@ describe('Metrora product path authority', () => {
     mkdirSync(oldCache, { recursive: true })
 
     expect(getMetroraConfigDir({}, home)).toBe(oldConfig)
-    expect(getMetroraCacheDir({}, home)).toBe(oldCache)
+    expect(getMetroraCacheDir({}, home)).toBe(join(home, '.cache', 'metrora'))
+    expect(getMetroraLegacyCacheDirs({}, home)).toContain(oldCache)
   })
 
   it('prefers canonical roots when both canonical and legacy data exist', () => {
@@ -64,6 +66,10 @@ describe('Metrora product path authority', () => {
       METRORA_CACHE_DIR: '/canonical-cache',
       [LEGACY_CACHE_DIR_ENV]: '/legacy-cache',
     }, home)).toBe('/canonical-cache')
+    expect(getMetroraLegacyCacheDirs({
+      METRORA_CACHE_DIR: '/canonical-cache',
+      [LEGACY_CACHE_DIR_ENV]: '/legacy-cache',
+    }, home)).toContain('/legacy-cache')
   })
 
   it('uses XDG bases without reintroducing a legacy product name', () => {

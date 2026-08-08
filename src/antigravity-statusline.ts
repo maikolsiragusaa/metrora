@@ -11,6 +11,7 @@ import {
   buildPersistentMetroraLookupPath,
   resolvePersistentMetroraPathFromPath,
 } from './persistent-metrora.js'
+import { getMetroraCacheDir } from './product-paths.js'
 
 export { buildPersistentMetroraLookupPath as buildAntigravityHookLookupPath } from './persistent-metrora.js'
 export {
@@ -57,7 +58,7 @@ function settingsPath(): string {
 }
 
 function metroraCacheDir(): string {
-  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
+  return getMetroraCacheDir()
 }
 
 function previousStatusLinePath(): string {

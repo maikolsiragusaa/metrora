@@ -52,23 +52,43 @@ export function getMetroraConfigDir(
 }
 
 /**
- * New installations use the Metrora cache root. Explicit Metrora overrides
- * win, followed by temporary compatibility aliases; an existing legacy default
- * is adopted in place rather than abandoned, preserving durable history.
+ * New installations and migrated installations always use the Metrora cache
+ * root. Compatibility aliases are handled by the explicit read-only migration
+ * path below and are never selected as the runtime cache directory.
  */
 export function getMetroraCacheDir(
   env: MetroraPathEnvironment = process.env,
   home: string = homedir(),
 ): string {
-  const explicit = firstExplicit(env, [
-    'METRORA_CACHE_DIR',
-    LEGACY_CACHE_DIR_ENV,
-  ])
+  const explicit = firstExplicit(env, ['METRORA_CACHE_DIR'])
   if (explicit) return explicit
 
   const base = standardBase(env, 'XDG_CACHE_HOME', home, '.cache')
-  return existingOrCanonical(
-    join(base, 'metrora'),
-    [join(base, LEGACY_PRODUCT_ROOT)],
+  return join(base, 'metrora')
+}
+
+/**
+ * Cache roots that may contain pre-Metrora usage history. These paths are
+ * migration inputs only: runtime reads and writes always use getMetroraCacheDir.
+ * The explicit compatibility override is included even when the default legacy
+ * root does not exist, so an administrator can relocate the old root safely.
+ */
+export function getMetroraLegacyCacheDirs(
+  env: MetroraPathEnvironment = process.env,
+  home: string = homedir(),
+): string[] {
+  const canonical = getMetroraCacheDir(env, home)
+  const base = standardBase(env, 'XDG_CACHE_HOME', home, '.cache')
+  const explicit = firstExplicit(env, [LEGACY_CACHE_DIR_ENV])
+  const candidates = [explicit, join(base, LEGACY_PRODUCT_ROOT)].filter(
+    (value): value is string => Boolean(value),
   )
+  const canonicalKey = process.platform === 'win32' ? canonical.toLowerCase() : canonical
+  const seen = new Set<string>()
+  return candidates.filter(candidate => {
+    const key = process.platform === 'win32' ? candidate.toLowerCase() : candidate
+    if (key === canonicalKey || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }

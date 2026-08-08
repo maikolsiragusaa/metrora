@@ -2,13 +2,13 @@ import { readFile, stat, open, rename, unlink, readdir, mkdir } from 'fs/promise
 import { existsSync, readFileSync, unlinkSync } from 'fs'
 import { createHash, randomBytes } from 'crypto'
 import { join } from 'path'
-import { homedir } from 'os'
 
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
 import { CostAssignmentV1Schema, costAssignmentMatchesUsdV1, type CostAssignmentV1 } from './pricing/cost-assignment.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
-
+import { getMetroraCacheDir } from './product-paths.js'
+import { migrateLegacyDurableSessionCache } from './session-cache-root-migration.js'
 // ── Types ──────────────────────────────────────────────────────────────
 
 export type CachedUsage = {
@@ -258,7 +258,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
 // ── Cache Dir ──────────────────────────────────────────────────────────
 
 function getCacheDir(): string {
-  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
+  return getMetroraCacheDir()
 }
 
 function getCachePath(): string {
@@ -421,7 +421,7 @@ function validateTurn(t: unknown): t is CachedTurn {
     && (o['calls'] as unknown[]).every(validateCall)
 }
 
-function validateCachedFile(f: unknown): f is CachedFile {
+export function validateCachedFile(f: unknown): f is CachedFile {
   if (!f || typeof f !== 'object') return false
   const o = f as Record<string, unknown>
   return validateFingerprint(o['fingerprint'])
@@ -450,7 +450,7 @@ function validateProviderSection(s: unknown): s is ProviderSection {
   return Object.values(o['files'] as Record<string, unknown>).every(validateCachedFile)
 }
 
-function validateCache(raw: unknown): raw is SessionCache {
+export function isValidCache(raw: unknown): raw is SessionCache {
   if (!raw || typeof raw !== 'object') return false
   const o = raw as Record<string, unknown>
   if (o['version'] !== CACHE_VERSION) return false
@@ -544,14 +544,13 @@ async function adoptNewestPriorCache(): Promise<SessionCache | null> {
 }
 
 export async function loadCache(): Promise<SessionCache> {
+  let base: SessionCache
   try {
     const raw = await readFile(getCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
-    if (!validateCache(parsed)) return afterMissingVersionedCache()
-    return parsed
-  } catch {
-    return afterMissingVersionedCache()
-  }
+    base = isValidCache(parsed) ? parsed : await afterMissingVersionedCache()
+  } catch { base = await afterMissingVersionedCache() }
+  return migrateLegacyDurableSessionCache(base)
 }
 
 // The current versioned file is absent/unreadable. Prefer adopting the newest
@@ -561,7 +560,7 @@ export async function loadCache(): Promise<SessionCache> {
 async function afterMissingVersionedCache(): Promise<SessionCache> {
   const prior = await adoptNewestPriorCache()
   if (prior) return prior
-  // validateCache requires version === CACHE_VERSION, so a different-version
+  // isValidCache requires version === CACHE_VERSION, so a different-version
   // legacy file is ignored (left intact). We copy it into the versioned file once
   // via saveCache; the legacy file is never modified.
   return adoptLegacyCache()
@@ -571,7 +570,7 @@ async function adoptLegacyCache(): Promise<SessionCache> {
   try {
     const raw = await readFile(getLegacyCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
-    if (!validateCache(parsed)) return emptyCache()
+    if (!isValidCache(parsed)) return emptyCache()
     await saveCache(parsed).catch(() => {})
     return parsed
   } catch {
