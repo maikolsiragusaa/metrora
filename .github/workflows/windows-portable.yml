@@ -185,9 +185,6 @@ jobs:
           if ($overview -notmatch '^Metrora\s+Lifetime') {
             throw 'portable overview does not expose the canonical Metrora heading'
           }
-          if ($overview -match '\bMetrora\b') {
-            throw 'portable overview leaked legacy Metrora branding'
-          }
           if ($overview.Contains('Ô')) {
             throw 'portable overview contains Windows encoding mojibake'
           }
