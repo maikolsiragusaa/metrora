@@ -128,7 +128,6 @@ function OpportunityRows({ report }: { report: Polled<OptimizeJsonReport> }) {
         <strong>{report.data.summary.findingCount.toLocaleString('en-US')} opportunities</strong>
         <span>{formatUsd(report.data.summary.potentialSavingsCostUSD)} estimated potential</span>
         <span>{formatCompact(report.data.summary.potentialSavingsTokens)} tokens</span>
-        <span className="opt-summary-secondary">usage health {report.data.summary.healthScore}/100</span>
       </div>
       <ActionableFindingRows findings={report.data.findings} />
     </div>
