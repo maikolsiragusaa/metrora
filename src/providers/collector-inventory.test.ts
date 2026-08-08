@@ -15,7 +15,7 @@ describe('CollectorInventoryV1', () => {
     const registered = [...allProviderNames()].sort()
     const inventoried = CollectorInventoryV1.entries.map(entry => entry.provider).sort()
     expect(inventoried).toEqual(registered)
-    expect(new Set(inventoried).size).toBe(38)
+    expect(new Set(inventoried).size).toBe(39)
   })
 
   it('points every collector at a real provider module and provider guide', () => {
@@ -28,11 +28,11 @@ describe('CollectorInventoryV1', () => {
 
   it('tracks complete provider documentation coverage separately from evidence approval', () => {
     expect(collectorInventorySummaryV1()).toEqual({
-      total: 38,
+      total: 39,
       approved: 4,
       priority: 8,
-      pending: 26,
-      documented: 38,
+      pending: 27,
+      documented: 39,
       documentationGaps: [],
     })
   })
@@ -56,6 +56,17 @@ describe('CollectorInventoryV1', () => {
         expect(entry.manualValidation).toBe('required-before-share')
       }
     }
+  })
+
+  it('keeps Cline CLI local-only until a separate signed-evidence review approves it', () => {
+    const clineCli = CollectorInventoryV1.entries.find(entry => entry.provider === 'cline-cli')
+    expect(clineCli).toMatchObject({
+      reviewStatus: 'pending',
+      shareEligibility: 'withheld',
+      automatedEvidence: 'unassessed',
+      manualValidation: 'required-before-share',
+      provenanceProfileIds: [],
+    })
   })
 
   it('keeps the checked-in audit document generated from the executable inventory', () => {

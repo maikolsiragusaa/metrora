@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import snapshotData from './data/litellm-snapshot.json'
 import fallbackData from './data/pricing-fallback.json'
 import { fetchWithTimeout } from './fetch-utils.js'
+import { REVIEWED_MODEL_DISPLAY_NAMES } from './model-display-labels.js'
 
 export type ModelCosts = {
   inputCostPerToken: number
@@ -578,7 +579,7 @@ export function isProxiedPath(cwd: string | undefined | null): boolean {
 /// (menubar) that re-reads config could serve attribution from a stale set.
 export function getProxyPathsConfigHash(): string {
   if (userProxyPaths.length === 0) return ''
-  return [...userProxyPaths].sort().join('')
+  return [...userProxyPaths].sort().join('\u0002')
 }
 
 function resolveAlias(model: string): string {
@@ -925,22 +926,7 @@ const SHORT_NAMES: Record<string, string> = {
   'o3': 'o3',
   'MiniMax-M2.7-highspeed': 'MiniMax M2.7 Highspeed',
   'MiniMax-M2.7': 'MiniMax M2.7',
-  // Grok (xAI) and GLM ids that otherwise surface raw or as a pricing key in
-  // reports. grok-build and GLM-5.2 price via sibling aliases, so
-  // getShortModelName resolves to the pricing key before this lookup; map each
-  // back to the real model name. grok-composer has no alias, it just lacked an
-  // entry.
-  'glm-5p1': 'GLM-5.2',                               // ZCode/Hermes run GLM-5.2 (priced as the GLM-5.1 sibling)
-  'grok-build-0.1': 'Grok Build',                     // Grok Build prices through the 0.1 sibling
-  'grok-composer-2.5-fast': 'Grok Composer 2.5 Fast',
-  // Fireworks-hosted fleet models arrive as `accounts/fireworks/models/<slug>`;
-  // getShortModelName's path fallback strips to the bare slug and re-resolves it
-  // through this table. Display-only — getModelCosts prices off the full path,
-  // so these entries do not move any dollar amounts. (deepseek-v4-pro/-flash
-  // already have entries above and resolve the same way.)
-  'glm-5p2': 'GLM-5.2',
-  'qwen3p7-plus': 'Qwen 3.7 Plus',
-  'kimi-k2p7-code': 'Kimi K2.7 Code',
+  ...REVIEWED_MODEL_DISPLAY_NAMES,
 }
 
 // Sorted longest-first so more-specific prefixes match before shorter ones.

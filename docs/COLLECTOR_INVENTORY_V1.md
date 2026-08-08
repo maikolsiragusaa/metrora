@@ -17,6 +17,7 @@ These labels describe current evidence boundaries. They are not a public impleme
 | antigravity | lazy | protobuf-rpc-cache-and-statusline | docs/providers/antigravity.md | available | source-documented | withheld |
 | claude | core | jsonl-and-desktop-session-files | docs/providers/claude.md | available | signed-approved | approved |
 | cline | core | unassessed | docs/providers/cline.md | available | local-only | withheld |
+| cline-cli | core | unassessed | docs/providers/cline-cli.md | available | local-only | withheld |
 | codebuff | core | unassessed | docs/providers/codebuff.md | available | local-only | withheld |
 | codewhale | core | unassessed | docs/providers/codewhale.md | available | local-only | withheld |
 | codex | core | rollout-jsonl | docs/providers/codex.md | available | signed-approved | approved |
@@ -55,10 +56,10 @@ These labels describe current evidence boundaries. They are not a public impleme
 
 ## Current totals
 
-- Registered local collectors: **38**.
+- Registered local collectors: **39**.
 - Approved for signed Workspace measurements: **4 collectors / 6 path-specific profiles**.
-- Local collectors with signed sharing withheld: **34**.
-- Provider documentation present: **38**.
+- Local collectors with signed sharing withheld: **35**.
+- Provider documentation present: **39**.
 - Documentation gaps: **none**.
 
 ## Approval gate

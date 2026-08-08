@@ -71,6 +71,12 @@ Do not publish:
 
 Describe unavailable or unrelated work generically when its exact internal identity is not required for review. Product, publisher and provenance language must follow [`README.md`](README.md), [`NOTICE.md`](NOTICE.md) and [`BRAND_POLICY.md`](BRAND_POLICY.md).
 
+## Pricing data
+
+Reviewed historical pricing is intentionally contributor-editable, but it has a higher evidence bar than a current-price lookup table. The source of truth, unit conversions, provenance rules, append-only history model, supported modifiers and validation commands are documented in [`docs/CONTRIBUTING_PRICING.md`](docs/CONTRIBUTING_PRICING.md).
+
+Do not hand-edit the generated `docs/PRICING_HISTORY.md`, backdate a current price without evidence, or encode unknown pricing as zero.
+
 ## Provider and collector changes
 
 Collectors silently affect totals and therefore have a high evidence bar. A provider change should include:
