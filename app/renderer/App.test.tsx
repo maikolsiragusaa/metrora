@@ -231,7 +231,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '5', metaKey: true })
-    expect(await screen.findByText('No waste findings in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No actionable opportunities detected in this range.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '6', metaKey: true })
     expect(await screen.findByText('Other models')).toBeInTheDocument()
