@@ -250,8 +250,6 @@ interface SpanAttributes {
 }
 
 // ---------------------------------------------------------------------------
-// Paths
-// ---------------------------------------------------------------------------
 
 function getCopilotSessionStateDir(override?: string): string {
   return override ?? process.env['METRORA_COPILOT_SESSION_STATE_DIR'] ?? join(homedir(), '.copilot', 'session-state')
@@ -1083,7 +1081,6 @@ function inferJetBrainsProject(raw: string): string | undefined {
     // Decode %20 etc. and strip a trailing .rej/.orig suffix noise; keep the dir.
     let p = m[1]
     try { p = decodeURIComponent(p) } catch { /* leave as-is */ }
-    // Normalize Windows separators before walking the real filesystem.
     if (/^[A-Za-z]:[\\/]/.test(p)) p = p.replaceAll('\\', '/')
     const dir = p.slice(0, p.lastIndexOf('/'))
     if (dir.startsWith('/') || /^[A-Za-z]:\//.test(dir)) seen.add(dir)

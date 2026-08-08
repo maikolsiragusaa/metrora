@@ -2,7 +2,7 @@ import chalk from 'chalk'
 import { readdir, stat } from 'fs/promises'
 import { existsSync, statSync } from 'fs'
 import { basename, join } from 'path'
-import { homedir, tmpdir } from 'os'
+import { homedir } from 'os'
 
 import { readSessionLines, readSessionFileSync } from './fs-utils.js'
 import { discoverAllSessions } from './providers/index.js'
@@ -13,6 +13,7 @@ import { formatTokens } from './format.js'
 import { recommendModelDefault, type ModelDefaultRecommendation } from './act/model-defaults.js'
 import { aggregateFileChurn, buildCoachingNotes, scanUserCorrections, medianTimeToFirstEditMs, worstOneShotCategory, type ReworkedFile } from './workflow-insights.js'
 import { optimizeResultCacheKey } from './optimize-cache-key.js'
+import { shortHomePath } from './optimize-paths.js'
 
 // ============================================================================
 // Display constants
@@ -582,25 +583,6 @@ function readJsonFile(path: string): Record<string, unknown> | null {
   const raw = readSessionFileSync(path)
   if (raw === null) return null
   try { return JSON.parse(raw) } catch { return null }
-}
-
-function shortHomePath(absPath: string): string {
-  const home = homedir()
-  const normalize = (value: string): string => value.replaceAll('\\', '/').replace(/\/+$/, '')
-  const normalizedPath = normalize(absPath)
-  const normalizedTemp = normalize(tmpdir())
-  const normalizedHome = normalize(home)
-  const compare = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
-  const isUnder = (root: string): boolean => {
-    const pathValue = compare(normalizedPath)
-    const rootValue = compare(root)
-    return pathValue === rootValue || pathValue.startsWith(`${rootValue}/`)
-  }
-  // Keep temporary fixture/runtime paths explicit. On Windows the temp
-  // directory is commonly below the user's home, but abbreviating it hides
-  // the exact path needed to inspect a generated config or test artifact.
-  if (isUnder(normalizedTemp)) return absPath
-  return isUnder(normalizedHome) ? '~' + absPath.slice(home.length) : absPath
 }
 
 function isReadTool(name: string): boolean {

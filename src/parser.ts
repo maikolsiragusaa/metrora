@@ -50,7 +50,6 @@ import type {
   ToolCall,
   ToolUseBlock,
 } from './types.js'
-
 import { classifyTurn, BASH_TOOLS, EDIT_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
 

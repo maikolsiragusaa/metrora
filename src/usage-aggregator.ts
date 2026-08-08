@@ -25,7 +25,6 @@ import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
 import { buildGranularHistory } from './granular-history.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
-
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
   const sessions = projects.flatMap(p => p.sessions)
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
