@@ -8,10 +8,29 @@ function projectsWithTiming(): ProjectSummary[] {
     sessions: [{
       modelBreakdown: {
         'gpt-5.4': {
+          calls: 1,
+          costUSD: 0,
+          estimatedCostUSD: 0,
+          tokens: {
+            inputTokens: 0,
+            outputTokens: 10_000,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          },
           activeDurationMs: 2_500,
           activeGeneratedTokens: 10_000,
         },
-        'claude-opus-4-8': {},
+        'claude-opus-4-8': {
+          calls: 1,
+          costUSD: 0,
+          estimatedCostUSD: 0,
+          tokens: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          },
+        },
       },
     }],
   }] as unknown as ProjectSummary[]
