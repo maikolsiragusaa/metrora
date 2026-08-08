@@ -101,9 +101,9 @@ function mergeLegacyDurableProviders(base: session.SessionCache, providers: Reco
   return merged
 }
 
-export async function migrateLegacyDurableSessionCache(base: session.SessionCache): Promise<session.SessionCache> {
+export async function migrateLegacyDurableSessionCache(base: session.SessionCache, canonicalAlreadyUsable = false): Promise<session.SessionCache> {
   const markerPath = cacheMigrationMarkerPath(getMetroraCacheDir(), 'session-cache')
-  if (await cacheMigrationCompleted(markerPath, session.sessionCachePath(), 'session-cache', session.isValidCache)) return base
+  if (await cacheMigrationCompleted(markerPath, session.sessionCachePath(), 'session-cache', session.isValidCache, canonicalAlreadyUsable)) return base
   const legacy = await readLegacyDurableProviders()
   if (!legacy) return base
   const merged = mergeLegacyDurableProviders(base, legacy.providers)

@@ -220,6 +220,12 @@ export type ClaudeConfigSelector = {
 
 export type MenubarPayload = {
   generated: string
+  /** Read lifecycle metadata. Optional for compatibility with older clients. */
+  freshness?: {
+    readMode: 'snapshot' | 'fresh'
+    reconciliation: 'complete' | 'degraded' | 'targeted'
+    durableThrough: string | null
+  }
   current: {
     label: string
     cost: number

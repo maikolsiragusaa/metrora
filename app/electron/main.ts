@@ -236,17 +236,10 @@ type Handler = (...args: any[]) => Promise<Envelope>
  * unit-testable without launching Electron.
  */
 export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, resolveMetroraPath, getQuota, emitProgress: broadcastProgress, telemetry: telemetryInstance, getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS) }): Record<string, Handler> {
+  const snapshotEnv = { METRORA_READ_MODE: 'snapshot' }
   const emitProgress = deps.emitProgress ?? (() => {})
   const telemetry = deps.telemetry ?? null
-  // Flips true after the first overview fetch succeeds. Until then, every
-  // overview fetch runs cold (long timeout + progress streaming); the shared
-  // spawnCli coalescing means concurrent same-arg re-polls join one child.
-  let overviewWarmed = false
-  // cold_start is a once-per-launch metric. Because coalesced re-polls each
-  // re-enter the cold branch (and overviewWarmed only flips on success, so it
-  // never guards a still-failing warmup), emitting inline would record one row
-  // per poll — each with a launch-relative, cumulative elapsed time. Latch the
-  // emit and anchor the duration to the FIRST cold attempt instead.
+  // Latch cold_start to the first coalesced attempt in this app process.
   let coldStartEmitted = false
   let coldStartBegan: number | null = null
   const emitColdStart = (timedOut: boolean): void => {
@@ -260,7 +253,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     try {
       const argv = build(...args)
       cmd = argv[0]
-      return { ok: true, value: await deps.spawnCli(argv) }
+      return { ok: true, value: await deps.spawnCli(argv, { extraEnv: snapshotEnv }) }
     } catch (err) {
       const error = toEnvelopeError(err)
       telemetry?.track('cli_error', cliErrorProps(err, cmd))
@@ -279,25 +272,29 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
   // `background` (renderer prefetch only) drops this fetch to background priority
   // so it yields the CLI's run slots to any interactive poll or click. Optional
   // and defaulting to interactive, so an older preload that omits it is unchanged.
-  const getOverview: Handler = async (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean) => {
+  const getOverview: Handler = async (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean) => {
     coldStartBegan ??= Date.now()
     const priority: SpawnPriority | undefined = background ? 'background' : undefined
     try {
       const args = buildOverviewArgs(period, provider, range, configSource)
-      if (overviewWarmed) return { ok: true, value: await deps.spawnCli(args, priority ? { priority } : undefined) }
+      const snapshot = !fresh && !configSource
+      if (snapshot) {
+        const value = await deps.spawnCli(args, { extraEnv: snapshotEnv, ...(priority ? { priority } : {}) })
+        emitColdStart(false)
+        return { ok: true, value }
+      }
       const value = await deps.spawnCli(args, {
         timeoutMs: WARMUP_TIMEOUT_MS,
         extraEnv: { METRORA_PROGRESS: '1' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
       })
-      overviewWarmed = true
       emitProgress({ kind: 'done' })
       emitColdStart(false)
       return { ok: true, value }
     } catch (err) {
       const error = toEnvelopeError(err)
-      if (!overviewWarmed) emitColdStart(error.kind === 'timeout')
+      emitColdStart(error.kind === 'timeout')
       telemetry?.track('cli_error', cliErrorProps(err, 'status'))
       return { ok: false, error }
     }

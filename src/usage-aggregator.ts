@@ -19,10 +19,11 @@ import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
-import { getDaysInRange, ensureCacheHydrated, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
 import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
 import { buildGranularHistory } from './granular-history.js'
+import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -123,7 +124,6 @@ async function hydrateCache(): Promise<DailyCache> {
     return emptyCache()
   }
 }
-
 export type PeriodInfo = { range: DateRange; label: string }
 export type AggregateOpts = {
   provider?: string
@@ -272,7 +272,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const rangeEndStr = toDateString(periodInfo.range.end)
   const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
 
-  const cache = await hydrateCache()
+  const cache = isSnapshotReadMode() ? await loadDailyCache() : await hydrateCache()
 
   // Today's live data always comes from an all-provider parse so the union (and
   // any per-provider slice of it) sees every provider's today. `todayAllDays` is
@@ -774,5 +774,5 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
-  return buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs, granularHistory)
+  return withReadFreshness(buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs, granularHistory), cache, effectivelyScoped)
 }

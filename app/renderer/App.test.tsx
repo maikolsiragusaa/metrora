@@ -504,7 +504,7 @@ describe('provider prefetch storm', () => {
   // LRU-evicts between polls, blanking the overview and re-arming the prefetch
   // every 30s cycle: 12 redundant full-history parses forever. This asserts the
   // fix — each provider is prefetched EXACTLY ONCE total across three cycles.
-  it('prefetches each detected provider exactly once across 3 poll cycles', async () => {
+  it('never speculatively spawns provider or period reads across poll cycles', async () => {
     vi.useFakeTimers()
     try {
       render(<App />)
@@ -520,7 +520,7 @@ describe('provider prefetch storm', () => {
           // Prefetch warms carry the background-priority flag (5th arg).
           c => c[0] === '30days' && c[1] === id && c[2] === undefined && c[3] === undefined && c[4] === true,
         )
-        expect(spawns.length, `prefetch spawns for ${id}`).toBe(1)
+        expect(spawns.length, `speculative spawns for ${id}`).toBe(0)
       }
 
       // Sanity: the active 'all' view was polled every cycle (not prefetch-gated).
@@ -532,7 +532,7 @@ describe('provider prefetch storm', () => {
       // overview key and re-armed the prefetch. Under the old fixed cap of 8,
       // 7 of these 12 keys would have been evicted by soak's end.
       for (const id of PROVIDERS) {
-        expect(hasPolledMemo(overviewMemoKey(id, '30days', null, null)), `warm key ${id}`).toBe(true)
+        if (id !== 'all') expect(hasPolledMemo(overviewMemoKey(id, '30days', null, null)), `unvisited key ${id}`).toBe(false)
       }
     } finally {
       vi.useRealTimers()

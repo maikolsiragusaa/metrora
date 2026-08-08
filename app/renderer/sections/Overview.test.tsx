@@ -8,7 +8,7 @@ import type { ActReportJson, DailyHistoryEntry, MenubarPayload, YieldJsonReport 
 import { Overview, OverviewContent, deriveSignals, localDateKey } from './Overview'
 
 function polled(data: MenubarPayload): Polled<MenubarPayload> {
-  return { data, error: null, loading: false, switching: false, lastSuccessAt: Date.now(), refresh: vi.fn() }
+  return { data, error: null, loading: false, switching: false, lastSuccessAt: Date.now(), refresh: vi.fn(), refreshFresh: vi.fn() }
 }
 
 // Mock the typed bridge so the section fetches our payload instead of spawning
@@ -527,11 +527,22 @@ describe('Overview', () => {
       switching: false,
       lastSuccessAt: Date.now(),
       refresh: vi.fn(),
+      refreshFresh: vi.fn(),
     }
 
     render(<OverviewContent period="30days" provider="all" overview={overview} />)
 
     expect(await screen.findByRole('status')).toHaveTextContent('Refresh failed, showing last good data · metrora exited 1')
+  })
+
+  it('discloses degraded source reconciliation while preserving canonical data', async () => {
+    const payload = makePayload(new Date())
+    payload.freshness = { readMode: 'snapshot', reconciliation: 'degraded', durableThrough: '2026-08-08' }
+
+    render(<OverviewContent period="30days" provider="all" overview={polled(payload)} />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Showing canonical last-good data')
+    expect(screen.getByText('$312.40')).toBeInTheDocument()
   })
 
   it('groups current-driven signals into wins and improvements', () => {

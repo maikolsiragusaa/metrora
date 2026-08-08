@@ -127,6 +127,7 @@ function loadedOverview(overrides: Record<string, unknown> = {}) {
     switching: false,
     lastSuccessAt: Date.now(),
     refresh: vi.fn(),
+    refreshFresh: vi.fn(),
   } as any
 }
 

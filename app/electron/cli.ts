@@ -342,7 +342,14 @@ export function spawnCli(
   const spec = spawnSpecFor(target, args)
   if (opts.extraEnv) spec.env = { ...spec.env, ...opts.extraEnv }
 
-  const key = JSON.stringify([spec.bin, ...spec.args])
+  // Environment overrides can change read semantics even when argv is equal
+  // (notably canonical snapshot vs explicit fresh reconciliation). Keep those
+  // lifecycles in separate in-flight/result-cache lanes while retaining stable
+  // coalescing for truly identical requests.
+  const envKey = Object.entries(opts.extraEnv ?? {})
+    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+  const key = JSON.stringify([spec.bin, ...spec.args, envKey])
   const cached = readCache.get(key)
   if (cached && Date.now() - cached.at < COALESCE_TTL_MS) return Promise.resolve(cached.value)
 

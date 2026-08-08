@@ -169,6 +169,67 @@ describe('usePolled', () => {
     }
   })
 
+  it('reserves the explicit-refresh fetcher for refreshFresh only', async () => {
+    const snapshot = vi.fn().mockResolvedValue('snapshot')
+    const fresh = vi.fn().mockResolvedValue('fresh')
+    const { result } = renderHook(() => usePolled(snapshot, [], { intervalMs: null, manualFetcher: fresh }))
+
+    await act(async () => { await Promise.resolve() })
+    act(() => { result.current.refresh() })
+    expect(snapshot).toHaveBeenCalledTimes(2)
+    expect(fresh).not.toHaveBeenCalled()
+
+    act(() => { result.current.refreshFresh() })
+    expect(fresh).toHaveBeenCalledOnce()
+  })
+
+  it('keeps interval polls from superseding an in-flight explicit reconciliation', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveFresh!: (value: string) => void
+      const snapshot = vi.fn().mockResolvedValue('snapshot')
+      const fresh = vi.fn(() => new Promise<string>(resolve => { resolveFresh = resolve }))
+      const { result } = renderHook(() => usePolled(snapshot, [], { intervalMs: 1000, manualFetcher: fresh }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+
+      act(() => { result.current.refreshFresh() })
+      expect(fresh).toHaveBeenCalledOnce()
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      expect(snapshot).toHaveBeenCalledOnce()
+
+      await act(async () => { resolveFresh('fresh') })
+      expect(result.current.data).toBe('fresh')
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(snapshot).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retires an old-scope explicit reconciliation when dependencies change', async () => {
+    let resolveFresh!: (value: string) => void
+    const snapshot = vi.fn((scope: string) => Promise.resolve(`snapshot-${scope}`))
+    const fresh = vi.fn(() => new Promise<string>(resolve => { resolveFresh = resolve }))
+    const onManualSuccess = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ scope }: { scope: string }) => usePolled(() => snapshot(scope), [scope], {
+        manualFetcher: fresh,
+        onManualSuccess,
+      }),
+      { initialProps: { scope: 'A' } },
+    )
+    await act(async () => { await Promise.resolve() })
+    act(() => { result.current.refreshFresh() })
+
+    rerender({ scope: 'B' })
+    await act(async () => { await Promise.resolve() })
+    expect(result.current.data).toBe('snapshot-B')
+
+    await act(async () => { resolveFresh('fresh-A') })
+    expect(result.current.data).toBe('snapshot-B')
+    expect(onManualSuccess).not.toHaveBeenCalled()
+  })
+
   it('skips interval polls while the document is hidden, then catches up on return to visible', async () => {
     vi.useFakeTimers()
     try {

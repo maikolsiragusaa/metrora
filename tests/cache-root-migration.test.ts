@@ -23,7 +23,7 @@ import {
   type CachedFile,
   type SessionCache,
 } from '../src/session-cache.js'
-import { cacheMigrationMarkerPath } from '../src/cache-migration.js'
+import { CACHE_MIGRATION_VERSION, cacheMigrationCompleted, cacheMigrationMarkerPath } from '../src/cache-migration.js'
 
 let root: string
 let canonical: string
@@ -97,6 +97,22 @@ afterEach(async () => {
 })
 
 describe('read-only legacy usage-root migration', () => {
+  it('does not reparse an already-validated large canonical cache to accept its marker', async () => {
+    const canonicalPath = join(canonical, 'large-canonical.json')
+    const markerPath = cacheMigrationMarkerPath(canonical, 'large-canonical')
+    await mkdir(canonical, { recursive: true })
+    await writeFile(canonicalPath, '{intentionally-not-reparsed', 'utf-8')
+    await writeFile(markerPath, JSON.stringify({ version: CACHE_MIGRATION_VERSION, kind: 'large-canonical' }), 'utf-8')
+
+    await expect(cacheMigrationCompleted(
+      markerPath,
+      canonicalPath,
+      'large-canonical',
+      () => false,
+      true,
+    )).resolves.toBe(true)
+  })
+
   it('fresh install stays Metrora-only and does not mint a migration marker', async () => {
     const loaded = await loadDailyCache()
     expect(loaded.days).toEqual([])

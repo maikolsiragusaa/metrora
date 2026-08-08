@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -14,6 +14,7 @@ import {
   getDailyCacheConfigHash,
 } from '../src/usage-aggregator.js'
 import { parseAllSessions, filterProjectsByName, clearSessionCache } from '../src/parser.js'
+import { sessionCachePath } from '../src/session-cache.js'
 import { renderOverview } from '../src/overview.js'
 import type { DateRange } from '../src/types.js'
 
@@ -33,7 +34,7 @@ const { ROOT, ENV_KEYS, INITIAL_ENV } = vi.hoisted(() => {
   const envKeys = [
     'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE',
     'APPDATA', 'LOCALAPPDATA', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-    'METRORA_CACHE_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME', 'OPENCODE_DATA_DIR',
+    'METRORA_CACHE_DIR', 'METRORA_READ_MODE', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME', 'OPENCODE_DATA_DIR',
   ] as const
   const initialEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
   const separator = process.platform === 'win32' ? '\\' : '/'
@@ -243,6 +244,40 @@ describe('CLI totals ↔ menubar parity through the durable daily cache', () => 
     expect(carried).toBe(0)
     expect(menubarCost).toBeGreaterThan(0)
     expect(menubarCost).toBeCloseTo(live.cost, 6)
+  })
+})
+
+describe('snapshot read lifecycle', () => {
+  it('serves a degraded complete:false baseline repeatedly without hydrating or writing', async () => {
+    const carriedDate = await seedCarriedCache()
+    await seedLiveTodaySession()
+
+    // Publish one accepted session snapshot, then mark only current-source
+    // reconciliation as degraded. The durable baseline remains safe to serve.
+    await parseAllSessions(getDateRange('today').range, 'all')
+    const dailyPath = join(ROOT, 'cache', `daily-cache.v${DAILY_CACHE_VERSION}.json`)
+    const daily = JSON.parse(await readFile(dailyPath, 'utf-8')) as DailyCache
+    daily.complete = false
+    await writeFile(dailyPath, JSON.stringify(daily), 'utf-8')
+    const dailyBefore = await readFile(dailyPath, 'utf-8')
+    const sessionBefore = await readFile(sessionCachePath(), 'utf-8')
+
+    process.env['METRORA_READ_MODE'] = 'snapshot'
+    try {
+      clearSessionCache()
+      const first = await buildMenubarPayloadForRange(getDateRange('lifetime'), { provider: 'all', optimize: false, timeline: false })
+      clearSessionCache()
+      const second = await buildMenubarPayloadForRange(getDateRange('lifetime'), { provider: 'all', optimize: false, timeline: false })
+
+      expect(first.current.calls).toBe(second.current.calls)
+      expect(first.current.calls).toBeGreaterThan(40)
+      expect(first.history.daily.some(day => day.date === carriedDate)).toBe(true)
+      expect(await readFile(dailyPath, 'utf-8')).toBe(dailyBefore)
+      expect(await readFile(sessionCachePath(), 'utf-8')).toBe(sessionBefore)
+      expect((JSON.parse(dailyBefore) as DailyCache).complete).toBe(false)
+    } finally {
+      delete process.env['METRORA_READ_MODE']
+    }
   })
 })
 

@@ -371,6 +371,19 @@ describe('spawnCli coalescing (read-only)', () => {
     expect(readFileSync(countFile, 'utf8')).toBe('x') // exactly one spawn
   })
 
+  it('does not coalesce snapshot and fresh reads with identical argv', async () => {
+    const countFile = join(dir, 'spawns')
+    fakeBin('counter-env.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)}, process.env.METRORA_READ_MODE ?? 'fresh'); process.stdout.write(JSON.stringify({mode:process.env.METRORA_READ_MODE ?? 'fresh'}))`)
+    const [snapshot, fresh] = await Promise.all([
+      spawnCli(['status'], { extraEnv: { METRORA_READ_MODE: 'snapshot' } }),
+      spawnCli(['status'], { extraEnv: { METRORA_PROGRESS: '1' } }),
+    ])
+    expect(snapshot).toEqual({ mode: 'snapshot' })
+    expect(fresh).toEqual({ mode: 'fresh' })
+    expect(readFileSync(countFile, 'utf8')).toContain('snapshot')
+    expect(readFileSync(countFile, 'utf8')).toContain('fresh')
+  })
+
   it('spawns again once the 5s result cache has expired', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     try {

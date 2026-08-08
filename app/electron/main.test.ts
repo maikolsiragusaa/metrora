@@ -402,24 +402,25 @@ describe('createBeforeQuitHandler', () => {
   })
 })
 
-describe('createBridgeHandlers (cold-start warmup)', () => {
+describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
   const base = (extra: object) => ({ spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => '/bin/metrora', getQuota: vi.fn(async () => []), ...extra })
 
-  it('gives the first overview a long timeout + progress env, then reverts once warmed', async () => {
+  it('keeps normal reads bounded and reserves long progress mode for explicit Refresh', async () => {
     const opts: Array<Record<string, unknown> | undefined> = []
     const spawnCli = vi.fn(async (_args: string[], o?: Record<string, unknown>) => { opts.push(o); return { current: { cost: 1 } } })
     const emitProgress = vi.fn()
     const handlers = createBridgeHandlers(base({ spawnCli, emitProgress }))
 
     await handlers['metrora:getOverview']!('30days', 'all')
-    expect(opts[0]?.timeoutMs).toBe(10 * 60_000)
-    expect((opts[0]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
-    expect(typeof opts[0]?.onStderr).toBe('function')
-    expect(emitProgress).toHaveBeenCalledWith({ kind: 'done' })
+    expect(opts[0]?.timeoutMs).toBeUndefined()
+    expect((opts[0]?.extraEnv as Record<string, string> | undefined)?.METRORA_READ_MODE).toBe('snapshot')
+    expect(opts[0]?.onStderr).toBeUndefined()
 
-    await handlers['metrora:getOverview']!('30days', 'all')
-    expect(opts[1]?.timeoutMs).toBeUndefined()
-    expect(opts[1]?.extraEnv).toBeUndefined()
+    await handlers['metrora:getOverview']!('30days', 'all', undefined, undefined, false, true)
+    expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
+    expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
+    expect(typeof opts[1]?.onStderr).toBe('function')
+    expect(emitProgress).toHaveBeenCalledWith({ kind: 'done' })
   })
 
   it('drops a warmed overview to background priority only when the prefetch flag is set', async () => {
@@ -436,10 +437,10 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
     expect(opts[2]?.priority).toBe('background')
   })
 
-  it('re-arms the long timeout when the first overview fails (cache is still cold)', async () => {
-    const opts: Array<{ timeoutMs?: number } | undefined> = []
+  it('retries a failed normal read without converting it into reconciliation', async () => {
+    const opts: Array<{ timeoutMs?: number; extraEnv?: Record<string, string> } | undefined> = []
     let n = 0
-    const spawnCli = vi.fn(async (_args: string[], o?: { timeoutMs?: number }) => {
+    const spawnCli = vi.fn(async (_args: string[], o?: { timeoutMs?: number; extraEnv?: Record<string, string> }) => {
       opts.push(o)
       if (++n === 1) throw new CliError('timeout', 'timed out')
       return { current: { cost: 1 } }
@@ -448,8 +449,10 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
 
     expect(await handlers['metrora:getOverview']!('30days', 'all')).toMatchObject({ ok: false })
     expect(await handlers['metrora:getOverview']!('30days', 'all')).toMatchObject({ ok: true })
-    expect(opts[0]?.timeoutMs).toBe(10 * 60_000)
-    expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
+    expect(opts[0]?.timeoutMs).toBeUndefined()
+    expect(opts[1]?.timeoutMs).toBeUndefined()
+    expect(opts[0]?.extraEnv?.METRORA_READ_MODE).toBe('snapshot')
+    expect(opts[1]?.extraEnv?.METRORA_READ_MODE).toBe('snapshot')
   })
 
   it('parses CLI scan-progress stderr lines and forwards them to emitProgress', async () => {
@@ -461,7 +464,7 @@ describe('createBridgeHandlers (cold-start warmup)', () => {
     })
     const emitProgress = vi.fn()
     const handlers = createBridgeHandlers(base({ spawnCli, emitProgress }))
-    await handlers['metrora:getOverview']!('30days', 'all')
+    await handlers['metrora:getOverview']!('30days', 'all', undefined, undefined, false, true)
 
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'providers', providers: ['claude', 'codex'] })
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'tick', provider: 'claude', done: 5, total: 10 })

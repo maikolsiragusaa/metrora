@@ -118,6 +118,7 @@ export type ClaudeConfigSelector = {
 
 export type MenubarPayload = {
   generated: string
+  freshness?: { readMode: 'snapshot' | 'fresh'; reconciliation: 'complete' | 'degraded' | 'targeted'; durableThrough: string | null }
   current: {
     label: string
     cost: number
@@ -655,9 +656,8 @@ export interface MetroraBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
-  // `background` (prefetch only) requests background CLI-spawn priority; optional
-  // so an older preload that ignores it degrades to interactive priority.
-  getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean): Promise<MenubarPayload>
+  // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
+  getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>
   getActReport(): Promise<ActReportJson>
   readonly platform: string

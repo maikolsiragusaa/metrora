@@ -15,6 +15,8 @@ export type Polled<T> = {
   lastSuccessAt: number | null
   /** Re-run the fetcher immediately (period/provider change, manual refresh). */
   refresh: () => void
+  /** Re-run with the optional explicit-refresh fetcher. */
+  refreshFresh: () => void
 }
 
 // Module-level LRU of last-good results per memoKey. A section that switches deps
@@ -114,7 +116,7 @@ export function hasPolledMemo(key: string): boolean {
 export function usePolled<T>(
   fetcher: () => Promise<T>,
   deps: unknown[],
-  opts: { intervalMs?: number | null; enabled?: boolean; memoKey?: string } = {},
+  opts: { intervalMs?: number | null; enabled?: boolean; memoKey?: string; manualFetcher?: () => Promise<T>; onManualSuccess?: (result: T) => void } = {},
 ): Polled<T> {
   const cadence = useContext(RefreshCadenceContext)
   const intervalMs = opts.intervalMs !== undefined ? opts.intervalMs : cadence.intervalMs
@@ -133,10 +135,22 @@ export function usePolled<T>(
   // Wall-clock of the last successful fetch, mirrored out of state so the
   // visibilitychange catch-up can read it without re-subscribing on every poll.
   const lastSuccessRef = useRef<number | null>(null)
+  // Explicit reconciliation is single-flight at the hook boundary. Ordinary
+  // interval/catch-up refreshes must not supersede it merely because they claim
+  // a newer epoch while the heavier read is still running.
+  const manualEpochRef = useRef<number | null>(null)
+  const fetcherRef = useRef(fetcher)
+  const manualFetcherRef = useRef(opts.manualFetcher)
+  const onManualSuccessRef = useRef(opts.onManualSuccess)
+  fetcherRef.current = fetcher
+  manualFetcherRef.current = opts.manualFetcher
+  onManualSuccessRef.current = opts.onManualSuccess
 
-  const load = useCallback(() => {
+  const load = useCallback((manual = false) => {
     if (!enabled) return
+    if (manualEpochRef.current !== null) return
     const epoch = ++epochRef.current
+    if (manual) manualEpochRef.current = epoch
     // Instant paint: on a deps/key change, if a last-good result for the new key
     // is cached, show it immediately and flag `switching` while the fresh fetch
     // runs. If there is NO cached result for the new key, clear stale data so the
@@ -154,7 +168,8 @@ export function usePolled<T>(
     // Clear any prior error at the start of each attempt so a fresh poll never
     // shows a stale banner while it is still in flight; last-good `data` stays.
     setError(null)
-    fetcher()
+    const selectedFetcher = manual ? (manualFetcherRef.current ?? fetcherRef.current) : fetcherRef.current
+    selectedFetcher()
       .then(result => {
         if (epochRef.current !== epoch) return
         setData(result)
@@ -163,12 +178,14 @@ export function usePolled<T>(
         setLastSuccessAt(at)
         lastSuccessRef.current = at
         if (memoKey) memoSet(memoKey, result)
+        if (manual) onManualSuccessRef.current?.(result)
       })
       .catch(err => {
         if (epochRef.current !== epoch) return
         setError(normalizeCliError(err))
       })
       .finally(() => {
+        if (manualEpochRef.current === epoch) manualEpochRef.current = null
         if (epochRef.current !== epoch) return
         setLoading(false)
         setSwitching(false)
@@ -207,6 +224,7 @@ export function usePolled<T>(
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
       // Retire this generation so an in-flight fetch can't resolve into state
       // after unmount or a deps change.
+      manualEpochRef.current = null
       epochRef.current++
     }
   }, [load, intervalMs])
@@ -215,5 +233,9 @@ export function usePolled<T>(
     load()
   }, [load])
 
-  return { data, error, loading, switching, lastSuccessAt, refresh }
+  const refreshFresh = useCallback(() => {
+    load(true)
+  }, [load])
+
+  return { data, error, loading, switching, lastSuccessAt, refresh, refreshFresh }
 }

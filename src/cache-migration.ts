@@ -14,11 +14,17 @@ export async function cacheMigrationCompleted(
   canonicalPath: string,
   kind: string,
   isUsableCanonical?: (value: unknown) => boolean,
+  canonicalAlreadyUsable = false,
 ): Promise<boolean> {
   if (!existsSync(canonicalPath)) return false
   try {
-    const canonical = JSON.parse(await readFile(canonicalPath, 'utf-8')) as unknown
-    if (isUsableCanonical && !isUsableCanonical(canonical)) return false
+    // Large canonical session caches are already parsed and validated by their
+    // caller before migration is considered. Re-reading tens of megabytes only
+    // to validate the marker made every process pay that cost twice.
+    if (!canonicalAlreadyUsable) {
+      const canonical = JSON.parse(await readFile(canonicalPath, 'utf-8')) as unknown
+      if (isUsableCanonical && !isUsableCanonical(canonical)) return false
+    }
     const raw = JSON.parse(await readFile(markerPath, 'utf-8')) as {
       version?: unknown
       kind?: unknown

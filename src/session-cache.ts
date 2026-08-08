@@ -544,13 +544,12 @@ async function adoptNewestPriorCache(): Promise<SessionCache | null> {
 }
 
 export async function loadCache(): Promise<SessionCache> {
-  let base: SessionCache
   try {
     const raw = await readFile(getCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
-    base = isValidCache(parsed) ? parsed : await afterMissingVersionedCache()
-  } catch { base = await afterMissingVersionedCache() }
-  return migrateLegacyDurableSessionCache(base)
+    if (isValidCache(parsed)) return migrateLegacyDurableSessionCache(parsed, true)
+  } catch { /* fall through to safe adoption */ }
+  return migrateLegacyDurableSessionCache(await afterMissingVersionedCache())
 }
 
 // The current versioned file is absent/unreadable. Prefer adopting the newest

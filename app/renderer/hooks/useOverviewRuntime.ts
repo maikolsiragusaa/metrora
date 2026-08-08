@@ -4,7 +4,7 @@ import { setActiveCurrency } from '../lib/format'
 import { metrora } from '../lib/ipc'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
 import { providerName } from './useDesktopScope'
-import { overviewMemoKey, useProviderPrefetch } from './useProviderPrefetch'
+import { overviewMemoKey } from './useProviderPrefetch'
 import { clearPolledMemo, type Polled, usePolled } from './usePolled'
 
 export type DetectedProvider = {
@@ -68,14 +68,37 @@ export function useOverviewRuntime({
 
   // Preserve the existing 2/3-argument bridge calls when no config is scoped;
   // only add --claude-config-source once the user selected a real config.
-  const overview = usePolled<MenubarPayload>(
-    () => scopedClaudeConfigSource
+  const requestOverview = (fresh: boolean) => {
+    if (fresh) {
+      return metrora.getOverview(
+        period,
+        provider,
+        customRange ?? undefined,
+        scopedClaudeConfigSource ?? undefined,
+        false,
+        true,
+      )
+    }
+    return scopedClaudeConfigSource
       ? metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
       : customRange
       ? metrora.getOverview(period, provider, customRange)
-      : metrora.getOverview(period, provider),
+      : metrora.getOverview(period, provider)
+  }
+
+  const overviewKey = overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource)
+  const overview = usePolled<MenubarPayload>(
+    () => requestOverview(false),
     [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource],
-    { memoKey: overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource) },
+    {
+      memoKey: overviewKey,
+      manualFetcher: () => requestOverview(true),
+      onManualSuccess: () => {
+        // Section-specific snapshot reads run only after the reconciled
+        // canonical cache has been atomically published.
+        setRefreshToken(token => token + 1)
+      },
+    },
   )
 
   // The first Overview resolution is the single cold-cache warm authority. This
@@ -111,21 +134,13 @@ export function useOverviewRuntime({
     overview.switching,
   ])
 
-  useProviderPrefetch({
-    ready,
-    hasOverviewData: overview.data != null,
-    overviewLoading: overview.loading,
-    detectedProviders,
-    period,
-    provider,
-    customRange,
-    scopedClaudeConfigSource,
-  })
+  // Automatic multi-period/provider warming was disproportionate: each target
+  // was a separate CLI process and could turn one launch into a scan queue.
+  // Exact-scope results are still memoized after a real visit.
 
   const refreshVisible = useCallback(() => {
-    overview.refresh()
-    setRefreshToken(token => token + 1)
-  }, [overview.refresh])
+    overview.refreshFresh()
+  }, [overview.refreshFresh])
 
   const onConfigMutated = useCallback((kind: ConfigMutationKind = 'accounting') => {
     if (kind === 'display') {

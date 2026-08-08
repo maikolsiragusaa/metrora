@@ -362,6 +362,11 @@ export function OverviewContent({
   return (
     <div className="ov-dashboard">
       {error && <StaleBanner error={error} />}
+      {!error && data.freshness?.reconciliation === 'degraded' && (
+        <div role="status" className="stale-banner">
+          Showing canonical last-good data · source reconciliation is incomplete
+        </div>
+      )}
       <div className="ov-card ov-home-shell" aria-label="Key performance indicators">
         <OverviewHomeSummary
           current={data.current}
