@@ -11,7 +11,7 @@ import { join } from 'path'
 import { getMetroraConfigDir } from '../product-paths.js'
 
 const SERVICE_NAME = 'metrora-sync'
-const LEGACY_SERVICE_NAMES = ['qovrion-sync', 'codeburn-sync'] as const
+const LEGACY_SERVICE_NAMES = ['metrora-sync', 'metrora-sync'] as const
 const ACCOUNT_NAME = 'refresh-token'
 
 export type StorageMethod = 'keychain' | 'secret-tool' | 'dpapi' | 'file'
@@ -222,8 +222,8 @@ export function createCredentialStore(): CredentialStore {
   // can fully isolate with a temp HOME). Canonical env wins; legacy names stay
   // accepted only as temporary compatibility aliases.
   const forcedStore = process.env.METRORA_SYNC_TOKEN_STORE
-    ?? process.env.QOVRION_SYNC_TOKEN_STORE
-    ?? process.env.CODEBURN_SYNC_TOKEN_STORE
+    ?? process.env.METRORA_SYNC_TOKEN_STORE
+    ?? process.env.METRORA_SYNC_TOKEN_STORE
   if (forcedStore === 'file') {
     return new FileStore()
   }

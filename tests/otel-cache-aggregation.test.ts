@@ -99,14 +99,14 @@ describe.skipIf(!isSqliteAvailable())(
       dbPath   = join(tmpHome, 'agent-traces.db')
 
       process.env['HOME']              = tmpHome
-      process.env['CODEBURN_CACHE_DIR'] = tmpCache
+      process.env['METRORA_CACHE_DIR'] = tmpCache
 
-      vi.stubEnv('CODEBURN_COPILOT_OTEL_DB', dbPath)
-      vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '')
+      vi.stubEnv('METRORA_COPILOT_OTEL_DB', dbPath)
+      vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '')
       // Redirect JSONL and transcript dirs to nonexistent paths so real
       // developer session files don't contaminate the test results.
-      vi.stubEnv('CODEBURN_COPILOT_SESSION_STATE_DIR', join(tmpHome, 'no-jsonl'))
-      vi.stubEnv('CODEBURN_COPILOT_WS_STORAGE_DIR',   join(tmpHome, 'no-ws'))
+      vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', join(tmpHome, 'no-jsonl'))
+      vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR',   join(tmpHome, 'no-ws'))
     })
 
     afterEach(async () => {

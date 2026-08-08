@@ -7,8 +7,8 @@ import {
   TimestampSchema,
 } from './common.js'
 
-export const WORKSPACE_KIND = 'qovrion.workspace' as const
-export const WORKSPACE_MEMBERSHIP_KIND = 'qovrion.workspace-membership' as const
+export const WORKSPACE_KIND = 'metrora.workspace' as const
+export const WORKSPACE_MEMBERSHIP_KIND = 'metrora.workspace-membership' as const
 
 export const WorkspaceOwnershipSchema = z.enum(['personal', 'organization'])
 export const WorkspaceStatusSchema = z.enum(['active', 'suspended', 'deleted'])

@@ -123,7 +123,7 @@ The macOS menubar and other retained platform surfaces are not official Metrora 
 
 ## Compatibility aliases
 
-`qovrion` and `codeburn` remain temporary command aliases. They exist to preserve scripts, persisted state and integrations during migration.
+Legacy command aliases remain temporary runtime compatibility shims. They exist to preserve scripts, persisted state and integrations during migration.
 
 New documentation, scripts and releases should use `metrora`. Compatibility aliases may be removed only through an explicit migration that protects existing user-owned state.
 

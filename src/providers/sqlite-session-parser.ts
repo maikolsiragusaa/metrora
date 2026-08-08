@@ -90,7 +90,7 @@ function warnUnrecognizedSchemaOnce(providerLabel: string, missing: string[]): v
   warnedSchemas.set(providerLabel, providerSet)
   process.stderr.write(
     `metrora: ${providerLabel} database is missing expected tables (${missing.join(', ')}). ` +
-    `Run ${providerLabel} once to apply migrations, or report at https://github.com/getagentseal/codeburn/issues if this persists.\n`
+    `Run ${providerLabel} once to apply migrations, or report at https://github.com/maikolsiragusaa/metrora/issues if this persists.\n`
   )
 }
 
@@ -257,7 +257,7 @@ export function createSqliteSessionParser(
             }
           }
 
-          if (yieldCount === 0 && process.env['CODEBURN_VERBOSE'] === '1') {
+          if (yieldCount === 0 && process.env['METRORA_VERBOSE'] === '1') {
             process.stderr.write(
               `metrora: ${config.displayName} session ${sessionId} has ${messages.length} messages ` +
               `(${parseFailCount} unparseable, ${roleSkipCount} non-user/assistant roles) ` +

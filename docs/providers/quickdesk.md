@@ -17,11 +17,11 @@ For each profile base it reads:
 - `metrics/metrics-YYYY-MM-DD.jsonl`
 - `sessions/sessions.db`
 
-`probeRoots()` reports the same resolved profile bases for `codeburn doctor`.
+`probeRoots()` reports the same resolved profile bases for `metrora doctor`.
 
 ## Storage format
 
-Metrics files contain one AWS Embedded Metric Format JSON object per line. A usage row must have `Model`, `InputTokens`, and `OutputTokens`. `_aws.Timestamp` is milliseconds since the Unix epoch; when it is absent, the date in the metrics filename is used at midnight UTC. A numeric `CostUSD` is preserved as measured cost. Rows without `CostUSD` are priced through codeburn's existing model pricing and marked estimated. Tool-only rows in the file are linked to usage by `session_id`; `thread_id` may be present but is not required for the link. Malformed lines are skipped independently.
+Metrics files contain one AWS Embedded Metric Format JSON object per line. A usage row must have `Model`, `InputTokens`, and `OutputTokens`. `_aws.Timestamp` is milliseconds since the Unix epoch; when it is absent, the date in the metrics filename is used at midnight UTC. A numeric `CostUSD` is preserved as measured cost. Rows without `CostUSD` are priced through metrora's existing model pricing and marked estimated. Tool-only rows in the file are linked to usage by `session_id`; `thread_id` may be present but is not required for the link. Malformed lines are skipped independently.
 
 The SQLite database is opened read-only through `src/sqlite.ts`. The provider introspects `sqlite_master` and table columns before querying `sessions` or `session_messages`. It uses non-deleted sessions for the first user message and tools. A non-deleted session absent from every metrics file gets one estimated `quickdesk-auto` call: user and non-assistant content is input, assistant content is output, and characters are converted at four characters per token. Missing tables or columns disable only the affected enrichment or fallback; metrics remain usable.
 

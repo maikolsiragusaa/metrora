@@ -15,9 +15,9 @@ import {
   sessionCachePath,
 } from '../src/session-cache.js'
 
-const TMP_DIR = join(tmpdir(), `codeburn-rich-cache-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+const TMP_DIR = join(tmpdir(), `metrora-rich-cache-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
 
-beforeEach(() => { process.env['CODEBURN_CACHE_DIR'] = TMP_DIR })
+beforeEach(() => { process.env['METRORA_CACHE_DIR'] = TMP_DIR })
 afterEach(async () => { if (existsSync(TMP_DIR)) await rm(TMP_DIR, { recursive: true }) })
 
 function richCall(): CachedCall {

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { resolveTarget } from './cli'
+import { LEGACY_COMPAT_ENV, METRORA_ENV } from './identity'
 
 const saved = { ...process.env }
 let dir: string
@@ -13,9 +14,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'metrora-cli-identity-'))
   for (const key of Object.keys(process.env)) delete process.env[key]
   Object.assign(process.env, saved)
-  for (const key of ['METRORA_BIN', 'QOVRION_BIN', 'CODEBURN_BIN', 'METRORA_BUNDLED_CLI', 'QOVRION_BUNDLED_CLI', 'CODEBURN_BUNDLED_CLI', 'VITE_DEV_SERVER_URL']) delete process.env[key]
-  process.env.METRORA_PATH_DIRS = ''
-  process.env.METRORA_CLI_PATH_FILE = join(dir, 'none')
+  for (const key of [METRORA_ENV.bin, LEGACY_COMPAT_ENV.bin, METRORA_ENV.bundledCli, LEGACY_COMPAT_ENV.bundledCli, 'VITE_DEV_SERVER_URL']) delete process.env[key]
+  process.env[METRORA_ENV.pathDirs] = ''
+  process.env[METRORA_ENV.cliPathFile] = join(dir, 'none')
 })
 
 afterEach(() => {
@@ -34,30 +35,28 @@ function file(name: string): string {
 describe('Metrora CLI resolver wiring', () => {
   it('prefers METRORA_BIN over both compatibility variables', () => {
     const canonical = file('metrora')
-    process.env.METRORA_BIN = canonical
-    process.env.QOVRION_BIN = file('qovrion')
-    process.env.CODEBURN_BIN = file('codeburn')
+    process.env[METRORA_ENV.bin] = canonical
+    process.env[LEGACY_COMPAT_ENV.bin] = file('legacy-cli')
     expect(resolveTarget()).toEqual({ kind: 'external', bin: canonical })
   })
 
-  it('prefers QOVRION_BIN over CODEBURN_BIN when Metrora is absent', () => {
-    const qovrion = file('qovrion')
-    process.env.QOVRION_BIN = qovrion
-    process.env.CODEBURN_BIN = file('codeburn')
-    expect(resolveTarget()).toEqual({ kind: 'external', bin: qovrion })
+  it('prefers the canonical bin over the compatibility bin when Metrora is present', () => {
+    const metrora = file('metrora')
+    process.env[METRORA_ENV.bin] = metrora
+    process.env[LEGACY_COMPAT_ENV.bin] = file('legacy-cli')
+    expect(resolveTarget()).toEqual({ kind: 'external', bin: metrora })
   })
 
-  it('retains CODEBURN_BIN as the final fallback', () => {
-    const legacy = file('codeburn')
-    process.env.CODEBURN_BIN = legacy
+  it('retains the compatibility bin as the final fallback', () => {
+    const legacy = file('legacy-cli')
+    process.env[LEGACY_COMPAT_ENV.bin] = legacy
     expect(resolveTarget()).toEqual({ kind: 'external', bin: legacy })
   })
 
   it('applies the same precedence to bundled entries', () => {
     const canonical = file('metrora-bundled.js')
-    process.env.METRORA_BUNDLED_CLI = canonical
-    process.env.QOVRION_BUNDLED_CLI = file('qovrion-bundled.js')
-    process.env.CODEBURN_BUNDLED_CLI = file('codeburn-bundled.js')
+    process.env[METRORA_ENV.bundledCli] = canonical
+    process.env[LEGACY_COMPAT_ENV.bundledCli] = file('legacy-bundled.js')
     expect(resolveTarget()).toEqual({ kind: 'bundled', entry: canonical })
   })
 })

@@ -27,7 +27,7 @@ The parser tries both and dedupes via `seenKeys`.
 
 ## Caching
 
-`src/cursor-cache.ts` writes `~/.cache/codeburn/cursor-results.json` (override with `$CODEBURN_CACHE_DIR`). The fingerprint is `dbMtimeMs + dbSizeBytes` of `state.vscdb`. Atomic write via temp + rename.
+`src/cursor-cache.ts` writes `~/.cache/metrora/cursor-results.json` (override with `$METRORA_CACHE_DIR`). The fingerprint is `dbMtimeMs + dbSizeBytes` of `state.vscdb`. Atomic write via temp + rename.
 
 ## Deduplication
 

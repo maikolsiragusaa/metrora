@@ -49,7 +49,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // published package (dist/dash next to the bundled CLI) and from source.
 function resolveDashDir(): string | null {
   const candidates = [
-    process.env['CODEBURN_DASH_DIR'],
+    process.env['METRORA_DASH_DIR'],
     join(HERE, 'dash'),
     join(HERE, '..', 'dist', 'dash'),
     join(HERE, '..', 'dash', 'dist'),
@@ -161,7 +161,7 @@ export async function runWebDashboard(opts: {
     const devices = [{ id: 'local', name: hostname(), local: true, payload }]
     // Escape every '<' so a device/model/project name can't close the <script>.
     const json = JSON.stringify({ devices }).replace(/</g, String.fromCharCode(92) + 'u003c')
-    const injected = html.replace('<script type="module"', `<script>window.__CODEBURN_BOOTSTRAP__=${json}</script>\n    <script type="module"`)
+    const injected = html.replace('<script type="module"', `<script>window.__METRORA_BOOTSTRAP__=${json}</script>\n    <script type="module"`)
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     res.end(injected)
   }

@@ -32,7 +32,7 @@ const roots: string[] = []
 type Fixture = { root: string; home: string; project: string; actionsDir: string }
 
 async function makeFixture(): Promise<Fixture> {
-  const root = await mkdtemp(join(tmpdir(), 'codeburn-optimize-apply-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-optimize-apply-'))
   roots.push(root)
   const home = join(root, 'home')
   const project = join(root, 'project')
@@ -216,9 +216,9 @@ describe('claude-md rule plan', () => {
 
     let body = await readFile(claudeMd, 'utf-8')
     expect(body).toContain('# Project')
-    expect(body).toContain('<!-- codeburn:begin read-edit-ratio -->')
+    expect(body).toContain('<!-- metrora:begin read-edit-ratio -->')
     expect(body).toContain('Read before editing.')
-    expect(body).toContain('<!-- codeburn:end read-edit-ratio -->')
+    expect(body).toContain('<!-- metrora:end read-edit-ratio -->')
 
     // Second apply with the same id replaces the block instead of duplicating.
     const second = makeFinding('read-edit-ratio', { type: 'paste', destination: 'claude-md', label: '', text: 'Read first, then edit.' })
@@ -226,7 +226,7 @@ describe('claude-md rule plan', () => {
     const secondRec = await runAction(secondPlan!, fx.actionsDir)
 
     body = await readFile(claudeMd, 'utf-8')
-    expect(body.match(/codeburn:begin read-edit-ratio/g)).toHaveLength(1)
+    expect(body.match(/metrora:begin read-edit-ratio/g)).toHaveLength(1)
     expect(body).toContain('Read first, then edit.')
     expect(body).not.toContain('Read before editing.')
 
@@ -245,7 +245,7 @@ describe('shell-config plan', () => {
 
     await runAction(plan!, fx.actionsDir)
     const body = await readFile(join(fx.home, '.zshrc'), 'utf-8')
-    expect(body).toBe('# codeburn:begin bash-output-cap\nexport BASH_MAX_OUTPUT_LENGTH=15000\n# codeburn:end bash-output-cap\n')
+    expect(body).toBe('# metrora:begin bash-output-cap\nexport BASH_MAX_OUTPUT_LENGTH=15000\n# metrora:end bash-output-cap\n')
   })
 })
 
@@ -522,7 +522,7 @@ describe('runOptimizeApply end-to-end', () => {
     await runOptimizeApply([], undefined, applyOpts(fx2, io2, { findings: [claudeMdFinding], yes: true, only: 'read-edit-ratio' }))
 
     expect((await readRecords(fx2.actionsDir)).map(r => r.kind)).toEqual(['claude-md-rule'])
-    expect(await readFile(join(fx2.project, 'CLAUDE.md'), 'utf-8')).toContain('<!-- codeburn:begin read-edit-ratio -->')
+    expect(await readFile(join(fx2.project, 'CLAUDE.md'), 'utf-8')).toContain('<!-- metrora:begin read-edit-ratio -->')
   })
 
   it('project-scope leaves unrelated projects[*] entries untouched and previews the cold removals', async () => {

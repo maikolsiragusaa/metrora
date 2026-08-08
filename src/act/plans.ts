@@ -436,7 +436,7 @@ function shellOverrideManualNotes(path: string, homeDir: string, replacement?: s
   const action = replacementLine === undefined
     ? `delete the line \`${line}\` from ${shown}`
     : `in ${shown}, change the line \`${line}\` to \`${replacementLine}\``
-  return [`manual: ${action} yourself — codeburn only appends marker blocks to shell files and never edits user lines`]
+  return [`manual: ${action} yourself — metrora only appends marker blocks to shell files and never edits user lines`]
 }
 
 // mcp-deferral-off -> defer-enable. Only two causes are auto-appliable:
@@ -669,8 +669,8 @@ function escapeRegExp(s: string): string {
 }
 
 function upsertMarkerBlock(existing: string | null, id: string, text: string, style: 'html' | 'hash'): string {
-  const begin = style === 'html' ? `<!-- codeburn:begin ${id} -->` : `# codeburn:begin ${id}`
-  const end = style === 'html' ? `<!-- codeburn:end ${id} -->` : `# codeburn:end ${id}`
+  const begin = style === 'html' ? `<!-- metrora:begin ${id} -->` : `# metrora:begin ${id}`
+  const end = style === 'html' ? `<!-- metrora:end ${id} -->` : `# metrora:end ${id}`
   const block = `${begin}\n${text}\n${end}\n`
   if (!existing) return block
   const region = new RegExp(`${escapeRegExp(begin)}[\\s\\S]*?${escapeRegExp(end)}\\n?`)

@@ -12,7 +12,7 @@ const { getOverview, getOptimizeReport, getYield } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getOverview, getOptimizeReport, getYield } }
+  return { ...actual, metrora: { getOverview, getOptimizeReport, getYield } }
 })
 
 function makePayload(): MenubarPayload {
@@ -60,12 +60,12 @@ function makeOptimizeReport(): OptimizeJsonReport {
         id: 'context-heavy-sessions', title: 'Cache hit is low in agentseal-dash',
         explanation: 'Repeated context is not being served from cache.', severity: 'medium',
         trend: null, tokensSaved: 17_400, estimatedSavingsUSD: 8.7,
-        fix: { type: 'command', label: 'Run this command', text: 'codeburn cache inspect' },
+        fix: { type: 'command', label: 'Run this command', text: 'metrora cache inspect' },
       },
       {
         id: 'warmup-heavy', title: 'Batch tiny requests', explanation: 'Many short sessions repeat setup work.',
         severity: 'low', trend: 'improving', tokensSaved: 4_800, estimatedSavingsUSD: 2.4,
-        fix: { type: 'file-content', label: 'Create configuration', path: '~/.codeburn/config.json', content: '{"batch":true}' },
+        fix: { type: 'file-content', label: 'Create configuration', path: '~/.metrora/config.json', content: '{"batch":true}' },
       },
     ],
   }
@@ -81,7 +81,7 @@ function makeYield(): YieldJsonReport {
       total: { costUSD: 612.4, sessions: 26 }, productiveToRevertedCostRatio: 4.1,
     },
     details: [
-      { sessionId: 'rev-1', project: 'codeburn', category: 'reverted', commitCount: 2, costUSD: 55 },
+      { sessionId: 'rev-1', project: 'metrora', category: 'reverted', commitCount: 2, costUSD: 55 },
       { sessionId: 'rev-2', project: 'agentseal-dash', category: 'reverted', commitCount: 1, costUSD: 52 },
       { sessionId: 'abn-1', project: 'sandbox-spike', category: 'abandoned', commitCount: 0, costUSD: 65.4 },
       { sessionId: 'prod-1', project: 'desktop-app', category: 'productive', commitCount: 5, costUSD: 440 },
@@ -160,7 +160,7 @@ describe('Optimize', () => {
 
     expect(first).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('region', { name: 'Opus is doing your small talk details' })).not.toBeInTheDocument()
-    expect(screen.getByText('~/.codeburn/config.json')).toBeInTheDocument()
+    expect(screen.getByText('~/.metrora/config.json')).toBeInTheDocument()
     expect(screen.getByText('{"batch":true}')).toBeInTheDocument()
   })
 
@@ -171,9 +171,9 @@ describe('Optimize', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Reverted work $107.00' }))
     const reverted = screen.getByRole('table', { name: 'Reverted sessions' })
     expect(within(reverted).getByRole('columnheader', { name: 'Project and session' })).toBeInTheDocument()
-    expect(within(reverted).getByText('codeburn')).toBeInTheDocument()
+    expect(within(reverted).getByText('metrora')).toBeInTheDocument()
     expect(within(reverted).getByText('2 commits · Session ID rev-1')).toBeInTheDocument()
-    expect(within(reverted).getByRole('row', { name: /codeburn\. 2 commits\. Session ID rev-1\. Cost \$55\.00\./ })).toBeInTheDocument()
+    expect(within(reverted).getByRole('row', { name: /metrora\. 2 commits\. Session ID rev-1\. Cost \$55\.00\./ })).toBeInTheDocument()
     expect(screen.queryByText('sandbox-spike')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Abandoned work $65.40' }))
@@ -181,7 +181,7 @@ describe('Optimize', () => {
     expect(within(abandoned).getByText('sandbox-spike')).toBeInTheDocument()
     expect(within(abandoned).getByText('0 commits · Session ID abn-1')).toBeInTheDocument()
     expect(within(abandoned).getByText('$65.40')).toHaveClass('val')
-    expect(screen.queryByText('codeburn')).not.toBeInTheDocument()
+    expect(screen.queryByText('metrora')).not.toBeInTheDocument()
     expect(screen.queryByText('desktop-app')).not.toBeInTheDocument()
   })
 
@@ -272,10 +272,10 @@ describe('Optimize', () => {
 
     expect(await screen.findByRole('tab', { name: 'Reverted work $107.00' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Reverted work $107.00' }))
-    expect(screen.getByText('codeburn')).toBeInTheDocument()
+    expect(screen.getByText('metrora')).toBeInTheDocument()
     rerender(<OptimizeContent period="30days" overview={overview} refreshToken={1} />)
     await waitFor(() => expect(getYield).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('tab', { name: 'Reverted work $107.00' })).toBeInTheDocument()
-    expect(screen.getByText('codeburn')).toBeInTheDocument()
+    expect(screen.getByText('metrora')).toBeInTheDocument()
   })
 })

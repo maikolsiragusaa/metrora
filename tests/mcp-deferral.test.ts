@@ -165,12 +165,12 @@ function deferralOffSessions(): SessionSummary[] {
 
 describe('findDeferralEnvSetting', () => {
   it('returns null when nothing is configured', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     expect(findDeferralEnvSetting('ENABLE_TOOL_SEARCH', [], home)).toBeNull()
   })
 
   it('reads settings.json env fields before shell profiles', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     writeFile(join(home, '.zshrc'), 'export ENABLE_TOOL_SEARCH=true\n')
     const hit = findDeferralEnvSetting('ENABLE_TOOL_SEARCH', [], home)
@@ -180,7 +180,7 @@ describe('findDeferralEnvSetting', () => {
   })
 
   it('matches shell profile lines with and without export', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeFile(join(home, '.bashrc'), '# config\nENABLE_TOOL_SEARCH="auto:25"\n')
     const hit = findDeferralEnvSetting('ENABLE_TOOL_SEARCH', [], home)
     expect(hit).not.toBeNull()
@@ -189,8 +189,8 @@ describe('findDeferralEnvSetting', () => {
   })
 
   it('prefers the most-specific scope, matching effective settings precedence', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'true' } })
     writeJson(join(cwd, '.claude', 'settings.local.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     const hit = findDeferralEnvSetting('ENABLE_TOOL_SEARCH', [cwd], home)
@@ -206,20 +206,20 @@ describe('findDeferralEnvSetting', () => {
 
 describe('detectMcpDeferralOff', () => {
   it('returns null for users with no MCP at all', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const projects = [project([makeSession({ sessionId: 'a' }), makeSession({ sessionId: 'b' })])]
     expect(detectMcpDeferralOff([], projects, new Set(), [], home)).toBeNull()
   })
 
   it('returns null when ToolSearch calls prove deferral was active', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const calls = [toolCall('ToolSearch'), toolCall('mcp__srv__t1')]
     const projects = [project(deferralOffSessions())]
     expect(detectMcpDeferralOff(calls, projects, new Set(), [], home)).toBeNull()
   })
 
   it('returns null when any session observed an MCP inventory (deferral active)', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const sessions = [
       ...deferralOffSessions(),
       makeSession({ sessionId: 'c', inventory: ['mcp__srv__t1'] }),
@@ -228,7 +228,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('returns null below the minimum MCP-evidence session count', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const sessions = [
       makeSession({ sessionId: 'a', turns: claudeTurns(), mcpBreakdown: { srv: { calls: 3 } } }),
       makeSession({ sessionId: 'b', turns: claudeTurns() }),
@@ -237,7 +237,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('ignores MCP usage from non-Claude providers (no counter-evidence exists there)', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     // Codex/Copilot parsers normalize MCP calls into mcpBreakdown too, but
     // those sessions can never show ToolSearch calls or an inventory, so
     // they must not count as deferral-off evidence.
@@ -250,7 +250,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('emits the generic cause when no config explains the gap', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const projects = [project(deferralOffSessions())]
     const finding = detectMcpDeferralOff([], projects, new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -264,8 +264,8 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('counts every Claude session as affected when servers come from config', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { srv: { command: 'x' } } })
     const sessions = [
       makeSession({ sessionId: 'a', turns: claudeTurns() }),
@@ -281,8 +281,8 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('excludes alwaysLoad-pinned servers: all pinned means no finding', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // Deferral working with every server deliberately pinned: pinned tools
     // are never deferred, so no inventory and no ToolSearch calls is the
     // EXPECTED shape, not evidence of a gap.
@@ -295,8 +295,8 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('charges only unpinned servers when pinned and unpinned coexist', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // The pinned server's schema is mcp-alwaysload-hygiene's jurisdiction;
     // charging it here too would double-count the same tokens.
     writeJson(join(cwd, '.mcp.json'), {
@@ -312,7 +312,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes ENABLE_TOOL_SEARCH=false in user settings', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -323,7 +323,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes ENABLE_TOOL_SEARCH=false in user local settings', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.local.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -331,8 +331,8 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes ENABLE_TOOL_SEARCH=false in project settings, naming the path', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set([cwd]), [], home)
     expect(finding).not.toBeNull()
@@ -341,8 +341,8 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes ENABLE_TOOL_SEARCH=false in project local settings, naming the path', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.claude', 'settings.local.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set([cwd]), [], home)
     expect(finding).not.toBeNull()
@@ -351,7 +351,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes ENABLE_TOOL_SEARCH=false in a shell profile', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeFile(join(home, '.zshrc'), 'export ENABLE_TOOL_SEARCH=false\n')
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -359,7 +359,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes a non-first-party ANTHROPIC_BASE_URL with unknown-proxy wording', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ANTHROPIC_BASE_URL: 'https://llm-proxy.corp.example:8443/v1' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -371,7 +371,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('treats api.anthropic.com as first-party and falls through to generic', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -379,7 +379,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes CLAUDE_CODE_USE_VERTEX', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeFile(join(home, '.bashrc'), 'export CLAUDE_CODE_USE_VERTEX=1\n')
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -387,7 +387,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('attributes Claude Code versions predating tool search default-on (v2.1.7)', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const apiCalls = [apiCall('2.0.14'), apiCall('2.1.6')]
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), apiCalls, home)
     expect(finding).not.toBeNull()
@@ -397,7 +397,7 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('does not blame the version when any observed version has default-on tool search', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const apiCalls = [apiCall('2.0.14'), apiCall('2.1.30')]
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), apiCalls, home)
     expect(finding).not.toBeNull()
@@ -405,13 +405,13 @@ describe('detectMcpDeferralOff', () => {
   })
 
   it('yields to the defer-threshold detector when an auto override is set', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'auto:50' } })
     expect(detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)).toBeNull()
   })
 
   it('does not re-suggest the export when ENABLE_TOOL_SEARCH=true is already set', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'true' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding).not.toBeNull()
@@ -427,8 +427,8 @@ describe('detectMcpDeferralOff', () => {
 
 describe('deferral-off / defer-threshold handoff', () => {
   it('an out-of-range auto:N produces exactly one finding from the family', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // auto:1234 is nonsense-but-reachable: the threshold can never trigger.
     // deferral-off must yield AND defer-threshold must accept (clamping to
     // 100%), or the value would silently suppress both findings.
@@ -460,15 +460,15 @@ describe('detectMcpAlwaysLoadHygiene', () => {
   }
 
   it('returns null when no server sets alwaysLoad', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x' } } })
     expect(detectMcpAlwaysLoadHygiene([project(fiveSessions(0))], new Set([cwd]), [], undefined, home)).toBeNull()
   })
 
   it('flags an alwaysLoad server with usage below one call per five sessions', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     const finding = detectMcpAlwaysLoadHygiene([project(fiveSessions(0))], new Set([cwd]), [], undefined, home)
     expect(finding).not.toBeNull()
@@ -481,16 +481,16 @@ describe('detectMcpAlwaysLoadHygiene', () => {
   })
 
   it('does not flag an alwaysLoad server at or above the call-rate threshold', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     // 1 call / 5 sessions = 0.2 exactly; the threshold flags only strictly below.
     expect(detectMcpAlwaysLoadHygiene([project(fiveSessions(1))], new Set([cwd]), [], undefined, home)).toBeNull()
   })
 
   it('prefers observed inventory tool counts and loaded sessions when available', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     const inventory = Array.from({ length: 8 }, (_, i) => `mcp__pinned__t${i}`)
     const sessions = [
@@ -507,23 +507,23 @@ describe('detectMcpAlwaysLoadHygiene', () => {
   })
 
   it('does not flag an alwaysLoad server clearly over the call-rate threshold', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     // 5 calls / 5 sessions = 1.0, well over the 0.2 threshold.
     expect(detectMcpAlwaysLoadHygiene([project(fiveSessions(5))], new Set([cwd]), [], undefined, home)).toBeNull()
   })
 
   it('returns null when there are no sessions in the window', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     expect(detectMcpAlwaysLoadHygiene([], new Set([cwd]), [], undefined, home)).toBeNull()
   })
 
   it('returns null when every observed version predates server-level alwaysLoad (v2.1.121)', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     // On these versions the key is inert: tools defer normally, no cost.
     const apiCalls = [apiCall('2.1.100'), apiCall('2.1.120')]
@@ -531,8 +531,8 @@ describe('detectMcpAlwaysLoadHygiene', () => {
   })
 
   it('still flags when any observed version supports alwaysLoad', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     const apiCalls = [apiCall('2.1.100'), apiCall('2.1.121')]
     expect(detectMcpAlwaysLoadHygiene([project(fiveSessions(0))], new Set([cwd]), apiCalls, undefined, home)).not.toBeNull()
@@ -551,23 +551,23 @@ describe('detectMcpDeferThreshold', () => {
   }
 
   it('returns null when ENABLE_TOOL_SEARCH is not configured', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(3))
     expect(detectMcpDeferThreshold([project([makeSession({ turns: claudeTurns() })])], new Set([cwd]), home)).toBeNull()
   })
 
   it('returns null for non-auto values like true or false', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(3))
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'true' } })
     expect(detectMcpDeferThreshold([project([makeSession({ turns: claudeTurns() })])], new Set([cwd]), home)).toBeNull()
   })
 
   it('flags an auto threshold that the estimated defs fit under', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // 3 servers x 5 tools x 400 tokens = 6k defs/session, under the default
     // 10% of 200k (20k) but over the 5k substantial-cost floor.
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(3))
@@ -587,8 +587,8 @@ describe('detectMcpDeferThreshold', () => {
   })
 
   it('returns null when defs exceed the configured threshold (auto already defers)', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // 6k defs/session vs auto:2 threshold of 4k -> deferral kicks in.
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(3))
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'auto:2' } })
@@ -596,8 +596,8 @@ describe('detectMcpDeferThreshold', () => {
   })
 
   it('returns null when the upfront defs are not substantial', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // 2 servers = 4k defs/session, under the 5k floor.
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(2))
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'auto' } })
@@ -605,8 +605,8 @@ describe('detectMcpDeferThreshold', () => {
   })
 
   it('returns null when an inventory shows deferral already working', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(3))
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'auto' } })
     const sessions = [makeSession({ inventory: ['mcp__srv0__t1'] })]
@@ -614,8 +614,8 @@ describe('detectMcpDeferThreshold', () => {
   })
 
   it('recommends removing the override when defs already exceed the default 10%', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     // 15 servers = 30k defs/session: fits under auto:50 (100k) but exceeds
     // the default 10% (20k), so dropping the override is enough.
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(15))
@@ -626,14 +626,14 @@ describe('detectMcpDeferThreshold', () => {
   })
 
   it('returns null for users with no MCP servers at all', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'auto' } })
     expect(detectMcpDeferThreshold([project([makeSession({ turns: claudeTurns() })])], new Set(), home)).toBeNull()
   })
 
   it('returns null when there are no sessions in the window', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), mcpJsonWithServers(3))
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'auto' } })
     // Configured servers but zero sessions: no phantom "all 0 sessions"
@@ -650,7 +650,7 @@ describe('detectMcpDeferThreshold', () => {
 
 describe('deferral finding apply payloads', () => {
   it('env-false carries a defer-enable payload naming the settings file, scope, and value', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'false' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding!.apply).toEqual({
@@ -663,14 +663,14 @@ describe('deferral finding apply payloads', () => {
   })
 
   it('env-false in a shell profile keeps the shell-profile scope so the plan layer can refuse', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeFile(join(home, '.zshrc'), 'export ENABLE_TOOL_SEARCH=false\n')
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding!.apply).toMatchObject({ kind: 'defer-enable', cause: 'env-false', settingScope: 'shell profile' })
   })
 
   it('an unknown proxy carries cause proxy-unknown pointing at the base-URL setting', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     writeJson(join(home, '.claude', 'settings.json'), { env: { ANTHROPIC_BASE_URL: 'https://llm-proxy.corp.example' } })
     const finding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(finding!.apply).toMatchObject({
@@ -681,30 +681,30 @@ describe('deferral finding apply payloads', () => {
   })
 
   it('Vertex and old-version carry their refusal causes', () => {
-    const homeVertex = makeDir('codeburn-home-')
+    const homeVertex = makeDir('metrora-home-')
     writeFile(join(homeVertex, '.bashrc'), 'export CLAUDE_CODE_USE_VERTEX=1\n')
     const vertexFinding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], homeVertex)
     expect(vertexFinding!.apply).toMatchObject({ kind: 'defer-enable', cause: 'vertex' })
 
-    const homeOld = makeDir('codeburn-home-')
+    const homeOld = makeDir('metrora-home-')
     const oldFinding = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [apiCall('2.0.14')], homeOld)
     expect(oldFinding!.apply).toEqual({ kind: 'defer-enable', cause: 'old-version' })
   })
 
   it('the generic none-determinable causes carry no payload (nothing appliable)', () => {
-    const home = makeDir('codeburn-home-')
+    const home = makeDir('metrora-home-')
     const generic = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], home)
     expect(generic!.apply).toBeUndefined()
 
-    const homeTrue = makeDir('codeburn-home-')
+    const homeTrue = makeDir('metrora-home-')
     writeJson(join(homeTrue, '.claude', 'settings.json'), { env: { ENABLE_TOOL_SEARCH: 'true' } })
     const alreadyOn = detectMcpDeferralOff([], [project(deferralOffSessions())], new Set(), [], homeTrue)
     expect(alreadyOn!.apply).toBeUndefined()
   })
 
   it('alwaysload-hygiene payload names each flagged server and the exact files carrying the pin', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     writeJson(join(cwd, '.mcp.json'), { mcpServers: { pinned: { command: 'x', alwaysLoad: true } } })
     const sessions = Array.from({ length: 5 }, (_, i) => makeSession({ sessionId: `s${i}` }))
     const finding = detectMcpAlwaysLoadHygiene([project(sessions)], new Set([cwd]), [], undefined, home)
@@ -715,8 +715,8 @@ describe('deferral finding apply payloads', () => {
   })
 
   it('defer-threshold payload carries the override location, tightened N, and removal flag', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     const mcpServers: Record<string, unknown> = {}
     for (let i = 0; i < 3; i++) mcpServers[`srv${i}`] = { command: 'x' }
     writeJson(join(cwd, '.mcp.json'), { mcpServers })
@@ -733,8 +733,8 @@ describe('deferral finding apply payloads', () => {
   })
 
   it('defer-threshold payload sets removeOverride when the default threshold already defers', () => {
-    const home = makeDir('codeburn-home-')
-    const cwd = makeDir('codeburn-cwd-')
+    const home = makeDir('metrora-home-')
+    const cwd = makeDir('metrora-cwd-')
     const mcpServers: Record<string, unknown> = {}
     for (let i = 0; i < 15; i++) mcpServers[`srv${i}`] = { command: 'x' }
     writeJson(join(cwd, '.mcp.json'), { mcpServers })

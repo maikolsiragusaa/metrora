@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 import {
   buildAntigravityHookLookupPath,
   installAntigravityStatusLineHook,
-  resolvePersistentCodeburnPathFromPath,
   resolvePersistentMetroraPathFromPath,
   uninstallAntigravityStatusLineHook,
 } from '../src/antigravity-statusline.js'
@@ -16,7 +15,6 @@ type TempHookFixture = {
   settingsPath: string
   binDir: string
   metroraPath: string
-  codeburnPath: string
 }
 
 function executableName(command: string): string {
@@ -28,31 +26,33 @@ async function writeExecutable(path: string): Promise<void> {
   await chmod(path, 0o755)
 }
 
+function commandPath(path: string): string {
+  return process.platform === 'win32' ? path.replace(/\\/g, '\\\\') : path
+}
+
 describe('Antigravity CLI statusLine hook installer', () => {
   async function withTempSettings(run: (fixture: TempHookFixture) => Promise<void>) {
     const dir = await mkdtemp(join(tmpdir(), 'metrora-agy-hook-'))
     const settingsPath = join(dir, 'settings.json')
     const binDir = join(dir, 'bin')
     const metroraPath = join(binDir, executableName('metrora'))
-    const codeburnPath = join(binDir, executableName('codeburn'))
     await mkdir(binDir, { recursive: true })
     await writeExecutable(metroraPath)
-    await writeExecutable(codeburnPath)
 
-    const previousSettingsPath = process.env['CODEBURN_ANTIGRAVITY_SETTINGS_PATH']
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
+    const previousSettingsPath = process.env['METRORA_ANTIGRAVITY_SETTINGS_PATH']
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
     const previousPath = process.env.PATH
-    process.env['CODEBURN_ANTIGRAVITY_SETTINGS_PATH'] = settingsPath
-    process.env['CODEBURN_CACHE_DIR'] = join(dir, 'cache')
+    process.env['METRORA_ANTIGRAVITY_SETTINGS_PATH'] = settingsPath
+    process.env['METRORA_CACHE_DIR'] = join(dir, 'cache')
     process.env.PATH = binDir
 
     try {
-      await run({ dir, settingsPath, binDir, metroraPath, codeburnPath })
+      await run({ dir, settingsPath, binDir, metroraPath })
     } finally {
-      if (previousSettingsPath === undefined) delete process.env['CODEBURN_ANTIGRAVITY_SETTINGS_PATH']
-      else process.env['CODEBURN_ANTIGRAVITY_SETTINGS_PATH'] = previousSettingsPath
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousSettingsPath === undefined) delete process.env['METRORA_ANTIGRAVITY_SETTINGS_PATH']
+      else process.env['METRORA_ANTIGRAVITY_SETTINGS_PATH'] = previousSettingsPath
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       if (previousPath === undefined) delete process.env.PATH
       else process.env.PATH = previousPath
       await rm(dir, { recursive: true, force: true })
@@ -83,15 +83,15 @@ describe('Antigravity CLI statusLine hook installer', () => {
     })
   })
 
-  it('prefers metrora globally even when a codeburn alias appears earlier on PATH', async () => {
+  it('ignores a legacy executable when resolving the canonical hook command', async () => {
     await withTempSettings(async ({ dir }) => {
       const legacyBin = join(dir, 'legacy-bin')
       const canonicalBin = join(dir, 'canonical-bin')
-      const legacyCodeburn = join(legacyBin, executableName('codeburn'))
+      const legacyExecutable = join(legacyBin, executableName('legacy'))
       const canonicalMetrora = join(canonicalBin, executableName('metrora'))
       await mkdir(legacyBin, { recursive: true })
       await mkdir(canonicalBin, { recursive: true })
-      await writeExecutable(legacyCodeburn)
+      await writeExecutable(legacyExecutable)
       await writeExecutable(canonicalMetrora)
 
       const resolved = await resolvePersistentMetroraPathFromPath([legacyBin, canonicalBin].join(delimiter))
@@ -117,15 +117,11 @@ describe('Antigravity CLI statusLine hook installer', () => {
     })
   })
 
-  it('falls back to a persistent codeburn alias when metrora is unavailable', async () => {
+  it('rejects when no persistent metrora executable exists', async () => {
     await withTempSettings(async ({ dir }) => {
-      const legacyBin = join(dir, 'legacy-only')
-      const legacyCodeburn = join(legacyBin, executableName('codeburn'))
-      await mkdir(legacyBin, { recursive: true })
-      await writeExecutable(legacyCodeburn)
-
-      expect(await resolvePersistentMetroraPathFromPath(legacyBin)).toBe(legacyCodeburn)
-      expect(await resolvePersistentCodeburnPathFromPath(legacyBin)).toBe(legacyCodeburn)
+      const emptyBin = join(dir, 'empty-bin')
+      await mkdir(emptyBin, { recursive: true })
+      await expect(resolvePersistentMetroraPathFromPath(emptyBin)).rejects.toThrow(/persistent metrora command/)
     })
   })
 
@@ -166,7 +162,7 @@ describe('Antigravity CLI statusLine hook installer', () => {
   })
 
   it('installs the canonical metrora statusLine when no statusLine exists', async () => {
-    await withTempSettings(async ({ settingsPath, metroraPath, codeburnPath }) => {
+    await withTempSettings(async ({ settingsPath, metroraPath }) => {
       expect(await installAntigravityStatusLineHook(false)).toBe('installed')
       expect(await installAntigravityStatusLineHook(false)).toBe('already-installed')
 
@@ -175,8 +171,7 @@ describe('Antigravity CLI statusLine hook installer', () => {
         type: 'command',
         padding: 0,
       })
-      expect(settings.statusLine.command).toContain(metroraPath)
-      expect(settings.statusLine.command).not.toContain(codeburnPath)
+      expect(settings.statusLine.command).toContain(commandPath(metroraPath))
       expect(settings.statusLine.command).toContain('agy-statusline-hook')
       expect(settings.statusLine.command).not.toContain('dist/cli.js')
     })
@@ -187,7 +182,7 @@ describe('Antigravity CLI statusLine hook installer', () => {
       await writeFile(settingsPath, JSON.stringify({
         statusLine: {
           type: 'command',
-          command: "'/usr/local/bin/node' '/Users/me/codeburn-agy-statusline/dist/cli.js' agy-statusline-hook",
+          command: "'/usr/local/bin/node' '/Users/me/metrora-agy-statusline/dist/cli.js' agy-statusline-hook",
           padding: 0,
         },
       }))
@@ -195,9 +190,9 @@ describe('Antigravity CLI statusLine hook installer', () => {
       expect(await installAntigravityStatusLineHook(false)).toBe('installed')
 
       const settings = JSON.parse(await readFile(settingsPath, 'utf-8'))
-      expect(settings.statusLine.command).toContain(metroraPath)
+      expect(settings.statusLine.command).toContain(commandPath(metroraPath))
       expect(settings.statusLine.command).toContain('agy-statusline-hook')
-      expect(settings.statusLine.command).not.toContain('codeburn-agy-statusline/dist/cli.js')
+      expect(settings.statusLine.command).not.toContain('metrora-agy-statusline/dist/cli.js')
     })
   })
 
@@ -215,13 +210,13 @@ describe('Antigravity CLI statusLine hook installer', () => {
     })
   })
 
-  it('removes a legacy codeburn statusLine when there is no previous hook backup', async () => {
-    await withTempSettings(async ({ settingsPath, metroraPath, codeburnPath }) => {
+  it('removes a legacy metrora statusLine when there is no previous hook backup', async () => {
+    await withTempSettings(async ({ settingsPath, metroraPath }) => {
       await unlink(metroraPath)
       await writeFile(settingsPath, JSON.stringify({
         statusLine: {
           type: 'command',
-          command: `${codeburnPath} agy-statusline-hook`,
+          command: `${metroraPath} agy-statusline-hook`,
           padding: 0,
         },
       }))

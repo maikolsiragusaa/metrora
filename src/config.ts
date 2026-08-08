@@ -20,7 +20,7 @@ export type PlanConfigMap = Partial<Record<PlanProvider, PlanConfig>>
 export type PlanMap = Partial<Record<PlanProvider, Plan>>
 
 // Historical type name retained as an internal source-compatibility alias.
-export type CodeburnConfig = {
+export type MetroraConfig = {
   currency?: {
     code: string
     symbol?: string
@@ -72,16 +72,16 @@ function getConfigPath(): string {
   return join(getConfigDir(), 'config.json')
 }
 
-export async function readConfig(): Promise<CodeburnConfig> {
+export async function readConfig(): Promise<MetroraConfig> {
   try {
     const raw = await readFile(getConfigPath(), 'utf-8')
-    return JSON.parse(raw) as CodeburnConfig
+    return JSON.parse(raw) as MetroraConfig
   } catch {
     return {}
   }
 }
 
-export async function saveConfig(config: CodeburnConfig): Promise<void> {
+export async function saveConfig(config: MetroraConfig): Promise<void> {
   await mkdir(getConfigDir(), { recursive: true })
   const configPath = getConfigPath()
   // Randomize the temp path so two simultaneous saveConfig calls (from
@@ -111,7 +111,7 @@ function planFromConfig(provider: PlanProvider, plan: PlanConfig | undefined): P
   }
 }
 
-function normalizePlans(config: CodeburnConfig): PlanMap {
+function normalizePlans(config: MetroraConfig): PlanMap {
   const plans: PlanMap = {}
 
   if (config.plans && Object.keys(config.plans).length > 0) {

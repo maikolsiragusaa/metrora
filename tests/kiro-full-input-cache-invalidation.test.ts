@@ -16,9 +16,13 @@ import {
 import { estimateTokensFromChars } from '../src/token-estimate.js'
 
 const testRoot = vi.hoisted(() => {
-  const root = `${process.env['TMPDIR'] || '/tmp'}/kiro-full-input-cache-${process.pid}-${Date.now()}`
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.cwd()
+  const root = `${base}${base.endsWith(separator) ? '' : separator}.kiro-full-input-cache-${process.pid}-${Date.now()}`
   process.env['HOME'] = `${root}/home`
   process.env['USERPROFILE'] = `${root}/home`
+  process.env['HOMEPATH'] = `${root}/home`
+  process.env['HOMEDRIVE'] = ''
   return root
 })
 
@@ -96,7 +100,11 @@ async function seedPreviousCache(sourcePath: string): Promise<void> {
 }
 
 beforeEach(async () => {
-  process.env['CODEBURN_CACHE_DIR'] = CACHE_DIR
+  process.env['HOME'] = HOME
+  process.env['USERPROFILE'] = HOME
+  process.env['HOMEPATH'] = HOME
+  process.env['HOMEDRIVE'] = ''
+  process.env['METRORA_CACHE_DIR'] = CACHE_DIR
   clearSessionCache()
   await rm(testRoot, { recursive: true, force: true })
 })

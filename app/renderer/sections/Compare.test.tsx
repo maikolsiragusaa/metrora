@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: mocks }
+  return { ...actual, metrora: mocks }
 })
 
 const modelA: ModelStats = {

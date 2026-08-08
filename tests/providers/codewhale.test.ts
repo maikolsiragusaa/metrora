@@ -73,7 +73,7 @@ describe('codewhale provider', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'codewhale-test-'))
     previousCodeWhaleHome = process.env['CODEWHALE_HOME']
-    previousCacheDir = process.env['CODEBURN_CACHE_DIR']
+    previousCacheDir = process.env['METRORA_CACHE_DIR']
     clearSessionCache()
   })
 
@@ -81,8 +81,8 @@ describe('codewhale provider', () => {
     clearSessionCache()
     if (previousCodeWhaleHome === undefined) delete process.env['CODEWHALE_HOME']
     else process.env['CODEWHALE_HOME'] = previousCodeWhaleHome
-    if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-    else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+    if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+    else process.env['METRORA_CACHE_DIR'] = previousCacheDir
     await rm(tmpDir, { recursive: true, force: true })
   })
 
@@ -265,7 +265,7 @@ describe('codewhale provider', () => {
       cost: { session_cost_usd: 0.7, subagent_cost_usd: 0.05 },
     })
     process.env['CODEWHALE_HOME'] = home
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
 
     const first = await parseAllSessions(undefined, 'codewhale')
     clearSessionCache()

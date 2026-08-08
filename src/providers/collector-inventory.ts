@@ -2,7 +2,7 @@ import * as z from 'zod/v4'
 
 import { CollectorProvenanceProfilesV1 } from '../contracts/v1/collector-provenance.js'
 
-export const COLLECTOR_INVENTORY_KIND = 'qovrion.collector-inventory' as const
+export const COLLECTOR_INVENTORY_KIND = 'metrora.collector-inventory' as const
 
 export const CollectorLoadingModeV1Schema = z.enum(['core', 'lazy'])
 export const CollectorReviewStatusV1Schema = z.enum(['approved', 'priority', 'pending'])

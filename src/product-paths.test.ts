@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { getMetroraCacheDir, getMetroraConfigDir } from './product-paths.js'
+import {
+  getMetroraCacheDir,
+  getMetroraConfigDir,
+  LEGACY_CACHE_DIR_ENV,
+  LEGACY_CONFIG_DIR_ENV,
+  LEGACY_PRODUCT_ROOT,
+} from './product-paths.js'
 
 const roots: string[] = []
 
@@ -24,10 +30,10 @@ describe('Metrora product path authority', () => {
     expect(getMetroraCacheDir({}, home)).toBe(join(home, '.cache', 'metrora'))
   })
 
-  it('adopts existing legacy roots in place instead of abandoning user state', () => {
+  it('adopts an existing legacy root in place instead of abandoning user state', () => {
     const home = root()
-    const oldConfig = join(home, '.config', 'codeburn')
-    const oldCache = join(home, '.cache', 'codeburn')
+    const oldConfig = join(home, '.config', LEGACY_PRODUCT_ROOT)
+    const oldCache = join(home, '.cache', LEGACY_PRODUCT_ROOT)
     mkdirSync(oldConfig, { recursive: true })
     mkdirSync(oldCache, { recursive: true })
 
@@ -39,8 +45,8 @@ describe('Metrora product path authority', () => {
     const home = root()
     const canonicalConfig = join(home, '.config', 'metrora')
     const canonicalCache = join(home, '.cache', 'metrora')
-    mkdirSync(join(home, '.config', 'codeburn'), { recursive: true })
-    mkdirSync(join(home, '.cache', 'codeburn'), { recursive: true })
+    mkdirSync(join(home, '.config', LEGACY_PRODUCT_ROOT), { recursive: true })
+    mkdirSync(join(home, '.cache', LEGACY_PRODUCT_ROOT), { recursive: true })
     mkdirSync(canonicalConfig, { recursive: true })
     mkdirSync(canonicalCache, { recursive: true })
 
@@ -48,23 +54,21 @@ describe('Metrora product path authority', () => {
     expect(getMetroraCacheDir({}, home)).toBe(canonicalCache)
   })
 
-  it('honors Metrora overrides before temporary compatibility aliases', () => {
+  it('honors Metrora overrides before compatibility aliases', () => {
     const home = root()
     expect(getMetroraConfigDir({
       METRORA_CONFIG_DIR: '/canonical-config',
-      QOVRION_CONFIG_DIR: '/qovrion-config',
-      CODEBURN_CONFIG_DIR: '/legacy-config',
+      [LEGACY_CONFIG_DIR_ENV]: '/legacy-config',
     }, home)).toBe('/canonical-config')
     expect(getMetroraCacheDir({
       METRORA_CACHE_DIR: '/canonical-cache',
-      QOVRION_CACHE_DIR: '/qovrion-cache',
-      CODEBURN_CACHE_DIR: '/legacy-cache',
+      [LEGACY_CACHE_DIR_ENV]: '/legacy-cache',
     }, home)).toBe('/canonical-cache')
   })
 
   it('uses XDG bases without reintroducing a legacy product name', () => {
     const home = root()
-    expect(getMetroraConfigDir({ XDG_CONFIG_HOME: '/xdg/config' }, home)).toBe('/xdg/config/metrora')
-    expect(getMetroraCacheDir({ XDG_CACHE_HOME: '/xdg/cache' }, home)).toBe('/xdg/cache/metrora')
+    expect(getMetroraConfigDir({ XDG_CONFIG_HOME: join('\\xdg', 'config') }, home)).toBe(join('\\xdg', 'config', 'metrora'))
+    expect(getMetroraCacheDir({ XDG_CACHE_HOME: join('\\xdg', 'cache') }, home)).toBe(join('\\xdg', 'cache', 'metrora'))
   })
 })

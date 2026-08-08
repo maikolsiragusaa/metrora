@@ -14,7 +14,7 @@ describe('readSessionFile', () => {
   const tmpDirs: string[] = []
 
   afterEach(async () => {
-    delete process.env.CODEBURN_VERBOSE
+    delete process.env.METRORA_VERBOSE
     while (tmpDirs.length > 0) {
       const d = tmpDirs.pop()
       if (d) await rm(d, { recursive: true, force: true })
@@ -22,7 +22,7 @@ describe('readSessionFile', () => {
   })
 
   async function tmpPath(content: string | Buffer): Promise<string> {
-    const base = await mkdtemp(join(tmpdir(), 'codeburn-fs-'))
+    const base = await mkdtemp(join(tmpdir(), 'metrora-fs-'))
     tmpDirs.push(base)
     const p = join(base, 'x.jsonl')
     await writeFile(p, content)
@@ -47,14 +47,14 @@ describe('readSessionFile', () => {
     expect(await readSessionFile(p)).toBeNull()
   })
 
-  it('emits stderr warning under CODEBURN_VERBOSE=1 for skipped file', async () => {
-    process.env.CODEBURN_VERBOSE = '1'
+  it('emits stderr warning under METRORA_VERBOSE=1 for skipped file', async () => {
+    process.env.METRORA_VERBOSE = '1'
     const p = await tmpPath(Buffer.alloc(MAX_SESSION_FILE_BYTES + 1, 'c'))
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     await readSessionFile(p)
     expect(spy).toHaveBeenCalled()
     const msg = (spy.mock.calls[0][0] as string)
-    expect(msg).toContain('codeburn')
+    expect(msg).toContain('metrora')
     expect(msg).toContain('oversize')
     spy.mockRestore()
   })
@@ -75,7 +75,7 @@ describe('readSessionLines', () => {
   })
 
   async function tmpPath(content: string): Promise<string> {
-    const base = await mkdtemp(join(tmpdir(), 'codeburn-lines-'))
+    const base = await mkdtemp(join(tmpdir(), 'metrora-lines-'))
     tmpDirs.push(base)
     const p = join(base, 'session.jsonl')
     await writeFile(p, content)
@@ -178,7 +178,7 @@ describe('readSessionLines', () => {
     expect(lines).toEqual(['a', 'b', 'c'])
   })
 
-  it('skips files over the stream cap and surfaces a notice without CODEBURN_VERBOSE', async () => {
+  it('skips files over the stream cap and surfaces a notice without METRORA_VERBOSE', async () => {
     const p = await tmpPath('a\nb\nc\n')
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const lines: string[] = []

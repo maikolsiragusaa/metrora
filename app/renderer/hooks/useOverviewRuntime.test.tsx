@@ -21,7 +21,7 @@ vi.mock('../lib/format', () => ({
 }))
 
 vi.mock('../lib/ipc', () => ({
-  codeburn: {
+  metrora: {
     getOverview: mocks.getOverview,
   },
 }))

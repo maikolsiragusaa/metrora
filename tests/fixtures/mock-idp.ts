@@ -2,7 +2,7 @@
  * Mock OIDC Identity Provider for metrora sync e2e tests.
  *
  * Serves:
- * - /.well-known/codeburn-export.json (discovery doc)
+ * - /.well-known/metrora-export.json (discovery doc)
  * - /.well-known/openid-configuration (OIDC discovery)
  * - /oauth2/authorize (redirect with code — not used directly in tests)
  * - /oauth2/token (exchanges code for tokens)
@@ -60,13 +60,13 @@ export async function startMockIdp(opts: MockIdpOptions = {}): Promise<MockIdp> 
     const path = url.pathname
 
     // --- Discovery doc ---
-    if (path === '/.well-known/codeburn-export.json') {
+    if (path === '/.well-known/metrora-export.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         version: 1,
         issuer: state.baseUrl,
         client_id: 'mock-client-id',
-        scopes: ['openid', 'codeburn:write'],
+        scopes: ['openid', 'metrora:write'],
         traces_path: '/v1/traces',
         max_batch_size: 100,
       }))
@@ -81,7 +81,7 @@ export async function startMockIdp(opts: MockIdpOptions = {}): Promise<MockIdp> 
         authorization_endpoint: `${state.baseUrl}/oauth2/authorize`,
         token_endpoint: `${state.baseUrl}/oauth2/token`,
         revocation_endpoint: `${state.baseUrl}/oauth2/revoke`,
-        scopes_supported: ['openid', 'offline_access', 'codeburn:write'],
+        scopes_supported: ['openid', 'offline_access', 'metrora:write'],
         response_types_supported: ['code'],
         code_challenge_methods_supported: ['S256'],
       }))

@@ -21,7 +21,7 @@ const { getOverview, getActReport, getYield } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getOverview, getActReport, getYield } }
+  return { ...actual, metrora: { getOverview, getActReport, getYield } }
 })
 
 function makeYieldReport(): YieldJsonReport {
@@ -453,11 +453,11 @@ describe('Overview', () => {
   })
 
   it('shows the first-run locate-CLI state when the binary is missing', async () => {
-    getOverview.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    getOverview.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
 
     render(<Overview period="30days" provider="all" />)
 
-    expect(await screen.findByText(/Locate the codeburn CLI/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Locate the metrora CLI/i)).toBeInTheDocument()
   })
 
   it('sources Models this period from current.topModels when a provider filter is active', async () => {
@@ -522,7 +522,7 @@ describe('Overview', () => {
     const now = new Date()
     const overview: Polled<MenubarPayload> = {
       data: makePayload(now),
-      error: { kind: 'nonzero', message: 'codeburn exited 1' },
+      error: { kind: 'nonzero', message: 'metrora exited 1' },
       loading: false,
       switching: false,
       lastSuccessAt: Date.now(),
@@ -531,7 +531,7 @@ describe('Overview', () => {
 
     render(<OverviewContent period="30days" provider="all" overview={overview} />)
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Refresh failed, showing last good data · codeburn exited 1')
+    expect(await screen.findByRole('status')).toHaveTextContent('Refresh failed, showing last good data · metrora exited 1')
   })
 
   it('groups current-driven signals into wins and improvements', () => {

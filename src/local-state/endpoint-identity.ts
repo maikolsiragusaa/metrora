@@ -9,9 +9,8 @@ import {
   timingSafeEqual,
   verify,
 } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import * as z from 'zod/v4'
 
 import {
@@ -25,9 +24,9 @@ import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.j
 import { withLocalStateLease } from './local-state-lease.js'
 import type { SecretProtector } from './secret-protector.js'
 
-export const LOCAL_ENDPOINT_IDENTITY_KIND = 'qovrion.local-endpoint-identity' as const
-export const LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'qovrion.local-endpoint-identity-secret' as const
-const SECRET_CONTEXT = 'dev.qovrion.local-endpoint-identity.v1'
+export const LOCAL_ENDPOINT_IDENTITY_KIND = 'metrora.local-endpoint-identity' as const
+export const LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'metrora.local-endpoint-identity-secret' as const
+const SECRET_CONTEXT = 'dev.metrora.local-endpoint-identity.v1'
 const METADATA_FILE = 'endpoint-identity.v1.json'
 const SECRET_FILE = 'endpoint-identity.v1.secret'
 
@@ -90,35 +89,14 @@ export class EndpointIdentityRecoveryRequiredError extends Error {
 
 export function defaultMetroraDataDir(): string {
   if (process.env['METRORA_DATA_DIR'] !== undefined) return process.env['METRORA_DATA_DIR']!
-  // Deprecated but authoritative when the canonical variable is absent.
-  if (process.env['QOVRION_DATA_DIR'] !== undefined) return process.env['QOVRION_DATA_DIR']!
 
   const canonical = platform() === 'win32'
     ? join(process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'), 'Metrora')
     : platform() === 'darwin'
       ? join(homedir(), 'Library', 'Application Support', 'Metrora')
       : join(process.env['XDG_DATA_HOME'] ?? join(homedir(), '.local', 'share'), 'metrora')
-  const legacy = platform() === 'win32'
-    ? join(process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'), 'Metrora')
-    : platform() === 'darwin'
-      ? join(homedir(), 'Library', 'Application Support', 'Metrora')
-      : join(process.env['XDG_DATA_HOME'] ?? join(homedir(), '.local', 'share'), 'qovrion')
-
-  if (!existsSync(canonical) && existsSync(legacy)) {
-    try {
-      mkdirSync(dirname(canonical), { recursive: true })
-      cpSync(legacy, canonical, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true })
-    } catch (error) {
-      if (!existsSync(canonical)) {
-        throw new EndpointIdentityRecoveryRequiredError(`failed to adopt legacy Qovrion data: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-  }
   return canonical
 }
-
-/** Deprecated source-level alias retained for extensions built against Qovrion. */
-export const defaultQovrionDataDir = defaultMetroraDataDir
 
 function identityPaths(dataDir: string): { directory: string; metadata: string; secret: string } {
   const directory = join(dataDir, 'identity')

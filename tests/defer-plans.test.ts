@@ -23,7 +23,7 @@ const roots: string[] = []
 type Fixture = { root: string; home: string; project: string; actionsDir: string }
 
 async function makeFixture(): Promise<Fixture> {
-  const root = await mkdtemp(join(tmpdir(), 'codeburn-defer-plans-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-defer-plans-'))
   roots.push(root)
   const home = join(root, 'home')
   const project = join(root, 'project')

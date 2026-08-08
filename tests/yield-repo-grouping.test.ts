@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -83,13 +83,13 @@ const broadWindow = {
 
 describe('yield repo grouping by canonical repository identity (issue #713)', () => {
   it('groups path casing variants on case-insensitive filesystems', async () => {
-    const repoDir = await mkdtemp(join(tmpdir(), 'codeburn-yield-path-case-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'metrora-yield-path-case-'))
     try {
       initRepo(repoDir)
       await writeFile(join(repoDir, 'file.txt'), 'hello\n')
       commitAt(repoDir, 'feat: shipped once', '2026-01-01T10:30:00Z')
 
-      const caseAlteredRepoDir = join(repoDir, '..', repoDir.split('/').pop()!.toUpperCase())
+      const caseAlteredRepoDir = join(repoDir, '..', basename(repoDir).toUpperCase())
       if (!existsSync(caseAlteredRepoDir)) return
 
       const sessionOriginal = makeSession({ sessionId: 'case-original', project: 'app', ...tightWindow, totalCostUSD: 5 })
@@ -115,7 +115,7 @@ describe('yield repo grouping by canonical repository identity (issue #713)', ()
   })
 
   it('credits one commit once across two monorepo subdirectory sessions', async () => {
-    const repoDir = await mkdtemp(join(tmpdir(), 'codeburn-yield-monorepo-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'metrora-yield-monorepo-'))
     try {
       initRepo(repoDir)
       // Two package subdirectories of ONE repo. `git rev-parse --is-inside-work-tree`
@@ -154,7 +154,7 @@ describe('yield repo grouping by canonical repository identity (issue #713)', ()
   })
 
   it('credits one commit once across two worktrees of one repo', async () => {
-    const repoDir = await mkdtemp(join(tmpdir(), 'codeburn-yield-worktree-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'metrora-yield-worktree-'))
     let wtDir = ''
     try {
       initRepo(repoDir)
@@ -162,7 +162,7 @@ describe('yield repo grouping by canonical repository identity (issue #713)', ()
       commitAt(repoDir, 'feat: shipped once', '2026-01-01T10:30:00Z')
 
       // Linked worktree on a different branch, sharing the same object store.
-      wtDir = join(repoDir, '..', `${repoDir.split('/').pop()}-wt`)
+      wtDir = join(repoDir, '..', `${basename(repoDir)}-wt`)
       git(repoDir, ['worktree', 'add', wtDir, '-b', 'feature'])
 
       const sessionMain = makeSession({ sessionId: 'wt-main', project: 'app', ...tightWindow, totalCostUSD: 5 })
@@ -189,8 +189,8 @@ describe('yield repo grouping by canonical repository identity (issue #713)', ()
   })
 
   it('keeps two genuinely separate repos as independent groups (no over-merge)', async () => {
-    const repo1 = await mkdtemp(join(tmpdir(), 'codeburn-yield-sep1-'))
-    const repo2 = await mkdtemp(join(tmpdir(), 'codeburn-yield-sep2-'))
+    const repo1 = await mkdtemp(join(tmpdir(), 'metrora-yield-sep1-'))
+    const repo2 = await mkdtemp(join(tmpdir(), 'metrora-yield-sep2-'))
     try {
       for (const [dir, name] of [[repo1, 'first'], [repo2, 'second']] as const) {
         initRepo(dir)

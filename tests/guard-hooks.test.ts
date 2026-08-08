@@ -11,7 +11,7 @@ import type { ProjectSummary } from '../src/types.js'
 
 const roots: string[] = []
 async function tmp(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'codeburn-guard-hooks-'))
+  const d = await mkdtemp(join(tmpdir(), 'metrora-guard-hooks-'))
   roots.push(d)
   return d
 }

@@ -19,7 +19,7 @@ const bridge = vi.hoisted(() => ({
 }))
 const showToast = vi.hoisted(() => vi.fn())
 
-vi.mock('../lib/ipc', () => ({ metrora: bridge, codeburn: bridge }))
+vi.mock('../lib/ipc', () => ({ metrora: bridge }))
 vi.mock('../lib/toast', () => ({ showToast }))
 
 function overview(): MenubarPayload {

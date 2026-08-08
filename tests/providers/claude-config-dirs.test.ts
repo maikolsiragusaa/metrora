@@ -11,10 +11,13 @@ let tmpRoot: string
 const savedEnv = {
   CLAUDE_CONFIG_DIR: process.env['CLAUDE_CONFIG_DIR'],
   CLAUDE_CONFIG_DIRS: process.env['CLAUDE_CONFIG_DIRS'],
-  CODEBURN_DESKTOP_SESSIONS_DIR: process.env['CODEBURN_DESKTOP_SESSIONS_DIR'],
+  METRORA_DESKTOP_SESSIONS_DIR: process.env['METRORA_DESKTOP_SESSIONS_DIR'],
   APPDATA: process.env['APPDATA'],
   LOCALAPPDATA: process.env['LOCALAPPDATA'],
   HOME: process.env['HOME'],
+  USERPROFILE: process.env['USERPROFILE'],
+  HOMEPATH: process.env['HOMEPATH'],
+  HOMEDRIVE: process.env['HOMEDRIVE'],
 }
 
 function withPlatform<T>(platform: typeof process.platform, run: () => T): T {
@@ -30,15 +33,20 @@ function withPlatform<T>(platform: typeof process.platform, run: () => T): T {
 
 beforeEach(async () => {
   clearSessionCache()
-  tmpRoot = await mkdtemp(join(tmpdir(), 'codeburn-claude-multi-'))
+  tmpRoot = await mkdtemp(join(tmpdir(), 'metrora-claude-multi-'))
   // Point HOME at a scratch dir so the default `~/.claude` fallback resolves
   // somewhere we control. Without this, a stray `~/.claude` on the test
   // machine could leak into discovery.
   process.env['HOME'] = join(tmpRoot, 'home')
   await mkdir(process.env['HOME'], { recursive: true })
+  // Node's `os.homedir()` follows USERPROFILE on Windows, so keep the
+  // platform-specific home variables aligned with HOME as well.
+  process.env['USERPROFILE'] = process.env['HOME']
+  process.env['HOMEPATH'] = process.env['HOME']
+  process.env['HOMEDRIVE'] = ''
   delete process.env['CLAUDE_CONFIG_DIR']
   delete process.env['CLAUDE_CONFIG_DIRS']
-  delete process.env['CODEBURN_DESKTOP_SESSIONS_DIR']
+  delete process.env['METRORA_DESKTOP_SESSIONS_DIR']
   delete process.env['APPDATA']
   delete process.env['LOCALAPPDATA']
 })
@@ -307,7 +315,7 @@ describe('claude provider — Desktop sessions dir', () => {
     const override = join(tmpRoot, 'desktop-override')
     const localAppData = join(tmpRoot, 'local-profile')
     await makeMsixSessionsDir(localAppData, 'Claude_shouldnotappear5n8d')
-    process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = override
+    process.env['METRORA_DESKTOP_SESSIONS_DIR'] = override
     process.env['APPDATA'] = join(tmpRoot, 'roaming-profile')
     process.env['LOCALAPPDATA'] = localAppData
 
@@ -318,7 +326,7 @@ describe('claude provider — Desktop sessions dir', () => {
 
   it('resolves an override containing a parent segment and trailing separator', () => {
     const override = join(tmpRoot, 'desktop-parent', 'nested') + `${sep}..${sep}sessions${sep}`
-    process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = override
+    process.env['METRORA_DESKTOP_SESSIONS_DIR'] = override
 
     withPlatform('win32', () => {
       expect(getDesktopSessionsDirs()).toEqual([resolve(override)])
@@ -374,7 +382,7 @@ describe('claude provider — Desktop sessions dir', () => {
 
 describe('claude provider — config.json claudeConfigDirs (menubar-driven)', () => {
   async function writeConfigJson(value: unknown): Promise<void> {
-    const dir = join(process.env['HOME']!, '.config', 'codeburn')
+    const dir = join(process.env['HOME']!, '.config', 'metrora')
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'config.json'), JSON.stringify({ claudeConfigDirs: value }))
   }

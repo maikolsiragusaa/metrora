@@ -9,7 +9,7 @@ import { StaleBanner } from '../components/StaleBanner'
 import { useBarGrowIn } from '../lib/motion'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { contiguousDailyWindow, dataStartKey, formatChartDate, localDateKey, sliceDailyToPeriod, sliceDailyToRange } from '../lib/period'
 import { cacheReuseMultiple, formatReuseMultiple } from '../lib/usageMetrics'
 import type {
@@ -305,7 +305,7 @@ function TopActivities({ activities }: { activities: MenubarPayload['current']['
 }
 
 export function Overview({ period, provider }: { period: Period; provider: string }) {
-  const overview = usePolled<MenubarPayload>(() => codeburn.getOverview(period, provider), [period, provider])
+  const overview = usePolled<MenubarPayload>(() => metrora.getOverview(period, provider), [period, provider])
   return <OverviewContent period={period} provider={provider} overview={overview} />
 }
 
@@ -324,8 +324,8 @@ export function OverviewContent({
   onNavigate?: (section: 'optimize' | 'sessions') => void
   ready?: boolean
 }) {
-  const actReport = usePolled<ActReportJson>(() => codeburn.getActReport(), [], { enabled: ready, memoKey: 'overview-act' })
-  const yieldReport = usePolled<YieldJsonReport>(() => codeburn.getYield(period, provider), [period, provider], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
+  const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [], { enabled: ready, memoKey: 'overview-act' })
+  const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
   const { data, error } = overview
   const modelIndex = useMemo(() => data ? buildModelIndex(data) : new Map<string, string>(), [data])
 

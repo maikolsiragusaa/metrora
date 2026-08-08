@@ -200,7 +200,7 @@ async function readRetainedIndex(
   }
   const entries = await readdir(paths.snapshots, { withFileTypes: true })
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!entry.isFile() || entry.name.includes('.qovrion-tmp-')) continue
+    if (!entry.isFile() || entry.name.includes('.metrora-tmp-')) continue
     const match = /^([a-f0-9]{64})\.json$/u.exec(entry.name)
     if (!match) {
       throw new CanonicalHistoryShadowStoreIntegrityError(

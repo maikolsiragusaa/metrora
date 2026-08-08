@@ -50,8 +50,8 @@ function expandHome(p: string): string {
 
 function getMuxRoot(override?: string): string {
   if (override) return resolve(expandHome(override))
-  const codeburnOverride = process.env['CODEBURN_MUX_DIR']
-  if (codeburnOverride) return resolve(expandHome(codeburnOverride))
+  const metroraOverride = process.env['METRORA_MUX_DIR']
+  if (metroraOverride) return resolve(expandHome(metroraOverride))
   const muxRoot = process.env['MUX_ROOT']
   if (muxRoot) return resolve(expandHome(muxRoot))
   return join(homedir(), '.mux')
@@ -182,7 +182,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         const anthropic = asRecord(pm['anthropic'])
 
         // mux reports inputTokens inclusive of cache read+creation and
-        // outputTokens inclusive of reasoning; decompose to codeburn's
+        // outputTokens inclusive of reasoning; decompose to metrora's
         // cache/reasoning-exclusive convention. Cache creation is Anthropic-only.
         // The AI SDK v6 normalizes reasoning into usage.reasoningTokens across
         // every provider family, so that field is the single source of truth.
@@ -196,7 +196,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           continue
         }
 
-        // Strip the "provider:" prefix — codeburn's getCanonicalName only strips
+        // Strip the "provider:" prefix — metrora's getCanonicalName only strips
         // slash prefixes, so a colon-prefixed model would price at $0.
         const rawModel = typeof meta.model === 'string' && meta.model ? meta.model : 'unknown'
         const model = stripProvider(rawModel)

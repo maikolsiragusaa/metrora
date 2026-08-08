@@ -45,7 +45,7 @@ async function parseAll(filePath: string, seen = new Set<string>()): Promise<Par
 
 describe('droid provider', () => {
   beforeEach(async () => {
-    factoryDir = await mkdtemp(join(tmpdir(), 'codeburn-droid-test-'))
+    factoryDir = await mkdtemp(join(tmpdir(), 'metrora-droid-test-'))
   })
 
   afterEach(async () => {

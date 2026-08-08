@@ -25,7 +25,7 @@ $HOME/sessions/wd_*/<session-dir>/
 
 Session directory naming depends on the host product: the CLI uses `session_*`, embedded runtimes use `conv-*` / `ctitle-*`. Any directory is accepted; the `agents/*/wire.jsonl` probe gates real sessions.
 
-Every agent wire is a cache source. Main-agent and subagent calls share the session ID from the `session_*` directory. `state.json.workDir` supplies the project name and path. `probeRoots()` reports the resolved Kimi Code home for `codeburn doctor` even when there are no sessions.
+Every agent wire is a cache source. Main-agent and subagent calls share the session ID from the `session_*` directory. `state.json.workDir` supplies the project name and path. `probeRoots()` reports the resolved Kimi Code home for `metrora doctor` even when there are no sessions.
 
 ## Storage format
 
@@ -38,14 +38,14 @@ Every agent wire is a cache source. Main-agent and subagent calls share the sess
 
 Token fields map as follows:
 
-| Kimi Code | CodeBurn |
+| Kimi Code | Metrora |
 |---|---|
 | `inputOther` | input |
 | `output` | output |
 | `inputCacheRead` | cache read and cached input |
 | `inputCacheCreation` | cache write |
 
-`usage.record.model` is only the configured alias. The parser resolves that alias through observed `llm.request` events to obtain the real model ID used for pricing and reports, falling back to the nearest preceding request when the alias is empty or unknown. Kimi Code records no cost, so CodeBurn computes it from the four token categories with `calculateCost` and marks it estimated.
+`usage.record.model` is only the configured alias. The parser resolves that alias through observed `llm.request` events to obtain the real model ID used for pricing and reports, falling back to the nearest preceding request when the alias is empty or unknown. Kimi Code records no cost, so Metrora computes it from the four token categories with `calculateCost` and marks it estimated.
 
 Malformed JSONL lines are skipped independently. A failed session containing retrying `llm.request` events but no `usage.record` events emits no calls and therefore contributes zero usage. Retry `attempt` values are not interpreted.
 

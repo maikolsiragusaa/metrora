@@ -44,7 +44,7 @@ function worker(cacheDir: string, barriers: string, id: string, source: string, 
 }
 
 afterEach(async () => {
-  delete process.env['CODEBURN_CACHE_DIR']
+  delete process.env['METRORA_CACHE_DIR']
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
@@ -56,7 +56,7 @@ describe('warm refresh child-process regression', () => {
     const barriers = join(root, 'barriers')
     await mkdir(cacheDir, { recursive: true })
     await mkdir(barriers, { recursive: true })
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
     const initial = emptyCache()
     initial.complete = true
     await saveCache(initial)
@@ -92,7 +92,7 @@ describe('warm refresh child-process regression', () => {
     const barriers = join(root, 'barriers')
     await mkdir(cacheDir, { recursive: true })
     await mkdir(barriers, { recursive: true })
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
     const initial = emptyCache()
     initial.complete = true
     await saveCache(initial)
@@ -143,7 +143,7 @@ describe('warm refresh child-process regression', () => {
     const barriers = join(root, 'barriers')
     await mkdir(cacheDir, { recursive: true })
     await mkdir(barriers, { recursive: true })
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
     const initial = emptyCache()
     initial.complete = true
     await saveCache(initial)

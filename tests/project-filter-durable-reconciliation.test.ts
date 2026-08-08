@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,8 +19,46 @@ import {
 } from '../src/usage-aggregator.js'
 
 const ROOT = join(tmpdir(), `metrora-c4-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
-const ENV_KEYS = ['HOME', 'CODEBURN_CACHE_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME'] as const
+const ENV_KEYS = [
+  'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE', 'APPDATA', 'LOCALAPPDATA',
+  'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'METRORA_CACHE_DIR',
+  'METRORA_CONFIG_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME',
+  'OPENCODE_DATA_DIR',
+] as const
 let savedEnv: Record<string, string | undefined>
+
+const { ORIGINAL_ENV } = vi.hoisted(() => {
+  const envKeys = [
+    'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE', 'APPDATA', 'LOCALAPPDATA',
+    'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'METRORA_CACHE_DIR',
+    'METRORA_CONFIG_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME',
+    'OPENCODE_DATA_DIR',
+  ] as const
+  const original = Object.fromEntries(envKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.env['TMPDIR'] ?? process.env['TMP'] ?? process.env['TEMP'] ?? '.'
+  const root = `${base}${base.endsWith(separator) ? '' : separator}metrora-c4-isolated-home`
+  const home = `${root}${separator}home`
+  const isolated: Record<string, string> = {
+    HOME: home,
+    USERPROFILE: home,
+    HOMEPATH: home,
+    HOMEDRIVE: '',
+    APPDATA: `${home}${separator}AppData${separator}Roaming`,
+    LOCALAPPDATA: `${home}${separator}AppData${separator}Local`,
+    XDG_DATA_HOME: `${home}${separator}.local${separator}share`,
+    XDG_CONFIG_HOME: `${home}${separator}.config`,
+    XDG_CACHE_HOME: `${home}${separator}.cache`,
+    METRORA_CACHE_DIR: `${root}${separator}cache`,
+    METRORA_CONFIG_DIR: `${home}${separator}.config${separator}metrora`,
+    CLAUDE_CONFIG_DIR: `${home}${separator}.claude`,
+    CODEX_HOME: `${home}${separator}.codex`,
+    OPENCODE_DATA_DIR: `${home}${separator}.local${separator}share${separator}opencode`,
+  }
+  for (const [key, value] of Object.entries(isolated)) process.env[key] = value
+  delete process.env['CLAUDE_CONFIG_DIRS']
+  return { ORIGINAL_ENV: original }
+})
 
 function daysAgoStr(days: number): string {
   const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
@@ -171,6 +209,13 @@ function providerCost(result: Awaited<ReturnType<typeof payload>>): number {
   return result.current.providerDetails.reduce((sum, provider) => sum + provider.cost, 0)
 }
 
+afterAll(() => {
+  for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
+
 function projectCost(result: Awaited<ReturnType<typeof payload>>): number {
   return result.current.topProjects.reduce((sum, project) => sum + project.cost, 0)
 }
@@ -184,8 +229,19 @@ beforeEach(async () => {
   await mkdir(join(ROOT, 'home', '.claude'), { recursive: true })
   await mkdir(join(ROOT, 'cache'), { recursive: true })
   process.env.HOME = join(ROOT, 'home')
-  process.env.CODEBURN_CACHE_DIR = join(ROOT, 'cache')
+  process.env.USERPROFILE = join(ROOT, 'home')
+  process.env.HOMEPATH = join(ROOT, 'home')
+  process.env.HOMEDRIVE = ''
+  process.env.APPDATA = join(ROOT, 'home', 'AppData', 'Roaming')
+  process.env.LOCALAPPDATA = join(ROOT, 'home', 'AppData', 'Local')
+  process.env.XDG_DATA_HOME = join(ROOT, 'home', '.local', 'share')
+  process.env.XDG_CONFIG_HOME = join(ROOT, 'home', '.config')
+  process.env.XDG_CACHE_HOME = join(ROOT, 'home', '.cache')
+  process.env.METRORA_CACHE_DIR = join(ROOT, 'cache')
+  process.env.METRORA_CONFIG_DIR = join(ROOT, 'home', '.config', 'metrora')
   process.env.CLAUDE_CONFIG_DIR = join(ROOT, 'home', '.claude')
+  process.env.CODEX_HOME = join(ROOT, 'home', '.codex')
+  process.env.OPENCODE_DATA_DIR = join(ROOT, 'home', '.local', 'share', 'opencode')
   delete process.env.CLAUDE_CONFIG_DIRS
   delete process.env.CODEX_HOME
   clearSessionCache()

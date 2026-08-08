@@ -49,7 +49,7 @@ const defaultClock: RefreshLockClock = {
 }
 
 function defaultCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
 }
 
 function delay(ms: number): Promise<void> {

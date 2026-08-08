@@ -199,7 +199,7 @@ describe('mux provider - session discovery', () => {
 })
 
 describe('mux provider - chat.jsonl parsing', () => {
-  it('decomposes inclusive input/output usage into codeburn token fields', async () => {
+  it('decomposes inclusive input/output usage into metrora token fields', async () => {
     // input is inclusive of cache; output is inclusive of reasoning.
     const filePath = await writeWorkspace(tmpDir, 'ws-abc', [
       userMessage('implement the feature'),
@@ -223,7 +223,7 @@ describe('mux provider - chat.jsonl parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.provider).toBe('mux')
-    expect(call.model).toBe('claude-opus-4-8') // provider prefix stripped so codeburn prices/displays it
+    expect(call.model).toBe('claude-opus-4-8') // provider prefix stripped so metrora prices/displays it
     expect(call.inputTokens).toBe(750) // 1000 - 200 cacheRead - 50 cacheCreate
     expect(call.outputTokens).toBe(200) // 230 - 30 reasoning
     expect(call.reasoningTokens).toBe(30)

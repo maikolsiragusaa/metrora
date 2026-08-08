@@ -1,6 +1,5 @@
 export const METRORA_STORAGE_PREFIX = 'metrora.'
-export const LEGACY_QOVRION_STORAGE_PREFIX = 'qovrion.'
-export const LEGACY_CODEBURN_STORAGE_PREFIX = 'codeburn.'
+export const LEGACY_STORAGE_PREFIX = 'codeburn.'
 
 export const KNOWN_STORAGE_SUFFIXES = [
   'defaultPeriod',
@@ -23,15 +22,14 @@ function surface(): StorageSurface | null {
   }
 }
 
-export function storageKeys(suffix: string): { canonical: string; qovrion: string; codeburn: string } {
+export function storageKeys(suffix: string): { canonical: string; legacy: string } {
   return {
     canonical: `${METRORA_STORAGE_PREFIX}${suffix}`,
-    qovrion: `${LEGACY_QOVRION_STORAGE_PREFIX}${suffix}`,
-    codeburn: `${LEGACY_CODEBURN_STORAGE_PREFIX}${suffix}`,
+    legacy: `${LEGACY_STORAGE_PREFIX}${suffix}`,
   }
 }
 
-/** Metrora wins, then Qovrion, then CodeBurn. Old values are copied forward only. */
+/** Read canonical Metrora settings, adopting a legacy key once. */
 export function readCompatStorage(suffix: string, storage = surface()): string | null {
   if (!storage) return null
   const keys = storageKeys(suffix)
@@ -39,9 +37,8 @@ export function readCompatStorage(suffix: string, storage = surface()): string |
     const canonical = storage.getItem(keys.canonical)
     if (canonical !== null) return canonical
 
-    for (const legacyKey of [keys.qovrion, keys.codeburn]) {
-      const legacy = storage.getItem(legacyKey)
-      if (legacy === null) continue
+    const legacy = storage.getItem(keys.legacy)
+    if (legacy !== null) {
       try { storage.setItem(keys.canonical, legacy) } catch { /* best effort migration */ }
       return legacy
     }
@@ -51,20 +48,18 @@ export function readCompatStorage(suffix: string, storage = surface()): string |
   }
 }
 
-/** Write every supported generation so a rollback can still read current settings. */
+/** New writes use only the canonical Metrora namespace. */
 export function writeCompatStorage(suffix: string, value: string, storage = surface()): void {
   if (!storage) return
   const keys = storageKeys(suffix)
-  for (const key of [keys.canonical, keys.qovrion, keys.codeburn]) {
-    try { storage.setItem(key, value) } catch { /* hardened storage */ }
-  }
+  try { storage.setItem(keys.canonical, value) } catch { /* hardened storage */ }
 }
 
 /** Explicit removal mirrors the user's intent across every supported generation. */
 export function removeCompatStorage(suffix: string, storage = surface()): void {
   if (!storage) return
   const keys = storageKeys(suffix)
-  for (const key of [keys.canonical, keys.qovrion, keys.codeburn]) {
+  for (const key of [keys.canonical, keys.legacy]) {
     try { storage.removeItem(key) } catch { /* hardened storage */ }
   }
 }

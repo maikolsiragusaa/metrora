@@ -30,7 +30,7 @@ The first line read is capped at 1 MB (`FIRST_LINE_READ_CAP`). Codex CLI 0.128+ 
 
 ## Caching
 
-`src/codex-cache.ts` writes `~/.cache/codeburn/codex-results.json` (or `$CODEBURN_CACHE_DIR/codex-results.json`). Each entry is keyed by absolute file path and validated against `mtimeMs + sizeBytes`. Cached entries are returned wholesale.
+`src/codex-cache.ts` writes `~/.cache/metrora/codex-results.json` (or `$METRORA_CACHE_DIR/codex-results.json`). Each entry is keyed by absolute file path and validated against `mtimeMs + sizeBytes`. Cached entries are returned wholesale.
 
 A session that yielded zero parseable lines does **not** write to the cache (`codex.ts:419`); this prevents a transient read failure from pinning an empty result against a fingerprint.
 

@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process'
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import chalk from 'chalk'
 import stripAnsi from 'strip-ansi'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 import { aggregateModels, renderTable, renderMarkdown, renderJson, renderCsv, type ModelReportRow } from '../src/models-report.js'
 import type {

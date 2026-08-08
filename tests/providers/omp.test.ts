@@ -182,7 +182,7 @@ describe('omp provider - JSONL parsing', () => {
       calls.push(call)
     }
 
-    // cost must be calculated by codeburn, not taken from usage.cost (which is zeroed in fixture)
+    // cost must be calculated by metrora, not taken from usage.cost (which is zeroed in fixture)
     expect(calls[0]!.costUSD).toBeGreaterThanOrEqual(0)
   })
 

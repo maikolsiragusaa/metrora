@@ -320,7 +320,7 @@ export async function createNextLocalWorkspaceSignedBatchV1(
     dataDir: options.dataDir,
     identity: options.identity,
     workspaceId: workspace.workspace.workspaceId,
-    qovrionVersion: options.qovrionVersion,
+    metroraVersion: options.metroraVersion,
     adapterSetSha256: options.adapterSetSha256,
     openTelemetryGenAiVersion: options.openTelemetryGenAiVersion,
     ...(options.maxEvents !== undefined ? { maxEvents: options.maxEvents } : {}),

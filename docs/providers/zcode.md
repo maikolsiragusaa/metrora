@@ -61,7 +61,7 @@ Per `zcode:<model_usage.id>` (`zcode.ts`). `model_usage.id` is the row primary k
 
 ## What we extract
 
-| codeburn field | ZCode source |
+| metrora field | ZCode source |
 |---|---|
 | `inputTokens` | `model_usage.input_tokens` minus cached + created (see quirks) |
 | `outputTokens` | `model_usage.output_tokens` |
@@ -76,7 +76,7 @@ Per `zcode:<model_usage.id>` (`zcode.ts`). `model_usage.id` is the row primary k
 ## Quirks worth knowing
 
 - **Cached tokens are folded into `input_tokens` (OpenAI-style).** The row's `input_tokens` is the full prompt size including cache reads/writes, and `provider_total_tokens = input_tokens + output_tokens`. The parser subtracts `cache_read_input_tokens` and `cache_creation_input_tokens` from `input_tokens` so fresh input bills at the input rate and cached at the cache-read rate. Confirmed against the nested Anthropic usage in `provider_metadata_json` (e.g. 100 input = 36 fresh + 64 cached).
-- **No cost is stored anywhere.** GLM-5.2 runs on z.ai's `start-plan` subscription, so ZCode logs tokens only. CodeBurn computes a notional cost from the pricing table.
+- **No cost is stored anywhere.** GLM-5.2 runs on z.ai's `start-plan` subscription, so ZCode logs tokens only. Metrora computes a notional cost from the pricing table.
 - **GLM-5.2 is priced via an alias.** LiteLLM does not list GLM-5.2 yet, so `GLM-5.2` maps to `glm-5p1` (GLM-5.1) in `BUILTIN_ALIASES` (`src/models.ts`). Reports therefore show the model as `glm-5p1`, the same way any aliased model displays as its priced-as target. Drop the alias once LiteLLM adds GLM-5.2.
 - **Timestamps are milliseconds.** Unlike Crush (seconds), ZCode stores epoch ms; the parser passes them straight to `Date`.
 - **Tools are attached per turn, not per request.** `tool_usage` links to a turn, not a specific `model_usage` row, so each turn's tools are attached to its first request to avoid double-counting. Bash command text is not stored, so `bashCommands` is always empty.

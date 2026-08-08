@@ -111,7 +111,7 @@ describe('Workspace bootstrap status', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:getWorkspaceStatus']!()).resolves.toMatchObject({
+    await expect(handlers['metrora:getWorkspaceStatus']!()).resolves.toMatchObject({
       ok: true,
       value: {
         availability: 'ready',
@@ -133,7 +133,7 @@ describe('Workspace bootstrap status', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:inspectWorkspaceStatus']!()).resolves.toMatchObject({
+    await expect(handlers['metrora:inspectWorkspaceStatus']!()).resolves.toMatchObject({
       ok: true,
       value: {
         availability: 'ready',

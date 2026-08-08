@@ -178,7 +178,7 @@ function getAgent(): https.Agent {
 }
 
 function getCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
 }
 
 function getCachePath(): string {

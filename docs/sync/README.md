@@ -34,9 +34,9 @@ The client:
 3. stores the refresh token using the platform credential backend;
 4. stores non-secret endpoint configuration in the Metrora config root.
 
-Fresh installations use `~/.config/metrora` on platforms that follow the XDG-style layout. An existing Qovrion or CodeBurn config root is adopted in place rather than abandoned, so an upgrade does not silently lose configuration.
+Fresh installations use `~/.config/metrora` on platforms that follow the XDG-style layout. An existing Metrora or Metrora config root is adopted in place rather than abandoned, so an upgrade does not silently lose configuration.
 
-The v1 server contract still uses `/.well-known/codeburn-export.json` as a **frozen compatibility wire route**. That route name is not the product identity and must not be used for new UI, commands or branding.
+The v1 server contract still uses `/.well-known/metrora-export.json` as a **frozen compatibility wire route**. That route name is not the product identity and must not be used for new UI, commands or branding.
 
 ### `metrora sync push`
 

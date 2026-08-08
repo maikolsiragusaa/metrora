@@ -12,7 +12,7 @@ Default `~/.local/share/opencode/` or `$XDG_DATA_HOME/opencode/`. The discovery 
 
 For renamed/forked OpenCode-compatible builds (e.g. MiMoCode writing
 `~/.local/share/mimocode/mimicode.db` with the same `session`/`message`/`part`
-schema), point CodeBurn at the fork's data directory with two env vars:
+schema), point Metrora at the fork's data directory with two env vars:
 
 - `OPENCODE_DATA_DIR` — the **exact** data directory (no `opencode` suffix is
   appended). Example: `OPENCODE_DATA_DIR=$HOME/.local/share/mimocode`. Relocates
@@ -51,7 +51,7 @@ Per `<sessionId>:<messageId>`.
   when their parts contain non-empty text or tool activity. Empty zero-usage
   assistant placeholders are still skipped.
 - External MCP tools are stored as `<server>_<tool>` names (for example
-  `clickup_clickup_get_task`). The provider normalizes those to CodeBurn's
+  `clickup_clickup_get_task`). The provider normalizes those to Metrora's
   canonical `mcp__<server>__<tool>` names before aggregation so shared MCP
   panels and `optimize` findings count OpenCode usage.
 

@@ -8,7 +8,7 @@ let salt: string | undefined
 
 function getSalt(): string {
   if (salt) return salt
-  const dir = join(homedir(), '.config', 'codeburn')
+  const dir = join(homedir(), '.config', 'metrora')
   const saltPath = join(dir, '.mcp-salt')
   try {
     salt = readFileSync(saltPath, 'utf-8').trim()

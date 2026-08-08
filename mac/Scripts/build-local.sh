@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # build-local.sh — build the Metrora-branded menubar app on macOS 14.
-# The inherited Swift target/process remains CodeBurnMenubar for compatibility.
+# The inherited Swift target/process remains MetroraMenubar for compatibility.
 # ============================================================================
 # Why this exists
 # ---------------
@@ -25,8 +25,8 @@
 set -euo pipefail
 
 VERSION="${1:-dev}"
-BUNDLE_ID="org.agentseal.codeburn-menubar"
-EXE="CodeBurnMenubar"
+BUNDLE_ID="org.agentseal.metrora-menubar"
+EXE="MetroraMenubar"
 MIN_MACOS="14.0"
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -34,7 +34,7 @@ MAC_DIR="${ROOT}/mac"
 ICON_SOURCE="${ROOT}/assets/menubar-logo.png"
 SCRATCH="$(mktemp -d /tmp/metrora-menubar-local-build.XXXXXX)"
 APPS="${HOME}/Applications"
-BUNDLE="${APPS}/CodeBurnMenubar.app"
+BUNDLE="${APPS}/MetroraMenubar.app"
 
 trap 'rm -rf "${SCRATCH}"' EXIT
 

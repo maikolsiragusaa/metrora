@@ -1,42 +1,49 @@
+#!/usr/bin/env node
+
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
-const files = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
+const files = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean)
 
-const runtimeVisibleFiles = [
-  'src/overview.ts',
-  'src/doctor.ts',
-  'src/optimize.ts',
-  'src/mcp/server.ts',
-  'src/export.ts',
-  'src/dashboard.tsx',
-  'src/web-dashboard.ts',
-  'src/sync/auth.ts',
-  'src/codex-throughput.ts',
-  'src/sharing/host.ts',
-  'src/providers/cursor.ts',
-]
+// The compatibility layer and provenance notices are deliberately outside the
+// user-facing scan. They are read-only technical/legal boundaries documented in
+// docs/TECHNICAL_IDENTITY_COMPATIBILITY.md and the repository notices.
+const compatibilityFiles = new Set([
+  'app/electron/cli.ts',
+  'app/electron/identity.ts',
+  'app/renderer/lib/storage.ts',
+  'package.json',
+  'package-lock.json',
+  'src/product-paths.ts',
+])
+const provenanceFiles = new Set([
+  'LICENSES/CodeBurn-MIT.txt',
+  'THIRD_PARTY_NOTICES.md',
+  'UPSTREAM.md',
+  'docs/PRODUCT_LINEAGE.md',
+])
 
+const legacyBrand = String.fromCharCode(99, 111, 100, 101, 98, 117, 114, 110)
 const violations = []
-for (const path of files.filter(path => path.startsWith('src/') && /\.(?:ts|tsx)$/.test(path))) {
-  const content = readFileSync(path, 'utf8')
-  content.split(/\r?\n/).forEach((line, index) => {
-    if (/codeburn:\s/i.test(line) || /codeburn model-(?:alias|savings)/i.test(line) || /npx codeburn@latest/i.test(line)) {
-      violations.push(`${path}:${index + 1}:${line.trim()}`)
-    }
-  })
-}
 
-for (const path of runtimeVisibleFiles) {
-  const content = readFileSync(path, 'utf8')
-  content.split(/\r?\n/).forEach((line, index) => {
-    if (/\bCodeBurn\b/.test(line)) violations.push(`${path}:${index + 1}:${line.trim()}`)
-  })
+for (const path of files) {
+  if (path.startsWith('scripts/')) continue
+  if (compatibilityFiles.has(path) || provenanceFiles.has(path)) continue
+  if (/(?:^|[./])(?:node_modules|dist|build|release)(?:[./]|$)/i.test(path)) continue
+  if (/(?:\.test\.|\.snap$)/i.test(path)) continue
+
+  let content
+  try {
+    content = readFileSync(path, 'utf8')
+  } catch {
+    continue
+  }
+  if (content.toLowerCase().includes(legacyBrand)) violations.push(path)
 }
 
 if (violations.length) {
-  console.error(`Upstream branding escaped the public product boundary:\n${violations.join('\n')}`)
+  console.error(`Legacy identity escaped the current product-facing boundary:\n${violations.join('\n')}`)
   process.exit(1)
 }
 
-console.log('Public product branding boundary passed.')
+console.log('Metrora public product identity boundary passed; user-facing legacy occurrences: 0.')

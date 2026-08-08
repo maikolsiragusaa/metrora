@@ -339,7 +339,7 @@ function createParser(source: SessionSource): SessionParser {
         if (totalTokens === 0) continue
 
         // LingTai records provider-normalized input totals plus a separate
-        // cached count. Match CodeBurn's normal shape by billing cached tokens
+        // cached count. Match Metrora's normal shape by billing cached tokens
         // in cacheReadInputTokens, not again as fresh input.
         const inputTokens = Math.max(0, inputTotal - cachedInputTokens)
         const model = stringField(obj, 'model') ?? fallbackModel

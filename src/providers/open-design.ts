@@ -7,7 +7,7 @@ import { calculateCost } from '../models.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 const PROVIDER_NAME = 'open-design'
-const ENV_DIR = 'CODEBURN_OPEN_DESIGN_DIR'
+const ENV_DIR = 'METRORA_OPEN_DESIGN_DIR'
 
 const modelDisplayNames = new Map<string, string>([
   ['openai-codex:gpt-5.5', 'GPT-5.5'],

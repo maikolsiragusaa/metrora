@@ -1,6 +1,6 @@
 # Mux
 
-[coder/mux](https://github.com/coder/mux) — Coder's desktop/CLI app for parallel agentic development. Mux makes its own LLM API calls (via the Vercel AI SDK) and records per-turn token usage natively, so codeburn reads it directly.
+[coder/mux](https://github.com/coder/mux) — Coder's desktop/CLI app for parallel agentic development. Mux makes its own LLM API calls (via the Vercel AI SDK) and records per-turn token usage natively, so metrora reads it directly.
 
 - **Source:** `src/providers/mux.ts`
 - **Loading:** eager (`src/providers/index.ts:13`)
@@ -10,11 +10,11 @@
 
 | Order | Path |
 |---|---|
-| 1 | `$CODEBURN_MUX_DIR` (codeburn-only override) |
+| 1 | `$METRORA_MUX_DIR` (metrora-only override) |
 | 2 | `$MUX_ROOT` (mux's own override) |
 | 3 | `~/.mux` (default) |
 
-Session files: `<root>/sessions/<workspaceId>/chat.jsonl`, plus each spawned sub-agent's own transcript at `<root>/sessions/<workspaceId>/subagent-transcripts/<childTaskId>/chat.jsonl` (see Quirks). Dev builds of mux use `~/.mux-dev` and an older install may use `~/.cmux` (migrated to `~/.mux`); point `CODEBURN_MUX_DIR`/`MUX_ROOT` at those if needed.
+Session files: `<root>/sessions/<workspaceId>/chat.jsonl`, plus each spawned sub-agent's own transcript at `<root>/sessions/<workspaceId>/subagent-transcripts/<childTaskId>/chat.jsonl` (see Quirks). Dev builds of mux use `~/.mux-dev` and an older install may use `~/.cmux` (migrated to `~/.mux`); point `METRORA_MUX_DIR`/`MUX_ROOT` at those if needed.
 
 The human-readable project name is resolved from `<root>/config.json` (shape: `{ projects: Array<[projectPath, { workspaces: [{ id }] }] > }`); the directory under `sessions/` is the `workspaceId`, matched against `workspace.id`. Falls back to the raw `workspaceId` when there's no mapping.
 
@@ -24,7 +24,7 @@ JSONL, one `MuxMessage` per line. Token usage rides on each assistant message's 
 
 ## Pricing
 
-Cost is recomputed locally via `calculateCost` (mux and codeburn both price from the LiteLLM snapshot). On-disk model strings are `provider:modelId` (e.g. `anthropic:claude-opus-4-8`); the `provider:` prefix is stripped **at parse time** so the stored model is the bare LiteLLM id. This matters because codeburn's canonicalizer (`getCanonicalName`) only strips slash-style prefixes, and `parser.ts` re-prices from the stored model after the cache round-trip — a colon-prefixed model would price at $0 and render raw in the breakdown.
+Cost is recomputed locally via `calculateCost` (mux and metrora both price from the LiteLLM snapshot). On-disk model strings are `provider:modelId` (e.g. `anthropic:claude-opus-4-8`); the `provider:` prefix is stripped **at parse time** so the stored model is the bare LiteLLM id. This matters because metrora's canonicalizer (`getCanonicalName`) only strips slash-style prefixes, and `parser.ts` re-prices from the stored model after the cache round-trip — a colon-prefixed model would price at $0 and render raw in the breakdown.
 
 Token decomposition matches mux's own `displayUsage.ts` (AI SDK v6 semantics):
 

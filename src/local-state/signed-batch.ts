@@ -26,8 +26,8 @@ import {
   type LocalMeasurementOutboxRecordV1,
 } from './measurement-outbox.js'
 
-export const LOCAL_SIGNED_BATCH_KIND = 'qovrion.local-signed-measurement-batch' as const
-export const LOCAL_SIGNED_BATCH_ACK_KIND = 'qovrion.local-signed-measurement-batch-ack' as const
+export const LOCAL_SIGNED_BATCH_KIND = 'metrora.local-signed-measurement-batch' as const
+export const LOCAL_SIGNED_BATCH_ACK_KIND = 'metrora.local-signed-measurement-batch-ack' as const
 
 const CanonicalBase64Schema = z.string().min(1).refine(value => {
   try { return Buffer.from(value, 'base64').toString('base64') === value } catch { return false }
@@ -74,7 +74,7 @@ type BatchRangeV1 = z.infer<typeof BatchRangeV1Schema>
 export type CreateSignedMeasurementBatchV1Options = {
   dataDir: string
   identity: LoadedLocalEndpointIdentityV1
-  qovrionVersion: string
+  metroraVersion: string
   adapterSetSha256: string
   openTelemetryGenAiVersion: string
   /** Frozen public batch v1 has no top-level workspace field. When supplied,
@@ -121,7 +121,7 @@ function batchFileName(batch: LocalSignedMeasurementBatchV1): string {
 }
 
 function ackFileName(batchId: string): string {
-  return `${sha256(`qovrion-batch-ack-v1\0${batchId}`)}.json`
+  return `${sha256(`metrora-batch-ack-v1\0${batchId}`)}.json`
 }
 
 function canonicalBatch(batch: MeasurementBatchV1): string {
@@ -313,13 +313,13 @@ export async function createNextSignedMeasurementBatchV1(
 
     const previousDigest = previous?.batchSha256
     const batch = MeasurementBatchV1Schema.parse({
-      kind: 'qovrion.measurement-batch',
+      kind: 'metrora.measurement-batch',
       version: 1,
       batchId: buildBatchId(endpointId, previousDigest, records),
       createdAt: (options.now ?? (() => new Date()))().toISOString(),
       producer: {
         endpointId,
-        qovrionVersion: options.qovrionVersion,
+        metroraVersion: options.metroraVersion,
         adapterSetSha256: options.adapterSetSha256,
       },
       semanticConventions: {
@@ -328,7 +328,7 @@ export async function createNextSignedMeasurementBatchV1(
           version: options.openTelemetryGenAiVersion,
           stability: 'development',
         },
-        qovrion: '1',
+        metrora: '1',
       },
       ...(previousDigest ? { previousBatchSha256: previousDigest } : {}),
       events: records.map(record => record.event),

@@ -32,7 +32,7 @@ function fakeClock(start = 1_000): RefreshLockClock & { advance: (ms: number) =>
 }
 
 afterEach(async () => {
-  delete process.env['CODEBURN_CACHE_DIR']
+  delete process.env['METRORA_CACHE_DIR']
   await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
 
@@ -162,7 +162,10 @@ describe('warm session-cache refresh lock', () => {
       clock.advance(1_000)
 
       const records: Array<{ pid: number; token: string; at: number }> = []
-      const deadline = Date.now() + 100
+      // A 100ms window is occasionally too short on a saturated Windows
+      // worker even though the heartbeat is healthy. Keep the assertion about
+      // repeated observations while allowing the filesystem scheduler room.
+      const deadline = Date.now() + 250
       while (Date.now() < deadline) {
         const raw = await readFile(lockPath(dir), 'utf-8')
         records.push(JSON.parse(raw) as { pid: number; token: string; at: number })
@@ -214,7 +217,7 @@ describe('warm session-cache refresh lock', () => {
 
   it('fences publication and release removes only its own token', async () => {
     const dir = await tempDir()
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    process.env['METRORA_CACHE_DIR'] = dir
     const original = emptyCache()
     original.complete = true
     await saveCache(original)

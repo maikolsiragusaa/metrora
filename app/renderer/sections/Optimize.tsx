@@ -8,7 +8,7 @@ import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { DateRange, MenubarPayload, OptimizeJsonReport, Period, SessionYieldJson, WasteAction, YieldJsonReport } from '../lib/types'
 
 type OptimizeTab = 'opportunities' | 'reverts' | 'abandoned' | 'quickFixes'
@@ -26,7 +26,7 @@ function identified(value: string, fallback: string): string {
 
 export function Optimize({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
-    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
+    () => range ? metrora.getOverview(period, provider, range) : metrora.getOverview(period, provider),
     [period, provider, range?.from, range?.to],
   )
   return <OptimizeContent period={period} provider={provider} range={range} overview={overview} />
@@ -51,12 +51,12 @@ export function OptimizeContent({
   // them as prioritized insights today; a future conversational Advisor can
   // consume the same evidence without duplicating or replacing its authority.
   const optimizeReport = usePolled<OptimizeJsonReport>(
-    () => range ? codeburn.getOptimizeReport(period, provider, range) : codeburn.getOptimizeReport(period, provider),
+    () => range ? metrora.getOptimizeReport(period, provider, range) : metrora.getOptimizeReport(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `optimize|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
   const yieldReport = usePolled<YieldJsonReport>(
-    () => range ? codeburn.getYield(period, provider, range) : codeburn.getYield(period, provider),
+    () => range ? metrora.getYield(period, provider, range) : metrora.getYield(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `optyield|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )

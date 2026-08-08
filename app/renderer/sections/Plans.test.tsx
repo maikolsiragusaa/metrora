@@ -12,7 +12,7 @@ const { getPlans, getQuota } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getPlans, getQuota } }
+  return { ...actual, metrora: { getPlans, getQuota } }
 })
 
 const periodStart = new Date(2026, 5, 15).toISOString()
@@ -198,11 +198,11 @@ describe('Plans', () => {
   })
 
   it('renders the CLI locate state when getPlans reports not-found', async () => {
-    getPlans.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    getPlans.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
 
     render(<Plans period="week" />)
 
-    expect(await screen.findByText('Locate the codeburn CLI')).toBeInTheDocument()
+    expect(await screen.findByText('Locate the metrora CLI')).toBeInTheDocument()
   })
 
   it('does not re-apply the FX rate to CLI-converted plan values (symbol swap only)', async () => {

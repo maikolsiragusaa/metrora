@@ -6,7 +6,7 @@ import { CodexThroughputReader, readCodexThroughput, renderCodexThroughput } fro
 
 describe('Codex throughput prototype', () => {
   it('estimates generated tokens/sec between token_count checkpoints', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-tps-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-tps-'))
     const path = join(dir, 'rollout.jsonl')
     await writeFile(path, [
       JSON.stringify({ type: 'session_meta', timestamp: '2026-07-25T00:00:00.000Z', payload: { model: 'gpt-5.6-sol' } }),
@@ -26,7 +26,7 @@ describe('Codex throughput prototype', () => {
   })
 
   it('parses only appended complete lines while watching a growing rollout', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-tps-watch-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-tps-watch-'))
     const path = join(dir, 'rollout.jsonl')
     const first = JSON.stringify({ type: 'event_msg', timestamp: '2026-07-25T00:00:00.000Z', payload: { type: 'token_count', info: { last_token_usage: { output_tokens: 8, reasoning_output_tokens: 2 }, total_token_usage: { total_tokens: 10, output_tokens: 8, reasoning_output_tokens: 2 } } } })
     const second = JSON.stringify({ type: 'event_msg', timestamp: '2026-07-25T00:00:01.000Z', payload: { type: 'token_count', info: { last_token_usage: { output_tokens: 4, reasoning_output_tokens: 1 }, total_token_usage: { total_tokens: 15, output_tokens: 12, reasoning_output_tokens: 3 } } } })
@@ -40,7 +40,7 @@ describe('Codex throughput prototype', () => {
   })
 
   it('ignores replayed pre-fork checkpoints before estimating new work', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-tps-fork-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-tps-fork-'))
     const path = join(dir, 'rollout.jsonl')
     const line = (timestamp: string, payload: Record<string, unknown>) => JSON.stringify({ type: 'event_msg', timestamp, payload })
     await writeFile(path, [
@@ -59,7 +59,7 @@ describe('Codex throughput prototype', () => {
   })
 
   it('keeps oversized rollout lines bounded while extracting token usage', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-tps-large-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-tps-large-'))
     const path = join(dir, 'rollout.jsonl')
     const largeResult = JSON.stringify({
       type: 'event_msg',
@@ -77,7 +77,7 @@ describe('Codex throughput prototype', () => {
   })
 
   it('keeps MCP duration when arguments and result surround the middle field', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-tps-mcp-large-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-tps-mcp-large-'))
     const path = join(dir, 'rollout.jsonl')
     const mcp = JSON.stringify({
       type: 'event_msg', timestamp: '2026-07-25T00:00:05.000Z',
@@ -100,7 +100,7 @@ describe('Codex throughput prototype', () => {
   })
 
   it('keeps a streamed string MCP duration when arguments and result surround the middle field', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-tps-mcp-string-large-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-tps-mcp-string-large-'))
     const path = join(dir, 'rollout.jsonl')
     const mcp = JSON.stringify({
       type: 'event_msg', timestamp: '2026-07-25T00:00:05.000Z',

@@ -130,7 +130,7 @@ function readyAvailability(
 
 export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record<string, WorkspaceHandler> {
   return {
-    'codeburn:getWorkspaceStatus': async () => {
+    'metrora:getWorkspaceStatus': async () => {
       const state = await deps.getRuntimeState()
       if (state.status === 'unsupported-platform') {
         return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
@@ -155,7 +155,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:inspectWorkspaceStatus': async () => {
+    'metrora:inspectWorkspaceStatus': async () => {
       const state = await deps.getRuntimeState()
       if (state.status === 'unsupported-platform') {
         return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
@@ -173,7 +173,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:createWorkspace': async (input?: unknown) => {
+    'metrora:createWorkspace': async (input?: unknown) => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -183,7 +183,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:pauseWorkspaceProduction': async () => {
+    'metrora:pauseWorkspaceProduction': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -193,7 +193,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:resumeWorkspaceProduction': async () => {
+    'metrora:resumeWorkspaceProduction': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -203,7 +203,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:produceWorkspaceMeasurements': async () => {
+    'metrora:produceWorkspaceMeasurements': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -213,7 +213,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:recoverWorkspaceState': async () => {
+    'metrora:recoverWorkspaceState': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceRecoveryRuntime>
@@ -230,7 +230,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:createWorkspaceBatch': async () => {
+    'metrora:createWorkspaceBatch': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -240,7 +240,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:exportWorkspaceEvidence': async () => {
+    'metrora:exportWorkspaceEvidence': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       const outputPath = await deps.chooseExportPath(suggestedExportName((deps.now ?? (() => new Date()))()))

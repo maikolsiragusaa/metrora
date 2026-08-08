@@ -9,7 +9,7 @@ import { reasoningMixLabel, Sessions } from './Sessions'
 const getSessions = vi.hoisted(() => vi.fn())
 
 vi.mock('../lib/ipc', () => ({
-  codeburn: { getSessions },
+  metrora: { getSessions },
 }))
 
 function reasoningMix(level: 'unknown' | 'xhigh', totalCalls = 1): ReasoningMix {

@@ -7,7 +7,7 @@ import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
 import type { CompareJsonReport, ComparisonRow, DateRange, ModelStats, Period, WorkingStyleRow } from '../lib/types'
 
@@ -68,7 +68,7 @@ export function Compare({
   ready?: boolean
 }) {
   const models = usePolled<ModelStats[]>(
-    () => codeburn.getCompareModels(period, provider),
+    () => metrora.getCompareModels(period, provider),
     [period, provider, refreshToken],
     { enabled: ready, memoKey: `comparemodels|${period}|${provider}` },
   )
@@ -160,7 +160,7 @@ function CompareReport({
   onError: () => void
 }) {
   const report = usePolled<CompareJsonReport>(
-    () => codeburn.getCompare(period, provider, modelA, modelB),
+    () => metrora.getCompare(period, provider, modelA, modelB),
     [period, provider, modelA, modelB, refreshToken],
     { memoKey: `compare|${period}|${provider}|${modelA}|${modelB}` },
   )

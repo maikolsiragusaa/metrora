@@ -278,9 +278,9 @@ export function desktopReviewedProductionModulePath(
 }
 
 /**
- * Copy old Qovrion desktop state into Metrora once. The source is never moved,
- * modified or deleted. A failed readable-state migration is surfaced instead
- * of silently creating a fresh identity.
+ * Copy an explicitly supplied legacy desktop state into Metrora once. The
+ * source is never moved, modified or deleted. A failed readable-state
+ * migration is surfaced instead of silently creating a fresh identity.
  */
 export function adoptLegacyDesktopLocalState(options: {
   userDataPath: string
@@ -289,20 +289,22 @@ export function adoptLegacyDesktopLocalState(options: {
   const canonical = join(options.userDataPath, 'metrora-local-state')
   if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: null }
 
-  const legacyRoot = options.legacyUserDataPath ?? join(dirname(options.userDataPath), 'Qovrion')
-  const candidates = [
-    join(legacyRoot, 'qovrion-local-state'),
-    join(options.userDataPath, 'qovrion-local-state'),
-  ]
-  for (const legacy of candidates) {
-    if (!existsSync(legacy)) continue
-    try {
-      mkdirSync(dirname(canonical), { recursive: true })
-      cpSync(legacy, canonical, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true })
-      return { dataDir: canonical, adoptedFrom: legacy }
-    } catch (error) {
-      if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: legacy }
-      throw new Error(`failed to adopt legacy Qovrion desktop state: ${error instanceof Error ? error.message : String(error)}`)
+  if (options.legacyUserDataPath) {
+    const supplied = join(options.legacyUserDataPath, 'metrora-local-state')
+    if (existsSync(supplied)) {
+      try {
+        mkdirSync(dirname(canonical), { recursive: true })
+        cpSync(supplied, canonical, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          preserveTimestamps: true,
+        })
+        return { dataDir: canonical, adoptedFrom: supplied }
+      } catch (error) {
+        if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: supplied }
+        throw new Error(`failed to adopt legacy Metrora desktop state: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
   return { dataDir: canonical, adoptedFrom: null }

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/ipc', () => ({
-  codeburn: {
+  metrora: {
     getOverview: mocks.getOverview,
   },
 }))

@@ -4,7 +4,7 @@ import { normalizeExplicitModelProvider } from '../../model-provider.js'
 import type { ParsedApiCall } from '../../types.js'
 import { ContractVersionSchema } from './common.js'
 
-export const COLLECTOR_PROVENANCE_PROFILE_KIND = 'qovrion.collector-provenance-profile' as const
+export const COLLECTOR_PROVENANCE_PROFILE_KIND = 'metrora.collector-provenance-profile' as const
 
 export const FactProvenanceSchema = z.enum(['measured', 'derived', 'estimated', 'unknown'])
 export const IdentityProvenanceSchema = z.enum(['exact', 'normalized', 'derived', 'unknown'])

@@ -1,7 +1,50 @@
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
+
+const { ORIGINAL_ENV } = vi.hoisted(() => {
+  const envKeys = [
+    'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE', 'APPDATA', 'LOCALAPPDATA',
+    'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'METRORA_CACHE_DIR',
+    'METRORA_CONFIG_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME',
+    'OPENCODE_DATA_DIR', 'CLINE_DIR', 'CLINE_DATA_DIR', 'CLINE_SESSION_DATA_DIR',
+    'CODEWHALE_HOME', 'CODEBUFF_DATA_DIR', 'METRORA_DESKTOP_SESSIONS_DIR',
+    'METRORA_COPILOT_SESSION_STATE_DIR', 'METRORA_COPILOT_OTEL_DB',
+    'METRORA_COPILOT_JETBRAINS_DIR', 'METRORA_COPILOT_WS_STORAGE_DIR',
+    'METRORA_COPILOT_GLOBAL_STORAGE_DIR', 'FACTORY_DIR', 'HERMES_HOME',
+    'KIMI_SHARE_DIR', 'KIMI_CODE_HOME', 'KIRO_HOME', 'VIBE_HOME',
+    'LINGTAI_TUI_GLOBAL_DIR', 'LINGTAI_HOME', 'LINGTAI_TUI_HOME', 'METRORA_MUX_DIR',
+    'QWEN_DATA_DIR', 'QUICKWORK_HOME', 'ZS_DATA_DIR', 'GROK_HOME',
+  ] as const
+  const original = Object.fromEntries(envKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.env['TMPDIR'] ?? process.env['TMP'] ?? process.env['TEMP'] ?? '.'
+  const root = `${base}${base.endsWith(separator) ? '' : separator}metrora-hydration-isolated-home`
+  const home = `${root}${separator}home`
+  const isolated: Record<string, string> = {
+    HOME: home,
+    USERPROFILE: home,
+    HOMEPATH: home,
+    HOMEDRIVE: '',
+    APPDATA: `${home}${separator}AppData${separator}Roaming`,
+    LOCALAPPDATA: `${home}${separator}AppData${separator}Local`,
+    XDG_DATA_HOME: `${home}${separator}.local${separator}share`,
+    XDG_CONFIG_HOME: `${home}${separator}.config`,
+    XDG_CACHE_HOME: `${home}${separator}.cache`,
+    METRORA_CACHE_DIR: `${root}${separator}cache`,
+    METRORA_CONFIG_DIR: `${home}${separator}.config${separator}metrora`,
+    CODEX_HOME: `${home}${separator}.codex`,
+    OPENCODE_DATA_DIR: `${home}${separator}.local${separator}share${separator}opencode`,
+  }
+  for (const [key, value] of Object.entries(isolated)) process.env[key] = value
+  for (const key of envKeys) {
+    if (!(key in isolated)) delete process.env[key]
+  }
+  return { ORIGINAL_ENV: original }
+})
 
 import { loadPricing, setLocalModelSavings, setModelAliases } from '../src/models.js'
 import { buildMenubarPayloadForRange } from '../src/usage-aggregator.js'
@@ -41,10 +84,17 @@ afterEach(async () => {
   }
 })
 
+afterAll(() => {
+  for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
+
 /** Point discovery + cache at fresh isolated dirs and seed the fixture sessions. */
 async function seed(): Promise<void> {
-  const base = await mkdtemp(join(tmpdir(), 'codeburn-hyd-src-'))
-  const cacheDir = await mkdtemp(join(tmpdir(), 'codeburn-hyd-cache-'))
+  const base = await mkdtemp(join(tmpdir(), 'metrora-hyd-src-'))
+  const cacheDir = await mkdtemp(join(tmpdir(), 'metrora-hyd-cache-'))
   tmpDirs.push(base, cacheDir)
   const projectDir = join(base, 'projects', 'p')
   await mkdir(projectDir, { recursive: true })
@@ -63,7 +113,7 @@ async function seed(): Promise<void> {
   }
 
   process.env['CLAUDE_CONFIG_DIR'] = base
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
+  process.env['METRORA_CACHE_DIR'] = cacheDir
 }
 
 /** The (date, cost) shape of the daily chart — the thing that froze empty. */

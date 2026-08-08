@@ -12,7 +12,7 @@ const { getSessions } = vi.hoisted(() => ({
 
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { ...actual.codeburn, getSessions } }
+  return { ...actual, metrora: { ...actual.metrora, getSessions } }
 })
 
 function session(overrides: Partial<SessionRow> & Pick<SessionRow, 'sessionId' | 'project' | 'provider'>): SessionRow {

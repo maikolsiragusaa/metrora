@@ -44,7 +44,7 @@ const HISTORY_DAYS_CAP = 365
  * than mislabeling aged-out history).
  *
  * Days before this key render as "no data recorded". That label is literally
- * true even for the edge where CodeBurn was installed earlier but idle until
+ * true even for the edge where Metrora was installed earlier but idle until
  * its first recorded activity: nothing was recorded those days either.
  */
 export function dataStartKey(daily: DailyHistoryEntry[]): string | null {

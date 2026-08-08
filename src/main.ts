@@ -39,7 +39,7 @@ import {
   runAgyStatusLineHook,
   uninstallAntigravityStatusLineHook,
 } from './antigravity-statusline.js'
-import { clearPlan, readConfig, readPlan, readPlans, saveConfig, savePlan, getConfigFilePath, type CodeburnConfig, type Plan, type PlanId, type PlanProvider } from './config.js'
+import { clearPlan, readConfig, readPlan, readPlans, saveConfig, savePlan, getConfigFilePath, type MetroraConfig, type Plan, type PlanId, type PlanProvider } from './config.js'
 import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from './plan-usage.js'
 import { getPresetPlan, isPlanId, isPlanProvider, PLAN_IDS, PLAN_PROVIDERS, planDisplayName } from './plans.js'
 import { createRequire } from 'node:module'
@@ -86,7 +86,7 @@ function parseCodexTpsWatch(value: string): number {
   return parsed
 }
 
-type PriceOverrideConfig = NonNullable<CodeburnConfig['priceOverrides']>[string]
+type PriceOverrideConfig = NonNullable<MetroraConfig['priceOverrides']>[string]
 
 type PriceOverrideOptions = {
   input?: number
@@ -218,7 +218,7 @@ function isValidBudgetAmount(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
-function configuredBudgetEntries(budget: CodeburnConfig['budget']): Array<{ tier: BudgetTier; amount: number }> {
+function configuredBudgetEntries(budget: MetroraConfig['budget']): Array<{ tier: BudgetTier; amount: number }> {
   const entries: Array<{ tier: BudgetTier; amount: number }> = []
   const daily = budget?.daily
   const weekly = budget?.weekly
@@ -237,7 +237,7 @@ function budgetTierForOverview(period: Period | undefined, customRange: DateRang
   return undefined
 }
 
-function budgetAmountForTier(budget: CodeburnConfig['budget'], tier: BudgetTier): number | undefined {
+function budgetAmountForTier(budget: MetroraConfig['budget'], tier: BudgetTier): number | undefined {
   const amount = tier === 'daily'
     ? budget?.daily
     : tier === 'weekly'
@@ -271,7 +271,7 @@ function totalProjectCostUSD(projects: ProjectSummary[]): number {
   return projects.reduce((sum, project) => sum + project.totalCostUSD, 0)
 }
 
-function buildOverviewBudget(projects: ProjectSummary[], budget: CodeburnConfig['budget'], tier: BudgetTier | undefined, range: DateRange): OverviewBudget | undefined {
+function buildOverviewBudget(projects: ProjectSummary[], budget: MetroraConfig['budget'], tier: BudgetTier | undefined, range: DateRange): OverviewBudget | undefined {
   if (!tier) return undefined
   const amount = budgetAmountForTier(budget, tier)
   if (amount === undefined) return undefined
@@ -292,7 +292,7 @@ function isOverviewBudgetFilterActive(opts: { provider: string; project: string[
   return opts.provider !== 'all' || opts.project.length > 0 || opts.exclude.length > 0
 }
 
-function printBudgetList(budget: CodeburnConfig['budget']): void {
+function printBudgetList(budget: MetroraConfig['budget']): void {
   const entries = configuredBudgetEntries(budget)
   if (entries.length === 0) {
     console.log('\n  No budgets configured.')
@@ -323,7 +323,7 @@ function validateBudgetSetters(opts: BudgetCommandOpts): boolean {
   return false
 }
 
-function assignBudgetSetters(config: CodeburnConfig, opts: BudgetCommandOpts): void {
+function assignBudgetSetters(config: MetroraConfig, opts: BudgetCommandOpts): void {
   const budget = { ...(config.budget ?? {}) }
   if (opts.daily !== undefined) budget.daily = opts.daily
   if (opts.weekly !== undefined) budget.weekly = opts.weekly
@@ -331,7 +331,7 @@ function assignBudgetSetters(config: CodeburnConfig, opts: BudgetCommandOpts): v
   config.budget = budget
 }
 
-function removeBudget(config: CodeburnConfig, tier: string): boolean {
+function removeBudget(config: MetroraConfig, tier: string): boolean {
   if (tier !== 'daily' && tier !== 'weekly' && tier !== 'monthly') {
     console.error(`\n  Unknown budget period: ${tier}. Use daily, weekly, or monthly.\n`)
     process.exitCode = 1
@@ -346,7 +346,7 @@ function removeBudget(config: CodeburnConfig, tier: string): boolean {
   return true
 }
 
-async function runBudgetCheck(budget: CodeburnConfig['budget']): Promise<void> {
+async function runBudgetCheck(budget: MetroraConfig['budget']): Promise<void> {
   const entries = configuredBudgetEntries(budget)
   if (entries.length === 0) {
     console.log('\n  No budgets configured.')
@@ -396,7 +396,7 @@ function sortedPlans(plans: Partial<Record<PlanProvider, Plan>>): Plan[] {
 function assertFormat(value: string, allowed: readonly string[], command: string): void {
   if (!allowed.includes(value)) {
     process.stderr.write(
-      `codeburn ${command}: unknown format "${value}". Valid values: ${allowed.join(', ')}.\n`
+      `metrora ${command}: unknown format "${value}". Valid values: ${allowed.join(', ')}.\n`
     )
     process.exit(1)
   }
@@ -414,7 +414,7 @@ function assertProvider(value: string, command: string): void {
   const names = allProviderNames()
   if (value === 'all' || names.includes(value)) return
   process.stderr.write(
-    `codeburn ${command}: unknown provider "${value}". Valid values: all, ${names.join(', ')}.\n`
+    `metrora ${command}: unknown provider "${value}". Valid values: all, ${names.join(', ')}.\n`
   )
   process.exit(1)
 }
@@ -422,7 +422,7 @@ function assertProvider(value: string, command: string): void {
 function assertScope(value: string, allowed: readonly string[], command: string): void {
   if (!allowed.includes(value)) {
     process.stderr.write(
-      `codeburn ${command}: unknown scope "${value}". Valid values: ${allowed.join(', ')}.\n`
+      `metrora ${command}: unknown scope "${value}". Valid values: ${allowed.join(', ')}.\n`
     )
     process.exit(1)
   }
@@ -444,7 +444,7 @@ const program = new Command()
   .option('--timezone <zone>', 'IANA timezone for date grouping (e.g. Asia/Tokyo, America/New_York)')
 
 program.hook('preAction', async (thisCommand) => {
-  const tz = thisCommand.opts<{ timezone?: string }>().timezone ?? process.env['CODEBURN_TZ']
+  const tz = thisCommand.opts<{ timezone?: string }>().timezone ?? process.env['METRORA_TZ']
   if (tz) {
     try {
       Intl.DateTimeFormat(undefined, { timeZone: tz })
@@ -460,7 +460,7 @@ program.hook('preAction', async (thisCommand) => {
   setLocalModelSavings(config.localModelSavings ?? {})
   setProxyPaths(config.proxyPaths ?? [])
   if (thisCommand.opts<{ verbose?: boolean }>().verbose) {
-    process.env['CODEBURN_VERBOSE'] = '1'
+    process.env['METRORA_VERBOSE'] = '1'
   }
   await loadCurrency()
 })
@@ -1281,7 +1281,7 @@ program
         savedPath = await exportCsv(periods, outputPath)
       }
     } catch (err) {
-      // Protection guards in export.ts (symlink refusal, non-codeburn folder refusal, etc.)
+      // Protection guards in export.ts (symlink refusal, non-metrora folder refusal, etc.)
       // throw with a user-readable message. Print just the message, not the stack, so the CLI
       // doesn't spray its internals at the user.
       const message = err instanceof Error ? err.message : String(err)
@@ -1618,7 +1618,7 @@ program
     const trimmed = path.trim()
     if (!isAbsolute(trimmed) || normalizeProxyPath(trimmed) === '') {
       console.error(`\n  Proxy path must be an absolute project directory (got: ${path}).`)
-      console.error('  codeburn matches sessions by their recorded absolute cwd; the')
+      console.error('  metrora matches sessions by their recorded absolute cwd; the')
       console.error('  filesystem root is too broad and is not accepted.\n')
       process.exitCode = 1
       return
@@ -2004,7 +2004,7 @@ program
 
 program
   .command('audit')
-  .description("Token audit: raw provider token fields vs codeburn's displayed totals and cost derivation")
+  .description("Token audit: raw provider token fields vs metrora's displayed totals and cost derivation")
   .option('-p, --period <period>', 'Analysis period: today, week, 30days, month, all, lifetime', '30days')
   .option('--from <date>', 'Custom range start (YYYY-MM-DD)')
   .option('--to <date>', 'Custom range end (YYYY-MM-DD)')

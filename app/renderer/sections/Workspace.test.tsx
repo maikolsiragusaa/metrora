@@ -19,7 +19,7 @@ const bridge = vi.hoisted(() => ({
   exportWorkspaceEvidence: vi.fn(),
 }))
 
-vi.mock('../lib/ipc', () => ({ metrora: bridge, codeburn: bridge }))
+vi.mock('../lib/ipc', () => ({ metrora: bridge }))
 
 function overviewPayload(): MenubarPayload {
   return {

@@ -2,14 +2,14 @@
  * Integration test: metrora sync push against real AWS infrastructure.
  *
  * Requires:
- * - Deployed CodeburnSyncBackend stack
- * - Environment variables: CODEBURN_SYNC_URL, CODEBURN_SYNC_EMAIL, CODEBURN_SYNC_PASSWORD
+ * - Deployed MetroraSyncBackend stack
+ * - Environment variables: METRORA_SYNC_URL, METRORA_SYNC_EMAIL, METRORA_SYNC_PASSWORD
  * - AWS credentials (for verifying CloudWatch logs)
  *
  * Run:
- *   CODEBURN_SYNC_URL=https://xxx.execute-api.us-west-2.amazonaws.com \
- *   CODEBURN_SYNC_EMAIL=andklee@amazon.com \
- *   CODEBURN_SYNC_PASSWORD='password' \
+ *   METRORA_SYNC_URL=https://xxx.execute-api.us-west-2.amazonaws.com \
+ *   METRORA_SYNC_EMAIL=andklee@amazon.com \
+ *   METRORA_SYNC_PASSWORD='password' \
  *   AWS_PROFILE=andklee-dev \
  *   npx vitest run tests/sync-infra-e2e.test.ts
  */
@@ -22,9 +22,9 @@ import { fetchOidcConfig, refreshToken } from '../src/sync/auth.js'
 import { buildOtlpPayload, deriveSpanId, type CallWithSession } from '../src/sync/otlp.js'
 import type { ParsedApiCall, TokenUsage } from '../src/types.js'
 
-const BASE_URL = process.env.CODEBURN_SYNC_URL
-const TEST_EMAIL = process.env.CODEBURN_SYNC_EMAIL
-const TEST_PASSWORD = process.env.CODEBURN_SYNC_PASSWORD
+const BASE_URL = process.env.METRORA_SYNC_URL
+const TEST_EMAIL = process.env.METRORA_SYNC_EMAIL
+const TEST_PASSWORD = process.env.METRORA_SYNC_PASSWORD
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2'
 
 const SKIP = !BASE_URL || !TEST_EMAIL || !TEST_PASSWORD
@@ -42,7 +42,7 @@ describe.skipIf(SKIP)('sync infra e2e — push + verify', () => {
     tracesEndpoint = `${BASE_URL}${discovery.traces_path}`
 
     // Direct auth (USER_PASSWORD_AUTH) for testing
-    const tokenEndpoint = `https://codeburn-sync.auth.${AWS_REGION}.amazoncognito.com/oauth2/token`
+    const tokenEndpoint = `https://metrora-sync.auth.${AWS_REGION}.amazoncognito.com/oauth2/token`
 
     // Use Cognito initiateAuth via fetch to the Cognito service
     const cognitoUrl = `https://cognito-idp.${AWS_REGION}.amazonaws.com/`

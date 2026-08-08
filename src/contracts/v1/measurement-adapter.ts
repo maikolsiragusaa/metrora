@@ -101,7 +101,7 @@ function eventId(call: ParsedApiCall, context: ParsedApiCallMeasurementContextV1
   }
 
   const digest = createHmac('sha256', context.eventIdentityKey)
-    .update('qovrion.measurement.v1\0')
+    .update('metrora.measurement.v1\0')
     .update(context.endpointId)
     .update('\0')
     .update(context.collector.sourceFingerprintSha256)
@@ -131,7 +131,7 @@ export function toUsageMeasurementEventV1(
   const event: UsageMeasurementEventV1 = {
     specversion: '1.0',
     id: eventId(call, context),
-    source: `urn:qovrion:endpoint:${context.endpointId}`,
+    source: `urn:metrora:endpoint:${context.endpointId}`,
     type: USAGE_MEASUREMENT_EVENT_TYPE,
     time: call.timestamp,
     subject: eventSubject(context),

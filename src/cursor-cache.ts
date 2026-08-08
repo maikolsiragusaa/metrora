@@ -32,7 +32,7 @@ type ResultCache = {
 const CACHE_FILE = 'cursor-results.json'
 
 function getCacheDir(): string {
-  return join(homedir(), '.cache', 'codeburn')
+  return join(homedir(), '.cache', 'metrora')
 }
 
 function getCachePath(): string {
@@ -82,7 +82,7 @@ export async function writeCachedResults(
   // Diagnostic contexts (metrora doctor) sample-parse providers under a
   // strictly read-only promise; this is the one parse path that writes to
   // disk before its first yield, so it honors the suppression flag.
-  if (process.env['CODEBURN_SUPPRESS_CACHE_WRITES']) return
+  if (process.env['METRORA_SUPPRESS_CACHE_WRITES']) return
   const fp = await getDbFingerprint(dbPath)
   if (!fp) return
 

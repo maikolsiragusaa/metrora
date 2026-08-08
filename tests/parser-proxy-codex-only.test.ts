@@ -26,7 +26,7 @@ afterEach(async () => {
 
 it('flags a Codex-only project under a proxy path (leading-slash agnostic match)', async () => {
   // Codex fixture (the only sessions present).
-  const home = await mkdtemp(join(tmpdir(), 'codeburn-codexonly-'))
+  const home = await mkdtemp(join(tmpdir(), 'metrora-codexonly-'))
   tmpDirs.push(home)
   const dir = join(home, 'sessions', '2026', '04', '16')
   await mkdir(dir, { recursive: true })
@@ -49,7 +49,7 @@ it('flags a Codex-only project under a proxy path (leading-slash agnostic match)
   process.env['CODEX_HOME'] = home
 
   // Empty Claude dir so the only project is the Codex one.
-  const claudeEmpty = await mkdtemp(join(tmpdir(), 'codeburn-codexonly-claude-'))
+  const claudeEmpty = await mkdtemp(join(tmpdir(), 'metrora-codexonly-claude-'))
   tmpDirs.push(claudeEmpty)
   await mkdir(join(claudeEmpty, 'projects'), { recursive: true })
   process.env['CLAUDE_CONFIG_DIR'] = claudeEmpty

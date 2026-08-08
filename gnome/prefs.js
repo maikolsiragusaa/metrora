@@ -31,7 +31,7 @@ const PERIODS = [
   { id: 'all', label: '6 Months' },
 ];
 
-export default class CodeBurnPreferences extends ExtensionPreferences {
+export default class MetroraPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window) {
     const settings = this.getSettings();
 
@@ -161,10 +161,10 @@ export default class CodeBurnPreferences extends ExtensionPreferences {
 
     const pathRow = new Adw.EntryRow({
       title: 'Local CLI Path',
-      text: settings.get_string('codeburn-path'),
+      text: settings.get_string('metrora-path'),
     });
     pathRow.connect('changed', () => {
-      settings.set_string('codeburn-path', pathRow.get_text());
+      settings.set_string('metrora-path', pathRow.get_text());
     });
     advancedGroup.add(pathRow);
   }

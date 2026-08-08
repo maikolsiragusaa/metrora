@@ -2,7 +2,7 @@ import chalk from 'chalk'
 import { readdir, stat } from 'fs/promises'
 import { existsSync, statSync } from 'fs'
 import { basename, join } from 'path'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 
 import { readSessionLines, readSessionFileSync } from './fs-utils.js'
 import { discoverAllSessions } from './providers/index.js'
@@ -586,7 +586,21 @@ function readJsonFile(path: string): Record<string, unknown> | null {
 
 function shortHomePath(absPath: string): string {
   const home = homedir()
-  return absPath.startsWith(home) ? '~' + absPath.slice(home.length) : absPath
+  const normalize = (value: string): string => value.replaceAll('\\', '/').replace(/\/+$/, '')
+  const normalizedPath = normalize(absPath)
+  const normalizedTemp = normalize(tmpdir())
+  const normalizedHome = normalize(home)
+  const compare = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
+  const isUnder = (root: string): boolean => {
+    const pathValue = compare(normalizedPath)
+    const rootValue = compare(root)
+    return pathValue === rootValue || pathValue.startsWith(`${rootValue}/`)
+  }
+  // Keep temporary fixture/runtime paths explicit. On Windows the temp
+  // directory is commonly below the user's home, but abbreviating it hides
+  // the exact path needed to inspect a generated config or test artifact.
+  if (isUnder(normalizedTemp)) return absPath
+  return isUnder(normalizedHome) ? '~' + absPath.slice(home.length) : absPath
 }
 
 function isReadTool(name: string): boolean {
@@ -1785,7 +1799,7 @@ function attributeDeferralOffCause(
 ): { cause: string; fix: WasteAction; apply?: FindingApply } {
   if (enableToolSearch && isEnvValueFalse(enableToolSearch.value)) {
     return {
-      cause: `Cause: ${ENABLE_TOOL_SEARCH_VAR}=${enableToolSearch.value} is set in ${enableToolSearch.scope} (${shortHomePath(enableToolSearch.path)}), forcing all tool definitions upfront.`,
+      cause: `Cause: ${ENABLE_TOOL_SEARCH_VAR}=${enableToolSearch.value} is set in ${enableToolSearch.scope} (${enableToolSearch.path}), forcing all tool definitions upfront.`,
       fix: {
         type: 'paste',
         destination: 'prompt',

@@ -12,7 +12,7 @@ Forge agent CLI.
 
 ## Storage format
 
-SQLite (`forge.ts:225-252`). CodeBurn reads the `conversations` table and parses JSON from `context.messages` (`forge.ts:154-171`).
+SQLite (`forge.ts:225-252`). Metrora reads the `conversations` table and parses JSON from `context.messages` (`forge.ts:154-171`).
 
 ## Caching
 
@@ -25,8 +25,8 @@ Per `<provider>:<conversation_id>:<tool_call_id-or-message-index>` (`forge.ts:19
 ## Quirks
 
 - `workspace_id` is cast to text in SQL because Forge can store values larger than JavaScript's safe integer range (`forge.ts:35`, `forge.ts:155`, `forge.ts:238`).
-- Forge reports prompt tokens inclusive of cached tokens. CodeBurn subtracts cached tokens from prompt tokens before pricing (`forge.ts:185-188`).
-- One CodeBurn call is emitted per assistant message with usage; zero-token assistant messages are skipped (`forge.ts:183-190`).
+- Forge reports prompt tokens inclusive of cached tokens. Metrora subtracts cached tokens from prompt tokens before pricing (`forge.ts:185-188`).
+- One Metrora call is emitted per assistant message with usage; zero-token assistant messages are skipped (`forge.ts:183-190`).
 - Project names come from the conversation title, falling back to `workspace_id` (`forge.ts:244`).
 
 ## When fixing a bug here

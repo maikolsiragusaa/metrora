@@ -216,8 +216,8 @@ describe('model default recommendations', () => {
 
 describe('model default apply plan', () => {
   it('writes only the model key while preserving existing Claude settings and journals model-default', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-model-default-'))
-    const actionsDir = join(dir, '.codeburn-actions')
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-model-default-'))
+    const actionsDir = join(dir, '.metrora-actions')
     const projectPath = join(dir, 'project')
     const settingsPath = join(projectPath, '.claude', 'settings.json')
     const original = '{\n  "enabledTools": ["Bash"],\n  "model": "claude-sonnet-4-20250514"\n}\n'

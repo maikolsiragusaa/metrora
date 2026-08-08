@@ -94,12 +94,12 @@ describe('desktop local-state Electron host', () => {
     expect(initializeWorkspace).not.toHaveBeenCalled()
   })
 
-  it('copies old Qovrion desktop state without modifying the source', () => {
+  it('copies legacy desktop state into Metrora without modifying the source', () => {
     const root = mkdtempSync(join(tmpdir(), 'metrora-desktop-adoption-'))
     try {
       const userDataPath = join(root, 'Metrora')
-      const legacyUserDataPath = join(root, 'Qovrion')
-      const legacyState = join(legacyUserDataPath, 'qovrion-local-state')
+      const legacyUserDataPath = join(root, 'legacy-desktop')
+      const legacyState = join(legacyUserDataPath, 'metrora-local-state')
       mkdirSync(legacyState, { recursive: true })
       writeFileSync(join(legacyState, 'identity.bin'), 'legacy-state')
 

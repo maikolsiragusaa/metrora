@@ -11,7 +11,7 @@ import { usePolled } from '../hooks/usePolled'
 import { version as appVersion } from '../../package.json'
 import { readDailyBudget } from '../lib/budget'
 import { formatConverted, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
 import { REFRESH_OPTIONS, useRefreshCadence } from '../lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from '../lib/shortcuts'
@@ -47,7 +47,7 @@ const CURRENCIES = [
 ]
 
 function storageSuffix(key: string): string {
-  if (key.startsWith('codeburn.')) return key.slice('codeburn.'.length)
+  if (key.startsWith('metrora.')) return key.slice('metrora.'.length)
   if (key.startsWith('metrora.')) return key.slice('metrora.'.length)
   return key
 }
@@ -139,12 +139,12 @@ export function Settings({ period, refreshToken = 0, onNavigate, initialPane, cl
 
 function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, onConfigMutated }: { period: Period; refreshToken: number; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource: string | null; onConfigMutated?: ConfigMutationHandler }) {
   const [currencyNonce, setCurrencyNonce] = useState(0)
-  const plans = usePolled<StatusJson>(() => codeburn.getPlans(period), [period, refreshToken, currencyNonce])
+  const plans = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken, currencyNonce])
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = readSetting('codeburn.theme')
+    const saved = readSetting('metrora.theme')
     return saved === 'light' || saved === 'dark' ? saved : 'system'
   })
-  const [defaultPeriod, setDefaultPeriod] = useState(() => readSetting('codeburn.defaultPeriod') ?? 'today')
+  const [defaultPeriod, setDefaultPeriod] = useState(() => readSetting('metrora.defaultPeriod') ?? 'today')
   const cadence = useRefreshCadence()
   const [budgetKind, setBudgetKind] = useState<'off' | 'usd' | 'tokens'>(() => readDailyBudget()?.kind ?? 'off')
   const [budgetInput, setBudgetInput] = useState(() => { const budget = readDailyBudget(); return budget ? String(budget.value) : '' })
@@ -159,16 +159,16 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
   // cap (so the banner turns off) and, when non-empty, flags a validation error.
   const persistBudget = (kind: 'off' | 'usd' | 'tokens', input: string) => {
     const trimmed = input.trim()
-    if (kind === 'off' || trimmed === '') { setBudgetError(''); writeSetting('codeburn.dailyBudget', ''); return }
+    if (kind === 'off' || trimmed === '') { setBudgetError(''); writeSetting('metrora.dailyBudget', ''); return }
     const value = Number(trimmed)
     if (!Number.isFinite(value) || value <= 0) { setBudgetError('Enter a positive number.'); return }
     setBudgetError('')
-    writeSetting('codeburn.dailyBudget', JSON.stringify({ kind, value }))
+    writeSetting('metrora.dailyBudget', JSON.stringify({ kind, value }))
   }
 
   const chooseTheme = (next: Theme) => {
     setTheme(next)
-    writeSetting('codeburn.theme', next)
+    writeSetting('metrora.theme', next)
   }
   const finishCurrency = (result: ActionResult) => {
     showToast(result.ok ? 'Updated' : result.stderr || 'Unable to update currency', result.ok ? 'ok' : 'error')
@@ -205,10 +205,10 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
         <div className="about-sec">
           <div className="about-sec-h">Display</div>
           <div className="about-row"><label className="tx" htmlFor="settings-currency">Currency</label><span className="r">
-            {plans.data ? <Dropdown id="settings-currency" ariaLabel="Currency" value={plans.data.currency} options={currencies.map(code => ({ value: code, label: code }))} onChange={value => void codeburn.setCurrency(value).then(finishCurrency)} width={92} /> : plans.error ? <SettingsErrorText error={plans.error} /> : <span className="set-cap">Loading…</span>}
-            <button className="set-text-button" onClick={() => void codeburn.resetCurrency().then(finishCurrency)}>Reset to USD</button>
+            {plans.data ? <Dropdown id="settings-currency" ariaLabel="Currency" value={plans.data.currency} options={currencies.map(code => ({ value: code, label: code }))} onChange={value => void metrora.setCurrency(value).then(finishCurrency)} width={92} /> : plans.error ? <SettingsErrorText error={plans.error} /> : <span className="set-cap">Loading…</span>}
+            <button className="set-text-button" onClick={() => void metrora.resetCurrency().then(finishCurrency)}>Reset to USD</button>
           </span></div>
-          <div className="about-row"><label className="tx" htmlFor="settings-period">Default period<small>Applied on next launch.</small></label><span className="r"><Dropdown id="settings-period" ariaLabel="Default period" value={defaultPeriod} options={[{ value: 'today', label: 'Today' }, { value: 'week', label: '7d' }, { value: '30days', label: '30d' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All' }]} onChange={value => { setDefaultPeriod(value); writeSetting('codeburn.defaultPeriod', value) }} width={92} /></span></div>
+          <div className="about-row"><label className="tx" htmlFor="settings-period">Default period<small>Applied on next launch.</small></label><span className="r"><Dropdown id="settings-period" ariaLabel="Default period" value={defaultPeriod} options={[{ value: 'today', label: 'Today' }, { value: 'week', label: '7d' }, { value: '30days', label: '30d' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All' }]} onChange={value => { setDefaultPeriod(value); writeSetting('metrora.defaultPeriod', value) }} width={92} /></span></div>
           <div className="about-row"><label className="tx" htmlFor="settings-refresh">Refresh every<small>How often data auto-refreshes. Manual updates use {shortcutLabel('R')}.</small></label><span className="r"><Dropdown id="settings-refresh" ariaLabel="Refresh every" value={cadence.value} options={REFRESH_OPTIONS.map(option => ({ value: option.value, label: option.label }))} onChange={cadence.setValue} width={124} /></span></div>
           <div className="about-row"><label className="tx" htmlFor="settings-budget">Daily budget<small>Warns at 80%, alerts at 100%.</small></label><span className="r"><Dropdown id="settings-budget" ariaLabel="Daily budget" value={budgetKind} options={[{ value: 'off', label: 'Off' }, { value: 'usd', label: 'USD amount' }, { value: 'tokens', label: 'Tokens' }]} onChange={value => { const kind = value as 'off' | 'usd' | 'tokens'; setBudgetKind(kind); persistBudget(kind, budgetInput) }} width={120} />{budgetKind !== 'off' && <input className="set-input" type="text" inputMode="decimal" aria-label="Daily budget amount" placeholder={budgetKind === 'usd' ? 'USD' : 'tokens'} value={budgetInput} onChange={event => { setBudgetInput(event.target.value); persistBudget(budgetKind, event.target.value) }} style={{ width: 90 }} />}</span></div>
           {budgetError && <p className="set-action-msg error">{budgetError}</p>}
@@ -223,7 +223,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
 }
 
 function ProvidersPane({ period, refreshToken }: { period: Period; refreshToken: number }) {
-  const overview = usePolled<MenubarPayload>(() => codeburn.getOverview(period, 'all'), [period, refreshToken])
+  const overview = usePolled<MenubarPayload>(() => metrora.getOverview(period, 'all'), [period, refreshToken])
   const details = overview.data?.current.providerDetails
   // Prefer providerDetails (internal id + display label) so ProviderLogo keys on
   // the internal id. Fall back to the providers map keys (lowercased display
@@ -239,7 +239,7 @@ function ProvidersPane({ period, refreshToken }: { period: Period; refreshToken:
 
 function AliasesPane({ refreshToken, onConfigMutated }: { refreshToken: number; onConfigMutated?: ConfigMutationHandler }) {
   const [actionNonce, setActionNonce] = useState(0)
-  const aliases = usePolled<AliasRow[]>(() => codeburn.getAliases(), [refreshToken, actionNonce])
+  const aliases = usePolled<AliasRow[]>(() => metrora.getAliases(), [refreshToken, actionNonce])
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [error, setError] = useState('')
@@ -253,8 +253,8 @@ function AliasesPane({ refreshToken, onConfigMutated }: { refreshToken: number; 
   return <section className="set-p on">
     <div><h3 className="set-h">Model aliases</h3><p className="set-sub">Map an unrecognized model name to a priced model so its cost shows up.</p></div>
     <div className="card"><div className="about-sec set-last-sec">
-      {aliases.error ? <SettingsErrorText error={aliases.error} /> : !aliases.data ? <p className="set-cap">Loading aliases…</p> : aliases.data.length === 0 ? <p className="set-cap set-alias-empty">No aliases configured. Unknown models are priced at $0 until aliased.</p> : aliases.data.map(alias => <div className="set-alias" key={alias.from}><span className="set-mono">{alias.from}</span><span className="set-alias-ar">→</span><span className="set-mono set-alias-to">{alias.to}</span><button className="btnp" onClick={() => void codeburn.removeAlias(alias.from).then(result => complete(result))}>Remove</button></div>)}
-      <div className="set-alias"><input aria-label="Unrecognized model" className="set-input set-mono" placeholder="unrecognized model" value={from} onChange={event => setFrom(event.target.value)} /><span className="set-alias-ar">→</span><input aria-label="Priced model" className="set-input set-mono" placeholder="priced model" value={to} onChange={event => setTo(event.target.value)} /><button className="btnp btnp-primary" disabled={!from.trim() || !to.trim()} onClick={() => void codeburn.addAlias(from.trim(), to.trim()).then(result => complete(result, true))}>Add</button></div>
+      {aliases.error ? <SettingsErrorText error={aliases.error} /> : !aliases.data ? <p className="set-cap">Loading aliases…</p> : aliases.data.length === 0 ? <p className="set-cap set-alias-empty">No aliases configured. Unknown models are priced at $0 until aliased.</p> : aliases.data.map(alias => <div className="set-alias" key={alias.from}><span className="set-mono">{alias.from}</span><span className="set-alias-ar">→</span><span className="set-mono set-alias-to">{alias.to}</span><button className="btnp" onClick={() => void metrora.removeAlias(alias.from).then(result => complete(result))}>Remove</button></div>)}
+      <div className="set-alias"><input aria-label="Unrecognized model" className="set-input set-mono" placeholder="unrecognized model" value={from} onChange={event => setFrom(event.target.value)} /><span className="set-alias-ar">→</span><input aria-label="Priced model" className="set-input set-mono" placeholder="priced model" value={to} onChange={event => setTo(event.target.value)} /><button className="btnp btnp-primary" disabled={!from.trim() || !to.trim()} onClick={() => void metrora.addAlias(from.trim(), to.trim()).then(result => complete(result, true))}>Add</button></div>
       {error && <p className="set-action-msg error">{error}</p>}
     </div></div>
     <p className="set-cap">Unknown models are priced at $0 until aliased. A local model can instead be credited with what it would have cost via model-savings.</p>
@@ -279,7 +279,7 @@ function parseRate(raw: string): number | undefined | 'invalid' {
 
 function PricingPane({ refreshToken, onConfigMutated }: { refreshToken: number; onConfigMutated?: ConfigMutationHandler }) {
   const [actionNonce, setActionNonce] = useState(0)
-  const overrides = usePolled<PriceOverrideList>(() => codeburn.getPriceOverrides(), [refreshToken, actionNonce])
+  const overrides = usePolled<PriceOverrideList>(() => metrora.getPriceOverrides(), [refreshToken, actionNonce])
   const [model, setModel] = useState('')
   const [input, setInput] = useState('')
   const [output, setOutput] = useState('')
@@ -306,13 +306,13 @@ function PricingPane({ refreshToken, onConfigMutated }: { refreshToken: number; 
     if (!model.trim()) { setError('Enter a model name.'); return }
     if (rates.input === undefined || rates.output === undefined) { setError('Input and output rates are required.'); return }
     setError('')
-    void codeburn.setPriceOverride(model.trim(), rates).then(result => complete(result, true))
+    void metrora.setPriceOverride(model.trim(), rates).then(result => complete(result, true))
   }
 
   return <section className="set-p on">
     <div><h3 className="set-h">Pricing</h3><p className="set-sub">Override or add per-model rates so local or self-hosted models are priced. Rates are USD per 1,000,000 tokens.</p></div>
     <div className="card"><div className="about-sec set-last-sec">
-      {overrides.error ? <SettingsErrorText error={overrides.error} /> : !overrides.data ? <p className="set-cap">Loading price overrides…</p> : overrides.data.overrides.length === 0 ? <p className="set-cap set-alias-empty">No price overrides configured. Add one below to price an unrecognized or local model.</p> : overrides.data.overrides.map(override => <div className="set-price-row" key={override.model}><span className="set-mono">{override.model}</span><span className="set-price-rates">{priceRateSummary(override)}</span><ConfirmButton label="Remove" prompt="Remove?" onConfirm={() => void codeburn.removePriceOverride(override.model).then(result => complete(result))} /></div>)}
+      {overrides.error ? <SettingsErrorText error={overrides.error} /> : !overrides.data ? <p className="set-cap">Loading price overrides…</p> : overrides.data.overrides.length === 0 ? <p className="set-cap set-alias-empty">No price overrides configured. Add one below to price an unrecognized or local model.</p> : overrides.data.overrides.map(override => <div className="set-price-row" key={override.model}><span className="set-mono">{override.model}</span><span className="set-price-rates">{priceRateSummary(override)}</span><ConfirmButton label="Remove" prompt="Remove?" onConfirm={() => void metrora.removePriceOverride(override.model).then(result => complete(result))} /></div>)}
       <div className="set-price-form">
         <input aria-label="Override model" className="set-input set-mono set-price-model" placeholder="model name" value={model} onChange={event => setModel(event.target.value)} />
         <input aria-label="Input rate" className="set-input" inputMode="decimal" placeholder="input" value={input} onChange={event => setInput(event.target.value)} />
@@ -355,9 +355,9 @@ function PlansPane({ period, refreshToken, onConfigMutated }: { period: Period; 
     const key = `${refreshToken}:${reconnectNonce}`
     const force = key !== lastForced.current
     lastForced.current = key
-    return codeburn.getQuota(force)
+    return metrora.getQuota(force)
   }, [refreshToken, reconnectNonce])
-  const plans = usePolled<StatusJson>(() => codeburn.getPlans(period), [period, refreshToken, nonce])
+  const plans = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken, nonce])
   const [presetId, setPresetId] = useState(MANUAL_PLAN_PRESETS[0]!.id)
   const configured = plans.data ? planSummaries(plans.data) : []
 
@@ -366,11 +366,11 @@ function PlansPane({ period, refreshToken, onConfigMutated }: { period: Period; 
     if (result.ok) { setNonce(value => value + 1); onConfigMutated?.('accounting') }
   }
   const remove = (plan: JsonPlanSummary) => {
-    void codeburn.resetPlan(plan.provider).then(finish)
+    void metrora.resetPlan(plan.provider).then(finish)
   }
   const add = () => {
     const preset = MANUAL_PLAN_PRESETS.find(item => item.id === presetId)!
-    void codeburn.setPlan(preset.id, preset.provider).then(finish)
+    void metrora.setPlan(preset.id, preset.provider).then(finish)
   }
 
   return <section className="set-p on">
@@ -395,7 +395,7 @@ function PlansPane({ period, refreshToken, onConfigMutated }: { period: Period; 
 }
 
 function ExportPane({ period, refreshToken }: { period: Period; refreshToken: number }) {
-  const overview = usePolled<MenubarPayload>(() => codeburn.getOverview(period, 'all'), [period, refreshToken])
+  const overview = usePolled<MenubarPayload>(() => metrora.getOverview(period, 'all'), [period, refreshToken])
   const [format, setFormat] = useState<'csv' | 'json'>('csv')
   const [provider, setProvider] = useState('all')
   const [destination, setDestination] = useState<string | null>(null)
@@ -403,14 +403,14 @@ function ExportPane({ period, refreshToken }: { period: Period; refreshToken: nu
   const providers = Object.keys(overview.data?.current.providers ?? {})
 
   const chooseDirectory = async () => {
-    const selected = await codeburn.chooseDirectory()
+    const selected = await metrora.chooseDirectory()
     if (selected) setDestination(selected)
   }
   const exportNow = async () => {
     if (!destination) return
     setExporting(true)
     try {
-      const result = await codeburn.exportData(format, provider, destination)
+      const result = await metrora.exportData(format, provider, destination)
       showToast(result.ok ? `Exported to ${destination}` : (result.stderr || 'Export failed'), result.ok ? 'ok' : 'error')
     } finally {
       setExporting(false)
@@ -427,16 +427,16 @@ function ExportPane({ period, refreshToken }: { period: Period; refreshToken: nu
       </div>
       <div className="about-sec set-last-sec"><div className="about-row"><span className="tx" /><span className="r"><button className="btnp btnp-primary" disabled={!destination || exporting} onClick={() => void exportNow()}>{exporting ? 'Exporting…' : 'Export'}</button></span></div></div>
     </div>
-    <p className="set-cap">CSV writes a folder (summary, daily, models, projects, sessions, tools, mcp). JSON currently uses the legacy compatibility schema <code>codeburn.export.v2</code>.</p>
+    <p className="set-cap">CSV writes a folder (summary, daily, models, projects, sessions, tools, mcp). JSON currently uses the legacy compatibility schema <code>metrora.export.v2</code>.</p>
   </section>
 }
 
 function DevicesPane({ period, refreshToken }: { period: Period; refreshToken: number }) {
   const [nonce, setNonce] = useState(0)
-  const identity = usePolled<Identity>(() => codeburn.getIdentity(), [refreshToken])
-  const shareStatus = usePolled<ShareStatus>(() => codeburn.getShareStatus(), [refreshToken])
-  const scan = usePolled<DeviceScanResult>(() => codeburn.getDevicesScan(), [refreshToken, nonce])
-  const devices = usePolled<CombinedUsage>(() => codeburn.getDevices(period), [period, refreshToken, nonce])
+  const identity = usePolled<Identity>(() => metrora.getIdentity(), [refreshToken])
+  const shareStatus = usePolled<ShareStatus>(() => metrora.getShareStatus(), [refreshToken])
+  const scan = usePolled<DeviceScanResult>(() => metrora.getDevicesScan(), [refreshToken, nonce])
+  const devices = usePolled<CombinedUsage>(() => metrora.getDevices(period), [period, refreshToken, nonce])
   const refresh = () => setNonce(value => value + 1)
   return <section className="set-p on"><div><h3 className="set-h">Devices</h3><p className="set-sub">Combine usage across your machines.</p></div><ThisDevicePanel identity={identity} shareStatus={shareStatus} /><DiscoveredPanel scan={scan} /><PairedPanel devices={devices} period={period} onRefresh={refresh} /></section>
 }
@@ -467,7 +467,7 @@ function PairedPanel({ devices, period, onRefresh }: { devices: ReturnType<typeo
   const [error, setError] = useState('')
   const paired = devices.data?.perDevice.filter(device => !device.local) ?? []
   const remove = (name: string) => {
-    void codeburn.removeDevice(name).then(result => {
+    void metrora.removeDevice(name).then(result => {
       if (!result.ok) { setError(result.stderr || 'Unable to remove device'); return }
       setError('')
       onRefresh()

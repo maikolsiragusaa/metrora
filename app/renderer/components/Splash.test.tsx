@@ -2,12 +2,10 @@
 import { act, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// The splash captures the canonical Metrora bridge at import; mock both the
-// canonical export and compatibility alias with the same progress surface.
+// The splash captures the canonical Metrora bridge at import.
 let progressCb: ((event: unknown) => void) | undefined
 vi.mock('../lib/ipc', () => ({
   metrora: { onProgress: (cb: (event: unknown) => void) => { progressCb = cb; return () => { progressCb = undefined } } },
-  codeburn: { onProgress: (cb: (event: unknown) => void) => { progressCb = cb; return () => { progressCb = undefined } } },
   normalizeCliError: (err: unknown) => err,
 }))
 

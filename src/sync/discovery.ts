@@ -1,11 +1,11 @@
 /**
  * metrora sync — discovery document parser.
  *
- * The v1 compatibility wire route remains {baseUrl}/.well-known/codeburn-export.json
+ * The v1 compatibility wire route remains {baseUrl}/.well-known/metrora-export.json
  * until a separately versioned protocol migration is available.
  */
 
-export interface CodeburnDiscoveryDoc {
+export interface MetroraDiscoveryDoc {
   version: number
   issuer: string
   client_id: string
@@ -45,7 +45,7 @@ export function assertHttps(url: string, label: string): void {
 
 const SUPPORTED_VERSION = 1
 
-export function parseDiscoveryDoc(raw: unknown): CodeburnDiscoveryDoc {
+export function parseDiscoveryDoc(raw: unknown): MetroraDiscoveryDoc {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new DiscoveryError('Discovery doc must be a JSON object')
   }
@@ -88,9 +88,9 @@ export function parseDiscoveryDoc(raw: unknown): CodeburnDiscoveryDoc {
   return { version, issuer, client_id, scopes, traces_path, max_batch_size }
 }
 
-export async function fetchDiscoveryDoc(baseUrl: string): Promise<CodeburnDiscoveryDoc> {
+export async function fetchDiscoveryDoc(baseUrl: string): Promise<MetroraDiscoveryDoc> {
   assertHttps(baseUrl, 'Base URL')
-  const url = `${baseUrl.replace(/\/$/, '')}/.well-known/codeburn-export.json`
+  const url = `${baseUrl.replace(/\/$/, '')}/.well-known/metrora-export.json`
 
   let response: Response
   try {

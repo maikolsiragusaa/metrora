@@ -12,7 +12,7 @@ const { getOverview, getSpendFlow } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { getOverview, getSpendFlow } }
+  return { ...actual, metrora: { getOverview, getSpendFlow } }
 })
 
 function daily(date: string, cost: number, models: Array<{ name: string; cost: number }>) {
@@ -57,7 +57,7 @@ function makePayload(now: Date): MenubarPayload {
       providers: {},
       topProjects: [
         {
-          name: 'codeburn',
+          name: 'metrora',
           cost: 246.1,
           savingsUSD: 0,
           sessions: 124,
@@ -142,7 +142,7 @@ describe('Spend', () => {
 
     const { container } = render(<Spend period="week" provider="all" />)
 
-    expect(await screen.findByText('codeburn')).toBeInTheDocument()
+    expect(await screen.findByText('metrora')).toBeInTheDocument()
     expect(screen.getByText('$246.10')).toBeInTheDocument()
     expect(screen.getByText('agentseal-dash')).toBeInTheDocument()
     expect(screen.getByText('top 2')).toBeInTheDocument()
@@ -197,7 +197,7 @@ describe('Spend', () => {
     getSpendFlow.mockResolvedValue(makeFlow())
 
     render(<Spend period="week" provider="all" />)
-    expect(await screen.findByText('codeburn')).toBeInTheDocument()
+    expect(await screen.findByText('metrora')).toBeInTheDocument()
     expect(screen.queryByText(title)).not.toBeInTheDocument()
   })
 
@@ -226,7 +226,7 @@ describe('Spend', () => {
     getSpendFlow.mockResolvedValue(makeFlow())
 
     render(<Spend period="week" provider="all" />)
-    expect(await screen.findByText('codeburn')).toBeInTheDocument()
+    expect(await screen.findByText('metrora')).toBeInTheDocument()
 
     for (const name of ['Projects', 'Activity', 'Tools', 'MCP', 'Subagents']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
@@ -238,7 +238,7 @@ describe('Spend', () => {
     getSpendFlow.mockResolvedValue(makeFlow())
 
     const { container } = render(<Spend period="week" provider="all" />)
-    expect(await screen.findByText('codeburn')).toBeInTheDocument()
+    expect(await screen.findByText('metrora')).toBeInTheDocument()
 
     expect(container.querySelector('.spend-top-row')).toBeNull()
     expect(container.querySelector('.spend-breakdowns')?.children).toHaveLength(5)
@@ -263,17 +263,17 @@ describe('Spend', () => {
 
     render(<Spend period="week" provider="all" />)
 
-    expect(await screen.findByText('codeburn')).toBeInTheDocument()
+    expect(await screen.findByText('metrora')).toBeInTheDocument()
     expect(await screen.findByText('flow command failed')).toBeInTheDocument()
   })
 
-  it('renders the not-found panel when codeburn is not on PATH', async () => {
-    getOverview.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+  it('renders the not-found panel when metrora is not on PATH', async () => {
+    getOverview.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
     getSpendFlow.mockResolvedValue(emptyFlow())
 
     render(<Spend period="week" provider="all" />)
 
-    expect(await screen.findByText('Locate the codeburn CLI')).toBeInTheDocument()
+    expect(await screen.findByText('Locate the metrora CLI')).toBeInTheDocument()
     expect(screen.getByText(/isn't on your PATH yet/)).toBeInTheDocument()
   })
 
@@ -358,14 +358,14 @@ describe('Spend', () => {
 
     render(<Spend period="week" provider="all" />)
 
-    const first = await screen.findByRole('button', { name: /codeburn/ })
+    const first = await screen.findByRole('button', { name: /metrora/ })
     const second = screen.getByRole('button', { name: /agentseal-dash/ })
     expect(first).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('region', { name: 'codeburn sessions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'metrora sessions' })).not.toBeInTheDocument()
 
     await user.click(first)
     expect(first).toHaveAttribute('aria-expanded', 'true')
-    const detail = screen.getByRole('region', { name: 'codeburn sessions' })
+    const detail = screen.getByRole('region', { name: 'metrora sessions' })
     expect(within(detail).getByText('Jul 9')).toBeInTheDocument()
     expect(within(detail).getByText('$120.50')).toBeInTheDocument()
     expect(within(detail).getByLabelText('Models: claude-opus-4, claude-haiku-4')).toHaveTextContent('claude-opus-4 +1 more')
@@ -376,7 +376,7 @@ describe('Spend', () => {
     await user.click(second)
     expect(second).toHaveAttribute('aria-expanded', 'true')
     expect(first).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('region', { name: 'codeburn sessions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'metrora sessions' })).not.toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'agentseal-dash sessions' })).getByText('$9.90')).toBeInTheDocument()
 
     // Clicking the open row collapses it in place.

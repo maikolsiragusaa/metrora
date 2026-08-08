@@ -2,8 +2,8 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { getConfigFilePath } from '../config.js'
 
-// Guard state lives beside config.json under the CodeBurn home dir (in practice
-// ~/.config/codeburn): guard.json for thresholds, a guard/ subdir for the
+// Guard state lives beside config.json under the Metrora home dir (in practice
+// ~/.config/metrora): guard.json for thresholds, a guard/ subdir for the
 // per-session incremental caches, the flag list, and per-session allow markers.
 // Every path derives from an injectable base so tests point the whole thing at
 // a fixture dir and the real config dir is never touched.

@@ -302,7 +302,7 @@ export function createDesktopWorkspaceRuntimeV1(
           architecture: workspace.endpoint.platform.architecture,
           identityGeneration: workspace.endpointIdentityGeneration,
           publicKeyFingerprintSha256: workspace.endpoint.identity.publicKeyFingerprintSha256,
-          metroraVersion: workspace.endpoint.software.qovrionVersion,
+          metroraVersion: workspace.endpoint.software.metroraVersion,
           collectorVersion: workspace.endpoint.software.collectorVersion,
           capabilities: workspace.endpoint.capabilities,
           enrollmentState: workspace.endpoint.enrollment.state,
@@ -375,7 +375,7 @@ export function createDesktopWorkspaceRuntimeV1(
       const signed = await createNextLocalWorkspaceSignedBatchV1({
         dataDir: options.dataDir,
         identity: options.identity,
-        qovrionVersion: options.metroraVersion,
+        metroraVersion: options.metroraVersion,
         adapterSetSha256,
         openTelemetryGenAiVersion: options.openTelemetryGenAiVersion,
         now: options.now,

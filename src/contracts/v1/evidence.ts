@@ -11,9 +11,9 @@ import {
 } from './common.js'
 
 export const IN_TOTO_STATEMENT_V1 = 'https://in-toto.io/Statement/v1' as const
-export const QOVRION_USAGE_EVIDENCE_PREDICATE_V1 =
-  'https://schemas.qovrion.dev/attestations/usage-evidence/v1' as const
-export const EVIDENCE_PREDICATE_KIND = 'qovrion.usage-evidence' as const
+export const METRORA_USAGE_EVIDENCE_PREDICATE_V1 =
+  'https://schemas.metrora.dev/attestations/usage-evidence/v1' as const
+export const EVIDENCE_PREDICATE_KIND = 'metrora.usage-evidence' as const
 
 export const InTotoSubjectV1Schema = z.strictObject({
   name: z.string().trim().min(1).max(512),
@@ -66,7 +66,7 @@ export const UsageEvidencePredicateV1Schema = z.strictObject({
   workspaceId: OpaqueIdSchema,
   endpointId: OpaqueIdSchema,
   producer: z.strictObject({
-    name: z.literal('qovrion'),
+    name: z.literal('metrora'),
     version: z.string().trim().min(1).max(64),
   }),
   measurementBatch: z.strictObject({
@@ -90,7 +90,7 @@ export const UsageEvidencePredicateV1Schema = z.strictObject({
 export const UsageEvidenceStatementV1Schema = z.strictObject({
   _type: z.literal(IN_TOTO_STATEMENT_V1),
   subject: z.array(InTotoSubjectV1Schema).min(1).max(128),
-  predicateType: z.literal(QOVRION_USAGE_EVIDENCE_PREDICATE_V1),
+  predicateType: z.literal(METRORA_USAGE_EVIDENCE_PREDICATE_V1),
   predicate: UsageEvidencePredicateV1Schema,
 })
 
@@ -102,7 +102,7 @@ export type UsageEvidenceStatementV1 = z.infer<typeof UsageEvidenceStatementV1Sc
 
 export function parseUsageEvidenceStatementV1(input: unknown): UsageEvidenceStatementV1 {
   const statement = UsageEvidenceStatementV1Schema.parse(input)
-  const expectedSubjectName = `qovrion:measurement-batch:${statement.predicate.measurementBatch.batchId}`
+  const expectedSubjectName = `metrora:measurement-batch:${statement.predicate.measurementBatch.batchId}`
   const hasBatchSubject = statement.subject.some((subject) =>
     subject.name === expectedSubjectName &&
     subject.digest.sha256 === statement.predicate.measurementBatch.sha256,

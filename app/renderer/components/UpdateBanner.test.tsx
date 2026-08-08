@@ -10,7 +10,7 @@ describe('UpdateBanner', () => {
 
     expect(container).toBeEmptyDOMElement()
     expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.queryByText(/CodeBurn/i)).toBeNull()
+    expect(screen.queryByText(/Metrora/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /download/i })).toBeNull()
   })
 })

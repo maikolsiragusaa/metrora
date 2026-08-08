@@ -25,7 +25,7 @@ import {
 import { Aes256GcmSecretProtector } from './secret-protector.js'
 import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
 
-export const DESKTOP_MASTER_KEY_KIND = 'qovrion.desktop-master-key' as const
+export const DESKTOP_MASTER_KEY_KIND = 'metrora.desktop-master-key' as const
 const MASTER_KEY_FILE = 'desktop-master-key.v1.json'
 
 export const DesktopVaultBackendV1Schema = z.enum(['windows-dpapi', 'macos-keychain'])

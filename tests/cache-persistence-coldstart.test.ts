@@ -14,13 +14,13 @@ beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'coldstart-'))
   cacheDir = join(tmpDir, 'cache')
   process.env['CLAUDE_CONFIG_DIR'] = tmpDir
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
-  process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
+  process.env['METRORA_CACHE_DIR'] = cacheDir
+  process.env['METRORA_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
 })
 
 afterEach(async () => {
   clearSessionCache()
-  delete process.env['CODEBURN_PROGRESS']
+  delete process.env['METRORA_PROGRESS']
   await rm(tmpDir, { recursive: true, force: true })
 })
 
@@ -57,7 +57,7 @@ describe('cold-start cache persistence', () => {
     expect(raw.providers.claude.files[claudeFiles[0]!].turns.length).toBeGreaterThan(0)
   })
 
-  it('streams per-provider scan progress only when CODEBURN_PROGRESS=1', async () => {
+  it('streams per-provider scan progress only when METRORA_PROGRESS=1', async () => {
     await writeSession()
     const lines: string[] = []
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
@@ -66,12 +66,12 @@ describe('cold-start cache persistence', () => {
     try {
       // Off by default: plain CLI/terminal output is untouched.
       await parseAllSessions()
-      expect(lines.filter(l => l.startsWith('CODEBURN_PROGRESS ')).length).toBe(0)
+      expect(lines.filter(l => l.startsWith('METRORA_PROGRESS ')).length).toBe(0)
 
       clearSessionCache()
-      process.env['CODEBURN_PROGRESS'] = '1'
+      process.env['METRORA_PROGRESS'] = '1'
       await parseAllSessions()
-      const progress = lines.filter(l => l.startsWith('CODEBURN_PROGRESS '))
+      const progress = lines.filter(l => l.startsWith('METRORA_PROGRESS '))
       expect(progress.some(l => l.includes('"providers"'))).toBe(true)
       expect(progress.some(l => l.includes('"provider":"claude"') && l.includes('"start"'))).toBe(true)
     } finally {

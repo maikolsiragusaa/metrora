@@ -10,7 +10,7 @@ import { StaleBanner } from '../components/StaleBanner'
 import { Stat } from '../components/Stat'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatDayLong, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
 import type { DateRange, Period, ReasoningMix, ReasoningLevelOrUnknown, SessionRow } from '../lib/types'
 
@@ -225,7 +225,7 @@ export function Sessions({
   const [grouped, setGrouped] = useState(false)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
   const report = usePolled<SessionRow[]>(
-    () => range ? codeburn.getSessions(period, provider, range) : codeburn.getSessions(period, provider),
+    () => range ? metrora.getSessions(period, provider, range) : metrora.getSessions(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `sessions|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )

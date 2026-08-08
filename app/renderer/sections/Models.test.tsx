@@ -11,7 +11,7 @@ const { getModels, getAudit } = vi.hoisted(() => ({
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, codeburn: { ...actual.codeburn, getModels, getAudit } }
+  return { ...actual, metrora: { ...actual.metrora, getModels, getAudit } }
 })
 
 function pricing(totalCalls: number): ModelPricingSummary {

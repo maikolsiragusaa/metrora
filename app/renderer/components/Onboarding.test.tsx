@@ -39,6 +39,6 @@ describe('Onboarding', () => {
 
     expect(screen.queryByRole('switch', { name: /telemetry/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /what data we collect/i })).toBeNull()
-    expect(screen.queryByText(/CodeBurn/i)).toBeNull()
+    expect(screen.queryByText(/Metrora/i)).toBeNull()
   })
 })

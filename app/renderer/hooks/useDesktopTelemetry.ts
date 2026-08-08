@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { localDateKey } from '../lib/period'
 import type { DateRange, MenubarPayload, ModelReportRow, Period, TelemetryStatus } from '../lib/types'
 
@@ -93,22 +93,22 @@ export function useDesktopTelemetry({
   const [onboardingStatus, setOnboardingStatus] = useState<TelemetryStatus | null>(null)
 
   useEffect(() => {
-    if (typeof codeburn.telemetryStatus !== 'function') return
-    codeburn.telemetryStatus()
+    if (typeof metrora.telemetryStatus !== 'function') return
+    metrora.telemetryStatus()
       .then(status => { if (status && !status.onboarded) setOnboardingStatus(status) })
       .catch(() => { /* Optional telemetry unavailable: skip consent UI and tracking. */ })
   }, [])
 
   const finishOnboarding = useCallback((enabled: boolean) => {
     setOnboardingStatus(null)
-    if (typeof codeburn.completeOnboarding === 'function') {
-      void codeburn.completeOnboarding(enabled).catch(() => {})
+    if (typeof metrora.completeOnboarding === 'function') {
+      void metrora.completeOnboarding(enabled).catch(() => {})
     }
   }, [])
 
   const trackEvent = useCallback((name: string, props?: Record<string, unknown>) => {
-    if (typeof codeburn.telemetryTrack === 'function') {
-      void codeburn.telemetryTrack(name, props).catch(() => {})
+    if (typeof metrora.telemetryTrack === 'function') {
+      void metrora.telemetryTrack(name, props).catch(() => {})
     }
   }, [])
 
@@ -125,7 +125,7 @@ export function useDesktopTelemetry({
     void (async () => {
       let modelCategories: Map<string, string> | undefined
       try {
-        modelCategories = topCategoryByModel(await codeburn.getModels(period, 'all', false))
+        modelCategories = topCategoryByModel(await metrora.getModels(period, 'all', false))
       } catch {
         // The aggregate remains valid without the optional model/category join.
       }

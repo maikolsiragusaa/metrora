@@ -70,7 +70,7 @@ function project(sessions: SessionSummary[]): ProjectSummary {
 
 describe('shortenPrUrl', () => {
   it('shortens GitHub PR URLs and passes anything else through', () => {
-    expect(shortenPrUrl('https://github.com/getagentseal/codeburn/pull/755')).toBe('getagentseal/codeburn#755')
+    expect(shortenPrUrl('https://github.com/maikolsiragusaa/metrora/pull/755')).toBe('maikolsiragusaa/metrora#755')
     expect(shortenPrUrl('https://gitlab.com/x/y/-/merge_requests/3')).toBe('https://gitlab.com/x/y/-/merge_requests/3')
   })
 })

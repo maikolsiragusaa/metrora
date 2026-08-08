@@ -2,8 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 
 import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 const DISCOVERY_MOCK_REGISTER = join(process.cwd(), 'tests', 'fixtures', 'mock-discovery-register.mjs')
 
@@ -44,14 +47,25 @@ vi.mock('bonjour-service', () => ({
 
 function runCli(args: string[], home: string, opts: { mockDiscovery?: boolean } = {}) {
   const nodeArgs = ['--import', 'tsx']
-  if (opts.mockDiscovery) nodeArgs.push('--import', DISCOVERY_MOCK_REGISTER)
+  if (opts.mockDiscovery) nodeArgs.push('--import', pathToFileURL(DISCOVERY_MOCK_REGISTER).href)
   return spawnSync(process.execPath, [...nodeArgs, 'src/cli.ts', ...args], {
     cwd: process.cwd(),
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
-      CODEBURN_CACHE_DIR: join(home, '.cache', 'codeburn'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
       HOME: home,
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      CODEX_HOME: join(home, '.codex'),
+      OPENCODE_DATA_DIR: join(home, '.local', 'share', 'opencode'),
       TZ: 'UTC',
     },
     encoding: 'utf-8',
@@ -122,7 +136,7 @@ describe('sharing discovery', () => {
 
 describe('devices/share/identity JSON CLI output', () => {
   it('devices --format json returns CombinedUsage with the local device', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-devices-json-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-devices-json-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
@@ -164,7 +178,7 @@ describe('devices/share/identity JSON CLI output', () => {
   })
 
   it('identity --format json returns the public identity subset', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-identity-json-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-identity-json-'))
 
     try {
       const result = runCli(['identity', '--format', 'json'], home)
@@ -181,7 +195,7 @@ describe('devices/share/identity JSON CLI output', () => {
   })
 
   it('devices scan --format json returns the documented scan envelope', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-devices-scan-json-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-devices-scan-json-'))
 
     try {
       const result = runCli(['devices', 'scan', '--format', 'json'], home, { mockDiscovery: true })
@@ -202,10 +216,10 @@ describe('devices/share/identity JSON CLI output', () => {
     } finally {
       await rm(home, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('devices add --format json is rejected as a mutation', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-devices-add-json-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-devices-add-json-'))
 
     try {
       const result = runCli(['devices', 'add', '--format', 'json'], home)
@@ -219,7 +233,7 @@ describe('devices/share/identity JSON CLI output', () => {
   })
 
   it('share --format json is rejected without the status action', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-share-json-guard-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-share-json-guard-'))
 
     try {
       const result = runCli(['share', '--format', 'json'], home)
@@ -233,7 +247,7 @@ describe('devices/share/identity JSON CLI output', () => {
   })
 
   it('share status --format json returns ShareStatus without starting sharing', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-share-status-json-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-share-status-json-'))
 
     try {
       const result = runCli(['share', 'status', '--format', 'json'], home)

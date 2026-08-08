@@ -63,8 +63,8 @@ describe('canonical Metrora CLI public identity', () => {
     const exporter = readFileSync(join(process.cwd(), 'src/export.ts'), 'utf-8')
 
     expect(main).toContain('const defaultName = `metrora-${toDateString(new Date())}`')
-    expect(main).toContain('type CodeburnConfig')
-    expect(exporter).toContain("schema: 'codeburn.export.v2'")
-    expect(exporter).toContain("const EXPORT_MARKER_FILE = '.codeburn-export'")
+    expect(main).toContain('type MetroraConfig')
+    expect(exporter).toContain("schema: 'metrora.export.v2'")
+    expect(exporter).toContain("const EXPORT_MARKER_FILE = '.metrora-export'")
   })
 })

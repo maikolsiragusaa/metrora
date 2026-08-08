@@ -103,4 +103,4 @@ Do not file vulnerabilities in the public tracker. Follow [`SECURITY.md`](SECURI
 
 ## License
 
-Metrora is distributed under the MIT License and includes portions originally derived from CodeBurn 0.9.19. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), [`UPSTREAM.md`](UPSTREAM.md) and [`LICENSES/`](LICENSES/).
+Metrora is distributed under the MIT License. Upstream-derived portions retain their original notices and licence terms. Contributions are licensed under the repository's MIT terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), [`UPSTREAM.md`](UPSTREAM.md) and [`LICENSES/`](LICENSES/).

@@ -1,6 +1,7 @@
 # Metrora technical identity compatibility
 
-Metrora is the canonical product identity. `Qovrion` is retained only where it is needed to adopt local state created during the previous development name; `CodeBurn` remains only at inherited integration boundaries that have not yet been safely replaced.
+Metrora is the only canonical product identity. New code, UI, documentation,
+release metadata and generated artifacts use Metrora names exclusively.
 
 ## Canonical names
 
@@ -15,30 +16,47 @@ Metrora is the canonical product identity. `Qovrion` is retained only where it i
 - Desktop CLI pointer directory: `Metrora`
 - Default local data directory: `Metrora` / `metrora`
 
-## Temporary aliases
+## Compatibility boundary
 
-Metrora accepts these identities in order:
+The repository retains a narrowly scoped read-only compatibility boundary for
+older installations and integrations that would otherwise strand user-owned
+state. It is implemented only in:
 
-1. the canonical Metrora form;
-2. the former Qovrion form;
-3. the inherited CodeBurn form.
+- `app/electron/identity.ts` and `app/electron/cli.ts` for legacy executable,
+  environment-variable and persisted-pointer lookup;
+- `src/product-paths.ts` for existing config/cache roots;
+- `app/renderer/lib/storage.ts` for existing local-storage keys;
+- the package `bin` map for an old command-line shim.
 
-That precedence applies to the CLI (`metrora`, `qovrion`, `codeburn`), environment variables, persisted CLI pointers, IPC channels and preload globals. An explicitly empty canonical environment value remains authoritative.
+The precedence is always canonical first. New files, writes, IPC messages,
+preload globals, diagnostics and release artifacts use Metrora names only.
+Legacy values are read or adopted in place, never emitted as current product
+identity, and are not deleted automatically. The compatibility tests document
+the exact precedence and migration behavior at each boundary.
 
 ## Local-state adoption
 
 - `METRORA_DATA_DIR` wins when defined.
-- `QOVRION_DATA_DIR` is accepted as a deprecated fallback when the canonical variable is absent.
-- When default locations are used and the Metrora directory does not exist, an existing Qovrion directory is copied to Metrora once.
-- Desktop endpoint state is copied from the old Qovrion user-data location without moving, rewriting or deleting the source.
-- A readable legacy state that cannot be copied is surfaced as an error; Metrora must not silently create a replacement identity.
+- Fresh config and cache paths use the canonical Metrora roots.
+- An existing legacy root is adopted in place when the canonical root is not
+  present, preserving durable user history without silently replacing it.
+- Desktop endpoint state is read from an explicitly supplied legacy data root
+  only for controlled migration callers; no old product namespace is inferred
+  from a new installation.
 - Existing canonical files are never overwritten.
 - No migration performs telemetry or uploads data.
 
-## Immutable v1 identifiers
+## Versioned identifiers
 
-Already-defined v1 evidence and local-state records keep their `qovrion.*`, `dev.qovrion.*`, `urn:qovrion:*` and `schemas.qovrion.dev` identifiers. Those strings are protocol provenance, not visible branding. Rewriting them would invalidate signatures, hashes or stored records. New visible product surfaces use Metrora; a future namespace version can introduce `metrora.*` identifiers through an explicit versioned migration.
+Current v1 evidence, local-state records and wire contracts use the canonical
+Metrora namespace. Their identifiers are protocol provenance, not visible
+branding. Signed or hashed records are not rewritten in place; a future
+namespace change must be introduced as an explicit versioned migration that
+preserves verification semantics.
 
 ## Removal criteria
 
-A temporary alias can be removed only after a stable Metrora release has shipped with adoption support, rollback no longer depends on it, release notes have announced the removal, and tests prove that supported local state no longer requires the alias. Alias removal must be a separate reviewed change.
+The compatibility boundary can be removed only after a stable Metrora release
+has shipped with adoption support, rollback no longer depends on it, release
+notes have announced the removal, and tests prove that supported local state no
+longer requires the aliases. Removal must be a separate reviewed change.

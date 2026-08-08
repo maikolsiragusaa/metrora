@@ -26,32 +26,32 @@ async function collect(source: SessionSource, seenKeys = new Set<string>()): Pro
 async function fixtureSource(runId: string): Promise<SessionSource> {
   const provider = createOpenDesignProvider()
   const sources = await provider.discoverSessions()
-  const source = sources.find(s => s.path.includes(`${runId}/events.jsonl`))
+  const source = sources.find(s => s.path.replace(/\\/g, '/').includes(`${runId}/events.jsonl`))
   expect(source).toBeDefined()
   return source!
 }
 
 describe('open-design provider', () => {
   beforeEach(async () => {
-    previousOverride = process.env['CODEBURN_OPEN_DESIGN_DIR']
-    previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    cacheDir = await mkdtemp(join(tmpdir(), 'codeburn-open-design-cache-'))
-    process.env['CODEBURN_OPEN_DESIGN_DIR'] = dataDir
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    previousOverride = process.env['METRORA_OPEN_DESIGN_DIR']
+    previousCacheDir = process.env['METRORA_CACHE_DIR']
+    cacheDir = await mkdtemp(join(tmpdir(), 'metrora-open-design-cache-'))
+    process.env['METRORA_OPEN_DESIGN_DIR'] = dataDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
     clearSessionCache()
   })
 
   afterEach(async () => {
     clearSessionCache()
     if (previousOverride === undefined) {
-      delete process.env['CODEBURN_OPEN_DESIGN_DIR']
+      delete process.env['METRORA_OPEN_DESIGN_DIR']
     } else {
-      process.env['CODEBURN_OPEN_DESIGN_DIR'] = previousOverride
+      process.env['METRORA_OPEN_DESIGN_DIR'] = previousOverride
     }
     if (previousCacheDir === undefined) {
-      delete process.env['CODEBURN_CACHE_DIR']
+      delete process.env['METRORA_CACHE_DIR']
     } else {
-      process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      process.env['METRORA_CACHE_DIR'] = previousCacheDir
     }
     if (cacheDir) await rm(cacheDir, { recursive: true, force: true })
     cacheDir = undefined

@@ -157,7 +157,7 @@ export type DailyCache = {
 }
 
 function getCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return process.env['METRORA_CACHE_DIR'] ?? join(homedir(), '.cache', 'metrora')
 }
 
 /** IANA name of the current local timezone (respects the TZ env var). Days are

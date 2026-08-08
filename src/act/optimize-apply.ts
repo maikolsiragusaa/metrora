@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline/promises'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 import chalk from 'chalk'
 import type { DateRange, ProjectSummary } from '../types.js'
 import { scanAndDetect, type WasteFinding } from '../optimize.js'
@@ -26,7 +26,18 @@ export type ApplyOptions = {
 
 function short(p: string): string {
   const home = homedir()
-  return p.startsWith(home) ? '~' + p.slice(home.length) : p
+  const normalize = (value: string): string => value.replaceAll('\\', '/').replace(/\/+$/, '')
+  const normalizedPath = normalize(p)
+  const normalizedTemp = normalize(tmpdir())
+  const normalizedHome = normalize(home)
+  const compare = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
+  const isUnder = (root: string): boolean => {
+    const pathValue = compare(normalizedPath)
+    const rootValue = compare(root)
+    return pathValue === rootValue || pathValue.startsWith(`${rootValue}/`)
+  }
+  if (isUnder(normalizedTemp)) return p
+  return isUnder(normalizedHome) ? '~' + p.slice(home.length) : p
 }
 
 function changeLines(fp: FindingPlan): string[] {

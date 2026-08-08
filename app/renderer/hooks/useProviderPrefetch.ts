@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { DateRange, Period } from '../lib/types'
 import { hasPolledMemo, primePolledMemo, setPolledMemoMax } from './usePolled'
 
@@ -103,7 +103,7 @@ export function useProviderPrefetch({
 
         warmedKeys.current.add(key)
         try {
-          const value = await codeburn.getOverview(target.period, target.provider, undefined, undefined, true)
+          const value = await metrora.getOverview(target.period, target.provider, undefined, undefined, true)
           if (!cancelled) primePolledMemo(key, value)
         } catch {
           // Best-effort only: a real switch will fetch and surface the error.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { setActiveCurrency } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
 import { providerName } from './useDesktopScope'
 import { overviewMemoKey, useProviderPrefetch } from './useProviderPrefetch'
@@ -70,10 +70,10 @@ export function useOverviewRuntime({
   // only add --claude-config-source once the user selected a real config.
   const overview = usePolled<MenubarPayload>(
     () => scopedClaudeConfigSource
-      ? codeburn.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
+      ? metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
       : customRange
-      ? codeburn.getOverview(period, provider, customRange)
-      : codeburn.getOverview(period, provider),
+      ? metrora.getOverview(period, provider, customRange)
+      : metrora.getOverview(period, provider),
     [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource],
     { memoKey: overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource) },
   )

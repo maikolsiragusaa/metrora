@@ -140,7 +140,7 @@ describe('single-pass extraction whole-pipeline invariant', () => {
   let home: string
 
   beforeEach(async () => {
-    home = await mkdtemp(join(tmpdir(), 'codeburn-singlepass-'))
+    home = await mkdtemp(join(tmpdir(), 'metrora-singlepass-'))
     process.env['CLAUDE_CONFIG_DIR'] = join(home, '.claude')
   })
 

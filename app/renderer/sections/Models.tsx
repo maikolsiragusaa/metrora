@@ -11,7 +11,7 @@ import { StaleBanner } from '../components/StaleBanner'
 import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
 import type { AuditRow, DateRange, MenubarPayload, ModelReportRow, Period } from '../lib/types'
 import type { SettingsPane } from './Settings'
@@ -242,7 +242,7 @@ function ModelsUsage({
   // model table does not: it reads the already-loaded durable Overview payload,
   // avoiding both a second authority and another CLI spawn on first navigation.
   const report = usePolled<ModelReportRow[]>(
-    () => range ? codeburn.getModels(period, provider, true, range) : codeburn.getModels(period, provider, true),
+    () => range ? metrora.getModels(period, provider, true, range) : metrora.getModels(period, provider, true),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready && byTask, memoKey: `models|${period}|${provider}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
@@ -393,7 +393,7 @@ function AuditLens({
   ready: boolean
 }) {
   const report = usePolled<AuditRow[]>(
-    () => range ? codeburn.getAudit(period, provider, range) : codeburn.getAudit(period, provider),
+    () => range ? metrora.getAudit(period, provider, range) : metrora.getAudit(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `audit|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )

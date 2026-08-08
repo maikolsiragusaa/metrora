@@ -25,7 +25,7 @@ import {
 import { defaultMetroraDataDir } from '../local-state/endpoint-identity.js'
 import { withLocalStateLease } from '../local-state/local-state-lease.js'
 
-export const LOCAL_PRICE_OBSERVATION_KIND = 'qovrion.local-price-observation' as const
+export const LOCAL_PRICE_OBSERVATION_KIND = 'metrora.local-price-observation' as const
 
 const Sha256DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 const IsoInstantSchema = z.string().datetime({ offset: true })
@@ -108,7 +108,7 @@ function recordDigest(record: HistoricalPriceRecordV1): string {
 }
 
 function recordFileName(priceRecordId: string): string {
-  return `${sha256(`qovrion-local-price-observation-v1\0${priceRecordId}`)}.json`
+  return `${sha256(`metrora-local-price-observation-v1\0${priceRecordId}`)}.json`
 }
 
 function ledgerPaths(dataDir: string) {

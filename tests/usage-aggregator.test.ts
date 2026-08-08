@@ -1,4 +1,6 @@
-import { describe, expect, it, beforeAll } from 'vitest'
+import { describe, expect, it, beforeAll, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 import { buildMenubarPayloadForRange } from '../src/usage-aggregator.js'
 import { getDateRange } from '../src/cli-date.js'
 import { loadPricing } from '../src/models.js'

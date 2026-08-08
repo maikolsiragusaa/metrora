@@ -78,7 +78,7 @@ export function DeviceSearchModal({ onClose, onPaired }: { onClose: () => void; 
             </div>
           ) : found.length === 0 ? (
             <p className="py-6 text-center text-sm text-tertiary-foreground">
-              No devices found. On your other Mac run <span className="font-mono text-foreground">codeburn share</span> on the same Wi-Fi.
+              No devices found. On your other Mac run <span className="font-mono text-foreground">metrora share</span> on the same Wi-Fi.
             </p>
           ) : (
             <div className="flex flex-col gap-2">

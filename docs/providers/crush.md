@@ -21,7 +21,7 @@ The registry shape is an object keyed by project id (modern Crush) or an array (
 
 SQLite. Schema verified against `charmbracelet/crush` v0.66.1 (`internal/db/migrations/20250424200609_initial.sql` plus subsequent additive migrations).
 
-Two tables matter for codeburn:
+Two tables matter for metrora:
 
 ```sql
 CREATE TABLE sessions (
@@ -59,7 +59,7 @@ Per `crush:<sessionId>` (`crush.ts`).
 
 ## What we extract
 
-| codeburn field | Crush source |
+| metrora field | Crush source |
 |---|---|
 | `inputTokens` | `sessions.prompt_tokens` |
 | `outputTokens` | `sessions.completion_tokens` |

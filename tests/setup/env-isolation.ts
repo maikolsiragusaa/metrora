@@ -33,6 +33,8 @@ const sandbox = mkdtempSync(join(tmpdir(), 'metrora-test-env-'))
 
 const REDIRECTED = [
   'HOME',
+  'USERPROFILE',
+  'HOMEPATH',
   'APPDATA',
   'LOCALAPPDATA',
 ] as const
@@ -46,11 +48,11 @@ const CLEARED = [
   // Canonical and compatibility product roots. No developer shell override may
   // leak into tests; individual compatibility tests set these explicitly.
   'METRORA_CONFIG_DIR',
-  'QOVRION_CONFIG_DIR',
-  'CODEBURN_CONFIG_DIR',
+  'METRORA_CONFIG_DIR',
+  'METRORA_CONFIG_DIR',
   'METRORA_CACHE_DIR',
-  'QOVRION_CACHE_DIR',
-  'CODEBURN_CACHE_DIR',
+  'METRORA_CACHE_DIR',
+  'METRORA_CACHE_DIR',
   // Provider session-discovery dirs
   'CLAUDE_CONFIG_DIR',
   'CLAUDE_CONFIG_DIRS',
@@ -74,19 +76,19 @@ const CLEARED = [
   'WARP_DB_PATH',
   'ZS_DATA_DIR',
   // Compatibility collector/cache overrides
-  'CODEBURN_COPILOT_JETBRAINS_DIR',
-  'CODEBURN_COPILOT_OTEL_DB',
-  'CODEBURN_COPILOT_SESSION_STATE_DIR',
-  'CODEBURN_COPILOT_WS_STORAGE_DIR',
-  'CODEBURN_DESKTOP_SESSIONS_DIR',
-  'CODEBURN_MUX_DIR',
-  'CODEBURN_ANTIGRAVITY_SETTINGS_PATH',
+  'METRORA_COPILOT_JETBRAINS_DIR',
+  'METRORA_COPILOT_OTEL_DB',
+  'METRORA_COPILOT_SESSION_STATE_DIR',
+  'METRORA_COPILOT_WS_STORAGE_DIR',
+  'METRORA_DESKTOP_SESSIONS_DIR',
+  'METRORA_MUX_DIR',
+  'METRORA_ANTIGRAVITY_SETTINGS_PATH',
   // Compatibility behavior toggles (set by developers to tweak local runs)
-  'CODEBURN_COPILOT_DISABLE_OTEL',
-  'CODEBURN_TZ',
-  'CODEBURN_VERBOSE',
-  'CODEBURN_CURSOR_MAX_BUBBLES',
-  'CODEBURN_FORCE_MACOS_MAJOR',
+  'METRORA_COPILOT_DISABLE_OTEL',
+  'METRORA_TZ',
+  'METRORA_VERBOSE',
+  'METRORA_CURSOR_MAX_BUBBLES',
+  'METRORA_FORCE_MACOS_MAJOR',
   // Provider model/credential overrides
   'KIMI_MODEL_NAME',
   'AI_GATEWAY_API_KEY',
@@ -104,6 +106,10 @@ for (const key of PRESERVED) preservedSnapshot.set(key, process.env[key])
 
 function applyIsolation(): void {
   for (const key of REDIRECTED) process.env[key] = sandbox
+  // Windows' homedir() prefers USERPROFILE, and some path helpers still
+  // consult the split drive/path pair. Keep every home representation inside
+  // the same empty sandbox for cross-platform fixture determinism.
+  process.env['HOMEDRIVE'] = ''
   for (const key of CLEARED) delete process.env[key]
   for (const key of PRESERVED) {
     const original = preservedSnapshot.get(key)

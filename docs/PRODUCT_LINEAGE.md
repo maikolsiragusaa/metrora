@@ -72,7 +72,7 @@ This list describes current public boundaries, not every individual implementati
 
 The canonical product command is `metrora`.
 
-The former `qovrion` command and inherited `codeburn` command remain temporary aliases. Some directories, environment variables, cache files, schemas and persisted identifiers also retain historical names where immediate replacement would risk breaking:
+The current runtime contains a narrowly scoped compatibility boundary for older command aliases and persisted identifiers. Some directories, environment variables, cache files, schemas and persisted identifiers retain historical values only where immediate replacement would risk breaking:
 
 - existing local state;
 - scripts and integrations;

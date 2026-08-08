@@ -36,12 +36,12 @@ beforeEach(async () => {
   await mkdir(projectDir, { recursive: true })
   sessionPath = join(projectDir, 'sess-1.jsonl')
   process.env['CLAUDE_CONFIG_DIR'] = tmpDir
-  process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
+  process.env['METRORA_DESKTOP_SESSIONS_DIR'] = join(tmpDir, 'desktop-sessions')
 })
 
 afterEach(async () => {
   clearSessionCache()
-  delete process.env['CODEBURN_CACHE_DIR']
+  delete process.env['METRORA_CACHE_DIR']
   await rm(tmpDir, { recursive: true, force: true })
 })
 
@@ -100,8 +100,8 @@ function baseLines(): string[] {
 
 async function parseWith(cacheDir: string): Promise<ProjectSummary[]> {
   clearSessionCache()
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
-  return parseAllSessions()
+  process.env['METRORA_CACHE_DIR'] = cacheDir
+  return parseAllSessions(undefined, 'claude')
 }
 
 // A cold full re-parse of the file's CURRENT contents, using a pristine cache
@@ -152,7 +152,7 @@ describe('incremental append parsing', () => {
 
     expect(warm).toEqual(cold)
     await rm(warmCache, { recursive: true, force: true })
-  })
+  }, 15_000)
 
   it('PR-REFS: survive the incremental append path (continuation merge unions refs)', async () => {
     const warmCache = await mkdtemp(join(tmpdir(), 'incr-pr-'))

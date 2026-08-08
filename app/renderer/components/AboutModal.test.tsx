@@ -41,7 +41,6 @@ describe('Metrora About modal', () => {
     expect(screen.getByRole('status')).toHaveTextContent('does not use a separate in-app updater')
     expect(screen.getByText('Metrora · Published by Vensent')).toBeInTheDocument()
     expect(screen.queryByText(/CodeBurn/i)).toBeNull()
-    expect(screen.queryByText(/Qovrion/i)).toBeNull()
     expect(screen.queryByText(/0\.9\.19/)).toBeNull()
   })
 

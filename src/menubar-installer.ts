@@ -9,23 +9,23 @@ import { Readable } from 'node:stream'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 
 import {
-  buildPersistentCodeburnLookupPath,
-  resolvePersistentCodeburnPathFromWhichOutput,
-} from './persistent-codeburn.js'
+  buildPersistentMetroraLookupPath,
+  resolvePersistentMetroraPathFromWhichOutput,
+} from './persistent-metrora.js'
 
 /// Public GitHub repo that hosts macOS release builds. Normal installs use direct
 /// versioned release asset URLs; the API scan is only a fallback for missing assets.
-const RELEASE_API = 'https://api.github.com/repos/getagentseal/codeburn/releases?per_page=20'
-const RELEASE_DOWNLOAD_BASE = 'https://github.com/getagentseal/codeburn/releases/download'
-const APP_BUNDLE_NAME = 'CodeBurnMenubar.app'
-const EXPECTED_BUNDLE_ID = 'org.agentseal.codeburn-menubar'
-const VERSIONED_ASSET_PATTERN = /^CodeBurnMenubar-v.+\.zip$/
-const APP_PROCESS_NAME = 'CodeBurnMenubar'
+const RELEASE_API = 'https://api.github.com/repos/maikolsiragusaa/metrora/releases?per_page=20'
+const RELEASE_DOWNLOAD_BASE = 'https://github.com/maikolsiragusaa/metrora/releases/download'
+const APP_BUNDLE_NAME = 'MetroraMenubar.app'
+const EXPECTED_BUNDLE_ID = 'org.agentseal.metrora-menubar'
+const VERSIONED_ASSET_PATTERN = /^MetroraMenubar-v.+\.zip$/
+const APP_PROCESS_NAME = 'MetroraMenubar'
 const SUPPORTED_OS = 'darwin'
 const MIN_MACOS_MAJOR = 14
-const PERSISTED_CLI_PATH = join(homedir(), 'Library', 'Application Support', 'CodeBurn', 'codeburn-cli-path.v1')
+const PERSISTED_CLI_PATH = join(homedir(), 'Library', 'Application Support', 'Metrora', 'metrora-cli-path.v1')
 const PERSISTENT_CLI_REQUIRED_MESSAGE =
-  'The menubar app needs a persistent codeburn command. Install CodeBurn globally first: npm install -g codeburn'
+  'The menubar app needs a persistent metrora command. Install Metrora globally first: npm install -g metrora'
 
 export type InstallResult = { installedPath: string; launched: boolean }
 
@@ -75,7 +75,7 @@ export function resolveMenubarReleaseAssets(release: ReleaseResponse): ResolvedA
   if (!zip) {
     throw new Error(
       `No ${APP_BUNDLE_NAME} versioned zip found in release ${release.tag_name}. ` +
-      `Check https://github.com/getagentseal/codeburn/releases.`
+      `Check https://github.com/maikolsiragusaa/metrora/releases.`
     )
   }
   const checksum = release.assets.find(a => a.name === `${zip.name}.sha256`)
@@ -94,7 +94,7 @@ export function resolveLatestMenubarReleaseAssets(releases: ReleaseResponse[]): 
       continue
     }
   }
-  throw new Error('No mac-v* release with a CodeBurnMenubar-v*.zip and checksum was found.')
+  throw new Error('No mac-v* release with a MetroraMenubar-v*.zip and checksum was found.')
 }
 
 function normalizeCliVersion(cliVersion: string): string {
@@ -103,10 +103,10 @@ function normalizeCliVersion(cliVersion: string): string {
 
 export function resolveVersionedMenubarReleaseAssets(cliVersion: string): ResolvedAssets {
   const version = normalizeCliVersion(cliVersion)
-  if (!version) throw new Error('Cannot resolve CodeBurn Menubar release without a CLI version.')
+  if (!version) throw new Error('Cannot resolve Metrora Menubar release without a CLI version.')
 
   const tagName = `mac-v${version}`
-  const zipName = `CodeBurnMenubar-v${version}.zip`
+  const zipName = `MetroraMenubar-v${version}.zip`
   const checksumName = `${zipName}.sha256`
   const releaseBase = `${RELEASE_DOWNLOAD_BASE}/${tagName}`
   const zip = { name: zipName, browser_download_url: `${releaseBase}/${zipName}` }
@@ -140,9 +140,9 @@ function isMissingDirectAssetError(err: unknown): boolean {
 }
 
 export {
-  buildPersistentCodeburnLookupPath,
-  resolvePersistentCodeburnPathFromWhichOutput,
-} from './persistent-codeburn.js'
+  buildPersistentMetroraLookupPath,
+  resolvePersistentMetroraPathFromWhichOutput,
+} from './persistent-metrora.js'
 
 function userApplicationsDir(): string {
   return join(homedir(), 'Applications')
@@ -161,7 +161,7 @@ async function ensureSupportedPlatform(): Promise<void> {
   if (platform() !== SUPPORTED_OS) {
     throw new Error(`The menubar app is macOS only (detected: ${platform()}).`)
   }
-  const major = Number((process.env.CODEBURN_FORCE_MACOS_MAJOR ?? '')
+  const major = Number((process.env.METRORA_FORCE_MACOS_MAJOR ?? '')
     || (await sysProductVersion()).split('.')[0])
   if (!Number.isFinite(major) || major < MIN_MACOS_MAJOR) {
     throw new Error(`macOS ${MIN_MACOS_MAJOR}+ required (detected ${major}).`)
@@ -184,7 +184,7 @@ async function sysProductVersion(): Promise<string> {
 async function fetchLatestReleaseAssets(): Promise<ResolvedAssets> {
   const response = await fetchWithProxy(RELEASE_API, {
     headers: {
-      'User-Agent': 'codeburn-menubar-installer',
+      'User-Agent': 'metrora-menubar-installer',
       Accept: 'application/vnd.github+json',
     },
   })
@@ -197,7 +197,7 @@ async function fetchLatestReleaseAssets(): Promise<ResolvedAssets> {
 
 async function verifyChecksum(archivePath: string, checksumUrl: string): Promise<void> {
   const response = await fetchWithProxy(checksumUrl, {
-    headers: { 'User-Agent': 'codeburn-menubar-installer' },
+    headers: { 'User-Agent': 'metrora-menubar-installer' },
     redirect: 'follow',
   })
   if (!response.ok) {
@@ -219,7 +219,7 @@ async function verifyChecksum(archivePath: string, checksumUrl: string): Promise
 
 async function downloadToFile(url: string, destPath: string): Promise<void> {
   const response = await fetchWithProxy(url, {
-    headers: { 'User-Agent': 'codeburn-menubar-installer' },
+    headers: { 'User-Agent': 'metrora-menubar-installer' },
     redirect: 'follow',
   })
   if (!response.ok || response.body === null) {
@@ -296,25 +296,25 @@ async function verifyBundleIdentity(appPath: string): Promise<void> {
   await runCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath])
 }
 
-async function resolvePersistentCodeburnPath(): Promise<string> {
+async function resolvePersistentMetroraPath(): Promise<string> {
   let output = ''
   try {
     output = await captureCommand('/usr/bin/env', [
-      `PATH=${buildPersistentCodeburnLookupPath()}`,
+      `PATH=${buildPersistentMetroraLookupPath()}`,
       'which',
       '-a',
-      'codeburn',
+      'metrora',
     ])
   } catch {
     throw new Error(PERSISTENT_CLI_REQUIRED_MESSAGE)
   }
 
-  return resolvePersistentCodeburnPathFromWhichOutput(output, PERSISTENT_CLI_REQUIRED_MESSAGE)
+  return resolvePersistentMetroraPathFromWhichOutput(output, PERSISTENT_CLI_REQUIRED_MESSAGE)
 }
 
-async function persistCodeburnPath(): Promise<void> {
-  const cliPath = await resolvePersistentCodeburnPath()
-  await mkdir(join(homedir(), 'Library', 'Application Support', 'CodeBurn'), { recursive: true, mode: 0o700 })
+async function persistMetroraPath(): Promise<void> {
+  const cliPath = await resolvePersistentMetroraPath()
+  await mkdir(join(homedir(), 'Library', 'Application Support', 'Metrora'), { recursive: true, mode: 0o700 })
   await writeFile(PERSISTED_CLI_PATH, `${cliPath}\n`, { mode: 0o600 })
   await chmod(PERSISTED_CLI_PATH, 0o600)
 }
@@ -341,7 +341,7 @@ async function killRunningApp(): Promise<void> {
 
 export async function installMenubarApp(options: InstallOptions = {}): Promise<InstallResult> {
   await ensureSupportedPlatform()
-  await persistCodeburnPath()
+  await persistMetroraPath()
 
   const appsDir = userApplicationsDir()
   const targetPath = join(appsDir, APP_BUNDLE_NAME)
@@ -357,21 +357,21 @@ export async function installMenubarApp(options: InstallOptions = {}): Promise<I
   const cliVersion = options.cliVersion ? normalizeCliVersion(options.cliVersion) : ''
   let assets: ResolvedAssets
   if (cliVersion) {
-    console.log(`Resolving CodeBurn Menubar v${cliVersion}...`)
+    console.log(`Resolving Metrora Menubar v${cliVersion}...`)
     assets = resolveVersionedMenubarReleaseAssets(cliVersion)
   } else {
-    console.log('Looking up the latest CodeBurn Menubar release...')
+    console.log('Looking up the latest Metrora Menubar release...')
     assets = await fetchLatestReleaseAssets()
   }
 
-  const stagingDir = await mkdtemp(join(tmpdir(), 'codeburn-menubar-'))
+  const stagingDir = await mkdtemp(join(tmpdir(), 'metrora-menubar-'))
   try {
     let unpackedApp: string
     try {
       unpackedApp = await stageMenubarApp(assets, stagingDir)
     } catch (err) {
       if (!cliVersion || !isMissingDirectAssetError(err)) throw err
-      console.log(`CodeBurn Menubar v${cliVersion} assets were not found. Looking up the latest CodeBurn Menubar release...`)
+      console.log(`Metrora Menubar v${cliVersion} assets were not found. Looking up the latest Metrora Menubar release...`)
       assets = await fetchLatestReleaseAssets()
       unpackedApp = await stageMenubarApp(assets, stagingDir)
     }
@@ -385,7 +385,7 @@ export async function installMenubarApp(options: InstallOptions = {}): Promise<I
     }
     await rename(unpackedApp, targetPath)
 
-    console.log('Launching CodeBurn Menubar...')
+    console.log('Launching Metrora Menubar...')
     await runCommand('/usr/bin/open', [targetPath])
     return { installedPath: targetPath, launched: true }
   } finally {

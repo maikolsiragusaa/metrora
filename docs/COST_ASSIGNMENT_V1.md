@@ -33,4 +33,4 @@ Settled values are stored as non-negative safe integer micro-USD. This matches t
 - zero plus `explicit-zero` assignment;
 - no amount plus `unavailable` when prompt-size, web-search, fast-route, or other required rate evidence is missing.
 
-The function does not change existing CodeBurn-derived runtime totals. The next tranche must carry this optional contract through normalized calls and the session cache, preserve old caches losslessly, and compare real Metrora and CodeBurn logs before historical assignments become authoritative.
+The function does not change existing Metrora-derived runtime totals. The next tranche must carry this optional contract through normalized calls and the session cache, preserve old caches losslessly, and compare real Metrora and Metrora logs before historical assignments become authoritative.

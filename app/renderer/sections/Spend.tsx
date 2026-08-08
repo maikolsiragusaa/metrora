@@ -10,7 +10,7 @@ import { StackedBars } from '../components/StackedBars'
 import { StaleBanner } from '../components/StaleBanner'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import { contiguousDailyWindow, dataStartKey, localDateKey } from '../lib/period'
 import type { CliError, DateRange, MenubarPayload, Period, SpendFlow } from '../lib/types'
 
@@ -47,7 +47,7 @@ function providerLabel(provider: string): string {
 
 export function Spend({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
-    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
+    () => range ? metrora.getOverview(period, provider, range) : metrora.getOverview(period, provider),
     [period, provider, range?.from, range?.to],
   )
   return <SpendContent period={period} provider={provider} range={range} overview={overview} />
@@ -72,7 +72,7 @@ export function SpendContent({
   // model→project relationship graph is deliberately progressive: it fills its
   // reserved panel when ready instead of holding the rest of the page hostage.
   const flow = usePolled<SpendFlow>(
-    () => range ? codeburn.getSpendFlow(period, provider, range) : codeburn.getSpendFlow(period, provider),
+    () => range ? metrora.getSpendFlow(period, provider, range) : metrora.getSpendFlow(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `spendflow|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )

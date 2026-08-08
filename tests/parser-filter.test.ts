@@ -15,7 +15,7 @@ function makeProject(project: string, projectPath = project): ProjectSummary {
 
 describe('filterProjectsByName', () => {
   const projects = [
-    makeProject('codeburn', '/Users/alice/codeburn'),
+    makeProject('metrora', '/Users/alice/metrora'),
     makeProject('AgentSeal', '/Users/alice/projects/AgentSeal'),
     makeProject('dashboard', '/Users/alice/AgentSeal/dashboard'),
     makeProject('sandbox', '/tmp/sandbox'),
@@ -28,8 +28,8 @@ describe('filterProjectsByName', () => {
   })
 
   it('include matches project name (case-insensitive substring)', () => {
-    const result = filterProjectsByName(projects, ['codeburn'])
-    expect(result.map(p => p.project)).toEqual(['codeburn'])
+    const result = filterProjectsByName(projects, ['metrora'])
+    expect(result.map(p => p.project)).toEqual(['metrora'])
   })
 
   it('include is case-insensitive', () => {
@@ -43,12 +43,12 @@ describe('filterProjectsByName', () => {
   })
 
   it('include uses OR semantics across patterns', () => {
-    const result = filterProjectsByName(projects, ['codeburn', 'sandbox'])
-    expect(result.map(p => p.project).sort()).toEqual(['codeburn', 'sandbox'])
+    const result = filterProjectsByName(projects, ['metrora', 'sandbox'])
+    expect(result.map(p => p.project).sort()).toEqual(['metrora', 'sandbox'])
   })
 
   it('exclude removes matching projects (AND-negation across patterns)', () => {
-    const result = filterProjectsByName(projects, undefined, ['codeburn', 'sandbox'])
+    const result = filterProjectsByName(projects, undefined, ['metrora', 'sandbox'])
     expect(result.map(p => p.project).sort()).toEqual(['AgentSeal', 'dashboard'])
   })
 

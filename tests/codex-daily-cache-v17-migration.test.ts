@@ -44,16 +44,16 @@ beforeEach(async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-05T12:00:00Z'))
   cacheDir = await mkdtemp(join(tmpdir(), 'codex-v17-cache-'))
-  previousCacheDir = process.env['CODEBURN_CACHE_DIR']
+  previousCacheDir = process.env['METRORA_CACHE_DIR']
   previousTz = process.env['TZ']
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
+  process.env['METRORA_CACHE_DIR'] = cacheDir
   process.env['TZ'] = 'UTC'
 })
 
 afterEach(async () => {
   vi.useRealTimers()
-  if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-  else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+  if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+  else process.env['METRORA_CACHE_DIR'] = previousCacheDir
   if (previousTz === undefined) delete process.env['TZ']
   else process.env['TZ'] = previousTz
   await rm(cacheDir, { recursive: true, force: true })

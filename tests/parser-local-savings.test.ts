@@ -40,7 +40,7 @@ afterEach(async () => {
 })
 
 async function setupLocalModelSession(modelName: string): Promise<string> {
-  const base = await mkdtemp(join(tmpdir(), 'codeburn-savings-'))
+  const base = await mkdtemp(join(tmpdir(), 'metrora-savings-'))
   tmpDirs.push(base)
   const projectDir = join(base, 'projects', 'p')
   await mkdir(projectDir, { recursive: true })

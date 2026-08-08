@@ -145,8 +145,8 @@ function getLowercasePricingIndex(): Map<string, ModelCosts> {
 }
 
 function getCacheDir(): string {
-  if (process.env['CODEBURN_CACHE_DIR']) return process.env['CODEBURN_CACHE_DIR']
-  return join(homedir(), '.cache', 'codeburn')
+  if (process.env['METRORA_CACHE_DIR']) return process.env['METRORA_CACHE_DIR']
+  return join(homedir(), '.cache', 'metrora')
 }
 
 function getCachePath(): string {
@@ -533,7 +533,7 @@ export function getPriceOverridesConfigHash(): string {
 // Absolute directory prefixes whose sessions are routed through a
 // subscription-backed proxy (config `proxyPaths`). Stored already-normalized so
 // the per-project match is a cheap compare. Set during preAction. See
-// CodeburnConfig.proxyPaths for the product rationale.
+// MetroraConfig.proxyPaths for the product rationale.
 let userProxyPaths: string[] = []
 
 /// Normalize a path for prefix comparison: backslashes -> forward slashes
@@ -683,7 +683,7 @@ const warnedUnknownModels = new Set<string>()
 
 /// Heuristic for "this looks like a local model that will never be in LiteLLM's
 /// pricing JSON". We suppress the unknown-model warning for these because the
-/// "update codeburn" advice can't help — local Ollama models, llama.cpp tags,
+/// "update metrora" advice can't help — local Ollama models, llama.cpp tags,
 /// LM Studio loads, etc. are billed locally and don't have public pricing.
 /// Users still get $0 in cost reports for them (correct — local inference is
 /// effectively free); the warning was just noise.
@@ -789,7 +789,7 @@ export function findUnpricedModels(
 function shouldWarnAboutUnknownModel(name: string): boolean {
   if (!name || name === '<synthetic>') return false
   if (warnedUnknownModels.has(name)) return false
-  // Suppress for local/quantized models — the "update codeburn" hint is
+  // Suppress for local/quantized models — the "update metrora" hint is
   // actively misleading there. Users who need cost visibility for local
   // inference can still set an alias via `metrora model-alias`.
   if (looksLikeLocalModel(name)) return false
@@ -797,8 +797,8 @@ function shouldWarnAboutUnknownModel(name: string): boolean {
   // dashboard) which made first launches look broken — three "no pricing
   // data" lines greet a user before the dashboard even draws. Now opt-in
   // via --verbose. The unknown model still costs $0 in reports; users who
-  // suspect missing models run `codeburn --verbose` to see the list.
-  if (process.env['CODEBURN_VERBOSE'] !== '1') return false
+  // suspect missing models run `metrora --verbose` to see the list.
+  if (process.env['METRORA_VERBOSE'] !== '1') return false
   return true
 }
 
