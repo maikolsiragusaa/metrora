@@ -276,7 +276,7 @@ $manifest = [ordered]@{
     architecture = $env:PROCESSOR_ARCHITECTURE
     powershellVersion = $PSVersionTable.PSVersion.ToString()
   }
-  metrora = [ordered]@{
+  comparison = [ordered]@{
     skipped = [bool]$SkipMetrora
     detected = [bool]$resolvedMetrora
     executableName = if ($resolvedMetrora) { [System.IO.Path]::GetFileName($resolvedMetrora) } else { $null }
