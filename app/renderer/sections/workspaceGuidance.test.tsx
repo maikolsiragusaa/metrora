@@ -156,9 +156,9 @@ describe('Workspace progressive disclosure', () => {
     render(<WorkspaceEvidencePanel evidence={value.evidence} view={view} inspectionError={false} />)
 
     expect(screen.getByText('receipt-chain-mismatch')).toBeVisible()
-    const details = screen.getByText('Audit counts').closest('details')
+    const details = screen.getByText('Technical details').closest('details')
     expect(details).not.toHaveAttribute('open')
-    fireEvent.click(screen.getByText('Audit counts'))
+    fireEvent.click(screen.getByText('Technical details'))
     expect(details).toHaveAttribute('open')
     expect(screen.getByText('Invalid')).toBeInTheDocument()
   })

@@ -168,7 +168,7 @@ describe('Spend', () => {
 
     render(<Spend period="week" provider="all" />)
     expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()
-    expect(screen.getByText('By project')).toBeInTheDocument()
+    expect(screen.getByText('Projects')).toBeInTheDocument()
     expect(screen.getByText('Cost flow · model → project')).toBeInTheDocument()
     expect(screen.getByText('Activity')).toBeInTheDocument()
     expect(screen.getByText('coding')).toBeInTheDocument()
@@ -208,12 +208,13 @@ describe('Spend', () => {
     payload.current.tools = []
     payload.current.mcpServers = []
     payload.current.subagents = []
+    payload.current.topProjects = []
     getOverview.mockResolvedValue(payload)
     getSpendFlow.mockResolvedValue(makeFlow())
 
     render(<Spend period="week" provider="all" />)
 
-    expect(await screen.findByText('No activity, tool, MCP, or subagent data in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No project, activity, tool, MCP, or subagent detail in this range yet.')).toBeInTheDocument()
     expect(screen.queryByText('Activity')).not.toBeInTheDocument()
     expect(screen.queryByText('Tools')).not.toBeInTheDocument()
     expect(screen.queryByText('MCP')).not.toBeInTheDocument()
@@ -239,8 +240,8 @@ describe('Spend', () => {
     const { container } = render(<Spend period="week" provider="all" />)
     expect(await screen.findByText('codeburn')).toBeInTheDocument()
 
-    expect(container.querySelector('.spend-top-row')?.children).toHaveLength(2)
-    expect(container.querySelector('.spend-breakdowns')?.children).toHaveLength(4)
+    expect(container.querySelector('.spend-top-row')).toBeNull()
+    expect(container.querySelector('.spend-breakdowns')?.children).toHaveLength(5)
   })
 
   it('renders empty chart and flow states when no daily spend exists', async () => {

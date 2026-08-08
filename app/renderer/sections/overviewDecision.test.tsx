@@ -100,7 +100,7 @@ describe('decision-led Home', () => {
       </div>,
     )
 
-    expect(screen.getByLabelText('What changed and what to do next')).toBeInTheDocument()
+    expect(screen.getByLabelText('What changed and what matters next')).toBeInTheDocument()
     expect(screen.getByText('100% higher')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Top driver: debugging/i }))
     expect(onNavigate).toHaveBeenLastCalledWith('sessions')

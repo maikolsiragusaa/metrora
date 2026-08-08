@@ -208,7 +208,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('No sessions in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
   })
 
   it('keeps command navigation, settings, and refresh shortcuts active without stale hints', async () => {
@@ -222,10 +222,10 @@ describe('App shortcuts', () => {
     expect(screen.queryByText('Export view')).not.toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('No sessions in this range yet.')).toBeInTheDocument()
+    expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
-    expect(await screen.findByText(/PR links are captured as sessions are parsed/)).toBeInTheDocument()
+    expect(await screen.findByText(/No PR-linked work yet/)).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '4', metaKey: true })
     expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
@@ -240,7 +240,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByText('Need at least two models with usage in this range to compare.')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '8', metaKey: true })
-    expect(await screen.findByText('Not connected. Log in with the Claude CLI.')).toBeInTheDocument()
+    expect(await screen.findByText(/secure Workspace runtime did not return a public status/)).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: ',', metaKey: true })
     expect((await screen.findAllByText('Settings')).length).toBeGreaterThan(0)
@@ -625,12 +625,12 @@ describe('currency correctness', () => {
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
   })
 
-  it('clears the instant-switch memo and force-refreshes when currency is reset', async () => {
+  it('preserves warmed usage memos and refreshes the active Overview when currency is reset', async () => {
     render(<App />)
     expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
 
-    // A warmed entry (as the prefetcher would leave one) that must be purged so a
-    // later switch can't repaint a payload computed under the old currency.
+    // A warmed entry remains valid because currency is a presentation transform
+    // over raw USD accounting and must not invalidate unrelated usage views.
     primePolledMemo('sentinel-warmed-key', { stale: true })
     expect(hasPolledMemo('sentinel-warmed-key')).toBe(true)
 
@@ -639,9 +639,10 @@ describe('currency correctness', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Reset to USD' }))
 
     await waitFor(() => expect(mocks.resetCurrency).toHaveBeenCalled())
-    // Memo purged and the active view force-refreshed so the new currency lands fast.
+    // Only the active Overview is refreshed so the new currency descriptor lands
+    // without rescanning every section.
     await waitFor(() => expect(mocks.getOverview.mock.calls.length).toBeGreaterThan(overviewCalls))
-    expect(hasPolledMemo('sentinel-warmed-key')).toBe(false)
+    expect(hasPolledMemo('sentinel-warmed-key')).toBe(true)
   })
 })
 

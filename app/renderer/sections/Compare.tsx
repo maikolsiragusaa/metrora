@@ -112,7 +112,7 @@ export function Compare({
           id="compare-first-model"
           ariaLabel="First model"
           value={modelA ?? ''}
-          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString()} calls` }))}
+          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString('en-US')} calls` }))}
           onChange={next => {
             setModelA(next)
             if (next === modelB) setModelB(nudgeDistinct(next))
@@ -123,7 +123,7 @@ export function Compare({
           id="compare-second-model"
           ariaLabel="Second model"
           value={modelB ?? ''}
-          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString()} calls` }))}
+          options={modelRows.map(model => ({ value: model.model, label: `${model.model} · ${model.calls.toLocaleString('en-US')} calls` }))}
           onChange={next => {
             setModelB(next)
             if (next === modelA) setModelA(nudgeDistinct(next))

@@ -82,12 +82,12 @@ describe('Settings', () => {
     document.documentElement.removeAttribute('data-theme')
   })
 
-  it('switches panes from the rail and renders the completed Plans pane', async () => {
+  it('switches panes from the rail and renders the completed AI plans pane', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
-    expect(screen.getByRole('heading', { name: 'Plans' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
+    expect(screen.getByRole('heading', { name: 'AI plans' })).toBeInTheDocument()
     expect((await screen.findAllByText('Claude Max 20x')).length).toBeGreaterThan(0)
   })
 
@@ -226,13 +226,13 @@ describe('Settings', () => {
   it('lists, removes, and adds plans through the action bridge', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     expect((await screen.findAllByText('Claude Max 20x')).length).toBeGreaterThan(0)
     expect(screen.getByText('$200.00/month · claude · 24% used')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Remove' }))
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     expect(mocks.resetPlan).toHaveBeenCalledWith('claude')
-    await user.click(screen.getByLabelText('Add a plan'))
+    await user.click(screen.getByLabelText('Add a provider plan'))
     await user.click(screen.getByRole('option', { name: 'Cursor Pro' }))
     await user.click(screen.getByRole('button', { name: 'Add' }))
     expect(mocks.setPlan).toHaveBeenCalledWith('cursor-pro', 'cursor')
@@ -241,7 +241,7 @@ describe('Settings', () => {
   it('shows detected subscriptions with an auto-detected tier and a disconnected hint', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     expect(await screen.findByText('Detected subscriptions')).toBeInTheDocument()
     expect(screen.getByText('Max 20x')).toBeInTheDocument()
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
@@ -251,7 +251,7 @@ describe('Settings', () => {
   it('expands the DetectedRow Connect affordance and forces a keychain refresh', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     await screen.findByText('Detected subscriptions')
     await user.click(screen.getByRole('button', { name: 'Connect' }))
     expect(screen.getByText('codex login')).toBeInTheDocument()
@@ -263,8 +263,8 @@ describe('Settings', () => {
   it('offers only non-OAuth budget presets; Claude and Codex are excluded', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
-    await user.click(await screen.findByLabelText('Add a plan'))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
+    await user.click(await screen.findByLabelText('Add a provider plan'))
     expect(screen.getByRole('option', { name: 'Cursor Pro' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'SuperGrok' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Claude Pro' })).not.toBeInTheDocument()
@@ -275,7 +275,7 @@ describe('Settings', () => {
   it('still lists a configured Claude manual plan with Remove and a superseded note', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
-    await user.click(screen.getByRole('button', { name: 'Plans' }))
+    await user.click(screen.getByRole('button', { name: 'AI plans' }))
     expect((await screen.findAllByText('Claude Max 20x')).length).toBeGreaterThan(0)
     expect(screen.getByText('superseded by the detected subscription')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()

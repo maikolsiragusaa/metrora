@@ -97,8 +97,9 @@ describe('Sessions', () => {
     const toggle = screen.getByRole('button', { name: 'Group by provider' })
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('Claude').closest('tr')).toHaveTextContent('1 sessions')
-    expect(screen.getByText('Codex').closest('tr')).toHaveTextContent('2 sessions')
+    const table = screen.getByRole('table', { name: 'Detailed sessions' })
+    expect(within(table).getByRole('row', { name: /Claude.*1 sessions/ })).toBeInTheDocument()
+    expect(within(table).getByRole('row', { name: /Codex.*2 sessions/ })).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Recent' }))
     expect(toggle).toHaveAttribute('aria-pressed', 'false')

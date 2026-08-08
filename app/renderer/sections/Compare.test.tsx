@@ -96,7 +96,7 @@ describe('Compare', () => {
     render(<Compare period="30days" provider="all" />)
 
     const disclosure = await screen.findByText('Workflow diagnostics · Experimental')
-    expect(screen.queryByRole('table', { name: 'Editing signals comparison' })).not.toBeInTheDocument()
+    expect(disclosure.closest('details')).not.toHaveAttribute('open')
 
     await user.click(disclosure)
     const diagnostics = screen.getByRole('table', { name: 'Editing signals comparison' })
@@ -131,7 +131,7 @@ describe('Compare', () => {
 
     const usage = await screen.findByRole('table', { name: 'Observed usage comparison' })
     expect(within(usage).getByLabelText('Opus 4.8, Cache ×: —')).toHaveTextContent('—')
-    expect(screen.getByRole('table', { name: 'Comparison observation context' })).toHaveTextContent('Not available')
+    expect(screen.getByLabelText('Opus 4.8, Days observed: Not available')).toBeInTheDocument()
   })
 
   it('notes that custom ranges are unsupported and still compares by period', async () => {
