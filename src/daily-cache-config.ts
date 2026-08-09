@@ -11,6 +11,7 @@ export function getDailyCacheConfigHash(): string {
     : savingsHash
   return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}`
     + `\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}`
+    + `\u0002antigravityCollector=${PROVIDER_PARSE_VERSIONS['antigravity'] ?? ''}`
     + `\u0002opencodeCollector=${PROVIDER_PARSE_VERSIONS['opencode'] ?? ''}`
     + `\u0002modelIdentity=v3`
     + `\u0002${accountingHash}`
