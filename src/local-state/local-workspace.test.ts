@@ -14,6 +14,12 @@ import {
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
+import {
+  LEGACY_ENDPOINT_KIND,
+  LEGACY_SOFTWARE_VERSION_FIELD,
+  LEGACY_WORKSPACE_KIND,
+  LEGACY_WORKSPACE_MEMBERSHIP_KIND,
+} from './legacy-identity-compatibility.js'
 
 const roots: string[] = []
 const NOW = '2026-08-01T12:00:00.000Z'
@@ -233,13 +239,13 @@ describe.sequential('local personal workspace v1', () => {
     const statePath = join(dataDir, 'workspace', 'local-personal-workspace.v1.json')
     await writeFile(statePath, JSON.stringify({
       ...created.state,
-      workspace: { ...created.state.workspace, kind: 'qovrion.workspace' },
-      ownerMembership: { ...created.state.ownerMembership, kind: 'qovrion.workspace-membership' },
+      workspace: { ...created.state.workspace, kind: LEGACY_WORKSPACE_KIND },
+      ownerMembership: { ...created.state.ownerMembership, kind: LEGACY_WORKSPACE_MEMBERSHIP_KIND },
       endpoint: {
         ...created.state.endpoint,
-        kind: 'qovrion.endpoint',
+        kind: LEGACY_ENDPOINT_KIND,
         software: {
-          qovrionVersion: created.state.endpoint.software.metroraVersion,
+          [LEGACY_SOFTWARE_VERSION_FIELD]: created.state.endpoint.software.metroraVersion,
           collectorVersion: created.state.endpoint.software.collectorVersion,
         },
       },

@@ -21,15 +21,17 @@ import {
   TimestampSchema,
 } from '../contracts/v1/common.js'
 import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.js'
+import {
+  LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND,
+  LEGACY_LOCAL_ENDPOINT_IDENTITY_SECRET_KIND,
+  LEGACY_SECRET_CONTEXT,
+} from './legacy-identity-compatibility.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import type { SecretProtector } from './secret-protector.js'
 
 export const LOCAL_ENDPOINT_IDENTITY_KIND = 'metrora.local-endpoint-identity' as const
 export const LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'metrora.local-endpoint-identity-secret' as const
-const LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND = 'qovrion.local-endpoint-identity' as const
-const LEGACY_LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'qovrion.local-endpoint-identity-secret' as const
 const SECRET_CONTEXT = 'dev.metrora.local-endpoint-identity.v1'
-const LEGACY_SECRET_CONTEXT = 'dev.qovrion.local-endpoint-identity.v1'
 const METADATA_FILE = 'endpoint-identity.v1.json'
 const SECRET_FILE = 'endpoint-identity.v1.secret'
 
@@ -37,11 +39,7 @@ const CanonicalBase64Schema = z.string().min(1).max(16_384).refine(value => {
   try { return Buffer.from(value, 'base64').toString('base64') === value } catch { return false }
 }, 'must be canonical base64')
 
-export const LocalEndpointIdentityMetadataV1Schema = z.strictObject({
-  kind: z.union([
-    z.literal(LOCAL_ENDPOINT_IDENTITY_KIND),
-    z.literal(LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND),
-  ]),
+const LocalEndpointIdentityMetadataFieldsSchema = z.strictObject({
   version: ContractVersionSchema,
   endpointId: OpaqueIdSchema,
   generation: PositiveIntegerSchema,
@@ -54,11 +52,20 @@ export const LocalEndpointIdentityMetadataV1Schema = z.strictObject({
   rotatedAt: TimestampSchema.optional(),
 })
 
-const LocalEndpointIdentitySecretV1Schema = z.strictObject({
-  kind: z.union([
-    z.literal(LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
-    z.literal(LEGACY_LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
-  ]),
+export const LocalEndpointIdentityMetadataV1Schema = LocalEndpointIdentityMetadataFieldsSchema.extend({
+  kind: z.literal(LOCAL_ENDPOINT_IDENTITY_KIND),
+})
+
+const LegacyLocalEndpointIdentityMetadataV1Schema = LocalEndpointIdentityMetadataFieldsSchema.extend({
+  kind: z.literal(LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND),
+})
+
+const PersistedLocalEndpointIdentityMetadataV1Schema = z.union([
+  LocalEndpointIdentityMetadataV1Schema,
+  LegacyLocalEndpointIdentityMetadataV1Schema,
+])
+
+const LocalEndpointIdentitySecretFieldsSchema = z.strictObject({
   version: ContractVersionSchema,
   endpointId: OpaqueIdSchema,
   generation: PositiveIntegerSchema,
@@ -71,8 +78,23 @@ const LocalEndpointIdentitySecretV1Schema = z.strictObject({
   rotatedAt: TimestampSchema.optional(),
 })
 
+const LocalEndpointIdentitySecretV1Schema = LocalEndpointIdentitySecretFieldsSchema.extend({
+  kind: z.literal(LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
+})
+
+const LegacyLocalEndpointIdentitySecretV1Schema = LocalEndpointIdentitySecretFieldsSchema.extend({
+  kind: z.literal(LEGACY_LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
+})
+
+const PersistedLocalEndpointIdentitySecretV1Schema = z.union([
+  LocalEndpointIdentitySecretV1Schema,
+  LegacyLocalEndpointIdentitySecretV1Schema,
+])
+
 export type LocalEndpointIdentityMetadataV1 = z.infer<typeof LocalEndpointIdentityMetadataV1Schema>
 type LocalEndpointIdentitySecretV1 = z.infer<typeof LocalEndpointIdentitySecretV1Schema>
+type PersistedLocalEndpointIdentityMetadataV1 = z.infer<typeof PersistedLocalEndpointIdentityMetadataV1Schema>
+type PersistedLocalEndpointIdentitySecretV1 = z.infer<typeof PersistedLocalEndpointIdentitySecretV1Schema>
 
 export type LoadedLocalEndpointIdentityV1 = {
   metadata: LocalEndpointIdentityMetadataV1
@@ -128,7 +150,7 @@ function fingerprint(publicKeySpki: Uint8Array): string {
   return createHash('sha256').update(publicKeySpki).digest('hex')
 }
 
-function materialFromSecret(secret: LocalEndpointIdentitySecretV1): LoadedLocalEndpointIdentityV1 {
+function materialFromSecret(secret: PersistedLocalEndpointIdentitySecretV1): LoadedLocalEndpointIdentityV1 {
   const privateKeyPkcs8 = Buffer.from(secret.privateKeyPkcs8Base64, 'base64')
   const publicKeySpki = Buffer.from(secret.publicKeySpkiBase64, 'base64')
   const eventIdentityKey = Buffer.from(secret.eventIdentityKeyBase64, 'base64')
@@ -168,7 +190,7 @@ function materialFromSecret(secret: LocalEndpointIdentitySecretV1): LoadedLocalE
 }
 
 function metadataIsInterruptedOlderPublication(
-  stored: LocalEndpointIdentityMetadataV1,
+  stored: PersistedLocalEndpointIdentityMetadataV1,
   derived: LocalEndpointIdentityMetadataV1,
 ): boolean {
   return stored.endpointId === derived.endpointId
@@ -179,27 +201,32 @@ function metadataIsInterruptedOlderPublication(
 }
 
 function metadataMatchesExactly(
-  stored: LocalEndpointIdentityMetadataV1,
+  stored: PersistedLocalEndpointIdentityMetadataV1,
   derived: LocalEndpointIdentityMetadataV1,
 ): boolean {
   return JSON.stringify(stored) === JSON.stringify(derived)
 }
 
 function metadataMatchesAfterNamespaceMigration(
-  stored: LocalEndpointIdentityMetadataV1,
+  stored: PersistedLocalEndpointIdentityMetadataV1,
   derived: LocalEndpointIdentityMetadataV1,
 ): boolean {
-  return JSON.stringify({ ...stored, kind: LOCAL_ENDPOINT_IDENTITY_KIND }) === JSON.stringify(derived)
+  return stored.kind === LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND
+    && JSON.stringify(LocalEndpointIdentityMetadataV1Schema.parse({
+      ...stored,
+      kind: LOCAL_ENDPOINT_IDENTITY_KIND,
+    })) === JSON.stringify(derived)
 }
 
-function canonicalSecret(secret: LocalEndpointIdentitySecretV1): LocalEndpointIdentitySecretV1 {
-  return secret.kind === LOCAL_ENDPOINT_IDENTITY_SECRET_KIND
-    ? secret
-    : { ...secret, kind: LOCAL_ENDPOINT_IDENTITY_SECRET_KIND }
+function canonicalSecret(secret: PersistedLocalEndpointIdentitySecretV1): LocalEndpointIdentitySecretV1 {
+  return LocalEndpointIdentitySecretV1Schema.parse({
+    ...secret,
+    kind: LOCAL_ENDPOINT_IDENTITY_SECRET_KIND,
+  })
 }
 
 type DecodedLocalEndpointIdentitySecretV1 = {
-  secret: LocalEndpointIdentitySecretV1
+  secret: PersistedLocalEndpointIdentitySecretV1
   usedLegacyContext: boolean
 }
 
@@ -221,7 +248,7 @@ async function decodeSecret(
   }
   try {
     return {
-      secret: LocalEndpointIdentitySecretV1Schema.parse(JSON.parse(Buffer.from(plaintext).toString('utf-8'))),
+      secret: PersistedLocalEndpointIdentitySecretV1Schema.parse(JSON.parse(Buffer.from(plaintext).toString('utf-8'))),
       usedLegacyContext,
     }
   } catch {
@@ -309,9 +336,9 @@ async function loadOrCreateUnlocked(
     return loaded
   }
 
-  let metadata: LocalEndpointIdentityMetadataV1
+  let metadata: PersistedLocalEndpointIdentityMetadataV1
   try {
-    metadata = LocalEndpointIdentityMetadataV1Schema.parse(JSON.parse(metadataBytes.toString('utf-8')))
+    metadata = PersistedLocalEndpointIdentityMetadataV1Schema.parse(JSON.parse(metadataBytes.toString('utf-8')))
   } catch {
     throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata is invalid')
   }
@@ -354,7 +381,7 @@ export async function rotateLocalEndpointIdentityV1(
     if (!sealedSecret) {
       throw new EndpointIdentityRecoveryRequiredError('cannot rotate an endpoint identity without its protected secret')
     }
-    const previous = (await decodeSecret(resolved.protector, sealedSecret)).secret
+    const previous = canonicalSecret((await decodeSecret(resolved.protector, sealedSecret)).secret)
     return persistIdentity(paths, resolved.protector, generateSecret(resolved, previous))
   })
 }

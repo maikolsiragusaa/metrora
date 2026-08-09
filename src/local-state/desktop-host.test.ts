@@ -11,6 +11,7 @@ import {
   initializeDesktopLocalStateV1,
   type DesktopSafeStorageProvider,
 } from './desktop-host.js'
+import { LEGACY_DESKTOP_MASTER_KEY_KIND } from './legacy-identity-compatibility.js'
 
 const roots: string[] = []
 
@@ -121,7 +122,7 @@ describe.sequential('desktop OS vault local-state bridge', () => {
     const first = await initializeDesktopLocalStateV1(options)
     const masterPath = join(dataDir, 'host-secrets', 'desktop-master-key.v1.json')
     const legacyEnvelope = JSON.parse(await readFile(masterPath, 'utf8')) as { kind: string }
-    legacyEnvelope.kind = 'qovrion.desktop-master-key'
+    legacyEnvelope.kind = LEGACY_DESKTOP_MASTER_KEY_KIND
     await writeFile(masterPath, JSON.stringify(legacyEnvelope))
 
     const second = await initializeDesktopLocalStateV1(options)

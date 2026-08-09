@@ -28,13 +28,16 @@ import {
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.js'
+import {
+  LEGACY_ENDPOINT_KIND,
+  LEGACY_SOFTWARE_VERSION_FIELD,
+  LEGACY_WORKSPACE_KIND,
+  LEGACY_WORKSPACE_MEMBERSHIP_KIND,
+} from './legacy-identity-compatibility.js'
 import { withLocalStateLease } from './local-state-lease.js'
 
 export const LOCAL_PERSONAL_WORKSPACE_STATE_KIND = 'metrora.local-personal-workspace-state' as const
 const LOCAL_PERSONAL_WORKSPACE_STATE_FILE = 'local-personal-workspace.v1.json'
-const LEGACY_WORKSPACE_KIND = 'qovrion.workspace' as const
-const LEGACY_WORKSPACE_MEMBERSHIP_KIND = 'qovrion.workspace-membership' as const
-const LEGACY_ENDPOINT_KIND = 'qovrion.endpoint' as const
 
 const DisplayNameSchema = z.string().trim().min(1).max(120)
 const SoftwareVersionSchema = z.string().trim().min(1).max(64)
@@ -205,9 +208,10 @@ function normalizeLegacyNamespace(value: unknown): { value: unknown; migrated: b
     migrated = true
   }
   const software = record(endpoint?.software)
-  if (software && software.metroraVersion === undefined && software.qovrionVersion !== undefined) {
-    const { qovrionVersion, ...rest } = software
-    endpoint = { ...endpoint, software: { ...rest, metroraVersion: qovrionVersion } }
+  const legacySoftwareVersion = software?.[LEGACY_SOFTWARE_VERSION_FIELD]
+  if (software && software.metroraVersion === undefined && legacySoftwareVersion !== undefined) {
+    const { [LEGACY_SOFTWARE_VERSION_FIELD]: _legacyVersion, ...rest } = software
+    endpoint = { ...endpoint, software: { ...rest, metroraVersion: legacySoftwareVersion } }
     migrated = true
   }
 
