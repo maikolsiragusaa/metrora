@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
-import { findUnpricedModels, getLocalModelSavingsConfigHash, getPriceOverridesConfigHash, getShortModelName, isExpectedFreeModel } from './models.js'
+import { findUnpricedModels, getShortModelName, isExpectedFreeModel } from './models.js'
 import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
 import { stat } from 'node:fs/promises'
@@ -20,8 +20,8 @@ import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, compu
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
 import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
-import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
-import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
+import { getDailyCacheConfigHash } from './daily-cache-config.js'
+export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
@@ -85,29 +85,6 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
     topReworkedFiles: aggregateFileChurn(projects),
     pricingCoverage: computePricingCoverage(costBearingCalls, unpricedCalls),
   }
-}
-
-export function getDailyCacheConfigHash(): string {
-  const savingsHash = getLocalModelSavingsConfigHash()
-  const overridesHash = getPriceOverridesConfigHash()
-  const accountingHash = overridesHash
-    ? `localModelSavings=${savingsHash}\u0002priceOverrides=${overridesHash}`
-    : savingsHash
-  // Daily entries store the runtime-visible cost, not only immutable
-  // per-call assignments. Switching historical/compare/legacy must
-  // therefore re-derive surviving source slices; otherwise a daily
-  // headline from one mode can be combined with model/project rows
-  // from another. Sourceless slices are still carried forward by the
-  // v14+ merge contract and remain conservatively legacy-frozen.
-  // The OpenCode parser version also gates the durable model projection: an
-  // archived-session discovery fix or newly captured source route must rebuild
-  // the day/model slices once, while normal snapshot reads remain unchanged
-  // after that bounded hydration.
-  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}`
-    + `\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}`
-    + `\u0002opencodeCollector=${PROVIDER_PARSE_VERSIONS['opencode'] ?? ''}`
-    + `\u0002modelIdentity=v3`
-    + `\u0002${accountingHash}`
 }
 
 async function hydrateCache(): Promise<DailyCache> {

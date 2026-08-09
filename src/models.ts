@@ -144,13 +144,9 @@ function getLowercasePricingIndex(): Map<string, ModelCosts> {
   return lowercasePricingIndex
 }
 
-function getCacheDir(): string {
-  return getMetroraCacheDir()
-}
+const getCacheDir = (): string => getMetroraCacheDir()
 
-function getCachePath(): string {
-  return join(getCacheDir(), 'litellm-pricing.json')
-}
+const getCachePath = (): string => join(getCacheDir(), 'litellm-pricing.json')
 
 /// Clamp a per-token rate to a sane non-negative value. Defense in depth
 /// against a tampered LiteLLM JSON shipping a negative `input_cost_per_token`,
@@ -591,8 +587,7 @@ function resolveAlias(model: string): string {
 function getCanonicalName(model: string): string {
   return model
     .replace(/@.*$/, '')       // strip pin: claude-sonnet-4-6@20250929 -> claude-sonnet-4-6
-    .replace(/-\d{8}$/, '')   // strip date: claude-sonnet-4-20250514 -> claude-sonnet-4
-    .replace(/-\d{4}-\d{2}-\d{2}$/, '') // strip ISO date pins: gpt-5.4-2026-03-05
+    .replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '') // strip date pins
     .replace(/^[^/]+\//, '').replace(/\[(?:\d+(?:\.\d+)?(?:k|m|g)?)\]$/i, '') // provider prefix + numeric context tag
 }
 
@@ -616,7 +611,7 @@ function stripKnownPricingVariantSuffix(model: string): string | null {
 
 export function getModelCosts(model: string): ModelCosts | null {
   // Try with provider prefix preserved (azure/gpt-5.4, openrouter/anthropic/claude-opus-4.6)
-  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '').replace(/-\d{4}-\d{2}-\d{2}$/, '')
+  const withPrefix = model.replace(/@.*$/, '').replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '')
   const canonicalName = getCanonicalName(model)
   const canonical = resolveAlias(canonicalName)
 
@@ -695,12 +690,8 @@ function looksLikeLocalModel(name: string): boolean {
   return false
 }
 
-/// A provider can expose a free route as a model suffix (for example
-/// `deepseek-v4-flash-free`). That suffix is usage identity, not a reason to
-/// discard the call or to apply the paid sibling's rates.
-export function isExplicitFreeModel(model: string): boolean {
-  return /(?:^|[-:])free(?:$|[-:])/i.test(model.trim())
-}
+/// A free route is usage identity, not a reason to discard the call or apply paid rates.
+export const isExplicitFreeModel = (model: string): boolean => /(?:^|[-:])free(?:$|[-:])/i.test(model.trim())
 
 export interface UnpricedModelUsage {
   model: string
@@ -724,7 +715,7 @@ function hasBillableRate(costs: ModelCosts): boolean {
 // resolve AFTER table hits and so cannot prove the $0 was intentional; a
 // zero-rate stub shadowed by one still gets flagged (the honest direction).
 function exactPriceOverrideFor(model: string): ModelCosts | null {
-  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '').replace(/-\d{4}-\d{2}-\d{2}$/, '')
+  const withPrefix = model.replace(/@.*$/, '').replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '')
   const canonicalName = getCanonicalName(model)
   const canonical = resolveAlias(canonicalName)
   return getPriceOverrideExact(model, withPrefix, canonicalName, canonical)

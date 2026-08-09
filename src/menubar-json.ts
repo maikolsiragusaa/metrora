@@ -111,6 +111,8 @@ import type { GranularHistory } from './granular-history.js'
 import { buildModelAccounting, buildTopModels } from './model-accounting.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
+export type { ModelAccountingRow } from './model-accounting-types.js'
+import type { ModelAccountingRow } from './model-accounting-types.js'
 
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
@@ -155,32 +157,6 @@ export type LocalModelSavings = {
     outputTokens: number
   }>
   byProvider: Array<{ name: string; calls: number; savingsUSD: number }>
-}
-
-export type ModelAccountingRow = {
-  name: string
-  cost: number
-  savingsUSD: number
-  calls: number
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  /** False means an older source could preserve cost/calls but not token split. */
-  tokenDetail: boolean
-  /// Source-recorded route/provider. Kept separate from the collector name.
-  provider?: string
-  /// Collector/tool names contributing to the row.
-  sourceProviders?: string[]
-  /// Raw IDs that canonicalized into this row; emitted when useful for audit.
-  rawModels?: string[]
-  /// Canonical pricing identity before an economic variant suffix.
-  canonicalIdentity?: string
-  /// Explicit semantic variant such as free/high/low/tiered.
-  semanticVariant?: string
-  /** Active generation timing from surviving source evidence only. */
-  activeDurationMs?: number
-  activeGeneratedTokens?: number
 }
 
 export type ModelAccounting = {

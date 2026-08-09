@@ -5,6 +5,7 @@ import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
 import { getMetroraCacheDir } from './product-paths.js'
 import { migrateLegacyDailyCacheRoot } from './daily-cache-root-migration.js'
+import { emptyModelStats, mergeModelStats, sanitizeModels } from './daily-cache-model-detail.js'
 // Bumped to 16: historical per-call cost assignments. Surviving source days
 // re-derive under immutable date-effective settlements; sourceless provider
 // slices continue to carry forward losslessly from v15.
@@ -203,37 +204,6 @@ function num(v: unknown): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function sanitizeModels(raw: unknown): DailyEntry['models'] {
-  if (!isRecord(raw)) return {}
-  const out: DailyEntry['models'] = {}
-  for (const [name, m] of Object.entries(raw)) {
-    if (name in Object.prototype || !isRecord(m)) continue
-    setOwn(out, name, {
-      calls: num(m.calls),
-      cost: num(m.cost),
-      savingsUSD: num(m.savingsUSD),
-      inputTokens: num(m.inputTokens),
-      outputTokens: num(m.outputTokens),
-      ...(typeof m.reasoningTokens === 'number' && Number.isFinite(m.reasoningTokens)
-        ? { reasoningTokens: Math.max(0, m.reasoningTokens) }
-        : {}),
-      cacheReadTokens: num(m.cacheReadTokens),
-      cacheWriteTokens: num(m.cacheWriteTokens),
-      ...(typeof m.modelProvider === 'string' && m.modelProvider.trim().length > 0
-        ? { modelProvider: m.modelProvider.trim() }
-        : {}),
-      ...(Array.isArray(m.sourceProviders)
-        ? {
-            sourceProviders: [...new Set(m.sourceProviders
-              .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-              .map(value => value.trim()))].sort(),
-          }
-        : {}),
-    })
-  }
-  return out
 }
 
 function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
@@ -509,10 +479,6 @@ function isOpaqueDay(day: DailyEntry): boolean {
   return (day.cost > 0 || day.calls > 0) && Object.keys(day.providers).length === 0
 }
 
-function emptyModelStats(): ModelDayStats {
-  return { calls: 0, cost: 0, savingsUSD: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
-}
-
 /// Fold one provider's day slice into a day: the providers map, the day-level
 /// totals, and (when the slice carries them — v14+ slices do) the model and
 /// category breakdowns. Skinny slices from pre-v14 caches restore only
@@ -543,18 +509,7 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
   day.oneShotTurns += slice.oneShotTurns ?? 0
   for (const [name, m] of Object.entries(slice.models ?? {})) {
     const acc = Object.hasOwn(day.models, name) ? day.models[name]! : emptyModelStats()
-    acc.calls += m.calls
-    acc.cost += m.cost
-    acc.savingsUSD += m.savingsUSD ?? 0
-    acc.inputTokens += m.inputTokens
-    acc.outputTokens += m.outputTokens
-    if (m.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + m.reasoningTokens
-    acc.cacheReadTokens += m.cacheReadTokens
-    acc.cacheWriteTokens += m.cacheWriteTokens
-    if (!acc.modelProvider && m.modelProvider) acc.modelProvider = m.modelProvider
-    if (m.sourceProviders && m.sourceProviders.length > 0) {
-      acc.sourceProviders = [...new Set([...(acc.sourceProviders ?? []), ...m.sourceProviders])].sort()
-    }
+    mergeModelStats(acc, m)
     setOwn(day.models, name, acc)
   }
   for (const [cat, c] of Object.entries(slice.categories ?? {})) {
