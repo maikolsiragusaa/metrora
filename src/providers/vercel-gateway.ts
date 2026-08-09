@@ -28,17 +28,6 @@ function formatUtcDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-function allocation(total: number, index: number, count: number): number {
-  const safeTotal = Number.isFinite(total) ? Math.max(0, Math.trunc(total)) : 0
-  const base = Math.floor(safeTotal / count)
-  return base + (index < safeTotal % count ? 1 : 0)
-}
-
-function costAllocation(total: number, index: number, count: number): number {
-  if (index === count - 1) return total - (total / count) * (count - 1)
-  return total / count
-}
-
 export async function fetchVercelGatewayReport(
   dateRange: DateRange,
 ): Promise<ReportRow[]> {
@@ -101,36 +90,34 @@ function createParser(
         const cacheReadTokens = row.cached_input_tokens ?? 0
         const cacheWriteTokens = row.cache_creation_input_tokens ?? 0
         const reasoningTokens = row.reasoning_tokens ?? 0
-        const requestCount = typeof row.request_count === 'number' && Number.isFinite(row.request_count)
-          ? Math.max(1, Math.trunc(row.request_count))
-          : 1
         if (sourceCost === undefined && inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && reasoningTokens === 0) continue
 
         const rowKey = `vercel-gateway:${day}:${model}`
         if (seenKeys.has(rowKey)) continue
         seenKeys.add(rowKey)
 
-        for (let requestIndex = 0; requestIndex < requestCount; requestIndex++) {
-          yield {
-            provider: 'vercel-gateway',
-            model,
-            inputTokens: allocation(inputTokens, requestIndex, requestCount),
-            outputTokens: allocation(outputTokens, requestIndex, requestCount),
-            cacheCreationInputTokens: allocation(cacheWriteTokens, requestIndex, requestCount),
-            cacheReadInputTokens: allocation(cacheReadTokens, requestIndex, requestCount),
-            cachedInputTokens: 0,
-            reasoningTokens: allocation(reasoningTokens, requestIndex, requestCount),
-            webSearchRequests: 0,
-            costUSD: costAllocation(costUSD, requestIndex, requestCount),
-            tools: [],
-            bashCommands: [],
-            timestamp: day ? `${day}T12:00:00.000Z` : '',
-            speed: 'standard',
-            deduplicationKey: `${rowKey}:${requestIndex}`,
-            userMessage: '',
-            sessionId: `${day}:${model}`,
-            project: source.project,
-          }
+        // The report is aggregate evidence at day + model grain. Parsed calls
+        // have no multiplicity contract, so request_count must not become N
+        // synthetic request identities with allocated token/cost precision.
+        yield {
+          provider: 'vercel-gateway',
+          model,
+          inputTokens,
+          outputTokens,
+          cacheCreationInputTokens: cacheWriteTokens,
+          cacheReadInputTokens: cacheReadTokens,
+          cachedInputTokens: 0,
+          reasoningTokens,
+          webSearchRequests: 0,
+          costUSD,
+          tools: [],
+          bashCommands: [],
+          timestamp: day ? `${day}T12:00:00.000Z` : '',
+          speed: 'standard',
+          deduplicationKey: rowKey,
+          userMessage: '',
+          sessionId: `${day}:${model}`,
+          project: source.project,
         }
       }
     },

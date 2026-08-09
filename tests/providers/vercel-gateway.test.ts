@@ -62,9 +62,11 @@ describe('vercel-gateway provider', () => {
     for await (const call of vercelGateway.createSessionParser(source, seen, range).parse()) {
       calls.push(call)
     }
-    expect(calls).toHaveLength(3)
-    expect(calls.reduce((sum, call) => sum + call.costUSD, 0)).toBeCloseTo(1.25, 10)
-    expect(calls.reduce((sum, call) => sum + call.inputTokens, 0)).toBe(1000)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.costUSD).toBe(1.25)
+    expect(calls[0]?.inputTokens).toBe(1000)
+    expect(calls[0]?.outputTokens).toBe(200)
+    expect(calls[0]?.deduplicationKey).toBe('vercel-gateway:2026-06-01:anthropic/claude-sonnet-4.6')
     expect(calls[0]?.model).toBe('anthropic/claude-sonnet-4.6')
   })
 
@@ -81,6 +83,7 @@ describe('vercel-gateway provider', () => {
           cached_input_tokens: 120,
           cache_creation_input_tokens: 8,
           reasoning_tokens: 4,
+          request_count: 400,
         }],
       }),
     })) as typeof fetch
@@ -100,7 +103,7 @@ describe('vercel-gateway provider', () => {
     expect(calls[0]?.reasoningTokens).toBe(4)
   })
 
-  it('retains explicit free request rows and preserves their request count', async () => {
+  it('retains one bounded aggregate row for explicit free usage', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -122,8 +125,8 @@ describe('vercel-gateway provider', () => {
       path: 'vercel-ai-gateway:report', project: 'Vercel AI Gateway', provider: 'vercel-gateway',
     }, new Set(), range).parse()) calls.push(call)
 
-    expect(calls).toHaveLength(2)
-    expect(calls.every(call => call.costUSD === 0)).toBe(true)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0)
   })
 })
 

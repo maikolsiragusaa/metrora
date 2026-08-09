@@ -192,6 +192,7 @@ describe('mistral-vibe provider - parsing', () => {
     expect(call.inputTokens).toBe(2000)
     expect(call.outputTokens).toBe(3000)
     expect(call.costUSD).toBeCloseTo(0.0255, 8)
+    expect(call.costIsEstimated).toBe(true)
     expect(call.tools).toEqual(['Read', 'Edit', 'Bash'])
     expect(call.bashCommands).toEqual(['npm', 'git'])
     expect(call.timestamp).toBe('2026-05-11T10:05:00+00:00')
@@ -213,6 +214,24 @@ describe('mistral-vibe provider - parsing', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(0.381681)
+    expect(calls[0]!.costIsEstimated).toBe(true)
+  })
+
+  it('does not treat zero session_cost as evidence of a free route', async () => {
+    const sessionDir = await writeSession('session_20260511_100000_zero', metadata({
+      sessionCost: 0,
+      input: 1000,
+      output: 1000,
+      inputPrice: 0,
+      outputPrice: 0,
+      configInputPrice: 1.5,
+      configOutputPrice: 7.5,
+    }))
+
+    const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ inputTokens: 1000, outputTokens: 1000, costIsEstimated: true })
+    expect(calls[0]!.costUSD).toBeCloseTo(0.009, 8)
   })
 
   it('uses configured model prices when stats omit prices', async () => {

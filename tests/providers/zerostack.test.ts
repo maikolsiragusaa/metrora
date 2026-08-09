@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import { createZerostackProvider } from '../../src/providers/zerostack.js'
+import { cachedCallToApiCall, providerCallToCachedCall } from '../../src/parser.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 
 let tmpDir: string
@@ -102,7 +103,16 @@ describe('zerostack provider - parsing', () => {
     expect(call.userMessage).toBe('hello, what is this repo about?')
     expect(call.timestamp).toBe('2026-06-19T11:34:14.140631+00:00')
     expect(call.costUSD).toBeGreaterThan(0)
+    expect(call.costUSD).toBe(0.015677835)
+    expect(call.costIsEstimated).toBe(true)
     expect(call.deduplicationKey).toContain('zerostack:')
+
+    const cached = providerCallToCachedCall(call)
+    expect(cached.provider).toBe('zerostack')
+    expect(cached.modelProvider).toBe('openrouter')
+    expect(cached.isEstimated).toBe(true)
+    expect(cached.costAssignment.kind).not.toBe('metered')
+    expect(cachedCallToApiCall(cached).costAssignment.kind).not.toBe('metered')
   })
 
   it('skips sessions with zero tokens', async () => {
@@ -118,8 +128,10 @@ describe('zerostack provider - parsing', () => {
     const free = await parse(freePath)
     expect(paid).toHaveLength(1)
     expect(paid[0]!.costUSD).toBe(0.5)
+    expect(paid[0]!.costIsEstimated).toBe(true)
     expect(free).toHaveLength(1)
     expect(free[0]!.costUSD).toBe(0)
+    expect(free[0]!.costIsEstimated).toBe(true)
   })
 
   it('deduplicates across repeated parses', async () => {

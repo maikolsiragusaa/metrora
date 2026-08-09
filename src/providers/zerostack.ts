@@ -110,6 +110,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         reasoningTokens: 0,
         webSearchRequests: 0,
         costUSD,
+        costIsEstimated: true,
         // zerostack persists only final assistant text, not tool-call records,
         // so there is nothing to extract here.
         tools: [],

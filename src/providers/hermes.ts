@@ -407,14 +407,15 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
           cacheReadTokens,
           0,
         )
-        const recordedCost =
-          typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd) ? row.actual_cost_usd
-          : typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd) ? row.estimated_cost_usd
-          : null
+        const hasActualCost = typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd)
+        const hasEstimatedCost = typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd)
+        const recordedCost = hasActualCost
+          ? row.actual_cost_usd
+          : hasEstimatedCost ? row.estimated_cost_usd : null
         // When Hermes stored no cost (e.g. subscription-billed sessions), the
         // figure is our LiteLLM-priced estimate from the session token totals.
         const costUSD = recordedCost ?? calculatedCost
-        const costIsEstimated = recordedCost === null
+        const costIsEstimated = !hasActualCost
 
         result = {
           provider: 'hermes',

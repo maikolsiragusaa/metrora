@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { calculateCost } from '../../src/models.js'
 import { createHermesProvider } from '../../src/providers/hermes.js'
+import { cachedCallToApiCall, providerCallToCachedCall } from '../../src/parser.js'
 import { isSqliteAvailable } from '../../src/sqlite.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 import type { DateRange } from '../../src/types.js'
@@ -530,7 +531,7 @@ skipUnlessSqlite('hermes provider', () => {
     })
   })
 
-  it('flags estimated cost only when Hermes recorded none', async () => {
+  it('classifies actual, estimated, explicit zero, and fallback cost evidence', async () => {
     const dbPath = createHermesDb(tmpDir)
     withTestDb(dbPath, (db) => {
       insertSession(db, {
@@ -539,18 +540,48 @@ skipUnlessSqlite('hermes provider', () => {
         startedAt: 1779549200,
       })
       insertSession(db, {
-        id: 'recorded-cost',
-        actualCost: 1.23,
+        id: 'actual-wins', actualCost: 1.23, estimatedCost: 9.99,
         inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
         startedAt: 1779549300,
+      })
+      insertSession(db, {
+        id: 'estimated-cost', estimatedCost: 0.75,
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
+        startedAt: 1779549400,
+      })
+      insertSession(db, {
+        id: 'actual-zero', actualCost: 0, estimatedCost: 0.75,
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
+        startedAt: 1779549500,
+      })
+      insertSession(db, {
+        id: 'estimated-zero', estimatedCost: 0,
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
+        startedAt: 1779549600,
       })
     })
 
     const noCost = await collectCalls(tmpDir, `${dbPath}#hermes-session=no-cost`)
     expect(noCost[0]!.costIsEstimated).toBe(true)
 
-    const recorded = await collectCalls(tmpDir, `${dbPath}#hermes-session=recorded-cost`)
-    expect(recorded[0]).toMatchObject({ costUSD: 1.23, costIsEstimated: false })
+    const actual = await collectCalls(tmpDir, `${dbPath}#hermes-session=actual-wins`)
+    expect(actual[0]).toMatchObject({ costUSD: 1.23, costIsEstimated: false })
+
+    const estimated = await collectCalls(tmpDir, `${dbPath}#hermes-session=estimated-cost`)
+    expect(estimated[0]).toMatchObject({ costUSD: 0.75, costIsEstimated: true })
+
+    const actualZero = await collectCalls(tmpDir, `${dbPath}#hermes-session=actual-zero`)
+    expect(actualZero[0]).toMatchObject({ costUSD: 0, costIsEstimated: false })
+
+    const estimatedZero = await collectCalls(tmpDir, `${dbPath}#hermes-session=estimated-zero`)
+    expect(estimatedZero[0]).toMatchObject({ costUSD: 0, costIsEstimated: true })
+
+    const cached = providerCallToCachedCall(estimated[0]!)
+    expect(cached.isEstimated).toBe(true)
+    expect(cached.costAssignment.kind).not.toBe('metered')
+    const runtime = cachedCallToApiCall(cached)
+    expect(runtime.isEstimated).toBe(true)
+    expect(runtime.costAssignment.kind).not.toBe('metered')
   })
 
   it('counts tool-result messages by their tool_name', async () => {
