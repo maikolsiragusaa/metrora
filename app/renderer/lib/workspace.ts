@@ -75,7 +75,14 @@ export type DesktopWorkspaceAvailability =
       snapshot: DesktopWorkspaceSnapshot
     }
   | { availability: 'unsupported-platform'; platform: string }
-  | { availability: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+  | {
+      availability: 'unavailable'
+      reason:
+        | 'vault-unavailable'
+        | 'packaged-runtime-unavailable'
+        | 'local-state-unavailable'
+        | 'initialization-failed'
+    }
 
 export type DesktopReviewedProductionSummary = {
   kind: 'metrora.canonical-reviewed-production-summary'

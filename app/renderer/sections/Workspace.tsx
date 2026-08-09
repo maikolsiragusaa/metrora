@@ -31,6 +31,21 @@ export type { WorkspaceUsage } from './workspaceUsage'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
 
+function unavailableWorkspaceMessage(
+  reason: Extract<DesktopWorkspaceAvailability, { availability: 'unavailable' }>['reason'],
+): string {
+  if (reason === 'vault-unavailable') {
+    return 'The operating-system vault is unavailable, so Metrora will not open a plaintext fallback.'
+  }
+  if (reason === 'packaged-runtime-unavailable') {
+    return 'The packaged secure Workspace runtime is unavailable or invalid, so Metrora will not open a plaintext fallback.'
+  }
+  if (reason === 'local-state-unavailable') {
+    return 'The existing encrypted Workspace state could not be read, so Metrora will not replace it or open a plaintext fallback.'
+  }
+  return 'The secure Workspace runtime could not be initialized, so Metrora will not open a plaintext fallback.'
+}
+
 export function WorkspaceContent({
   payload,
   scope,
@@ -93,7 +108,7 @@ export function WorkspaceContent({
     return (
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
-          <EmptyNote>The operating-system vault is unavailable, so Metrora will not open a plaintext fallback.</EmptyNote>
+          <EmptyNote>{unavailableWorkspaceMessage(availability.reason)}</EmptyNote>
           <button type="button" className="btn btn-s" onClick={() => void retryStatus()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>

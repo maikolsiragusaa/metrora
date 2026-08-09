@@ -132,6 +132,12 @@ export type DesktopLocalStateResult =
     }
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
 
+export type DesktopWorkspaceUnavailableReason =
+  | 'vault-unavailable'
+  | 'packaged-runtime-unavailable'
+  | 'local-state-unavailable'
+  | 'initialization-failed'
+
 export type DesktopWorkspaceRuntimeState =
   | {
       status: 'ready'
@@ -143,7 +149,7 @@ export type DesktopWorkspaceRuntimeState =
       runtime: DesktopWorkspaceRuntime
     }
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
-  | { status: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+  | { status: 'unavailable'; reason: DesktopWorkspaceUnavailableReason }
 
 type DesktopCanonicalReviewedProductionInput = {
   endpointId: string
@@ -359,6 +365,19 @@ function safeStorageAdapter(deps: InitializeDesktopEndpointStateDeps) {
   }
 }
 
+function classifyWorkspaceInitializationError(error: unknown): DesktopWorkspaceUnavailableReason {
+  const name = error instanceof Error ? error.name : ''
+  if (name === 'DesktopVaultUnavailableError') return 'vault-unavailable'
+  if (new Set([
+    'DesktopEncryptedStateUnreadableError',
+    'DesktopLocalStateCorruptError',
+    'EndpointIdentityRecoveryRequiredError',
+    'LocalWorkspaceRecoveryRequiredError',
+    'LocalWorkspaceProductionLifecycleRecoveryRequiredError',
+  ]).has(name)) return 'local-state-unavailable'
+  return 'initialization-failed'
+}
+
 async function loadRuntimeModule(deps: InitializeDesktopEndpointStateDeps): Promise<DesktopLocalStateModule> {
   const importModule = deps.importModule ?? (async url => import(url) as Promise<DesktopLocalStateModule>)
   return importModule(pathToFileURL(desktopLocalStateModulePath(deps)).href)
@@ -415,11 +434,24 @@ export async function initializeDesktopWorkspaceRuntimeState(
   const backend = desktopVaultBackend(deps.platform)
   if (!backend) return { status: 'unsupported-platform', platform: deps.platform }
 
+  let module: DesktopLocalStateModule
   try {
-    const module = await loadRuntimeModule(deps)
-    if (typeof module.initializeDesktopWorkspaceRuntimeV1 !== 'function') {
-      throw new Error('bundled desktop Workspace runtime is invalid')
-    }
+    module = await loadRuntimeModule(deps)
+  } catch {
+    return { status: 'unavailable', reason: 'packaged-runtime-unavailable' }
+  }
+  if (typeof module.initializeDesktopWorkspaceRuntimeV1 !== 'function') {
+    return { status: 'unavailable', reason: 'packaged-runtime-unavailable' }
+  }
+
+  let dataDir: string
+  try {
+    dataDir = localStateDataDir(deps)
+  } catch {
+    return { status: 'unavailable', reason: 'local-state-unavailable' }
+  }
+
+  try {
     const version = deps.appVersion?.trim() || '0.0.0'
     let reviewedProductionModulePromise: Promise<DesktopReviewedProductionModule> | undefined
     const scanCanonicalCandidates = async (
@@ -432,7 +464,7 @@ export async function initializeDesktopWorkspaceRuntimeState(
 
     const initialized = await module.initializeDesktopWorkspaceRuntimeV1({
       backend,
-      dataDir: localStateDataDir(deps),
+      dataDir,
       safeStorage: safeStorageAdapter(deps),
       platform: {
         os: endpointOs(deps.platform),
@@ -453,10 +485,6 @@ export async function initializeDesktopWorkspaceRuntimeState(
       runtime: initialized.runtime,
     }
   } catch (error) {
-    const name = error instanceof Error ? error.name : ''
-    return {
-      status: 'unavailable',
-      reason: name === 'DesktopVaultUnavailableError' ? 'vault-unavailable' : 'initialization-failed',
-    }
+    return { status: 'unavailable', reason: classifyWorkspaceInitializationError(error) }
   }
 }

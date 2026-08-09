@@ -11,6 +11,8 @@ import type {
 import { reconcileLocalWorkspaceSoftwareV1 } from './local-state/workspace-software-reconciliation.js'
 
 export {
+  DesktopEncryptedStateUnreadableError,
+  DesktopLocalStateCorruptError,
   DesktopVaultUnavailableError,
   initializeDesktopLocalStateV1,
 } from './local-state/desktop-host.js'
@@ -27,14 +29,19 @@ export async function initializeDesktopWorkspaceRuntimeV1(
   input: InitializeDesktopWorkspaceRuntimeV1Options,
 ): Promise<InitializedDesktopWorkspaceRuntimeV1> {
   const initialized = await initializeDesktopWorkspaceRuntimeV1Base(input)
-  await reconcileLocalWorkspaceSoftwareV1({
-    endpointIdentity: initialized.endpoint,
-    metroraVersion: input.metroraVersion,
-    collectorVersion: input.collectorVersion,
-    ...(input.dataDir !== undefined ? { dataDir: input.dataDir } : {}),
-    ...(input.now !== undefined ? { now: input.now } : {}),
-  })
-  return initialized
+  try {
+    await reconcileLocalWorkspaceSoftwareV1({
+      endpointIdentity: initialized.endpoint,
+      metroraVersion: input.metroraVersion,
+      collectorVersion: input.collectorVersion,
+      ...(input.dataDir !== undefined ? { dataDir: input.dataDir } : {}),
+      ...(input.now !== undefined ? { now: input.now } : {}),
+    })
+    return initialized
+  } catch (error) {
+    initialized.runtime.dispose()
+    throw error
+  }
 }
 
 export {

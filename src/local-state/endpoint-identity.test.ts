@@ -11,6 +11,7 @@ import {
   verifyLocalEndpointIdentitySignatureV1,
 } from './endpoint-identity.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
+import type { SecretProtector } from './secret-protector.js'
 
 const roots: string[] = []
 
@@ -22,6 +23,14 @@ async function root(): Promise<string> {
 
 function protector(byte = 7): Aes256GcmSecretProtector {
   return new Aes256GcmSecretProtector(Buffer.alloc(32, byte))
+}
+
+function contextualProtector(context: string, byte = 7): SecretProtector {
+  const base = protector(byte)
+  return {
+    seal: plaintext => base.seal(plaintext, context),
+    open: sealed => base.open(sealed, context),
+  }
 }
 
 afterEach(async () => {
@@ -87,6 +96,38 @@ describe.sequential('local endpoint identity v1', () => {
     expect(repaired.metadata).toEqual(first.metadata)
     expect(JSON.parse(await readFile(join(dataDir, 'identity', 'endpoint-identity.v1.json'), 'utf-8')))
       .toEqual(first.metadata)
+  })
+
+  it('migrates the legacy identity namespace without regenerating identity material', async () => {
+    const dataDir = await root()
+    const legacyProtector = contextualProtector('dev.qovrion.local-endpoint-identity.v1')
+    const options = { dataDir, protector: legacyProtector }
+    const first = await loadOrCreateLocalEndpointIdentityV1(options)
+    const metadataPath = join(dataDir, 'identity', 'endpoint-identity.v1.json')
+    const secretPath = join(dataDir, 'identity', 'endpoint-identity.v1.secret')
+
+    const legacyMetadata = JSON.parse(await readFile(metadataPath, 'utf8')) as { kind: string }
+    legacyMetadata.kind = 'qovrion.local-endpoint-identity'
+    await writeFile(metadataPath, JSON.stringify(legacyMetadata))
+    const legacySecret = JSON.parse(Buffer.from(
+      await legacyProtector.open(await readFile(secretPath), 'ignored'),
+    ).toString('utf8')) as { kind: string }
+    legacySecret.kind = 'qovrion.local-endpoint-identity-secret'
+    await writeFile(
+      secretPath,
+      await legacyProtector.seal(Buffer.from(JSON.stringify(legacySecret)), 'ignored'),
+    )
+
+    const migrated = await loadOrCreateLocalEndpointIdentityV1({ dataDir, protector: protector() })
+    expect(migrated.metadata.kind).toBe('metrora.local-endpoint-identity')
+    expect(migrated.metadata.endpointId).toBe(first.metadata.endpointId)
+    expect(migrated.metadata.generation).toBe(first.metadata.generation)
+    expect(JSON.parse(await readFile(metadataPath, 'utf8')).kind).toBe('metrora.local-endpoint-identity')
+
+    const migratedSecret = JSON.parse(Buffer.from(
+      await protector().open(await readFile(secretPath), 'dev.metrora.local-endpoint-identity.v1'),
+    ).toString('utf8')) as { kind: string }
+    expect(migratedSecret.kind).toBe('metrora.local-endpoint-identity-secret')
   })
 
   it('repairs older public metadata after an interrupted rotation publication', async () => {

@@ -32,6 +32,9 @@ import { withLocalStateLease } from './local-state-lease.js'
 
 export const LOCAL_PERSONAL_WORKSPACE_STATE_KIND = 'metrora.local-personal-workspace-state' as const
 const LOCAL_PERSONAL_WORKSPACE_STATE_FILE = 'local-personal-workspace.v1.json'
+const LEGACY_WORKSPACE_KIND = 'qovrion.workspace' as const
+const LEGACY_WORKSPACE_MEMBERSHIP_KIND = 'qovrion.workspace-membership' as const
+const LEGACY_ENDPOINT_KIND = 'qovrion.endpoint' as const
 
 const DisplayNameSchema = z.string().trim().min(1).max(120)
 const SoftwareVersionSchema = z.string().trim().min(1).max(64)
@@ -168,9 +171,61 @@ function opaqueId(prefix: 'workspace' | 'membership' | 'subject', uuid: () => st
   return OpaqueIdSchema.parse(`${prefix}_${uuid()}`)
 }
 
-function parseState(bytes: Uint8Array): LocalPersonalWorkspaceStateV1 {
+type ParsedLocalPersonalWorkspaceState = {
+  state: LocalPersonalWorkspaceStateV1
+  namespaceMigrated: boolean
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function normalizeLegacyNamespace(value: unknown): { value: unknown; migrated: boolean } {
+  const root = record(value)
+  if (!root) return { value, migrated: false }
+
+  let migrated = false
+  let workspace = record(root.workspace)
+  if (workspace?.kind === LEGACY_WORKSPACE_KIND) {
+    workspace = { ...workspace, kind: 'metrora.workspace' }
+    migrated = true
+  }
+
+  let ownerMembership = record(root.ownerMembership)
+  if (ownerMembership?.kind === LEGACY_WORKSPACE_MEMBERSHIP_KIND) {
+    ownerMembership = { ...ownerMembership, kind: 'metrora.workspace-membership' }
+    migrated = true
+  }
+
+  let endpoint = record(root.endpoint)
+  if (endpoint?.kind === LEGACY_ENDPOINT_KIND) {
+    endpoint = { ...endpoint, kind: 'metrora.endpoint' }
+    migrated = true
+  }
+  const software = record(endpoint?.software)
+  if (software && software.metroraVersion === undefined && software.qovrionVersion !== undefined) {
+    const { qovrionVersion, ...rest } = software
+    endpoint = { ...endpoint, software: { ...rest, metroraVersion: qovrionVersion } }
+    migrated = true
+  }
+
+  return {
+    value: migrated
+      ? { ...root, ...(workspace ? { workspace } : {}), ...(ownerMembership ? { ownerMembership } : {}), ...(endpoint ? { endpoint } : {}) }
+      : value,
+    migrated,
+  }
+}
+
+function parseState(bytes: Uint8Array): ParsedLocalPersonalWorkspaceState {
   try {
-    return LocalPersonalWorkspaceStateV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
+    const normalized = normalizeLegacyNamespace(JSON.parse(Buffer.from(bytes).toString('utf-8')))
+    return {
+      state: LocalPersonalWorkspaceStateV1Schema.parse(normalized.value),
+      namespaceMigrated: normalized.migrated,
+    }
   } catch (error) {
     throw new LocalWorkspaceRecoveryRequiredError(
       `local workspace state is invalid: ${error instanceof Error ? error.message : String(error)}`,
@@ -262,7 +317,7 @@ function buildState(input: {
   })
 }
 
-async function readState(path: string): Promise<LocalPersonalWorkspaceStateV1 | undefined> {
+async function readState(path: string): Promise<ParsedLocalPersonalWorkspaceState | undefined> {
   let bytes: Buffer | undefined
   try {
     bytes = await readOptionalPrivateFile(path)
@@ -279,8 +334,9 @@ async function loadAndReconcileUnlocked(input: {
   identity: LocalEndpointIdentityMetadataV1
   now: () => Date
 }): Promise<LocalPersonalWorkspaceStateV1 | undefined> {
-  const stored = await readState(input.statePath)
-  if (!stored) return undefined
+  const parsed = await readState(input.statePath)
+  if (!parsed) return undefined
+  const stored = parsed.state
 
   if (stored.endpoint.endpointId !== input.identity.endpointId) {
     throw new LocalWorkspaceRecoveryRequiredError(
@@ -297,6 +353,9 @@ async function loadAndReconcileUnlocked(input: {
       throw new LocalWorkspaceRecoveryRequiredError(
         'local workspace endpoint fingerprint does not match the current identity generation',
       )
+    }
+    if (parsed.namespaceMigrated) {
+      await atomicWritePrivateFile(input.statePath, JSON.stringify(stored))
     }
     return stored
   }

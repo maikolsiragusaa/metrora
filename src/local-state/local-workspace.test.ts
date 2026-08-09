@@ -221,6 +221,45 @@ describe.sequential('local personal workspace v1', () => {
     expect(workspaceText).not.toContain(endpointIdentity.metadata.publicKeySpkiBase64)
   })
 
+  it('migrates the legacy workspace namespace without minting a new workspace or endpoint', async () => {
+    const dataDir = await root()
+    const created = await createLocalPersonalWorkspaceV1({
+      dataDir,
+      endpointIdentity: identity(),
+      intent: intent(),
+      now: () => new Date(NOW),
+      randomUUID: uuidSource().next,
+    })
+    const statePath = join(dataDir, 'workspace', 'local-personal-workspace.v1.json')
+    await writeFile(statePath, JSON.stringify({
+      ...created.state,
+      workspace: { ...created.state.workspace, kind: 'qovrion.workspace' },
+      ownerMembership: { ...created.state.ownerMembership, kind: 'qovrion.workspace-membership' },
+      endpoint: {
+        ...created.state.endpoint,
+        kind: 'qovrion.endpoint',
+        software: {
+          qovrionVersion: created.state.endpoint.software.metroraVersion,
+          collectorVersion: created.state.endpoint.software.collectorVersion,
+        },
+      },
+    }))
+
+    const loaded = await loadLocalPersonalWorkspaceV1({
+      dataDir,
+      endpointIdentity: identity(),
+    })
+
+    expect(loaded?.workspace.workspaceId).toBe(created.state.workspace.workspaceId)
+    expect(loaded?.endpoint.endpointId).toBe(created.state.endpoint.endpointId)
+    expect(loaded?.endpoint.software.metroraVersion).toBe('0.9.19')
+    const migrated = JSON.parse(await readFile(statePath, 'utf8'))
+    expect(migrated.workspace.kind).toBe('metrora.workspace')
+    expect(migrated.ownerMembership.kind).toBe('metrora.workspace-membership')
+    expect(migrated.endpoint.kind).toBe('metrora.endpoint')
+    expect(migrated.endpoint.software).toEqual({ metroraVersion: '0.9.19', collectorVersion: '0.9.19' })
+  })
+
   it('reconciles a forward endpoint-key rotation without replacing workspace identity', async () => {
     const dataDir = await root()
     const created = await createLocalPersonalWorkspaceV1({

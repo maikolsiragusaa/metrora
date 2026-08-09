@@ -2,6 +2,7 @@ import path from 'node:path'
 
 import type { Envelope } from './main'
 import type {
+  DesktopWorkspaceUnavailableReason,
   DesktopWorkspaceRuntimeState,
   DesktopWorkspaceSnapshot,
 } from './local-state'
@@ -17,7 +18,7 @@ export type DesktopWorkspaceAvailability =
       snapshot: DesktopWorkspaceSnapshot
     }
   | { availability: 'unsupported-platform'; platform: NodeJS.Platform }
-  | { availability: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+  | { availability: 'unavailable'; reason: DesktopWorkspaceUnavailableReason }
 
 export type WorkspaceBridgeDeps = {
   getRuntimeState(): Promise<DesktopWorkspaceRuntimeState>
@@ -50,12 +51,14 @@ function unavailableError(state: Exclude<DesktopWorkspaceRuntimeState, { status:
   if (state.status === 'unsupported-platform') {
     return workspaceError('workspace-unsupported', 'Workspace signing requires Windows or macOS OS-backed encryption.')
   }
-  return workspaceError(
-    'workspace-unavailable',
-    state.reason === 'vault-unavailable'
-      ? 'The operating-system vault is unavailable. Workspace actions remain disabled.'
-      : 'The local Workspace runtime could not be initialized.',
-  )
+  const message = state.reason === 'vault-unavailable'
+    ? 'The operating-system vault is unavailable. Workspace actions remain disabled.'
+    : state.reason === 'packaged-runtime-unavailable'
+      ? 'The packaged Workspace runtime is unavailable or invalid. Workspace actions remain disabled.'
+      : state.reason === 'local-state-unavailable'
+        ? 'The existing encrypted Workspace state could not be read. Workspace actions remain disabled.'
+        : 'The local Workspace runtime could not be initialized. Workspace actions remain disabled.'
+  return workspaceError('workspace-unavailable', message)
 }
 
 function sanitizeActionError(error: unknown): { kind: string; message: string } {

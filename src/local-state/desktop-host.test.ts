@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  DESKTOP_MASTER_KEY_KIND,
+  DesktopEncryptedStateUnreadableError,
+  DesktopLocalStateCorruptError,
   DesktopVaultUnavailableError,
   initializeDesktopLocalStateV1,
   type DesktopSafeStorageProvider,
@@ -104,6 +107,57 @@ describe.sequential('desktop OS vault local-state bridge', () => {
     expect(result.masterKeyState).toBe('rewrapped')
     expect(vault.encryptions).toBe(2)
     expect(vault.decryptions).toBe(1)
+  })
+
+  it('loads and migrates the pre-Metrora envelope kind without changing identity', async () => {
+    const dataDir = await root()
+    const vault = new FakeSafeStorage()
+    const options = {
+      dataDir,
+      backend: 'windows-dpapi' as const,
+      safeStorage: vault,
+      randomBytes: (size: number) => Buffer.alloc(size, 17),
+    }
+    const first = await initializeDesktopLocalStateV1(options)
+    const masterPath = join(dataDir, 'host-secrets', 'desktop-master-key.v1.json')
+    const legacyEnvelope = JSON.parse(await readFile(masterPath, 'utf8')) as { kind: string }
+    legacyEnvelope.kind = 'qovrion.desktop-master-key'
+    await writeFile(masterPath, JSON.stringify(legacyEnvelope))
+
+    const second = await initializeDesktopLocalStateV1(options)
+    const migrated = JSON.parse(await readFile(masterPath, 'utf8')) as { kind: string }
+    expect(second.masterKeyState).toBe('loaded')
+    expect(second.endpoint).toEqual(first.endpoint)
+    expect(migrated.kind).toBe(DESKTOP_MASTER_KEY_KIND)
+    expect(vault.decryptions).toBe(1)
+    expect(vault.encryptions).toBe(1)
+  })
+
+  it('classifies corrupt and unreadable existing encrypted state without replacing it', async () => {
+    const dataDir = await root()
+    const first = new FakeSafeStorage('first')
+    await initializeDesktopLocalStateV1({ dataDir, backend: 'windows-dpapi', safeStorage: first })
+    const masterPath = join(dataDir, 'host-secrets', 'desktop-master-key.v1.json')
+    const originalEnvelope = await readFile(masterPath, 'utf8')
+    const corruptEnvelope = JSON.parse(originalEnvelope) as { kind: string }
+    corruptEnvelope.kind = 'unexpected.desktop-master-key'
+    const corruptEnvelopeSerialized = JSON.stringify(corruptEnvelope)
+    await writeFile(masterPath, corruptEnvelopeSerialized)
+
+    await expect(initializeDesktopLocalStateV1({
+      dataDir,
+      backend: 'windows-dpapi',
+      safeStorage: first,
+    })).rejects.toBeInstanceOf(DesktopLocalStateCorruptError)
+    expect(await readFile(masterPath, 'utf8')).toBe(corruptEnvelopeSerialized)
+
+    await writeFile(masterPath, originalEnvelope)
+    await expect(initializeDesktopLocalStateV1({
+      dataDir,
+      backend: 'windows-dpapi',
+      safeStorage: new FakeSafeStorage('second'),
+    })).rejects.toBeInstanceOf(DesktopEncryptedStateUnreadableError)
+    expect(await readFile(masterPath, 'utf8')).toBe(originalEnvelope)
   })
 
   it('fails closed for unavailable, wrong or mismatched vaults', async () => {

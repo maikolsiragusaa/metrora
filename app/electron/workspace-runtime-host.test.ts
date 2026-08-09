@@ -193,6 +193,39 @@ describe('Electron private Workspace runtime host', () => {
     expect(importReviewedProductionModule).not.toHaveBeenCalled()
   })
 
+  it('classifies packaged, local-state and generic initialization failures separately', async () => {
+    const base = {
+      platform: 'win32' as const,
+      isPackaged: true,
+      resourcesPath: 'C:\\app\\resources',
+      appPath: 'C:\\app',
+      userDataPath: 'C:\\Users\\test\\Metrora',
+      safeStorage: safeStorage(),
+    }
+
+    await expect(initializeDesktopWorkspaceRuntimeState({
+      ...base,
+      importModule: vi.fn(async () => { throw new Error('Cannot find packaged module') }),
+    })).resolves.toEqual({ status: 'unavailable', reason: 'packaged-runtime-unavailable' })
+
+    for (const [name, reason] of [
+      ['DesktopLocalStateCorruptError', 'local-state-unavailable'],
+      ['DesktopEncryptedStateUnreadableError', 'local-state-unavailable'],
+      ['EndpointIdentityRecoveryRequiredError', 'local-state-unavailable'],
+      ['UnexpectedError', 'initialization-failed'],
+    ] as const) {
+      const error = new Error('private diagnostic detail')
+      error.name = name
+      await expect(initializeDesktopWorkspaceRuntimeState({
+        ...base,
+        importModule: vi.fn(async () => ({
+          initializeDesktopLocalStateV1: vi.fn(),
+          initializeDesktopWorkspaceRuntimeV1: vi.fn(async () => { throw error }),
+        })),
+      })).resolves.toEqual({ status: 'unavailable', reason })
+    }
+  })
+
   it('retries a failed initialization with one new runtime attempt and never duplicates a live runtime', async () => {
     const privateRuntime = runtime()
     const initializer = vi.fn<() => Promise<DesktopWorkspaceRuntimeState>>()

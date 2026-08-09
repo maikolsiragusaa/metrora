@@ -369,6 +369,24 @@ describe('Workspace desktop view', () => {
     expect(screen.queryByRole('button', { name: 'Export signed data' })).not.toBeInTheDocument()
   })
 
+  it('does not present a generic initialization failure as an OS-vault failure', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText(/secure Workspace runtime could not be initialized/i)).toBeInTheDocument()
+    expect(screen.queryByText(/operating-system vault is unavailable/i)).not.toBeInTheDocument()
+  })
+
+  it('explains that unreadable local state is preserved instead of replaced', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'local-state-unavailable' })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText(/existing encrypted Workspace state could not be read/i)).toBeInTheDocument()
+    expect(screen.queryByText(/operating-system vault is unavailable/i)).not.toBeInTheDocument()
+  })
+
   it('uses a new runtime initialization for Retry status after a failed bootstrap', async () => {
     bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
     bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())

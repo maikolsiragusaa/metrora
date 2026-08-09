@@ -140,6 +140,20 @@ describe('Workspace IPC bridge', () => {
       ok: true,
       value: { availability: 'unavailable', reason: 'vault-unavailable' },
     })
+
+    const localState = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => ({ status: 'unavailable', reason: 'local-state-unavailable' }),
+      chooseExportPath: async () => null,
+    })
+    await expect(localState['metrora:createWorkspace']!({
+      displayName: 'Local', endpointDisplayName: 'Desktop',
+    })).resolves.toEqual({
+      ok: false,
+      error: {
+        kind: 'workspace-unavailable',
+        message: 'The existing encrypted Workspace state could not be read. Workspace actions remain disabled.',
+      },
+    })
   })
 
   it('uses a fresh retry runtime operation instead of rereading the failed state', async () => {

@@ -26,7 +26,10 @@ import type { SecretProtector } from './secret-protector.js'
 
 export const LOCAL_ENDPOINT_IDENTITY_KIND = 'metrora.local-endpoint-identity' as const
 export const LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'metrora.local-endpoint-identity-secret' as const
+const LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND = 'qovrion.local-endpoint-identity' as const
+const LEGACY_LOCAL_ENDPOINT_IDENTITY_SECRET_KIND = 'qovrion.local-endpoint-identity-secret' as const
 const SECRET_CONTEXT = 'dev.metrora.local-endpoint-identity.v1'
+const LEGACY_SECRET_CONTEXT = 'dev.qovrion.local-endpoint-identity.v1'
 const METADATA_FILE = 'endpoint-identity.v1.json'
 const SECRET_FILE = 'endpoint-identity.v1.secret'
 
@@ -35,7 +38,10 @@ const CanonicalBase64Schema = z.string().min(1).max(16_384).refine(value => {
 }, 'must be canonical base64')
 
 export const LocalEndpointIdentityMetadataV1Schema = z.strictObject({
-  kind: z.literal(LOCAL_ENDPOINT_IDENTITY_KIND),
+  kind: z.union([
+    z.literal(LOCAL_ENDPOINT_IDENTITY_KIND),
+    z.literal(LEGACY_LOCAL_ENDPOINT_IDENTITY_KIND),
+  ]),
   version: ContractVersionSchema,
   endpointId: OpaqueIdSchema,
   generation: PositiveIntegerSchema,
@@ -49,7 +55,10 @@ export const LocalEndpointIdentityMetadataV1Schema = z.strictObject({
 })
 
 const LocalEndpointIdentitySecretV1Schema = z.strictObject({
-  kind: z.literal(LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
+  kind: z.union([
+    z.literal(LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
+    z.literal(LEGACY_LOCAL_ENDPOINT_IDENTITY_SECRET_KIND),
+  ]),
   version: ContractVersionSchema,
   endpointId: OpaqueIdSchema,
   generation: PositiveIntegerSchema,
@@ -176,17 +185,45 @@ function metadataMatchesExactly(
   return JSON.stringify(stored) === JSON.stringify(derived)
 }
 
-async function decodeSecret(protector: SecretProtector, sealed: Uint8Array): Promise<LocalEndpointIdentitySecretV1> {
+function metadataMatchesAfterNamespaceMigration(
+  stored: LocalEndpointIdentityMetadataV1,
+  derived: LocalEndpointIdentityMetadataV1,
+): boolean {
+  return JSON.stringify({ ...stored, kind: LOCAL_ENDPOINT_IDENTITY_KIND }) === JSON.stringify(derived)
+}
+
+function canonicalSecret(secret: LocalEndpointIdentitySecretV1): LocalEndpointIdentitySecretV1 {
+  return secret.kind === LOCAL_ENDPOINT_IDENTITY_SECRET_KIND
+    ? secret
+    : { ...secret, kind: LOCAL_ENDPOINT_IDENTITY_SECRET_KIND }
+}
+
+type DecodedLocalEndpointIdentitySecretV1 = {
+  secret: LocalEndpointIdentitySecretV1
+  usedLegacyContext: boolean
+}
+
+async function decodeSecret(
+  protector: SecretProtector,
+  sealed: Uint8Array,
+): Promise<DecodedLocalEndpointIdentitySecretV1> {
   let plaintext: Uint8Array
+  let usedLegacyContext = false
   try {
     plaintext = await protector.open(sealed, SECRET_CONTEXT)
-  } catch (error) {
-    throw new EndpointIdentityRecoveryRequiredError(
-      `endpoint identity secret could not be decrypted: ${error instanceof Error ? error.message : String(error)}`,
-    )
+  } catch {
+    try {
+      plaintext = await protector.open(sealed, LEGACY_SECRET_CONTEXT)
+      usedLegacyContext = true
+    } catch {
+      throw new EndpointIdentityRecoveryRequiredError('endpoint identity secret could not be decrypted')
+    }
   }
   try {
-    return LocalEndpointIdentitySecretV1Schema.parse(JSON.parse(Buffer.from(plaintext).toString('utf-8')))
+    return {
+      secret: LocalEndpointIdentitySecretV1Schema.parse(JSON.parse(Buffer.from(plaintext).toString('utf-8'))),
+      usedLegacyContext,
+    }
   } catch {
     throw new EndpointIdentityRecoveryRequiredError('endpoint identity secret payload is invalid')
   }
@@ -258,10 +295,17 @@ async function loadOrCreateUnlocked(
   }
   if (!sealedSecret) throw new EndpointIdentityRecoveryRequiredError('endpoint identity secret is missing')
 
-  const secret = await decodeSecret(resolved.protector, sealedSecret)
+  const decoded = await decodeSecret(resolved.protector, sealedSecret)
+  const secret = decoded.secret
   const loaded = materialFromSecret(secret)
+  const migratedSecret = canonicalSecret(secret)
+  const secretNeedsMigration = decoded.usedLegacyContext || secret.kind !== LOCAL_ENDPOINT_IDENTITY_SECRET_KIND
   if (!metadataBytes) {
-    await atomicWritePrivateFile(paths.metadata, JSON.stringify(loaded.metadata))
+    if (secretNeedsMigration) {
+      await persistIdentity(paths, resolved.protector, migratedSecret)
+    } else {
+      await atomicWritePrivateFile(paths.metadata, JSON.stringify(loaded.metadata))
+    }
     return loaded
   }
 
@@ -271,9 +315,20 @@ async function loadOrCreateUnlocked(
   } catch {
     throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata is invalid')
   }
-  if (metadataMatchesExactly(metadata, loaded.metadata)) return loaded
+  if (metadataMatchesExactly(metadata, loaded.metadata)) {
+    if (secretNeedsMigration) await persistIdentity(paths, resolved.protector, migratedSecret)
+    return loaded
+  }
+  if (metadataMatchesAfterNamespaceMigration(metadata, loaded.metadata)) {
+    await persistIdentity(paths, resolved.protector, migratedSecret)
+    return loaded
+  }
   if (metadataIsInterruptedOlderPublication(metadata, loaded.metadata)) {
-    await atomicWritePrivateFile(paths.metadata, JSON.stringify(loaded.metadata))
+    if (secretNeedsMigration) {
+      await persistIdentity(paths, resolved.protector, migratedSecret)
+    } else {
+      await atomicWritePrivateFile(paths.metadata, JSON.stringify(loaded.metadata))
+    }
     return loaded
   }
   throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata does not match the protected secret')
@@ -299,7 +354,7 @@ export async function rotateLocalEndpointIdentityV1(
     if (!sealedSecret) {
       throw new EndpointIdentityRecoveryRequiredError('cannot rotate an endpoint identity without its protected secret')
     }
-    const previous = await decodeSecret(resolved.protector, sealedSecret)
+    const previous = (await decodeSecret(resolved.protector, sealedSecret)).secret
     return persistIdentity(paths, resolved.protector, generateSecret(resolved, previous))
   })
 }
