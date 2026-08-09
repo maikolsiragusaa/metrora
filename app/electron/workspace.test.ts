@@ -142,6 +142,21 @@ describe('Workspace IPC bridge', () => {
     })
   })
 
+  it('uses a fresh retry runtime operation instead of rereading the failed state', async () => {
+    const retryRuntime = vi.fn(async () => readyState())
+    const handlers = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => ({ status: 'unavailable', reason: 'initialization-failed' }),
+      retryRuntime,
+      chooseExportPath: async () => null,
+    })
+
+    await expect(handlers['metrora:retryWorkspaceStatus']!()).resolves.toMatchObject({
+      ok: true,
+      value: { availability: 'ready' },
+    })
+    expect(retryRuntime).toHaveBeenCalledTimes(1)
+  })
+
   it('validates create input before invoking the private runtime', async () => {
     const privateRuntime = runtime()
     const handlers = createWorkspaceBridgeHandlers({

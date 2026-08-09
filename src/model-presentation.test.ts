@@ -37,6 +37,59 @@ function accounting(rows: ModelAccountingRow[]): ModelAccounting {
 }
 
 describe('model presentation projection', () => {
+  it('preserves known reasoning evidence while distinguishing complete, mixed, and unavailable coverage', () => {
+    const rows = [
+      row({ name: 'Separate reasoning model', provider: 'codex', reasoningTokens: 9 }),
+      row({
+        name: 'Shared reasoning model',
+        provider: 'codex',
+        canonicalIdentity: 'shared-reasoning-model',
+        sourceProviders: ['codex'],
+        reasoningTokens: 17,
+      }),
+      row({
+        name: 'Shared reasoning model',
+        provider: 'zed',
+        canonicalIdentity: 'shared-reasoning-model',
+        sourceProviders: ['zed'],
+        reasoningSemantics: 'unavailable',
+        reasoningTokens: undefined,
+      }),
+      row({
+        name: 'Mixed evidence model',
+        provider: 'mixed-route',
+        canonicalIdentity: 'mixed-evidence-model',
+        sourceProviders: ['codex', 'zed'],
+        reasoningSemantics: 'mixed',
+        reasoningTokens: 11,
+      }),
+      row({
+        name: 'Unavailable reasoning model',
+        provider: 'zed',
+        canonicalIdentity: 'unavailable-reasoning-model',
+        sourceProviders: ['zed'],
+        reasoningSemantics: 'unavailable',
+        reasoningTokens: undefined,
+      }),
+    ]
+
+    const projection = buildModelPresentation(accounting(rows))
+    const separate = projection.rows.find(value => value.name === 'Separate reasoning model')!
+    const shared = projection.rows.find(value => value.name === 'Shared reasoning model')!
+    const mixed = projection.rows.find(value => value.name === 'Mixed evidence model')!
+    const unavailable = projection.rows.find(value => value.name === 'Unavailable reasoning model')!
+
+    expect(separate).toMatchObject({ reasoningSemantics: 'separate', reasoningTokens: 9 })
+    expect(shared).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 17 })
+    expect(mixed).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 11 })
+    expect(unavailable.reasoningSemantics).toBe('unavailable')
+    expect(unavailable).not.toHaveProperty('reasoningTokens')
+    expect(projection.rows.reduce((sum, value) => sum + (value.reasoningTokens ?? 0), 0)).toBe(37)
+    for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+      expect(projection.rows.reduce((sum, value) => sum + value[key], 0)).toBe(rows.reduce((sum, value) => sum + value[key], 0))
+    }
+  })
+
   it('groups equivalent paid routes while preserving exact deliveries and free economics', () => {
     const rows = [
       row({ name: 'DeepSeek V4 Pro', provider: 'opencode-go', cost: 2, calls: 2, sourceProviders: ['opencode'] }),

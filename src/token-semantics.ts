@@ -20,9 +20,8 @@ export function providerHasSeparateReasoning(provider: string | undefined): bool
 }
 
 export function reasoningSemanticsForProviders(providers: readonly string[] | undefined, hasSeparateTokenEvidence = false): ReasoningTokenSemantics {
-  if (hasSeparateTokenEvidence) return 'separate'
   const values = [...new Set((providers ?? []).map(provider => provider.trim().toLowerCase()).filter(Boolean))]
-  const hasSeparate = values.some(providerHasSeparateReasoning)
+  const hasSeparate = hasSeparateTokenEvidence || values.some(providerHasSeparateReasoning)
   const hasUnavailable = values.some(provider => !providerHasSeparateReasoning(provider))
   if (hasSeparate && hasUnavailable) return 'mixed'
   if (hasSeparate) return 'separate'
@@ -34,8 +33,6 @@ export function mergeReasoningSemantics(
   right: ReasoningTokenSemantics,
 ): ReasoningTokenSemantics {
   if (left === right) return left
-  if (left === 'unavailable') return right
-  if (right === 'unavailable') return left
   return 'mixed'
 }
 
@@ -51,9 +48,11 @@ export function separatelyReportedReasoningTokens(
   reasoningTokens: number | undefined,
   semantics: ReasoningTokenSemantics | undefined,
 ): number {
-  // Mixed raw rows do not carry a safe per-source split. Only a row explicitly
-  // proven separate can contribute its numeric reasoning field here.
-  if (semantics !== 'separate') return 0
+  // A mixed row may retain a positive subtotal from the independently observed
+  // constituent(s). Preserve that evidence, while the mixed status tells the
+  // presentation that other constituents are unavailable or aggregate-output;
+  // no missing reasoning is estimated.
+  if (semantics !== 'separate' && semantics !== 'mixed') return 0
   return typeof reasoningTokens === 'number' && Number.isFinite(reasoningTokens) && reasoningTokens > 0
     ? reasoningTokens
     : 0

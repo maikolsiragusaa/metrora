@@ -6,9 +6,11 @@ import {
   getDesktopWorkspaceRuntimeState,
   initializeDesktopWorkspaceRuntimeState,
   installDesktopWorkspaceRuntimePromise,
+  retryDesktopWorkspaceRuntime,
   type DesktopLocalStateModule,
   type DesktopReviewedProductionModule,
   type DesktopWorkspaceRuntime,
+  type DesktopWorkspaceRuntimeState,
   type ElectronSafeStorageLike,
 } from './local-state'
 
@@ -189,6 +191,44 @@ describe('Electron private Workspace runtime host', () => {
     })).resolves.toEqual({ status: 'unsupported-platform', platform: 'linux' })
     expect(importModule).not.toHaveBeenCalled()
     expect(importReviewedProductionModule).not.toHaveBeenCalled()
+  })
+
+  it('retries a failed initialization with one new runtime attempt and never duplicates a live runtime', async () => {
+    const privateRuntime = runtime()
+    const initializer = vi.fn<() => Promise<DesktopWorkspaceRuntimeState>>()
+    initializer
+      .mockResolvedValueOnce({ status: 'unavailable', reason: 'initialization-failed' })
+      .mockResolvedValueOnce({
+        status: 'ready',
+        endpointId: 'endpoint_retry',
+        publicKeyFingerprintSha256: 'b'.repeat(64),
+        identityGeneration: 3,
+        masterKeyState: 'loaded',
+        backend: 'windows-dpapi',
+        runtime: privateRuntime,
+      })
+
+    installDesktopWorkspaceRuntimePromise(
+      Promise.resolve({ status: 'unavailable', reason: 'initialization-failed' }),
+      initializer,
+    )
+
+    const firstRetry = retryDesktopWorkspaceRuntime()
+    expect(retryDesktopWorkspaceRuntime()).toBe(firstRetry)
+    await expect(firstRetry).resolves.toEqual({ status: 'unavailable', reason: 'initialization-failed' })
+    await Promise.resolve()
+
+    const secondRetry = retryDesktopWorkspaceRuntime()
+    await expect(secondRetry).resolves.toMatchObject({ status: 'ready', runtime: privateRuntime })
+    expect(initializer).toHaveBeenCalledTimes(2)
+
+    const readyRetry = await retryDesktopWorkspaceRuntime()
+    expect(readyRetry).toMatchObject({ status: 'ready', runtime: privateRuntime })
+    expect(initializer).toHaveBeenCalledTimes(2)
+
+    await disposeDesktopWorkspaceRuntime()
+    await disposeDesktopWorkspaceRuntime()
+    expect(privateRuntime.dispose).toHaveBeenCalledTimes(1)
   })
 
   it('shares one initialization promise and disposes the private runtime once', async () => {

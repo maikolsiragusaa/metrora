@@ -21,6 +21,7 @@ export type DesktopWorkspaceAvailability =
 
 export type WorkspaceBridgeDeps = {
   getRuntimeState(): Promise<DesktopWorkspaceRuntimeState>
+  retryRuntime?: () => Promise<DesktopWorkspaceRuntimeState>
   chooseExportPath(suggestedName: string): Promise<string | null>
   now?: () => Date
 }
@@ -115,6 +116,33 @@ async function readyState(deps: WorkspaceBridgeDeps): Promise<
   return state.status === 'ready' ? state : unavailableError(state)
 }
 
+async function workspaceStatus(
+  getRuntimeState: () => Promise<DesktopWorkspaceRuntimeState>,
+): Promise<Envelope> {
+  try {
+    const state = await getRuntimeState()
+    if (state.status === 'unsupported-platform') {
+      return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
+    }
+    if (state.status === 'unavailable') {
+      return { ok: true, value: { availability: 'unavailable', reason: state.reason } satisfies DesktopWorkspaceAvailability }
+    }
+    const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceBootstrapRuntime>
+    if (typeof runtime.getBootstrapSnapshot === 'function') {
+      return {
+        ok: true,
+        value: readyAvailability(state, await runtime.getBootstrapSnapshot(), 'pending'),
+      }
+    }
+    return {
+      ok: true,
+      value: readyAvailability(state, await runtime.getSnapshot(), 'complete'),
+    }
+  } catch (error) {
+    return { ok: false, error: sanitizeActionError(error) }
+  }
+}
+
 function readyAvailability(
   state: Extract<DesktopWorkspaceRuntimeState, { status: 'ready' }>,
   snapshot: DesktopWorkspaceSnapshot,
@@ -130,30 +158,11 @@ function readyAvailability(
 
 export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record<string, WorkspaceHandler> {
   return {
-    'metrora:getWorkspaceStatus': async () => {
-      const state = await deps.getRuntimeState()
-      if (state.status === 'unsupported-platform') {
-        return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
-      }
-      if (state.status === 'unavailable') {
-        return { ok: true, value: { availability: 'unavailable', reason: state.reason } satisfies DesktopWorkspaceAvailability }
-      }
-      try {
-        const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceBootstrapRuntime>
-        if (typeof runtime.getBootstrapSnapshot === 'function') {
-          return {
-            ok: true,
-            value: readyAvailability(state, await runtime.getBootstrapSnapshot(), 'pending'),
-          }
-        }
-        return {
-          ok: true,
-          value: readyAvailability(state, await runtime.getSnapshot(), 'complete'),
-        }
-      } catch (error) {
-        return { ok: false, error: sanitizeActionError(error) }
-      }
-    },
+    'metrora:getWorkspaceStatus': async () => workspaceStatus(deps.getRuntimeState),
+
+    'metrora:retryWorkspaceStatus': async () => deps.retryRuntime
+      ? workspaceStatus(deps.retryRuntime)
+      : workspaceError('workspace-retry-unavailable', 'Workspace runtime retry is unavailable in this desktop host.'),
 
     'metrora:inspectWorkspaceStatus': async () => {
       const state = await deps.getRuntimeState()

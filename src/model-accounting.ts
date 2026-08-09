@@ -1,6 +1,6 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
-import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const TOP_MODELS_LIMIT = 20
 const SYNTHETIC_MODEL_NAME = '<synthetic>'
@@ -149,8 +149,9 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
     // reasoning field is populated only from parser contracts that expose
     // reasoning independently; a mixed row is therefore safe to retain when
     // it has positive evidence and includes at least one known separate-
-    // reasoning source. A positive field from an unknown-only source remains
-    // unavailable, so legacy/unclassified values are never guessed.
+    // reasoning source. Explicit mixed rows with a positive numeric field
+    // likewise retain that observed subtotal. Unknown-only legacy values
+    // remain unavailable, so no reasoning is guessed.
     const modelReasoningSemantics = model.reasoningSemantics
       ?? reasoningSemanticsForProviders(model.sourceProviders, hasSeparateTokenEvidence(model))
     acc.reasoningSemantics = acc.reasoningSemantics === undefined
@@ -158,6 +159,9 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       : combineReasoningSemantics([acc.reasoningSemantics, modelReasoningSemantics])
     if (hasTokenDetail && modelReasoningSemantics === 'separate') {
       acc.reasoningTokens = (acc.reasoningTokens ?? 0) + (model.reasoningTokens ?? 0)
+    } else if (hasTokenDetail) {
+      const observedReasoning = separatelyReportedReasoningTokens(model.reasoningTokens, modelReasoningSemantics)
+      if (observedReasoning > 0) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + observedReasoning
     }
     if (
       typeof model.activeDurationMs === 'number' && Number.isFinite(model.activeDurationMs) && model.activeDurationMs > 0

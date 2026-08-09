@@ -223,24 +223,65 @@ export type InitializeDesktopEndpointStateDeps = {
   importReviewedProductionModule?: (url: string) => Promise<DesktopReviewedProductionModule>
 }
 
-let workspaceRuntimePromise: Promise<DesktopWorkspaceRuntimeState> = Promise.resolve({
-  status: 'unavailable',
-  reason: 'initialization-failed',
-})
+type DesktopWorkspaceRuntimeInitializer = () => Promise<DesktopWorkspaceRuntimeState>
+
+function unavailableWorkspaceRuntimeState(): DesktopWorkspaceRuntimeState {
+  return { status: 'unavailable', reason: 'initialization-failed' }
+}
+
+let workspaceRuntimePromise: Promise<DesktopWorkspaceRuntimeState> = Promise.resolve(unavailableWorkspaceRuntimeState())
+let workspaceRuntimeInitializer: DesktopWorkspaceRuntimeInitializer | undefined
+let workspaceRuntimeRetryPromise: Promise<DesktopWorkspaceRuntimeState> | undefined
+const disposedWorkspaceRuntimes = new WeakSet<DesktopWorkspaceRuntime>()
 
 export function installDesktopWorkspaceRuntimePromise(
   promise: Promise<DesktopWorkspaceRuntimeState>,
+  initializer?: DesktopWorkspaceRuntimeInitializer,
 ): void {
-  workspaceRuntimePromise = promise
+  // Keep the IPC boundary bounded even if a caller supplies a rejected promise.
+  workspaceRuntimePromise = promise.catch(() => unavailableWorkspaceRuntimeState())
+  workspaceRuntimeInitializer = initializer
+  workspaceRuntimeRetryPromise = undefined
 }
 
 export function getDesktopWorkspaceRuntimeState(): Promise<DesktopWorkspaceRuntimeState> {
   return workspaceRuntimePromise
 }
 
+/**
+ * Retry only a failed initialization. A pending attempt is shared by all
+ * callers, and a live runtime is never replaced by a second live runtime.
+ */
+export function retryDesktopWorkspaceRuntime(): Promise<DesktopWorkspaceRuntimeState> {
+  if (workspaceRuntimeRetryPromise) return workspaceRuntimeRetryPromise
+
+  const current = workspaceRuntimePromise
+  const initializer = workspaceRuntimeInitializer
+  if (!initializer) return current
+
+  const retryPromise = (async () => {
+    const currentState = await current
+    if (currentState.status !== 'unavailable') return currentState
+    try {
+      return await initializer()
+    } catch {
+      return unavailableWorkspaceRuntimeState()
+    }
+  })()
+
+  workspaceRuntimeRetryPromise = retryPromise
+  workspaceRuntimePromise = retryPromise
+  void retryPromise.finally(() => {
+    if (workspaceRuntimeRetryPromise === retryPromise) workspaceRuntimeRetryPromise = undefined
+  })
+  return retryPromise
+}
+
 export async function disposeDesktopWorkspaceRuntime(): Promise<void> {
-  const state = await workspaceRuntimePromise.catch(() => undefined)
-  if (state?.status === 'ready') state.runtime.dispose()
+  const state = await workspaceRuntimePromise
+  if (state.status !== 'ready' || disposedWorkspaceRuntimes.has(state.runtime)) return
+  disposedWorkspaceRuntimes.add(state.runtime)
+  state.runtime.dispose()
 }
 
 export function desktopVaultBackend(platform: NodeJS.Platform): 'windows-dpapi' | 'macos-keychain' | undefined {
@@ -265,7 +306,7 @@ export function desktopLocalStateModulePath(
   deps: Pick<InitializeDesktopEndpointStateDeps, 'isPackaged' | 'resourcesPath' | 'appPath'>,
 ): string {
   return deps.isPackaged
-    ? join(deps.resourcesPath, 'cli', 'dist', 'desktop-local-state.js')
+    ? join(deps.resourcesPath, 'cli.asar', 'dist', 'desktop-local-state.js')
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-local-state.js')
 }
 
@@ -273,7 +314,7 @@ export function desktopReviewedProductionModulePath(
   deps: Pick<InitializeDesktopEndpointStateDeps, 'isPackaged' | 'resourcesPath' | 'appPath'>,
 ): string {
   return deps.isPackaged
-    ? join(deps.resourcesPath, 'cli', 'dist', 'desktop-reviewed-production.js')
+    ? join(deps.resourcesPath, 'cli.asar', 'dist', 'desktop-reviewed-production.js')
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-reviewed-production.js')
 }
 

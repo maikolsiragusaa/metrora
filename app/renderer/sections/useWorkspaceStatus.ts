@@ -36,19 +36,23 @@ export function useWorkspaceStatus(bridge: Partial<WorkspaceBridge>) {
     })
   }, [])
 
-  const loadBootstrap = useCallback(async () => {
+  const loadStatus = useCallback(async (retry: boolean) => {
     setAction('reload')
     setStatusError(false)
     setInspectionError(false)
     try {
-      if (typeof bridge.getWorkspaceStatus !== 'function') throw new Error('workspace bridge unavailable')
-      setAvailability(await bridge.getWorkspaceStatus())
+      const method = retry ? bridge.retryWorkspaceStatus : bridge.getWorkspaceStatus
+      if (typeof method !== 'function') throw new Error('workspace bridge unavailable')
+      setAvailability(await method.call(bridge))
     } catch {
       setStatusError(true)
     } finally {
       setAction(null)
     }
   }, [bridge])
+
+  const loadBootstrap = useCallback(() => loadStatus(false), [loadStatus])
+  const retryStatus = useCallback(() => loadStatus(true), [loadStatus])
 
   const reload = useCallback(async () => {
     setAction('reload')
@@ -104,6 +108,7 @@ export function useWorkspaceStatus(bridge: Partial<WorkspaceBridge>) {
     action,
     setAction,
     loadBootstrap,
+    retryStatus,
     reload,
   }
 }

@@ -48,6 +48,20 @@ describe('shared usage metrics', () => {
     expect(totalTokenCount({ ...usage, reasoningSemantics: 'aggregate-output' })).toBe(610)
   })
 
+  it('keeps the observed mixed subtotal in Total and Cost / 1M without estimating the missing part', () => {
+    const usage = {
+      inputTokens: 100,
+      outputTokens: 200,
+      reasoningTokens: 50,
+      cacheReadTokens: 300,
+      cacheWriteTokens: 10,
+      reasoningSemantics: 'mixed' as const,
+    }
+    expect(totalTokenCount(usage)).toBe(660)
+    expect(costPerMillionTotal(6.6, usage)).toBe(10_000)
+    expect(totalTokenCount({ ...usage, reasoningTokens: undefined })).toBe(610)
+  })
+
   it('returns unavailable instead of infinity when cache reuse has no uncached input denominator', () => {
     expect(cacheReuseMultiple(0, 20_000)).toBeNull()
     expect(formatReuseMultiple(null)).toBe('—')

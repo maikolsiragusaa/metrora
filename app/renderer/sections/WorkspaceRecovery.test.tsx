@@ -8,6 +8,7 @@ import { WorkspaceContent } from './Workspace'
 
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
+  retryWorkspaceStatus: vi.fn(),
   inspectWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
@@ -128,6 +129,7 @@ describe('Workspace recovery controls', () => {
     for (const mock of Object.values(bridge)) mock.mockReset()
     showToast.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(availability())
+    bridge.retryWorkspaceStatus.mockResolvedValue(availability())
     bridge.inspectWorkspaceStatus.mockResolvedValue(availability())
   })
 

@@ -9,6 +9,7 @@ import { WorkspaceContent, workspaceUsageFromOverview } from './Workspace'
 
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
+  retryWorkspaceStatus: vi.fn(),
   inspectWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
@@ -134,6 +135,7 @@ describe('Workspace desktop view', () => {
   beforeEach(() => {
     setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     bridge.getWorkspaceStatus.mockReset()
+    bridge.retryWorkspaceStatus.mockReset()
     bridge.inspectWorkspaceStatus.mockReset()
     bridge.createWorkspace.mockReset()
     bridge.pauseWorkspaceProduction.mockReset()
@@ -143,6 +145,7 @@ describe('Workspace desktop view', () => {
     bridge.createWorkspaceBatch.mockReset()
     bridge.exportWorkspaceEvidence.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability())
+    bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())
     bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability())
   })
 
@@ -364,5 +367,17 @@ describe('Workspace desktop view', () => {
     expect(screen.queryByRole('button', { name: 'Create local Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Produce reviewed measurements' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Export signed data' })).not.toBeInTheDocument()
+  })
+
+  it('uses a new runtime initialization for Retry status after a failed bootstrap', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
+    bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days Â· All providers" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry status' }))
+
+    await waitFor(() => expect(bridge.retryWorkspaceStatus).toHaveBeenCalledTimes(1))
+    expect(bridge.getWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
   })
 })

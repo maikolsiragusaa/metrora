@@ -148,6 +148,7 @@ export type DesktopWorkspaceExportResult =
 
 export interface WorkspaceBridge {
   getWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
+  retryWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
   inspectWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
   createWorkspace(input: {
     displayName: string

@@ -181,6 +181,8 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
     const rowSemantics = row.reasoningSemantics ?? reasoningSemanticsForProviders(row.sourceProviders)
     return sum + separatelyReportedReasoningTokens(row.reasoningTokens, rowSemantics)
   }, 0)
+  const hasReasoningEvidence = reasoningSemantics === 'separate'
+    || (reasoningSemantics === 'mixed' && reasoningTokens > 0)
   const activeDurationMs = rows.reduce((sum, row) => sum + (row.activeDurationMs ?? 0), 0)
   const activeGeneratedTokens = rows.reduce((sum, row) => sum + (row.activeGeneratedTokens ?? 0), 0)
   const estimatedCostUSD = rows.reduce((sum, row) => sum + (row.estimatedCostUSD ?? 0), 0)
@@ -198,7 +200,7 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
     calls: rows.reduce((sum, row) => sum + row.calls, 0),
     inputTokens: rows.reduce((sum, row) => sum + row.inputTokens, 0),
     outputTokens: rows.reduce((sum, row) => sum + row.outputTokens, 0),
-    ...(reasoningSemantics !== 'unavailable' ? { reasoningTokens } : {}),
+    ...(hasReasoningEvidence ? { reasoningTokens } : {}),
     cacheReadTokens: rows.reduce((sum, row) => sum + row.cacheReadTokens, 0),
     cacheWriteTokens: rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0),
     tokenDetail,

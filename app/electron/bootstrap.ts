@@ -8,10 +8,11 @@ import {
 import { registerWorkspaceHandlers } from './workspace-register'
 
 // Install the promise before loading the inherited desktop main module. IPC
-// handlers can therefore await the same one-time OS-vault initialization even
-// when the window is created before it settles. Failure never opens a plaintext
-// fallback and never blocks the existing local analytics dashboard.
-const workspaceRuntimePromise = app.whenReady().then(() => initializeDesktopWorkspaceRuntimeState({
+// handlers can therefore await the same OS-vault initialization even when the
+// window is created before it settles. A failed attempt can be replaced by the
+// explicit status retry without opening a plaintext fallback or blocking the
+// existing local analytics dashboard.
+const initializeWorkspaceRuntime = () => app.whenReady().then(() => initializeDesktopWorkspaceRuntimeState({
   platform: process.platform,
   arch: process.arch,
   appVersion: app.getVersion(),
@@ -21,7 +22,8 @@ const workspaceRuntimePromise = app.whenReady().then(() => initializeDesktopWork
   userDataPath: app.getPath('userData'),
   safeStorage,
 }))
-installDesktopWorkspaceRuntimePromise(workspaceRuntimePromise)
+const workspaceRuntimePromise = initializeWorkspaceRuntime()
+installDesktopWorkspaceRuntimePromise(workspaceRuntimePromise, initializeWorkspaceRuntime)
 registerWorkspaceHandlers()
 
 void workspaceRuntimePromise.then(state => {

@@ -18,6 +18,7 @@ vi.mock('../lib/toast', () => ({ showToast }))
 
 const bridge = {
   getWorkspaceStatus: vi.fn<WorkspaceBridge['getWorkspaceStatus']>(),
+  retryWorkspaceStatus: vi.fn<WorkspaceBridge['retryWorkspaceStatus']>(),
   inspectWorkspaceStatus: vi.fn<WorkspaceBridge['inspectWorkspaceStatus']>(),
   createWorkspace: vi.fn<WorkspaceBridge['createWorkspace']>(),
   pauseWorkspaceProduction: vi.fn<WorkspaceBridge['pauseWorkspaceProduction']>(),
@@ -123,6 +124,7 @@ describe('useWorkspaceController', () => {
     showToast.mockReset()
     for (const method of Object.values(bridge)) method.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(ready())
+    bridge.retryWorkspaceStatus.mockResolvedValue(ready())
     bridge.inspectWorkspaceStatus.mockResolvedValue(ready())
   })
 
@@ -152,6 +154,19 @@ describe('useWorkspaceController', () => {
 
     resolveStatus(ready())
     await waitFor(() => expect(result.current.busy).toBe(false))
+  })
+
+  it('uses the retry runtime operation after an initialization failure', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
+    bridge.retryWorkspaceStatus.mockResolvedValue(ready())
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.availability?.availability).toBe('unavailable'))
+
+    await act(async () => { await result.current.retryStatus() })
+
+    expect(bridge.getWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(bridge.retryWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(result.current.availability).toEqual(ready())
   })
 
   it('trims creation input, accepts the returned snapshot and clears bounded result state', async () => {

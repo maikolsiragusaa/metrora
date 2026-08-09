@@ -53,6 +53,26 @@ function tokenTotal(row: DurableModelRow): number {
   return totalTokenCount(row)
 }
 
+function reasoningDisplay(row: Pick<DurableModelAccountingRow, 'reasoningSemantics' | 'reasoningTokens'>): string {
+  if (row.reasoningSemantics === 'separate') return formatCompact(row.reasoningTokens ?? 0)
+  if (row.reasoningSemantics === 'mixed' && (row.reasoningTokens ?? 0) > 0) {
+    return `≥${formatCompact(row.reasoningTokens!)}`
+  }
+  return '—'
+}
+
+function reasoningTitle(row: Pick<DurableModelAccountingRow, 'reasoningSemantics' | 'reasoningTokens'>): string {
+  if (row.reasoningSemantics === 'separate') return 'Separately reported reasoning tokens included in Total.'
+  if (row.reasoningSemantics === 'aggregate-output') return 'Reasoning is already included in Output; it is not added separately.'
+  if (row.reasoningSemantics === 'mixed' && (row.reasoningTokens ?? 0) > 0) {
+    return 'At least the shown reasoning tokens were separately observed and included in Total; other delivery reasoning is unavailable or already aggregated.'
+  }
+  if (row.reasoningSemantics === 'mixed') {
+    return 'Some delivery reasoning is unavailable or already aggregated; no separately reported reasoning evidence was retained.'
+  }
+  return 'Separate reasoning evidence is unavailable; it is not guessed.'
+}
+
 function modelCacheReuse(row: DurableModelRow): number | null {
   return row.tokenDetail ? cacheReuseMultiple(row.inputTokens, row.cacheReadTokens) : null
 }
@@ -184,9 +204,7 @@ export function DurableModelsTable({
             const providerLabel = model.providers.length > 0
               ? model.providers.join(', ')
               : model.sourceProviders.length > 0 ? model.sourceProviders.join(', ') : undefined
-            const reasoning = model.reasoningSemantics === 'separate' || model.reasoningSemantics === 'mixed'
-              ? formatCompact(model.reasoningTokens ?? 0)
-              : '—'
+            const reasoning = reasoningDisplay(model)
             const expandable = model.deliveryRows.length > 1 || model.deliveryStatus === 'partial'
             const isExpanded = expanded.has(model.presentationIdentity)
             return (
@@ -205,7 +223,7 @@ export function DurableModelsTable({
                     </span>
                   </td>
                   <td>{fmtInt(model.calls)}</td>
-                  <td title={model.reasoningSemantics === 'unavailable' ? 'Separate reasoning evidence is unavailable; it is not guessed.' : 'Separately reported reasoning tokens included in Total.'}>{model.tokenDetail ? reasoning : '—'}</td>
+                  <td title={reasoningTitle(model)}>{model.tokenDetail ? reasoning : '—'}</td>
                   <td>{model.tokenDetail ? formatCompact(model.inputTokens) : '—'}</td>
                   <td>{model.tokenDetail ? formatCompact(model.outputTokens) : '—'}</td>
                   <td>{model.tokenDetail ? formatCompact(model.cacheReadTokens) : '—'}</td>
@@ -239,7 +257,7 @@ function DeliveryBreakdown({ model }: { model: DurableModelRow }) {
           const usage = { ...delivery, reasoningSemantics: semantics }
           const total = delivery.tokenDetail ? totalTokenCount(usage) : null
           const unit = delivery.tokenDetail ? costPerMillionTotal(delivery.cost, usage) : null
-          const reasoning = semantics === 'separate' ? formatCompact(delivery.reasoningTokens ?? 0) : '—'
+          const reasoning = reasoningDisplay({ reasoningSemantics: semantics, reasoningTokens: delivery.reasoningTokens })
           const generated = delivery.activeDurationMs && delivery.activeGeneratedTokens
             ? delivery.activeGeneratedTokens / (delivery.activeDurationMs / 1000)
             : null
@@ -251,7 +269,7 @@ function DeliveryBreakdown({ model }: { model: DurableModelRow }) {
             <td>{fmtInt(delivery.calls)}</td>
             <td>{delivery.tokenDetail ? formatCompact(delivery.inputTokens) : '—'}</td>
             <td>{delivery.tokenDetail ? formatCompact(delivery.outputTokens) : '—'}</td>
-            <td>{delivery.tokenDetail ? reasoning : '—'}</td>
+            <td title={reasoningTitle({ reasoningSemantics: semantics, reasoningTokens: delivery.reasoningTokens })}>{delivery.tokenDetail ? reasoning : '—'}</td>
             <td>{delivery.tokenDetail ? formatCompact(delivery.cacheReadTokens) : '—'}</td>
             <td>{delivery.tokenDetail ? formatCompact(delivery.cacheWriteTokens) : '—'}</td>
             <td>{total == null ? '—' : formatCompact(total)}</td>

@@ -51,7 +51,7 @@ export function WorkspaceContent({
     lastRecovery,
     setWorkspaceName,
     setEndpointName,
-    loadBootstrap,
+    retryStatus,
     reload,
     createWorkspace,
     produceMeasurements,
@@ -67,7 +67,7 @@ export function WorkspaceContent({
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
           <EmptyNote>The secure Workspace runtime did not return a public status. Ordinary local analytics remain available.</EmptyNote>
-          <button type="button" className="btn btn-s" onClick={() => void loadBootstrap()} disabled={action !== null}>Retry status</button>
+          <button type="button" className="btn btn-s" onClick={() => void retryStatus()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>
     )
@@ -94,7 +94,7 @@ export function WorkspaceContent({
       <Panel title="Workspace unavailable">
         <div className="workspace-empty">
           <EmptyNote>The operating-system vault is unavailable, so Metrora will not open a plaintext fallback.</EmptyNote>
-          <button type="button" className="btn btn-s" onClick={() => void loadBootstrap()} disabled={action !== null}>Retry status</button>
+          <button type="button" className="btn btn-s" onClick={() => void retryStatus()} disabled={action !== null}>Retry status</button>
         </div>
       </Panel>
     )

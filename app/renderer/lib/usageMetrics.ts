@@ -18,8 +18,9 @@ export function observedTokenTotal(usage: UsageTokenTotals): number {
 }
 
 /**
- * Safe user-facing total. Reasoning is added only when the source proved it is
- * separately reported; aggregate-output and unavailable sources are not guessed.
+ * Safe user-facing total. Reasoning is added only from separately reported
+ * evidence. For mixed sources this is a known subtotal; unavailable or
+ * aggregate-output portions are not guessed.
  */
 export function totalTokenCount(usage: UsageTokenTotals): number {
   const reasoning = usage.reasoningSemantics === 'separate' || usage.reasoningSemantics === 'mixed'

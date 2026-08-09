@@ -305,12 +305,12 @@ describe('model accounting payload', () => {
     expect(accounting.rows).toHaveLength(1)
     expect(accounting.rows[0]).toMatchObject({
       reasoningTokens: 57_133,
-      reasoningSemantics: 'separate',
+      reasoningSemantics: 'mixed',
     })
     expect(presentation.rows).toHaveLength(1)
     expect(presentation.rows[0]).toMatchObject({
       reasoningTokens: 57_133,
-      reasoningSemantics: 'separate',
+      reasoningSemantics: 'mixed',
       deliveryRows: [accounting.rows[0]],
     })
     expect(presentation.rows.reduce((sum, row) => sum + (row.reasoningTokens ?? 0), 0)).toBe(57_133)

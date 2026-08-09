@@ -49,6 +49,7 @@ const bridge = {
   cliStatus: () => invoke('metrora:cliStatus'),
 
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
+  retryWorkspaceStatus: () => invoke('metrora:retryWorkspaceStatus'),
   inspectWorkspaceStatus: () => invoke('metrora:inspectWorkspaceStatus'),
   createWorkspace: (input: CreateWorkspaceInput) => invoke('metrora:createWorkspace', input),
   pauseWorkspaceProduction: () => invoke('metrora:pauseWorkspaceProduction'),
