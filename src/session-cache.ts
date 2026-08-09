@@ -267,7 +267,6 @@ function getCacheDir(): string {
 function getCachePath(): string {
   return join(getCacheDir(), CACHE_FILE)
 }
-
 function getLegacyCachePath(): string {
   return join(getCacheDir(), LEGACY_CACHE_FILE)
 }
