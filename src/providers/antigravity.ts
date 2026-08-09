@@ -14,12 +14,11 @@ import {
   buildCallsFromGeneratorMetadata,
   getCanonicalModelId,
   normalizePricingModel,
-  reconcileAntigravityStatusLineCalls,
   type GeneratorMetadata,
   type ModelMap,
 } from './antigravity-accounting.js'
 export { buildCallsFromGeneratorMetadata, reconcileAntigravityStatusLineCalls } from './antigravity-accounting.js'
-export type { GeneratorMetadata } from './antigravity-accounting.js'
+export type { AntigravityCacheEnrichment, GeneratorMetadata } from './antigravity-accounting.js'
 type AntigravityConversationRoot = {
   dir: string
   project: string
@@ -1086,7 +1085,8 @@ async function parseStatusLineCalls(source: SessionSource, seenKeys: Set<string>
     }
     const directCalls = cache.cascades[conversationId]?.calls ?? []
     if (directCalls.length === 0) continue
-    reconciled.push(...reconcileAntigravityStatusLineCalls(directCalls, calls))
+    // Direct RPC generations are authoritative; Status Line deltas cannot enter
+    // normal calls without inflating API/model cardinality or allocating tokens.
   }
   return reconciled.filter(call => !seenKeys.has(call.deduplicationKey))
 }

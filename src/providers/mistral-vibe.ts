@@ -309,8 +309,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       const stats = metadata.stats ?? {}
       const inputTokens = safeNumber(stats.session_prompt_tokens)
       const outputTokens = safeNumber(stats.session_completion_tokens)
-      const hasExplicitCost = typeof stats.session_cost === 'number' && Number.isFinite(stats.session_cost)
-      if (inputTokens === 0 && outputTokens === 0 && !hasExplicitCost) return
+      const hasPositiveExplicitCost = safeNumber(stats.session_cost) > 0
+      if (inputTokens === 0 && outputTokens === 0 && !hasPositiveExplicitCost) return
 
       const sessionId = metadata.session_id || basename(source.path)
       const messages = await readMessages(messagesPath)

@@ -27,6 +27,8 @@ function session(opts: {
   input?: number
   output?: number
   totalCost?: number | null
+  cacheRead?: number
+  cacheWrite?: number
   updatedAt?: string
 } = {}) {
   return JSON.stringify({
@@ -42,6 +44,8 @@ function session(opts: {
     total_input_tokens: opts.input ?? 34119,
     total_output_tokens: opts.output ?? 961,
     total_cost: Object.hasOwn(opts, 'totalCost') ? opts.totalCost : 0.015677835,
+    ...(Object.hasOwn(opts, 'cacheRead') ? { total_cached_input_tokens: opts.cacheRead } : {}),
+    ...(Object.hasOwn(opts, 'cacheWrite') ? { total_cache_creation_input_tokens: opts.cacheWrite } : {}),
     total_estimated_tokens: 446,
     model: opts.model ?? 'deepseek/deepseek-v4-pro',
     provider: opts.provider ?? 'openrouter',
@@ -115,23 +119,38 @@ describe('zerostack provider - parsing', () => {
     expect(cachedCallToApiCall(cached).costAssignment.kind).not.toBe('metered')
   })
 
-  it('skips sessions with zero tokens', async () => {
-    const path = await write('empty.json', session({ input: 0, output: 0, totalCost: null }))
+  it('ignores zero-token sessions with zero total cost', async () => {
+    const path = await write('empty.json', session({ input: 0, output: 0, totalCost: 0 }))
     expect(await parse(path)).toHaveLength(0)
   })
 
-  it('retains an explicit cost-only session, including zero cost', async () => {
+  it('preserves real token usage when total cost is zero', async () => {
+    const path = await write('free-usage.json', session({ input: 12, output: 8, totalCost: 0 }))
+    const calls = await parse(path)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ inputTokens: 12, outputTokens: 8, costIsEstimated: true })
+  })
+
+  it('retains positive explicit cost-only evidence', async () => {
     const paidPath = await write('cost-only.json', session({ input: 0, output: 0, totalCost: 0.5 }))
-    const freePath = await write('free-only.json', session({ input: 0, output: 0, totalCost: 0 }))
 
     const paid = await parse(paidPath)
-    const free = await parse(freePath)
     expect(paid).toHaveLength(1)
     expect(paid[0]!.costUSD).toBe(0.5)
     expect(paid[0]!.costIsEstimated).toBe(true)
-    expect(free).toHaveLength(1)
-    expect(free[0]!.costUSD).toBe(0)
-    expect(free[0]!.costIsEstimated).toBe(true)
+  })
+
+  it('characterizes Zerostack cache counters without importing schema-only fields', async () => {
+    const path = await write('cache-fields.json', session({ cacheRead: 1234, cacheWrite: 567 }))
+    const calls = await parse(path)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      inputTokens: 34119,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    })
   })
 
   it('deduplicates across repeated parses', async () => {

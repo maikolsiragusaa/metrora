@@ -82,8 +82,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
       const input = session.total_input_tokens ?? 0
       const output = session.total_output_tokens ?? 0
-      const hasSourceCost = typeof session.total_cost === 'number' && Number.isFinite(session.total_cost)
-      if (input === 0 && output === 0 && !hasSourceCost) return
+      const hasPositiveSourceCost = typeof session.total_cost === 'number' && Number.isFinite(session.total_cost) && session.total_cost > 0
+      if (input === 0 && output === 0 && !hasPositiveSourceCost) return
 
       const timestamp = session.updated_at ?? session.created_at ?? ''
       const sessionId = session.id ?? basename(source.path, '.json')
@@ -94,7 +94,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       const model = session.model ?? ''
       const modelProvider = normalizeExplicitModelProvider(session.provider)
 
-      const costUSD = hasSourceCost
+      const costUSD = hasPositiveSourceCost
         ? session.total_cost!
         : calculateCost(model, input, output, 0, 0, 0)
 

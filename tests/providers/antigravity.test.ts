@@ -509,7 +509,7 @@ describe('antigravity provider helpers', () => {
     }
   })
 
-  it('adds only an aggregate Status Line cache complement for the same direct population', () => {
+  it('keeps Status Line cache enrichment out of API and model call cardinality', () => {
     const direct: ParsedProviderCall[] = [{
       provider: 'antigravity', model: 'gemini-3.5-flash-high', modelProvider: 'google',
       inputTokens: 100, outputTokens: 40, reasoningTokens: 10,
@@ -525,17 +525,52 @@ describe('antigravity provider helpers', () => {
       timestamp: '2026-08-01T00:01:00.000Z', project: 'antigravity-cli',
     }]
 
-    const complement = reconcileAntigravityStatusLineCalls(direct, status)
-    expect(complement).toHaveLength(1)
-    expect(complement[0]).toMatchObject({
+    const enrichment = reconcileAntigravityStatusLineCalls(direct, status)
+    expect(enrichment).toEqual([{
       model: 'gemini-3.5-flash-high', modelProvider: 'google',
-      inputTokens: 0, outputTokens: 0, reasoningTokens: 0,
       cacheCreationInputTokens: 5, cacheReadInputTokens: 10,
-      sessionId: 'conversation', project: 'antigravity-cli',
+    }])
+    expect(enrichment[0]).not.toHaveProperty('inputTokens')
+    expect(enrichment[0]).not.toHaveProperty('outputTokens')
+    expect(enrichment[0]).not.toHaveProperty('costUSD')
+    expect(direct).toHaveLength(1)
+    expect(direct[0]).toMatchObject({
+      model: 'gemini-3.5-flash-high', inputTokens: 100, outputTokens: 40,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 20,
     })
     expect(reconcileAntigravityStatusLineCalls([
       { ...direct[0]!, cacheCreationInputTokens: 5, cacheReadInputTokens: 30 },
     ], status)).toEqual([])
+  })
+
+  it('does not cross-match mixed Gemini high, medium, low, or agent identities', () => {
+    const variants = [
+      { directModel: 'gemini-3.5-flash-high', statusModel: 'Gemini 3.5 Flash (High)', input: 100, output: 40, read: 20 },
+      { directModel: 'gemini-3.5-flash-medium', statusModel: 'Gemini 3.5 Flash (Medium)', input: 200, output: 50, read: 30 },
+      { directModel: 'gemini-3.5-flash-low', statusModel: 'Gemini 3.5 Flash (Low)', input: 300, output: 60, read: 40 },
+      { directModel: 'gemini-3-flash-agent', statusModel: 'Gemini 3 Flash (Agent)', input: 400, output: 70, read: 50 },
+    ]
+    const direct: ParsedProviderCall[] = variants.map((variant, index) => ({
+      provider: 'antigravity', model: variant.directModel, modelProvider: 'google',
+      inputTokens: variant.input, outputTokens: variant.output, reasoningTokens: 0,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: variant.read, cachedInputTokens: 0,
+      webSearchRequests: 0, costUSD: 1, tools: [], bashCommands: [],
+      timestamp: `2026-08-01T00:0${index}:00.000Z`, speed: 'standard',
+      deduplicationKey: `antigravity:conversation:response-${index}`, userMessage: '', sessionId: 'conversation',
+    }))
+    const status: ParsedProviderCall[] = variants.map((variant, index) => ({
+      ...direct[index]!, model: variant.statusModel, modelProvider: undefined,
+      cacheCreationInputTokens: 5, cacheReadInputTokens: variant.read + 10,
+      deduplicationKey: `antigravity-statusline:conversation:${index}:signature`,
+      timestamp: `2026-08-01T01:0${index}:00.000Z`, project: 'antigravity-cli',
+    }))
+
+    expect(reconcileAntigravityStatusLineCalls(direct, status)).toEqual(
+      variants.map(variant => ({
+        model: variant.directModel, modelProvider: 'google',
+        cacheCreationInputTokens: 5, cacheReadInputTokens: 10,
+      })),
+    )
   })
 
   it('skips singleton statusLine snapshots and deltas monotonic usage', async () => {

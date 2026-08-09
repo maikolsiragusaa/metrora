@@ -291,10 +291,11 @@ describe('mistral-vibe provider - parsing', () => {
     expect(second).toHaveLength(0)
   })
 
-  it('skips sessions without cumulative token usage', async () => {
+  it('ignores zero-token sessions with zero derived cost', async () => {
     const sessionDir = await writeSession('session_20260511_100000_empty', metadata({
       input: 0,
       output: 0,
+      sessionCost: 0,
     }))
 
     const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))

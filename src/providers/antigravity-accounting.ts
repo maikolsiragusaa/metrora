@@ -30,6 +30,13 @@ export type GeneratorMetadata = {
   }
 }
 
+export type AntigravityCacheEnrichment = {
+  model: string
+  modelProvider?: string
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+}
+
 const MODEL_PLACEHOLDER_PATTERN = /^MODEL_PLACEHOLDER_/
 const PRICING_ALIASES: Record<string, string> = { 'gemini-pro': 'gemini-3.1-pro' }
 
@@ -40,24 +47,30 @@ export function dropPlaceholderModelId(model: string): string {
 export function getCanonicalModelId(key: string, displayName?: string): string {
   if (displayName) {
     const lower = displayName.toLowerCase()
+    const hasExplicitTier = /high|medium|low|image|lite/.test(lower)
+    const isAgent = lower.includes('agent') || (/-agent$/i.test(key) && !hasExplicitTier)
     if (lower.includes('3.5 flash')) {
+      if (isAgent) return 'gemini-3.5-flash-agent'
       if (lower.includes('high')) return 'gemini-3.5-flash-high'
       if (lower.includes('medium')) return 'gemini-3.5-flash-medium'
       if (lower.includes('low')) return 'gemini-3.5-flash-low'
       return 'gemini-3.5-flash'
     }
     if (lower.includes('3.1 pro')) {
+      if (isAgent) return 'gemini-3.1-pro-agent'
       if (lower.includes('high')) return 'gemini-3.1-pro-high'
+      if (lower.includes('medium')) return 'gemini-3.1-pro-medium'
       if (lower.includes('low')) return 'gemini-3.1-pro-low'
       return 'gemini-3.1-pro'
     }
     if (lower.includes('3.1 flash')) {
+      if (isAgent) return 'gemini-3.1-flash-agent'
       if (lower.includes('image')) return 'gemini-3.1-flash-image'
       if (lower.includes('lite')) return 'gemini-3.1-flash-lite'
       return 'gemini-3.1-flash'
     }
-    if (lower.includes('3 flash')) return 'gemini-3-flash'
-    if (lower.includes('3 pro')) return 'gemini-3-pro'
+    if (lower.includes('3 flash')) return isAgent ? 'gemini-3-flash-agent' : 'gemini-3-flash'
+    if (lower.includes('3 pro')) return isAgent ? 'gemini-3-pro-agent' : 'gemini-3-pro'
   }
   return dropPlaceholderModelId(key)
 }
@@ -140,22 +153,24 @@ export function buildCallsFromGeneratorMetadata(
 }
 
 function modelKey(model: string): string {
-  return normalizePricingModel(getCanonicalModelId(model, model)).toLowerCase()
+  return getCanonicalModelId(model, model).toLowerCase()
 }
 
-/** Status Line has no response id, so only cache-only aggregate complements
- * are emitted for populations whose conversation/model input and output match. */
+/**
+ * Status Line has no response id. Keep any matched cache delta as evidence only;
+ * the normal call pipeline has no safe aggregate-enrichment representation.
+ */
 export function reconcileAntigravityStatusLineCalls(
   directCalls: readonly ParsedProviderCall[],
   statusLineCalls: readonly ParsedProviderCall[],
-): ParsedProviderCall[] {
-  if (directCalls.length === 0) return [...statusLineCalls]
+): AntigravityCacheEnrichment[] {
+  if (directCalls.length === 0) return []
   const directByModel = new Map<string, ParsedProviderCall[]>()
   const statusByModel = new Map<string, ParsedProviderCall[]>()
   for (const call of directCalls) directByModel.set(modelKey(call.model), [...(directByModel.get(modelKey(call.model)) ?? []), call])
   for (const call of statusLineCalls) statusByModel.set(modelKey(call.model), [...(statusByModel.get(modelKey(call.model)) ?? []), call])
 
-  const complements: ParsedProviderCall[] = []
+  const enrichments: AntigravityCacheEnrichment[] = []
   for (const [key, statusCalls] of statusByModel) {
     const direct = directByModel.get(key) ?? []
     if (direct.length === 0) continue
@@ -170,18 +185,11 @@ export function reconcileAntigravityStatusLineCalls(
     if (cacheRead === 0 && cacheWrite === 0) continue
 
     const exemplar = direct[0]!
-    const lastStatus = statusCalls.at(-1)!
     const modelProvider = direct.every(call => call.modelProvider === exemplar.modelProvider) ? exemplar.modelProvider : undefined
-    complements.push({
-      provider: 'antigravity', model: exemplar.model, ...(modelProvider ? { modelProvider } : {}),
-      inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: cacheWrite,
-      cacheReadInputTokens: cacheRead, cachedInputTokens: 0, reasoningTokens: 0,
-      webSearchRequests: 0,
-      costUSD: calculateCost(normalizePricingModel(exemplar.model), 0, 0, cacheWrite, cacheRead, 0),
-      tools: [], bashCommands: [], timestamp: lastStatus.timestamp, speed: 'standard',
-      deduplicationKey: `antigravity-statusline-complement:${exemplar.sessionId}:${key}:${cacheRead}:${cacheWrite}`,
-      userMessage: '', sessionId: exemplar.sessionId, project: lastStatus.project,
+    enrichments.push({
+      model: exemplar.model, ...(modelProvider ? { modelProvider } : {}),
+      cacheCreationInputTokens: cacheWrite, cacheReadInputTokens: cacheRead,
     })
   }
-  return complements
+  return enrichments
 }
