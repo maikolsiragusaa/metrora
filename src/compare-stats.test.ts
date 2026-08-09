@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aggregateModelStats, computeCategoryComparison, selfCorrectionsForPresentation } from './compare-stats.js'
+import { aggregateModelStats, aggregatePresentationModelStats, computeCategoryComparison, selfCorrectionsForPresentation } from './compare-stats.js'
 import type { ProjectSummary } from './types.js'
 
 function projects(): ProjectSummary[] {
@@ -16,9 +16,15 @@ function projects(): ProjectSummary[] {
 
 describe('Compare presentation identity', () => {
   it('compares one family row when the same model arrives under different raw labels', () => {
-    const rows = aggregateModelStats(projects())
+    const rows = aggregatePresentationModelStats(projects())
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ model: 'GPT-5.6 Luna', calls: 2, cost: 5 })
+  })
+
+  it('keeps raw operational model ids distinct from the presentation projection', () => {
+    const rows = aggregateModelStats(projects())
+    expect(rows.map(row => row.model)).toEqual(['gpt-5.6-luna', 'GPT-5.6 Luna'])
+    expect(rows.map(row => row.calls)).toEqual([1, 1])
   })
 
   it('matches category evidence against a presentation identity', () => {
@@ -28,7 +34,7 @@ describe('Compare presentation identity', () => {
   })
 
   it('sums self-correction evidence across raw labels in one family', () => {
-    const identity = aggregateModelStats(projects())[0]!.presentationIdentity
+    const identity = aggregatePresentationModelStats(projects())[0]!.presentationIdentity
     expect(selfCorrectionsForPresentation(new Map([
       ['GPT-5.6 Luna', 2],
       ['gpt-5.6-luna', 3],

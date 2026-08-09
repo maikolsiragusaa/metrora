@@ -1,6 +1,6 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
-import { combineReasoningSemantics, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const TOP_MODELS_LIMIT = 20
 const SYNTHETIC_MODEL_NAME = '<synthetic>'
@@ -97,6 +97,13 @@ function rowIdentity(model: PeriodData['models'][number], providerSources: Provi
   return `${base}\u0000`
 }
 
+function hasSeparateTokenEvidence(model: PeriodData['models'][number]): boolean {
+  return typeof model.reasoningTokens === 'number'
+    && Number.isFinite(model.reasoningTokens)
+    && model.reasoningTokens > 0
+    && (model.sourceProviders ?? []).some(providerHasSeparateReasoning)
+}
+
 function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
   // Durable day entries can use raw provider model ids. Resolve a conservative
   // identity here: true aliases collapse, while source-recorded routes and
@@ -138,8 +145,14 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       acc.cacheReadTokens += model.cacheReadTokens!
       acc.cacheWriteTokens += model.cacheWriteTokens!
     }
+    // Current durable rows do not persist reasoningSemantics. Their numeric
+    // reasoning field is populated only from parser contracts that expose
+    // reasoning independently; a mixed row is therefore safe to retain when
+    // it has positive evidence and includes at least one known separate-
+    // reasoning source. A positive field from an unknown-only source remains
+    // unavailable, so legacy/unclassified values are never guessed.
     const modelReasoningSemantics = model.reasoningSemantics
-      ?? reasoningSemanticsForProviders(model.sourceProviders)
+      ?? reasoningSemanticsForProviders(model.sourceProviders, hasSeparateTokenEvidence(model))
     acc.reasoningSemantics = acc.reasoningSemantics === undefined
       ? modelReasoningSemantics
       : combineReasoningSemantics([acc.reasoningSemantics, modelReasoningSemantics])

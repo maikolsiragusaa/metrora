@@ -1963,9 +1963,9 @@ program
     await loadPricing()
     const { range, label } = getDateRange(opts.period)
     if (opts.format === 'json') {
-      const { aggregateModelStats, buildCompareJson, matchesPresentationModel, renderCompareJson, scanSelfCorrections, selfCorrectionsForPresentation } = await import('./compare-stats.js')
+      const { aggregatePresentationModelStats, buildCompareJson, matchesPresentationModel, renderCompareJson, scanSelfCorrections, selfCorrectionsForPresentation } = await import('./compare-stats.js')
       const projects = await parseAllSessions(range, opts.provider)
-      const models = aggregateModelStats(projects)
+      const models = aggregatePresentationModelStats(projects)
 
       const providers = await getAllProviders()
       const dirs: string[] = []

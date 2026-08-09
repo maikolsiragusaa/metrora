@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
+import { buildPeriodDataFromDays } from '../src/day-aggregator.js'
 import { buildMenubarPayload, type PeriodData } from '../src/menubar-json.js'
+import { buildModelAccounting } from '../src/model-accounting.js'
+import { buildModelPresentation } from '../src/model-presentation.js'
 
 function period(models: PeriodData['models'], cost: number, calls: number): PeriodData {
   return {
@@ -260,6 +263,57 @@ describe('model accounting payload', () => {
     expect(row).not.toHaveProperty('reasoningTokens')
     expect(row).not.toHaveProperty('reasoningSemantics')
     expect(payload.current.modelPresentation?.rows[0]).toMatchObject({ reasoningSemantics: 'unavailable' })
+  })
+
+  it('retains exact reasoning evidence from a carried mixed-source durable row once, without a schema change', () => {
+    const day = {
+      date: '2026-08-01',
+      carried: true,
+      cost: 12,
+      savingsUSD: 0,
+      calls: 2,
+      sessions: 1,
+      inputTokens: 1_000,
+      outputTokens: 2_000,
+      reasoningTokens: 57_133,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      editTurns: 0,
+      oneShotTurns: 0,
+      models: {
+        'Sonnet 4.6': {
+          calls: 2,
+          cost: 12,
+          savingsUSD: 0,
+          inputTokens: 1_000,
+          outputTokens: 2_000,
+          reasoningTokens: 57_133,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          sourceProviders: ['antigravity', 'claude'],
+        },
+      },
+      categories: {},
+      providers: {},
+    } satisfies Parameters<typeof buildPeriodDataFromDays>[0][number]
+
+    const period = buildPeriodDataFromDays([day], 'carried')
+    const accounting = buildModelAccounting(period.models, period.cost, period.calls)
+    const presentation = buildModelPresentation(accounting)
+
+    expect(period.models[0]).toMatchObject({ reasoningTokens: 57_133, sourceProviders: ['antigravity', 'claude'] })
+    expect(accounting.rows).toHaveLength(1)
+    expect(accounting.rows[0]).toMatchObject({
+      reasoningTokens: 57_133,
+      reasoningSemantics: 'separate',
+    })
+    expect(presentation.rows).toHaveLength(1)
+    expect(presentation.rows[0]).toMatchObject({
+      reasoningTokens: 57_133,
+      reasoningSemantics: 'separate',
+      deliveryRows: [accounting.rows[0]],
+    })
+    expect(presentation.rows.reduce((sum, row) => sum + (row.reasoningTokens ?? 0), 0)).toBe(57_133)
   })
 
   it('folds provenance-poor legacy aliases into one unambiguous route but keeps true provider variants apart', () => {

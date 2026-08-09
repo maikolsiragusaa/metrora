@@ -17,7 +17,7 @@ import type { DateRange, Period, ReasoningMix, ReasoningLevelOrUnknown, SessionR
 export const INITIAL_VISIBLE = 120
 const STEP = 120
 
-type SessionSort = 'recent' | 'cost' | 'tokens' | 'cache' | 'unitCost'
+type SessionSort = 'recent' | 'cost' | 'tokens' | 'calls' | 'cache' | 'unitCost'
 type SequenceEntry =
   | { type: 'header'; provider: string; count: number; cost: number }
   | { type: 'row'; row: SessionRow }
@@ -26,6 +26,7 @@ const SORT_OPTIONS = [
   { value: 'recent', label: 'Recent' },
   { value: 'cost', label: 'Cost' },
   { value: 'tokens', label: 'Total tokens' },
+  { value: 'calls', label: 'Calls' },
   { value: 'cache', label: 'Cache reuse' },
   { value: 'unitCost', label: 'Cost / 1M' },
 ]
@@ -34,6 +35,7 @@ const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
   recent: 'most recent',
   cost: 'highest cost',
   tokens: 'total tokens',
+  calls: 'highest call count',
   cache: 'cache reuse',
   unitCost: 'effective cost per one million total tokens',
 }
@@ -104,6 +106,7 @@ function compareNullableDescending(a: number | null, b: number | null): number {
 function compareRows(sort: SessionSort, a: SessionRow, b: SessionRow): number {
   if (sort === 'cost') return b.cost - a.cost
   if (sort === 'tokens') return sessionTotalTokens(b) - sessionTotalTokens(a)
+  if (sort === 'calls') return b.calls - a.calls
   if (sort === 'cache') return compareNullableDescending(sessionCacheReuse(a), sessionCacheReuse(b))
   if (sort === 'unitCost') return compareNullableDescending(sessionUnitCost(a), sessionUnitCost(b))
   return endedAtTime(b) - endedAtTime(a)
@@ -112,6 +115,7 @@ function compareRows(sort: SessionSort, a: SessionRow, b: SessionRow): number {
 function groupSortValue(sort: SessionSort, rows: SessionRow[]): number {
   if (sort === 'cost') return rows.reduce((sum, row) => sum + row.cost, 0)
   if (sort === 'tokens') return rows.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
+  if (sort === 'calls') return rows.reduce((sum, row) => sum + row.calls, 0)
   if (sort === 'cache') {
     const values = rows.map(sessionCacheReuse).filter((value): value is number => value != null)
     return values.length > 0 ? Math.max(...values) : 0

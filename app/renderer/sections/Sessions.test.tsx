@@ -89,6 +89,25 @@ describe('Sessions', () => {
     expect(within(sortedTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual(headers)
   })
 
+  it('sorts by Calls while changing row order only', async () => {
+    const user = userEvent.setup()
+    getSessions.mockResolvedValue([
+      session({ sessionId: 'few-calls', title: 'Few calls', project: 'metrora', provider: 'codex', calls: 2, endedAt: '2026-08-08T12:30:00.000Z' }),
+      session({ sessionId: 'many-calls', title: 'Many calls', project: 'metrora', provider: 'codex', calls: 20, endedAt: '2026-08-08T10:30:00.000Z' }),
+    ])
+    render(<Sessions period="lifetime" provider="all" />)
+
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
+    expect(headers).toHaveLength(15)
+
+    await user.click(screen.getByRole('tab', { name: 'Calls' }))
+
+    const sortedTable = screen.getByRole('table', { name: 'Detailed sessions' })
+    expect(within(sortedTable).getAllByRole('row').slice(1)[0]).toHaveTextContent('Many calls')
+    expect(within(sortedTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual(headers)
+  })
+
   it('explains available detail versus durable historical session totals', async () => {
     render(<Sessions period="lifetime" provider="all" historicalSessionCount={4} />)
 

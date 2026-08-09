@@ -29,15 +29,42 @@ export type ModelStats = {
   lastSeen: string
 }
 
+function emptyModelStats(model: string): ModelStats {
+  const identity = presentationIdentityForModelName(model)
+  return {
+    model,
+    presentationIdentity: identity.key,
+    calls: 0,
+    cost: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    reasoningSemantics: 'unavailable',
+    inputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTurns: 0,
+    editTurns: 0,
+    oneShotTurns: 0,
+    retries: 0,
+    selfCorrections: 0,
+    editCost: 0,
+    firstSeen: '',
+    lastSeen: '',
+  }
+}
+
+/**
+ * Exact/raw model aggregation for operational consumers. The model field is
+ * intentionally the raw model id; presentation identity is metadata only.
+ */
 export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
   const byModel = new Map<string, ModelStats>()
 
   const ensure = (model: string): ModelStats => {
-    const identity = presentationIdentityForModelName(model)
-    let s = byModel.get(identity.key)
+    let s = byModel.get(model)
     if (!s) {
-      s = { model: identity.name, presentationIdentity: identity.key, calls: 0, cost: 0, outputTokens: 0, reasoningTokens: 0, reasoningSemantics: 'unavailable', inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTurns: 0, editTurns: 0, oneShotTurns: 0, retries: 0, selfCorrections: 0, editCost: 0, firstSeen: '', lastSeen: '' }
-      byModel.set(identity.key, s)
+      s = emptyModelStats(model)
+      byModel.set(model, s)
     }
     return s
   }
@@ -48,7 +75,6 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
         if (turn.assistantCalls.length === 0) continue
         const primaryRawModel = turn.assistantCalls[0]!.model
         if (primaryRawModel === '<synthetic>') continue
-        const primaryIdentity = presentationIdentityForModelName(primaryRawModel)
 
         const ms = ensure(primaryRawModel)
         ms.totalTurns++
@@ -63,8 +89,7 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
 
         for (const call of turn.assistantCalls) {
           if (call.model === '<synthetic>') continue
-          const callIdentity = presentationIdentityForModelName(call.model)
-          const cs = callIdentity.key === primaryIdentity.key ? ms : ensure(call.model)
+          const cs = call.model === primaryRawModel ? ms : ensure(call.model)
           cs.calls++
           cs.cost += call.costUSD
           cs.outputTokens += call.usage.outputTokens
@@ -87,6 +112,42 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
   }
 
   return [...byModel.values()].sort((a, b) => b.cost - a.cost)
+}
+
+/**
+ * Compare-only projection. It groups exact model rows by their safe
+ * presentation identity while leaving the raw aggregation available to
+ * actions and other operational consumers.
+ */
+export function aggregatePresentationModelStats(projects: ProjectSummary[]): ModelStats[] {
+  const grouped = new Map<string, ModelStats>()
+
+  for (const raw of aggregateModelStats(projects)) {
+    const existing = grouped.get(raw.presentationIdentity)
+    if (!existing) {
+      grouped.set(raw.presentationIdentity, { ...raw, model: presentationIdentityForModelName(raw.model).name })
+      continue
+    }
+
+    existing.calls += raw.calls
+    existing.cost += raw.cost
+    existing.outputTokens += raw.outputTokens
+    existing.reasoningTokens += raw.reasoningTokens
+    existing.reasoningSemantics = combineReasoningSemantics([existing.reasoningSemantics, raw.reasoningSemantics])
+    existing.inputTokens += raw.inputTokens
+    existing.cacheReadTokens += raw.cacheReadTokens
+    existing.cacheWriteTokens += raw.cacheWriteTokens
+    existing.totalTurns += raw.totalTurns
+    existing.editTurns += raw.editTurns
+    existing.oneShotTurns += raw.oneShotTurns
+    existing.retries += raw.retries
+    existing.selfCorrections += raw.selfCorrections
+    existing.editCost += raw.editCost
+    if (!existing.firstSeen || (raw.firstSeen && raw.firstSeen < existing.firstSeen)) existing.firstSeen = raw.firstSeen
+    if (!existing.lastSeen || raw.lastSeen > existing.lastSeen) existing.lastSeen = raw.lastSeen
+  }
+
+  return [...grouped.values()].sort((a, b) => b.cost - a.cost)
 }
 
 export type ComparisonRow = {

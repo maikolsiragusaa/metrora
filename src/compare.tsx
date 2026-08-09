@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useStdout } from 'ink'
 
 import type { ModelStats, ComparisonRow, CategoryComparison, WorkingStyleRow } from './compare-stats.js'
-import { aggregateModelStats, computeComparison, computeCategoryComparison, computeWorkingStyle, scanSelfCorrections, selfCorrectionsForPresentation } from './compare-stats.js'
+import { aggregatePresentationModelStats, computeComparison, computeCategoryComparison, computeWorkingStyle, scanSelfCorrections, selfCorrectionsForPresentation } from './compare-stats.js'
 import { formatCost } from './format.js'
 import { parseAllSessions, setInteractiveScanUI } from './parser.js'
 import { getAllProviders } from './providers/index.js'
@@ -338,7 +338,7 @@ type CompareViewProps = {
 export function CompareView({ projects, onBack }: CompareViewProps) {
   const { exit } = useApp()
   const [phase, setPhase] = useState<'select' | 'loading' | 'results'>('select')
-  const [models, setModels] = useState<ModelStats[]>(() => aggregateModelStats(projects))
+  const [models, setModels] = useState<ModelStats[]>(() => aggregatePresentationModelStats(projects))
   const [recommendations, setRecommendations] = useState<ModelDefaultRecommendation[]>(() => {
     const recs: ModelDefaultRecommendation[] = []
     for (const p of projects) {
@@ -358,7 +358,7 @@ export function CompareView({ projects, onBack }: CompareViewProps) {
   projectsRef.current = projects
 
   useEffect(() => {
-    const newModels = aggregateModelStats(projects)
+    const newModels = aggregatePresentationModelStats(projects)
     setModels(newModels)
 
     const recs: ModelDefaultRecommendation[] = []
@@ -409,7 +409,7 @@ export function CompareView({ projects, onBack }: CompareViewProps) {
     let cancelled = false
     setPhase('loading')
 
-    const currentModels = aggregateModelStats(projectsRef.current)
+    const currentModels = aggregatePresentationModelStats(projectsRef.current)
     const a = currentModels.find(m => m.model === pickedNames[0])
     const b = currentModels.find(m => m.model === pickedNames[1])
     if (!a || !b) { setPhase('select'); return }
