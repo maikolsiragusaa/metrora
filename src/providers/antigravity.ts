@@ -5,8 +5,8 @@ import { basename, join } from 'path'
 import { homedir } from 'os'
 import { fileURLToPath } from 'url'
 import https from 'https'
-
 import { calculateCost } from '../models.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
 import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
@@ -786,7 +786,7 @@ function buildCallFromSqliteGenMetadataRow(cascadeId: string, row: AntigravityGe
     if (adjustedResponseTokens >= 0) responseTokens = adjustedResponseTokens
   }
 
-  if (inputTokens === 0 && totalOutputTokens === 0) return null
+  if (inputTokens === 0 && totalOutputTokens === 0 && responseTokens === 0 && thinkingTokens === 0) return null
 
   const responseId = antigravitySqliteResponseId(usageFields, String(row.idx))
   const model = antigravitySqliteModel(chatFields)
@@ -896,7 +896,7 @@ export function antigravityCascadeIdFromPath(path: string): string {
   return basename(path).replace(/\.(pb|db)$/i, '')
 }
 
-function buildCallsFromGeneratorMetadata(
+export function buildCallsFromGeneratorMetadata(
   cascadeId: string,
   metadata: GeneratorMetadata[],
   modelMap: ModelMap,
@@ -913,19 +913,19 @@ function buildCallsFromGeneratorMetadata(
     const thinkingTokens = parseInt(usage.thinkingOutputTokens ?? '0', 10)
     const responseTokens = parseInt(usage.responseOutputTokens ?? '0', 10)
 
-    if (inputTokens === 0 && outputTokens === 0) continue
+    if (inputTokens === 0 && outputTokens === 0 && thinkingTokens === 0 && responseTokens === 0) continue
 
     const responseId = usage.responseId || String(i)
     const dedupKey = `antigravity:${cascadeId}:${responseId}`
 
     const model = dropPlaceholderModelId(modelMap[usage.model] ?? usage.model)
-    const pricingModel = normalizePricingModel(model)
+    const pricingModel = normalizePricingModel(model), modelProvider = normalizeExplicitModelProvider(usage.apiProvider)
     const timestamp = entry.chatModel?.chatStartMetadata?.createdAt ?? ''
     const costUSD = calculateCost(pricingModel, inputTokens, responseTokens + thinkingTokens, 0, 0, 0)
 
     results.push({
       provider: 'antigravity',
-      model,
+      model, ...(modelProvider ? { modelProvider } : {}),
       inputTokens,
       outputTokens: responseTokens,
       cacheCreationInputTokens: 0,

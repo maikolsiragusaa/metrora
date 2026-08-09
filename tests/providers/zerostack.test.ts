@@ -25,6 +25,7 @@ function session(opts: {
   workingDir?: string
   input?: number
   output?: number
+  totalCost?: number | null
   updatedAt?: string
 } = {}) {
   return JSON.stringify({
@@ -39,7 +40,7 @@ function session(opts: {
     updated_at: opts.updatedAt ?? '2026-06-19T11:34:14.140631+00:00',
     total_input_tokens: opts.input ?? 34119,
     total_output_tokens: opts.output ?? 961,
-    total_cost: 0.015677835,
+    total_cost: Object.hasOwn(opts, 'totalCost') ? opts.totalCost : 0.015677835,
     total_estimated_tokens: 446,
     model: opts.model ?? 'deepseek/deepseek-v4-pro',
     provider: opts.provider ?? 'openrouter',
@@ -94,6 +95,7 @@ describe('zerostack provider - parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.model).toBe('deepseek/deepseek-v4-pro')
+    expect(call.modelProvider).toBe('openrouter')
     expect(call.inputTokens).toBe(34119)
     expect(call.outputTokens).toBe(961)
     expect(call.sessionId).toBe('sess-abc')
@@ -104,8 +106,20 @@ describe('zerostack provider - parsing', () => {
   })
 
   it('skips sessions with zero tokens', async () => {
-    const path = await write('empty.json', session({ input: 0, output: 0 }))
+    const path = await write('empty.json', session({ input: 0, output: 0, totalCost: null }))
     expect(await parse(path)).toHaveLength(0)
+  })
+
+  it('retains an explicit cost-only session, including zero cost', async () => {
+    const paidPath = await write('cost-only.json', session({ input: 0, output: 0, totalCost: 0.5 }))
+    const freePath = await write('free-only.json', session({ input: 0, output: 0, totalCost: 0 }))
+
+    const paid = await parse(paidPath)
+    const free = await parse(freePath)
+    expect(paid).toHaveLength(1)
+    expect(paid[0]!.costUSD).toBe(0.5)
+    expect(free).toHaveLength(1)
+    expect(free[0]!.costUSD).toBe(0)
   })
 
   it('deduplicates across repeated parses', async () => {
@@ -116,7 +130,7 @@ describe('zerostack provider - parsing', () => {
   })
 
   it('prices unknown local models at zero without throwing', async () => {
-    const path = await write('local.json', session({ model: 'my-local-model', provider: 'ollama' }))
+    const path = await write('local.json', session({ model: 'my-local-model', provider: 'ollama', totalCost: null }))
     const calls = await parse(path)
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(0)

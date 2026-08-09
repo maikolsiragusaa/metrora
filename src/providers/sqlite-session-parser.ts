@@ -225,7 +225,14 @@ export function createSqliteSessionParser(
 
         if (yieldCount === 0 && messages.length > 0) {
           const sessionTokens = tryQuerySessionTokens(db, sessionId)
-          if (sessionTokens && (sessionTokens.cost > 0 || sessionTokens.input > 0 || sessionTokens.output > 0)) {
+          if (sessionTokens && (
+            sessionTokens.cost > 0 ||
+            sessionTokens.input > 0 ||
+            sessionTokens.output > 0 ||
+            sessionTokens.reasoning > 0 ||
+            sessionTokens.cacheRead > 0 ||
+            sessionTokens.cacheWrite > 0
+          )) {
             const dedupKey = `${config.providerName}:${sessionId}:session-level`
             if (!seenKeys.has(dedupKey)) {
               seenKeys.add(dedupKey)

@@ -13,7 +13,7 @@ function previousClineFingerprint(): string {
 
 describe('Cline discovery cache authority', () => {
   it('invalidates the prior provider section and daily source-backed history', () => {
-    expect(PROVIDER_PARSE_VERSIONS['cline']).toBe('worktree-project-grouping-v1-vscode-variants-v1')
+    expect(PROVIDER_PARSE_VERSIONS['cline']).toBe('worktree-project-grouping-v1-vscode-variants-v2-provider-zero-cost')
     expect(computeEnvFingerprint('cline')).not.toBe(previousClineFingerprint())
     expect(getDailyCacheConfigHash()).toContain(
       `clineCollector=${PROVIDER_PARSE_VERSIONS['cline']}`,

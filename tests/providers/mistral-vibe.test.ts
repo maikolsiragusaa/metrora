@@ -187,6 +187,7 @@ describe('mistral-vibe provider - parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.provider).toBe('mistral-vibe')
+    expect(call.modelProvider).toBe('mistral')
     expect(call.model).toBe('mistral-medium-3.5')
     expect(call.inputTokens).toBe(2000)
     expect(call.outputTokens).toBe(3000)
@@ -280,6 +281,19 @@ describe('mistral-vibe provider - parsing', () => {
     const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
 
     expect(calls).toEqual([])
+  })
+
+  it('retains a session with explicit cost but no token counters', async () => {
+    const sessionDir = await writeSession('session_20260511_100000_cost_only', metadata({
+      input: 0,
+      output: 0,
+      sessionCost: 0.25,
+    }))
+
+    const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0.25)
   })
 
   it('skips sessions with malformed meta.json', async () => {

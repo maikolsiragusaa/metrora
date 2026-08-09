@@ -62,9 +62,68 @@ describe('vercel-gateway provider', () => {
     for await (const call of vercelGateway.createSessionParser(source, seen, range).parse()) {
       calls.push(call)
     }
-    expect(calls).toHaveLength(1)
-    expect(calls[0]?.costUSD).toBe(1.25)
+    expect(calls).toHaveLength(3)
+    expect(calls.reduce((sum, call) => sum + call.costUSD, 0)).toBeCloseTo(1.25, 10)
+    expect(calls.reduce((sum, call) => sum + call.inputTokens, 0)).toBe(1000)
     expect(calls[0]?.model).toBe('anthropic/claude-sonnet-4.6')
+  })
+
+  it('retains cache/reasoning-only report rows', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        results: [{
+          day: '2026-06-02',
+          model: 'gpt-5',
+          total_cost: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cached_input_tokens: 120,
+          cache_creation_input_tokens: 8,
+          reasoning_tokens: 4,
+        }],
+      }),
+    })) as typeof fetch
+
+    const range = {
+      start: new Date('2026-06-02T00:00:00.000Z'),
+      end: new Date('2026-06-02T23:59:59.999Z'),
+    }
+    const calls = []
+    for await (const call of vercelGateway.createSessionParser({
+      path: 'vercel-ai-gateway:report', project: 'Vercel AI Gateway', provider: 'vercel-gateway',
+    }, new Set(), range).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.cacheReadInputTokens).toBe(120)
+    expect(calls[0]?.cacheCreationInputTokens).toBe(8)
+    expect(calls[0]?.reasoningTokens).toBe(4)
+  })
+
+  it('retains explicit free request rows and preserves their request count', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        results: [{
+          day: '2026-06-03',
+          model: 'deepseek/deepseek-v4-flash-free',
+          total_cost: 0,
+          request_count: 2,
+        }],
+      }),
+    })) as typeof fetch
+
+    const range = {
+      start: new Date('2026-06-03T00:00:00.000Z'),
+      end: new Date('2026-06-03T23:59:59.999Z'),
+    }
+    const calls = []
+    for await (const call of vercelGateway.createSessionParser({
+      path: 'vercel-ai-gateway:report', project: 'Vercel AI Gateway', provider: 'vercel-gateway',
+    }, new Set(), range).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(2)
+    expect(calls.every(call => call.costUSD === 0)).toBe(true)
   })
 })
 

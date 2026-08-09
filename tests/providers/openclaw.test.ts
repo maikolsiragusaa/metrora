@@ -68,6 +68,7 @@ describe('openclaw provider', () => {
     expect(calls.length).toBe(2)
     expect(calls[0].provider).toBe('openclaw')
     expect(calls[0].model).toBe('claude-sonnet-4-6')
+    expect(calls[0].modelProvider).toBe('anthropic')
     expect(calls[0].inputTokens).toBe(500)
     expect(calls[0].outputTokens).toBe(100)
     expect(calls[0].cacheReadInputTokens).toBe(200)
@@ -133,6 +134,7 @@ describe('openclaw provider', () => {
     const calls: any[] = []
     for await (const c of parser.parse()) calls.push(c)
     expect(calls[0].model).toBe('gpt-5.5')
+    expect(calls[0].modelProvider).toBe('openai')
   })
 
   it('reads model from custom model-snapshot event', async () => {
@@ -152,6 +154,7 @@ describe('openclaw provider', () => {
     const calls: any[] = []
     for await (const c of parser.parse()) calls.push(c)
     expect(calls[0].model).toBe('glm-5.1:cloud')
+    expect(calls[0].modelProvider).toBe('ollama')
   })
 
   it('skips entries with invalid timestamps', async () => {

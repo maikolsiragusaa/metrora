@@ -8,6 +8,7 @@ import { isSqliteAvailable } from '../../src/sqlite.js'
 import {
   antigravityAppDataDirFromSourcePath,
   antigravityCascadeIdFromPath,
+  buildCallsFromGeneratorMetadata,
   createAntigravityProvider,
   discoverAntigravitySessionSources,
   extractAntigravityAppDataDirFromLine,
@@ -212,6 +213,43 @@ describe('antigravity provider helpers', () => {
     expect(extractAntigravityGeneratorMetadata({ generatorMetadata: metadata })).toEqual(metadata)
     expect(extractAntigravityGeneratorMetadata({ response: { generatorMetadata: null } })).toEqual([])
     expect(extractAntigravityGeneratorMetadata(null)).toEqual([])
+  })
+
+  it('retains the explicit generator provider on normalized calls', () => {
+    const calls = buildCallsFromGeneratorMetadata('cascade-1', [{
+      chatModel: {
+        model: 'gemini-3-pro',
+        usage: {
+          model: 'gemini-3-pro',
+          inputTokens: '10',
+          outputTokens: '4',
+          responseOutputTokens: '4',
+          apiProvider: 'Google',
+        },
+      },
+    }], {})
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.modelProvider).toBe('google')
+  })
+
+  it('retains generator records with reasoning but no input/output', () => {
+    const calls = buildCallsFromGeneratorMetadata('cascade-reasoning', [{
+      chatModel: {
+        model: 'gemini-3-pro',
+        usage: {
+          model: 'gemini-3-pro',
+          inputTokens: '0',
+          outputTokens: '0',
+          responseOutputTokens: '0',
+          thinkingOutputTokens: '3',
+          apiProvider: 'google',
+        },
+      },
+    }], {})
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.reasoningTokens).toBe(3)
   })
 
   it('derives cascade ids from legacy .pb and Antigravity 2 .db files', () => {

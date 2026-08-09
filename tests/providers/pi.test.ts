@@ -77,6 +77,7 @@ function assistantMessage(opts: {
   responseId?: string
   timestamp?: string
   model?: string
+  provider?: string
   input?: number
   output?: number
   cacheRead?: number
@@ -104,7 +105,7 @@ function assistantMessage(opts: {
       role: 'assistant',
       content,
       api: 'openai-codex-responses',
-      provider: 'openai-codex',
+      provider: opts.provider ?? 'openai-codex',
       model: opts.model ?? 'gpt-5.4',
       responseId: opts.responseId ?? 'resp-001',
       usage: {
@@ -214,6 +215,7 @@ describe('pi provider - JSONL parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.provider).toBe('pi')
+    expect(call.modelProvider).toBe('openai-codex')
     expect(call.model).toBe('gpt-5.4')
     expect(call.inputTokens).toBe(2000)
     expect(call.outputTokens).toBe(400)
@@ -226,6 +228,23 @@ describe('pi provider - JSONL parsing', () => {
     expect(call.costUSD).toBeGreaterThan(0)
     expect(call.deduplicationKey).toContain('pi:')
     expect(call.deduplicationKey).toContain('resp-abc')
+  })
+
+  it('retains cache-only assistant usage', async () => {
+    const projectDir = join(tmpDir, '--Users-test-cache-only--')
+    const filePath = await writeSession(projectDir, 'cache-only.jsonl', [
+      sessionMeta({ id: 'sess-cache-only', cwd: '/Users/test/cache-only' }),
+      assistantMessage({ input: 0, output: 0, cacheRead: 123, cacheWrite: 7 }),
+    ])
+
+    const provider = createPiProvider(tmpDir)
+    const source = { path: filePath, project: 'cache-only', provider: 'pi' }
+    const calls: ParsedProviderCall[] = []
+    for await (const call of provider.createSessionParser(source, new Set()).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.cacheReadInputTokens).toBe(123)
+    expect(calls[0]!.cacheCreationInputTokens).toBe(7)
   })
 
   it('does not crash when a user message content is a string instead of an array (issue #441)', async () => {

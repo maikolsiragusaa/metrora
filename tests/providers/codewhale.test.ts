@@ -164,6 +164,7 @@ describe('codewhale provider', () => {
     expect(call).toMatchObject({
       provider: 'codewhale',
       model: 'anthropic/claude-sonnet-4-6',
+      modelProvider: 'deepseek',
       inputTokens: 12_345,
       outputTokens: 0,
       cacheCreationInputTokens: 0,
@@ -216,6 +217,18 @@ describe('codewhale provider', () => {
     expect(estimated!.costIsEstimated).toBe(true)
     expect(exactZero!.costUSD).toBe(0)
     expect(exactZero!.costIsEstimated).toBe(false)
+  })
+
+  it('retains an explicit zero-cost record when aggregate tokens are absent', async () => {
+    const path = await writeSession(join(tmpDir, 'sessions'), 'free-empty.json', {
+      totalTokens: 0,
+      cost: { session_cost_usd: 0, subagent_cost_usd: 0 },
+    })
+
+    const calls = await parseOne(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0)
+    expect(calls[0]!.costIsEstimated).toBe(false)
   })
 
   it('falls back to file mtime for malformed timestamps and deduplicates by session id', async () => {

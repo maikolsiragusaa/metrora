@@ -224,6 +224,7 @@ describe('mux provider - chat.jsonl parsing', () => {
     const call = calls[0]!
     expect(call.provider).toBe('mux')
     expect(call.model).toBe('claude-opus-4-8') // provider prefix stripped so metrora prices/displays it
+    expect(call.modelProvider).toBe('anthropic')
     expect(call.inputTokens).toBe(750) // 1000 - 200 cacheRead - 50 cacheCreate
     expect(call.outputTokens).toBe(200) // 230 - 30 reasoning
     expect(call.reasoningTokens).toBe(30)

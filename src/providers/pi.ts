@@ -6,6 +6,7 @@ import { readSessionFile } from '../fs-utils.js'
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
 import { normalizeContentBlocks } from '../content-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 const modelDisplayNames: Record<string, string> = {
@@ -72,6 +73,7 @@ type PiEntry = {
     role?: string
     content?: Array<{ type?: string; text?: string; name?: string; arguments?: Record<string, unknown> }> | string
     model?: string
+    provider?: string
     responseId?: string
     usage?: {
       input: number
@@ -187,9 +189,10 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         const output = msg.usage.output ?? 0
         const cacheRead = msg.usage.cacheRead ?? 0
         const cacheWrite = msg.usage.cacheWrite ?? 0
-        if (input === 0 && output === 0) continue
+        if (input === 0 && output === 0 && cacheRead === 0 && cacheWrite === 0) continue
 
         const model = msg.model ?? 'gpt-5'
+        const modelProvider = normalizeExplicitModelProvider(msg.provider)
         const responseId = msg.responseId ?? ''
         const dedupKey = `${source.provider}:${source.path}:${responseId || entry.id || entry.timestamp || String(lineIdx)}`
 
@@ -229,6 +232,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         yield {
           provider: source.provider,
           model,
+          ...(modelProvider ? { modelProvider } : {}),
           inputTokens: input,
           outputTokens: output,
           cacheCreationInputTokens: cacheWrite,

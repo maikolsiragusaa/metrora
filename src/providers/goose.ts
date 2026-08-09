@@ -3,6 +3,7 @@ import { homedir, platform } from 'os'
 
 import { calculateCost, getShortModelName } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { isSqliteAvailable, getSqliteLoadError, openDatabase, blobToText, type SqliteDatabase } from '../sqlite.js'
 import type { ToolCall } from '../types.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
@@ -190,6 +191,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
         const config = parseModelConfig(blobToText(session.model_config_json))
         const model = config.model_name ?? 'unknown'
+        const modelProvider = normalizeExplicitModelProvider(session.provider_name)
         const costUSD = calculateCost(model, inputTokens, outputTokens, 0, 0, 0)
 
         const { tools, bashCommands, toolSequence } = extractToolsFromMessages(db, sessionId)
@@ -203,6 +205,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         yield {
           provider: 'goose',
           model,
+          ...(modelProvider ? { modelProvider } : {}),
           inputTokens,
           outputTokens,
           cacheCreationInputTokens: 0,

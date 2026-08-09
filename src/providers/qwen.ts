@@ -105,7 +105,12 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (entry.type !== 'assistant' || !entry.usageMetadata) continue
 
         const usage = entry.usageMetadata
-        if (usage.promptTokenCount === 0 && usage.candidatesTokenCount === 0) continue
+        if (
+          usage.promptTokenCount === 0 &&
+          usage.candidatesTokenCount === 0 &&
+          usage.thoughtsTokenCount === 0 &&
+          usage.cachedContentTokenCount === 0
+        ) continue
 
         const dedupKey = `qwen:${entry.sessionId}:${entry.uuid}`
         if (seenKeys.has(dedupKey)) continue

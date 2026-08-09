@@ -10,7 +10,7 @@ import { estimateTokensFromChars } from '../token-estimate.js'
 import type { DateRange } from '../types.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
-/** Matches cli-date.ts "all" period cap (6 months). */
+/** Default scan cap for Cursor when the caller did not request a range. */
 const CURSOR_MAX_LOOKBACK_MONTHS = 6
 
 export function getCursorTimeFloor(dateRange?: DateRange): string {
@@ -20,8 +20,8 @@ export function getCursorTimeFloor(dateRange?: DateRange): string {
     now.getMonth() - CURSOR_MAX_LOOKBACK_MONTHS,
     now.getDate(),
   )
-  const start = dateRange?.start ?? maxStart
-  const effective = start < maxStart ? maxStart : start
+  // Explicit ranges are authoritative; only the no-range default is capped.
+  const effective = dateRange?.start ?? maxStart
   return effective.toISOString()
 }
 

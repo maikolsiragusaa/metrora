@@ -477,6 +477,7 @@ function createParser(
             reasoningTokens,
             webSearchRequests: 0,
             costUSD,
+            costIsEstimated: true,
             tools: turn.assistant.tools,
             bashCommands: [],
             timestamp,

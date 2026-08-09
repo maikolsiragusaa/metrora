@@ -813,7 +813,7 @@ function createJsonlParser(
 
             // Nothing this call would add over the per-turn events, so skip it
             // to avoid an empty $0 row (output is intentionally excluded).
-            if (inputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0) continue
+            if (inputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && reasoningTokens === 0) continue
 
             const dedupKey = `copilot:${sessionId}:shutdown:${model}`
             if (seenKeys.has(dedupKey)) continue
@@ -1760,7 +1760,7 @@ function createOtelParser(
             const cacheReadTokens = Number(attrs['gen_ai.usage.cache_read.input_tokens'] ?? 0)
             const cacheCreationTokens = Number(attrs['gen_ai.usage.cache_creation.input_tokens'] ?? 0)
 
-            if (inputTokens === 0 && outputTokens === 0) {
+            if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheCreationTokens === 0) {
               continue
             }
 

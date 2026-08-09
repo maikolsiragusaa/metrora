@@ -3,8 +3,8 @@ import { existsSync } from 'fs'
 import { readdir, readFile, stat } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { homedir } from 'os'
-
 import { readSessionFile } from '../fs-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { calculateCost } from '../models.js'
 import { estimateTokensFromChars } from '../token-estimate.js'
 import type { ToolCall } from '../types.js'
@@ -199,7 +199,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
   const results: ParsedProviderCall[] = []
   const { chat, metadata } = data
 
-  let modelId = normalizeModelId(metadata.modelId ?? '')
+  let modelId = normalizeModelId(metadata.modelId ?? ''), modelProvider = normalizeExplicitModelProvider(metadata.modelProvider)
   if (modelId === 'auto' || !modelId) modelId = 'kiro-auto'
 
   let pendingUserMessage = '', inputChars = 0
@@ -235,7 +235,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
 
   results.push({
     provider: 'kiro',
-    model: modelId,
+    model: modelId, ...(modelProvider ? { modelProvider } : {}),
     inputTokens,
     outputTokens,
     cacheCreationInputTokens: 0,

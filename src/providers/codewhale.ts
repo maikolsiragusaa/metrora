@@ -4,6 +4,7 @@ import { join } from 'path'
 
 import { extractBashCommands } from '../bash-utils.js'
 import { readSessionFile } from '../fs-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { calculateCost, getShortModelName } from '../models.js'
 import type { ToolCall } from '../types.js'
 import type { ParsedProviderCall, Provider, SessionParser, SessionSource } from './types.js'
@@ -388,12 +389,12 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       metadata ??= await readSessionMetadata(source.path)
       if (!metadata) return
       const totalTokens = safeTokenCount(metadata.total_tokens)
-      const model = metadata.model ?? metadata.model_provider ?? 'unknown'
+      const model = metadata.model ?? metadata.model_provider ?? 'unknown', modelProvider = normalizeExplicitModelProvider(metadata.model_provider)
       const localCost = reportedCost(metadata.cost)
       const costUSD = localCost.exact
         ? localCost.value
         : calculateCost(model, totalTokens, 0, 0, 0, 0)
-      if (totalTokens === 0 && costUSD === 0) return
+      if (totalTokens === 0 && !localCost.exact) return
 
       const deduplicationKey = `codewhale:${metadata.id}`
       if (seenKeys.has(deduplicationKey)) return
@@ -410,7 +411,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
       yield {
         provider: 'codewhale',
-        model,
+        model, ...(modelProvider ? { modelProvider } : {}),
         // CodeWhale persists only one aggregate token counter. Preserve it
         // losslessly in the input column instead of inventing a split.
         inputTokens: totalTokens,

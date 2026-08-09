@@ -192,7 +192,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           const outputTokens = usageActual(messages[i]?.usage, 'completion_tokens')
           const cachedInputTokens = usageActual(messages[i]?.usage, 'cached_tokens')
           const inputTokens = Math.max(0, promptTokens - cachedInputTokens)
-          if (inputTokens === 0 && outputTokens === 0) continue
+          if (inputTokens === 0 && outputTokens === 0 && cachedInputTokens === 0) continue
 
           const model = typeof text?.model === 'string' ? text.model : 'unknown'
           const calls = toolCalls(text?.tool_calls)

@@ -262,6 +262,7 @@ skipUnlessSqlite('hermes provider', () => {
     expect(calls[0]!).toMatchObject({
       provider: 'hermes',
       model: 'gpt-5.5',
+      modelProvider: 'openai-codex',
       inputTokens: 1000,
       outputTokens: 200,
       cacheReadInputTokens: 300,
@@ -310,6 +311,30 @@ skipUnlessSqlite('hermes provider', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(calculateCost('claude-sonnet-4-20250514', 1000, 250, 0, 0, 0))
     expect(calls[0]!.reasoningTokens).toBe(50)
+  })
+
+  it('retains a cost-only session when token counters are zero', async () => {
+    const dbPath = createHermesDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, {
+        id: 'cost-only-session',
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        actualCost: 1.25,
+        startedAt: 1779549300,
+      })
+    })
+
+    const provider = createHermesProvider(tmpDir)
+    const sources = await provider.discoverSessions()
+    expect(sources).toHaveLength(1)
+    const calls = await collectCalls(tmpDir, sources[0]!.path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(1.25)
+    expect(calls[0]!.costIsEstimated).toBe(false)
   })
 
   it('does not split multibyte characters when truncating the first user message', async () => {

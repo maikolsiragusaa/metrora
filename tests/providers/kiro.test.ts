@@ -105,6 +105,7 @@ describe('kiro provider - chat file parsing', () => {
     const call = calls[0]!
     expect(call.provider).toBe('kiro')
     expect(call.model).toBe('claude-haiku-4-5')
+    expect(call.modelProvider).toBe('qdev')
     expect(call.outputTokens).toBeGreaterThan(0)
     expect(call.userMessage).toBe('explain the code')
     expect(call.bashCommands).toEqual([])

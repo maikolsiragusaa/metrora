@@ -3,6 +3,7 @@ import { basename, join, posix, win32 } from 'path'
 import { homedir } from 'os'
 
 import { calculateCost } from '../models.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import type { SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 type UiMessage = {
@@ -91,7 +92,7 @@ async function discoverClineTasksInBaseDir(baseDir: string, providerName: string
 const MODEL_TAG_RE = /<model>([^<]+)<\/model>/
 const WORKSPACE_DIR_RE = /Current Workspace Directory \(([^)]+)\)/
 
-type HistoryMeta = { model: string; workspace: string | null }
+type HistoryMeta = { model: string; modelProvider?: string; workspace: string | null }
 
 function extractHistoryMeta(taskDir: string, fallbackModel: string): Promise<HistoryMeta> {
   return readFile(join(taskDir, 'api_conversation_history.json'), 'utf-8')
@@ -99,6 +100,7 @@ function extractHistoryMeta(taskDir: string, fallbackModel: string): Promise<His
       const msgs = JSON.parse(raw) as Array<{ role?: string; content?: Array<{ text?: string }> }>
       if (!Array.isArray(msgs)) return { model: fallbackModel, workspace: null }
       let model: string | null = null
+      let modelProvider: string | undefined
       let workspace: string | null = null
       for (const msg of msgs) {
         if (msg.role !== 'user' || !Array.isArray(msg.content)) continue
@@ -106,7 +108,12 @@ function extractHistoryMeta(taskDir: string, fallbackModel: string): Promise<His
           if (typeof block.text !== 'string') continue
           if (!model) {
             const mm = MODEL_TAG_RE.exec(block.text)
-            if (mm) model = mm[1].includes('/') ? mm[1].split('/').pop()! : mm[1]
+            if (mm) {
+              const rawModel = mm[1].trim()
+              const slash = rawModel.indexOf('/')
+              model = slash > 0 ? rawModel.slice(slash + 1) : rawModel
+              modelProvider = slash > 0 ? normalizeExplicitModelProvider(rawModel.slice(0, slash)) : undefined
+            }
           }
           if (!workspace) {
             const wm = WORKSPACE_DIR_RE.exec(block.text)
@@ -116,7 +123,7 @@ function extractHistoryMeta(taskDir: string, fallbackModel: string): Promise<His
         }
         if (model && workspace) break
       }
-      return { model: model ?? fallbackModel, workspace }
+      return { model: model ?? fallbackModel, ...(modelProvider ? { modelProvider } : {}), workspace }
     })
     .catch(() => ({ model: fallbackModel, workspace: null }))
 }
@@ -149,6 +156,7 @@ export function createClineParser(source: SessionSource, seenKeys: Set<string>, 
 
       const meta = await extractHistoryMeta(taskDir, fallbackModel)
       const model = meta.model
+      const modelProvider = meta.modelProvider
       const project = meta.workspace ? workspaceToProject(meta.workspace) : undefined
       const projectPath = meta.workspace ?? undefined
 
@@ -190,7 +198,7 @@ export function createClineParser(source: SessionSource, seenKeys: Set<string>, 
           } catch {}
         }
 
-        if (tokensIn === 0 && tokensOut === 0) continue
+        if (tokensIn === 0 && tokensOut === 0 && cacheReads === 0 && cacheWrites === 0 && cost === undefined) continue
 
         const timestamp = entry.ts ? new Date(entry.ts).toISOString() : ''
         const costUSD = cost ?? calculateCost(model, tokensIn, tokensOut, cacheWrites, cacheReads, 0)
@@ -198,6 +206,7 @@ export function createClineParser(source: SessionSource, seenKeys: Set<string>, 
         yield {
           provider: providerName,
           model,
+          ...(modelProvider ? { modelProvider } : {}),
           inputTokens: tokensIn,
           outputTokens: tokensOut,
           cacheCreationInputTokens: cacheWrites,
