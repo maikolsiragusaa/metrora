@@ -127,6 +127,7 @@ describe('model accounting payload', () => {
         tokenDetail: true,
         activeDurationMs: 1500,
         activeGeneratedTokens: 3000,
+        timingCoverage: 'observed',
       },
     ])
     expect(payload.current.modelAccounting?.tokenCoverage).toEqual({ cost: 1, calls: 1 })
@@ -238,6 +239,27 @@ describe('model accounting payload', () => {
     })
     expect(payload.current.modelAccounting?.gap).toEqual({ cost: 0, savingsUSD: 0, calls: 0 })
     expect(payload.current.modelAccounting?.coverage).toEqual({ cost: 1, calls: 1 })
+  })
+
+  it('does not treat an unclassified reasoning field as separately reported', () => {
+    const payload = buildMenubarPayload(period([{
+      name: 'gpt-5.4',
+      modelProvider: 'zed.dev',
+      sourceProviders: ['zed'],
+      cost: 1,
+      savingsUSD: 0,
+      calls: 1,
+      inputTokens: 10,
+      outputTokens: 20,
+      reasoningTokens: 99,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    }], 1, 1), [], null)
+
+    const row = payload.current.modelAccounting?.rows[0]!
+    expect(row).not.toHaveProperty('reasoningTokens')
+    expect(row).not.toHaveProperty('reasoningSemantics')
+    expect(payload.current.modelPresentation?.rows[0]).toMatchObject({ reasoningSemantics: 'unavailable' })
   })
 
   it('folds provenance-poor legacy aliases into one unambiguous route but keeps true provider variants apart', () => {

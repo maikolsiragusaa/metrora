@@ -69,6 +69,26 @@ describe('Sessions', () => {
     expect(screen.getByRole('button', { name: 'Group by provider' })).toHaveAttribute('aria-pressed', 'false')
   })
 
+  it('uses last activity for Recent and keeps the table columns fixed across sorting', async () => {
+    const user = userEvent.setup()
+    getSessions.mockResolvedValue([
+      session({ sessionId: 'started-late', title: 'Started later', project: 'metrora', provider: 'codex', cost: 99, startedAt: '2026-08-08T12:00:00.000Z', endedAt: '2026-08-08T12:10:00.000Z' }),
+      session({ sessionId: 'active-late', title: 'Active later', project: 'metrora', provider: 'codex', startedAt: '2026-08-08T10:00:00.000Z', endedAt: '2026-08-08T12:30:00.000Z' }),
+    ])
+    render(<Sessions period="lifetime" provider="all" />)
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
+    const initialRows = within(table).getAllByRole('row').slice(1)
+    expect(initialRows[0]).toHaveTextContent('Active later')
+    expect(within(table).getByRole('columnheader', { name: 'Started' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Last activity' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Cost' }))
+    const sortedTable = screen.getByRole('table', { name: 'Detailed sessions' })
+    expect(within(sortedTable).getAllByRole('row').slice(1)[0]).toHaveTextContent('Started later')
+    expect(within(sortedTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual(headers)
+  })
+
   it('explains available detail versus durable historical session totals', async () => {
     render(<Sessions period="lifetime" provider="all" historicalSessionCount={4} />)
 

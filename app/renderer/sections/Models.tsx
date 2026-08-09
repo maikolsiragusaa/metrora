@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { EmptyNote } from '../components/EmptyState'
 import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
-import { ProviderLogo } from '../components/ProviderLogo'
 import { SectionSkeleton } from '../components/Skeleton'
 import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
@@ -12,52 +11,19 @@ import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
-import type { AuditRow, DateRange, MenubarPayload, ModelReportRow, Period } from '../lib/types'
+import { cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
+import type { AuditRow, DateRange, DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation, ModelReportRow, Period, ReasoningTokenSemantics } from '../lib/types'
 import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
+import { DurableModelsTable, ModelIdentity, providerTagStyle } from './ModelsDurableTable'
 
 type ModelsLens = 'model' | 'task' | 'audit'
-type ModelSort = 'cost' | 'tokens' | 'calls' | 'cache' | 'speed' | 'unitCost'
-type DurableModelRow = {
-  name: string
-  cost: number
-  savingsUSD: number
-  calls: number
-  inputTokens: number
-  outputTokens: number
-  reasoningTokens?: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  tokenDetail: boolean
-  provider?: string
-  sourceProviders?: string[]
-  rawModels?: string[]
-  canonicalIdentity?: string
-  semanticVariant?: string
-  activeDurationMs?: number
-  activeGeneratedTokens?: number
-}
-type DurableModelAccounting = {
-  rows: DurableModelRow[]
-  gap: { cost: number; savingsUSD: number; calls: number }
-  coverage: { cost: number; calls: number }
-  tokenCoverage?: { cost: number; calls: number }
-}
+type DurableModelAccounting = ModelAccounting
 
 const LENSES = [
   { value: 'model', label: 'By model' },
   { value: 'task', label: 'By task' },
   { value: 'audit', label: 'Audit' },
-]
-
-const MODEL_SORTS = [
-  { value: 'cost', label: 'Cost' },
-  { value: 'tokens', label: 'Total tokens' },
-  { value: 'calls', label: 'Calls' },
-  { value: 'cache', label: 'Cache reuse' },
-  { value: 'speed', label: 'ms / 1K' },
-  { value: 'unitCost', label: 'Cost / 1M' },
 ]
 
 function fmtInt(n: number): string {
@@ -66,16 +32,15 @@ function fmtInt(n: number): string {
 
 // Muted secondary tag naming a row's provider, so the same model name coming
 // from different providers reads as distinct rows.
-const providerTagStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', fontWeight: 450 } as const
 const authorityNoteStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', lineHeight: 1.45 } as const
 
 function durableAccounting(data: MenubarPayload): DurableModelAccounting {
-  const emitted = (data.current as MenubarPayload['current'] & { modelAccounting?: DurableModelAccounting }).modelAccounting
+  const emitted = data.current.modelAccounting
   if (emitted) return emitted
 
   // Compatibility fallback for an older CLI payload: retain the durable headline
   // but do not invent a token split the old payload never carried.
-  const rows: DurableModelRow[] = data.current.topModels.map(model => ({
+  const rows: DurableModelAccountingRow[] = data.current.topModels.map(model => ({
     name: model.name,
     cost: model.cost,
     savingsUSD: model.savingsUSD,
@@ -101,80 +66,38 @@ function durableAccounting(data: MenubarPayload): DurableModelAccounting {
   }
 }
 
+function legacyPresentationRow(row: DurableModelAccountingRow, index: number): DurableModelPresentationRow {
+  const reasoningSemantics: ReasoningTokenSemantics = row.reasoningSemantics ?? 'unavailable'
+  const hasRoute = Boolean(row.provider || (row.sourceProviders?.length ?? 0) > 0)
+  const deliveryStatus = !hasRoute
+    ? 'unavailable' as const
+    : row.provider && (row.sourceProviders?.length ?? 0) > 0
+      ? 'exact' as const
+      : 'partial' as const
+  return {
+    ...row,
+    presentationIdentity: `legacy:${row.name}:${index}`,
+    providers: row.provider ? [row.provider] : [],
+    sourceProviders: row.sourceProviders ?? [],
+    rawModels: row.rawModels ?? [row.name],
+    canonicalIdentities: row.canonicalIdentity ? [row.canonicalIdentity] : [],
+    economicVariants: [row.semanticVariant ?? 'default'],
+    reasoningSemantics,
+    timingCoverage: row.timingCoverage ?? (row.activeDurationMs && row.activeGeneratedTokens ? 'observed' : 'unavailable'),
+    deliveryRows: [row],
+    deliveryStatus,
+  }
+}
+
+function durablePresentation(data: MenubarPayload, accounting: DurableModelAccounting): ModelPresentation {
+  return data.current.modelPresentation ?? {
+    rows: accounting.rows.map(legacyPresentationRow),
+    accountingRowCount: accounting.rows.length,
+  }
+}
+
 function hasAccountingValue(accounting: DurableModelAccounting): boolean {
   return accounting.rows.length > 0 || accounting.gap.cost > 0.000001 || accounting.gap.calls > 0 || accounting.gap.savingsUSD > 0.000001
-}
-
-function modelLogoProvider(name: string): string | null {
-  const model = name.toLowerCase()
-  if (/^(gpt|o1|o3|o4|codex)/.test(model) || model.includes('openai')) return 'codex'
-  if (model.includes('claude')) return 'claude'
-  if (model.includes('gemini')) return 'gemini'
-  if (model.includes('qwen')) return 'qwen'
-  if (model.includes('grok')) return 'grok'
-  if (model.includes('kimi')) return 'kimi'
-  if (model.includes('mistral') || model.includes('ministral')) return 'mistral-vibe'
-  return null
-}
-
-function ModelIdentity({ name }: { name: string }) {
-  const provider = modelLogoProvider(name)
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-      {provider
-        ? <ProviderLogo provider={provider} size={16} />
-        : <span className="provider-logo provider-mono" style={{ width: 16, height: 16, fontSize: 9 }} aria-hidden>{(name.trim()[0] ?? '?').toUpperCase()}</span>}
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
-    </span>
-  )
-}
-
-function tokenTotal(row: DurableModelRow): number {
-  return observedTokenTotal(row)
-}
-
-function modelCacheReuse(row: DurableModelRow): number | null {
-  return row.tokenDetail ? cacheReuseMultiple(row.inputTokens, row.cacheReadTokens) : null
-}
-
-function modelUnitCost(row: DurableModelRow): number | null {
-  return row.tokenDetail ? costPerMillionObserved(row.cost, tokenTotal(row)) : null
-}
-
-function modelMsPer1K(row: DurableModelRow): number | null {
-  const duration = row.activeDurationMs ?? 0
-  const tokens = row.activeGeneratedTokens ?? 0
-  if (!(duration > 0) || !(tokens > 0)) return null
-  return duration * 1000 / tokens
-}
-
-function formatMsPer1K(value: number | null): string {
-  return value == null ? '—' : `${value.toFixed(1)}ms`
-}
-
-function compareNullableDescending(a: number | null, b: number | null): number {
-  if (a == null && b == null) return 0
-  if (a == null) return 1
-  if (b == null) return -1
-  return b - a
-}
-
-function compareNullableAscending(a: number | null, b: number | null): number {
-  if (a == null && b == null) return 0
-  if (a == null) return 1
-  if (b == null) return -1
-  return a - b
-}
-
-function sortDurableRows(rows: DurableModelRow[], sort: ModelSort): DurableModelRow[] {
-  return [...rows].sort((a, b) => {
-    if (sort === 'tokens') return tokenTotal(b) - tokenTotal(a)
-    if (sort === 'calls') return b.calls - a.calls
-    if (sort === 'cache') return compareNullableDescending(modelCacheReuse(a), modelCacheReuse(b))
-    if (sort === 'speed') return compareNullableAscending(modelMsPer1K(a), modelMsPer1K(b))
-    if (sort === 'unitCost') return compareNullableDescending(modelUnitCost(a), modelUnitCost(b))
-    return (b.cost - a.cost) || (b.calls - a.calls)
-  })
 }
 
 export function Models({
@@ -282,6 +205,7 @@ function ModelsUsage({
   }
 
   const accounting = durableAccounting(overview.data)
+  const presentation = durablePresentation(overview.data, accounting)
   const incomplete = accounting.coverage.cost < 0.999999 || accounting.coverage.calls < 0.999999
   const tokenIncomplete = (accounting.tokenCoverage?.cost ?? 0) < 0.999999 || (accounting.tokenCoverage?.calls ?? 0) < 0.999999
 
@@ -289,97 +213,20 @@ function ModelsUsage({
     <>
       {overview.error && <StaleBanner error={overview.error} />}
       <Panel className="scroll-x">
-        <div style={{ padding: '12px 14px 4px' }}>
-          <strong>Model usage</strong>
-          <div style={authorityNoteStyle}>Historical cost, calls and retained token detail from Metrora&apos;s durable local ledger.</div>
-          <div style={authorityNoteStyle}>ms / 1K uses observed active-generation timing from source sessions still available on this device; lower is faster and — means no reliable timing evidence.</div>
+          <div style={{ padding: '12px 14px 4px' }}>
+            <strong>Model usage</strong>
+            <div style={authorityNoteStyle}>Historical cost, calls and retained token detail from Metrora&apos;s durable local ledger.</div>
+            <div style={authorityNoteStyle}>Generated tok/s uses retained active-generation evidence only. Observed active-generation timing is shown where the source provides it; Active ms / 1K is the inverse secondary view and unavailable routes remain —.</div>
+            <div style={authorityNoteStyle}>Total = Input + Output + separately reported Reasoning + Cache R + Cache W. Reasoning is never guessed.</div>
           {incomplete ? <div style={authorityNoteStyle}>Some older usage no longer has a reliable model identity; that remainder is shown as Other models.</div> : null}
           {tokenIncomplete ? <div style={authorityNoteStyle}>Legacy rows without a durable token split show — for token-derived metrics instead of guessing.</div> : null}
         </div>
         {hasAccountingValue(accounting) ? (
-          <DurableModelsTable accounting={accounting} />
+          <DurableModelsTable accounting={accounting} presentation={presentation} legacyPresentationRow={legacyPresentationRow} />
         ) : (
           <EmptyNote>No model usage in this range yet.</EmptyNote>
         )}
       </Panel>
-    </>
-  )
-}
-
-function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting }) {
-  const [sort, setSort] = useState<ModelSort>('cost')
-  const hasSavings = accounting.rows.some(row => row.savingsUSD > 0) || accounting.gap.savingsUSD > 0
-  const rows = useMemo(() => {
-    const values = [...accounting.rows]
-    if (accounting.gap.cost > 0.000001 || accounting.gap.calls > 0 || accounting.gap.savingsUSD > 0.000001) {
-      values.push({
-        name: 'Other models',
-        ...accounting.gap,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        tokenDetail: false,
-      })
-    }
-    return sortDurableRows(values, sort)
-  }, [accounting, sort])
-
-  return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 12px 0' }}>
-        <SegTabs options={MODEL_SORTS} value={sort} onChange={value => setSort(value as ModelSort)} />
-      </div>
-      <table aria-label="Model usage">
-        <thead>
-          <tr>
-            <th>Model</th>
-            <th>Calls</th>
-            <th>Input</th>
-            <th>Output</th>
-            <th>Cache R</th>
-            <th>Cache W</th>
-            <th title="Cached input read per uncached input token">Cache ×</th>
-            <th>Total</th>
-            <th title="Active generation milliseconds per 1,000 generated tokens. Lower is faster; tool wait is excluded where the collector supplies active timing.">ms / 1K</th>
-            <th>Cost</th>
-            <th title="Effective API-equivalent value per 1M observed tokens">Cost / 1M</th>
-            {hasSavings ? <th>Saved</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((model, index) => {
-            const total = model.tokenDetail ? tokenTotal(model) : null
-            const reuse = modelCacheReuse(model)
-            const share = model.tokenDetail ? cacheShare(model.inputTokens, model.cacheReadTokens) : null
-            const unitCost = modelUnitCost(model)
-            const speed = modelMsPer1K(model)
-            const providerLabel = model.provider
-              ?? (model.sourceProviders && model.sourceProviders.length > 0 ? model.sourceProviders.join(', ') : undefined)
-            return (
-              <tr key={`${model.name}-${index}`}>
-                <td title={providerLabel ? `${model.name} · ${providerLabel}` : model.name}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    <ModelIdentity name={model.name} />
-                    {providerLabel ? <span style={providerTagStyle}>{providerLabel}</span> : null}
-                  </span>
-                </td>
-                <td>{fmtInt(model.calls)}</td>
-                <td>{model.tokenDetail ? formatCompact(model.inputTokens) : '—'}</td>
-                <td>{model.tokenDetail ? formatCompact(model.outputTokens) : '—'}</td>
-                <td>{model.tokenDetail ? formatCompact(model.cacheReadTokens) : '—'}</td>
-                <td>{model.tokenDetail ? formatCompact(model.cacheWriteTokens) : '—'}</td>
-                <td title={share == null ? undefined : `${Math.round(share * 1000) / 10}% of input served from cache`}>{formatReuseMultiple(reuse)}</td>
-                <td>{total == null ? '—' : formatCompact(total)}</td>
-                <td title={speed == null ? 'No reliable active-generation timing for this model in the available source sessions.' : `${formatCompact(model.activeGeneratedTokens ?? 0)} timed generated tokens from available source sessions.`}>{formatMsPer1K(speed)}</td>
-                <td>{formatUsd(model.cost)}</td>
-                <td>{unitCost == null ? '—' : formatUsd(unitCost)}</td>
-                {hasSavings ? <td className={model.savingsUSD > 0 ? 'pos' : undefined}>{model.savingsUSD > 0 ? formatUsd(model.savingsUSD) : '—'}</td> : null}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
     </>
   )
 }
@@ -487,6 +334,7 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
         <tr>
           <th>Task</th>
           <th>Calls</th>
+          <th>Reasoning</th>
           <th>Input</th>
           <th>Output</th>
           <th>Cache R</th>
@@ -510,7 +358,14 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
 }
 
 function reportRowTotal(row: ModelReportRow): number {
-  return observedTokenTotal(row)
+  return totalTokenCount({
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    reasoningTokens: row.reasoningTokens,
+    reasoningSemantics: row.reasoningSemantics,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+  })
 }
 
 function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
@@ -519,13 +374,17 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
   const costUSD = rows.reduce((sum, row) => sum + row.costUSD, 0)
   const input = rows.reduce((sum, row) => sum + row.inputTokens, 0)
   const output = rows.reduce((sum, row) => sum + row.outputTokens, 0)
+  const reasoning = rows.reduce((sum, row) => sum + (row.reasoningTokens ?? 0), 0)
+  const reasoningSemantics: ReasoningTokenSemantics = rows.some(row => row.reasoningSemantics === 'separate' || row.reasoningSemantics === 'mixed')
+    ? 'separate'
+    : 'unavailable'
   const cacheRead = rows.reduce((sum, row) => sum + row.cacheReadTokens, 0)
   const cacheWrite = rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0)
-  const total = observedTokenTotal({ inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
+  const total = totalTokenCount({ inputTokens: input, outputTokens: output, reasoningTokens: reasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
   const pricing = modelPricingPresentation(combineModelPricing(rows), calls)
   const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(costUSD)
   const reuse = cacheReuseMultiple(input, cacheRead)
-  const unitCost = costPerMillionObserved(costUSD, total)
+  const unitCost = costPerMillionTotal(costUSD, { inputTokens: input, outputTokens: output, reasoningTokens: reasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
 
   return (
     <tr className="model-group-row">
@@ -540,6 +399,7 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
         </span>
       </td>
       <td>{fmtInt(calls)}</td>
+      <td>{reasoningSemantics === 'separate' ? formatCompact(reasoning) : '—'}</td>
       <td>{formatCompact(input)}</td>
       <td>{formatCompact(output)}</td>
       <td>{formatCompact(cacheRead)}</td>
@@ -557,12 +417,20 @@ function ModelTaskRow({ row }: { row: ModelReportRow }) {
   const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
   const total = reportRowTotal(row)
   const reuse = cacheReuseMultiple(row.inputTokens, row.cacheReadTokens)
-  const unitCost = costPerMillionObserved(row.costUSD, total)
+  const unitCost = costPerMillionTotal(row.costUSD, {
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    reasoningTokens: row.reasoningTokens,
+    reasoningSemantics: row.reasoningSemantics,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+  })
 
   return (
     <tr className="model-task-row">
       <td>{row.category ?? 'general'}</td>
       <td>{fmtInt(row.calls)}</td>
+      <td>{row.reasoningSemantics === 'separate' || row.reasoningSemantics === 'mixed' ? formatCompact(row.reasoningTokens ?? 0) : '—'}</td>
       <td>{formatCompact(row.inputTokens)}</td>
       <td>{formatCompact(row.outputTokens)}</td>
       <td>{formatCompact(row.cacheReadTokens)}</td>

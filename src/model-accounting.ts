@@ -1,5 +1,6 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const TOP_MODELS_LIMIT = 20
 const SYNTHETIC_MODEL_NAME = '<synthetic>'
@@ -9,7 +10,6 @@ type MergedModelRow = {
   cost: number
   calls: number
   savingsUSD: number
-  estimatedCostUSD: number
   inputTokens: number
   outputTokens: number
   reasoningTokens?: number
@@ -18,11 +18,22 @@ type MergedModelRow = {
   tokenDetail: boolean
   activeDurationMs: number
   activeGeneratedTokens: number
+  timingCoverage?: 'observed' | 'partial' | 'unavailable'
   provider?: string
   sourceProviders?: string[]
   rawModels?: string[]
   canonicalIdentity?: string
   semanticVariant?: string
+  reasoningSemantics?: ReasoningTokenSemantics
+  estimatedCostUSD: number
+  costIsEstimated: boolean
+}
+
+function mergeTimingCoverage(left: MergedModelRow['timingCoverage'], right: MergedModelRow['timingCoverage']): MergedModelRow['timingCoverage'] {
+  if (left === undefined) return right
+  if (right === undefined) return left
+  if (left === right) return left
+  return 'partial'
 }
 
 function semanticVariant(model: string): string | undefined {
@@ -104,7 +115,6 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       cost: 0,
       calls: 0,
       savingsUSD: 0,
-      estimatedCostUSD: 0,
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 0,
@@ -112,25 +122,39 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       tokenDetail: true,
       activeDurationMs: 0,
       activeGeneratedTokens: 0,
+      timingCoverage: undefined,
+      estimatedCostUSD: 0,
+      costIsEstimated: false,
     }
     acc.cost += model.cost
     acc.calls += model.calls
     acc.savingsUSD += model.savingsUSD ?? 0
     acc.estimatedCostUSD += model.estimatedCostUSD ?? 0
+    acc.costIsEstimated = acc.costIsEstimated || (model.estimatedCostUSD ?? 0) > 0
     acc.tokenDetail = acc.tokenDetail && hasTokenDetail
     if (hasTokenDetail) {
       acc.inputTokens += model.inputTokens!
       acc.outputTokens += model.outputTokens!
-      if (model.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + model.reasoningTokens
       acc.cacheReadTokens += model.cacheReadTokens!
       acc.cacheWriteTokens += model.cacheWriteTokens!
+    }
+    const modelReasoningSemantics = model.reasoningSemantics
+      ?? reasoningSemanticsForProviders(model.sourceProviders)
+    acc.reasoningSemantics = acc.reasoningSemantics === undefined
+      ? modelReasoningSemantics
+      : combineReasoningSemantics([acc.reasoningSemantics, modelReasoningSemantics])
+    if (hasTokenDetail && modelReasoningSemantics === 'separate') {
+      acc.reasoningTokens = (acc.reasoningTokens ?? 0) + (model.reasoningTokens ?? 0)
     }
     if (
       typeof model.activeDurationMs === 'number' && Number.isFinite(model.activeDurationMs) && model.activeDurationMs > 0
       && typeof model.activeGeneratedTokens === 'number' && Number.isFinite(model.activeGeneratedTokens) && model.activeGeneratedTokens > 0
     ) {
+      acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, model.timingCoverage ?? 'observed')
       acc.activeDurationMs += model.activeDurationMs
       acc.activeGeneratedTokens += model.activeGeneratedTokens
+    } else {
+      acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, model.timingCoverage ?? 'unavailable')
     }
     const hasProvenance = Boolean(model.modelProvider || (model.sourceProviders && model.sourceProviders.length > 0))
     if (model.modelProvider) acc.provider = model.modelProvider
@@ -181,7 +205,6 @@ export function buildModelAccounting(models: PeriodData['models'], totalCost: nu
     calls: row.calls,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
-    ...(row.reasoningTokens !== undefined ? { reasoningTokens: row.reasoningTokens } : {}),
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
     tokenDetail: row.tokenDetail,
@@ -190,9 +213,14 @@ export function buildModelAccounting(models: PeriodData['models'], totalCost: nu
     ...(row.rawModels && row.rawModels.length > 0 ? { rawModels: row.rawModels } : {}),
     ...(row.canonicalIdentity ? { canonicalIdentity: row.canonicalIdentity } : {}),
     ...(row.semanticVariant ? { semanticVariant: row.semanticVariant } : {}),
+    ...(row.reasoningSemantics && row.reasoningSemantics !== 'unavailable' ? { reasoningSemantics: row.reasoningSemantics } : {}),
+    ...(row.reasoningTokens !== undefined ? { reasoningTokens: row.reasoningTokens } : {}),
+    ...(row.estimatedCostUSD > 0 ? { estimatedCostUSD: row.estimatedCostUSD } : {}),
+    ...(row.costIsEstimated ? { costIsEstimated: true } : {}),
     ...(row.activeDurationMs > 0 && row.activeGeneratedTokens > 0
       ? { activeDurationMs: row.activeDurationMs, activeGeneratedTokens: row.activeGeneratedTokens }
       : {}),
+    ...(row.timingCoverage && row.timingCoverage !== 'unavailable' ? { timingCoverage: row.timingCoverage } : {}),
   }))
   const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
   const representedSavings = rows.reduce((sum, row) => sum + row.savingsUSD, 0)

@@ -80,7 +80,7 @@ describe('CLI JSON emitters', () => {
       const listResult = runCli(['compare', '--format', 'json', '--period', 'all', '--provider', 'claude'], home)
       expect(listResult.status, listResult.stderr).toBe(0)
       const models = JSON.parse(listResult.stdout) as Array<{ model: string; selfCorrections: number }>
-      expect(models.map(model => model.model)).toEqual(expect.arrayContaining(['claude-sonnet-4-5', 'claude-opus-4-5']))
+      expect(models.map(model => model.model)).toEqual(expect.arrayContaining(['Sonnet 4.5', 'Opus 4.5']))
       expect(models.every(model => typeof model.selfCorrections === 'number')).toBe(true)
 
       const fullResult = runCli([
@@ -91,8 +91,8 @@ describe('CLI JSON emitters', () => {
       const report = JSON.parse(fullResult.stdout)
       expect(Object.keys(report)).toEqual(['period', 'modelA', 'modelB', 'metrics', 'categories', 'workingStyle'])
       expect(report.period.provider).toBe('claude')
-      expect(report.modelA.model).toBe('claude-sonnet-4-5')
-      expect(report.modelB.model).toBe('claude-opus-4-5')
+      expect(report.modelA.model).toBe('Sonnet 4.5')
+      expect(report.modelB.model).toBe('Opus 4.5')
     } finally {
       await rm(home, { recursive: true, force: true })
     }
@@ -106,13 +106,13 @@ describe('CLI JSON emitters', () => {
       const rows = JSON.parse(result.stdout) as Array<Record<string, unknown>>
       expect(rows).toHaveLength(2)
       expect(Object.keys(rows[0]!)).toEqual([
-        'sessionId', 'title', 'project', 'provider', 'models', 'cost', 'savingsUSD', 'calls', 'turns',
+        'sessionId', 'sessionKey', 'title', 'project', 'provider', 'models', 'cost', 'savingsUSD', 'calls', 'turns',
         'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens',
-        'reasoningTokens', 'reasoningMix',
+        'reasoningSemantics', 'reasoningMix',
         'startedAt', 'endedAt', 'durationMs',
       ])
       expect(rows.every(row => row.provider === 'claude')).toBe(true)
-      expect(rows.every(row => typeof row.reasoningTokens === 'number')).toBe(true)
+      expect(rows.every(row => row.reasoningSemantics === 'unavailable')).toBe(true)
       expect(rows.every(row => {
         const mix = row.reasoningMix as { totalCalls?: number; rows?: Array<{ level?: string }> } | undefined
         return mix?.totalCalls === row.calls && mix.rows?.some(item => item.level === 'unknown')

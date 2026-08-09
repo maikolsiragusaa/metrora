@@ -11,7 +11,7 @@ import { Stat } from '../components/Stat'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatDayLong, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
+import { cacheReuseMultiple, cacheShare, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { DateRange, Period, ReasoningMix, ReasoningLevelOrUnknown, SessionRow } from '../lib/types'
 
 export const INITIAL_VISIBLE = 120
@@ -33,9 +33,9 @@ const SORT_OPTIONS = [
 const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
   recent: 'most recent',
   cost: 'highest cost',
-  tokens: 'total observed tokens',
+  tokens: 'total tokens',
   cache: 'cache reuse',
-  unitCost: 'effective cost per one million observed tokens',
+  unitCost: 'effective cost per one million total tokens',
 }
 
 function providerName(provider: string): string {
@@ -83,7 +83,7 @@ function endedAtTime(row: SessionRow): number {
 }
 
 function sessionTotalTokens(row: SessionRow): number {
-  return observedTokenTotal(row)
+  return totalTokenCount(row)
 }
 
 function sessionCacheReuse(row: SessionRow): number | null {
@@ -91,7 +91,7 @@ function sessionCacheReuse(row: SessionRow): number | null {
 }
 
 function sessionUnitCost(row: SessionRow): number | null {
-  return costPerMillionObserved(row.cost, sessionTotalTokens(row))
+  return costPerMillionTotal(row.cost, row)
 }
 
 function compareNullableDescending(a: number | null, b: number | null): number {
@@ -119,7 +119,7 @@ function groupSortValue(sort: SessionSort, rows: SessionRow[]): number {
   if (sort === 'unitCost') {
     const cost = rows.reduce((sum, row) => sum + row.cost, 0)
     const tokens = rows.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
-    return costPerMillionObserved(cost, tokens) ?? 0
+    return tokens > 0 ? cost / tokens * 1_000_000 : 0
   }
   return rows.reduce((latest, row) => Math.max(latest, endedAtTime(row)), 0)
 }
@@ -128,8 +128,12 @@ function sessionHeadline(row: SessionRow): string {
   return row.title || shortenProjectPath(row.project)
 }
 
-function sessionDetailId(sessionId: string): string {
-  return `session-details-${sessionId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+function sessionIdentity(row: SessionRow): string {
+  return row.sessionKey ?? [row.provider, row.project, row.sessionId].join('\u0000')
+}
+
+function sessionDetailId(identity: string): string {
+  return `session-details-${identity.replace(/[^a-zA-Z0-9_-]/g, '-')}`
 }
 
 function sessionRowLabel(row: SessionRow, expanded: boolean): string {
@@ -139,12 +143,13 @@ function sessionRowLabel(row: SessionRow, expanded: boolean): string {
   if (row.title && project !== headline) parts.push(`Project ${project}.`)
   parts.push(
     `Session ID ${row.sessionId}.`,
-    `Ended ${formatDayLong(row.endedAt)}.`,
+    `Started ${formatDayLong(row.startedAt)}.`,
+    `Last activity ${formatDayLong(row.endedAt)}.`,
     `Models ${row.models.length > 0 ? row.models.join(', ') : 'not identified'}.`,
     `Reasoning ${reasoningMixLabel(row.reasoningMix)}.`,
     `${row.turns.toLocaleString('en-US')} turns.`,
     `Cost ${formatUsd(row.cost)}.`,
-    `${formatCompact(sessionTotalTokens(row))} observed tokens.`,
+    `${formatCompact(sessionTotalTokens(row))} total tokens.`,
   )
   return parts.join(' ')
 }
@@ -360,44 +365,56 @@ export function Sessions({
       ) : (
         <>
           <Panel className="scroll-x">
-            <table aria-label="Detailed sessions">
+            <table className="sessions-table" aria-label="Detailed sessions">
+              <colgroup>
+                <col style={{ width: 230 }} /><col style={{ width: 118 }} /><col style={{ width: 112 }} /><col style={{ width: 126 }} />
+                <col style={{ width: 190 }} /><col style={{ width: 76 }} /><col style={{ width: 104 }} /><col style={{ width: 104 }} />
+                <col style={{ width: 104 }} /><col style={{ width: 104 }} /><col style={{ width: 104 }} /><col style={{ width: 88 }} />
+                <col style={{ width: 116 }} /><col style={{ width: 96 }} /><col style={{ width: 108 }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Session</th>
                   <th>Client</th>
                   <th>Started</th>
+                  <th>Last activity</th>
                   <th>Model</th>
                   <th>Calls</th>
                   <th>Input</th>
                   <th>Output</th>
+                  <th>Reasoning</th>
                   <th>Cache R</th>
                   <th>Cache W</th>
                   <th title="Cached input read per uncached input token">Cache ×</th>
                   <th>Total</th>
                   <th>Cost</th>
-                  <th title="Effective API-equivalent value per 1M observed tokens">Cost / 1M</th>
+                  <th title="Effective API-equivalent value per 1M total tokens">Cost / 1M</th>
                 </tr>
               </thead>
               <tbody>
                 {renderedSequence.map(entry => entry.type === 'header' ? (
                   <tr key={`provider-${entry.provider}`}>
-                    <td colSpan={13}>
+                    <td colSpan={15}>
                       <strong>{providerName(entry.provider)}</strong>
                       <span style={{ color: 'var(--mut)', marginLeft: 8 }}>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span>
                     </td>
                   </tr>
                 ) : (
-                  <Fragment key={entry.row.sessionId}>
+                  <Fragment key={sessionIdentity(entry.row)}>
+                    {(() => {
+                      const identity = sessionIdentity(entry.row)
+                      const expanded = selectedId === identity
+                      return <>
                     <tr>
                       <td>
                         <button
                           className="alias"
                           type="button"
-                          aria-label={sessionRowLabel(entry.row, selectedId === entry.row.sessionId)}
-                          aria-expanded={selectedId === entry.row.sessionId}
-                          aria-controls={sessionDetailId(entry.row.sessionId)}
+                          aria-label={sessionRowLabel(entry.row, expanded)}
+                          aria-expanded={expanded}
+                          aria-controls={sessionDetailId(identity)}
                           title={entry.row.title || entry.row.sessionId}
-                          onClick={() => setSelectedId(current => current === entry.row.sessionId ? null : entry.row.sessionId)}
+                          onClick={() => setSelectedId(current => current === identity ? null : identity)}
                         >
                           {sessionHeadline(entry.row)}
                         </button>
@@ -405,10 +422,12 @@ export function Sessions({
                       </td>
                       <td><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ProviderLogo provider={entry.row.provider} size={14} />{providerName(entry.row.provider)}</span></td>
                       <td>{formatStartedAt(entry.row.startedAt)}</td>
+                      <td>{formatStartedAt(entry.row.endedAt)}</td>
                       <td title={entry.row.models.join(', ')}>{entry.row.models.join(', ') || '—'}</td>
                       <td>{entry.row.calls.toLocaleString('en-US')}</td>
                       <td>{formatCompact(entry.row.inputTokens)}</td>
                       <td>{formatCompact(entry.row.outputTokens)}</td>
+                      <td title={entry.row.reasoningSemantics === 'unavailable' ? 'Separate reasoning evidence is unavailable; it is not guessed.' : 'Separately reported reasoning tokens included in Total.'}>{entry.row.reasoningSemantics === 'separate' || entry.row.reasoningSemantics === 'mixed' ? formatCompact(entry.row.reasoningTokens ?? 0) : '\u2014'}</td>
                       <td>{formatCompact(entry.row.cacheReadTokens)}</td>
                       <td>{formatCompact(entry.row.cacheWriteTokens)}</td>
                       <td title={cacheShare(entry.row.inputTokens, entry.row.cacheReadTokens) == null ? undefined : `${Math.round((cacheShare(entry.row.inputTokens, entry.row.cacheReadTokens) ?? 0) * 1000) / 10}% of input served from cache`}>{formatReuseMultiple(sessionCacheReuse(entry.row))}</td>
@@ -416,13 +435,15 @@ export function Sessions({
                       <td>{formatUsd(entry.row.cost)}</td>
                       <td>{formatUnitCost(sessionUnitCost(entry.row))}</td>
                     </tr>
-                    {selectedId === entry.row.sessionId && (
+                    {expanded && (
                       <tr>
-                        <td colSpan={13} id={sessionDetailId(entry.row.sessionId)}>
+                        <td colSpan={15} id={sessionDetailId(identity)}>
                           <SessionDetail session={entry.row} onCollapse={() => setSelectedId(null)} />
                         </td>
                       </tr>
                     )}
+                      </>
+                    })()}
                   </Fragment>
                 ))}
               </tbody>
@@ -445,9 +466,10 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
   const reuse = sessionCacheReuse(session)
   const share = cacheShare(session.inputTokens, session.cacheReadTokens)
   const unitCost = sessionUnitCost(session)
-  const reasoningTokenSummary = session.reasoningTokens === undefined
+  const hasSeparateReasoning = session.reasoningSemantics === 'separate' || session.reasoningSemantics === 'mixed'
+  const reasoningTokenSummary = !hasSeparateReasoning
     ? 'Reasoning-token count unavailable'
-    : `${formatCompact(session.reasoningTokens)} dedicated reasoning tokens`
+    : `${formatCompact(session.reasoningTokens ?? 0)} dedicated reasoning tokens`
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -469,15 +491,16 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
       </div>
       <div className="stats">
         <Stat label="Cost" value={formatUsd(session.cost)} delta="API-equivalent value" />
-        <Stat label="Cost / 1M" value={formatUnitCost(unitCost)} delta="observed tokens" />
+        <Stat label="Cost / 1M" value={formatUnitCost(unitCost)} delta="total tokens" />
         <Stat label="Calls" value={session.calls.toLocaleString()} delta="API calls" />
         <Stat label="Turns" value={session.turns.toLocaleString()} delta="assistant turns" />
         <Stat label="Input" value={formatCompact(session.inputTokens)} delta="uncached input" />
         <Stat label="Output" value={formatCompact(session.outputTokens)} delta="generated" />
+        <Stat label="Reasoning" value={hasSeparateReasoning ? formatCompact(session.reasoningTokens ?? 0) : '—'} delta={hasSeparateReasoning ? 'separately reported' : 'separate evidence unavailable'} />
         <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta="reused input" />
         <Stat label="Cache write" value={formatCompact(session.cacheWriteTokens)} delta="written to cache" />
         <Stat label="Cache reuse" value={formatReuseMultiple(reuse)} delta={share == null ? 'No comparable input' : `${Math.round(share * 1000) / 10}% cache share`} />
-        <Stat label="Total" value={formatCompact(totalTokens)} delta="observed tokens" />
+        <Stat label="Total" value={formatCompact(totalTokens)} delta="input + output + reasoning + cache" />
         {session.savingsUSD > 0 ? <Stat label="Saved" value={formatUsd(session.savingsUSD)} delta="configured baseline" /> : null}
       </div>
       {session.reasoningMix && session.reasoningMix.rows.length > 0 && (

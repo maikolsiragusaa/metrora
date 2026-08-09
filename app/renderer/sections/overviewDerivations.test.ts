@@ -133,8 +133,8 @@ describe('Overview derivations', () => {
     })
     ;(value as MenubarPayload['current'] & { modelAccounting: unknown }).modelAccounting = {
       rows: [
-        { name: 'model-a', cost: 10, savingsUSD: 0, calls: 10 },
-        { name: 'model-b', cost: 1.5, savingsUSD: 0, calls: 1 },
+        { name: 'model-a', cost: 10, savingsUSD: 0, calls: 10, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: false },
+        { name: 'model-b', cost: 1.5, savingsUSD: 0, calls: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: false },
       ],
       gap: { cost: 0.5, savingsUSD: 0, calls: 1 },
       coverage: { cost: 0.958333, calls: 0.916667 },

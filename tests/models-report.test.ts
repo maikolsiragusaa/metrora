@@ -238,7 +238,7 @@ describe('aggregateModels', () => {
     expect(above.find(r => r.provider === 'cursor')).toBeUndefined()
   })
 
-  it('counts reasoning tokens as output tokens', async () => {
+  it('keeps separately reported reasoning out of Output and includes it in Total', async () => {
     const project = makeProject([
       makeTurn('feature', [
         {
@@ -259,7 +259,10 @@ describe('aggregateModels', () => {
       ]),
     ])
     const rows = await aggregateModels([project])
-    expect(rows[0]!.outputTokens).toBe(250)
+    expect(rows[0]!.outputTokens).toBe(50)
+    expect(rows[0]!.reasoningTokens).toBe(200)
+    expect(rows[0]!.reasoningSemantics).toBe('separate')
+    expect(rows[0]!.totalTokens).toBe(350)
   })
   it('rolls call-level pricing evidence into each model row', async () => {
     const rows = await aggregateModels([makeProject([
@@ -513,8 +516,8 @@ describe('renderMarkdown', () => {
     ]
     const md = renderMarkdown(rows, { showTotals: false })
     const lines = md.split('\n')
-    expect(lines[0]).toBe('| Provider | Model | Top Task | Input | Output | Cache Write | Cache Read | Total | Cost | Saved |')
-    expect(lines[1]).toBe('| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
+    expect(lines[0]).toBe('| Provider | Model | Top Task | Input | Output | Reasoning | Cache Write | Cache Read | Total | Cost | Saved |')
+    expect(lines[1]).toBe('| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
     expect(lines[2]).toContain('| Claude |')
     expect(lines[2]).toContain('`Sonnet 4.6`')
     expect(lines[2]).toContain('Feature Dev (60%)')
@@ -540,7 +543,7 @@ describe('renderMarkdown', () => {
     ]
     const md = renderMarkdown(rows, { byAgent: true, showTotals: false })
     const lines = md.split('\n')
-    expect(lines[0]).toBe('| Provider | Model | Agent | Input | Output | Cache Write | Cache Read | Total | Cost | Saved |')
+    expect(lines[0]).toBe('| Provider | Model | Agent | Input | Output | Reasoning | Cache Write | Cache Read | Total | Cost | Saved |')
     expect(lines[2]).toContain('| planner |')
   })
 
@@ -675,8 +678,8 @@ describe('renderCsv', () => {
     ]
     const csv = renderCsv(rows)
     const lines = csv.split('\n')
-    expect(lines[0]).toBe('provider,model,top_task,top_task_share,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
-    expect(lines[1]).toBe('Claude,Sonnet 4.6,Feature Dev,0.6000,100,50,0,0,150,1,1.500000,0.000000,')
+    expect(lines[0]).toBe('provider,model,top_task,top_task_share,input_tokens,output_tokens,reasoning_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
+    expect(lines[1]).toBe('Claude,Sonnet 4.6,Feature Dev,0.6000,100,50,0,0,0,150,1,1.500000,0.000000,')
   })
 
   it('emits an agent column in byAgent mode', () => {
@@ -701,8 +704,8 @@ describe('renderCsv', () => {
     ]
     const csv = renderCsv(rows, { byAgent: true })
     const lines = csv.split('\n')
-    expect(lines[0]).toBe('provider,model,agent,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
-    expect(lines[1]).toBe('Claude,Opus 4.8,planner,100,50,0,0,150,1,6.000000,0.000000,')
+    expect(lines[0]).toBe('provider,model,agent,input_tokens,output_tokens,reasoning_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
+    expect(lines[1]).toBe('Claude,Opus 4.8,planner,100,50,0,0,0,150,1,6.000000,0.000000,')
   })
 
   it('escapes commas in provider/model cells', () => {

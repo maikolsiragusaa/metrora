@@ -1963,7 +1963,7 @@ program
     await loadPricing()
     const { range, label } = getDateRange(opts.period)
     if (opts.format === 'json') {
-      const { aggregateModelStats, buildCompareJson, renderCompareJson, scanSelfCorrections } = await import('./compare-stats.js')
+      const { aggregateModelStats, buildCompareJson, matchesPresentationModel, renderCompareJson, scanSelfCorrections, selfCorrectionsForPresentation } = await import('./compare-stats.js')
       const projects = await parseAllSessions(range, opts.provider)
       const models = aggregateModelStats(projects)
 
@@ -1975,7 +1975,7 @@ program
       }
       const corrections = await scanSelfCorrections(dirs)
       for (const model of models) {
-        model.selfCorrections = corrections.get(model.model) ?? 0
+        model.selfCorrections = selfCorrectionsForPresentation(corrections, model.presentationIdentity)
       }
 
       if (!opts.modelA && !opts.modelB) {
@@ -1986,8 +1986,8 @@ program
         process.stderr.write('metrora compare: --model-a and --model-b must be provided together.\n')
         process.exit(1)
       }
-      const modelA = models.find(model => model.model === opts.modelA)
-      const modelB = models.find(model => model.model === opts.modelB)
+      const modelA = models.find(model => matchesPresentationModel(model, opts.modelA))
+      const modelB = models.find(model => matchesPresentationModel(model, opts.modelB))
       if (!modelA) {
         process.stderr.write(`metrora compare: model not found: "${opts.modelA}".\n`)
         process.exit(1)

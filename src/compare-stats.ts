@@ -1,15 +1,21 @@
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 
+import { presentationIdentityForModelName } from './model-presentation.js'
 import type { ProjectSummary } from './types.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const PLANNING_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode'])
 
 export type ModelStats = {
   model: string
+  /** Safe presentation identity shared by Compare's model selection and evidence scans. */
+  presentationIdentity: string
   calls: number
   cost: number
   outputTokens: number
+  reasoningTokens: number
+  reasoningSemantics: ReasoningTokenSemantics
   inputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
@@ -27,10 +33,11 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
   const byModel = new Map<string, ModelStats>()
 
   const ensure = (model: string): ModelStats => {
-    let s = byModel.get(model)
+    const identity = presentationIdentityForModelName(model)
+    let s = byModel.get(identity.key)
     if (!s) {
-      s = { model, calls: 0, cost: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTurns: 0, editTurns: 0, oneShotTurns: 0, retries: 0, selfCorrections: 0, editCost: 0, firstSeen: '', lastSeen: '' }
-      byModel.set(model, s)
+      s = { model: identity.name, presentationIdentity: identity.key, calls: 0, cost: 0, outputTokens: 0, reasoningTokens: 0, reasoningSemantics: 'unavailable', inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTurns: 0, editTurns: 0, oneShotTurns: 0, retries: 0, selfCorrections: 0, editCost: 0, firstSeen: '', lastSeen: '' }
+      byModel.set(identity.key, s)
     }
     return s
   }
@@ -39,10 +46,11 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
     for (const session of project.sessions) {
       for (const turn of session.turns) {
         if (turn.assistantCalls.length === 0) continue
-        const primaryModel = turn.assistantCalls[0]!.model
-        if (primaryModel === '<synthetic>') continue
+        const primaryRawModel = turn.assistantCalls[0]!.model
+        if (primaryRawModel === '<synthetic>') continue
+        const primaryIdentity = presentationIdentityForModelName(primaryRawModel)
 
-        const ms = ensure(primaryModel)
+        const ms = ensure(primaryRawModel)
         ms.totalTurns++
         if (turn.hasEdits) {
           ms.editTurns++
@@ -55,10 +63,18 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
 
         for (const call of turn.assistantCalls) {
           if (call.model === '<synthetic>') continue
-          const cs = call.model === primaryModel ? ms : ensure(call.model)
+          const callIdentity = presentationIdentityForModelName(call.model)
+          const cs = callIdentity.key === primaryIdentity.key ? ms : ensure(call.model)
           cs.calls++
           cs.cost += call.costUSD
           cs.outputTokens += call.usage.outputTokens
+          const callReasoningSemantics = reasoningSemanticsForProviders([call.provider])
+          cs.reasoningSemantics = cs.calls === 1
+            ? callReasoningSemantics
+            : combineReasoningSemantics([cs.reasoningSemantics, callReasoningSemantics])
+          if (callReasoningSemantics === 'separate') {
+            cs.reasoningTokens += call.usage.reasoningTokens
+          }
           cs.inputTokens += call.usage.inputTokens
           cs.cacheReadTokens += call.usage.cacheReadInputTokens
           cs.cacheWriteTokens += call.usage.cacheCreationInputTokens
@@ -98,6 +114,24 @@ export type WorkingStyleRow = {
   valueA: number | null
   valueB: number | null
   formatFn: ComparisonRow['formatFn']
+}
+
+export function matchesPresentationModel(model: Pick<ModelStats, 'model' | 'presentationIdentity'>, requested: string): boolean {
+  return model.model === requested || model.presentationIdentity === presentationIdentityForModelName(requested).key
+}
+
+export function selfCorrectionsForPresentation(corrections: Map<string, number>, presentationIdentity: string): number {
+  return [...corrections.entries()]
+    .filter(([rawModel]) => presentationIdentityForModelName(rawModel).key === presentationIdentity)
+    .reduce((sum, [, count]) => sum + count, 0)
+}
+
+function comparisonIdentity(value: string): string {
+  // Compare callers may provide either a raw/display model name or the stable
+  // presentation key carried by ModelStats.  Raw identities do not contain a
+  // NUL separator, so recognize their explicit key prefix as well.
+  if (value.includes('\u0000') || /^(?:raw|canonical|family|exact):/.test(value)) return value
+  return presentationIdentityForModelName(value).key
 }
 
 export type CompareJsonReport = {
@@ -203,6 +237,8 @@ export function computeCategoryComparison(projects: ProjectSummary[], modelA: st
   type Accum = { turns: number; editTurns: number; oneShotTurns: number }
   const mapA = new Map<string, Accum>()
   const mapB = new Map<string, Accum>()
+  const modelAKey = comparisonIdentity(modelA)
+  const modelBKey = comparisonIdentity(modelB)
 
   const ensure = (map: Map<string, Accum>, cat: string): Accum => {
     let a = map.get(cat)
@@ -214,10 +250,10 @@ export function computeCategoryComparison(projects: ProjectSummary[], modelA: st
     for (const session of project.sessions) {
       for (const turn of session.turns) {
         if (turn.assistantCalls.length === 0) continue
-        const primary = turn.assistantCalls[0]!.model
-        if (primary !== modelA && primary !== modelB) continue
+        const primary = presentationIdentityForModelName(turn.assistantCalls[0]!.model).key
+        if (primary !== modelAKey && primary !== modelBKey) continue
 
-        const acc = ensure(primary === modelA ? mapA : mapB, turn.category)
+        const acc = ensure(primary === modelAKey ? mapA : mapB, turn.category)
         acc.turns++
         if (turn.hasEdits) {
           acc.editTurns++
@@ -257,15 +293,17 @@ export function computeWorkingStyle(projects: ProjectSummary[], modelA: string, 
   type StyleAccum = { totalTurns: number; agentSpawns: number; planModeUses: number; totalToolCalls: number; fastModeCalls: number }
   const sA: StyleAccum = { totalTurns: 0, agentSpawns: 0, planModeUses: 0, totalToolCalls: 0, fastModeCalls: 0 }
   const sB: StyleAccum = { totalTurns: 0, agentSpawns: 0, planModeUses: 0, totalToolCalls: 0, fastModeCalls: 0 }
+  const modelAKey = comparisonIdentity(modelA)
+  const modelBKey = comparisonIdentity(modelB)
 
   for (const project of projects) {
     for (const session of project.sessions) {
       for (const turn of session.turns) {
         if (turn.assistantCalls.length === 0) continue
-        const primary = turn.assistantCalls[0]!.model
-        if (primary !== modelA && primary !== modelB) continue
+        const primary = presentationIdentityForModelName(turn.assistantCalls[0]!.model).key
+        if (primary !== modelAKey && primary !== modelBKey) continue
 
-        const s = primary === modelA ? sA : sB
+        const s = primary === modelAKey ? sA : sB
         s.totalTurns++
         const turnTools = turn.assistantCalls.flatMap(c => c.tools)
         if (turnTools.some(t => PLANNING_TOOLS.has(t)) || turn.assistantCalls.some(c => c.hasPlanMode)) {
@@ -303,8 +341,8 @@ export function buildCompareJson(
     modelA,
     modelB,
     metrics: computeComparison(modelA, modelB),
-    categories: computeCategoryComparison(projects, modelA.model, modelB.model),
-    workingStyle: computeWorkingStyle(projects, modelA.model, modelB.model),
+    categories: computeCategoryComparison(projects, modelA.presentationIdentity, modelB.presentationIdentity),
+    workingStyle: computeWorkingStyle(projects, modelA.presentationIdentity, modelB.presentationIdentity),
   }
 }
 

@@ -78,6 +78,7 @@ describe('sessions JSON emitter', () => {
 
     expect(parsed).toEqual([{
       sessionId: 'session-1',
+      sessionKey: 'claude\u0000session-1\u0000metrora\u0000metrora',
       title: '',
       project: 'metrora',
       provider: 'claude',
@@ -90,6 +91,7 @@ describe('sessions JSON emitter', () => {
       outputTokens: 20,
       cacheReadTokens: 400,
       cacheWriteTokens: 30,
+      reasoningSemantics: 'unavailable',
       startedAt: '2026-07-10T10:00:00.000Z',
       endedAt: '2026-07-10T10:05:00.000Z',
       durationMs: 300_000,

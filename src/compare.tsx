@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useStdout } from 'ink'
 
 import type { ModelStats, ComparisonRow, CategoryComparison, WorkingStyleRow } from './compare-stats.js'
-import { aggregateModelStats, computeComparison, computeCategoryComparison, computeWorkingStyle, scanSelfCorrections } from './compare-stats.js'
+import { aggregateModelStats, computeComparison, computeCategoryComparison, computeWorkingStyle, scanSelfCorrections, selfCorrectionsForPresentation } from './compare-stats.js'
 import { formatCost } from './format.js'
 import { parseAllSessions, setInteractiveScanUI } from './parser.js'
 import { getAllProviders } from './providers/index.js'
@@ -425,8 +425,8 @@ export function CompareView({ projects, onBack }: CompareViewProps) {
       if (cancelled) return
 
       const currentProjects = projectsRef.current
-      const aCopy = { ...a!, selfCorrections: corrections.get(a!.model) ?? 0 }
-      const bCopy = { ...b!, selfCorrections: corrections.get(b!.model) ?? 0 }
+      const aCopy = { ...a!, selfCorrections: selfCorrectionsForPresentation(corrections, a!.presentationIdentity) }
+      const bCopy = { ...b!, selfCorrections: selfCorrectionsForPresentation(corrections, b!.presentationIdentity) }
       setSelectedA(aCopy)
       setSelectedB(bCopy)
       setRows(computeComparison(aCopy, bCopy))

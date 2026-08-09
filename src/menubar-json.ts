@@ -40,6 +40,7 @@ export type PeriodData = {
     inputTokens?: number
     outputTokens?: number
     reasoningTokens?: number
+    reasoningSemantics?: 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
     cacheReadTokens?: number
     cacheWriteTokens?: number
     /// Source-recorded model/API provider, when the durable source exposed it.
@@ -48,6 +49,7 @@ export type PeriodData = {
     sourceProviders?: string[]
     activeDurationMs?: number
     activeGeneratedTokens?: number
+    timingCoverage?: 'observed' | 'partial' | 'unavailable'
   }>
   /// Models with usage in the period whose pricing lookup fails against the
   /// current tables (#638): their calls contribute $0 to `cost`. Optional so
@@ -109,6 +111,7 @@ import type { OptimizeResult } from './optimize.js'
 import { getCurrency } from './currency.js'
 import type { GranularHistory } from './granular-history.js'
 import { buildModelAccounting, buildTopModels } from './model-accounting.js'
+import { buildModelPresentation } from './model-presentation.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
@@ -168,6 +171,9 @@ export type ModelAccounting = {
   /** Share of represented model accounting that also has durable token detail. */
   tokenCoverage: { cost: number; calls: number }
 }
+
+export type { ModelPresentation, ModelPresentationRow, DeliveryStatus } from './model-presentation.js'
+import type { ModelPresentation } from './model-presentation.js'
 
 export type DeviceSummary = {
   id: string
@@ -261,6 +267,8 @@ export type MenubarPayload = {
     /// payloads; current producers always emit it from the same PeriodData used
     /// by headline cost/calls.
     modelAccounting?: ModelAccounting
+    /** Presentation-sized projection above exact modelAccounting rows. */
+    modelPresentation?: ModelPresentation
     /// See PeriodData.unpricedModels: usage priced at $0 for lack of pricing
     /// data. Empty when every model in the period resolved a price. Optional
     /// so payload producers that predate the field stay source-compatible.
@@ -532,6 +540,7 @@ export function buildMenubarPayload(
   claudeConfigs?: ClaudeConfigSelector,
   granularHistory?: GranularHistory,
 ): MenubarPayload {
+  const modelAccounting = buildModelAccounting(current.models, current.cost, current.calls)
   const payload: MenubarPayload = {
     generated: new Date().toISOString(),
     current: {
@@ -549,7 +558,8 @@ export function buildMenubarPayload(
       estimatedCostUSD: current.estimatedCostUSD ?? 0,
       topActivities: buildTopActivities(current.categories),
       topModels: buildTopModels(current.models),
-      modelAccounting: buildModelAccounting(current.models, current.cost, current.calls),
+      modelAccounting,
+      modelPresentation: buildModelPresentation(modelAccounting),
       unpricedModels: current.unpricedModels ?? [],
       localModelSavings: breakdowns?.localModelSavings ?? { totalUSD: 0, calls: 0, byModel: [], byProvider: [] },
       providers: buildProviders(providers),

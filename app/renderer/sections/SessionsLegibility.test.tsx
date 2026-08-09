@@ -77,13 +77,13 @@ describe('Sessions dense-report legibility', () => {
     expect(status).toHaveTextContent('Sessions sorted by most recent, not grouped by provider. 1 session after filters.')
 
     const row = sessionRow
-    expect(row).toHaveAttribute('aria-controls', 'session-details-claude-abc-123')
+    expect(row).toHaveAttribute('aria-controls', 'session-details-claude-projects-metrora-claude-abc-123')
     expect(row).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(row)
 
     const detail = screen.getByRole('region', { name: 'projects/metrora session details' })
-    expect(detail.closest('td')).toHaveAttribute('id', 'session-details-claude-abc-123')
+    expect(detail.closest('td')).toHaveAttribute('id', 'session-details-claude-projects-metrora-claude-abc-123')
     expect(screen.getByRole('button', { name: /Collapse session: Investigate cache/i })).toHaveAttribute('aria-expanded', 'true')
     expect(within(detail).getByText('No comparable input')).toBeInTheDocument()
     expect(within(detail).getByText('Reasoning-token count unavailable')).toBeInTheDocument()

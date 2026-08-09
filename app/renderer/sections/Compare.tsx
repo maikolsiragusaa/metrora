@@ -8,7 +8,7 @@ import { SectionSkeleton } from '../components/Skeleton'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { cacheReuseMultiple, cacheShare, costPerMillionObserved, formatReuseMultiple, observedTokenTotal } from '../lib/usageMetrics'
+import { cacheReuseMultiple, cacheShare, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { CompareJsonReport, ComparisonRow, DateRange, ModelStats, Period, WorkingStyleRow } from '../lib/types'
 
 function fmtMetric(v: number | null, fn: 'cost' | 'number' | 'percent' | 'decimal'): string | null {
@@ -202,18 +202,19 @@ function CompareReport({
 }
 
 function ObservedUsageCard({ modelA, modelB }: { modelA: ModelStats; modelB: ModelStats }) {
-  const totalA = observedTokenTotal(modelA)
-  const totalB = observedTokenTotal(modelB)
+  const totalA = totalTokenCount(modelA)
+  const totalB = totalTokenCount(modelB)
   const reuseA = cacheReuseMultiple(modelA.inputTokens, modelA.cacheReadTokens)
   const reuseB = cacheReuseMultiple(modelB.inputTokens, modelB.cacheReadTokens)
   const shareA = cacheShare(modelA.inputTokens, modelA.cacheReadTokens)
   const shareB = cacheShare(modelB.inputTokens, modelB.cacheReadTokens)
-  const unitA = costPerMillionObserved(modelA.cost, totalA)
-  const unitB = costPerMillionObserved(modelB.cost, totalB)
+  const unitA = costPerMillionTotal(modelA.cost, modelA)
+  const unitB = costPerMillionTotal(modelB.cost, modelB)
   const rows: Array<{ label: string; valueA: string | null; valueB: string | null; note?: string }> = [
     { label: 'Calls', valueA: modelA.calls.toLocaleString('en-US'), valueB: modelB.calls.toLocaleString('en-US') },
     { label: 'Input', valueA: formatCompact(modelA.inputTokens), valueB: formatCompact(modelB.inputTokens) },
     { label: 'Output', valueA: formatCompact(modelA.outputTokens), valueB: formatCompact(modelB.outputTokens) },
+    { label: 'Reasoning', valueA: modelA.reasoningSemantics === 'separate' || modelA.reasoningSemantics === 'mixed' ? formatCompact(modelA.reasoningTokens ?? 0) : '—', valueB: modelB.reasoningSemantics === 'separate' || modelB.reasoningSemantics === 'mixed' ? formatCompact(modelB.reasoningTokens ?? 0) : '—' },
     { label: 'Cache R', valueA: formatCompact(modelA.cacheReadTokens), valueB: formatCompact(modelB.cacheReadTokens) },
     { label: 'Cache W', valueA: formatCompact(modelA.cacheWriteTokens), valueB: formatCompact(modelB.cacheWriteTokens) },
     { label: 'Cache ×', valueA: formatReuseMultiple(reuseA), valueB: formatReuseMultiple(reuseB), note: `Cache share: ${shareA == null ? '—' : `${Math.round(shareA * 1000) / 10}%`} / ${shareB == null ? '—' : `${Math.round(shareB * 1000) / 10}%`}` },

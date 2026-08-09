@@ -19,8 +19,15 @@ export type ModelAccountingRow = {
   canonicalIdentity?: string
   /// Explicit semantic variant such as free/high/low/tiered.
   semanticVariant?: string
+  /** Whether separately reported reasoning is safe to add to generated totals. */
+  reasoningSemantics?: 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
+  /** Portion of this row's settled cost computed from estimated usage. */
+  estimatedCostUSD?: number
+  costIsEstimated?: boolean
   /** Active generation timing from surviving source evidence only. */
   activeDurationMs?: number
   activeGeneratedTokens?: number
+  /** Whether active-generation timing is observed for this exact row. */
+  timingCoverage?: 'observed' | 'partial' | 'unavailable'
   reasoningTokens?: number
 }

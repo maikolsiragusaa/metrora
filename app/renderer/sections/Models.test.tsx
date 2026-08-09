@@ -144,7 +144,7 @@ describe('Models', () => {
     expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
     expect(screen.getByText('Claude Opus 4.8')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'ms / 1K' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Active ms / 1K' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
     expect(screen.getByText('9×')).toBeInTheDocument()
     expect(screen.getByText('5.1M')).toBeInTheDocument()
@@ -217,7 +217,7 @@ describe('Models', () => {
     })
     render(<Models period="lifetime" provider="all" overview={overview} />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'ms / 1K' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Active ms / 1K' }))
     const bodyRows = screen.getAllByRole('row').slice(1)
     expect(bodyRows[0]).toHaveTextContent('Faster model')
     expect(bodyRows[1]).toHaveTextContent('Slower model')

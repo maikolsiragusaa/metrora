@@ -3,6 +3,8 @@ export type UsageTokenTotals = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  reasoningTokens?: number
+  reasoningSemantics?: 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
 }
 
 /**
@@ -13,6 +15,22 @@ export type UsageTokenTotals = {
  */
 export function observedTokenTotal(usage: UsageTokenTotals): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+}
+
+/**
+ * Safe user-facing total. Reasoning is added only when the source proved it is
+ * separately reported; aggregate-output and unavailable sources are not guessed.
+ */
+export function totalTokenCount(usage: UsageTokenTotals): number {
+  const reasoning = usage.reasoningSemantics === 'separate' || usage.reasoningSemantics === 'mixed'
+    ? usage.reasoningTokens ?? 0
+    : 0
+  return observedTokenTotal(usage) + reasoning
+}
+
+export function generatedTokenCount(usage: UsageTokenTotals): number | null {
+  if (usage.reasoningSemantics === 'unavailable') return null
+  return usage.outputTokens + ((usage.reasoningSemantics === 'separate' || usage.reasoningSemantics === 'mixed') ? usage.reasoningTokens ?? 0 : 0)
 }
 
 /**
@@ -36,6 +54,10 @@ export function cacheShare(inputTokens: number, cacheReadTokens: number): number
 export function costPerMillionObserved(costUSD: number, totalTokens: number): number | null {
   if (!Number.isFinite(costUSD) || !Number.isFinite(totalTokens) || totalTokens <= 0) return null
   return costUSD / totalTokens * 1_000_000
+}
+
+export function costPerMillionTotal(costUSD: number, usage: UsageTokenTotals): number | null {
+  return costPerMillionObserved(costUSD, totalTokenCount(usage))
 }
 
 export function formatReuseMultiple(value: number | null): string {
