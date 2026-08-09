@@ -76,8 +76,15 @@ export type ModelDayStats = {
   savingsUSD: number
   inputTokens: number
   outputTokens: number
+  /// Separately observed reasoning/thinking tokens. Optional for legacy days.
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  /// Source-recorded model/API provider when the collector exposes it.
+  modelProvider?: string
+  /// Collector/tool names contributing to this model row. Additive provenance;
+  /// it is not used to split otherwise equivalent accounting rows.
+  sourceProviders?: string[]
 }
 
 export type CategoryDayStats = { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }
@@ -98,6 +105,7 @@ export type ProviderDaySlice = {
   sessions?: number
   inputTokens?: number
   outputTokens?: number
+  reasoningTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   editTurns?: number
@@ -115,6 +123,8 @@ export type DailyEntry = {
   sessions: number
   inputTokens: number
   outputTokens: number
+  /// Separately observed reasoning/thinking tokens. Optional for legacy days.
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   editTurns: number
@@ -206,8 +216,21 @@ function sanitizeModels(raw: unknown): DailyEntry['models'] {
       savingsUSD: num(m.savingsUSD),
       inputTokens: num(m.inputTokens),
       outputTokens: num(m.outputTokens),
+      ...(typeof m.reasoningTokens === 'number' && Number.isFinite(m.reasoningTokens)
+        ? { reasoningTokens: Math.max(0, m.reasoningTokens) }
+        : {}),
       cacheReadTokens: num(m.cacheReadTokens),
       cacheWriteTokens: num(m.cacheWriteTokens),
+      ...(typeof m.modelProvider === 'string' && m.modelProvider.trim().length > 0
+        ? { modelProvider: m.modelProvider.trim() }
+        : {}),
+      ...(Array.isArray(m.sourceProviders)
+        ? {
+            sourceProviders: [...new Set(m.sourceProviders
+              .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+              .map(value => value.trim()))].sort(),
+          }
+        : {}),
     })
   }
   return out
@@ -229,7 +252,7 @@ function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
   return out
 }
 
-const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
+const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
 
 /// Same junk-tolerance as sanitizeProjects, one level up: a foreign cache can
 /// hold anything under a provider slice, and structuredClone in the merge
@@ -286,6 +309,9 @@ export function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
       sessions: num(d.sessions),
       inputTokens: num(d.inputTokens),
       outputTokens: num(d.outputTokens),
+      ...(typeof d.reasoningTokens === 'number' && Number.isFinite(d.reasoningTokens)
+        ? { reasoningTokens: Math.max(0, d.reasoningTokens) }
+        : {}),
       cacheReadTokens: num(d.cacheReadTokens),
       cacheWriteTokens: num(d.cacheWriteTokens),
       editTurns: num(d.editTurns),
@@ -510,6 +536,7 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
   day.sessions += Math.max(0, (slice.sessions ?? 0) - placeholderSessions)
   day.inputTokens += slice.inputTokens ?? 0
   day.outputTokens += slice.outputTokens ?? 0
+  if (slice.reasoningTokens !== undefined) day.reasoningTokens = (day.reasoningTokens ?? 0) + slice.reasoningTokens
   day.cacheReadTokens += slice.cacheReadTokens ?? 0
   day.cacheWriteTokens += slice.cacheWriteTokens ?? 0
   day.editTurns += slice.editTurns ?? 0
@@ -521,8 +548,13 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
     acc.savingsUSD += m.savingsUSD ?? 0
     acc.inputTokens += m.inputTokens
     acc.outputTokens += m.outputTokens
+    if (m.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + m.reasoningTokens
     acc.cacheReadTokens += m.cacheReadTokens
     acc.cacheWriteTokens += m.cacheWriteTokens
+    if (!acc.modelProvider && m.modelProvider) acc.modelProvider = m.modelProvider
+    if (m.sourceProviders && m.sourceProviders.length > 0) {
+      acc.sourceProviders = [...new Set([...(acc.sourceProviders ?? []), ...m.sourceProviders])].sort()
+    }
     setOwn(day.models, name, acc)
   }
   for (const [cat, c] of Object.entries(slice.categories ?? {})) {

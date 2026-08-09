@@ -592,6 +592,7 @@ function getCanonicalName(model: string): string {
   return model
     .replace(/@.*$/, '')       // strip pin: claude-sonnet-4-6@20250929 -> claude-sonnet-4-6
     .replace(/-\d{8}$/, '')   // strip date: claude-sonnet-4-20250514 -> claude-sonnet-4
+    .replace(/-\d{4}-\d{2}-\d{2}$/, '') // strip ISO date pins: gpt-5.4-2026-03-05
     .replace(/^[^/]+\//, '').replace(/\[(?:\d+(?:\.\d+)?(?:k|m|g)?)\]$/i, '') // provider prefix + numeric context tag
 }
 
@@ -615,7 +616,7 @@ function stripKnownPricingVariantSuffix(model: string): string | null {
 
 export function getModelCosts(model: string): ModelCosts | null {
   // Try with provider prefix preserved (azure/gpt-5.4, openrouter/anthropic/claude-opus-4.6)
-  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '').replace(/-\d{4}-\d{2}-\d{2}$/, '')
   const canonicalName = getCanonicalName(model)
   const canonical = resolveAlias(canonicalName)
 
@@ -694,6 +695,13 @@ function looksLikeLocalModel(name: string): boolean {
   return false
 }
 
+/// A provider can expose a free route as a model suffix (for example
+/// `deepseek-v4-flash-free`). That suffix is usage identity, not a reason to
+/// discard the call or to apply the paid sibling's rates.
+export function isExplicitFreeModel(model: string): boolean {
+  return /(?:^|[-:])free(?:$|[-:])/i.test(model.trim())
+}
+
 export interface UnpricedModelUsage {
   model: string
   calls: number
@@ -716,7 +724,7 @@ function hasBillableRate(costs: ModelCosts): boolean {
 // resolve AFTER table hits and so cannot prove the $0 was intentional; a
 // zero-rate stub shadowed by one still gets flagged (the honest direction).
 function exactPriceOverrideFor(model: string): ModelCosts | null {
-  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '').replace(/-\d{4}-\d{2}-\d{2}$/, '')
   const canonicalName = getCanonicalName(model)
   const canonical = resolveAlias(canonicalName)
   return getPriceOverrideExact(model, withPrefix, canonicalName, canonical)
@@ -745,6 +753,7 @@ function exactPriceOverrideFor(model: string): ModelCosts | null {
 /// denominator — otherwise a 95%-ollama user reads high coverage while every
 /// genuinely cost-bearing call is unpriced.
 export function isExpectedFreeModel(model: string): boolean {
+  if (isExplicitFreeModel(model)) return true
   if (looksLikeLocalModel(model)) return true
   if (getLocalSavingsBaseline(model)) return true
   const costs = getModelCosts(model)
@@ -757,7 +766,8 @@ export function isExpectedFreeModel(model: string): boolean {
 /// that mapping is a presentation/accounting overlay whose API-equivalent
 /// baseline remains separately priced and may change without rewriting settled
 /// history.
-export function explicitZeroReasonForModel(model: string): 'local-inference' | 'manual-reviewed' | undefined {
+export function explicitZeroReasonForModel(model: string): 'free-route' | 'local-inference' | 'manual-reviewed' | undefined {
+  if (isExplicitFreeModel(model)) return 'free-route'
   if (looksLikeLocalModel(model)) return 'local-inference'
   const costs = getModelCosts(model)
   if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return 'manual-reviewed'

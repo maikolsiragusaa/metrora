@@ -13,7 +13,7 @@ function makeProject(overrides: Partial<ProjectSummary> & { sessions: ProjectSum
   }
 }
 
-function makeCall(timestamp: string, costUSD: number, model = 'Opus 4.7', provider = 'claude') {
+function makeCall(timestamp: string, costUSD: number, model = 'Opus 4.7', provider = 'claude', reasoningTokens = 0) {
   return {
     provider,
     model,
@@ -23,7 +23,7 @@ function makeCall(timestamp: string, costUSD: number, model = 'Opus 4.7', provid
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 50,
       cachedInputTokens: 0,
-      reasoningTokens: 0,
+      reasoningTokens,
       webSearchRequests: 0,
     },
     costUSD,
@@ -267,11 +267,13 @@ describe('aggregateProjectsIntoDays', () => {
       calls: 1, cost: 7, savingsUSD: 0,
       inputTokens: 100, outputTokens: 200,
       cacheReadTokens: 50, cacheWriteTokens: 0,
+      sourceProviders: ['claude'],
     })
     expect(day.models['gpt-5']).toEqual({
       calls: 1, cost: 3, savingsUSD: 0,
       inputTokens: 100, outputTokens: 200,
       cacheReadTokens: 50, cacheWriteTokens: 0,
+      sourceProviders: ['codex'],
     })
     // Provider slices carry the full per-provider breakdown (v14) so that a
     // carried-forward slice stays exact across daily-cache rebuilds.
@@ -280,14 +282,14 @@ describe('aggregateProjectsIntoDays', () => {
       inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0,
     })
     expect(day.providers['claude']!.models).toEqual({
-      'Opus 4.7': { calls: 1, cost: 7, savingsUSD: 0, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0 },
+      'Opus 4.7': { calls: 1, cost: 7, savingsUSD: 0, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0, sourceProviders: ['claude'] },
     })
     expect(day.providers['codex']).toMatchObject({
       calls: 1, cost: 3, savingsUSD: 0,
       inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0,
     })
     expect(day.providers['codex']!.models).toEqual({
-      'gpt-5': { calls: 1, cost: 3, savingsUSD: 0, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0 },
+      'gpt-5': { calls: 1, cost: 3, savingsUSD: 0, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0, sourceProviders: ['codex'] },
     })
     // Slice categories hold only that provider's share of cost; the primary
     // provider (the first call in this tie) owns the turn count.
@@ -300,6 +302,18 @@ describe('aggregateProjectsIntoDays', () => {
     expect(day.projects!['p']).toEqual({ cost: 10, calls: 2, savingsUSD: 0, sessions: 1, path: '/p' })
     expect(day.providers['claude']!.projects!['p']).toMatchObject({ cost: 7, calls: 1 })
     expect(day.providers['codex']!.projects!['p']).toMatchObject({ cost: 3, calls: 1 })
+  })
+
+  it('carries separately observed reasoning tokens through durable day and period models', () => {
+    const days = aggregateProjectsIntoDays([
+      makeSingleTurnProject([makeCall('2026-04-10T10:00:00', 7, 'Opus 4.7', 'claude', 17)]),
+    ])
+    expect(days[0]!.reasoningTokens).toBe(17)
+    expect(days[0]!.models['Opus 4.7']!.reasoningTokens).toBe(17)
+
+    const period = buildPeriodDataFromDays(days, 'Lifetime')
+    expect(period.reasoningTokens).toBe(17)
+    expect(period.models[0]!.reasoningTokens).toBe(17)
   })
 
   it('attributes a multi-provider turn to the majority provider exactly once', () => {

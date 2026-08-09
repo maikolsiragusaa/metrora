@@ -170,7 +170,7 @@ function unavailableAssignment(): CostAssignmentV1 {
   })
 }
 
-function explicitZeroAssignment(reason: 'local-inference' | 'manual-reviewed'): CostAssignmentV1 {
+function explicitZeroAssignment(reason: 'free-route' | 'local-inference' | 'manual-reviewed'): CostAssignmentV1 {
   return CostAssignmentV1Schema.parse({
     version: 1,
     kind: 'explicit-zero',
@@ -228,6 +228,15 @@ function resolveHistoricalRecord(
   const route = 'standard'
   let pricingAuthority = normalizeAuthority(input.modelProvider)
 
+  // Some collectors record a routing adapter (for example `opencode-go`) in
+  // modelProvider. Preserve that source evidence, but do not mistake a route
+  // name for a catalog authority. If it has no matching historical record,
+  // fall back to the same unambiguous price-book authority discovery used when
+  // the source omitted modelProvider.
+  if (pricingAuthority && !recordsAt([context.reviewedBook, context.localBook], pricingModel, route, input.timestamp)
+    .some(record => record.pricingAuthority === pricingAuthority)) {
+    pricingAuthority = undefined
+  }
   if (!pricingAuthority) {
     const authorities = new Set(
       recordsAt([context.reviewedBook, context.localBook], pricingModel, route, input.timestamp)

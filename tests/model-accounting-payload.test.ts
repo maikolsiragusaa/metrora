@@ -168,4 +168,140 @@ describe('model accounting payload', () => {
     expect(payload.current.modelAccounting?.rows[0]?.tokenDetail).toBe(false)
     expect(payload.current.modelAccounting?.tokenCoverage).toEqual({ cost: 0, calls: 0 })
   })
+
+  it('preserves free routes, economic variants, and source-recorded routes', () => {
+    const models = [
+      {
+        name: 'deepseek-v4-flash',
+        modelProvider: 'opencode-go',
+        sourceProviders: ['opencode'],
+        cost: 2,
+        savingsUSD: 0,
+        calls: 10,
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 300,
+        cacheWriteTokens: 0,
+      },
+      {
+        name: 'deepseek-v4-flash-free',
+        modelProvider: 'opencode',
+        sourceProviders: ['opencode'],
+        cost: 0,
+        savingsUSD: 0,
+        calls: 4,
+        inputTokens: 40,
+        outputTokens: 8,
+        cacheReadTokens: 500,
+        cacheWriteTokens: 0,
+      },
+      {
+        name: 'gemini-3.1-pro-high',
+        modelProvider: 'google',
+        sourceProviders: ['antigravity'],
+        cost: 3,
+        savingsUSD: 0,
+        calls: 5,
+        inputTokens: 50,
+        outputTokens: 10,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        name: 'gemini-3.1-pro-low',
+        modelProvider: 'google',
+        sourceProviders: ['antigravity'],
+        cost: 1,
+        savingsUSD: 0,
+        calls: 2,
+        inputTokens: 20,
+        outputTokens: 4,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    ]
+    const payload = buildMenubarPayload(period(models, 6, 21), [], null)
+    const rows = payload.current.modelAccounting?.rows ?? []
+
+    expect(rows.map(row => row.name)).toEqual(expect.arrayContaining([
+      'DeepSeek v4 Flash',
+      'DeepSeek v4 Flash (free)',
+      'Gemini 3.1 Pro (high)',
+      'Gemini 3.1 Pro (low)',
+    ]))
+    expect(rows.find(row => row.name === 'DeepSeek v4 Flash (free)')).toMatchObject({
+      provider: 'opencode',
+      calls: 4,
+      cost: 0,
+      rawModels: ['deepseek-v4-flash-free'],
+      semanticVariant: 'free',
+    })
+    expect(payload.current.modelAccounting?.gap).toEqual({ cost: 0, savingsUSD: 0, calls: 0 })
+    expect(payload.current.modelAccounting?.coverage).toEqual({ cost: 1, calls: 1 })
+  })
+
+  it('folds provenance-poor legacy aliases into one unambiguous route but keeps true provider variants apart', () => {
+    const payload = buildMenubarPayload(period([
+      {
+        name: 'gpt-5.4',
+        cost: 4,
+        savingsUSD: 0,
+        calls: 1,
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 0,
+      },
+      {
+        name: 'gpt-5.4',
+        modelProvider: 'openai',
+        sourceProviders: ['codex'],
+        cost: 6,
+        savingsUSD: 0,
+        calls: 2,
+        inputTokens: 20,
+        outputTokens: 4,
+        reasoningTokens: 5,
+        cacheReadTokens: 60,
+        cacheWriteTokens: 0,
+      },
+      {
+        name: 'deepseek-v4-flash',
+        modelProvider: 'opencode-go',
+        cost: 2,
+        savingsUSD: 0,
+        calls: 3,
+        inputTokens: 30,
+        outputTokens: 6,
+        cacheReadTokens: 90,
+        cacheWriteTokens: 0,
+      },
+      {
+        name: 'deepseek-v4-flash',
+        modelProvider: 'deepseek',
+        cost: 1,
+        savingsUSD: 0,
+        calls: 4,
+        inputTokens: 40,
+        outputTokens: 8,
+        cacheReadTokens: 120,
+        cacheWriteTokens: 0,
+      },
+    ], 13, 10), [], null)
+    const rows = payload.current.modelAccounting?.rows ?? []
+
+    expect(rows.filter(row => row.name === 'GPT-5.4')).toHaveLength(1)
+    expect(rows.find(row => row.name === 'GPT-5.4')).toMatchObject({
+      provider: 'openai',
+      calls: 3,
+      cost: 10,
+      rawModels: ['gpt-5.4'],
+      reasoningTokens: 5,
+    })
+    expect(rows.filter(row => row.name === 'DeepSeek v4 Flash')).toHaveLength(2)
+    expect(rows.filter(row => row.name === 'DeepSeek v4 Flash').map(row => row.provider).sort()).toEqual([
+      'deepseek',
+      'opencode-go',
+    ])
+  })
 })

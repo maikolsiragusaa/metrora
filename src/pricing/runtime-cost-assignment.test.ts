@@ -76,6 +76,24 @@ describe('runtime historical cost assignment', () => {
     expect(local.storedAssignment).toMatchObject({ kind: 'explicit-zero', reason: 'local-inference' })
   })
 
+  it('keeps a source-declared free model usage population with explicit zero cost', () => {
+    const free = assignRuntimeCostV1(input('2026-08-08T12:00:00Z', {
+      model: 'deepseek-v4-flash-free',
+      modelProvider: 'opencode',
+      legacyCostUSD: 1.25,
+    }))
+    expect(free.storedCostUSD).toBe(0)
+    expect(free.runtimeCostUSD).toBe(0)
+    expect(free.storedAssignment).toMatchObject({ kind: 'explicit-zero', reason: 'free-route' })
+  })
+
+  it('does not let an adapter route hide an otherwise unambiguous price authority', () => {
+    const routed = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
+      modelProvider: 'opencode-go',
+    }))
+    expect(routed.storedAssignment.kind).toBe('token-price')
+  })
+
   it('supports compare and rollback views without mutating the stored historical settlement', () => {
     process.env['METRORA_HISTORICAL_PRICING'] = 'compare'
     const compared = assignRuntimeCostV1(input('2026-07-31T00:00:00Z'))

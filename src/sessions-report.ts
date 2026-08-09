@@ -18,7 +18,7 @@ export type SessionRow = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
-  reasoningTokens: number
+  reasoningTokens?: number
   reasoningMix?: ReasoningMix
   startedAt: string
   endedAt: string

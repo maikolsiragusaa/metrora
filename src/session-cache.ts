@@ -251,6 +251,9 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   'roo-code': 'worktree-project-grouping-v1',
   warp: 'worktree-project-grouping-v1-est-cost',
   antigravity: 'worktree-project-grouping-v5',
+  // OpenCode keeps valid usage in archived root/child sessions. The parser
+  // must scan the complete SQLite session tree, not only active sessions.
+  opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1',
   // Preserve the source-recorded thread.model.provider through the shared cache.
   zed: 'sqlite-zstd-ledger-v1-model-provider-v1',
 }

@@ -26,9 +26,15 @@ type DurableModelRow = {
   calls: number
   inputTokens: number
   outputTokens: number
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
+  provider?: string
+  sourceProviders?: string[]
+  rawModels?: string[]
+  canonicalIdentity?: string
+  semanticVariant?: string
   activeDurationMs?: number
   activeGeneratedTokens?: number
 }
@@ -348,9 +354,16 @@ function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting
             const share = model.tokenDetail ? cacheShare(model.inputTokens, model.cacheReadTokens) : null
             const unitCost = modelUnitCost(model)
             const speed = modelMsPer1K(model)
+            const providerLabel = model.provider
+              ?? (model.sourceProviders && model.sourceProviders.length > 0 ? model.sourceProviders.join(', ') : undefined)
             return (
               <tr key={`${model.name}-${index}`}>
-                <td title={model.name}><ModelIdentity name={model.name} /></td>
+                <td title={providerLabel ? `${model.name} · ${providerLabel}` : model.name}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <ModelIdentity name={model.name} />
+                    {providerLabel ? <span style={providerTagStyle}>{providerLabel}</span> : null}
+                  </span>
+                </td>
                 <td>{fmtInt(model.calls)}</td>
                 <td>{model.tokenDetail ? formatCompact(model.inputTokens) : '—'}</td>
                 <td>{model.tokenDetail ? formatCompact(model.outputTokens) : '—'}</td>

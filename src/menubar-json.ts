@@ -18,6 +18,7 @@ export type PeriodData = {
   sessions: number
   inputTokens: number
   outputTokens: number
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   /// Total Codex credits consumed in the period (issues #408/#495). Optional so
@@ -38,8 +39,13 @@ export type PeriodData = {
     estimatedCostUSD?: number
     inputTokens?: number
     outputTokens?: number
+    reasoningTokens?: number
     cacheReadTokens?: number
     cacheWriteTokens?: number
+    /// Source-recorded model/API provider, when the durable source exposed it.
+    modelProvider?: string
+    /// Collector/tool names that contributed to this model row.
+    sourceProviders?: string[]
     activeDurationMs?: number
     activeGeneratedTokens?: number
   }>
@@ -130,6 +136,7 @@ export type DailyHistoryEntry = {
   calls: number
   inputTokens: number
   outputTokens: number
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   topModels: DailyModelBreakdown[]
@@ -161,6 +168,16 @@ export type ModelAccountingRow = {
   cacheWriteTokens: number
   /** False means an older source could preserve cost/calls but not token split. */
   tokenDetail: boolean
+  /// Source-recorded route/provider. Kept separate from the collector name.
+  provider?: string
+  /// Collector/tool names contributing to the row.
+  sourceProviders?: string[]
+  /// Raw IDs that canonicalized into this row; emitted when useful for audit.
+  rawModels?: string[]
+  /// Canonical pricing identity before an economic variant suffix.
+  canonicalIdentity?: string
+  /// Explicit semantic variant such as free/high/low/tiered.
+  semanticVariant?: string
   /** Active generation timing from surviving source evidence only. */
   activeDurationMs?: number
   activeGeneratedTokens?: number

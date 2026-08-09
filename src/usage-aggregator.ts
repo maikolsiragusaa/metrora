@@ -99,7 +99,15 @@ export function getDailyCacheConfigHash(): string {
   // headline from one mode can be combined with model/project rows
   // from another. Sourceless slices are still carried forward by the
   // v14+ merge contract and remain conservatively legacy-frozen.
-  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}\u0002${accountingHash}`
+  // The OpenCode parser version also gates the durable model projection: an
+  // archived-session discovery fix or newly captured source route must rebuild
+  // the day/model slices once, while normal snapshot reads remain unchanged
+  // after that bounded hydration.
+  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}`
+    + `\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}`
+    + `\u0002opencodeCollector=${PROVIDER_PARSE_VERSIONS['opencode'] ?? ''}`
+    + `\u0002modelIdentity=v3`
+    + `\u0002${accountingHash}`
 }
 
 async function hydrateCache(): Promise<DailyCache> {
