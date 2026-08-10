@@ -25,6 +25,11 @@ import {
   scanMeasurementOutboxV1,
   type LocalMeasurementOutboxRecordV1,
 } from './measurement-outbox.js'
+import {
+  hasLegacySignedBatchMarker,
+  verifyLegacySignedBatch,
+} from './legacy-signed-batch-compatibility.js'
+import { objectValue } from './legacy-outbox-compatibility.js'
 
 export const LOCAL_SIGNED_BATCH_KIND = 'metrora.local-signed-measurement-batch' as const
 export const LOCAL_SIGNED_BATCH_ACK_KIND = 'metrora.local-signed-measurement-batch-ack' as const
@@ -93,12 +98,19 @@ export type SignedMeasurementBatchStoreOptions = {
 export type LocalSignedMeasurementBatchStateV1 = {
   signed: LocalSignedMeasurementBatchV1
   acknowledgement?: LocalSignedMeasurementBatchAckV1
+  storageFormat?: 'legacy'
 }
 
 export type VerifyLocalSignedMeasurementBatchV1Options = {
   endpointId: string
   workspaceId?: string
   expectedFile?: string
+}
+
+type StoredSignedMeasurementBatchV1 = {
+  file: string
+  signed: LocalSignedMeasurementBatchV1
+  legacy: boolean
 }
 
 function sha256(value: string | Uint8Array): string {
@@ -216,27 +228,51 @@ async function listSignedBatches(
   paths: ReturnType<typeof batchPaths>,
   endpointId: string,
   workspaceId?: string,
-): Promise<Array<{ file: string; signed: LocalSignedMeasurementBatchV1 }>> {
+): Promise<StoredSignedMeasurementBatchV1[]> {
   await ensurePrivateDirectory(paths.batches)
   const files = (await readdir(paths.batches)).filter(file => /^\d{16}-\d{16}-[a-f0-9]{64}\.json$/.test(file)).sort()
-  const result: Array<{ file: string; signed: LocalSignedMeasurementBatchV1 }> = []
+  const result: StoredSignedMeasurementBatchV1[] = []
   for (const file of files) {
     const bytes = await readOptionalPrivateFile(join(paths.batches, file))
     if (!bytes) continue
+    const value = JSON.parse(bytes.toString('utf-8')) as unknown
+    const current = LocalSignedMeasurementBatchV1Schema.safeParse(value)
+    if (current.success) {
+      result.push({
+        file,
+        signed: verifyLocalSignedMeasurementBatchV1(bytes, {
+          endpointId,
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+          expectedFile: file,
+        }),
+        legacy: false,
+      })
+      continue
+    }
+    if (!hasLegacySignedBatchMarker(value)) throw current.error
     result.push({
       file,
-      signed: verifyLocalSignedMeasurementBatchV1(bytes, {
+      signed: LocalSignedMeasurementBatchV1Schema.parse(verifyLegacySignedBatch(value, {
         endpointId,
         ...(workspaceId !== undefined ? { workspaceId } : {}),
         expectedFile: file,
-      }),
+      })),
+      legacy: true,
     })
   }
   result.sort((a, b) => a.signed.range.firstSequence - b.signed.range.firstSequence)
-  verifyLocalSignedMeasurementBatchChainV1(
-    result.map(item => item.signed),
-    { endpointId, ...(workspaceId !== undefined ? { workspaceId } : {}) },
-  )
+  let previousDigest: string | undefined
+  let previousLast = 0
+  for (const item of result) {
+    if (item.signed.range.firstSequence <= previousLast) {
+      throw new Error('signed batch sequence ranges overlap or are out of order')
+    }
+    if (item.signed.batch.previousBatchSha256 !== previousDigest) {
+      throw new Error('signed batch digest chain is broken')
+    }
+    previousDigest = item.signed.batchSha256
+    previousLast = item.signed.range.lastSequence
+  }
   return result
 }
 
@@ -279,11 +315,17 @@ export async function createNextSignedMeasurementBatchV1(
   return withLocalStateLease(paths.root, async () => {
     await Promise.all([ensurePrivateDirectory(paths.batches), ensurePrivateDirectory(paths.acknowledgements)])
     const existing = await listSignedBatches(paths, endpointId, workspaceId)
+    if (existing.some(item => item.legacy)) {
+      throw new Error('historical signed batches are immutable and require explicit migration before appending')
+    }
     const previous = existing.at(-1)?.signed
     const scan = await scanMeasurementOutboxV1({ dataDir: options.dataDir })
     if (scan.invalid.length) throw new Error('cannot create a signed batch while invalid outbox events require review')
     if (workspaceId !== undefined && scan.quarantined.length) {
       throw new Error('cannot create a workspace signed batch while quarantined outbox events require review')
+    }
+    if ((scan.legacyPending?.length ?? 0) > 0 || (scan.legacyAcknowledged?.length ?? 0) > 0) {
+      throw new Error('historical outbox evidence is immutable and requires explicit migration before batching')
     }
 
     if (workspaceId !== undefined) {
@@ -378,7 +420,8 @@ async function readAck(
   paths: ReturnType<typeof batchPaths>,
   signed: LocalSignedMeasurementBatchV1,
 ): Promise<LocalSignedMeasurementBatchAckV1 | undefined> {
-  const bytes = await readOptionalPrivateFile(join(paths.acknowledgements, ackFileName(signed.batch.batchId)))
+  const file = ackFileName(signed.batch.batchId)
+  const bytes = await readOptionalPrivateFile(join(paths.acknowledgements, file))
   if (!bytes) return undefined
   const ack = LocalSignedMeasurementBatchAckV1Schema.parse(JSON.parse(bytes.toString('utf-8')))
   if (
@@ -401,9 +444,13 @@ export async function listSignedMeasurementBatchStatesV1(
   await ensurePrivateDirectory(paths.acknowledgements)
   const batches = await listSignedBatches(paths, endpointId, workspaceId)
   const result: LocalSignedMeasurementBatchStateV1[] = []
-  for (const { signed } of batches) {
+  for (const { signed, legacy } of batches) {
     const acknowledgement = await readAck(paths, signed)
-    result.push({ signed, ...(acknowledgement ? { acknowledgement } : {}) })
+    result.push({
+      signed,
+      ...(legacy ? { storageFormat: 'legacy' as const } : {}),
+      ...(acknowledgement ? { acknowledgement } : {}),
+    })
   }
   return result
 }
@@ -431,8 +478,9 @@ export async function acknowledgeSignedMeasurementBatchV1(
   const paths = batchPaths(options.dataDir)
   await ensurePrivateDirectory(paths.acknowledgements)
   const batches = await listSignedBatches(paths, endpointId, workspaceId)
-  const signed = batches.find(item => item.signed.batch.batchId === batchId)?.signed
-  if (!signed) throw new Error('cannot acknowledge an unknown signed batch')
+  const stored = batches.find(item => item.signed.batch.batchId === batchId)
+  if (!stored) throw new Error('cannot acknowledge an unknown signed batch')
+  const signed = stored.signed
   const existing = await readAck(paths, signed)
   if (existing) {
     if (existing.receiptId !== receiptId) throw new Error('signed batch already has a different receipt')

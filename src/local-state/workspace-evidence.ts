@@ -188,6 +188,11 @@ function canonicalPayload(payload: LocalWorkspaceEvidencePayloadV1): string {
 }
 
 function exportBatchStates(states: LocalSignedMeasurementBatchStateV1[]): LocalWorkspaceEvidenceExportBatchV1[] {
+  if (states.some(state => state.storageFormat === 'legacy')) {
+    throw new LocalWorkspaceEvidenceBlockedError(
+      'historical signed evidence is immutable and cannot be exported through the canonical schema',
+    )
+  }
   return states.map(({ signed, acknowledgement }) => acknowledgement
     ? LocalWorkspaceEvidenceExportBatchV1Schema.parse({
         state: 'acknowledged',
@@ -200,6 +205,13 @@ function exportBatchStates(states: LocalSignedMeasurementBatchStateV1[]): LocalW
         },
       })
     : LocalWorkspaceEvidenceExportBatchV1Schema.parse({ state: 'pending', signed }))
+}
+
+function boundedInspectionError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const prefix = error instanceof Error ? `${error.name}: ` : ''
+  const bounded = `${prefix}${message}`
+  return bounded.length <= 420 ? bounded : `${bounded.slice(0, 400)}… (${bounded.length} chars)`
 }
 
 function summaryFor(batches: LocalWorkspaceEvidenceExportBatchV1[]) {
@@ -267,19 +279,22 @@ export async function inspectLocalWorkspaceEvidenceV1(
       workspaceId: workspace.workspace.workspaceId,
     })
   } catch (error) {
-    blockers.push(`signed batch state is invalid: ${error instanceof Error ? error.message : String(error)}`)
+    blockers.push(`signed batch state is invalid: ${boundedInspectionError(error)}`)
   }
 
   if (scan.invalid.length) blockers.push(`${scan.invalid.length} invalid outbox event(s) require recovery`)
   const visibleRecords = [
     ...scan.pending,
+    ...(scan.legacyPending ?? []),
     ...scan.acknowledged.map(item => item.record),
+    ...(scan.legacyAcknowledged ?? []).map(item => item.record),
   ]
   const foreignRecords = visibleRecords.filter(record => !recordIsAuthorized(workspace, record))
   if (foreignRecords.length) blockers.push(`${foreignRecords.length} outbox event(s) are outside the local workspace endpoint`)
 
   const latestSequence = batchStates.at(-1)?.signed.range.lastSequence ?? 0
-  const unbatchedEventCount = scan.pending.filter(record => record.sequence > latestSequence).length
+  const pendingRecords = [...scan.pending, ...(scan.legacyPending ?? [])]
+  const unbatchedEventCount = pendingRecords.filter(record => record.sequence > latestSequence).length
   const pendingBatchCount = batchStates.filter(item => item.acknowledgement === undefined).length
   const acknowledgedBatchCount = batchStates.length - pendingBatchCount
 
@@ -294,9 +309,9 @@ export async function inspectLocalWorkspaceEvidenceV1(
     state,
     workspaceId: workspace.workspace.workspaceId,
     endpointId: workspace.endpoint.endpointId,
-    pendingEventCount: scan.pending.length,
+    pendingEventCount: pendingRecords.length,
     unbatchedEventCount,
-    acknowledgedEventCount: scan.acknowledged.length,
+    acknowledgedEventCount: scan.acknowledged.length + (scan.legacyAcknowledged ?? []).length,
     invalidEventCount: scan.invalid.length,
     quarantinedEventCount: scan.quarantined.length,
     pendingBatchCount,

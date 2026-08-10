@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
@@ -19,7 +18,18 @@ import {
   readOptionalPrivateFile,
 } from './atomic-file.js'
 import { defaultMetroraDataDir } from './endpoint-identity.js'
+import {
+  legacyEventFileName as legacyOutboxEventFileName,
+  objectValue,
+  parseStoredOutboxRecord,
+} from './legacy-outbox-compatibility.js'
 import { withLocalStateLease } from './local-state-lease.js'
+import {
+  canonicalJson,
+  eventDigest,
+  semanticEventDigest,
+  sha256,
+} from './measurement-outbox-digests.js'
 
 export const LOCAL_OUTBOX_RECORD_KIND = 'metrora.local-measurement-outbox-record' as const
 export const LOCAL_OUTBOX_ACK_KIND = 'metrora.local-measurement-outbox-ack' as const
@@ -91,62 +101,24 @@ export type EnqueueMeasurementEventV1Options = MeasurementOutboxOptions & {
 export type MeasurementOutboxScanV1 = {
   pending: LocalMeasurementOutboxRecordV1[]
   acknowledged: Array<{ record: LocalMeasurementOutboxRecordV1; ack: LocalMeasurementOutboxAckV1 }>
+  legacyPending?: LocalMeasurementOutboxRecordV1[]
+  legacyAcknowledged?: Array<{ record: LocalMeasurementOutboxRecordV1; ack: LocalMeasurementOutboxAckV1 }>
   invalid: Array<{ eventFile: string; reason: string }>
   quarantined: LocalMeasurementOutboxQuarantineV1[]
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null) return 'null'
-  if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value) || !Number.isSafeInteger(value)) {
-      throw new Error('outbox canonical JSON accepts only finite safe integers')
-    }
-    return JSON.stringify(value)
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
-  if (typeof value === 'object') {
-    const object = value as Record<string, unknown>
-    const keys = Object.keys(object).filter(key => object[key] !== undefined).sort()
-    return `{${keys.map(key => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(',')}}`
-  }
-  throw new Error('outbox canonical JSON cannot encode this value')
+type StoredOutboxRecordV1 = {
+  record: LocalMeasurementOutboxRecordV1
+  legacy: boolean
+  eventFile: string
+  rawEvent: unknown
 }
 
-function sha256(value: string | Uint8Array): string {
-  return createHash('sha256').update(value).digest('hex')
-}
-
-function eventDigest(event: UsageMeasurementEventV1): string {
-  return sha256(canonicalJson(event))
-}
-
-function semanticEventDigest(event: UsageMeasurementEventV1): string {
-  const {
-    id: _eventId,
-    data: {
-      collector: {
-        adapterVersion: _adapterVersion,
-        ...collectorWithoutReleaseVersion
-      },
-      ...dataWithoutCollector
-    },
-    ...eventWithoutRotatingIdAndData
-  } = event
-
-  // The endpoint HMAC key and the Metrora release may rotate while the source
-  // measurement remains identical. Both public event ID and adapterVersion are
-  // therefore excluded from the private receipt's semantic collision check.
-  // Evidence profile, source kind/fingerprint, token/cost facts, scope,
-  // provider/model identity, disclosure and every other public field remain
-  // strictly bound.
-  return sha256(canonicalJson({
-    ...eventWithoutRotatingIdAndData,
-    data: {
-      ...dataWithoutCollector,
-      collector: collectorWithoutReleaseVersion,
-    },
-  }))
+type StoredProductionReceiptV1 = {
+  receipt: LocalMeasurementProductionReceiptV1
+  storedRecord: StoredOutboxRecordV1
+  legacyRecord: boolean
+  rawEvent: unknown
 }
 
 function eventFileName(eventId: string): string {
@@ -184,34 +156,56 @@ async function prepare(paths: ReturnType<typeof outboxPaths>): Promise<void> {
   ])
 }
 
-function parseRecord(bytes: Uint8Array, expectedFile?: string): LocalMeasurementOutboxRecordV1 {
-  const record = LocalMeasurementOutboxRecordV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
-  const expectedDigest = eventDigest(record.event)
-  if (record.eventSha256 !== expectedDigest) throw new Error('event digest does not match its canonical payload')
-  if (expectedFile && eventFileName(record.event.id) !== expectedFile) {
-    throw new Error('event id does not match its outbox filename')
+function legacyEventFileName(eventId: string): string {
+  return legacyOutboxEventFileName(eventId, sha256)
+}
+
+function parseRecord(bytes: Uint8Array, expectedFile?: string): StoredOutboxRecordV1 {
+  const value = JSON.parse(Buffer.from(bytes).toString('utf-8')) as unknown
+  const current = LocalMeasurementOutboxRecordV1Schema.safeParse(value)
+  const parsed = parseStoredOutboxRecord(
+    value,
+    expectedFile,
+    current,
+    normalized => LocalMeasurementOutboxRecordV1Schema.safeParse(normalized),
+    eventDigest,
+    eventFileName,
+    sha256,
+  )
+  return {
+    record: LocalMeasurementOutboxRecordV1Schema.parse(parsed.record),
+    legacy: parsed.legacy,
+    eventFile: parsed.eventFile,
+    rawEvent: parsed.rawEvent,
   }
-  return record
 }
 
 function parseProductionReceipt(
   bytes: Uint8Array,
   expectedProductionKey: string,
-): LocalMeasurementProductionReceiptV1 {
-  const receipt = LocalMeasurementProductionReceiptV1Schema.parse(
-    JSON.parse(Buffer.from(bytes).toString('utf-8')),
-  )
+): StoredProductionReceiptV1 {
+  const value = objectValue(JSON.parse(Buffer.from(bytes).toString('utf-8')), 'production receipt is not an object')
+  const current = LocalMeasurementProductionReceiptV1Schema.safeParse(value)
+  const rawRecord = objectValue(value.record, 'production receipt record is invalid')
+  const storedRecord = parseRecord(Buffer.from(JSON.stringify(rawRecord)))
+  const receipt = current.success
+    ? current.data
+    : LocalMeasurementProductionReceiptV1Schema.parse({ ...value, record: storedRecord.record })
   if (receipt.productionKeySha256 !== expectedProductionKey) {
     throw new Error('production receipt does not match its private index key')
   }
-  const record = parseRecord(Buffer.from(JSON.stringify(receipt.record)))
-  if (record.eventSha256 !== receipt.record.eventSha256) {
+  if (storedRecord.record.eventSha256 !== receipt.record.eventSha256) {
     throw new Error('production receipt record is invalid')
   }
-  if (receipt.semanticEventSha256 !== semanticEventDigest(record.event)) {
+  if (receipt.semanticEventSha256 !== semanticEventDigest(storedRecord.rawEvent)) {
     throw new Error('production receipt semantic digest does not match its event')
   }
-  return receipt
+  return {
+    receipt,
+    storedRecord,
+    legacyRecord: storedRecord.legacy,
+    rawEvent: storedRecord.rawEvent,
+  }
 }
 
 async function readCounter(path: string): Promise<number> {
@@ -227,26 +221,67 @@ async function readCounter(path: string): Promise<number> {
 async function readRecordByEventId(
   paths: ReturnType<typeof outboxPaths>,
   eventId: string,
-): Promise<LocalMeasurementOutboxRecordV1 | undefined> {
-  const file = eventFileName(eventId)
-  const bytes = await readOptionalPrivateFile(join(paths.events, file))
-  return bytes ? parseRecord(bytes, file) : undefined
+): Promise<StoredOutboxRecordV1 | undefined> {
+  const candidates = [eventFileName(eventId), legacyEventFileName(eventId)]
+  const found: StoredOutboxRecordV1[] = []
+  for (const file of candidates) {
+    const bytes = await readOptionalPrivateFile(join(paths.events, file))
+    if (bytes) found.push(parseRecord(bytes, file))
+  }
+  if (found.length > 1) {
+    throw new Error('event id has multiple persisted outbox representations')
+  }
+  return found[0]
 }
 
 async function readProductionReceipt(
   paths: ReturnType<typeof outboxPaths>,
   productionKeySha256: string,
-): Promise<LocalMeasurementProductionReceiptV1 | undefined> {
+): Promise<StoredProductionReceiptV1 | undefined> {
   const bytes = await readOptionalPrivateFile(
     join(paths.production, productionReceiptFileName(productionKeySha256)),
   )
   return bytes ? parseProductionReceipt(bytes, productionKeySha256) : undefined
 }
 
+export type ValidatedLocalMeasurementProductionReceiptV1 = {
+  receipt: LocalMeasurementProductionReceiptV1
+  legacyRecord: boolean
+  sourcePresent: boolean
+}
+
+export async function readValidatedLocalMeasurementProductionReceiptV1(
+  dataDir: string,
+  productionKeySha256: string,
+): Promise<ValidatedLocalMeasurementProductionReceiptV1 | undefined> {
+  const paths = outboxPaths(dataDir)
+  const stored = await readProductionReceipt(paths, productionKeySha256)
+  if (!stored) return undefined
+  const sourceBytes = await readOptionalPrivateFile(join(paths.events, stored.storedRecord.eventFile))
+  if (!sourceBytes) {
+    return {
+      receipt: stored.receipt,
+      legacyRecord: stored.legacyRecord,
+      sourcePresent: false,
+    }
+  }
+  const source = parseRecord(sourceBytes, stored.storedRecord.eventFile)
+  if (source.record.eventSha256 !== stored.receipt.record.eventSha256) {
+    throw new Error('production receipt does not match its published outbox event')
+  }
+  return {
+    receipt: stored.receipt,
+    legacyRecord: stored.legacyRecord,
+    sourcePresent: true,
+  }
+}
+
 async function ensureRecordPublished(
   paths: ReturnType<typeof outboxPaths>,
-  record: LocalMeasurementOutboxRecordV1,
+  stored: StoredOutboxRecordV1,
 ): Promise<void> {
+  if (stored.legacy) return
+  const { record } = stored
   const file = eventFileName(record.event.id)
   const path = join(paths.events, file)
   const bytes = await readOptionalPrivateFile(path)
@@ -255,7 +290,7 @@ async function ensureRecordPublished(
     return
   }
   const existing = parseRecord(bytes, file)
-  if (canonicalJson(existing) !== canonicalJson(record)) {
+  if (existing.legacy || canonicalJson(existing.record) !== canonicalJson(record)) {
     throw new Error('production receipt conflicts with the published outbox event')
   }
 }
@@ -279,31 +314,33 @@ export async function enqueueMeasurementEventV1(
     if (productionKeySha256 !== undefined) {
       const productionReceipt = await readProductionReceipt(paths, productionKeySha256)
       if (productionReceipt) {
-        if (productionReceipt.semanticEventSha256 !== semanticDigest) {
+        if (productionReceipt.receipt.semanticEventSha256 !== semanticDigest) {
           throw new Error('outbox production key collision with different measurement payload')
         }
-        await ensureRecordPublished(paths, productionReceipt.record)
-        return { status: 'duplicate' as const, record: productionReceipt.record }
+        await ensureRecordPublished(paths, productionReceipt.storedRecord)
+        return { status: 'duplicate' as const, record: productionReceipt.storedRecord.record }
       }
     }
 
     const existing = await readRecordByEventId(paths, event.id)
     if (existing) {
-      if (existing.eventSha256 !== digest) throw new Error('outbox event id collision with different payload')
+      if (existing.legacy || existing.record.eventSha256 !== digest) {
+        throw new Error('outbox event id collision with different payload')
+      }
       if (productionKeySha256 !== undefined) {
         const receipt = LocalMeasurementProductionReceiptV1Schema.parse({
           kind: LOCAL_OUTBOX_PRODUCTION_RECEIPT_KIND,
           version: 1,
           productionKeySha256,
           semanticEventSha256: semanticDigest,
-          record: existing,
+          record: existing.record,
         })
         await atomicWritePrivateFile(
           join(paths.production, productionReceiptFileName(productionKeySha256)),
           JSON.stringify(receipt),
         )
       }
-      return { status: 'duplicate' as const, record: existing }
+      return { status: 'duplicate' as const, record: existing.record }
     }
 
     const sequence = await readCounter(paths.counter)
@@ -348,12 +385,13 @@ export async function enqueueMeasurementEventV1(
 
 async function readAck(
   paths: ReturnType<typeof outboxPaths>,
-  record: LocalMeasurementOutboxRecordV1,
+  stored: StoredOutboxRecordV1,
 ): Promise<LocalMeasurementOutboxAckV1 | undefined> {
-  const bytes = await readOptionalPrivateFile(join(paths.acknowledgements, eventFileName(record.event.id)))
+  const file = eventFileName(stored.record.event.id)
+  const bytes = await readOptionalPrivateFile(join(paths.acknowledgements, file))
   if (!bytes) return undefined
   const ack = LocalMeasurementOutboxAckV1Schema.parse(JSON.parse(bytes.toString('utf-8')))
-  if (ack.eventId !== record.event.id || ack.sequence !== record.sequence) {
+  if (ack.eventId !== stored.record.event.id || ack.sequence !== stored.record.sequence) {
     throw new Error('outbox acknowledgement does not match its immutable event')
   }
   return ack
@@ -385,13 +423,13 @@ export async function acknowledgeMeasurementEventV1(
     const ack = LocalMeasurementOutboxAckV1Schema.parse({
       kind: LOCAL_OUTBOX_ACK_KIND,
       version: 1,
-      eventId: record.event.id,
-      sequence: record.sequence,
+      eventId: record.record.event.id,
+      sequence: record.record.sequence,
       acknowledgedAt: now().toISOString(),
       ...(requestedReceiptId !== undefined ? { receiptId: requestedReceiptId } : {}),
     })
     await atomicWritePrivateFile(
-      join(paths.acknowledgements, eventFileName(record.event.id)),
+      join(paths.acknowledgements, eventFileName(record.record.event.id)),
       JSON.stringify(ack),
     )
     return { status: 'acknowledged' as const, ack }
@@ -405,6 +443,8 @@ export async function scanMeasurementOutboxV1(
   await prepare(paths)
   const pending: LocalMeasurementOutboxRecordV1[] = []
   const acknowledged: MeasurementOutboxScanV1['acknowledged'] = []
+  const legacyPending: LocalMeasurementOutboxRecordV1[] = []
+  const legacyAcknowledged: MeasurementOutboxScanV1['legacyAcknowledged'] = []
   const invalid: MeasurementOutboxScanV1['invalid'] = []
   const quarantined: LocalMeasurementOutboxQuarantineV1[] = []
   const quarantinedFiles = new Set<string>()
@@ -431,11 +471,17 @@ export async function scanMeasurementOutboxV1(
     try {
       const bytes = await readOptionalPrivateFile(join(paths.events, file))
       if (!bytes) continue
-      const record = parseRecord(bytes, file)
+      const stored = parseRecord(bytes, file)
       if (quarantinedFiles.has(file)) continue
-      const ack = await readAck(paths, record)
-      if (ack) acknowledged.push({ record, ack })
-      else pending.push(record)
+      const ack = await readAck(paths, stored)
+      if (ack) {
+        if (stored.legacy) legacyAcknowledged.push({ record: stored.record, ack })
+        else acknowledged.push({ record: stored.record, ack })
+      } else if (stored.legacy) {
+        legacyPending.push(stored.record)
+      } else {
+        pending.push(stored.record)
+      }
     } catch (error) {
       invalid.push({ eventFile: file, reason: error instanceof Error ? error.message : String(error) })
     }
@@ -443,7 +489,16 @@ export async function scanMeasurementOutboxV1(
 
   pending.sort((a, b) => a.sequence - b.sequence)
   acknowledged.sort((a, b) => a.record.sequence - b.record.sequence)
-  return { pending, acknowledged, invalid, quarantined }
+  legacyPending.sort((a, b) => a.sequence - b.sequence)
+  legacyAcknowledged.sort((a, b) => a.record.sequence - b.record.sequence)
+  return {
+    pending,
+    acknowledged,
+    ...(legacyPending.length ? { legacyPending } : {}),
+    ...(legacyAcknowledged.length ? { legacyAcknowledged } : {}),
+    invalid,
+    quarantined,
+  }
 }
 
 export async function readPendingMeasurementEventsV1(
