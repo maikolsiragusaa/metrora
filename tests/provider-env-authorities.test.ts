@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   COPILOT_DEFERRED_ENV_FINGERPRINTS,
   PROVIDER_ENV_FINGERPRINT_ADDITIONS,
-  VERCEL_DEFERRED_SECRET_FINGERPRINTS,
   ensureProviderEnvFingerprintAuthorities,
   getProviderEnvConfigHash,
 } from '../src/provider-parse-authorities.js'
@@ -47,14 +46,6 @@ describe('provider env cache authorities', () => {
     }
   })
 
-  it('does not declare Vercel secrets until doctor redacts declared credential values', () => {
-    ensureProviderEnvFingerprintAuthorities()
-    const declared = PROVIDER_ENV_VARS['vercel-gateway'] ?? []
-    for (const name of VERCEL_DEFERRED_SECRET_FINGERPRINTS) {
-      expect(declared).not.toContain(name)
-    }
-  })
-
   it('changes the daily authority when a declared source/profile override changes without exposing the value', () => {
     setEnv('GROK_HOME', '/tmp/metrora-grok-a')
     const first = getProviderEnvConfigHash()
@@ -66,5 +57,17 @@ describe('provider env cache authorities', () => {
     expect(second).toMatch(/^[0-9a-f]{24}$/)
     expect(first).not.toContain('/tmp/metrora-grok-a')
     expect(second).not.toContain('/tmp/metrora-grok-b')
+  })
+
+  it('fingerprints Vercel account credentials without serializing the secret', () => {
+    const secret = 'metrora-test-secret-never-persist-this-value'
+    setEnv('AI_GATEWAY_API_KEY', secret)
+    const first = getProviderEnvConfigHash()
+    setEnv('AI_GATEWAY_API_KEY', 'different-test-secret')
+    const second = getProviderEnvConfigHash()
+
+    expect(PROVIDER_ENV_VARS['vercel-gateway']).toContain('AI_GATEWAY_API_KEY')
+    expect(first).not.toBe(second)
+    expect(first).not.toContain(secret)
   })
 })
