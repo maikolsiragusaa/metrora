@@ -5,22 +5,12 @@ import { readFileSync } from 'node:fs'
 
 const files = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean)
 
-// The compatibility layer and provenance notices are deliberately outside the
-// user-facing scan. They are read-only technical/legal boundaries documented in
-// docs/TECHNICAL_IDENTITY_COMPATIBILITY.md and the repository notices.
-const compatibilityFiles = new Set([
-  'app/electron/cli.ts',
-  'app/electron/identity.ts',
-  'app/renderer/lib/storage.ts',
-  'package.json',
-  'package-lock.json',
-  'src/product-paths.ts',
-])
+// Provenance notices are deliberately outside the user-facing scan. They are
+// the narrow technical/legal boundaries documented in the repository notices.
+const compatibilityFiles = new Set()
 const provenanceFiles = new Set([
-  'LICENSES/CodeBurn-MIT.txt',
+  'LICENSES/UPSTREAM-MIT.txt',
   'THIRD_PARTY_NOTICES.md',
-  'UPSTREAM.md',
-  'docs/PRODUCT_LINEAGE.md',
 ])
 
 const legacyBrand = String.fromCharCode(99, 111, 100, 101, 98, 117, 114, 110)

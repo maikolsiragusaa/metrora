@@ -45,7 +45,9 @@ The CLI owns command routing and invokes shared domain modules for:
 - MCP stdio tools;
 - endpoint, Workspace, batching and verification operations where applicable.
 
-Temporary inherited command aliases remain compatibility entry points only. New documentation, artifacts and user-facing text use Metrora.
+The current package publishes only the `metrora` command. Historical signed
+evidence identifiers remain internal protocol details; new documentation,
+artifacts and user-facing text use Metrora.
 
 ### Electron desktop — `app/`
 

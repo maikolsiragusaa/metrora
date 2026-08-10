@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { Section } from '../components/Sidebar'
-import { storageKeys } from '../lib/storage'
+import { storageKey } from '../lib/storage'
 import { useDesktopScope } from './useDesktopScope'
 
 const providers = [
@@ -17,8 +17,8 @@ describe('useDesktopScope', () => {
   })
 
   it('boots from the persisted default period and config source', () => {
-    localStorage.setItem(storageKeys('defaultPeriod').canonical, 'week')
-    localStorage.setItem(storageKeys('claudeConfigSource').canonical, 'claude-config:default')
+    localStorage.setItem(storageKey('defaultPeriod'), 'week')
+    localStorage.setItem(storageKey('claudeConfigSource'), 'claude-config:default')
 
     const { result } = renderHook(() => useDesktopScope({ section: 'overview', detectedProviders: providers }))
 
@@ -47,24 +47,22 @@ describe('useDesktopScope', () => {
     act(() => result.current.onConfigSelect('claude-config:default'))
     expect(result.current.provider).toBe('all')
     expect(result.current.claudeConfigSource).toBe('claude-config:default')
-    expect(localStorage.getItem(storageKeys('claudeConfigSource').canonical)).toBe('claude-config:default')
+    expect(localStorage.getItem(storageKey('claudeConfigSource'))).toBe('claude-config:default')
   })
 
   it('drops config scope when a non-Claude provider is selected', () => {
-    localStorage.setItem(storageKeys('claudeConfigSource').canonical, 'claude-config:default')
+    localStorage.setItem(storageKey('claudeConfigSource'), 'claude-config:default')
     const { result } = renderHook(() => useDesktopScope({ section: 'overview', detectedProviders: providers }))
 
     act(() => result.current.onProviderSelect('grok'))
 
     expect(result.current.provider).toBe('grok')
     expect(result.current.claudeConfigSource).toBeNull()
-    for (const key of Object.values(storageKeys('claudeConfigSource'))) {
-      expect(localStorage.getItem(key)).toBeNull()
-    }
+    expect(localStorage.getItem(storageKey('claudeConfigSource'))).toBeNull()
   })
 
   it('keeps the persisted config while removing it from unsupported section scope', () => {
-    localStorage.setItem(storageKeys('claudeConfigSource').canonical, 'claude-config:default')
+    localStorage.setItem(storageKey('claudeConfigSource'), 'claude-config:default')
     const { result, rerender } = renderHook(
       ({ section }: { section: Section }) => useDesktopScope({ section, detectedProviders: providers }),
       { initialProps: { section: 'overview' as Section } },

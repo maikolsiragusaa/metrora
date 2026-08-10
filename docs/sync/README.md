@@ -34,7 +34,9 @@ The client:
 3. stores the refresh token using the platform credential backend;
 4. stores non-secret endpoint configuration in the Metrora config root.
 
-Fresh installations use `~/.config/metrora` on platforms that follow the XDG-style layout. An existing Metrora or Metrora config root is adopted in place rather than abandoned, so an upgrade does not silently lose configuration.
+Fresh and subsequent installations use the canonical Metrora config root on
+platforms that follow the XDG-style layout. Retired pre-release config roots
+are not inferred; existing canonical files remain in place.
 
 The v1 server contract still uses `/.well-known/metrora-export.json` as a **frozen compatibility wire route**. That route name is not the product identity and must not be used for new UI, commands or branding.
 
@@ -92,11 +94,12 @@ Sync uses OIDC Authorization Code + PKCE. Credential handling is platform-specif
 - Linux: libsecret when available, otherwise a permission-restricted file fallback;
 - Windows: DPAPI-protected local credential storage.
 
-Fresh credential/config files use the canonical Metrora config root. Existing compatibility roots remain readable so upgrades do not strand credentials or settings.
+Credential and config files use the canonical Metrora config root. Retired
+pre-release roots are not inferred, and the application does not delete them.
 
 ## Operational behavior
 
-`metrora sync push` is idempotency-aware through a local sent-ledger. Successfully sent record identities are retained so an overlapping later push does not intentionally duplicate them. The ledger follows the canonical Metrora cache root on fresh installations and adopts an existing legacy cache root in place when present.
+`metrora sync push` is idempotency-aware through a local sent-ledger. Successfully sent record identities are retained so an overlapping later push does not intentionally duplicate them. The ledger follows the canonical Metrora cache root; retired pre-release cache roots are not inferred.
 
 When the machine is offline, nothing is uploaded. A later explicit push can use a larger `--since` window to catch up.
 

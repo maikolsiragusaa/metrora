@@ -1,9 +1,8 @@
 /**
  * metrora sync — config file management.
  *
- * New installations store non-secret sync configuration under the canonical
- * Metrora config root. Existing legacy roots are adopted in place by the shared
- * product-path authority so upgrades do not silently lose configuration.
+ * Sync configuration is stored under the canonical Metrora config root. The
+ * shared product-path authority does not infer retired product roots.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs'

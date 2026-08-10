@@ -11,7 +11,6 @@ import { join } from 'path'
 import { getMetroraConfigDir } from '../product-paths.js'
 
 const SERVICE_NAME = 'metrora-sync'
-const LEGACY_SERVICE_NAMES = ['metrora-sync', 'metrora-sync'] as const
 const ACCOUNT_NAME = 'refresh-token'
 
 export type StorageMethod = 'keychain' | 'secret-tool' | 'dpapi' | 'file'
@@ -51,24 +50,11 @@ class KeychainStore implements CredentialStore {
   }
 
   retrieve(): string | null {
-    const canonical = readMacKeychain(SERVICE_NAME)
-    if (canonical) return canonical
-
-    for (const legacy of LEGACY_SERVICE_NAMES) {
-      const token = readMacKeychain(legacy)
-      if (!token) continue
-      // Adopt the credential into the canonical service while preserving the
-      // source entry until the canonical write succeeds.
-      this.store(token)
-      deleteMacKeychain(legacy)
-      return token
-    }
-    return null
+    return readMacKeychain(SERVICE_NAME)
   }
 
   delete(): void {
     deleteMacKeychain(SERVICE_NAME)
-    for (const legacy of LEGACY_SERVICE_NAMES) deleteMacKeychain(legacy)
   }
 
   method(): StorageMethod { return 'keychain' }
@@ -105,22 +91,11 @@ class SecretToolStore implements CredentialStore {
   }
 
   retrieve(): string | null {
-    const canonical = readSecretTool(SERVICE_NAME)
-    if (canonical) return canonical
-
-    for (const legacy of LEGACY_SERVICE_NAMES) {
-      const token = readSecretTool(legacy)
-      if (!token) continue
-      this.store(token)
-      deleteSecretTool(legacy)
-      return token
-    }
-    return null
+    return readSecretTool(SERVICE_NAME)
   }
 
   delete(): void {
     deleteSecretTool(SERVICE_NAME)
-    for (const legacy of LEGACY_SERVICE_NAMES) deleteSecretTool(legacy)
   }
 
   method(): StorageMethod { return 'secret-tool' }
@@ -219,11 +194,8 @@ function isCommandAvailable(cmd: string): boolean {
 
 export function createCredentialStore(): CredentialStore {
   // Test/CI escape hatch: force the file store (respects $HOME, so tests
-  // can fully isolate with a temp HOME). Canonical env wins; legacy names stay
-  // accepted only as temporary compatibility aliases.
+  // can fully isolate with a temp HOME).
   const forcedStore = process.env.METRORA_SYNC_TOKEN_STORE
-    ?? process.env.METRORA_SYNC_TOKEN_STORE
-    ?? process.env.METRORA_SYNC_TOKEN_STORE
   if (forcedStore === 'file') {
     return new FileStore()
   }

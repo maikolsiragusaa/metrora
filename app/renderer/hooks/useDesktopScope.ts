@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import type { Section } from '../components/Sidebar'
 import { DESKTOP_SECTION_CAPABILITIES } from '../lib/desktopSections'
-import { readCompatStorage, removeCompatStorage, writeCompatStorage } from '../lib/storage'
+import { readStorage, removeStorage, writeStorage } from '../lib/storage'
 import type { DateRange, Period } from '../lib/types'
 
 const STANDARD_PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all', 'lifetime']
@@ -17,17 +17,17 @@ function isPeriod(value: string): value is Period {
 }
 
 function initialPeriod(): Period {
-  const saved = readCompatStorage('defaultPeriod')
+  const saved = readStorage('defaultPeriod')
   return saved && isPeriod(saved) ? saved : 'today'
 }
 
 function initialConfigSource(): string | null {
-  return readCompatStorage('claudeConfigSource') || null
+  return readStorage('claudeConfigSource') || null
 }
 
 function persistConfigSource(id: string | null): void {
-  if (id) writeCompatStorage('claudeConfigSource', id)
-  else removeCompatStorage('claudeConfigSource')
+  if (id) writeStorage('claudeConfigSource', id)
+  else removeStorage('claudeConfigSource')
 }
 
 export function providerName(provider: string): string {

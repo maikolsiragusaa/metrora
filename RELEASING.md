@@ -12,7 +12,9 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Current desktop build version: `1.0.0.9`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 
-Temporary compatibility commands are governed by the technical compatibility register. They are not release brands or names for new artifacts.
+The published command is `metrora`. Historical protocol and signed-data
+identifiers are governed by their versioned contracts and are not release
+brands or names for new artifacts.
 
 The root npm package is private and must not be published from this repository.
 

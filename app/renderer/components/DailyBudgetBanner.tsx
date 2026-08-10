@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { readDailyBudget } from '../lib/budget'
 import { formatCompact, formatUsd } from '../lib/format'
 import { localDateKey } from '../lib/period'
-import { readCompatStorage, writeCompatStorage } from '../lib/storage'
+import { readStorage, writeStorage } from '../lib/storage'
 import type { MenubarPayload } from '../lib/types'
 
 export type DailyBudgetBannerProps = {
@@ -23,7 +23,7 @@ export function DailyBudgetBanner({ payload, provider }: DailyBudgetBannerProps)
   if (budget.kind === 'tokens' && provider !== 'all') return null
 
   const todayKey = localDateKey(new Date())
-  if (readCompatStorage('dailyBudget.dismissed') === todayKey) return null
+  if (readStorage('dailyBudget.dismissed') === todayKey) return null
 
   const entry = payload.history.daily.find(day => day.date === todayKey)
   const used = budget.kind === 'usd'
@@ -40,7 +40,7 @@ export function DailyBudgetBanner({ payload, provider }: DailyBudgetBannerProps)
     : `Today's spend is at ${Math.floor(percent)}% of your daily budget`
 
   const dismiss = () => {
-    writeCompatStorage('dailyBudget.dismissed', todayKey)
+    writeStorage('dailyBudget.dismissed', todayKey)
     bumpDismiss(tick => tick + 1)
   }
 

@@ -23,7 +23,9 @@ metrora sync push
   └─ update lastSync
 ```
 
-Fresh installations use canonical Metrora config/cache roots. Existing legacy roots are adopted in place when present so upgrades do not silently abandon state.
+Fresh and subsequent installations use canonical Metrora config/cache roots.
+Retired pre-release roots are not inferred, and existing canonical state is
+left in place.
 
 ## Discovery protocol
 
@@ -82,7 +84,9 @@ Supported storage backends are:
 | Linux | libsecret, with permission-restricted file fallback |
 | Windows | DPAPI-protected local file |
 
-Canonical credential identity is `metrora-sync`. Existing legacy keychain service entries can be adopted into the canonical service after a successful read. Legacy files remain readable through the shared config-root compatibility boundary.
+Canonical credential identity is `metrora-sync`. Credential lookups use the
+canonical service and canonical config root only; retired pre-release entries
+are not adopted automatically.
 
 Secrets are never written to `sync.json` or the sent-ledger.
 

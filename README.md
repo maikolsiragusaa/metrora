@@ -174,11 +174,9 @@ Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1]
 
 ## Origin and independent development
 
-Metrora is independently maintained from a reviewed upstream MIT-licensed source baseline and preserves the required copyright and licence notices.
-
-The inherited baseline provided substantial local collection, reporting and interface foundations. Metrora independently maintains that code while introducing its own product identity, evidence model, durable-history rules, historical-pricing authority, Windows release discipline, local Workspace contracts and other material changes.
-
-See [Product lineage](docs/PRODUCT_LINEAGE.md) for the functional boundary and [Upstream provenance](UPSTREAM.md) for the exact imported source authority. Required notices remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
+Metrora is independently maintained under its own product identity. Required
+third-party notices and licence texts remain in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
 ## Documentation
 
@@ -187,7 +185,6 @@ Start from the [documentation index](docs/README.md):
 - [Getting started](docs/GETTING_STARTED.md)
 - [CLI reference](docs/CLI_REFERENCE.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)
-- [Product lineage](docs/PRODUCT_LINEAGE.md)
 - [Product principles](docs/PRODUCT_PRINCIPLES.md)
 - [Pricing history](docs/PRICING_HISTORY.md)
 - [Workspace v1](docs/WORKSPACE_V1.md)
@@ -207,7 +204,9 @@ tests/     core test suite
 docs/      product, user, contract and technical documentation
 ```
 
-The canonical command is `metrora`. Compatibility aliases are retained only at narrowly scoped runtime boundaries while local state and integrations migrate safely. They are not product-facing names for new releases.
+The current package publishes only the `metrora` command. Historical signed
+evidence identifiers remain internal protocol details and are not product
+facing names for new releases.
 
 ## Contributing
 

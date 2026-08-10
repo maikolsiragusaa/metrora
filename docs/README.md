@@ -12,7 +12,6 @@ This index separates user guidance, current product guarantees, public contracts
 ## Understand the product
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
-- [Product lineage](PRODUCT_LINEAGE.md) — inherited foundations, material Metrora changes and compatibility identifiers.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
@@ -56,7 +55,6 @@ Historical and guided acceptance documents preserve reproducible public evidence
 
 - [Contributing](../CONTRIBUTING.md) — contribution workflow and validation requirements.
 - [Security policy](../SECURITY.md) — private vulnerability reporting.
-- [Upstream provenance](../UPSTREAM.md) — exact imported source authority.
 - [Third-party notices](../THIRD_PARTY_NOTICES.md) — required licences and component notices.
 - [Brand policy](../BRAND_POLICY.md) — product identity and permitted brand use.
 

@@ -8,9 +8,14 @@ import { fileURLToPath } from 'node:url'
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
 function readTrackedText(path) {
-  const bytes = readFileSync(resolve(repositoryRoot, path))
-  if (bytes.includes(0)) return null
-  return bytes.toString('utf8')
+  try {
+    const bytes = readFileSync(resolve(repositoryRoot, path))
+    if (bytes.includes(0)) return null
+    return bytes.toString('utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
 }
 
 const findings = []
@@ -33,11 +38,11 @@ const requiredFiles = {
   LICENSE: [
     'Copyright (c) 2026 Metrora contributors',
   ],
-  'LICENSES/CodeBurn-MIT.txt': [
+  'LICENSES/UPSTREAM-MIT.txt': [
     'Copyright (c) 2026 AgentSeal',
   ],
   'THIRD_PARTY_NOTICES.md': [
-    'LICENSES/CodeBurn-MIT.txt',
+    'LICENSES/UPSTREAM-MIT.txt',
     'LICENSES/Apache-2.0.txt',
   ],
   'NOTICE.md': [

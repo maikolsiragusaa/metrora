@@ -1,10 +1,7 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  adoptLegacyDesktopLocalState,
   desktopLocalStateModulePath,
   desktopReviewedProductionModulePath,
   desktopVaultBackend,
@@ -103,27 +100,6 @@ describe('desktop local-state Electron host', () => {
     expect(importModule).toHaveBeenCalledOnce()
     expect(initialize).toHaveBeenCalledOnce()
     expect(initializeWorkspace).not.toHaveBeenCalled()
-  })
-
-  it('copies legacy desktop state into Metrora without modifying the source', () => {
-    const root = mkdtempSync(join(tmpdir(), 'metrora-desktop-adoption-'))
-    try {
-      const userDataPath = join(root, 'Metrora')
-      const legacyUserDataPath = join(root, 'legacy-desktop')
-      const legacyState = join(legacyUserDataPath, 'metrora-local-state')
-      mkdirSync(legacyState, { recursive: true })
-      writeFileSync(join(legacyState, 'identity.bin'), 'legacy-state')
-
-      const adopted = adoptLegacyDesktopLocalState({ userDataPath, legacyUserDataPath })
-      expect(adopted).toEqual({
-        dataDir: join(userDataPath, 'metrora-local-state'),
-        adoptedFrom: legacyState,
-      })
-      expect(readFileSync(join(adopted.dataDir, 'identity.bin'), 'utf8')).toBe('legacy-state')
-      expect(readFileSync(join(legacyState, 'identity.bin'), 'utf8')).toBe('legacy-state')
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
   })
 
   it('fails closed without loading the runtime on unsupported platforms', async () => {

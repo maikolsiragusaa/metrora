@@ -121,10 +121,9 @@ Pairing is explicit and revocable. Combined-device reporting is separate from th
 
 The macOS menubar and other retained platform surfaces are not official Metrora distributions until their platform-specific release boundary passes.
 
-## Compatibility aliases
+## Identity boundary
 
-Legacy command aliases remain temporary runtime compatibility shims. They exist to preserve scripts, persisted state and integrations during migration.
-
-New documentation, scripts and releases should use `metrora`. Compatibility aliases may be removed only through an explicit migration that protects existing user-owned state.
-
-Internal paths, versioned schemas and persisted identifiers can still contain historical compatibility names where migration safety requires them. Canonical CLI help, diagnostics and examples use Metrora.
+The current package publishes and resolves only the `metrora` command. Retired
+pre-release command aliases, environment variables and CLI pointer roots are
+not adopted by new installations. Versioned Workspace/evidence identifiers
+remain an internal signed-data boundary and are not product-facing CLI names.

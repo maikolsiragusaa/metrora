@@ -22,7 +22,7 @@ import { formatUsd } from './lib/format'
 import { motionClass } from './lib/motion'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
-import { readCompatStorage } from './lib/storage'
+import { readStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
 import { Models } from './sections/Models'
@@ -103,7 +103,7 @@ function AppMain() {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    const saved = readCompatStorage('theme')
+    const saved = readStorage('theme')
     if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved)
     else document.documentElement.removeAttribute('data-theme')
   }, [])

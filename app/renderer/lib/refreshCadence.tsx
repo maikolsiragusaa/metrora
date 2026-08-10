@@ -1,9 +1,9 @@
 import { createContext, useContext } from 'react'
 
-import { readCompatStorage, writeCompatStorage } from './storage'
+import { readStorage, writeStorage } from './storage'
 
 // The auto-refresh cadence, chosen in Settings > General. Metrora storage is
-// canonical; the adapter dual-writes the legacy key during the migration window.
+// canonical and scoped to the current Metrora renderer.
 export const REFRESH_OPTIONS: ReadonlyArray<{ value: string; label: string; ms: number | null }> = [
   { value: 'manual', label: 'Manual', ms: null },
   { value: '30s', label: '30 seconds', ms: 30_000 },
@@ -22,13 +22,13 @@ export function refreshValueToMs(value: string): number | null {
 }
 
 export function readRefreshValue(): string {
-  const saved = readCompatStorage('refreshInterval')
+  const saved = readStorage('refreshInterval')
   if (saved && REFRESH_OPTIONS.some(option => option.value === saved)) return saved
   return DEFAULT_REFRESH_VALUE
 }
 
 export function persistRefreshValue(value: string): void {
-  writeCompatStorage('refreshInterval', value)
+  writeStorage('refreshInterval', value)
 }
 
 export type RefreshCadence = {

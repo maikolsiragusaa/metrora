@@ -1,6 +1,6 @@
 # Changelog
 
-This file records Metrora-originated public changes. Required upstream provenance and licence notices are maintained separately in [`UPSTREAM.md`](UPSTREAM.md), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
+This file records Metrora-originated public changes. Required third-party notices and licence texts are maintained separately in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
 ## Unreleased — current source line `1.0.0-rc.9`
 

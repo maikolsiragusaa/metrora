@@ -33,7 +33,7 @@ function makePayload(): MenubarPayload {
       savingsUSD: 94.4,
       topFindings: [
         { title: 'Opus is doing your small talk', impact: 'high', savingsUSD: 9.1 },
-        { title: 'Cache hit is low in agentseal-dash', impact: 'medium', savingsUSD: 8.7 },
+        { title: 'Cache hit is low in example-dashboard', impact: 'medium', savingsUSD: 8.7 },
         { title: 'Batch tiny requests', impact: 'low', savingsUSD: 2.4 },
       ],
     },
@@ -57,7 +57,7 @@ function makeOptimizeReport(): OptimizeJsonReport {
         fix: { type: 'paste', label: 'Paste into CLAUDE.md', text: 'Use Sonnet for routine questions.', destination: 'claude-md' },
       },
       {
-        id: 'context-heavy-sessions', title: 'Cache hit is low in agentseal-dash',
+        id: 'context-heavy-sessions', title: 'Cache hit is low in example-dashboard',
         explanation: 'Repeated context is not being served from cache.', severity: 'medium',
         trend: null, tokensSaved: 17_400, estimatedSavingsUSD: 8.7,
         fix: { type: 'command', label: 'Run this command', text: 'metrora cache inspect' },
@@ -82,7 +82,7 @@ function makeYield(): YieldJsonReport {
     },
     details: [
       { sessionId: 'rev-1', project: 'metrora', category: 'reverted', commitCount: 2, costUSD: 55 },
-      { sessionId: 'rev-2', project: 'agentseal-dash', category: 'reverted', commitCount: 1, costUSD: 52 },
+      { sessionId: 'rev-2', project: 'example-dashboard', category: 'reverted', commitCount: 1, costUSD: 52 },
       { sessionId: 'abn-1', project: 'sandbox-spike', category: 'abandoned', commitCount: 0, costUSD: 65.4 },
       { sessionId: 'prod-1', project: 'desktop-app', category: 'productive', commitCount: 5, costUSD: 440 },
     ],

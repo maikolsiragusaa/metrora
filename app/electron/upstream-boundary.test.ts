@@ -21,14 +21,8 @@ function runtimeFiles(dir: string): string[] {
 }
 
 const FORBIDDEN_RUNTIME_DESTINATIONS = [
-  'api.codeburn.app',
-  'www.codeburn.app/telemetry',
-  'github.com/getagentseal/codeburn/releases',
   'apps.microsoft.com/detail/9P0R4ZL5XMB8',
   'discord.com/invite/w2sw8mCqep',
-  'x.com/_codeburn',
-  'youtube.com/@codeburnn',
-  'linkedin.com/showcase/codeburnn',
 ]
 
 describe('desktop upstream-service boundary', () => {

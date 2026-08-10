@@ -1,5 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export type ElectronSafeStorageLike = {
@@ -259,7 +258,6 @@ export type InitializeDesktopEndpointStateDeps = {
   resourcesPath: string
   appPath: string
   userDataPath: string
-  legacyUserDataPath?: string
   safeStorage: ElectronSafeStorageLike
   importModule?: (url: string) => Promise<DesktopLocalStateModule>
   importReviewedProductionModule?: (url: string) => Promise<DesktopReviewedProductionModule>
@@ -360,39 +358,6 @@ export function desktopReviewedProductionModulePath(
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-reviewed-production.js')
 }
 
-/**
- * Copy an explicitly supplied legacy desktop state into Metrora once. The
- * source is never moved, modified or deleted. A failed readable-state
- * migration is surfaced instead of silently creating a fresh identity.
- */
-export function adoptLegacyDesktopLocalState(options: {
-  userDataPath: string
-  legacyUserDataPath?: string
-}): { dataDir: string; adoptedFrom: string | null } {
-  const canonical = join(options.userDataPath, 'metrora-local-state')
-  if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: null }
-
-  if (options.legacyUserDataPath) {
-    const supplied = join(options.legacyUserDataPath, 'metrora-local-state')
-    if (existsSync(supplied)) {
-      try {
-        mkdirSync(dirname(canonical), { recursive: true })
-        cpSync(supplied, canonical, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-          preserveTimestamps: true,
-        })
-        return { dataDir: canonical, adoptedFrom: supplied }
-      } catch (error) {
-        if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: supplied }
-        throw new Error(`failed to adopt legacy Metrora desktop state: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-  }
-  return { dataDir: canonical, adoptedFrom: null }
-}
-
 function safeStorageAdapter(deps: InitializeDesktopEndpointStateDeps) {
   return {
     isAvailable: () => deps.safeStorage.isAsyncEncryptionAvailable(),
@@ -432,10 +397,7 @@ async function loadReviewedProductionModule(
 }
 
 function localStateDataDir(deps: InitializeDesktopEndpointStateDeps): string {
-  return adoptLegacyDesktopLocalState({
-    userDataPath: deps.userDataPath,
-    legacyUserDataPath: deps.legacyUserDataPath,
-  }).dataDir
+  return join(deps.userDataPath, 'metrora-local-state')
 }
 
 export async function initializeDesktopEndpointState(

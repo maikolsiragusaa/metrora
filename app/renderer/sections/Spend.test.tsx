@@ -65,7 +65,7 @@ function makePayload(now: Date): MenubarPayload {
           sessionDetails: [],
         },
         {
-          name: 'agentseal-dash',
+          name: 'example-dashboard',
           cost: 141.3,
           savingsUSD: 0,
           sessions: 74,
@@ -144,7 +144,7 @@ describe('Spend', () => {
 
     expect(await screen.findByText('metrora')).toBeInTheDocument()
     expect(screen.getByText('$246.10')).toBeInTheDocument()
-    expect(screen.getByText('agentseal-dash')).toBeInTheDocument()
+    expect(screen.getByText('example-dashboard')).toBeInTheDocument()
     expect(screen.getByText('top 2')).toBeInTheDocument()
 
     // Sparse history is zero-filled into 15 contiguous days ending today (Jul 10),
@@ -359,7 +359,7 @@ describe('Spend', () => {
     render(<Spend period="week" provider="all" />)
 
     const first = await screen.findByRole('button', { name: /metrora/ })
-    const second = screen.getByRole('button', { name: /agentseal-dash/ })
+    const second = screen.getByRole('button', { name: /example-dashboard/ })
     expect(first).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('region', { name: 'metrora sessions' })).not.toBeInTheDocument()
 
@@ -377,11 +377,11 @@ describe('Spend', () => {
     expect(second).toHaveAttribute('aria-expanded', 'true')
     expect(first).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('region', { name: 'metrora sessions' })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: 'agentseal-dash sessions' })).getByText('$9.90')).toBeInTheDocument()
+      expect(within(screen.getByRole('region', { name: 'example-dashboard sessions' })).getByText('$9.90')).toBeInTheDocument()
 
     // Clicking the open row collapses it in place.
     await user.click(second)
     expect(second).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('region', { name: 'agentseal-dash sessions' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'example-dashboard sessions' })).not.toBeInTheDocument()
   })
 })

@@ -5,8 +5,6 @@ import { delimiter, dirname, isAbsolute, join } from 'node:path'
 
 import {
   cliExecutableNames,
-  compatEnv,
-  LEGACY_COMPAT_ENV,
   METRORA_ENV,
   readPersistedCliPath,
 } from './identity'
@@ -142,7 +140,7 @@ export function nodeManagerDirs(): string[] {
 }
 
 function searchDirs(): string[] {
-  const override = compatEnv(process.env, METRORA_ENV.pathDirs, LEGACY_COMPAT_ENV.pathDirs)
+  const override = process.env[METRORA_ENV.pathDirs]
   if (override !== undefined) return override.split(delimiter).filter(Boolean)
   const pathDirs = (process.env.PATH || '').split(delimiter).filter(Boolean)
   return [...pathDirs, ...nodeManagerDirs()]
@@ -178,22 +176,21 @@ export function spawnSpecFor(target: CliTarget, args: string[]): SpawnSpec {
 }
 
 function readPersistedPath(): string | null {
-  return readPersistedCliPath({ isUsable: isExecutableFile })?.value ?? null
+  return readPersistedCliPath({ isUsable: isExecutableFile })
 }
 
 /**
  * Resolution order:
- * METRORA_BIN plus compatibility fallback → dev repository → packaged bundle → persisted
- * canonical/legacy pointer → PATH. Canonical values always take precedence.
+ * METRORA_BIN → dev repository → packaged bundle → persisted canonical pointer → PATH.
  */
 export function resolveTarget(): CliTarget | null {
-  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_COMPAT_ENV.bin)
+  const override = process.env[METRORA_ENV.bin]
   if (override && isAbsolute(override) && isExecutableFile(override)) {
     return { kind: 'external', bin: override }
   }
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    const devRepoRoot = compatEnv(process.env, METRORA_ENV.devRepoRoot, LEGACY_COMPAT_ENV.devRepoRoot)
+    const devRepoRoot = process.env[METRORA_ENV.devRepoRoot]
     if (devRepoRoot) {
       const devBin = join(devRepoRoot, 'dist', 'cli.js')
       if (isExecutableFile(devBin)) return { kind: 'external', bin: devBin }
@@ -206,7 +203,7 @@ export function resolveTarget(): CliTarget | null {
     }
   }
 
-  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_COMPAT_ENV.bundledCli)
+  const bundled = process.env[METRORA_ENV.bundledCli]
   if (bundled && isAbsolute(bundled) && isFile(bundled)) {
     return { kind: 'bundled', entry: bundled }
   }
@@ -230,13 +227,13 @@ export function resolveMetroraPath(): string | null {
 
 /** Return a bounded, non-sensitive reason for a resolution failure. */
 export function notFoundStage(): NotFoundStage {
-  const override = compatEnv(process.env, METRORA_ENV.bin, LEGACY_COMPAT_ENV.bin)
+  const override = process.env[METRORA_ENV.bin]
   if (override) {
     if (!isAbsolute(override)) return 'bin-not-absolute'
     if (!isExecutableFile(override)) return 'bin-not-executable'
   }
 
-  const bundled = compatEnv(process.env, METRORA_ENV.bundledCli, LEGACY_COMPAT_ENV.bundledCli)
+  const bundled = process.env[METRORA_ENV.bundledCli]
   if (bundled) {
     if (!isAbsolute(bundled)) return 'bundled-not-absolute'
     if (!isFile(bundled)) return 'bundled-missing'

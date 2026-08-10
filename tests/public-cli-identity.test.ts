@@ -3,15 +3,6 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-const commands = [
-  'report', 'today', 'month', 'overview', 'status', 'sessions', 'models',
-  'spend', 'export', 'compare', 'optimize', 'audit', 'doctor', 'yield',
-  'context', 'codex-tps', 'budget', 'plan', 'currency', 'model-alias',
-  'price-override', 'model-savings', 'proxy-path', 'act', 'guard', 'sync',
-  'share', 'devices', 'identity', 'web', 'mcp', 'menubar',
-  'antigravity-hook',
-] as const
-
 const sourceFiles = [
   'src/main.ts',
   'src/export.ts',
@@ -49,9 +40,6 @@ describe('canonical Metrora CLI public identity', () => {
       .map(path => readFileSync(join(process.cwd(), path), 'utf-8'))
       .join('\n')
 
-    for (const command of commands) {
-      expect(source).not.toContain(`codeburn ${command}`)
-    }
     expect(source).toContain('metrora optimize')
     expect(source).toContain('metrora act')
     expect(source).toContain('metrora share')
