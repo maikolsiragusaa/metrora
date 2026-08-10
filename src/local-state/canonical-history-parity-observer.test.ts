@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { DailyCache, DailyEntry } from '../daily-cache.js'
+import { DAILY_CACHE_VERSION, type DailyCache, type DailyEntry } from '../daily-cache.js'
 import type { CachedCall, CachedFile, SessionCache } from '../session-cache.js'
 import { projectCanonicalHistoryReadV1 } from './canonical-history-read-projection.js'
 import {
@@ -128,7 +128,7 @@ function day(): DailyEntry {
 
 function dailyCache(days: DailyEntry[] = [day()]): DailyCache {
   return {
-    version: 17,
+    version: DAILY_CACHE_VERSION,
     savingsConfigHash: 'test',
     tzKey: 'UTC',
     lastComputedDate: '2026-08-01',

@@ -5,6 +5,7 @@ import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
 import { getMetroraCacheDir } from './product-paths.js'
 import { emptyModelStats, mergeModelStats, sanitizeModels } from './daily-cache-model-detail.js'
+// v18: Copilot accounting changed; v17 history is adopted untrusted, re-derived where sources survive, and carried otherwise.
 // Bumped to 16: historical per-call cost assignments. Surviving source days
 // re-derive under immutable date-effective settlements; sourceless provider
 // slices continue to carry forward losslessly from v15.
@@ -61,7 +62,7 @@ import { emptyModelStats, mergeModelStats, sanitizeModels } from './daily-cache-
 // that older binaries skipped. v8 added local-model savings to the daily
 // rollup; the `savingsConfigHash` field is invalidated separately when the
 // user changes their `localModelSavings` mapping.
-export const DAILY_CACHE_VERSION = 17
+export const DAILY_CACHE_VERSION = 18
 const MIN_SUPPORTED_VERSION = 15
 // Version-suffixed so different binaries each own a distinct file and never
 // clobber an incompatible schema. Bumping the version mints a fresh filename;
@@ -302,9 +303,8 @@ export function migratedFrom(parsed: { version: number; lastComputedDate: string
       ? parsed.lastComputedDate
       : null,
     days: migrateDays(parsed.days),
-    // Only a cache explicitly marked complete stays trusted; one written before
-    // the marker existed reads false and is re-backfilled once.
-    complete: parsed.complete === true,
+    // Older schemas carry history but are never complete-authoritative.
+    complete: parsed.version === DAILY_CACHE_VERSION && parsed.complete === true,
   }
 }
 

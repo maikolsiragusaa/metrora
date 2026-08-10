@@ -43,7 +43,7 @@ function day(
 beforeEach(async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-05T12:00:00Z'))
-  cacheDir = await mkdtemp(join(tmpdir(), 'codex-v17-cache-'))
+  cacheDir = await mkdtemp(join(tmpdir(), 'daily-v18-cache-'))
   previousCacheDir = process.env['METRORA_CACHE_DIR']
   previousTz = process.env['TZ']
   process.env['METRORA_CACHE_DIR'] = cacheDir
@@ -59,12 +59,12 @@ afterEach(async () => {
   await rm(cacheDir, { recursive: true, force: true })
 })
 
-describe('Codex daily-cache v17 migration', () => {
+describe('daily-cache v18 migration', () => {
   it('re-derives surviving Codex days and carries sourceless history losslessly and idempotently', async () => {
-    expect(DAILY_CACHE_VERSION).toBe(17)
+    expect(DAILY_CACHE_VERSION).toBe(18)
     await mkdir(cacheDir, { recursive: true })
-    const v16 = {
-      version: 16,
+    const v17 = {
+      version: 17,
       savingsConfigHash: 'settled-config',
       tzKey: 'UTC',
       lastComputedDate: '2026-08-04',
@@ -97,10 +97,10 @@ describe('Codex daily-cache v17 migration', () => {
         }),
       ],
     }
-    await writeFile(join(cacheDir, 'daily-cache.v16.json'), JSON.stringify(v16))
+    await writeFile(join(cacheDir, 'daily-cache.v17.json'), JSON.stringify(v17))
 
     const adopted = await loadDailyCache()
-    expect(adopted.version).toBe(17)
+    expect(adopted.version).toBe(18)
     expect(adopted.complete).toBe(false)
     expect(adopted.days).toHaveLength(2)
 
@@ -160,8 +160,8 @@ describe('Codex daily-cache v17 migration', () => {
     expect(parses).toBe(1)
     expect(again).toEqual(migrated)
 
-    const persisted = JSON.parse(await readFile(join(cacheDir, 'daily-cache.v17.json'), 'utf-8'))
-    expect(persisted.version).toBe(17)
+    const persisted = JSON.parse(await readFile(join(cacheDir, 'daily-cache.v18.json'), 'utf-8'))
+    expect(persisted.version).toBe(18)
     expect(persisted.days.find((entry: DailyEntry) => entry.date === '2026-08-03').cost).toBe(12.345678)
   })
 

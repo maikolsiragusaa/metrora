@@ -57,14 +57,15 @@ describe('trusted watermark envelope propagation', () => {
     expect((await loadDailyCache()).watermarkTrusted).toBe(true)
   })
 
-  it('durably preserves a trusted stamp while migrating a supported active envelope', async () => {
+  it('does not trust a v17 envelope before the v18 accounting re-derive', async () => {
     await writeFile(dailyCachePath(), JSON.stringify(envelope({ version: DAILY_CACHE_VERSION - 1 })), 'utf-8')
 
     const loaded = await loadDailyCache()
     expect(loaded.version).toBe(DAILY_CACHE_VERSION)
-    expect(loaded.watermarkTrusted).toBe(true)
-    expect(await persistedTrust()).toBe(true)
-    expect((await loadDailyCache()).watermarkTrusted).toBe(true)
+    expect(loaded.complete).toBe(false)
+    expect(loaded.watermarkTrusted).toBe(false)
+    expect(await persistedTrust()).toBeUndefined()
+    expect((await loadDailyCache()).watermarkTrusted).toBe(false)
   })
 
   it('never transfers trust from an unsupported active envelope to an adopted cache', async () => {
