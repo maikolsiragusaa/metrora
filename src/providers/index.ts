@@ -10,6 +10,10 @@ import {
   createCopilotChatJournalProvider,
   withCopilotChatJournalAccounting,
 } from './copilot-chat-journal.js'
+import {
+  createCopilotCliResumeProvider,
+  withCopilotCliResumeAccounting,
+} from './copilot-cli-resume.js'
 import { droid } from './droid.js'
 import { devin } from './devin.js'
 import { gemini } from './gemini.js'
@@ -30,7 +34,14 @@ import { quickdesk } from './quickdesk.js'
 import { rooCode } from './roo-code.js'
 import { zerostack } from './zerostack.js'
 import { grok } from './grok.js'
+import { ensureProviderEnvFingerprintAuthorities } from '../provider-parse-authorities.js'
 import type { Provider, SessionSource } from './types.js'
+
+// Install deterministic source/profile env inputs before parser code computes a
+// session-cache fingerprint. The installer is idempotent and intentionally does
+// not declare Copilot's provider-wide overrides until durable present-path
+// carry-forward can preserve pruned OTel history safely.
+ensureProviderEnvFingerprintAuthorities()
 
 let antigravityProvider: Provider | null = null
 let antigravityLoadAttempted = false
@@ -196,8 +207,12 @@ async function loadZed(): Promise<Provider | null> {
   }
 }
 
-const copilotWithChatJournal = withCopilotChatJournalAccounting(copilot)
-const internalProviders: Provider[] = [createCopilotChatJournalProvider(copilot)]
+const copilotWithCliResume = withCopilotCliResumeAccounting(copilot)
+const copilotWithChatJournal = withCopilotChatJournalAccounting(copilotWithCliResume)
+const internalProviders: Provider[] = [
+  createCopilotChatJournalProvider(copilot),
+  createCopilotCliResumeProvider(copilot),
+]
 const coreProviders: Provider[] = [claude, cline, clineCli, codewhale, codebuff, withCodexModelProvider(codex), copilotWithChatJournal, devin, droid, gemini, hermes, ibmBob, kiloCode, kiro, kimi, kimicode, lingtaiTui, mistralVibe, mux, openclaw, openDesign, pi, omp, qwen, quickdesk, rooCode, zerostack, grok]
 
 // Lazily loaded providers, listed by name so --provider validation works even
