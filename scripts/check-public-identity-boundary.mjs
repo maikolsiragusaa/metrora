@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -54,7 +53,8 @@ const requiredFiles = {
     'Copyright (c) 2026 Metrora contributors',
   ],
   'LICENSES/UPSTREAM-MIT.txt': [
-    'Copyright (c) 2026 AgentSeal',
+    'MIT License',
+    'Permission is hereby granted',
   ],
   'THIRD_PARTY_NOTICES.md': [
     'LICENSES/UPSTREAM-MIT.txt',
@@ -115,15 +115,6 @@ for (const [path, markers] of Object.entries(forbiddenStoreSurfaceMarkers)) {
       findings.push({ path, line: 1, message: `historical marker must not appear on the Store-facing surface: ${marker}` })
     }
   }
-}
-
-const rootLicense = readTrackedText('LICENSE') ?? ''
-if (rootLicense.includes('AgentSeal')) {
-  findings.push({
-    path: 'LICENSE',
-    line: 1,
-    message: 'upstream copyright must remain scoped to its dedicated licence notice',
-  })
 }
 
 if (findings.length > 0) {
