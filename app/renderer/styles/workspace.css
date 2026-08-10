@@ -31,6 +31,7 @@
 .workspace-state { border: 1px solid var(--line2); background: rgba(160,175,255,.05); color: var(--mut); }
 .workspace-state-ready,
 .workspace-state-acknowledged { border-color: rgba(70,200,140,.28); background: rgba(70,200,140,.08); color: var(--ok); }
+.workspace-state-compatibility { border-color: rgba(240,180,70,.32); background: rgba(240,180,70,.08); color: var(--warn, #d9a441); }
 .workspace-state-quarantined,
 .workspace-state-blocked { border-color: rgba(242,109,109,.28); background: rgba(242,109,109,.08); color: var(--bad); }
 

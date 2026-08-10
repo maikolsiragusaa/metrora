@@ -31,6 +31,13 @@ import {
   type CreateSignedMeasurementBatchV1Options,
   type LocalSignedMeasurementBatchStateV1,
 } from './signed-batch.js'
+import {
+  assertWorkspaceCapabilityV1,
+  classifyWorkspaceEvidenceCompatibilityV1,
+  evaluateWorkspaceCapabilitiesV1,
+  type WorkspaceEvidenceCompatibilityV1,
+  type WorkspaceEvidenceIntegrityV1,
+} from './workspace-capability-policy.js'
 
 export const LOCAL_WORKSPACE_EVIDENCE_EXPORT_KIND = 'metrora.local-workspace-evidence-export' as const
 export const LOCAL_WORKSPACE_EVIDENCE_PAYLOAD_KIND = 'metrora.local-workspace-evidence-payload' as const
@@ -132,6 +139,8 @@ export type LocalWorkspaceEvidenceStateKindV1 =
 
 export type LocalWorkspaceEvidenceStateV1 = {
   state: LocalWorkspaceEvidenceStateKindV1
+  integrity: WorkspaceEvidenceIntegrityV1
+  compatibility: WorkspaceEvidenceCompatibilityV1
   workspaceId?: string
   endpointId?: string
   pendingEventCount: number
@@ -141,6 +150,14 @@ export type LocalWorkspaceEvidenceStateV1 = {
   quarantinedEventCount: number
   pendingBatchCount: number
   acknowledgedBatchCount: number
+  storage: {
+    canonicalEventCount: number
+    historicalEventCount: number
+    canonicalUnbatchedEventCount: number
+    historicalUnbatchedEventCount: number
+    canonicalBatchCount: number
+    historicalBatchCount: number
+  }
   blockers: string[]
 }
 
@@ -258,6 +275,8 @@ export async function inspectLocalWorkspaceEvidenceV1(
   if (!workspace) {
     return {
       state: 'workspace-required',
+      integrity: 'unverified',
+      compatibility: 'workspace-required',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -265,6 +284,14 @@ export async function inspectLocalWorkspaceEvidenceV1(
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: ['local personal workspace is not configured'],
     }
   }
@@ -293,10 +320,31 @@ export async function inspectLocalWorkspaceEvidenceV1(
   if (foreignRecords.length) blockers.push(`${foreignRecords.length} outbox event(s) are outside the local workspace endpoint`)
 
   const latestSequence = batchStates.at(-1)?.signed.range.lastSequence ?? 0
-  const pendingRecords = [...scan.pending, ...(scan.legacyPending ?? [])]
-  const unbatchedEventCount = pendingRecords.filter(record => record.sequence > latestSequence).length
+  const historicalPending = scan.legacyPending ?? []
+  const historicalAcknowledged = scan.legacyAcknowledged ?? []
+  const pendingRecords = [...scan.pending, ...historicalPending]
+  const canonicalUnbatchedEventCount = scan.pending.filter(record => record.sequence > latestSequence).length
+  const historicalUnbatchedEventCount = historicalPending.filter(record => record.sequence > latestSequence).length
+  const unbatchedEventCount = canonicalUnbatchedEventCount + historicalUnbatchedEventCount
   const pendingBatchCount = batchStates.filter(item => item.acknowledgement === undefined).length
   const acknowledgedBatchCount = batchStates.length - pendingBatchCount
+  const canonicalEventCount = scan.pending.length + scan.acknowledged.length
+  const historicalEventCount = historicalPending.length + historicalAcknowledged.length
+  const canonicalBatchCount = batchStates.filter(item => item.storageFormat === undefined).length
+  const historicalBatchCount = batchStates.filter(item => item.storageFormat === 'legacy').length
+  const integrity: WorkspaceEvidenceIntegrityV1 = blockers.length
+    ? 'invalid'
+    : scan.quarantined.length
+      ? 'quarantined'
+      : 'verified'
+  const compatibility = classifyWorkspaceEvidenceCompatibilityV1({
+    workspaceConfigured: true,
+    integrity,
+    canonicalEventCount,
+    historicalEventCount,
+    canonicalBatchCount,
+    historicalBatchCount,
+  })
 
   let state: LocalWorkspaceEvidenceStateKindV1
   if (blockers.length) state = 'blocked'
@@ -307,16 +355,62 @@ export async function inspectLocalWorkspaceEvidenceV1(
 
   return {
     state,
+    integrity,
+    compatibility,
     workspaceId: workspace.workspace.workspaceId,
     endpointId: workspace.endpoint.endpointId,
     pendingEventCount: pendingRecords.length,
     unbatchedEventCount,
-    acknowledgedEventCount: scan.acknowledged.length + (scan.legacyAcknowledged ?? []).length,
+    acknowledgedEventCount: scan.acknowledged.length + historicalAcknowledged.length,
     invalidEventCount: scan.invalid.length,
     quarantinedEventCount: scan.quarantined.length,
     pendingBatchCount,
     acknowledgedBatchCount,
+    storage: {
+      canonicalEventCount,
+      historicalEventCount,
+      canonicalUnbatchedEventCount,
+      historicalUnbatchedEventCount,
+      canonicalBatchCount,
+      historicalBatchCount,
+    },
     blockers,
+  }
+}
+
+function evidenceCapabilities(state: LocalWorkspaceEvidenceStateV1, workspaceConfigured: boolean) {
+  return evaluateWorkspaceCapabilitiesV1({
+    inspected: true,
+    workspaceConfigured,
+    integrity: state.integrity,
+    compatibility: state.compatibility,
+    productionMode: 'active',
+    unbatchedEventCount: state.unbatchedEventCount,
+    pendingBatchCount: state.pendingBatchCount,
+  })
+}
+
+function workspaceRequiredEvidenceState(): LocalWorkspaceEvidenceStateV1 {
+  return {
+    state: 'workspace-required',
+    integrity: 'unverified',
+    compatibility: 'workspace-required',
+    pendingEventCount: 0,
+    unbatchedEventCount: 0,
+    acknowledgedEventCount: 0,
+    invalidEventCount: 0,
+    quarantinedEventCount: 0,
+    pendingBatchCount: 0,
+    acknowledgedBatchCount: 0,
+    storage: {
+      canonicalEventCount: 0,
+      historicalEventCount: 0,
+      canonicalUnbatchedEventCount: 0,
+      historicalUnbatchedEventCount: 0,
+      canonicalBatchCount: 0,
+      historicalBatchCount: 0,
+    },
+    blockers: ['local personal workspace is not configured'],
   }
 }
 
@@ -324,13 +418,12 @@ export async function createNextLocalWorkspaceSignedBatchV1(
   options: CreateNextLocalWorkspaceSignedBatchV1Options,
 ) {
   const workspace = await loadWorkspace(options)
-  if (!workspace) throw new LocalWorkspaceEvidenceBlockedError('a local personal workspace is required')
-  const state = await inspectLocalWorkspaceEvidenceV1(options)
-  if (state.state === 'blocked' || state.state === 'quarantined') {
-    throw new LocalWorkspaceEvidenceBlockedError(
-      state.blockers[0] ?? 'workspace evidence is quarantined and requires review',
-    )
+  if (!workspace) {
+    assertWorkspaceCapabilityV1(evidenceCapabilities(workspaceRequiredEvidenceState(), false), 'batchSign')
+    throw new LocalWorkspaceEvidenceBlockedError('a local personal workspace is required')
   }
+  const state = await inspectLocalWorkspaceEvidenceV1(options)
+  assertWorkspaceCapabilityV1(evidenceCapabilities(state, true), 'batchSign', state.blockers[0])
   return createNextSignedMeasurementBatchV1({
     dataDir: options.dataDir,
     identity: options.identity,
@@ -427,16 +520,12 @@ export async function createLocalWorkspaceEvidenceExportV1(
   options: CreateLocalWorkspaceEvidenceExportV1Options,
 ): Promise<LocalWorkspaceEvidenceExportV1> {
   const workspace = await loadWorkspace(options)
-  if (!workspace) throw new LocalWorkspaceEvidenceBlockedError('a local personal workspace is required')
+  if (!workspace) {
+    assertWorkspaceCapabilityV1(evidenceCapabilities(workspaceRequiredEvidenceState(), false), 'canonicalExport')
+    throw new LocalWorkspaceEvidenceBlockedError('a local personal workspace is required')
+  }
   const state = await inspectLocalWorkspaceEvidenceV1(options)
-  if (state.state === 'blocked' || state.state === 'quarantined') {
-    throw new LocalWorkspaceEvidenceBlockedError(
-      state.blockers[0] ?? 'workspace evidence is quarantined and requires review',
-    )
-  }
-  if (state.unbatchedEventCount > 0) {
-    throw new LocalWorkspaceEvidenceBlockedError('workspace has unbatched reviewed events')
-  }
+  assertWorkspaceCapabilityV1(evidenceCapabilities(state, true), 'canonicalExport', state.blockers[0])
 
   const storedBatchStates = await listSignedMeasurementBatchStatesV1({
     dataDir: options.dataDir,

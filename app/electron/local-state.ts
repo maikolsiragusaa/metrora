@@ -8,6 +8,31 @@ export type ElectronSafeStorageLike = {
   decryptStringAsync(ciphertext: Buffer): Promise<{ result: string; shouldReEncrypt: boolean }>
 }
 
+export type DesktopWorkspaceCapabilityReason =
+  | 'inspection-pending'
+  | 'workspace-required'
+  | 'invalid-evidence'
+  | 'quarantined-evidence'
+  | 'historical-evidence-read-only'
+  | 'mixed-evidence-read-only'
+  | 'unbatched-evidence'
+  | 'production-paused'
+  | 'runtime-unavailable'
+
+export type DesktopWorkspaceCapability = {
+  allowed: boolean
+  reason: DesktopWorkspaceCapabilityReason | null
+}
+
+export type DesktopWorkspaceCapabilities = {
+  inspection: DesktopWorkspaceCapability
+  reviewedProduction: DesktopWorkspaceCapability
+  batchSign: DesktopWorkspaceCapability
+  canonicalExport: DesktopWorkspaceCapability
+  recovery: DesktopWorkspaceCapability
+  productionLifecycle: DesktopWorkspaceCapability
+}
+
 export type DesktopWorkspaceSnapshot = {
   kind: 'metrora.desktop-workspace-snapshot'
   version: 1
@@ -45,6 +70,8 @@ export type DesktopWorkspaceSnapshot = {
   }
   evidence: {
     state: 'workspace-required' | 'empty' | 'ready' | 'acknowledged' | 'quarantined' | 'blocked'
+    integrity: 'unverified' | 'verified' | 'invalid' | 'quarantined'
+    compatibility: 'uninspected' | 'workspace-required' | 'empty' | 'canonical' | 'historical-read-only' | 'mixed' | 'invalid' | 'quarantined'
     pendingEventCount: number
     unbatchedEventCount: number
     acknowledgedEventCount: number
@@ -52,8 +79,17 @@ export type DesktopWorkspaceSnapshot = {
     quarantinedEventCount: number
     pendingBatchCount: number
     acknowledgedBatchCount: number
+    storage: {
+      canonicalEventCount: number
+      historicalEventCount: number
+      canonicalUnbatchedEventCount: number
+      historicalUnbatchedEventCount: number
+      canonicalBatchCount: number
+      historicalBatchCount: number
+    }
     blockers: string[]
   }
+  capabilities: DesktopWorkspaceCapabilities
   privacy: {
     networkRequired: false
     promptsIncluded: false

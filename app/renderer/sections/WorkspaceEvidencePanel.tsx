@@ -27,13 +27,25 @@ const EVIDENCE_DESCRIPTIONS: Record<WorkspaceEvidenceState, string> = {
   blocked: 'Resolve the local issue shown below before signing or exporting.',
 }
 
+type WorkspaceEvidenceStateClass = WorkspaceEvidenceState | 'compatibility'
+
+function compatibilityDescription(disposition: DesktopWorkspaceSnapshot['evidence']['compatibility']): string | null {
+  if (disposition === 'historical-read-only') {
+    return 'Verified historical Workspace evidence remains readable on this device. Canonical signing and export are unavailable in the current runtime.'
+  }
+  if (disposition === 'mixed') {
+    return 'Verified canonical and historical evidence remain readable on this device. Mutation and canonical export are unavailable until explicit compatibility semantics exist.'
+  }
+  return null
+}
+
 export type WorkspaceEvidenceViewState = {
   inspectionPending: boolean
   inspectionComplete: boolean
   label: string
   description: string
   blocked: boolean
-  stateClass: WorkspaceEvidenceState
+  stateClass: WorkspaceEvidenceStateClass
 }
 
 export function workspaceEvidenceViewState(
@@ -50,14 +62,22 @@ export function workspaceEvidenceViewState(
       ? 'Check unavailable'
       : inspectionPending
         ? 'Checking local data'
+        : evidence.compatibility === 'historical-read-only' || evidence.compatibility === 'mixed'
+          ? 'Verified · read-only'
         : EVIDENCE_LABELS[evidence.state],
     description: inspectionError
       ? 'Metrora could not finish the local integrity check. Existing files were not changed.'
       : inspectionPending
         ? 'Metrora is checking local workspace data in the background. Nothing is being uploaded.'
-        : EVIDENCE_DESCRIPTIONS[evidence.state],
-    blocked: !inspectionComplete || evidence.state === 'blocked' || evidence.state === 'quarantined',
-    stateClass: inspectionComplete ? evidence.state : 'blocked',
+        : compatibilityDescription(evidence.compatibility) ?? EVIDENCE_DESCRIPTIONS[evidence.state],
+    blocked: !inspectionComplete
+      || evidence.integrity === 'invalid'
+      || evidence.integrity === 'quarantined',
+    stateClass: !inspectionComplete
+      ? 'blocked'
+      : evidence.compatibility === 'historical-read-only' || evidence.compatibility === 'mixed'
+        ? 'compatibility'
+        : evidence.state,
   }
 }
 
@@ -83,6 +103,11 @@ export function WorkspaceEvidencePanel({
           The check could not complete. Use Check &amp; recover below to retry safely; no files were deleted or reset.
         </div>
       ) : null}
+      {view.inspectionComplete ? (
+        <div className="workspace-source-line" data-testid="workspace-evidence-disposition">
+          Integrity: {integrityLabel(evidence.integrity)} · Compatibility: {compatibilityLabel(evidence.compatibility)}
+        </div>
+      ) : null}
       {view.inspectionComplete && evidence.blockers.length > 0 ? (
         <div className="workspace-visible-blockers" role="alert">
           <b>What needs attention</b>
@@ -99,6 +124,8 @@ export function WorkspaceEvidencePanel({
           <EvidenceCount label="Acknowledged events" value={view.inspectionComplete ? evidence.acknowledgedEventCount : null} />
           <EvidenceCount label="Pending batches" value={view.inspectionComplete ? evidence.pendingBatchCount : null} />
           <EvidenceCount label="Acknowledged batches" value={view.inspectionComplete ? evidence.acknowledgedBatchCount : null} />
+          <EvidenceCount label="Verified historical events" value={view.inspectionComplete ? evidence.storage.historicalEventCount : null} />
+          <EvidenceCount label="Verified historical batches" value={view.inspectionComplete ? evidence.storage.historicalBatchCount : null} />
           <EvidenceCount label="Quarantined" value={view.inspectionComplete ? evidence.quarantinedEventCount : null} />
           <EvidenceCount label="Invalid" value={view.inspectionComplete ? evidence.invalidEventCount : null} />
         </div>
@@ -114,4 +141,22 @@ function EvidenceCount({ label, value }: { label: string; value: number | null }
       <b>{value === null ? '—' : formatCompact(value)}</b>
     </div>
   )
+}
+
+function integrityLabel(integrity: Evidence['integrity']): string {
+  if (integrity === 'verified') return 'Verified / healthy'
+  if (integrity === 'invalid') return 'Invalid'
+  if (integrity === 'quarantined') return 'Quarantined'
+  return 'Not yet verified'
+}
+
+function compatibilityLabel(compatibility: Evidence['compatibility']): string {
+  if (compatibility === 'historical-read-only') return 'Historical · read-only'
+  if (compatibility === 'mixed') return 'Mixed · read-only'
+  if (compatibility === 'canonical') return 'Canonical'
+  if (compatibility === 'empty') return 'Empty'
+  if (compatibility === 'quarantined') return 'Quarantined'
+  if (compatibility === 'invalid') return 'Invalid'
+  if (compatibility === 'workspace-required') return 'Workspace required'
+  return 'Inspection pending'
 }

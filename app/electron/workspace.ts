@@ -82,6 +82,9 @@ function sanitizeActionError(error: unknown): { kind: string; message: string } 
   if (name === 'LocalWorkspaceEvidenceBlockedError') {
     return { kind: 'workspace-blocked', message: 'Workspace evidence is blocked or requires review.' }
   }
+  if (name === 'WorkspaceCapabilityDeniedError') {
+    return { kind: 'workspace-capability-denied', message: 'This Workspace action is unavailable for the verified local evidence state.' }
+  }
   return { kind: 'workspace-action-failed', message: 'The local Workspace action failed.' }
 }
 

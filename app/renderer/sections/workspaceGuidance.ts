@@ -19,6 +19,7 @@ export function workspaceGuidance({
 }): WorkspaceGuidance {
   const workspace = snapshot.workspace
   const evidence = snapshot.evidence
+  const capabilities = snapshot.capabilities
   const paused = snapshot.productionLifecycle?.mode === 'paused'
 
   const collection: WorkspaceGuidance['collection'] = !workspace
@@ -42,7 +43,7 @@ export function workspaceGuidance({
   const verification: WorkspaceGuidance['verification'] = evidenceView.inspectionPending
     ? {
         label: 'Checking local data',
-        detail: 'Background verification is read-only. Counts and actions stay gated until it finishes.',
+        detail: 'Background verification is read-only. Mutation-capable actions stay gated until it finishes.',
         tone: 'neutral',
       }
     : !evidenceView.inspectionComplete
@@ -57,15 +58,15 @@ export function workspaceGuidance({
           tone: 'good',
         }
 
-  const hasEvidenceBlocker = evidence.state === 'blocked'
-    || evidence.state === 'quarantined'
+  const hasEvidenceBlocker = evidence.integrity === 'invalid'
+    || evidence.integrity === 'quarantined'
     || evidence.blockers.length > 0
     || evidence.invalidEventCount > 0
     || evidence.quarantinedEventCount > 0
   const blocker: WorkspaceGuidance['blocker'] = evidenceView.inspectionPending
     ? {
         label: 'Waiting for verification',
-        detail: 'No evidence action is safe until the read-only check finishes.',
+        detail: 'Signing and export wait for the read-only check; Check & recover remains available.',
         tone: 'neutral',
       }
     : !evidenceView.inspectionComplete
@@ -113,13 +114,19 @@ export function workspaceGuidance({
       detail: 'Resuming changes only evidence preparation; ordinary analytics never stopped.',
       tone: 'warning',
     }
-  } else if (evidence.unbatchedEventCount > 0 || evidence.state === 'ready') {
+  } else if (!capabilities.batchSign.allowed) {
+    nextAction = {
+      label: 'Review Workspace compatibility',
+      detail: 'The verified local evidence remains readable, but the current runtime keeps signing and export unavailable.',
+      tone: 'warning',
+    }
+  } else if (!capabilities.canonicalExport.allowed && capabilities.canonicalExport.reason === 'unbatched-evidence') {
     nextAction = {
       label: 'Create a signed package',
       detail: 'Reviewed local activity is waiting to be signed before export.',
       tone: 'good',
     }
-  } else if (evidence.state === 'acknowledged') {
+  } else if (capabilities.canonicalExport.allowed && evidence.pendingBatchCount + evidence.acknowledgedBatchCount > 0) {
     nextAction = {
       label: 'Export verifiable evidence',
       detail: 'The signed local chain is ready for an explicit user-owned export.',

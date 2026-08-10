@@ -64,6 +64,8 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
     } : null,
     evidence: {
       state: withWorkspace ? 'ready' : 'workspace-required',
+      integrity: withWorkspace ? 'verified' : 'unverified',
+      compatibility: withWorkspace ? 'empty' : 'workspace-required',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -71,7 +73,23 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      batchSign: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      canonicalExport: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
     },
     privacy: {
       networkRequired: false,

@@ -74,6 +74,8 @@ function snapshot(state: 'ready' | 'quarantined' = 'ready'): DesktopWorkspaceSna
     },
     evidence: {
       state,
+      integrity: state === 'quarantined' ? 'quarantined' : 'verified',
+      compatibility: state === 'quarantined' ? 'quarantined' : 'canonical',
       pendingEventCount: state === 'ready' ? 0 : 1,
       unbatchedEventCount: state === 'ready' ? 0 : 1,
       acknowledgedEventCount: 0,
@@ -81,7 +83,23 @@ function snapshot(state: 'ready' | 'quarantined' = 'ready'): DesktopWorkspaceSna
       quarantinedEventCount: state === 'quarantined' ? 1 : 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: state === 'ready' ? 0 : 1,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: state === 'ready' ? 0 : 1,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: state === 'quarantined' ? ['Evidence requires review.'] : [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: state === 'quarantined' ? { allowed: false, reason: 'quarantined-evidence' } : { allowed: true, reason: null },
+      batchSign: state === 'quarantined' ? { allowed: false, reason: 'quarantined-evidence' } : { allowed: true, reason: null },
+      canonicalExport: state === 'quarantined' ? { allowed: false, reason: 'quarantined-evidence' } : { allowed: true, reason: null },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: true, reason: null },
     },
     privacy: {
       networkRequired: false,
@@ -107,6 +125,8 @@ function pendingAvailability(): DesktopWorkspaceAvailability {
   const value = snapshot()
   value.evidence = {
     state: 'blocked',
+    integrity: 'unverified',
+    compatibility: 'uninspected',
     pendingEventCount: 0,
     unbatchedEventCount: 0,
     acknowledgedEventCount: 0,
@@ -114,7 +134,23 @@ function pendingAvailability(): DesktopWorkspaceAvailability {
     quarantinedEventCount: 0,
     pendingBatchCount: 0,
     acknowledgedBatchCount: 0,
+    storage: {
+      canonicalEventCount: 0,
+      historicalEventCount: 0,
+      canonicalUnbatchedEventCount: 0,
+      historicalUnbatchedEventCount: 0,
+      canonicalBatchCount: 0,
+      historicalBatchCount: 0,
+    },
     blockers: ['Full local evidence inspection is pending.'],
+  }
+  value.capabilities = {
+    inspection: { allowed: true, reason: null },
+    reviewedProduction: { allowed: false, reason: 'inspection-pending' },
+    batchSign: { allowed: false, reason: 'inspection-pending' },
+    canonicalExport: { allowed: false, reason: 'inspection-pending' },
+    recovery: { allowed: true, reason: null },
+    productionLifecycle: { allowed: false, reason: 'inspection-pending' },
   }
   return {
     availability: 'ready',

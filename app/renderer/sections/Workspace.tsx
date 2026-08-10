@@ -215,7 +215,7 @@ function ReadyWorkspaceView({
       {workspace ? (
         <WorkspaceProductionPanel
           productionPaused={productionPaused}
-          evidenceView={evidenceView}
+          capabilities={snapshot.capabilities}
           action={action}
           busy={busy}
           lastProduction={lastProduction}
@@ -235,8 +235,6 @@ function ReadyWorkspaceView({
         <WorkspacePrivacyPanel />
         <WorkspaceEvidenceActionsPanel
           availability={availability}
-          workspace={workspace}
-          evidence={evidence}
           evidenceView={evidenceView}
           action={action}
           busy={busy}

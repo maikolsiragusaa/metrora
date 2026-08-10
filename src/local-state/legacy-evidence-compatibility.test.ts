@@ -28,6 +28,7 @@ import {
 } from './endpoint-identity.js'
 import { createLocalPersonalWorkspaceV1 } from './local-workspace.js'
 import {
+  enqueueMeasurementEventV1,
   LocalMeasurementOutboxRecordV1Schema,
   scanMeasurementOutboxV1,
 } from './measurement-outbox.js'
@@ -35,8 +36,11 @@ import { Aes256GcmSecretProtector } from './secret-protector.js'
 import {
   listSignedMeasurementBatchStatesV1,
 } from './signed-batch.js'
+import { attachDesktopReviewedProductionV1 } from './desktop-reviewed-production-runtime.js'
+import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
 import {
   createLocalWorkspaceEvidenceExportV1,
+  createNextLocalWorkspaceSignedBatchV1,
   inspectLocalWorkspaceEvidenceV1,
 } from './workspace-evidence.js'
 import { reconcileMeasurementProductionReceiptsV1 } from './measurement-production-recovery.js'
@@ -264,11 +268,19 @@ describe.sequential('historical Workspace evidence compatibility', () => {
     const second = await inspectLocalWorkspaceEvidenceV1({ dataDir: value.dataDir, identity: value.identity })
     expect(first).toMatchObject({
       state: 'ready',
+      integrity: 'verified',
+      compatibility: 'historical-read-only',
       pendingEventCount: 1,
       unbatchedEventCount: 0,
       invalidEventCount: 0,
       pendingBatchCount: 1,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 1,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 1,
+      },
     })
     expect(second).toEqual(first)
     expect(await readFile(eventPath)).toEqual(eventBefore)
@@ -276,6 +288,13 @@ describe.sequential('historical Workspace evidence compatibility', () => {
 
     await expect(createLocalWorkspaceEvidenceExportV1({ dataDir: value.dataDir, identity: value.identity }))
       .rejects.toThrow(/immutable|canonical schema/)
+    await expect(createNextLocalWorkspaceSignedBatchV1({
+      dataDir: value.dataDir,
+      identity: value.identity,
+      metroraVersion: '0.9.19',
+      adapterSetSha256: 'a'.repeat(64),
+      openTelemetryGenAiVersion: '1.37.0',
+    })).rejects.toMatchObject({ reason: 'historical-evidence-read-only' })
     await expect(reconcileMeasurementProductionReceiptsV1({ dataDir: value.dataDir }))
       .resolves.toMatchObject({ receiptCount: 1, repairedEventCount: 0 })
     expect(value.identity.metadata.generation).toBe(1)
@@ -294,6 +313,82 @@ describe.sequential('historical Workspace evidence compatibility', () => {
     expect(scan.invalid).toHaveLength(1)
     expect(scan.quarantined).toHaveLength(0)
     expect(await readFile(eventPath, 'utf8')).toContain('f'.repeat(64))
+  })
+
+  it('classifies canonical plus historical storage as verified mixed read-only evidence', async () => {
+    const value = await fixture()
+    await enqueueMeasurementEventV1({
+      ...event(value.identity.metadata.endpointId, value.workspace.workspace.workspaceId),
+      id: 'evt_canonical_transition',
+    }, { dataDir: value.dataDir, now: () => new Date(NOW) })
+
+    const state = await inspectLocalWorkspaceEvidenceV1({ dataDir: value.dataDir, identity: value.identity })
+    expect(state).toMatchObject({
+      state: 'ready',
+      integrity: 'verified',
+      compatibility: 'mixed',
+      pendingEventCount: 2,
+      unbatchedEventCount: 1,
+      storage: {
+        canonicalEventCount: 1,
+        historicalEventCount: 1,
+        canonicalUnbatchedEventCount: 1,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 1,
+      },
+    })
+    await expect(createNextLocalWorkspaceSignedBatchV1({
+      dataDir: value.dataDir,
+      identity: value.identity,
+      metroraVersion: '0.9.19',
+      adapterSetSha256: 'a'.repeat(64),
+      openTelemetryGenAiVersion: '1.37.0',
+    })).rejects.toMatchObject({ reason: 'mixed-evidence-read-only' })
+    await expect(createLocalWorkspaceEvidenceExportV1({ dataDir: value.dataDir, identity: value.identity }))
+      .rejects.toMatchObject({ capability: 'canonicalExport', reason: 'mixed-evidence-read-only' })
+  })
+
+  it('projects historical capabilities into the desktop runtime and keeps recovery read-only', async () => {
+    const value = await fixture()
+    const base = createDesktopWorkspaceRuntimeV1({
+      dataDir: value.dataDir,
+      identity: value.identity,
+      platform: { os: 'windows', architecture: 'x64' },
+      metroraVersion: '0.9.19',
+      collectorVersion: '0.9.19',
+      now: () => new Date(NOW),
+    })
+    const runtime = attachDesktopReviewedProductionV1({
+      runtime: base,
+      dataDir: value.dataDir,
+      identity: value.identity,
+      adapterVersion: '0.9.19',
+      now: () => new Date(NOW),
+    })
+
+    const projected = await runtime.getSnapshot()
+    expect(projected).toMatchObject({
+      evidence: { integrity: 'verified', compatibility: 'historical-read-only' },
+      capabilities: {
+        inspection: { allowed: true, reason: null },
+        recovery: { allowed: true, reason: null },
+        reviewedProduction: { allowed: false, reason: 'historical-evidence-read-only' },
+        batchSign: { allowed: false, reason: 'historical-evidence-read-only' },
+        canonicalExport: { allowed: false, reason: 'historical-evidence-read-only' },
+      },
+    })
+    const recovery = await runtime.recoverLocalState()
+    expect(recovery).toMatchObject({
+      summary: {
+        outcome: 'verified-read-only',
+        retryAttempted: false,
+        blocker: null,
+        receiptRepairCount: 0,
+        production: null,
+      },
+    })
+    runtime.dispose()
   })
 
   it('rejects signed legacy payload tampering before any normalization can be used', async () => {

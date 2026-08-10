@@ -1,11 +1,10 @@
 import { Panel } from '../components/Panel'
-import type { DesktopReviewedProductionSummary, WorkspaceProductionMode } from '../lib/workspace'
-import type { WorkspaceEvidenceViewState } from './WorkspaceEvidencePanel'
+import type { DesktopReviewedProductionSummary, DesktopWorkspaceCapabilities, WorkspaceProductionMode } from '../lib/workspace'
 import type { WorkspaceAction } from './useWorkspaceStatus'
 
 export function WorkspaceProductionPanel({
   productionPaused,
-  evidenceView,
+  capabilities,
   action,
   busy,
   lastProduction,
@@ -13,7 +12,7 @@ export function WorkspaceProductionPanel({
   onSetProductionMode,
 }: {
   productionPaused: boolean
-  evidenceView: WorkspaceEvidenceViewState
+  capabilities: DesktopWorkspaceCapabilities
   action: WorkspaceAction
   busy: boolean
   lastProduction: DesktopReviewedProductionSummary | null
@@ -30,7 +29,7 @@ export function WorkspaceProductionPanel({
           type="button"
           className="btn btn-p"
           onClick={() => void onProduce()}
-          disabled={busy || evidenceView.blocked || productionPaused}
+          disabled={busy || !capabilities.reviewedProduction.allowed}
         >
           {action === 'produce' ? 'Producing…' : 'Produce reviewed measurements'}
         </button>
@@ -38,7 +37,7 @@ export function WorkspaceProductionPanel({
           type="button"
           className="btn btn-s"
           onClick={() => void onSetProductionMode(productionPaused ? 'active' : 'paused')}
-          disabled={busy}
+          disabled={busy || !capabilities.productionLifecycle.allowed}
         >
           {productionPaused
             ? (action === 'resume' ? 'Resuming…' : 'Resume production')

@@ -43,6 +43,8 @@ function snapshot(): DesktopWorkspaceSnapshot {
     },
     evidence: {
       state: 'empty',
+      integrity: 'verified',
+      compatibility: 'empty',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -50,7 +52,23 @@ function snapshot(): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: true, reason: null },
+      batchSign: { allowed: true, reason: null },
+      canonicalExport: { allowed: true, reason: null },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: true, reason: null },
     },
     privacy: {
       networkRequired: false,
@@ -103,6 +121,8 @@ describe('workspaceGuidance', () => {
     const value = snapshot()
     value.evidence.state = 'ready'
     value.evidence.unbatchedEventCount = 3
+    value.evidence.storage.canonicalUnbatchedEventCount = 3
+    value.capabilities.canonicalExport = { allowed: false, reason: 'unbatched-evidence' }
     const result = guidance(value)
     expect(value.evidence.state).toBe('ready')
     expect(result.nextAction.label).toBe('Create a signed package')
