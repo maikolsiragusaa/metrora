@@ -4,6 +4,7 @@ import { homedir, platform } from 'os'
 
 import { readSessionFile } from '../fs-utils.js'
 import { calculateCost, getShortModelName } from '../models.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 // zerostack (https://github.com/gi-dellav/zerostack) is a minimal Rust coding
@@ -36,6 +37,7 @@ type ZerostackSession = {
   updated_at?: string
   total_input_tokens?: number
   total_output_tokens?: number
+  total_cost?: number
   model?: string
   provider?: string
   working_dir?: string
@@ -80,7 +82,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
       const input = session.total_input_tokens ?? 0
       const output = session.total_output_tokens ?? 0
-      if (input === 0 && output === 0) return
+      const hasPositiveSourceCost = typeof session.total_cost === 'number' && Number.isFinite(session.total_cost) && session.total_cost > 0
+      if (input === 0 && output === 0 && !hasPositiveSourceCost) return
 
       const timestamp = session.updated_at ?? session.created_at ?? ''
       const sessionId = session.id ?? basename(source.path, '.json')
@@ -89,10 +92,16 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       seenKeys.add(dedupKey)
 
       const model = session.model ?? ''
+      const modelProvider = normalizeExplicitModelProvider(session.provider)
+
+      const costUSD = hasPositiveSourceCost
+        ? session.total_cost!
+        : calculateCost(model, input, output, 0, 0, 0)
 
       yield {
         provider: source.provider,
         model,
+        ...(modelProvider ? { modelProvider } : {}),
         inputTokens: input,
         outputTokens: output,
         cacheCreationInputTokens: 0,
@@ -100,7 +109,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         cachedInputTokens: 0,
         reasoningTokens: 0,
         webSearchRequests: 0,
-        costUSD: calculateCost(model, input, output, 0, 0, 0),
+        costUSD,
+        costIsEstimated: true,
         // zerostack persists only final assistant text, not tool-call records,
         // so there is nothing to extract here.
         tools: [],

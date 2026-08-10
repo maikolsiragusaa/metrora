@@ -57,7 +57,7 @@ function createThreadsDb(path: string, modelProvider?: unknown): void {
 }
 
 async function parsedCalls(modelProvider?: unknown): Promise<ParsedApiCall[]> {
-  const root = await mkdtemp(join(tmpdir(), 'qovrion-zed-provenance-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-zed-provenance-'))
   temporaryRoots.push(root)
   const dbPath = join(root, 'threads.db')
   createThreadsDb(dbPath, modelProvider)

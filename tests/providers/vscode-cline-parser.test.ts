@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { join, posix, win32 } from 'path'
 import { tmpdir } from 'os'
 
-import { discoverClineTasks, getVSCodeGlobalStoragePaths } from '../../src/providers/vscode-cline-parser.js'
+import { createClineParser, discoverClineTasks, getVSCodeGlobalStoragePaths } from '../../src/providers/vscode-cline-parser.js'
 
 let tmpDir: string
 
@@ -54,5 +54,28 @@ describe('VS Code Cline-family storage discovery', () => {
       join(codeRoot, 'tasks', 'task-code'),
       join(codiumRoot, 'tasks', 'task-codium'),
     ].sort())
+  })
+
+  it('retains provider prefixes and cache/cost-only API records', async () => {
+    const taskDir = join(tmpDir, 'tasks', 'task-parse')
+    await mkdir(taskDir, { recursive: true })
+    await writeFile(join(taskDir, 'ui_messages.json'), JSON.stringify([
+      { type: 'say', say: 'user_feedback', text: 'do the work' },
+      { type: 'say', say: 'api_req_started', ts: 1776074400000, text: JSON.stringify({ tokensIn: 0, tokensOut: 0, cacheReads: 12, cacheWrites: 3, cost: 0 }) },
+    ]))
+    await writeFile(join(taskDir, 'api_conversation_history.json'), JSON.stringify([
+      { role: 'user', content: [{ text: '<model>anthropic/claude-sonnet-4-5</model> Current Workspace Directory (/Users/test/project)' }] },
+    ]))
+
+    const calls: any[] = []
+    const source = { path: taskDir, project: 'Cline', provider: 'cline' }
+    for await (const call of createClineParser(source, new Set(), 'cline').parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].model).toBe('claude-sonnet-4-5')
+    expect(calls[0].modelProvider).toBe('anthropic')
+    expect(calls[0].cacheReadInputTokens).toBe(12)
+    expect(calls[0].cacheCreationInputTokens).toBe(3)
+    expect(calls[0].costUSD).toBe(0)
   })
 })

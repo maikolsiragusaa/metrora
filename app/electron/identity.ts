@@ -10,21 +10,17 @@ export const METRORA_ENV = {
   devRepoRoot: 'METRORA_DEV_REPO_ROOT',
 } as const
 
-export const LEGACY_QOVRION_ENV = {
-  bin: 'QOVRION_BIN',
-  pathDirs: 'QOVRION_PATH_DIRS',
-  cliPathFile: 'QOVRION_CLI_PATH_FILE',
-  bundledCli: 'QOVRION_BUNDLED_CLI',
-  devRepoRoot: 'QOVRION_DEV_REPO_ROOT',
-} as const
-
-export const LEGACY_CODEBURN_ENV = {
+export const LEGACY_COMPAT_ENV = {
   bin: 'CODEBURN_BIN',
   pathDirs: 'CODEBURN_PATH_DIRS',
   cliPathFile: 'CODEBURN_CLI_PATH_FILE',
   bundledCli: 'CODEBURN_BUNDLED_CLI',
   devRepoRoot: 'CODEBURN_DEV_REPO_ROOT',
 } as const
+
+export const LEGACY_CLI_NAME = 'codeburn'
+export const LEGACY_CLI_PRODUCT_DIR = 'CodeBurn'
+export const LEGACY_CLI_PATH_FILENAME = 'codeburn-cli-path.v1'
 
 /** The first defined value wins, including a deliberately empty string. */
 export function compatEnv(
@@ -40,20 +36,13 @@ export function compatEnv(
 
 /** npm shims are .cmd on Windows; keep extensionless forms as fallbacks. */
 export function cliExecutableNames(platformName: NodeJS.Platform = platform()): string[] {
-  const bases = ['metrora', 'qovrion', 'codeburn']
+  const bases = ['metrora', LEGACY_CLI_NAME]
   if (platformName !== 'win32') return bases
   return bases.flatMap(name => [`${name}.cmd`, `${name}.exe`, name])
 }
 
 /** Keep all historical IPC prefixes inside the explicit identity/compatibility boundary. */
-export function ipcChannelAliases(channel: string): string[] {
-  if (!channel.startsWith('codeburn:')) return [channel]
-  return [
-    channel.replace(/^codeburn:/, 'metrora:'),
-    channel.replace(/^codeburn:/, 'qovrion:'),
-    channel,
-  ]
-}
+export function ipcChannelAliases(channel: string): string[] { return [channel] }
 
 export type CliPathFiles = {
   canonical: string
@@ -80,24 +69,20 @@ export function cliPathFiles(
   // automatic fallback to old pointer files.
   if (canonicalOverride !== undefined) return { canonical, legacy: [] }
 
-  const qovrionOverride = env[LEGACY_QOVRION_ENV.cliPathFile]
-  const codeburnOverride = env[LEGACY_CODEBURN_ENV.cliPathFile]
+  const legacyOverride = env[LEGACY_COMPAT_ENV.cliPathFile]
   return {
     canonical,
     legacy: [
-      qovrionOverride !== undefined
-        ? qovrionOverride
-        : configPointer(home, platformName, 'Qovrion', 'qovrion-cli-path.v1', env),
-      codeburnOverride !== undefined
-        ? codeburnOverride
-        : configPointer(home, platformName, 'CodeBurn', 'codeburn-cli-path.v1', env),
+      legacyOverride !== undefined
+        ? legacyOverride
+        : configPointer(home, platformName, LEGACY_CLI_PRODUCT_DIR, LEGACY_CLI_PATH_FILENAME, env),
     ],
   }
 }
 
 export type PersistedCliPathResult = {
   value: string
-  source: 'canonical' | 'qovrion' | 'codeburn'
+  source: 'canonical' | 'legacy'
   migrated: boolean
 }
 
@@ -112,7 +97,7 @@ function readCandidate(file: string | null, isUsable: (value: string) => boolean
 }
 
 /**
- * Read Metrora first, then Qovrion, then CodeBurn. A valid old value is copied
+ * Read Metrora first, then the compatibility pointer. A valid old value is copied
  * to the Metrora pointer only when the canonical file does not exist. Old files
  * are never modified or removed.
  */
@@ -141,7 +126,7 @@ export function readPersistedCliPath(options: {
         // Resolution may still use the valid old pointer. No old file is changed.
       }
     }
-    return { value, source: index === 0 ? 'qovrion' : 'codeburn', migrated }
+    return { value, source: 'legacy', migrated }
   }
   return null
 }

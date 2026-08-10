@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Metrora-branded universal menubar bundle from the inherited
-# CodeBurnMenubar SwiftPM target and drops a distributable zip alongside.
+# MetroraMenubar SwiftPM target and drops a distributable zip alongside.
 # The internal target, process and artifact identifiers remain stable until the
 # release/install compatibility path is migrated separately.
 #
@@ -13,9 +13,9 @@ set -euo pipefail
 VERSION="${1:-dev}"
 ASSET_VERSION="${VERSION#mac-}"
 BUNDLE_VERSION="${ASSET_VERSION#v}"
-BUNDLE_NAME="CodeBurnMenubar.app"
-BUNDLE_ID="org.agentseal.codeburn-menubar"
-EXECUTABLE_NAME="CodeBurnMenubar"
+BUNDLE_NAME="MetroraMenubar.app"
+BUNDLE_ID="org.agentseal.metrora-menubar"
+EXECUTABLE_NAME="MetroraMenubar"
 MIN_MACOS="14.0"
 
 repo_root() {
@@ -144,7 +144,7 @@ echo "  minos 14.0 confirmed, no libswift_errno dependency."
 # Keep the inherited asset filename until the legacy installer/update contract is
 # replaced by an official Metrora release channel. The bundle shown to users is
 # branded Metrora through Info.plist and the canonical Signal Grid icon.
-ZIP_NAME="CodeBurnMenubar-${ASSET_VERSION}.zip"
+ZIP_NAME="MetroraMenubar-${ASSET_VERSION}.zip"
 ZIP_PATH="${DIST_DIR}/${ZIP_NAME}"
 echo "▸ Packaging ${ZIP_NAME}..."
 (cd "${DIST_DIR}" && COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --norsrc --keepParent "${BUNDLE_NAME}" "${ZIP_NAME}")

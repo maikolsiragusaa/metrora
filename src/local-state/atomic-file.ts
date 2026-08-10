@@ -3,7 +3,7 @@ import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:f
 import { dirname, join } from 'node:path'
 
 const WINDOWS_MUTATION_RETRIES = 5
-const TEMP_SUFFIX = '.qovrion-tmp-'
+const TEMP_SUFFIX = '.metrora-tmp-'
 
 function isBusyError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code

@@ -12,7 +12,7 @@
  *
  * Requirements:
  * - Playwright + Chromium installed (`npx playwright install chromium`)
- * - Real Cognito endpoint deployed (CodeburnSyncBackend stack)
+ * - Real Cognito endpoint deployed (MetroraSyncBackend stack)
  * - Test user created in the pool
  *
  * Run: npx vitest run tests/sync-headless-e2e.test.ts
@@ -34,9 +34,9 @@ import {
 import { randomBytes } from 'crypto'
 
 // --- Configuration (from deployed stack outputs) ---
-const BASE_URL = process.env.CODEBURN_SYNC_URL
-const TEST_EMAIL = process.env.CODEBURN_SYNC_EMAIL
-const TEST_PASSWORD = process.env.CODEBURN_SYNC_PASSWORD
+const BASE_URL = process.env.METRORA_SYNC_URL
+const TEST_EMAIL = process.env.METRORA_SYNC_EMAIL
+const TEST_PASSWORD = process.env.METRORA_SYNC_PASSWORD
 
 // Only runs when ALL three env vars are set. Developer-only test.
 const SKIP = !BASE_URL || !TEST_EMAIL || !TEST_PASSWORD

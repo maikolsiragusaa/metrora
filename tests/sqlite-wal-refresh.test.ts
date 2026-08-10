@@ -89,11 +89,11 @@ describe.skipIf(!isSqliteAvailable())('warm SQLite WAL refresh', () => {
     db = openWalDatabase(dbPath)
 
     vi.stubEnv('HOME', home)
-    vi.stubEnv('CODEBURN_CACHE_DIR', cache)
-    vi.stubEnv('CODEBURN_COPILOT_OTEL_DB', dbPath)
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '')
-    vi.stubEnv('CODEBURN_COPILOT_SESSION_STATE_DIR', join(home, 'no-jsonl'))
-    vi.stubEnv('CODEBURN_COPILOT_WS_STORAGE_DIR', join(home, 'no-workspaces'))
+    vi.stubEnv('METRORA_CACHE_DIR', cache)
+    vi.stubEnv('METRORA_COPILOT_OTEL_DB', dbPath)
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '')
+    vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', join(home, 'no-jsonl'))
+    vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR', join(home, 'no-workspaces'))
   })
 
   afterEach(async () => {

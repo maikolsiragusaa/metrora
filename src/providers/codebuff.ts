@@ -28,7 +28,7 @@ const modelDisplayNames: Record<string, string> = {
   'codebuff-max': 'Codebuff Max',
 }
 
-// Codebuff's native tool names map to codeburn's canonical tool set so
+// Codebuff's native tool names map to metrora's canonical tool set so
 // classifier heuristics (edit/read/bash/etc.) behave consistently with the
 // other providers.
 const toolNameMap: Record<string, string> = {

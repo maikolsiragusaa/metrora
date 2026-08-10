@@ -3,7 +3,7 @@ import { dirname, join } from 'path'
 import { getConfigFilePath } from '../config.js'
 import type { ActionRecord } from './types.js'
 
-// Actions live beside config.json under the same CodeBurn home dir; reuse the
+// Actions live beside config.json under the same Metrora home dir; reuse the
 // config resolver rather than inventing a second location.
 export function defaultActionsDir(): string {
   return join(dirname(getConfigFilePath()), 'actions')

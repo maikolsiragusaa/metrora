@@ -73,7 +73,7 @@ describe('codewhale provider', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'codewhale-test-'))
     previousCodeWhaleHome = process.env['CODEWHALE_HOME']
-    previousCacheDir = process.env['CODEBURN_CACHE_DIR']
+    previousCacheDir = process.env['METRORA_CACHE_DIR']
     clearSessionCache()
   })
 
@@ -81,8 +81,8 @@ describe('codewhale provider', () => {
     clearSessionCache()
     if (previousCodeWhaleHome === undefined) delete process.env['CODEWHALE_HOME']
     else process.env['CODEWHALE_HOME'] = previousCodeWhaleHome
-    if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-    else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+    if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+    else process.env['METRORA_CACHE_DIR'] = previousCacheDir
     await rm(tmpDir, { recursive: true, force: true })
   })
 
@@ -164,6 +164,7 @@ describe('codewhale provider', () => {
     expect(call).toMatchObject({
       provider: 'codewhale',
       model: 'anthropic/claude-sonnet-4-6',
+      modelProvider: 'deepseek',
       inputTokens: 12_345,
       outputTokens: 0,
       cacheCreationInputTokens: 0,
@@ -218,6 +219,18 @@ describe('codewhale provider', () => {
     expect(exactZero!.costIsEstimated).toBe(false)
   })
 
+  it('retains an explicit zero-cost record when aggregate tokens are absent', async () => {
+    const path = await writeSession(join(tmpDir, 'sessions'), 'free-empty.json', {
+      totalTokens: 0,
+      cost: { session_cost_usd: 0, subagent_cost_usd: 0 },
+    })
+
+    const calls = await parseOne(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0)
+    expect(calls[0]!.costIsEstimated).toBe(false)
+  })
+
   it('falls back to file mtime for malformed timestamps and deduplicates by session id', async () => {
     const path = await writeSession(join(tmpDir, 'sessions'), 'mtime.json', {
       id: 'mtime-session',
@@ -265,7 +278,7 @@ describe('codewhale provider', () => {
       cost: { session_cost_usd: 0.7, subagent_cost_usd: 0.05 },
     })
     process.env['CODEWHALE_HOME'] = home
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
 
     const first = await parseAllSessions(undefined, 'codewhale')
     clearSessionCache()

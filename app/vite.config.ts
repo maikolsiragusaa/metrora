@@ -26,7 +26,7 @@ const stamp = buildStamp()
 // blocks; relax script-src to allow inline scripts for the dev server only.
 function devCsp(): Plugin {
   return {
-    name: 'codeburn-dev-csp',
+    name: 'metrora-dev-csp',
     apply: 'serve',
     transformIndexHtml(html) {
       return html.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")

@@ -13,7 +13,7 @@ import type { ActionRecord } from '../src/act/types.js'
 const roots: string[] = []
 
 async function makeRoot(): Promise<{ actionsDir: string; files: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'codeburn-act-journal-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-act-journal-'))
   roots.push(root)
   const files = join(root, 'files')
   await mkdir(files, { recursive: true })
@@ -167,9 +167,9 @@ describe('action lock', () => {
 
 describe('act list --json (CLI)', () => {
   it('prints full records as JSON, newest first', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-act-cli-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-act-cli-'))
     roots.push(home)
-    const actionsDir = join(home, '.config', 'codeburn', 'actions')
+    const actionsDir = join(home, '.config', 'metrora', 'actions')
     const files = join(home, 'work')
     await mkdir(files, { recursive: true })
     const p1 = join(files, 'a.txt')

@@ -187,10 +187,12 @@ describe('mistral-vibe provider - parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.provider).toBe('mistral-vibe')
+    expect(call.modelProvider).toBe('mistral')
     expect(call.model).toBe('mistral-medium-3.5')
     expect(call.inputTokens).toBe(2000)
     expect(call.outputTokens).toBe(3000)
     expect(call.costUSD).toBeCloseTo(0.0255, 8)
+    expect(call.costIsEstimated).toBe(true)
     expect(call.tools).toEqual(['Read', 'Edit', 'Bash'])
     expect(call.bashCommands).toEqual(['npm', 'git'])
     expect(call.timestamp).toBe('2026-05-11T10:05:00+00:00')
@@ -212,6 +214,24 @@ describe('mistral-vibe provider - parsing', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(0.381681)
+    expect(calls[0]!.costIsEstimated).toBe(true)
+  })
+
+  it('does not treat zero session_cost as evidence of a free route', async () => {
+    const sessionDir = await writeSession('session_20260511_100000_zero', metadata({
+      sessionCost: 0,
+      input: 1000,
+      output: 1000,
+      inputPrice: 0,
+      outputPrice: 0,
+      configInputPrice: 1.5,
+      configOutputPrice: 7.5,
+    }))
+
+    const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ inputTokens: 1000, outputTokens: 1000, costIsEstimated: true })
+    expect(calls[0]!.costUSD).toBeCloseTo(0.009, 8)
   })
 
   it('uses configured model prices when stats omit prices', async () => {
@@ -271,15 +291,29 @@ describe('mistral-vibe provider - parsing', () => {
     expect(second).toHaveLength(0)
   })
 
-  it('skips sessions without cumulative token usage', async () => {
+  it('ignores zero-token sessions with zero derived cost', async () => {
     const sessionDir = await writeSession('session_20260511_100000_empty', metadata({
       input: 0,
       output: 0,
+      sessionCost: 0,
     }))
 
     const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
 
     expect(calls).toEqual([])
+  })
+
+  it('retains a session with explicit cost but no token counters', async () => {
+    const sessionDir = await writeSession('session_20260511_100000_cost_only', metadata({
+      input: 0,
+      output: 0,
+      sessionCost: 0.25,
+    }))
+
+    const calls = await collect(sessionDir, createMistralVibeProvider(tmpDir))
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0.25)
   })
 
   it('skips sessions with malformed meta.json', async () => {

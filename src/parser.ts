@@ -1,6 +1,6 @@
 import { existsSync } from 'fs'
 import { lstat, readFile, readdir, stat } from 'fs/promises'
-import { basename, dirname, join, resolve, sep } from 'path'
+import { basename, dirname, join, normalize, resolve, sep } from 'path'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, calculateLocalModelSavings, getShortModelName, isProxiedPath, getProxyPathsConfigHash } from './models.js'
 import { buildReasoningMix, reasoningLevelFromModelLabel, type ReasoningMixInput } from './reasoning-level.js'
@@ -52,6 +52,7 @@ import type {
 } from './types.js'
 import { classifyTurn, BASH_TOOLS, EDIT_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
+import { isSnapshotReadMode } from './read-lifecycle.js'
 
 function unsanitizePath(dirName: string): string {
   return dirName.replace(/-/g, '/')
@@ -131,7 +132,7 @@ async function resolveCanonicalProjectPath(cwd: string): Promise<{ path: string;
       const worktreeMarker = '/.git/worktrees/'
       const markerIndex = normalizedGitDir.lastIndexOf(worktreeMarker)
       if (markerIndex === -1) return { path: dir === trimmed ? dir : cwd, isWorktree: false }
-      return { path: normalizedGitDir.slice(0, markerIndex), isWorktree: true }
+      return { path: normalize(normalizedGitDir.slice(0, markerIndex)), isWorktree: true }
     }
     const parent = dirname(dir)
     if (parent === dir) return { path: cwd, isWorktree: false }
@@ -2900,12 +2901,12 @@ export function setInteractiveScanUI(active = true): void {
 }
 
 // Machine-readable scan progress for the desktop app's first-run splash. Plain
-// CLI/terminal usage is untouched: emission is gated on CODEBURN_PROGRESS=1,
+// CLI/terminal usage is untouched: emission is gated on METRORA_PROGRESS=1,
 // which only the app's cold-start warmup spawn sets. Each event is one
 // newline-delimited JSON object behind a sentinel prefix so the reader can pick
 // it out of stderr that may also carry provider warnings. This is orthogonal to
 // createScanProgress's `\r` TTY line (that one never fires under a piped spawn).
-export const PROGRESS_LINE_PREFIX = 'CODEBURN_PROGRESS '
+export const PROGRESS_LINE_PREFIX = 'METRORA_PROGRESS '
 export type ScanProgressEvent =
   // `cold` is true only for a genuine full hydration (the on-disk cache was
   // empty). A warm launch's incremental re-parse of a handful of changed files
@@ -2916,7 +2917,7 @@ export type ScanProgressEvent =
   | { kind: 'tick'; provider: string; done: number; total: number }
 
 export function emitScanProgress(event: ScanProgressEvent): void {
-  if (process.env['CODEBURN_PROGRESS'] !== '1') return
+  if (process.env['METRORA_PROGRESS'] !== '1') return
   try { process.stderr.write(`${PROGRESS_LINE_PREFIX}${JSON.stringify(event)}\n`) } catch { /* stderr closed */ }
 }
 
@@ -3267,7 +3268,7 @@ function cacheKey(dateRange?: DateRange, providerFilter?: string): string {
   const claudeEnv = (process.env['CLAUDE_CONFIG_DIRS'] ?? '') + '|' + (process.env['CLAUDE_CONFIG_DIR'] ?? '')
   // Proxy attribution (totalProxiedCostUSD) is computed live from proxyPaths and
   // then cached, so the key must change when that config changes.
-  return `${s}:${providerFilter ?? 'all'}:${claudeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
+  return `${isSnapshotReadMode() ? 'snapshot' : 'fresh'}:${s}:${providerFilter ?? 'all'}:${claudeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
 }
 
 export function clearSessionCache(): void {
@@ -3693,16 +3694,10 @@ async function parseAllSessionsWithHistoricalContext(dateRange?: DateRange, prov
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data
 
   let diskCache = await loadCache()
+  if (isSnapshotReadMode()) return runParse(key, diskCache, dateRange, providerFilter, { readOnly: true, cachedOnly: true })
   await cleanupOrphanedTempFiles()
 
-  // Cold-hydration coordination (advisory, cross-process). Engages whenever the
-  // on-disk cache is not COMPLETE — an empty cache OR a partial one an interrupted
-  // cold start left behind. Keying on completeness (not mere non-emptiness) is
-  // what keeps a resumed partial hydration under the lock, so a concurrent menubar
-  // + desktop can't race their partial writes and freeze a partial daily history.
-  // If another live process is already hydrating, wait for it, then reload the
-  // now-warm cache instead of double-parsing. Never a correctness gate: on any
-  // doubt it proceeds unlocked.
+  // Incomplete cold hydration is cross-process single-flight and resumes safely.
   if (!isCacheComplete(diskCache)) {
     const hydration = await beginColdHydration(true)
     if (hydration.waited) diskCache = await loadCache()
@@ -3745,6 +3740,7 @@ class RefreshPublicationUnavailableError extends Error {}
 type RunParseOptions = {
   isCold?: boolean
   readOnly?: boolean
+  cachedOnly?: boolean
   refreshLock?: RefreshLockHandle
 }
 
@@ -3755,10 +3751,10 @@ async function runParse(
   providerFilter?: string,
   options: RunParseOptions = {},
 ): Promise<ProjectSummary[]> {
-  const { isCold = false, readOnly = false, refreshLock } = options
+  const { isCold = false, readOnly = false, cachedOnly = false, refreshLock } = options
   const seenMsgIds = new Set<string>()
   const seenKeys = new Set<string>()
-  const allSources = await discoverAllSessions(providerFilter)
+  const allSources = cachedOnly ? [] : await discoverAllSessions(providerFilter)
 
   const claudeSources = allSources.filter(s => s.provider === 'claude')
   const nonClaudeSources = allSources.filter(s => s.provider !== 'claude')
@@ -3795,15 +3791,18 @@ async function runParse(
       ? { id: s.sourceId, label: s.sourceLabel, path: s.sourcePath, kind: s.sourceKind }
       : undefined,
   }))
-  if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'start' })
   let claudeProjects: ProjectSummary[] = []
-  try {
-    claudeProjects = await scanProjectDirs(claudeDirs, seenMsgIds, diskCache, dateRange, saveProgress, readOnly)
-    if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
-  } catch (err) {
-    if (!isPermissionError(err)) throw err
-    process.stderr.write(`metrora: skipped claude data (permission denied; grant Full Disk Access to include it)\n`)
-    emitScanProgress({ kind: 'provider', provider: 'claude', state: 'skipped' })
+  const includeClaude = !providerFilter || providerFilter === 'all' || providerFilter === 'claude'
+  if (includeClaude) {
+    if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'start' })
+    try {
+      claudeProjects = await scanProjectDirs(claudeDirs, seenMsgIds, diskCache, dateRange, saveProgress, readOnly)
+      if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
+    } catch (err) {
+      if (!isPermissionError(err)) throw err
+      process.stderr.write(`metrora: skipped claude data (permission denied; grant Full Disk Access to include it)\n`)
+      emitScanProgress({ kind: 'provider', provider: 'claude', state: 'skipped' })
+    }
   }
 
   const otherProjects: ProjectSummary[] = []
@@ -3828,6 +3827,7 @@ async function runParse(
   // monthly total never drops. Call parseProviderSources with empty sources for
   // any such provider found in the disk cache.
   const processedProviders = new Set(providerGroups.keys())
+  if (includeClaude) processedProviders.add('claude')
   for (const providerName of Object.keys(diskCache.providers)) {
     if (processedProviders.has(providerName)) continue
     // Skip if filtered to a different provider
@@ -3838,7 +3838,7 @@ async function runParse(
     // processes a durableSources provider) OR the static DURABLE_PROVIDER_NAMES
     // constant — both checks are O(1) and avoid a getProvider() dynamic-import
     // round-trip for every unprocessed provider in the disk cache.
-    if (!section.durable && !DURABLE_PROVIDER_NAMES.has(providerName)) continue
+    if (!cachedOnly && !section.durable && !DURABLE_PROVIDER_NAMES.has(providerName)) continue
     const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly)
     otherProjects.push(...projects)
   }

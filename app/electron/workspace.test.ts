@@ -22,6 +22,8 @@ function snapshot(): DesktopWorkspaceSnapshot {
     productionLifecycle: null,
     evidence: {
       state: 'workspace-required',
+      integrity: 'unverified',
+      compatibility: 'workspace-required',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -29,7 +31,23 @@ function snapshot(): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: ['Local personal workspace is not configured.'],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: false, reason: 'workspace-required' },
+      batchSign: { allowed: false, reason: 'workspace-required' },
+      canonicalExport: { allowed: false, reason: 'workspace-required' },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: false, reason: 'workspace-required' },
     },
     privacy: {
       networkRequired: false,
@@ -100,7 +118,7 @@ describe('Workspace IPC bridge', () => {
       getRuntimeState: async () => readyState(),
       chooseExportPath: async () => null,
     })
-    const result = await handlers['codeburn:getWorkspaceStatus']!()
+    const result = await handlers['metrora:getWorkspaceStatus']!()
     expect(result).toMatchObject({
       ok: true,
       value: {
@@ -120,14 +138,14 @@ describe('Workspace IPC bridge', () => {
       getRuntimeState: async () => ({ status: 'unsupported-platform', platform: 'linux' }),
       chooseExportPath: async () => null,
     })
-    await expect(unsupported['codeburn:getWorkspaceStatus']!()).resolves.toEqual({
+    await expect(unsupported['metrora:getWorkspaceStatus']!()).resolves.toEqual({
       ok: true,
       value: { availability: 'unsupported-platform', platform: 'linux' },
     })
-    await expect(unsupported['codeburn:createWorkspace']!({
+    await expect(unsupported['metrora:createWorkspace']!({
       displayName: 'Local', endpointDisplayName: 'Desktop',
     })).resolves.toMatchObject({ ok: false, error: { kind: 'workspace-unsupported' } })
-    await expect(unsupported['codeburn:produceWorkspaceMeasurements']!()).resolves.toMatchObject({
+    await expect(unsupported['metrora:produceWorkspaceMeasurements']!()).resolves.toMatchObject({
       ok: false,
       error: { kind: 'workspace-unsupported' },
     })
@@ -136,10 +154,39 @@ describe('Workspace IPC bridge', () => {
       getRuntimeState: async () => ({ status: 'unavailable', reason: 'vault-unavailable' }),
       chooseExportPath: async () => null,
     })
-    await expect(unavailable['codeburn:getWorkspaceStatus']!()).resolves.toEqual({
+    await expect(unavailable['metrora:getWorkspaceStatus']!()).resolves.toEqual({
       ok: true,
       value: { availability: 'unavailable', reason: 'vault-unavailable' },
     })
+
+    const localState = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => ({ status: 'unavailable', reason: 'local-state-unavailable' }),
+      chooseExportPath: async () => null,
+    })
+    await expect(localState['metrora:createWorkspace']!({
+      displayName: 'Local', endpointDisplayName: 'Desktop',
+    })).resolves.toEqual({
+      ok: false,
+      error: {
+        kind: 'workspace-unavailable',
+        message: 'The existing encrypted Workspace state could not be read. Workspace actions remain disabled.',
+      },
+    })
+  })
+
+  it('uses a fresh retry runtime operation instead of rereading the failed state', async () => {
+    const retryRuntime = vi.fn(async () => readyState())
+    const handlers = createWorkspaceBridgeHandlers({
+      getRuntimeState: async () => ({ status: 'unavailable', reason: 'initialization-failed' }),
+      retryRuntime,
+      chooseExportPath: async () => null,
+    })
+
+    await expect(handlers['metrora:retryWorkspaceStatus']!()).resolves.toMatchObject({
+      ok: true,
+      value: { availability: 'ready' },
+    })
+    expect(retryRuntime).toHaveBeenCalledTimes(1)
   })
 
   it('validates create input before invoking the private runtime', async () => {
@@ -149,14 +196,14 @@ describe('Workspace IPC bridge', () => {
       chooseExportPath: async () => null,
     })
     for (const invalid of [null, [], { displayName: '', endpointDisplayName: 'Desktop' }]) {
-      await expect(handlers['codeburn:createWorkspace']!(invalid)).resolves.toEqual({
+      await expect(handlers['metrora:createWorkspace']!(invalid)).resolves.toEqual({
         ok: false,
         error: { kind: 'bad-args', message: 'Workspace input is invalid.' },
       })
     }
     expect(privateRuntime.createWorkspace).not.toHaveBeenCalled()
 
-    await expect(handlers['codeburn:createWorkspace']!({
+    await expect(handlers['metrora:createWorkspace']!({
       displayName: 'Maikol Workspace',
       slug: 'maikol-workspace',
       endpointDisplayName: 'Desktop',
@@ -175,11 +222,11 @@ describe('Workspace IPC bridge', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:pauseWorkspaceProduction']!({ arbitrary: 'ignored' })).resolves.toMatchObject({
+    await expect(handlers['metrora:pauseWorkspaceProduction']!({ arbitrary: 'ignored' })).resolves.toMatchObject({
       ok: true,
       value: { outcome: 'changed' },
     })
-    await expect(handlers['codeburn:resumeWorkspaceProduction']!('ignored')).resolves.toMatchObject({
+    await expect(handlers['metrora:resumeWorkspaceProduction']!('ignored')).resolves.toMatchObject({
       ok: true,
       value: { outcome: 'changed' },
     })
@@ -194,7 +241,7 @@ describe('Workspace IPC bridge', () => {
       chooseExportPath: async () => null,
     })
 
-    const result = await handlers['codeburn:produceWorkspaceMeasurements']!({
+    const result = await handlers['metrora:produceWorkspaceMeasurements']!({
       calls: [{ private: true }],
       sourcePath: '/private/path',
       provider: 'invented',
@@ -226,7 +273,7 @@ describe('Workspace IPC bridge', () => {
       getRuntimeState: async () => readyState(privateRuntime),
       chooseExportPath: async () => null,
     })
-    await expect(handlers['codeburn:createWorkspaceBatch']!()).resolves.toMatchObject({
+    await expect(handlers['metrora:createWorkspaceBatch']!()).resolves.toMatchObject({
       ok: true,
       value: { outcome: 'empty' },
     })
@@ -242,7 +289,7 @@ describe('Workspace IPC bridge', () => {
       chooseExportPath,
       now: () => new Date('2026-08-01T15:00:00.000Z'),
     })
-    const result = await handlers['codeburn:exportWorkspaceEvidence']!()
+    const result = await handlers['metrora:exportWorkspaceEvidence']!()
     expect(chooseExportPath).toHaveBeenCalledWith('Metrora-Workspace-Evidence-2026-08-01.json')
     expect(privateRuntime.exportEvidence).toHaveBeenCalledWith(selected)
     expect(result).toMatchObject({
@@ -273,20 +320,20 @@ describe('Workspace IPC bridge', () => {
       getRuntimeState: async () => readyState(privateRuntime),
       chooseExportPath: async () => null,
     })
-    await expect(cancelled['codeburn:exportWorkspaceEvidence']!()).resolves.toEqual({
+    await expect(cancelled['metrora:exportWorkspaceEvidence']!()).resolves.toEqual({
       ok: true,
       value: { outcome: 'cancelled' },
     })
     expect(privateRuntime.exportEvidence).not.toHaveBeenCalled()
 
-    const failed = await cancelled['codeburn:createWorkspaceBatch']!()
+    const failed = await cancelled['metrora:createWorkspaceBatch']!()
     expect(failed).toEqual({
       ok: false,
       error: { kind: 'workspace-action-failed', message: 'The local Workspace action failed.' },
     })
     expect(JSON.stringify(failed)).not.toContain('/secret/path')
 
-    const lifecycle = await cancelled['codeburn:pauseWorkspaceProduction']!()
+    const lifecycle = await cancelled['metrora:pauseWorkspaceProduction']!()
     expect(lifecycle).toEqual({
       ok: false,
       error: {
@@ -296,7 +343,7 @@ describe('Workspace IPC bridge', () => {
     })
     expect(JSON.stringify(lifecycle)).not.toContain('/private/lifecycle/path')
 
-    const scanner = await cancelled['codeburn:produceWorkspaceMeasurements']!()
+    const scanner = await cancelled['metrora:produceWorkspaceMeasurements']!()
     expect(scanner).toEqual({
       ok: false,
       error: {

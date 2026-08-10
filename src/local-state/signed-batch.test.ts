@@ -20,7 +20,7 @@ import {
 const roots: string[] = []
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), 'qovrion-signed-batch-'))
+  const value = await mkdtemp(join(tmpdir(), 'metrora-signed-batch-'))
   roots.push(value)
   return value
 }
@@ -33,7 +33,7 @@ function event(endpointId: string, id: string, outputTokens: number): UsageMeasu
   return {
     specversion: '1.0',
     id,
-    source: `urn:qovrion:endpoint:${endpointId}`,
+    source: `urn:metrora:endpoint:${endpointId}`,
     type: USAGE_MEASUREMENT_EVENT_TYPE,
     time: '2026-07-31T16:00:00.000Z',
     subject: `workspace/ws_test/endpoint/${endpointId}`,
@@ -86,7 +86,7 @@ function createOptions(dataDir: string, identity: Awaited<ReturnType<typeof load
   return {
     dataDir,
     identity,
-    qovrionVersion: '0.9.19',
+    metroraVersion: '0.9.19',
     adapterSetSha256: 'a'.repeat(64),
     openTelemetryGenAiVersion: '1.37.0',
     now: () => new Date('2026-07-31T16:05:00.000Z'),

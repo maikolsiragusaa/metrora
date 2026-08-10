@@ -7,12 +7,12 @@ import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 import type { ParsedApiCall } from '../types.js'
 import {
   attachDesktopReviewedProductionV1,
-  DesktopReviewedProductionUnavailableError,
 } from './desktop-reviewed-production-runtime.js'
 import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
 import { loadOrCreateLocalEndpointIdentityV1 } from './endpoint-identity.js'
 import type { LocalReviewedMeasurementContextV1 } from './reviewed-measurement-producer.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
+import { WorkspaceCapabilityDeniedError } from './workspace-capability-policy.js'
 
 const roots: string[] = []
 const NOW = '2026-08-01T22:00:00.000Z'
@@ -195,7 +195,7 @@ describe.sequential('desktop reviewed-production runtime', () => {
     })
 
     await expect(runtime.produceReviewedMeasurements())
-      .rejects.toBeInstanceOf(DesktopReviewedProductionUnavailableError)
+      .rejects.toBeInstanceOf(WorkspaceCapabilityDeniedError)
     runtime.dispose()
   })
 })

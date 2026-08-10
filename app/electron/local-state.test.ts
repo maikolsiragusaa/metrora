@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   adoptLegacyDesktopLocalState,
   desktopLocalStateModulePath,
+  desktopReviewedProductionModulePath,
   desktopVaultBackend,
   initializeDesktopEndpointState,
   type DesktopLocalStateModule,
@@ -30,7 +31,7 @@ describe('desktop local-state Electron host', () => {
     expect(desktopVaultBackend('linux')).toBeUndefined()
   })
 
-  it('resolves the staged runtime in dev and packaged layouts', () => {
+  it('resolves staged modules in dev and the sealed ASAR in the packaged layout', () => {
     expect(desktopLocalStateModulePath({
       isPackaged: false,
       appPath: '/repo/app',
@@ -40,7 +41,17 @@ describe('desktop local-state Electron host', () => {
       isPackaged: true,
       appPath: '/unused',
       resourcesPath: '/app/resources',
-    })).toBe(join('/app/resources', 'cli', 'dist', 'desktop-local-state.js'))
+    })).toBe(join('/app/resources', 'cli.asar', 'dist', 'desktop-local-state.js'))
+    expect(desktopReviewedProductionModulePath({
+      isPackaged: false,
+      appPath: '/repo/app',
+      resourcesPath: '/unused',
+    })).toBe(join('/repo/app', 'build', 'cli', 'dist', 'desktop-reviewed-production.js'))
+    expect(desktopReviewedProductionModulePath({
+      isPackaged: true,
+      appPath: '/unused',
+      resourcesPath: '/app/resources',
+    })).toBe(join('/app/resources', 'cli.asar', 'dist', 'desktop-reviewed-production.js'))
   })
 
   it('passes a narrow async safeStorage adapter to the shared runtime', async () => {
@@ -94,12 +105,12 @@ describe('desktop local-state Electron host', () => {
     expect(initializeWorkspace).not.toHaveBeenCalled()
   })
 
-  it('copies old Qovrion desktop state without modifying the source', () => {
+  it('copies legacy desktop state into Metrora without modifying the source', () => {
     const root = mkdtempSync(join(tmpdir(), 'metrora-desktop-adoption-'))
     try {
       const userDataPath = join(root, 'Metrora')
-      const legacyUserDataPath = join(root, 'Qovrion')
-      const legacyState = join(legacyUserDataPath, 'qovrion-local-state')
+      const legacyUserDataPath = join(root, 'legacy-desktop')
+      const legacyState = join(legacyUserDataPath, 'metrora-local-state')
       mkdirSync(legacyState, { recursive: true })
       writeFileSync(join(legacyState, 'identity.bin'), 'legacy-state')
 

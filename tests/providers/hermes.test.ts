@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { calculateCost } from '../../src/models.js'
 import { createHermesProvider } from '../../src/providers/hermes.js'
+import { cachedCallToApiCall, providerCallToCachedCall } from '../../src/parser.js'
 import { isSqliteAvailable } from '../../src/sqlite.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 import type { DateRange } from '../../src/types.js'
@@ -21,20 +22,20 @@ type TestDb = {
 let tmpDir: string
 let cacheDir: string
 let originalHermesHome: string | undefined
-let originalCodeburnCacheDir: string | undefined
+let originalMetroraCacheDir: string | undefined
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'hermes-provider-test-'))
   cacheDir = await mkdtemp(join(tmpdir(), 'hermes-provider-cache-'))
   originalHermesHome = process.env['HERMES_HOME']
-  originalCodeburnCacheDir = process.env['CODEBURN_CACHE_DIR']
+  originalMetroraCacheDir = process.env['METRORA_CACHE_DIR']
 })
 
 afterEach(async () => {
   if (originalHermesHome === undefined) delete process.env['HERMES_HOME']
   else process.env['HERMES_HOME'] = originalHermesHome
-  if (originalCodeburnCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-  else process.env['CODEBURN_CACHE_DIR'] = originalCodeburnCacheDir
+  if (originalMetroraCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+  else process.env['METRORA_CACHE_DIR'] = originalMetroraCacheDir
   await rm(tmpDir, { recursive: true, force: true })
   await rm(cacheDir, { recursive: true, force: true })
 })
@@ -178,9 +179,9 @@ function dayRange(): DateRange {
   }
 }
 
-async function loadParserWithHermesHome(hermesHome: string, codeburnCacheDir: string) {
+async function loadParserWithHermesHome(hermesHome: string, metroraCacheDir: string) {
   process.env['HERMES_HOME'] = hermesHome
-  process.env['CODEBURN_CACHE_DIR'] = codeburnCacheDir
+  process.env['METRORA_CACHE_DIR'] = metroraCacheDir
   vi.resetModules()
   const parser = await import('../../src/parser.js')
   return parser
@@ -262,6 +263,7 @@ skipUnlessSqlite('hermes provider', () => {
     expect(calls[0]!).toMatchObject({
       provider: 'hermes',
       model: 'gpt-5.5',
+      modelProvider: 'openai-codex',
       inputTokens: 1000,
       outputTokens: 200,
       cacheReadInputTokens: 300,
@@ -310,6 +312,30 @@ skipUnlessSqlite('hermes provider', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(calculateCost('claude-sonnet-4-20250514', 1000, 250, 0, 0, 0))
     expect(calls[0]!.reasoningTokens).toBe(50)
+  })
+
+  it('retains a cost-only session when token counters are zero', async () => {
+    const dbPath = createHermesDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, {
+        id: 'cost-only-session',
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        actualCost: 1.25,
+        startedAt: 1779549300,
+      })
+    })
+
+    const provider = createHermesProvider(tmpDir)
+    const sources = await provider.discoverSessions()
+    expect(sources).toHaveLength(1)
+    const calls = await collectCalls(tmpDir, sources[0]!.path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(1.25)
+    expect(calls[0]!.costIsEstimated).toBe(false)
   })
 
   it('does not split multibyte characters when truncating the first user message', async () => {
@@ -486,7 +512,7 @@ skipUnlessSqlite('hermes provider', () => {
     withTestDb(dbPath, (db) => {
       insertSession(db, {
         id: 'cwd-session',
-        cwd: '/Users/me/projects/codeburn',
+        cwd: '/Users/me/projects/metrora',
         inputTokens: 30,
         outputTokens: 10,
         cacheReadTokens: 0,
@@ -500,12 +526,12 @@ skipUnlessSqlite('hermes provider', () => {
 
     const calls = await collectCalls(tmpDir, `${dbPath}#hermes-session=cwd-session`)
     expect(calls[0]).toMatchObject({
-      project: 'Users-me-projects-codeburn',
-      projectPath: '/Users/me/projects/codeburn',
+      project: 'Users-me-projects-metrora',
+      projectPath: '/Users/me/projects/metrora',
     })
   })
 
-  it('flags estimated cost only when Hermes recorded none', async () => {
+  it('classifies actual, estimated, explicit zero, and fallback cost evidence', async () => {
     const dbPath = createHermesDb(tmpDir)
     withTestDb(dbPath, (db) => {
       insertSession(db, {
@@ -514,18 +540,48 @@ skipUnlessSqlite('hermes provider', () => {
         startedAt: 1779549200,
       })
       insertSession(db, {
-        id: 'recorded-cost',
-        actualCost: 1.23,
+        id: 'actual-wins', actualCost: 1.23, estimatedCost: 9.99,
         inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
         startedAt: 1779549300,
+      })
+      insertSession(db, {
+        id: 'estimated-cost', estimatedCost: 0.75,
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
+        startedAt: 1779549400,
+      })
+      insertSession(db, {
+        id: 'actual-zero', actualCost: 0, estimatedCost: 0.75,
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
+        startedAt: 1779549500,
+      })
+      insertSession(db, {
+        id: 'estimated-zero', estimatedCost: 0,
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0,
+        startedAt: 1779549600,
       })
     })
 
     const noCost = await collectCalls(tmpDir, `${dbPath}#hermes-session=no-cost`)
     expect(noCost[0]!.costIsEstimated).toBe(true)
 
-    const recorded = await collectCalls(tmpDir, `${dbPath}#hermes-session=recorded-cost`)
-    expect(recorded[0]).toMatchObject({ costUSD: 1.23, costIsEstimated: false })
+    const actual = await collectCalls(tmpDir, `${dbPath}#hermes-session=actual-wins`)
+    expect(actual[0]).toMatchObject({ costUSD: 1.23, costIsEstimated: false })
+
+    const estimated = await collectCalls(tmpDir, `${dbPath}#hermes-session=estimated-cost`)
+    expect(estimated[0]).toMatchObject({ costUSD: 0.75, costIsEstimated: true })
+
+    const actualZero = await collectCalls(tmpDir, `${dbPath}#hermes-session=actual-zero`)
+    expect(actualZero[0]).toMatchObject({ costUSD: 0, costIsEstimated: false })
+
+    const estimatedZero = await collectCalls(tmpDir, `${dbPath}#hermes-session=estimated-zero`)
+    expect(estimatedZero[0]).toMatchObject({ costUSD: 0, costIsEstimated: true })
+
+    const cached = providerCallToCachedCall(estimated[0]!)
+    expect(cached.isEstimated).toBe(true)
+    expect(cached.costAssignment.kind).not.toBe('metered')
+    const runtime = cachedCallToApiCall(cached)
+    expect(runtime.isEstimated).toBe(true)
+    expect(runtime.costAssignment.kind).not.toBe('metered')
   })
 
   it('counts tool-result messages by their tool_name', async () => {

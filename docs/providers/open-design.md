@@ -16,7 +16,7 @@ Windows %APPDATA%/Open Design
 Linux   ~/.config/Open Design
 ```
 
-Set `CODEBURN_OPEN_DESIGN_DIR` to use an explicit root. The override may point to an application root, a namespace `data` directory, or a `runs` directory.
+Set `METRORA_OPEN_DESIGN_DIR` to use an explicit root. The override may point to an application root, a namespace `data` directory, or a `runs` directory.
 
 The provider recognizes these layouts:
 
@@ -75,7 +75,7 @@ When an event has no usable ID, the parser assigns a stable per-file fallback co
 - A `start` event can seed the model before any later status event.
 - Cache-read tokens are included in Open Design's input total and must be separated before pricing.
 - Reasoning tokens are priced with output tokens while remaining separately reported.
-- The environment variable retains the historical `CODEBURN_` prefix for compatibility; it is not the product name.
+- The environment variable retains the historical `METRORA_` prefix for compatibility; it is not the product name.
 - Known model display aliases are presentation-only. Raw model identifiers remain the accounting authority.
 
 ## When fixing a bug here

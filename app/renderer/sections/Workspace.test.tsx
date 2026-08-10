@@ -9,6 +9,7 @@ import { WorkspaceContent, workspaceUsageFromOverview } from './Workspace'
 
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
+  retryWorkspaceStatus: vi.fn(),
   inspectWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
@@ -19,7 +20,7 @@ const bridge = vi.hoisted(() => ({
   exportWorkspaceEvidence: vi.fn(),
 }))
 
-vi.mock('../lib/ipc', () => ({ metrora: bridge, codeburn: bridge }))
+vi.mock('../lib/ipc', () => ({ metrora: bridge }))
 
 function overviewPayload(): MenubarPayload {
   return {
@@ -38,6 +39,11 @@ function overviewPayload(): MenubarPayload {
 }
 
 function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
+  const evidenceState = withWorkspace ? 'ready' as const : 'workspace-required' as const
+  const integrity = withWorkspace ? 'verified' as const : 'unverified' as const
+  const compatibility = withWorkspace ? 'canonical' as const : 'workspace-required' as const
+  const pendingEvents = withWorkspace ? 3 : 0
+  const unbatchedEvents = withWorkspace ? 3 : 0
   return {
     kind: 'metrora.desktop-workspace-snapshot',
     version: 1,
@@ -74,15 +80,36 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
       updatedAt: null,
     } : null,
     evidence: {
-      state: withWorkspace ? 'ready' : 'workspace-required',
-      pendingEventCount: withWorkspace ? 3 : 0,
-      unbatchedEventCount: withWorkspace ? 3 : 0,
+      state: evidenceState,
+      integrity,
+      compatibility,
+      pendingEventCount: pendingEvents,
+      unbatchedEventCount: unbatchedEvents,
       acknowledgedEventCount: 5,
       invalidEventCount: 0,
       quarantinedEventCount: 0,
       pendingBatchCount: 1,
       acknowledgedBatchCount: 2,
+      storage: {
+        canonicalEventCount: pendingEvents + 5,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: unbatchedEvents,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 3,
+        historicalBatchCount: 0,
+      },
       blockers: [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      batchSign: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      canonicalExport: {
+        allowed: withWorkspace && unbatchedEvents === 0,
+        reason: withWorkspace ? (unbatchedEvents > 0 ? 'unbatched-evidence' : null) : 'workspace-required',
+      },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
     },
     privacy: {
       networkRequired: false,
@@ -99,6 +126,8 @@ function bootstrapSnapshot(): DesktopWorkspaceSnapshot {
   const value = snapshot(true)
   value.evidence = {
     state: 'blocked',
+    integrity: 'unverified',
+    compatibility: 'uninspected',
     pendingEventCount: 0,
     unbatchedEventCount: 0,
     acknowledgedEventCount: 0,
@@ -106,7 +135,23 @@ function bootstrapSnapshot(): DesktopWorkspaceSnapshot {
     quarantinedEventCount: 0,
     pendingBatchCount: 0,
     acknowledgedBatchCount: 0,
+    storage: {
+      canonicalEventCount: 0,
+      historicalEventCount: 0,
+      canonicalUnbatchedEventCount: 0,
+      historicalUnbatchedEventCount: 0,
+      canonicalBatchCount: 0,
+      historicalBatchCount: 0,
+    },
     blockers: ['Full local evidence inspection is pending.'],
+  }
+  value.capabilities = {
+    inspection: { allowed: true, reason: null },
+    reviewedProduction: { allowed: false, reason: 'inspection-pending' },
+    batchSign: { allowed: false, reason: 'inspection-pending' },
+    canonicalExport: { allowed: false, reason: 'inspection-pending' },
+    recovery: { allowed: true, reason: null },
+    productionLifecycle: { allowed: false, reason: 'inspection-pending' },
   }
   return value
 }
@@ -114,6 +159,8 @@ function bootstrapSnapshot(): DesktopWorkspaceSnapshot {
 function batchedSnapshot(): DesktopWorkspaceSnapshot {
   const value = snapshot(true)
   value.evidence.unbatchedEventCount = 0
+  value.evidence.storage.canonicalUnbatchedEventCount = 0
+  value.capabilities.canonicalExport = { allowed: true, reason: null }
   return value
 }
 
@@ -134,6 +181,7 @@ describe('Workspace desktop view', () => {
   beforeEach(() => {
     setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     bridge.getWorkspaceStatus.mockReset()
+    bridge.retryWorkspaceStatus.mockReset()
     bridge.inspectWorkspaceStatus.mockReset()
     bridge.createWorkspace.mockReset()
     bridge.pauseWorkspaceProduction.mockReset()
@@ -143,6 +191,7 @@ describe('Workspace desktop view', () => {
     bridge.createWorkspaceBatch.mockReset()
     bridge.exportWorkspaceEvidence.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability())
+    bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())
     bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability())
   })
 
@@ -192,11 +241,11 @@ describe('Workspace desktop view', () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
     expect(await screen.findByTestId('workspace-evidence-inspection')).toHaveTextContent(
-      'Read-only evidence verification in progress',
+      'Checking local workspace data',
     )
     expect(screen.getByText('Pending events').parentElement).toHaveTextContent('—')
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeEnabled()
     expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
     expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
 
@@ -263,6 +312,7 @@ describe('Workspace desktop view', () => {
     paused.productionLifecycle = {
       mode: 'paused', revision: 1, persisted: true, updatedAt: '2026-08-01T22:00:00.000Z',
     }
+    paused.capabilities.reviewedProduction = { allowed: false, reason: 'production-paused' }
     const active = snapshot(true)
     active.productionLifecycle = {
       mode: 'active', revision: 2, persisted: true, updatedAt: '2026-08-01T23:00:00.000Z',
@@ -275,7 +325,7 @@ describe('Workspace desktop view', () => {
 
     await waitFor(() => expect(bridge.pauseWorkspaceProduction).toHaveBeenCalledWith())
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeEnabled()
     expect(screen.getByText(/paused before scanning/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume production' }))
@@ -286,9 +336,9 @@ describe('Workspace desktop view', () => {
   it('requires reviewed events to enter a signed batch before export', async () => {
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    const exportButton = await screen.findByRole('button', { name: 'Export verifiable evidence' })
+    const exportButton = await screen.findByRole('button', { name: 'Export signed data' })
     expect(exportButton).toBeDisabled()
-    expect(screen.getByText(/create a signed batch before export/i)).toBeInTheDocument()
+    expect(screen.getByText(/Sign the pending usage before exporting it/i)).toBeInTheDocument()
     expect(bridge.exportWorkspaceEvidence).not.toHaveBeenCalled()
   })
 
@@ -324,10 +374,10 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Create signed batch' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign pending usage' }))
     await waitFor(() => expect(bridge.createWorkspaceBatch).toHaveBeenCalledTimes(1))
 
-    const exportButton = screen.getByRole('button', { name: 'Export verifiable evidence' })
+    const exportButton = screen.getByRole('button', { name: 'Export signed data' })
     await waitFor(() => expect(exportButton).toBeEnabled())
     fireEvent.click(exportButton)
     await waitFor(() => expect(bridge.exportWorkspaceEvidence).toHaveBeenCalledTimes(1))
@@ -336,9 +386,15 @@ describe('Workspace desktop view', () => {
   it('disables production, signing and export for quarantined evidence and exposes invalid counts', async () => {
     const quarantined = snapshot(true)
     quarantined.evidence.state = 'quarantined'
+    quarantined.evidence.integrity = 'quarantined'
+    quarantined.evidence.compatibility = 'quarantined'
     quarantined.evidence.invalidEventCount = 2
     quarantined.evidence.quarantinedEventCount = 1
     quarantined.evidence.unbatchedEventCount = 0
+    quarantined.evidence.storage.canonicalUnbatchedEventCount = 0
+    quarantined.capabilities.reviewedProduction = { allowed: false, reason: 'quarantined-evidence' }
+    quarantined.capabilities.batchSign = { allowed: false, reason: 'quarantined-evidence' }
+    quarantined.capabilities.canonicalExport = { allowed: false, reason: 'quarantined-evidence' }
     bridge.getWorkspaceStatus.mockResolvedValue({
       availability: 'ready',
       inspection: 'complete',
@@ -348,11 +404,50 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    expect((await screen.findAllByText('Evidence quarantined')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Needs attention')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
     expect(screen.getByText('Invalid').parentElement).toHaveTextContent('2')
+  })
+
+  it('renders verified historical evidence as neutral compatibility read-only state', async () => {
+    const historical = snapshot(true)
+    historical.evidence.state = 'ready'
+    historical.evidence.integrity = 'verified'
+    historical.evidence.compatibility = 'historical-read-only'
+    historical.evidence.pendingEventCount = 1_140
+    historical.evidence.unbatchedEventCount = 1_140
+    historical.evidence.acknowledgedEventCount = 355
+    historical.evidence.pendingBatchCount = 1
+    historical.evidence.acknowledgedBatchCount = 0
+    historical.evidence.storage = {
+      canonicalEventCount: 0,
+      historicalEventCount: 1_495,
+      canonicalUnbatchedEventCount: 0,
+      historicalUnbatchedEventCount: 1_140,
+      canonicalBatchCount: 0,
+      historicalBatchCount: 1,
+    }
+    historical.capabilities.reviewedProduction = { allowed: false, reason: 'historical-evidence-read-only' }
+    historical.capabilities.batchSign = { allowed: false, reason: 'historical-evidence-read-only' }
+    historical.capabilities.canonicalExport = { allowed: false, reason: 'historical-evidence-read-only' }
+
+    bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
+    bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect((await screen.findAllByText('Verified · read-only')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeEnabled()
+    expect(screen.getByText('Verified historical events').parentElement).toHaveTextContent('1.5K')
+    expect(screen.getByText('Verified historical batches').parentElement).toHaveTextContent('1')
+    expect(screen.getByTestId('workspace-evidence-disposition')).toHaveTextContent('Integrity: Verified / healthy · Compatibility: Historical · read-only')
+    expect(screen.getByText(/Canonical signing and export are unavailable/i)).toBeInTheDocument()
+    expect(screen.queryByText(/migration/i)).not.toBeInTheDocument()
   })
 
   it('fails closed when the operating-system vault is unavailable', async () => {
@@ -363,6 +458,36 @@ describe('Workspace desktop view', () => {
     expect(await screen.findByText(/will not open a plaintext fallback/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create local Workspace' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Produce reviewed measurements' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Export verifiable evidence' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Export signed data' })).not.toBeInTheDocument()
+  })
+
+  it('does not present a generic initialization failure as an OS-vault failure', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText(/secure Workspace runtime could not be initialized/i)).toBeInTheDocument()
+    expect(screen.queryByText(/operating-system vault is unavailable/i)).not.toBeInTheDocument()
+  })
+
+  it('explains that unreadable local state is preserved instead of replaced', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'local-state-unavailable' })
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText(/existing encrypted Workspace state could not be read/i)).toBeInTheDocument()
+    expect(screen.queryByText(/operating-system vault is unavailable/i)).not.toBeInTheDocument()
+  })
+
+  it('uses a new runtime initialization for Retry status after a failed bootstrap', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
+    bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days Â· All providers" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry status' }))
+
+    await waitFor(() => expect(bridge.retryWorkspaceStatus).toHaveBeenCalledTimes(1))
+    expect(bridge.getWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
   })
 })

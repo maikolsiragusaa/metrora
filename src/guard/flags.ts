@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from 'fs/promises'
-import { sep } from 'path'
 import type { ProjectSummary } from '../types.js'
 import { flagsPath, guardDir } from './store.js'
 
@@ -55,7 +54,9 @@ export function flagsAgeMs(flags: GuardFlags): number {
 }
 
 function norm(p: string): string {
-  return p.length > 1 && p.endsWith(sep) ? p.slice(0, -1) : p
+  const normalized = p.replace(/\\/g, '/')
+  const trimmed = normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized
+  return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed
 }
 
 // Openers for the flagged project the cwd sits in (exact match or a subdir of
@@ -65,7 +66,7 @@ export function matchFlag(flags: GuardFlags, cwd: string): string[] {
   let best: ProjectFlag | null = null
   for (const flag of flags.projects) {
     const base = norm(flag.path)
-    if (target === base || target.startsWith(base + sep)) {
+    if (target === base || target.startsWith(base + '/')) {
       if (!best || base.length > norm(best.path).length) best = flag
     }
   }

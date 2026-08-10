@@ -7,7 +7,6 @@
   "main": "./dist/cli.js",
   "bin": {
     "metrora": "dist/cli.js",
-    "qovrion": "dist/cli.js",
     "codeburn": "dist/cli.js"
   },
   "files": [

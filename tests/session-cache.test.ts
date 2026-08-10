@@ -25,10 +25,10 @@ import {
 // Version-suffixed filename (e.g. session-cache.v5.json) the cache now writes to.
 const CACHE_FILE = () => basename(sessionCachePath())
 
-const TMP_DIR = join(tmpdir(), `codeburn-scache-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+const TMP_DIR = join(tmpdir(), `metrora-scache-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
 
 beforeEach(() => {
-  process.env['CODEBURN_CACHE_DIR'] = TMP_DIR
+  process.env['METRORA_CACHE_DIR'] = TMP_DIR
 })
 
 afterEach(async () => {
@@ -753,7 +753,7 @@ describe('cleanupOrphanedTempFiles', () => {
   })
 
   it('does not fail when cache dir does not exist', async () => {
-    process.env['CODEBURN_CACHE_DIR'] = '/no/such/dir'
+    process.env['METRORA_CACHE_DIR'] = '/no/such/dir'
     await cleanupOrphanedTempFiles()
   })
 })

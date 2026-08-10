@@ -3,6 +3,7 @@ import { basename, join } from 'path'
 import { homedir } from 'os'
 
 import { readSessionFile, readSessionLines } from '../fs-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
@@ -48,6 +49,7 @@ type VibeStats = {
 type VibeModelConfig = {
   name?: string
   alias?: string
+  provider?: string
   input_price?: number
   output_price?: number
 }
@@ -307,11 +309,13 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       const stats = metadata.stats ?? {}
       const inputTokens = safeNumber(stats.session_prompt_tokens)
       const outputTokens = safeNumber(stats.session_completion_tokens)
-      if (inputTokens === 0 && outputTokens === 0) return
+      const hasPositiveExplicitCost = safeNumber(stats.session_cost) > 0
+      if (inputTokens === 0 && outputTokens === 0 && !hasPositiveExplicitCost) return
 
       const sessionId = metadata.session_id || basename(source.path)
       const messages = await readMessages(messagesPath)
       const model = resolveModel(metadata)
+      const modelProvider = normalizeExplicitModelProvider(activeModelConfig(metadata)?.provider)
       const costUSD = calculateSessionCost(metadata, model, inputTokens, outputTokens)
       const assistantMessages = messages.filter(m => m.role === 'assistant')
       const fallbackTimestamp = metadata.end_time ?? metadata.start_time ?? ''
@@ -325,6 +329,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         yield {
           provider: 'mistral-vibe',
           model,
+          ...(modelProvider ? { modelProvider } : {}),
           inputTokens,
           outputTokens,
           cacheCreationInputTokens: 0,
@@ -333,6 +338,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           reasoningTokens: 0,
           webSearchRequests: 0,
           costUSD,
+          costIsEstimated: true,
           tools,
           bashCommands,
           timestamp: fallbackTimestamp,
@@ -372,6 +378,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         yield {
           provider: 'mistral-vibe',
           model,
+          ...(modelProvider ? { modelProvider } : {}),
           inputTokens: allocateInteger(inputTokens, allocationIndex, assistantMessages.length),
           outputTokens: allocateInteger(outputTokens, allocationIndex, assistantMessages.length),
           cacheCreationInputTokens: 0,
@@ -380,6 +387,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           reasoningTokens: 0,
           webSearchRequests: 0,
           costUSD: allocateCost(costUSD, assistantMessages.length),
+          costIsEstimated: true,
           tools,
           bashCommands,
           timestamp: message.timestamp ?? fallbackTimestamp,

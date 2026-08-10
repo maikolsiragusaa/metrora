@@ -6,9 +6,11 @@ import {
   getDesktopWorkspaceRuntimeState,
   initializeDesktopWorkspaceRuntimeState,
   installDesktopWorkspaceRuntimePromise,
+  retryDesktopWorkspaceRuntime,
   type DesktopLocalStateModule,
   type DesktopReviewedProductionModule,
   type DesktopWorkspaceRuntime,
+  type DesktopWorkspaceRuntimeState,
   type ElectronSafeStorageLike,
 } from './local-state'
 
@@ -38,6 +40,8 @@ function runtime(): DesktopWorkspaceRuntime {
       productionLifecycle: null,
       evidence: {
         state: 'workspace-required',
+        integrity: 'unverified',
+        compatibility: 'workspace-required',
         pendingEventCount: 0,
         unbatchedEventCount: 0,
         acknowledgedEventCount: 0,
@@ -45,7 +49,23 @@ function runtime(): DesktopWorkspaceRuntime {
         quarantinedEventCount: 0,
         pendingBatchCount: 0,
         acknowledgedBatchCount: 0,
+        storage: {
+          canonicalEventCount: 0,
+          historicalEventCount: 0,
+          canonicalUnbatchedEventCount: 0,
+          historicalUnbatchedEventCount: 0,
+          canonicalBatchCount: 0,
+          historicalBatchCount: 0,
+        },
         blockers: [],
+      },
+      capabilities: {
+        inspection: { allowed: true, reason: null },
+        reviewedProduction: { allowed: false, reason: 'workspace-required' },
+        batchSign: { allowed: false, reason: 'workspace-required' },
+        canonicalExport: { allowed: false, reason: 'workspace-required' },
+        recovery: { allowed: true, reason: null },
+        productionLifecycle: { allowed: false, reason: 'workspace-required' },
       },
       privacy: {
         networkRequired: false,
@@ -189,6 +209,77 @@ describe('Electron private Workspace runtime host', () => {
     })).resolves.toEqual({ status: 'unsupported-platform', platform: 'linux' })
     expect(importModule).not.toHaveBeenCalled()
     expect(importReviewedProductionModule).not.toHaveBeenCalled()
+  })
+
+  it('classifies packaged, local-state and generic initialization failures separately', async () => {
+    const base = {
+      platform: 'win32' as const,
+      isPackaged: true,
+      resourcesPath: 'C:\\app\\resources',
+      appPath: 'C:\\app',
+      userDataPath: 'C:\\Users\\test\\Metrora',
+      safeStorage: safeStorage(),
+    }
+
+    await expect(initializeDesktopWorkspaceRuntimeState({
+      ...base,
+      importModule: vi.fn(async () => { throw new Error('Cannot find packaged module') }),
+    })).resolves.toEqual({ status: 'unavailable', reason: 'packaged-runtime-unavailable' })
+
+    for (const [name, reason] of [
+      ['DesktopLocalStateCorruptError', 'local-state-unavailable'],
+      ['DesktopEncryptedStateUnreadableError', 'local-state-unavailable'],
+      ['EndpointIdentityRecoveryRequiredError', 'local-state-unavailable'],
+      ['UnexpectedError', 'initialization-failed'],
+    ] as const) {
+      const error = new Error('private diagnostic detail')
+      error.name = name
+      await expect(initializeDesktopWorkspaceRuntimeState({
+        ...base,
+        importModule: vi.fn(async () => ({
+          initializeDesktopLocalStateV1: vi.fn(),
+          initializeDesktopWorkspaceRuntimeV1: vi.fn(async () => { throw error }),
+        })),
+      })).resolves.toEqual({ status: 'unavailable', reason })
+    }
+  })
+
+  it('retries a failed initialization with one new runtime attempt and never duplicates a live runtime', async () => {
+    const privateRuntime = runtime()
+    const initializer = vi.fn<() => Promise<DesktopWorkspaceRuntimeState>>()
+    initializer
+      .mockResolvedValueOnce({ status: 'unavailable', reason: 'initialization-failed' })
+      .mockResolvedValueOnce({
+        status: 'ready',
+        endpointId: 'endpoint_retry',
+        publicKeyFingerprintSha256: 'b'.repeat(64),
+        identityGeneration: 3,
+        masterKeyState: 'loaded',
+        backend: 'windows-dpapi',
+        runtime: privateRuntime,
+      })
+
+    installDesktopWorkspaceRuntimePromise(
+      Promise.resolve({ status: 'unavailable', reason: 'initialization-failed' }),
+      initializer,
+    )
+
+    const firstRetry = retryDesktopWorkspaceRuntime()
+    expect(retryDesktopWorkspaceRuntime()).toBe(firstRetry)
+    await expect(firstRetry).resolves.toEqual({ status: 'unavailable', reason: 'initialization-failed' })
+    await Promise.resolve()
+
+    const secondRetry = retryDesktopWorkspaceRuntime()
+    await expect(secondRetry).resolves.toMatchObject({ status: 'ready', runtime: privateRuntime })
+    expect(initializer).toHaveBeenCalledTimes(2)
+
+    const readyRetry = await retryDesktopWorkspaceRuntime()
+    expect(readyRetry).toMatchObject({ status: 'ready', runtime: privateRuntime })
+    expect(initializer).toHaveBeenCalledTimes(2)
+
+    await disposeDesktopWorkspaceRuntime()
+    await disposeDesktopWorkspaceRuntime()
+    expect(privateRuntime.dispose).toHaveBeenCalledTimes(1)
   })
 
   it('shares one initialization promise and disposes the private runtime once', async () => {

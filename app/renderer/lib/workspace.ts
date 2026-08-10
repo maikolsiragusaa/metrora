@@ -8,6 +8,31 @@ export type WorkspaceEvidenceState =
 
 export type WorkspaceProductionMode = 'active' | 'paused'
 
+export type WorkspaceCapabilityReason =
+  | 'inspection-pending'
+  | 'workspace-required'
+  | 'invalid-evidence'
+  | 'quarantined-evidence'
+  | 'historical-evidence-read-only'
+  | 'mixed-evidence-read-only'
+  | 'unbatched-evidence'
+  | 'production-paused'
+  | 'runtime-unavailable'
+
+export type WorkspaceCapability = {
+  allowed: boolean
+  reason: WorkspaceCapabilityReason | null
+}
+
+export type DesktopWorkspaceCapabilities = {
+  inspection: WorkspaceCapability
+  reviewedProduction: WorkspaceCapability
+  batchSign: WorkspaceCapability
+  canonicalExport: WorkspaceCapability
+  recovery: WorkspaceCapability
+  productionLifecycle: WorkspaceCapability
+}
+
 export type DesktopWorkspaceSnapshot = {
   kind: 'metrora.desktop-workspace-snapshot'
   version: 1
@@ -45,6 +70,8 @@ export type DesktopWorkspaceSnapshot = {
   }
   evidence: {
     state: WorkspaceEvidenceState
+    integrity: 'unverified' | 'verified' | 'invalid' | 'quarantined'
+    compatibility: 'uninspected' | 'workspace-required' | 'empty' | 'canonical' | 'historical-read-only' | 'mixed' | 'invalid' | 'quarantined'
     pendingEventCount: number
     unbatchedEventCount: number
     acknowledgedEventCount: number
@@ -52,8 +79,17 @@ export type DesktopWorkspaceSnapshot = {
     quarantinedEventCount: number
     pendingBatchCount: number
     acknowledgedBatchCount: number
+    storage: {
+      canonicalEventCount: number
+      historicalEventCount: number
+      canonicalUnbatchedEventCount: number
+      historicalUnbatchedEventCount: number
+      canonicalBatchCount: number
+      historicalBatchCount: number
+    }
     blockers: string[]
   }
+  capabilities: DesktopWorkspaceCapabilities
   privacy: {
     networkRequired: false
     promptsIncluded: false
@@ -75,7 +111,14 @@ export type DesktopWorkspaceAvailability =
       snapshot: DesktopWorkspaceSnapshot
     }
   | { availability: 'unsupported-platform'; platform: string }
-  | { availability: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+  | {
+      availability: 'unavailable'
+      reason:
+        | 'vault-unavailable'
+        | 'packaged-runtime-unavailable'
+        | 'local-state-unavailable'
+        | 'initialization-failed'
+    }
 
 export type DesktopReviewedProductionSummary = {
   kind: 'metrora.canonical-reviewed-production-summary'
@@ -97,7 +140,7 @@ export type DesktopWorkspaceProductionResult = {
 export type DesktopWorkspaceRecoverySummary = {
   kind: 'metrora.desktop-workspace-recovery-summary'
   version: 1
-  outcome: 'workspace-required' | 'paused' | 'blocked' | 'healthy' | 'reconciled'
+  outcome: 'workspace-required' | 'paused' | 'verified-read-only' | 'blocked' | 'healthy' | 'reconciled'
   retryAttempted: boolean
   blocker: 'invalid-evidence' | 'quarantined-evidence' | 'blocked-evidence' | null
   receiptRepairCount: number
@@ -148,6 +191,7 @@ export type DesktopWorkspaceExportResult =
 
 export interface WorkspaceBridge {
   getWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
+  retryWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
   inspectWorkspaceStatus(): Promise<DesktopWorkspaceAvailability>
   createWorkspace(input: {
     displayName: string

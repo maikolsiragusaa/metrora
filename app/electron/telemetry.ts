@@ -4,7 +4,7 @@ import { join } from 'node:path'
 /**
  * Metrora does not transmit product telemetry.
  *
- * The CodeBurn-derived desktop shell expects a Telemetry-compatible object, so
+ * The Metrora-derived desktop shell expects a Telemetry-compatible object, so
  * this module intentionally preserves that local interface while making every
  * operation a no-op. Keeping the interface avoids a risky cross-cutting IPC
  * rewrite during the compatibility phase; keeping the implementation inert
@@ -118,7 +118,7 @@ export class Telemetry {
     }
 
     // Remove the inherited consent/install identifier if this tree is run over
-    // an existing CodeBurn desktop profile. This file contains no usage data.
+    // an existing Metrora desktop profile. This file contains no usage data.
     try { rmSync(join(deps.stateDir, 'telemetry.v1.json'), { force: true }) } catch { /* best effort */ }
   }
 

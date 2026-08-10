@@ -2,13 +2,12 @@ import { readFile, stat, open, rename, unlink, readdir, mkdir } from 'fs/promise
 import { existsSync, readFileSync, unlinkSync } from 'fs'
 import { createHash, randomBytes } from 'crypto'
 import { join } from 'path'
-import { homedir } from 'os'
-
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
 import { CostAssignmentV1Schema, costAssignmentMatchesUsdV1, type CostAssignmentV1 } from './pricing/cost-assignment.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
-
+import { getMetroraCacheDir } from './product-paths.js'
+import { migrateLegacyDurableSessionCache } from './session-cache-root-migration.js'
 // ── Types ──────────────────────────────────────────────────────────────
 
 export type CachedUsage = {
@@ -204,7 +203,7 @@ export const PROVIDER_ENV_VARS: Record<string, string[]> = {
   goose: ['XDG_DATA_HOME'],
   crush: ['XDG_DATA_HOME'],
   warp: ['WARP_DB_PATH'],
-  antigravity: ['CODEBURN_CACHE_DIR'],
+  antigravity: ['METRORA_CACHE_DIR'],
   qwen: ['QWEN_DATA_DIR'],
   'ibm-bob': ['XDG_CONFIG_HOME'],
   quickdesk: ['QUICKWORK_HOME'],
@@ -227,8 +226,8 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // title / prLinks / isSidechain. Forces one re-parse so cached sessions gain
   // the new optional fields.
   claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1',
-  cline: 'worktree-project-grouping-v1-vscode-variants-v1',
-  codewhale: 'aggregate-session-v1-est-cost',
+  cline: 'worktree-project-grouping-v1-vscode-variants-v2-provider-zero-cost',
+  codewhale: 'aggregate-session-v2-provider-provenance',
   // Bump when the Codex parser changes attribution so unchanged, already-cached
   // session files re-parse (session-cache.json serves them without invoking the
   // provider parser otherwise). Covers native mcp_tool_call_end (#513) and
@@ -238,33 +237,36 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // lockstep so the pre-session-cache layer re-parses too.)
   codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
-  'cursor-agent': 'workspaceless-transcript-v1',
-  copilot: 'cli-shutdown-cost-v1-skills',
+  'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
+  copilot: 'cli-shutdown-cost-v2-preserve-observed-reasoning-cache',
+  goose: 'sqlite-session-v1-provider-provenance',
   grok: 'estimated-cost-v1',
-  hermes: 'reasoning-output-accounting-v1-est-cost',
+  hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2',
   'lingtai-tui': 'token-ledger-registry-activity-v3',
   'ibm-bob': 'worktree-project-grouping-v1',
-  kiro: 'ide-parsing-v2-legacy-full-input-est-cost',
+  kiro: 'ide-parsing-v3-provider-provenance',
+  'mistral-vibe': 'session-cost-only-v1-provider-provenance-estimated-cost-v2',
   quickdesk: 'emf-sqlite-v2-est-cost',
   kimicode: 'wire-usage-v1-est-cost',
   'kilo-code': 'worktree-project-grouping-v1',
   'roo-code': 'worktree-project-grouping-v1',
+  zerostack: 'cumulative-session-v1-provider-provenance-estimated-cost-v2',
   warp: 'worktree-project-grouping-v1-est-cost',
-  antigravity: 'worktree-project-grouping-v5',
+  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2',
+  // OpenCode keeps valid usage in archived root/child sessions. The parser
+  // must scan the complete SQLite session tree, not only active sessions.
+  opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1',
   // Preserve the source-recorded thread.model.provider through the shared cache.
   zed: 'sqlite-zstd-ledger-v1-model-provider-v1',
 }
-
 // ── Cache Dir ──────────────────────────────────────────────────────────
 
 function getCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return getMetroraCacheDir()
 }
-
 function getCachePath(): string {
   return join(getCacheDir(), CACHE_FILE)
 }
-
 function getLegacyCachePath(): string {
   return join(getCacheDir(), LEGACY_CACHE_FILE)
 }
@@ -421,7 +423,7 @@ function validateTurn(t: unknown): t is CachedTurn {
     && (o['calls'] as unknown[]).every(validateCall)
 }
 
-function validateCachedFile(f: unknown): f is CachedFile {
+export function validateCachedFile(f: unknown): f is CachedFile {
   if (!f || typeof f !== 'object') return false
   const o = f as Record<string, unknown>
   return validateFingerprint(o['fingerprint'])
@@ -450,7 +452,7 @@ function validateProviderSection(s: unknown): s is ProviderSection {
   return Object.values(o['files'] as Record<string, unknown>).every(validateCachedFile)
 }
 
-function validateCache(raw: unknown): raw is SessionCache {
+export function isValidCache(raw: unknown): raw is SessionCache {
   if (!raw || typeof raw !== 'object') return false
   const o = raw as Record<string, unknown>
   if (o['version'] !== CACHE_VERSION) return false
@@ -547,11 +549,9 @@ export async function loadCache(): Promise<SessionCache> {
   try {
     const raw = await readFile(getCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
-    if (!validateCache(parsed)) return afterMissingVersionedCache()
-    return parsed
-  } catch {
-    return afterMissingVersionedCache()
-  }
+    if (isValidCache(parsed)) return migrateLegacyDurableSessionCache(parsed, true)
+  } catch { /* fall through to safe adoption */ }
+  return migrateLegacyDurableSessionCache(await afterMissingVersionedCache())
 }
 
 // The current versioned file is absent/unreadable. Prefer adopting the newest
@@ -561,7 +561,7 @@ export async function loadCache(): Promise<SessionCache> {
 async function afterMissingVersionedCache(): Promise<SessionCache> {
   const prior = await adoptNewestPriorCache()
   if (prior) return prior
-  // validateCache requires version === CACHE_VERSION, so a different-version
+  // isValidCache requires version === CACHE_VERSION, so a different-version
   // legacy file is ignored (left intact). We copy it into the versioned file once
   // via saveCache; the legacy file is never modified.
   return adoptLegacyCache()
@@ -571,7 +571,7 @@ async function adoptLegacyCache(): Promise<SessionCache> {
   try {
     const raw = await readFile(getLegacyCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
-    if (!validateCache(parsed)) return emptyCache()
+    if (!isValidCache(parsed)) return emptyCache()
     await saveCache(parsed).catch(() => {})
     return parsed
   } catch {

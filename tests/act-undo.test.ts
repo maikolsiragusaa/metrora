@@ -11,7 +11,7 @@ import type { ActionRecord } from '../src/act/types.js'
 const roots: string[] = []
 
 async function makeRoot(): Promise<{ actionsDir: string; files: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'codeburn-act-undo-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-act-undo-'))
   roots.push(root)
   const files = join(root, 'files')
   await mkdir(files, { recursive: true })

@@ -22,16 +22,20 @@ import {
   type DesktopCanonicalReviewedScannerV1,
   type DesktopReviewedProductionRuntimeV1,
 } from './desktop-reviewed-production-runtime.js'
+import { LEGACY_DESKTOP_MASTER_KEY_KIND } from './legacy-identity-compatibility.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
 import { createDesktopWorkspaceRuntimeV1 } from './desktop-workspace-runtime.js'
 
-export const DESKTOP_MASTER_KEY_KIND = 'qovrion.desktop-master-key' as const
+export const DESKTOP_MASTER_KEY_KIND = 'metrora.desktop-master-key' as const
 const MASTER_KEY_FILE = 'desktop-master-key.v1.json'
 
 export const DesktopVaultBackendV1Schema = z.enum(['windows-dpapi', 'macos-keychain'])
 
 const DesktopMasterKeyEnvelopeV1Schema = z.strictObject({
-  kind: z.literal(DESKTOP_MASTER_KEY_KIND),
+  kind: z.union([
+    z.literal(DESKTOP_MASTER_KEY_KIND),
+    z.literal(LEGACY_DESKTOP_MASTER_KEY_KIND),
+  ]),
   version: z.literal(1),
   backend: DesktopVaultBackendV1Schema,
   ciphertextBase64: z.string().min(1),
@@ -85,10 +89,24 @@ export class DesktopVaultUnavailableError extends Error {
   }
 }
 
+export class DesktopLocalStateCorruptError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DesktopLocalStateCorruptError'
+  }
+}
+
+export class DesktopEncryptedStateUnreadableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DesktopEncryptedStateUnreadableError'
+  }
+}
+
 function decodeMasterKey(value: string): Buffer {
   const decoded = Buffer.from(value, 'base64')
   if (decoded.byteLength !== 32 || decoded.toString('base64') !== value) {
-    throw new DesktopVaultUnavailableError('desktop vault returned an invalid master key')
+    throw new DesktopLocalStateCorruptError('desktop master-key payload is invalid')
   }
   return decoded
 }
@@ -101,10 +119,8 @@ function parseEnvelope(bytes: Uint8Array): z.infer<typeof DesktopMasterKeyEnvelo
       throw new Error('ciphertext is not canonical base64')
     }
     return envelope
-  } catch (error) {
-    throw new DesktopVaultUnavailableError(
-      `desktop master-key envelope is invalid: ${error instanceof Error ? error.message : String(error)}`,
-    )
+  } catch {
+    throw new DesktopLocalStateCorruptError('desktop master-key envelope is invalid')
   }
 }
 
@@ -127,7 +143,12 @@ async function loadOrCreateMasterKey(
       const key = options.randomBytes(32)
       if (key.byteLength !== 32) throw new Error('desktop master-key source returned the wrong size')
       const plaintext = key.toString('base64')
-      const ciphertext = Buffer.from(await options.safeStorage.encryptString(plaintext))
+      let ciphertext: Buffer
+      try {
+        ciphertext = Buffer.from(await options.safeStorage.encryptString(plaintext))
+      } catch {
+        throw new DesktopVaultUnavailableError('OS-backed desktop encryption is unavailable')
+      }
       if (ciphertext.byteLength === 0) throw new DesktopVaultUnavailableError('OS vault returned empty ciphertext')
       const timestamp = options.now().toISOString()
       const envelope = DesktopMasterKeyEnvelopeV1Schema.parse({
@@ -144,7 +165,7 @@ async function loadOrCreateMasterKey(
 
     const envelope = parseEnvelope(existingBytes)
     if (envelope.backend !== options.backend) {
-      throw new DesktopVaultUnavailableError(
+      throw new DesktopLocalStateCorruptError(
         `desktop master key belongs to ${envelope.backend}, not ${options.backend}`,
       )
     }
@@ -153,23 +174,32 @@ async function loadOrCreateMasterKey(
     let decrypted: { result: string; shouldReEncrypt: boolean }
     try {
       decrypted = await options.safeStorage.decryptString(ciphertext)
-    } catch (error) {
-      throw new DesktopVaultUnavailableError(
-        `desktop master key could not be decrypted: ${error instanceof Error ? error.message : String(error)}`,
-      )
+    } catch {
+      throw new DesktopEncryptedStateUnreadableError('desktop master key could not be decrypted')
     }
     const key = decodeMasterKey(decrypted.result)
-    if (!decrypted.shouldReEncrypt) return { key, state: 'loaded' as const }
+    const migrateEnvelopeKind = envelope.kind !== DESKTOP_MASTER_KEY_KIND
+    if (!decrypted.shouldReEncrypt && !migrateEnvelopeKind) return { key, state: 'loaded' as const }
 
-    const rewrapped = Buffer.from(await options.safeStorage.encryptString(decrypted.result))
-    if (rewrapped.byteLength === 0) throw new DesktopVaultUnavailableError('OS vault returned empty rewrapped ciphertext')
+    let nextCiphertext = ciphertext
+    let state: DesktopMasterKeyStateV1 = 'loaded'
+    if (decrypted.shouldReEncrypt) {
+      try {
+        nextCiphertext = Buffer.from(await options.safeStorage.encryptString(decrypted.result))
+      } catch {
+        throw new DesktopVaultUnavailableError('OS-backed desktop encryption is unavailable')
+      }
+      if (nextCiphertext.byteLength === 0) throw new DesktopVaultUnavailableError('OS vault returned empty rewrapped ciphertext')
+      state = 'rewrapped'
+    }
     const updated = DesktopMasterKeyEnvelopeV1Schema.parse({
       ...envelope,
-      ciphertextBase64: rewrapped.toString('base64'),
+      kind: DESKTOP_MASTER_KEY_KIND,
+      ciphertextBase64: nextCiphertext.toString('base64'),
       updatedAt: options.now().toISOString(),
     })
     await atomicWritePrivateFile(keyPath, JSON.stringify(updated))
-    return { key, state: 'rewrapped' as const }
+    return { key, state }
   })
 }
 

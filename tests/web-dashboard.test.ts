@@ -17,13 +17,13 @@ describe('web dashboard server: invalid query returns 400 without exiting', () =
   let homeDir: string
   let cacheDir: string
   const prevHome = process.env['HOME']
-  const prevCache = process.env['CODEBURN_CACHE_DIR']
+  const prevCache = process.env['METRORA_CACHE_DIR']
 
   beforeAll(async () => {
-    homeDir = await mkdtemp(join(tmpdir(), 'codeburn-web-home-'))
-    cacheDir = await mkdtemp(join(tmpdir(), 'codeburn-web-cache-'))
+    homeDir = await mkdtemp(join(tmpdir(), 'metrora-web-home-'))
+    cacheDir = await mkdtemp(join(tmpdir(), 'metrora-web-cache-'))
     process.env['HOME'] = homeDir
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    process.env['METRORA_CACHE_DIR'] = cacheDir
     server = await runWebDashboard({
       period: 'today', provider: 'all', project: [], exclude: [], port: 0, open: false,
     })
@@ -34,8 +34,8 @@ describe('web dashboard server: invalid query returns 400 without exiting', () =
     await new Promise<void>((resolve) => server.close(() => resolve()))
     if (prevHome === undefined) delete process.env['HOME']
     else process.env['HOME'] = prevHome
-    if (prevCache === undefined) delete process.env['CODEBURN_CACHE_DIR']
-    else process.env['CODEBURN_CACHE_DIR'] = prevCache
+    if (prevCache === undefined) delete process.env['METRORA_CACHE_DIR']
+    else process.env['METRORA_CACHE_DIR'] = prevCache
     await rm(homeDir, { recursive: true, force: true })
     await rm(cacheDir, { recursive: true, force: true })
   })

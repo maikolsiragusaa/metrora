@@ -8,6 +8,31 @@ export type ElectronSafeStorageLike = {
   decryptStringAsync(ciphertext: Buffer): Promise<{ result: string; shouldReEncrypt: boolean }>
 }
 
+export type DesktopWorkspaceCapabilityReason =
+  | 'inspection-pending'
+  | 'workspace-required'
+  | 'invalid-evidence'
+  | 'quarantined-evidence'
+  | 'historical-evidence-read-only'
+  | 'mixed-evidence-read-only'
+  | 'unbatched-evidence'
+  | 'production-paused'
+  | 'runtime-unavailable'
+
+export type DesktopWorkspaceCapability = {
+  allowed: boolean
+  reason: DesktopWorkspaceCapabilityReason | null
+}
+
+export type DesktopWorkspaceCapabilities = {
+  inspection: DesktopWorkspaceCapability
+  reviewedProduction: DesktopWorkspaceCapability
+  batchSign: DesktopWorkspaceCapability
+  canonicalExport: DesktopWorkspaceCapability
+  recovery: DesktopWorkspaceCapability
+  productionLifecycle: DesktopWorkspaceCapability
+}
+
 export type DesktopWorkspaceSnapshot = {
   kind: 'metrora.desktop-workspace-snapshot'
   version: 1
@@ -45,6 +70,8 @@ export type DesktopWorkspaceSnapshot = {
   }
   evidence: {
     state: 'workspace-required' | 'empty' | 'ready' | 'acknowledged' | 'quarantined' | 'blocked'
+    integrity: 'unverified' | 'verified' | 'invalid' | 'quarantined'
+    compatibility: 'uninspected' | 'workspace-required' | 'empty' | 'canonical' | 'historical-read-only' | 'mixed' | 'invalid' | 'quarantined'
     pendingEventCount: number
     unbatchedEventCount: number
     acknowledgedEventCount: number
@@ -52,8 +79,17 @@ export type DesktopWorkspaceSnapshot = {
     quarantinedEventCount: number
     pendingBatchCount: number
     acknowledgedBatchCount: number
+    storage: {
+      canonicalEventCount: number
+      historicalEventCount: number
+      canonicalUnbatchedEventCount: number
+      historicalUnbatchedEventCount: number
+      canonicalBatchCount: number
+      historicalBatchCount: number
+    }
     blockers: string[]
   }
+  capabilities: DesktopWorkspaceCapabilities
   privacy: {
     networkRequired: false
     promptsIncluded: false
@@ -132,6 +168,12 @@ export type DesktopLocalStateResult =
     }
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
 
+export type DesktopWorkspaceUnavailableReason =
+  | 'vault-unavailable'
+  | 'packaged-runtime-unavailable'
+  | 'local-state-unavailable'
+  | 'initialization-failed'
+
 export type DesktopWorkspaceRuntimeState =
   | {
       status: 'ready'
@@ -143,7 +185,7 @@ export type DesktopWorkspaceRuntimeState =
       runtime: DesktopWorkspaceRuntime
     }
   | { status: 'unsupported-platform'; platform: NodeJS.Platform }
-  | { status: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+  | { status: 'unavailable'; reason: DesktopWorkspaceUnavailableReason }
 
 type DesktopCanonicalReviewedProductionInput = {
   endpointId: string
@@ -223,24 +265,65 @@ export type InitializeDesktopEndpointStateDeps = {
   importReviewedProductionModule?: (url: string) => Promise<DesktopReviewedProductionModule>
 }
 
-let workspaceRuntimePromise: Promise<DesktopWorkspaceRuntimeState> = Promise.resolve({
-  status: 'unavailable',
-  reason: 'initialization-failed',
-})
+type DesktopWorkspaceRuntimeInitializer = () => Promise<DesktopWorkspaceRuntimeState>
+
+function unavailableWorkspaceRuntimeState(): DesktopWorkspaceRuntimeState {
+  return { status: 'unavailable', reason: 'initialization-failed' }
+}
+
+let workspaceRuntimePromise: Promise<DesktopWorkspaceRuntimeState> = Promise.resolve(unavailableWorkspaceRuntimeState())
+let workspaceRuntimeInitializer: DesktopWorkspaceRuntimeInitializer | undefined
+let workspaceRuntimeRetryPromise: Promise<DesktopWorkspaceRuntimeState> | undefined
+const disposedWorkspaceRuntimes = new WeakSet<DesktopWorkspaceRuntime>()
 
 export function installDesktopWorkspaceRuntimePromise(
   promise: Promise<DesktopWorkspaceRuntimeState>,
+  initializer?: DesktopWorkspaceRuntimeInitializer,
 ): void {
-  workspaceRuntimePromise = promise
+  // Keep the IPC boundary bounded even if a caller supplies a rejected promise.
+  workspaceRuntimePromise = promise.catch(() => unavailableWorkspaceRuntimeState())
+  workspaceRuntimeInitializer = initializer
+  workspaceRuntimeRetryPromise = undefined
 }
 
 export function getDesktopWorkspaceRuntimeState(): Promise<DesktopWorkspaceRuntimeState> {
   return workspaceRuntimePromise
 }
 
+/**
+ * Retry only a failed initialization. A pending attempt is shared by all
+ * callers, and a live runtime is never replaced by a second live runtime.
+ */
+export function retryDesktopWorkspaceRuntime(): Promise<DesktopWorkspaceRuntimeState> {
+  if (workspaceRuntimeRetryPromise) return workspaceRuntimeRetryPromise
+
+  const current = workspaceRuntimePromise
+  const initializer = workspaceRuntimeInitializer
+  if (!initializer) return current
+
+  const retryPromise = (async () => {
+    const currentState = await current
+    if (currentState.status !== 'unavailable') return currentState
+    try {
+      return await initializer()
+    } catch {
+      return unavailableWorkspaceRuntimeState()
+    }
+  })()
+
+  workspaceRuntimeRetryPromise = retryPromise
+  workspaceRuntimePromise = retryPromise
+  void retryPromise.finally(() => {
+    if (workspaceRuntimeRetryPromise === retryPromise) workspaceRuntimeRetryPromise = undefined
+  })
+  return retryPromise
+}
+
 export async function disposeDesktopWorkspaceRuntime(): Promise<void> {
-  const state = await workspaceRuntimePromise.catch(() => undefined)
-  if (state?.status === 'ready') state.runtime.dispose()
+  const state = await workspaceRuntimePromise
+  if (state.status !== 'ready' || disposedWorkspaceRuntimes.has(state.runtime)) return
+  disposedWorkspaceRuntimes.add(state.runtime)
+  state.runtime.dispose()
 }
 
 export function desktopVaultBackend(platform: NodeJS.Platform): 'windows-dpapi' | 'macos-keychain' | undefined {
@@ -265,7 +348,7 @@ export function desktopLocalStateModulePath(
   deps: Pick<InitializeDesktopEndpointStateDeps, 'isPackaged' | 'resourcesPath' | 'appPath'>,
 ): string {
   return deps.isPackaged
-    ? join(deps.resourcesPath, 'cli', 'dist', 'desktop-local-state.js')
+    ? join(deps.resourcesPath, 'cli.asar', 'dist', 'desktop-local-state.js')
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-local-state.js')
 }
 
@@ -273,14 +356,14 @@ export function desktopReviewedProductionModulePath(
   deps: Pick<InitializeDesktopEndpointStateDeps, 'isPackaged' | 'resourcesPath' | 'appPath'>,
 ): string {
   return deps.isPackaged
-    ? join(deps.resourcesPath, 'cli', 'dist', 'desktop-reviewed-production.js')
+    ? join(deps.resourcesPath, 'cli.asar', 'dist', 'desktop-reviewed-production.js')
     : join(deps.appPath, 'build', 'cli', 'dist', 'desktop-reviewed-production.js')
 }
 
 /**
- * Copy old Qovrion desktop state into Metrora once. The source is never moved,
- * modified or deleted. A failed readable-state migration is surfaced instead
- * of silently creating a fresh identity.
+ * Copy an explicitly supplied legacy desktop state into Metrora once. The
+ * source is never moved, modified or deleted. A failed readable-state
+ * migration is surfaced instead of silently creating a fresh identity.
  */
 export function adoptLegacyDesktopLocalState(options: {
   userDataPath: string
@@ -289,20 +372,22 @@ export function adoptLegacyDesktopLocalState(options: {
   const canonical = join(options.userDataPath, 'metrora-local-state')
   if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: null }
 
-  const legacyRoot = options.legacyUserDataPath ?? join(dirname(options.userDataPath), 'Qovrion')
-  const candidates = [
-    join(legacyRoot, 'qovrion-local-state'),
-    join(options.userDataPath, 'qovrion-local-state'),
-  ]
-  for (const legacy of candidates) {
-    if (!existsSync(legacy)) continue
-    try {
-      mkdirSync(dirname(canonical), { recursive: true })
-      cpSync(legacy, canonical, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true })
-      return { dataDir: canonical, adoptedFrom: legacy }
-    } catch (error) {
-      if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: legacy }
-      throw new Error(`failed to adopt legacy Qovrion desktop state: ${error instanceof Error ? error.message : String(error)}`)
+  if (options.legacyUserDataPath) {
+    const supplied = join(options.legacyUserDataPath, 'metrora-local-state')
+    if (existsSync(supplied)) {
+      try {
+        mkdirSync(dirname(canonical), { recursive: true })
+        cpSync(supplied, canonical, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          preserveTimestamps: true,
+        })
+        return { dataDir: canonical, adoptedFrom: supplied }
+      } catch (error) {
+        if (existsSync(canonical)) return { dataDir: canonical, adoptedFrom: supplied }
+        throw new Error(`failed to adopt legacy Metrora desktop state: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
   return { dataDir: canonical, adoptedFrom: null }
@@ -314,6 +399,19 @@ function safeStorageAdapter(deps: InitializeDesktopEndpointStateDeps) {
     encryptString: (plaintext: string) => deps.safeStorage.encryptStringAsync(plaintext),
     decryptString: (ciphertext: Uint8Array) => deps.safeStorage.decryptStringAsync(Buffer.from(ciphertext)),
   }
+}
+
+function classifyWorkspaceInitializationError(error: unknown): DesktopWorkspaceUnavailableReason {
+  const name = error instanceof Error ? error.name : ''
+  if (name === 'DesktopVaultUnavailableError') return 'vault-unavailable'
+  if (new Set([
+    'DesktopEncryptedStateUnreadableError',
+    'DesktopLocalStateCorruptError',
+    'EndpointIdentityRecoveryRequiredError',
+    'LocalWorkspaceRecoveryRequiredError',
+    'LocalWorkspaceProductionLifecycleRecoveryRequiredError',
+  ]).has(name)) return 'local-state-unavailable'
+  return 'initialization-failed'
 }
 
 async function loadRuntimeModule(deps: InitializeDesktopEndpointStateDeps): Promise<DesktopLocalStateModule> {
@@ -372,11 +470,24 @@ export async function initializeDesktopWorkspaceRuntimeState(
   const backend = desktopVaultBackend(deps.platform)
   if (!backend) return { status: 'unsupported-platform', platform: deps.platform }
 
+  let module: DesktopLocalStateModule
   try {
-    const module = await loadRuntimeModule(deps)
-    if (typeof module.initializeDesktopWorkspaceRuntimeV1 !== 'function') {
-      throw new Error('bundled desktop Workspace runtime is invalid')
-    }
+    module = await loadRuntimeModule(deps)
+  } catch {
+    return { status: 'unavailable', reason: 'packaged-runtime-unavailable' }
+  }
+  if (typeof module.initializeDesktopWorkspaceRuntimeV1 !== 'function') {
+    return { status: 'unavailable', reason: 'packaged-runtime-unavailable' }
+  }
+
+  let dataDir: string
+  try {
+    dataDir = localStateDataDir(deps)
+  } catch {
+    return { status: 'unavailable', reason: 'local-state-unavailable' }
+  }
+
+  try {
     const version = deps.appVersion?.trim() || '0.0.0'
     let reviewedProductionModulePromise: Promise<DesktopReviewedProductionModule> | undefined
     const scanCanonicalCandidates = async (
@@ -389,7 +500,7 @@ export async function initializeDesktopWorkspaceRuntimeState(
 
     const initialized = await module.initializeDesktopWorkspaceRuntimeV1({
       backend,
-      dataDir: localStateDataDir(deps),
+      dataDir,
       safeStorage: safeStorageAdapter(deps),
       platform: {
         os: endpointOs(deps.platform),
@@ -410,10 +521,6 @@ export async function initializeDesktopWorkspaceRuntimeState(
       runtime: initialized.runtime,
     }
   } catch (error) {
-    const name = error instanceof Error ? error.name : ''
-    return {
-      status: 'unavailable',
-      reason: name === 'DesktopVaultUnavailableError' ? 'vault-unavailable' : 'initialization-failed',
-    }
+    return { status: 'unavailable', reason: classifyWorkspaceInitializationError(error) }
   }
 }

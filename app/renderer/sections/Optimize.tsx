@@ -8,15 +8,15 @@ import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { DateRange, MenubarPayload, OptimizeJsonReport, Period, SessionYieldJson, WasteAction, YieldJsonReport } from '../lib/types'
 
-type OptimizeTab = 'waste' | 'reverts' | 'abandoned' | 'fixes'
+type OptimizeTab = 'opportunities' | 'reverts' | 'abandoned' | 'quickFixes'
 type YieldCategory = 'reverted' | 'abandoned'
 
 function yieldTabValue(report: Polled<YieldJsonReport>, category: YieldCategory): string {
   if (report.data) return formatUsd(report.data.summary[category].costUSD)
-  return report.error ? 'unavailable' : 'loading'
+  return report.error ? '—' : '…'
 }
 
 function identified(value: string, fallback: string): string {
@@ -26,7 +26,7 @@ function identified(value: string, fallback: string): string {
 
 export function Optimize({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
   const overview = usePolled<MenubarPayload>(
-    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
+    () => range ? metrora.getOverview(period, provider, range) : metrora.getOverview(period, provider),
     [period, provider, range?.from, range?.to],
   )
   return <OptimizeContent period={period} provider={provider} range={range} overview={overview} />
@@ -47,36 +47,50 @@ export function OptimizeContent({
   refreshToken?: number
   ready?: boolean
 }) {
-  // Gate on app-level readiness so boot hydrates the cache once (default true
-  // keeps standalone renders/tests polling normally).
+  // Deterministic findings remain the evidence engine. This surface presents
+  // them as prioritized insights today; a future conversational Advisor can
+  // consume the same evidence without duplicating or replacing its authority.
   const optimizeReport = usePolled<OptimizeJsonReport>(
-    () => range ? codeburn.getOptimizeReport(period, provider, range) : codeburn.getOptimizeReport(period, provider),
+    () => range ? metrora.getOptimizeReport(period, provider, range) : metrora.getOptimizeReport(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `optimize|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
   const yieldReport = usePolled<YieldJsonReport>(
-    () => range ? codeburn.getYield(period, provider, range) : codeburn.getYield(period, provider),
+    () => range ? metrora.getYield(period, provider, range) : metrora.getYield(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `optyield|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
-  const [tab, setTab] = useState<OptimizeTab>('waste')
+  const [tab, setTab] = useState<OptimizeTab>('opportunities')
 
   if (!overview.data) {
-    if (overview.error) return <CliErrorPanel error={overview.error} subject="optimize findings" />
-    return <SectionSkeleton label="Scanning optimize findings…" rows={5} />
+    if (overview.error) return <CliErrorPanel error={overview.error} subject="insights" />
+    return <SectionSkeleton label="Preparing insights…" rows={5} />
   }
 
   const options = [
-    { value: 'waste', label: `Waste ${formatUsd(overview.data.optimize.savingsUSD)}` },
-    { value: 'reverts', label: `Reverts ${yieldTabValue(yieldReport, 'reverted')}` },
-    { value: 'abandoned', label: `Abandoned ${yieldTabValue(yieldReport, 'abandoned')}` },
-    // The Fixes tab renders topFindings (capped list), so label the count that shows.
-    { value: 'fixes', label: `Fixes ${overview.data.optimize.topFindings.length.toLocaleString('en-US')}` },
+    { value: 'opportunities', label: `Opportunities ${formatUsd(overview.data.optimize.savingsUSD)}` },
+    { value: 'reverts', label: `Reverted work ${yieldTabValue(yieldReport, 'reverted')}` },
+    { value: 'abandoned', label: `Abandoned work ${yieldTabValue(yieldReport, 'abandoned')}` },
+    { value: 'quickFixes', label: `Quick fixes ${overview.data.optimize.topFindings.length.toLocaleString('en-US')}` },
   ]
 
   return (
     <>
       {overview.error && <StaleBanner error={overview.error} />}
+      <div className="opt-intro">
+        <div>
+          <span className="ov-label">Evidence-based insights</span>
+          <strong>What deserves your attention</strong>
+          <p>Prioritized from your observed local usage. These are deterministic signals, not generic AI advice.</p>
+        </div>
+        {overview.data.optimize.savingsUSD > 0 ? (
+          <div className="opt-intro-kpi">
+            <span>Potential</span>
+            <strong>{formatUsd(overview.data.optimize.savingsUSD)}</strong>
+            <small>{overview.data.optimize.findingCount.toLocaleString('en-US')} detected opportunities</small>
+          </div>
+        ) : null}
+      </div>
       <SegTabs
         options={options}
         value={tab}
@@ -84,12 +98,12 @@ export function OptimizeContent({
         style={{ alignSelf: 'flex-start' }}
       />
       <Panel>
-        {tab === 'waste' ? (
-          <WasteRows report={optimizeReport} />
+        {tab === 'opportunities' ? (
+          <OpportunityRows report={optimizeReport} />
         ) : tab === 'reverts' ? (
-          <YieldRows report={yieldReport} category="reverted" empty="No reverted sessions in this range yet." />
+          <YieldRows report={yieldReport} category="reverted" empty="No reverted work detected in this range." />
         ) : tab === 'abandoned' ? (
-          <YieldRows report={yieldReport} category="abandoned" empty="No abandoned sessions in this range yet." />
+          <YieldRows report={yieldReport} category="abandoned" empty="No abandoned work detected in this range." />
         ) : (
           <FixesRows data={overview.data} />
         )}
@@ -98,16 +112,22 @@ export function OptimizeContent({
   )
 }
 
-function WasteRows({ report }: { report: Polled<OptimizeJsonReport> }) {
+function OpportunityRows({ report }: { report: Polled<OptimizeJsonReport> }) {
   if (!report.data) {
-    if (report.error) return <CliErrorPanel error={report.error} subject="optimize findings" />
-    return <EmptyNote>Scanning optimize findings…</EmptyNote>
+    if (report.error) return <CliErrorPanel error={report.error} subject="insights" />
+    return <EmptyNote>Analyzing observed usage for opportunities…</EmptyNote>
+  }
+
+  if (!report.data.findings.length) {
+    return <EmptyNote>No actionable opportunities detected in this range.</EmptyNote>
   }
 
   return (
     <div className="opt-waste">
       <div className="opt-summary">
-        {report.data.summary.findingCount.toLocaleString('en-US')} findings · {formatUsd(report.data.summary.potentialSavingsCostUSD)} potential · health {report.data.summary.healthScore}/100
+        <strong>{report.data.summary.findingCount.toLocaleString('en-US')} opportunities</strong>
+        <span>{formatUsd(report.data.summary.potentialSavingsCostUSD)} estimated potential</span>
+        <span>{formatCompact(report.data.summary.potentialSavingsTokens)} tokens</span>
       </div>
       <ActionableFindingRows findings={report.data.findings} />
     </div>
@@ -130,8 +150,6 @@ function ActionableFindingRows({ findings }: { findings: OptimizeFinding[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  if (!findings.length) return <EmptyNote>No waste findings in this range yet.</EmptyNote>
-
   const copyFix = async (finding: OptimizeFinding) => {
     await navigator.clipboard.writeText(actionText(finding.fix))
     setCopiedId(finding.id)
@@ -140,7 +158,7 @@ function ActionableFindingRows({ findings }: { findings: OptimizeFinding[] }) {
 
   return (
     <div className="opt-findings">
-      {findings.map(finding => {
+      {findings.map((finding, index) => {
         const expanded = expandedId === finding.id
         return (
           <Fragment key={finding.id}>
@@ -150,17 +168,19 @@ function ActionableFindingRows({ findings }: { findings: OptimizeFinding[] }) {
               aria-expanded={expanded}
               onClick={() => setExpandedId(current => current === finding.id ? null : finding.id)}
             >
+              <span className="opt-finding-rank">{String(index + 1).padStart(2, '0')}</span>
               <span className={`opt-impact opt-impact-${finding.severity}`}>
                 <span aria-hidden="true">{IMPACT_ICON[finding.severity]}</span>
                 {finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1)}
               </span>
               <span className="opt-finding-titlewrap">
                 <b className="opt-finding-title">{finding.title}</b>
+                <span className="opt-finding-preview">{finding.explanation}</span>
                 {finding.trend === 'improving' && (
                   <span className="opt-trend opt-trend-improving">improving<span aria-hidden="true"> ↓</span></span>
                 )}
               </span>
-              <span className="opt-finding-savings">{formatUsd(finding.estimatedSavingsUSD)}</span>
+              <span className="opt-finding-savings">{finding.estimatedSavingsUSD > 0 ? formatUsd(finding.estimatedSavingsUSD) : '—'}</span>
               <span className="opt-finding-tokens">{formatCompact(finding.tokensSaved)} tokens</span>
               <span className="opt-finding-chevron" aria-hidden="true">›</span>
             </button>
@@ -203,7 +223,7 @@ function FindingRows({ findings, empty }: { findings: Finding[]; empty: string }
             <span aria-hidden="true">{IMPACT_ICON[finding.impact]}</span>
             {finding.impact.charAt(0).toUpperCase() + finding.impact.slice(1)}
           </span>
-          <span className="opt-finding-savings">{formatUsd(finding.savingsUSD)}</span>
+          <span className="opt-finding-savings">{finding.savingsUSD > 0 ? formatUsd(finding.savingsUSD) : '—'}</span>
         </div>
       ))}
     </div>
@@ -220,7 +240,7 @@ function YieldRows({
   empty: string
 }) {
   if (!report.data) {
-    return <EmptyNote>{report.error ? 'Yield data is unavailable right now.' : 'Scanning session outcomes…'}</EmptyNote>
+    return <EmptyNote>{report.error ? 'Outcome data is unavailable right now.' : 'Reviewing session outcomes…'}</EmptyNote>
   }
 
   const rows = report.data.details.filter(row => row.category === category)
@@ -259,5 +279,5 @@ function YieldRows({
 }
 
 function FixesRows({ data }: { data: MenubarPayload }) {
-  return <FindingRows findings={data.optimize.topFindings} empty="No fixes in this range yet." />
+  return <FindingRows findings={data.optimize.topFindings} empty="No quick fixes in this range." />
 }

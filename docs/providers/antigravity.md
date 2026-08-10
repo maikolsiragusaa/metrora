@@ -40,7 +40,7 @@ while `agy` is still alive, without prompts or local working-directory paths.
 It also attempts a best-effort RPC snapshot for full response metadata.
 
 The installed command resolves a persistent `metrora` executable from `PATH`.
-The historical `codeburn` alias remains an accepted fallback for compatible
+The historical `metrora` alias remains an accepted fallback for compatible
 existing installations, and running the install command again repairs an older
 Metrora-owned hook that points at a stale alias or build path. Remove the hook
 with:
@@ -58,7 +58,7 @@ Protobuf. Cascade and response objects map to `ParsedProviderCall` directly.
 
 ## Caching
 
-Custom file cache at `$CODEBURN_CACHE_DIR/antigravity-results.json` (defaults to `~/.cache/codeburn/`). These retained names are compatibility identifiers. The cache is also used as the data source when the RPC endpoint is unavailable, not just as an optimization. Bumping the cache version forces a recompute.
+Custom file cache at `$METRORA_CACHE_DIR/antigravity-results.json` (defaults to `~/.cache/metrora/`). These retained names are compatibility identifiers. The cache is also used as the data source when the RPC endpoint is unavailable, not just as an optimization. Bumping the cache version forces a recompute.
 
 ## Deduplication
 

@@ -132,7 +132,7 @@ describe('buildOtlpPayload', () => {
     expect(payload.resourceSpans).toHaveLength(1)
     // Protocol attribute retained for backward-compatible remote ingestion.
     expect(payload.resourceSpans[0]!.resource.attributes).toEqual([
-      { key: 'codeburn.device_id', value: { stringValue: expect.stringMatching(/^[0-9a-f]{16}$/) } },
+      { key: 'metrora.device_id', value: { stringValue: expect.stringMatching(/^[0-9a-f]{16}$/) } },
     ])
 
     const spans = payload.resourceSpans[0]!.scopeSpans[0]!.spans
@@ -313,7 +313,7 @@ describe('ledger', () => {
     const { readLedger } = await import('../src/sync/ledger.js')
     const { mkdirSync, writeFileSync } = await import('fs')
     const { join } = await import('path')
-    const dir = join(process.env.HOME!, '.cache', 'codeburn')
+    const dir = join(process.env.HOME!, '.cache', 'metrora')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'sync-ledger.json'), '{"truncated mid-wri')
     expect(readLedger()).toEqual([])

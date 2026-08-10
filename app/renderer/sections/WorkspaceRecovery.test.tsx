@@ -8,6 +8,7 @@ import { WorkspaceContent } from './Workspace'
 
 const bridge = vi.hoisted(() => ({
   getWorkspaceStatus: vi.fn(),
+  retryWorkspaceStatus: vi.fn(),
   inspectWorkspaceStatus: vi.fn(),
   createWorkspace: vi.fn(),
   pauseWorkspaceProduction: vi.fn(),
@@ -19,7 +20,7 @@ const bridge = vi.hoisted(() => ({
 }))
 const showToast = vi.hoisted(() => vi.fn())
 
-vi.mock('../lib/ipc', () => ({ metrora: bridge, codeburn: bridge }))
+vi.mock('../lib/ipc', () => ({ metrora: bridge }))
 vi.mock('../lib/toast', () => ({ showToast }))
 
 function overview(): MenubarPayload {
@@ -73,6 +74,8 @@ function snapshot(state: 'ready' | 'quarantined' = 'ready'): DesktopWorkspaceSna
     },
     evidence: {
       state,
+      integrity: state === 'quarantined' ? 'quarantined' : 'verified',
+      compatibility: state === 'quarantined' ? 'quarantined' : 'canonical',
       pendingEventCount: state === 'ready' ? 0 : 1,
       unbatchedEventCount: state === 'ready' ? 0 : 1,
       acknowledgedEventCount: 0,
@@ -80,7 +83,23 @@ function snapshot(state: 'ready' | 'quarantined' = 'ready'): DesktopWorkspaceSna
       quarantinedEventCount: state === 'quarantined' ? 1 : 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: state === 'ready' ? 0 : 1,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: state === 'ready' ? 0 : 1,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: state === 'quarantined' ? ['Evidence requires review.'] : [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: state === 'quarantined' ? { allowed: false, reason: 'quarantined-evidence' } : { allowed: true, reason: null },
+      batchSign: state === 'quarantined' ? { allowed: false, reason: 'quarantined-evidence' } : { allowed: true, reason: null },
+      canonicalExport: state === 'quarantined' ? { allowed: false, reason: 'quarantined-evidence' } : { allowed: true, reason: null },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: true, reason: null },
     },
     privacy: {
       networkRequired: false,
@@ -106,6 +125,8 @@ function pendingAvailability(): DesktopWorkspaceAvailability {
   const value = snapshot()
   value.evidence = {
     state: 'blocked',
+    integrity: 'unverified',
+    compatibility: 'uninspected',
     pendingEventCount: 0,
     unbatchedEventCount: 0,
     acknowledgedEventCount: 0,
@@ -113,7 +134,23 @@ function pendingAvailability(): DesktopWorkspaceAvailability {
     quarantinedEventCount: 0,
     pendingBatchCount: 0,
     acknowledgedBatchCount: 0,
+    storage: {
+      canonicalEventCount: 0,
+      historicalEventCount: 0,
+      canonicalUnbatchedEventCount: 0,
+      historicalUnbatchedEventCount: 0,
+      canonicalBatchCount: 0,
+      historicalBatchCount: 0,
+    },
     blockers: ['Full local evidence inspection is pending.'],
+  }
+  value.capabilities = {
+    inspection: { allowed: true, reason: null },
+    reviewedProduction: { allowed: false, reason: 'inspection-pending' },
+    batchSign: { allowed: false, reason: 'inspection-pending' },
+    canonicalExport: { allowed: false, reason: 'inspection-pending' },
+    recovery: { allowed: true, reason: null },
+    productionLifecycle: { allowed: false, reason: 'inspection-pending' },
   }
   return {
     availability: 'ready',
@@ -128,6 +165,7 @@ describe('Workspace recovery controls', () => {
     for (const mock of Object.values(bridge)) mock.mockReset()
     showToast.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(availability())
+    bridge.retryWorkspaceStatus.mockResolvedValue(availability())
     bridge.inspectWorkspaceStatus.mockResolvedValue(availability())
   })
 
@@ -160,7 +198,7 @@ describe('Workspace recovery controls', () => {
 
     render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
 
-    const button = await screen.findByRole('button', { name: 'Check & recover local state' })
+    const button = await screen.findByRole('button', { name: 'Check & recover' })
     expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
     fireEvent.click(button)
 
@@ -204,7 +242,7 @@ describe('Workspace recovery controls', () => {
     render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
 
     expect(await screen.findByTestId('workspace-evidence-inspection-error')).toBeInTheDocument()
-    const recover = screen.getByRole('button', { name: 'Check & recover local state' })
+    const recover = screen.getByRole('button', { name: 'Check & recover' })
     expect(recover).toBeEnabled()
     fireEvent.click(recover)
 
@@ -232,11 +270,11 @@ describe('Workspace recovery controls', () => {
 
     render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
 
-    const recover = await screen.findByRole('button', { name: 'Check & recover local state' })
+    const recover = await screen.findByRole('button', { name: 'Check & recover' })
     expect(recover).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
 
     fireEvent.click(recover)
     await waitFor(() => expect(bridge.recoverWorkspaceState).toHaveBeenCalledWith())
@@ -244,8 +282,8 @@ describe('Workspace recovery controls', () => {
     expect(await screen.findByTestId('workspace-recovery-summary')).toHaveTextContent(
       'Recovery: Blocked · invalid-evidence',
     )
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
     expect(showToast).toHaveBeenCalledWith(
       'Local evidence remains blocked. Nothing was deleted or reset.',
       'error',

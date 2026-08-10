@@ -285,14 +285,14 @@ describe('doctor is inert', () => {
       discoverSessions: async () => [{ path: '/tmp/x', project: 'p', provider: 'spy' }],
       createSessionParser: () => ({
         async *parse() {
-          flagDuringParse = process.env['CODEBURN_SUPPRESS_CACHE_WRITES']
+          flagDuringParse = process.env['METRORA_SUPPRESS_CACHE_WRITES']
         },
       }),
     })
-    delete process.env['CODEBURN_SUPPRESS_CACHE_WRITES']
+    delete process.env['METRORA_SUPPRESS_CACHE_WRITES']
     await collectDoctorReport('spy', { providers: [spy], cache: emptyCache() })
     expect(flagDuringParse).toBe('1')
-    expect(process.env['CODEBURN_SUPPRESS_CACHE_WRITES']).toBeUndefined()
+    expect(process.env['METRORA_SUPPRESS_CACHE_WRITES']).toBeUndefined()
   })
 
   it('never sample-parses a provider whose parse spawns processes (antigravity)', async () => {
@@ -314,17 +314,17 @@ describe('doctor is inert', () => {
     expect(row.candidatesFound).toBe(1)
   })
 
-  it('does not blame CODEBURN_CACHE_DIR for an empty provider', async () => {
-    const prev = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = '/tmp/some-cache'
+  it('does not blame METRORA_CACHE_DIR for an empty provider', async () => {
+    const prev = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = '/tmp/some-cache'
     try {
       const empty = fakeProvider({ name: 'antigravity' })
       const report = await collectDoctorReport('antigravity', { providers: [empty], cache: emptyCache() })
       const row = only(report, 'antigravity')
-      expect(row.verdict).not.toContain('CODEBURN_CACHE_DIR')
+      expect(row.verdict).not.toContain('METRORA_CACHE_DIR')
     } finally {
-      if (prev === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = prev
+      if (prev === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = prev
     }
   })
 })

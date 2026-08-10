@@ -24,7 +24,7 @@ function daysAgo(n: number): string {
 }
 
 async function writeJournal(records: unknown[]): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'codeburn-act-report-'))
+  const root = await mkdtemp(join(tmpdir(), 'metrora-act-report-'))
   roots.push(root)
   const actionsDir = join(root, 'actions')
   await mkdir(actionsDir, { recursive: true })
@@ -390,7 +390,7 @@ describe('round-down discipline', () => {
 describe('archive realized delta', () => {
   it('measures per-item definition tokens times sessions and detects un-archive', async () => {
     const at = daysAgo(10)
-    const kept = join(tmpdir(), 'codeburn-act-report-absent-skill-xyz') // absent -> not reverted
+    const kept = join(tmpdir(), 'metrora-act-report-absent-skill-xyz') // absent -> not reverted
     const base = { windowDays: 14, capturedAt: at, estimatedTokens: 160, sessions: 28, metrics: { 'skill-a': 80, 'skill-b': 80 } }
     const rec: ActionRecord = {
       id: 'ar1', at, kind: 'archive-skill', findingId: 'unused-skills',

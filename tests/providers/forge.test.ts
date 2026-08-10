@@ -198,6 +198,28 @@ describe('forge provider', () => {
     expect(calls).toEqual([])
   })
 
+  it('retains cache-only assistant usage', async () => {
+    if (!isSqliteAvailable()) return
+
+    const dbPath = createForgeDb()
+    const context = {
+      messages: [
+        { message: { text: { role: 'Assistant', model: 'claude-opus-4-6' } }, usage: {
+          prompt_tokens: { actual: 100 }, completion_tokens: { actual: 0 }, cached_tokens: { actual: 100 },
+        } },
+      ],
+    }
+    withTestDb(dbPath, db => insertConversationRow(db, { context: JSON.stringify(context) }))
+
+    const provider = createForgeProvider(dbPath)
+    const sources = await provider.discoverSessions()
+    const calls = await collect(provider.createSessionParser(sources[0]!, new Set()))
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.inputTokens).toBe(0)
+    expect(calls[0]!.cacheReadInputTokens).toBe(100)
+  })
+
   it('parses multiple assistant messages with the nearest previous user prompt', async () => {
     if (!isSqliteAvailable()) return
 

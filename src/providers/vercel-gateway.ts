@@ -83,31 +83,38 @@ function createParser(
       for (const row of rows) {
         const day = row.day ?? ''
         const model = row.model ?? 'unknown'
-        const costUSD = row.total_cost ?? 0
+        const sourceCost = typeof row.total_cost === 'number' && Number.isFinite(row.total_cost) ? row.total_cost : undefined
+        const costUSD = sourceCost ?? 0
         const inputTokens = row.input_tokens ?? 0
         const outputTokens = row.output_tokens ?? 0
-        if (costUSD === 0 && inputTokens === 0 && outputTokens === 0) continue
+        const cacheReadTokens = row.cached_input_tokens ?? 0
+        const cacheWriteTokens = row.cache_creation_input_tokens ?? 0
+        const reasoningTokens = row.reasoning_tokens ?? 0
+        if (sourceCost === undefined && inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && reasoningTokens === 0) continue
 
-        const deduplicationKey = `vercel-gateway:${day}:${model}`
-        if (seenKeys.has(deduplicationKey)) continue
-        seenKeys.add(deduplicationKey)
+        const rowKey = `vercel-gateway:${day}:${model}`
+        if (seenKeys.has(rowKey)) continue
+        seenKeys.add(rowKey)
 
+        // The report is aggregate evidence at day + model grain. Parsed calls
+        // have no multiplicity contract, so request_count must not become N
+        // synthetic request identities with allocated token/cost precision.
         yield {
           provider: 'vercel-gateway',
           model,
           inputTokens,
           outputTokens,
-          cacheCreationInputTokens: row.cache_creation_input_tokens ?? 0,
-          cacheReadInputTokens: row.cached_input_tokens ?? 0,
+          cacheCreationInputTokens: cacheWriteTokens,
+          cacheReadInputTokens: cacheReadTokens,
           cachedInputTokens: 0,
-          reasoningTokens: row.reasoning_tokens ?? 0,
+          reasoningTokens,
           webSearchRequests: 0,
           costUSD,
           tools: [],
           bashCommands: [],
           timestamp: day ? `${day}T12:00:00.000Z` : '',
           speed: 'standard',
-          deduplicationKey,
+          deduplicationKey: rowKey,
           userMessage: '',
           sessionId: `${day}:${model}`,
           project: source.project,

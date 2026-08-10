@@ -6,46 +6,9 @@ import { formatCost, formatTokens } from './format.js'
 import { createModelPricingCounts, observeModelPricing, summarizeModelPricing, type ModelPricingCounts, type ModelPricingSummary } from './model-pricing-summary.js'
 import { getProvider } from './providers/index.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
-
-export type ModelReportRow = {
-  provider: string
-  providerDisplayName: string
-  model: string
-  modelDisplayName: string
-  category: TaskCategory | null
-  /// Claude subagent label in byAgent mode; `(main)` for ordinary/non-Claude sessions.
-  agentType?: string | null
-  inputTokens: number
-  outputTokens: number
-  cacheWriteTokens: number
-  cacheReadTokens: number
-  totalTokens: number
-  costUSD: number
-  savingsUSD: number
-  savingsBaselineModel: string
-  calls: number
-  pricing: ModelPricingSummary
-  /// Codex credit consumption; null outside Codex or without a known rate.
-  credits: number | null
-  topCategory?: TaskCategory
-  topCategoryCost?: number
-  topCategoryShare?: number
-}
-
-export type AggregateOptions = {
-  byTask?: boolean
-  /// One row per (provider, model, agent). Mutually exclusive with `byTask`;
-  /// the caller enforces that. Non-Claude providers and ordinary sessions bucket
-  /// under `'(main)'`.
-  byAgent?: boolean
-  taskFilter?: TaskCategory
-  topN?: number
-  /// Threshold for the `cost`-based filter. The default `0.01` would
-  /// hide local-only models whose `costUSD` is 0 but `savingsUSD` is
-  /// meaningful. The implementation ORs in `savingsUSD >= minCost`
-  /// so saved-only rows still surface by default.
-  minCost?: number
-}
+import { providerHasSeparateReasoning, type ReasoningTokenSemantics } from './token-semantics.js'
+import type { AggregateOptions, ModelReportRow } from './models-report-types.js'
+export type { AggregateOptions, ModelReportRow } from './models-report-types.js'
 
 type Bucket = {
   provider: string
@@ -54,6 +17,8 @@ type Bucket = {
   agentType: string | null
   inputTokens: number
   outputTokens: number
+  reasoningTokens: number
+  reasoningSemantics: ReasoningTokenSemantics
   cacheWriteTokens: number
   cacheReadTokens: number
   costUSD: number
@@ -108,6 +73,8 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
               agentType,
               inputTokens: 0,
               outputTokens: 0,
+              reasoningTokens: 0,
+              reasoningSemantics: 'unavailable',
               cacheWriteTokens: 0,
               cacheReadTokens: 0,
               costUSD: 0,
@@ -119,7 +86,11 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
             buckets.set(key, bucket)
           }
           bucket.inputTokens += call.usage.inputTokens
-          bucket.outputTokens += call.usage.outputTokens + call.usage.reasoningTokens
+          bucket.outputTokens += call.usage.outputTokens
+          if (providerHasSeparateReasoning(call.provider)) {
+            bucket.reasoningTokens += call.usage.reasoningTokens
+            bucket.reasoningSemantics = 'separate'
+          }
           bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
           // The two cache-read fields are provider vocabularies for the same tokens.
           bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)
@@ -160,7 +131,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
   const rows: ModelReportRow[] = []
   for (const bucket of buckets.values()) {
     const meta = await resolveProvider(bucket.provider)
-    const total = bucket.inputTokens + bucket.outputTokens + bucket.cacheWriteTokens + bucket.cacheReadTokens
+    const total = bucket.inputTokens + bucket.outputTokens + bucket.reasoningTokens + bucket.cacheWriteTokens + bucket.cacheReadTokens
     const row: ModelReportRow = {
       provider: bucket.provider,
       providerDisplayName: meta.displayName,
@@ -170,6 +141,8 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
       agentType: bucket.agentType,
       inputTokens: bucket.inputTokens,
       outputTokens: bucket.outputTokens,
+      reasoningTokens: bucket.reasoningTokens,
+      reasoningSemantics: bucket.reasoningSemantics,
       cacheWriteTokens: bucket.cacheWriteTokens,
       cacheReadTokens: bucket.cacheReadTokens,
       totalTokens: total,
@@ -183,7 +156,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
         ? codexCredits(bucket.model, {
             inputTokens: bucket.inputTokens,
             cachedReadTokens: bucket.cacheReadTokens,
-            outputTokens: bucket.outputTokens,
+            outputTokens: bucket.outputTokens + bucket.reasoningTokens,
           })
         : null,
     }
@@ -274,7 +247,7 @@ type Column = {
   /// Drop priority. 0 = always shown; higher numbers get dropped first when
   /// the terminal is narrow.
   priority: number
-  key: 'provider' | 'model' | 'task' | 'input' | 'output' | 'cacheWrite' | 'cacheRead' | 'total' | 'cost' | 'saved'
+  key: 'provider' | 'model' | 'task' | 'input' | 'output' | 'reasoning' | 'cacheWrite' | 'cacheRead' | 'total' | 'cost' | 'saved'
 }
 
 type TableRenderOptions = {
@@ -294,7 +267,7 @@ function thirdColumnHeader(byTask: boolean, byAgent: boolean): string {
 
 const DROP_COLUMN_GROUPS: Array<Array<Column['key']>> = [
   ['cacheWrite', 'cacheRead'],
-  ['input', 'output'],
+  ['input', 'output', 'reasoning'],
   ['task'],
   ['saved'],
 ]
@@ -313,6 +286,7 @@ function defaultColumns(byTask: boolean, byAgent: boolean, showSaved: boolean): 
     { key: 'task',       header: thirdColumnHeader(byTask, byAgent),  align: 'left',  width: 8,  priority: 1 },
     { key: 'input',      header: 'Input',                      align: 'right', width: 6,  priority: 2 },
     { key: 'output',     header: 'Output',                     align: 'right', width: 6,  priority: 2 },
+    { key: 'reasoning',  header: 'Reasoning',                  align: 'right', width: 9,  priority: 2 },
     { key: 'cacheWrite', header: 'Cache Write',                align: 'right', width: 11, priority: 3 },
     { key: 'cacheRead',  header: 'Cache Read',                 align: 'right', width: 10, priority: 3 },
     { key: 'total',      header: 'Total',                      align: 'right', width: 6,  priority: 0 },
@@ -463,6 +437,7 @@ export function renderTable(
           : chalk.dim('-')
       case 'input':      return formatTokens(row.inputTokens)
       case 'output':     return formatTokens(row.outputTokens)
+      case 'reasoning':  return formatTokens(row.reasoningTokens ?? 0)
       case 'cacheWrite': return formatTokens(row.cacheWriteTokens)
       case 'cacheRead':  return formatTokens(row.cacheReadTokens)
       case 'total':      return formatTokens(row.totalTokens)
@@ -493,6 +468,7 @@ export function renderTable(
       (acc, r) => {
         acc.input += r.inputTokens
         acc.output += r.outputTokens
+        acc.reasoning += r.reasoningTokens ?? 0
         acc.cacheWrite += r.cacheWriteTokens
         acc.cacheRead += r.cacheReadTokens
         acc.total += r.totalTokens
@@ -500,7 +476,7 @@ export function renderTable(
         acc.savings += r.savingsUSD
         return acc
       },
-      { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0, cost: 0, savings: 0 },
+      { input: 0, output: 0, reasoning: 0, cacheWrite: 0, cacheRead: 0, total: 0, cost: 0, savings: 0 },
     )
     const cells = defaultColumns(byTask, byAgent, showSaved).map(col => {
       switch (col.key) {
@@ -509,6 +485,7 @@ export function renderTable(
         case 'task':       return ''
         case 'input':      return chalk.yellow(formatTokens(totals.input))
         case 'output':     return chalk.yellow(formatTokens(totals.output))
+        case 'reasoning':  return chalk.yellow(formatTokens(totals.reasoning))
         case 'cacheWrite': return chalk.yellow(formatTokens(totals.cacheWrite))
         case 'cacheRead':  return chalk.yellow(formatTokens(totals.cacheRead))
         case 'total':      return chalk.yellow.bold(formatTokens(totals.total))
@@ -590,6 +567,8 @@ export function renderJson(rows: ModelReportRow[]): string {
       topCategoryShare: r.topCategoryShare ?? null,
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
+      reasoningTokens: r.reasoningTokens ?? 0,
+      reasoningSemantics: r.reasoningSemantics ?? 'unavailable',
       cacheWriteTokens: r.cacheWriteTokens,
       cacheReadTokens: r.cacheReadTokens,
       totalTokens: r.totalTokens,
@@ -626,8 +605,8 @@ export function renderMarkdown(rows: ModelReportRow[], opts: { byTask?: boolean;
   const byAgent = opts.byAgent ?? false
   const showTotals = opts.showTotals ?? true
 
-  const header = ['Provider', 'Model', thirdColumnHeader(byTask, byAgent), 'Input', 'Output', 'Cache Write', 'Cache Read', 'Total', 'Cost', 'Saved']
-  const align = ['---', '---', '---', '---:', '---:', '---:', '---:', '---:', '---:', '---:']
+  const header = ['Provider', 'Model', thirdColumnHeader(byTask, byAgent), 'Input', 'Output', 'Reasoning', 'Cache Write', 'Cache Read', 'Total', 'Cost', 'Saved']
+  const align = ['---', '---', '---', '---:', '---:', '---:', '---:', '---:', '---:', '---:', '---:']
 
   const lines: string[] = []
   lines.push(`| ${header.join(' | ')} |`)
@@ -647,6 +626,7 @@ export function renderMarkdown(rows: ModelReportRow[], opts: { byTask?: boolean;
       taskCell,
       formatTokens(row.inputTokens),
       formatTokens(row.outputTokens),
+      formatTokens(row.reasoningTokens ?? 0),
       formatTokens(row.cacheWriteTokens),
       formatTokens(row.cacheReadTokens),
       formatTokens(row.totalTokens),
@@ -661,6 +641,7 @@ export function renderMarkdown(rows: ModelReportRow[], opts: { byTask?: boolean;
       (acc, r) => {
         acc.input += r.inputTokens
         acc.output += r.outputTokens
+        acc.reasoning += r.reasoningTokens ?? 0
         acc.cacheWrite += r.cacheWriteTokens
         acc.cacheRead += r.cacheReadTokens
         acc.total += r.totalTokens
@@ -668,7 +649,7 @@ export function renderMarkdown(rows: ModelReportRow[], opts: { byTask?: boolean;
         acc.savings += r.savingsUSD
         return acc
       },
-      { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0, cost: 0, savings: 0 },
+      { input: 0, output: 0, reasoning: 0, cacheWrite: 0, cacheRead: 0, total: 0, cost: 0, savings: 0 },
     )
     const totalCells = [
       '',
@@ -676,6 +657,7 @@ export function renderMarkdown(rows: ModelReportRow[], opts: { byTask?: boolean;
       '',
       `**${formatTokens(totals.input)}**`,
       `**${formatTokens(totals.output)}**`,
+      `**${formatTokens(totals.reasoning)}**`,
       `**${formatTokens(totals.cacheWrite)}**`,
       `**${formatTokens(totals.cacheRead)}**`,
       `**${formatTokens(totals.total)}**`,
@@ -694,10 +676,10 @@ export function renderCsv(rows: ModelReportRow[], opts: { byTask?: boolean; byAg
   // CSV intentionally repeats provider/model on every row so downstream
   // consumers can sort/filter without first reconstructing the grouping.
   const header = byAgent
-    ? ['provider', 'model', 'agent', 'input_tokens', 'output_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
+    ? ['provider', 'model', 'agent', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
     : byTask
-    ? ['provider', 'model', 'task', 'input_tokens', 'output_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
-    : ['provider', 'model', 'top_task', 'top_task_share', 'input_tokens', 'output_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
+    ? ['provider', 'model', 'task', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
+    : ['provider', 'model', 'top_task', 'top_task_share', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
   const lines: string[] = [header.join(',')]
   for (const r of rows) {
     const cells = byAgent
@@ -707,6 +689,7 @@ export function renderCsv(rows: ModelReportRow[], opts: { byTask?: boolean; byAg
           csvEscape(r.agentType ?? ''),
           String(r.inputTokens),
           String(r.outputTokens),
+          String(r.reasoningTokens ?? 0),
           String(r.cacheWriteTokens),
           String(r.cacheReadTokens),
           String(r.totalTokens),
@@ -722,6 +705,7 @@ export function renderCsv(rows: ModelReportRow[], opts: { byTask?: boolean; byAg
           r.category ? categoryLabel(r.category) : '',
           String(r.inputTokens),
           String(r.outputTokens),
+           String(r.reasoningTokens ?? 0),
           String(r.cacheWriteTokens),
           String(r.cacheReadTokens),
           String(r.totalTokens),
@@ -737,6 +721,7 @@ export function renderCsv(rows: ModelReportRow[], opts: { byTask?: boolean; byAg
           r.topCategoryShare !== undefined ? r.topCategoryShare.toFixed(4) : '',
           String(r.inputTokens),
           String(r.outputTokens),
+          String(r.reasoningTokens ?? 0),
           String(r.cacheWriteTokens),
           String(r.cacheReadTokens),
           String(r.totalTokens),

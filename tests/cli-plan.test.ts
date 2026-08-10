@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 
 import { describe, it, expect } from 'vitest'
 
-const CLI_PLAN_TIMEOUT_MS = 10_000
+const CLI_PLAN_TIMEOUT_MS = 30_000
 
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
@@ -16,6 +16,16 @@ function runCli(args: string[], home: string) {
       USERPROFILE: home, // os.homedir() uses USERPROFILE on Windows
       HOMEPATH: home,
       HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
+      CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      CODEX_HOME: join(home, '.codex'),
+      OPENCODE_DATA_DIR: join(home, '.local', 'share', 'opencode'),
     },
     encoding: 'utf-8',
   })

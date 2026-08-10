@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../lib/ipc', () => ({
-  codeburn: { platform: 'linux', arch: 'x64' },
+  metrora: { platform: 'linux', arch: 'x64' },
 }))
 
 import { directDownloadUrl, METRORA_RELEASES_URL, releasePageUrl, updateDownloadUrl } from './useUpdateStatus'

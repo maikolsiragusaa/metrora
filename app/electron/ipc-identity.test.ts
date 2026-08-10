@@ -14,13 +14,9 @@ vi.mock('electron', () => ({
 
 import { ipcChannelAliases, PROGRESS_CHANNEL, UPDATE_CHANNEL } from './main'
 
-describe('Metrora IPC compatibility', () => {
-  it('registers the canonical channel before the legacy alias', () => {
-    expect(ipcChannelAliases('codeburn:getOverview')).toEqual([
-      'metrora:getOverview',
-      'qovrion:getOverview',
-      'codeburn:getOverview',
-    ])
+describe('Metrora IPC identity', () => {
+  it('registers only the canonical channel', () => {
+    expect(ipcChannelAliases('metrora:getOverview')).toEqual(['metrora:getOverview'])
   })
 
   it('does not rewrite unrelated channels', () => {

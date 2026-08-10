@@ -48,6 +48,11 @@ describe('Kimi numeric context-tag normalization', () => {
     expect(getModelCosts('custom-model[preview]')).toBeNull()
   })
 
+  it('canonicalizes ISO date-pinned aliases without changing the displayed raw id', () => {
+    expect(getHistoricalPricingModelKey('gpt-5.4-2026-03-05')).toBe('gpt-5.4')
+    expect(getShortModelName('gpt-5.4-2026-03-05')).toBe('GPT-5.4')
+  })
+
   it('binds the daily accounting hash to the pricing lookup authority', () => {
     expect(getPriceOverridesConfigHash()).toContain(`lookup:${PRICING_LOOKUP_VERSION}`)
     expect(getDailyCacheConfigHash()).toContain(`lookup:${PRICING_LOOKUP_VERSION}`)

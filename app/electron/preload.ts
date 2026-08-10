@@ -14,10 +14,10 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 
 // The legacy IPC channel names remain behind this adapter until main-process
 // aliases are installed. Renderer code receives Metrora as the canonical bridge
-// immediately, while old windows/integrations can keep using window.codeburn.
+// immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean) => invoke('metrora:getOverview', period, provider, range, configSource, background),
+  getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean) => invoke('metrora:getOverview', period, provider, range, configSource, background, fresh),
   getPlans: (period: string) => invoke('metrora:getPlans', period),
   getActReport: () => invoke('metrora:getActReport'),
   getModels: (period: string, provider: string, byTask: boolean, range?: DateRange) => invoke('metrora:getModels', period, provider, byTask, range),
@@ -49,6 +49,7 @@ const bridge = {
   cliStatus: () => invoke('metrora:cliStatus'),
 
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
+  retryWorkspaceStatus: () => invoke('metrora:retryWorkspaceStatus'),
   inspectWorkspaceStatus: () => invoke('metrora:inspectWorkspaceStatus'),
   createWorkspace: (input: CreateWorkspaceInput) => invoke('metrora:createWorkspace', input),
   pauseWorkspaceProduction: () => invoke('metrora:pauseWorkspaceProduction'),
@@ -81,5 +82,3 @@ const bridge = {
 }
 
 contextBridge.exposeInMainWorld('metrora', bridge)
-contextBridge.exposeInMainWorld('qovrion', bridge)
-contextBridge.exposeInMainWorld('codeburn', bridge)

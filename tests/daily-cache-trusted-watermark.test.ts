@@ -100,7 +100,7 @@ beforeEach(async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-03T12:00:00.000Z'))
   root = join(tmpdir(), `metrora-daily-watermark-${Math.random().toString(36).slice(2)}`)
-  process.env['CODEBURN_CACHE_DIR'] = root
+  process.env['METRORA_CACHE_DIR'] = root
   await mkdir(root, { recursive: true })
 })
 

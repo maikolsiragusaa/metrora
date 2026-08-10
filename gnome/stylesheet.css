@@ -1,75 +1,75 @@
 /* ---- panel button ---- */
-.codeburn-panel {
+.metrora-panel {
   spacing: 4px;
 }
-.codeburn-flame {
+.metrora-flame {
   font-size: 14px;
 }
-.codeburn-label {
+.metrora-label {
   font-weight: 500;
   padding-left: 2px;
   padding-right: 2px;
 }
 
 /* ---- popup host ---- */
-.codeburn-menu {
+.metrora-menu {
   padding: 0;
 }
-.codeburn-host {
+.metrora-host {
   padding: 0;
   margin: 0;
   background: transparent;
   border: none;
 }
-.codeburn-host:hover,
-.codeburn-host:focus,
-.codeburn-host:active,
-.codeburn-host:selected {
+.metrora-host:hover,
+.metrora-host:focus,
+.metrora-host:active,
+.metrora-host:selected {
   background: transparent;
 }
-.codeburn-root {
+.metrora-root {
   width: 340px;
   height: 540px;
   padding: 0;
   spacing: 0;
 }
-.codeburn-scroll {
+.metrora-scroll {
   padding: 0;
 }
 
 /* ---- brand header ---- */
-.codeburn-brand-header {
+.metrora-brand-header {
   padding: 14px 16px 10px 16px;
   spacing: 2px;
 }
-.codeburn-brand-row {
+.metrora-brand-row {
   spacing: 0;
 }
-.codeburn-brand-primary {
+.metrora-brand-primary {
   font-weight: 700;
   font-size: 18px;
 }
-.codeburn-brand-accent {
+.metrora-brand-accent {
   font-weight: 700;
   font-size: 18px;
   color: #e8590c;
 }
-.codeburn-brand-subhead {
+.metrora-brand-subhead {
   font-size: 10.5px;
   opacity: 0.55;
 }
 
 /* ---- tab rows ---- */
-.codeburn-tab-row {
+.metrora-tab-row {
   padding: 4px 10px 8px 10px;
   spacing: 4px;
 }
-.codeburn-period-row {
+.metrora-period-row {
   padding-top: 0;
   padding-bottom: 10px;
 }
-.codeburn-tab,
-.codeburn-period {
+.metrora-tab,
+.metrora-period {
   padding: 5px 6px;
   border-radius: 6px;
   font-size: 11px;
@@ -79,22 +79,22 @@
   opacity: 0.7;
   transition-duration: 80ms;
 }
-.codeburn-tab:hover,
-.codeburn-period:hover {
+.metrora-tab:hover,
+.metrora-period:hover {
   background: rgba(232, 89, 12, 0.08);
   opacity: 1;
 }
-.codeburn-tab-active,
-.codeburn-period-active {
+.metrora-tab-active,
+.metrora-period-active {
   background: rgba(232, 89, 12, 0.18);
   color: #e8590c;
   opacity: 1;
   font-weight: 600;
 }
-.codeburn-agent-scroll {
+.metrora-agent-scroll {
   padding: 0;
 }
-.codeburn-agent-badge {
+.metrora-agent-badge {
   padding: 3px 10px;
   border-radius: 10px;
   background: rgba(232, 89, 12, 0.12);
@@ -104,128 +104,128 @@
 }
 
 /* ---- hero ---- */
-.codeburn-hero {
+.metrora-hero {
   padding: 4px 16px 10px 16px;
   spacing: 2px;
 }
-.codeburn-hero-top {
+.metrora-hero-top {
   spacing: 6px;
 }
-.codeburn-hero-dot {
+.metrora-hero-dot {
   width: 6px;
   height: 6px;
   border-radius: 3px;
   background-color: #e8590c;
   margin-top: 7px;
 }
-.codeburn-hero-label {
+.metrora-hero-label {
   font-size: 11px;
   opacity: 0.65;
   font-weight: 500;
 }
-.codeburn-hero-amount {
+.metrora-hero-amount {
   font-size: 28px;
   font-weight: 700;
   color: #f2701c;
 }
-.codeburn-hero-meta {
+.metrora-hero-meta {
   font-size: 11px;
   opacity: 0.6;
 }
 
 /* ---- activity section ---- */
-.codeburn-section-title {
+.metrora-section-title {
   font-weight: 600;
   font-size: 11px;
   opacity: 0.6;
   padding-bottom: 2px;
 }
 /* ---- table headers ---- */
-.codeburn-table-header {
+.metrora-table-header {
   spacing: 6px;
   padding: 2px 0 4px 0;
 }
-.codeburn-th {
+.metrora-th {
   font-size: 10px;
   font-weight: 600;
   opacity: 0.45;
 }
-.codeburn-th-cost {
+.metrora-th-cost {
   min-width: 64px;
 }
-.codeburn-th-turns {
+.metrora-th-turns {
   min-width: 40px;
 }
-.codeburn-th-calls {
+.metrora-th-calls {
   min-width: 50px;
 }
 
-.codeburn-activity-rows {
+.metrora-activity-rows {
   spacing: 0;
 }
-.codeburn-activity-row {
+.metrora-activity-row {
   spacing: 3px;
   padding: 6px 0;
 }
-.codeburn-activity-top {
+.metrora-activity-top {
   spacing: 6px;
 }
-.codeburn-activity-name {
+.metrora-activity-name {
   font-size: 11.5px;
   font-weight: 500;
   min-width: 120px;
 }
-.codeburn-activity-cost {
+.metrora-activity-cost {
   font-size: 11.5px;
   font-family: monospace;
   font-weight: 600;
   color: #f2701c;
   min-width: 64px;
 }
-.codeburn-activity-turns {
+.metrora-activity-turns {
   font-size: 10.5px;
   font-family: monospace;
   opacity: 0.6;
   min-width: 40px;
 }
-.codeburn-activity-oneshot {
+.metrora-activity-oneshot {
   font-size: 10.5px;
   font-family: monospace;
   color: #4ec972;
   min-width: 40px;
 }
-.codeburn-bar-track {
+.metrora-bar-track {
   height: 4px;
   border-radius: 2px;
   background-color: rgba(255, 255, 255, 0.08);
   width: 240px;
 }
-.codeburn-bar-fill {
+.metrora-bar-fill {
   height: 4px;
   border-radius: 2px;
   background-color: #e8590c;
 }
-.codeburn-empty {
+.metrora-empty {
   font-style: italic;
   opacity: 0.55;
   padding: 6px 0;
 }
 
 /* ---- loading skeleton ---- */
-.codeburn-loading {
+.metrora-loading {
   padding: 10px 16px;
   spacing: 10px;
 }
-.codeburn-skeleton-bar {
+.metrora-skeleton-bar {
   background-color: rgba(232, 89, 12, 0.15);
   border-radius: 4px;
 }
-.codeburn-light .codeburn-skeleton-bar {
+.metrora-light .metrora-skeleton-bar {
   background-color: rgba(232, 89, 12, 0.12);
 }
 
 /* ---- findings CTA ---- */
-.codeburn-findings {
+.metrora-findings {
   margin: 2px 16px 10px 16px;
   padding: 9px 11px;
   border-radius: 8px;
@@ -233,18 +233,18 @@
   border: none;
   transition-duration: 120ms;
 }
-.codeburn-findings:hover {
+.metrora-findings:hover {
   background: rgba(232, 89, 12, 0.2);
 }
-.codeburn-findings-inner {
+.metrora-findings-inner {
   spacing: 8px;
 }
-.codeburn-findings-count {
+.metrora-findings-count {
   font-size: 11.5px;
   font-weight: 600;
   color: #e8590c;
 }
-.codeburn-findings-savings {
+.metrora-findings-savings {
   font-size: 11.5px;
   font-weight: 500;
   color: #e8590c;
@@ -252,11 +252,11 @@
 }
 
 /* ---- footer ---- */
-.codeburn-footer {
+.metrora-footer {
   padding: 10px 12px;
   spacing: 6px;
 }
-.codeburn-footer-btn {
+.metrora-footer-btn {
   padding: 6px 10px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.05);
@@ -265,26 +265,26 @@
   font-weight: 500;
   transition-duration: 80ms;
 }
-.codeburn-footer-btn:hover {
+.metrora-footer-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-.codeburn-currency-box {
+.metrora-currency-box {
   spacing: 2px;
 }
-.codeburn-currency-btn {
+.metrora-currency-btn {
   font-family: monospace;
   min-width: 62px;
 }
-.codeburn-currency-picker {
+.metrora-currency-picker {
   background: rgba(30, 30, 30, 0.95);
   border-radius: 8px;
   padding: 4px;
   height: 180px;
 }
-.codeburn-currency-list {
+.metrora-currency-list {
   spacing: 1px;
 }
-.codeburn-currency-item {
+.metrora-currency-item {
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 11px;
@@ -292,33 +292,33 @@
   background: transparent;
   border: none;
 }
-.codeburn-currency-item:hover {
+.metrora-currency-item:hover {
   background: rgba(232, 89, 12, 0.12);
 }
-.codeburn-currency-item-active {
+.metrora-currency-item-active {
   background: rgba(232, 89, 12, 0.2);
   color: #e8590c;
   font-weight: 600;
 }
-.codeburn-footer-cta {
+.metrora-footer-cta {
   background: #bf4808;
   color: #ffffff;
 }
-.codeburn-footer-cta:hover {
+.metrora-footer-cta:hover {
   background: #e8590c;
 }
-.codeburn-updated {
+.metrora-updated {
   font-size: 10px;
   opacity: 0.45;
   padding: 0 16px 10px 16px;
 }
 
 /* ---- insight pills row ---- */
-.codeburn-insight-row {
+.metrora-insight-row {
   padding: 4px 10px 8px 10px;
   spacing: 4px;
 }
-.codeburn-insight-pill {
+.metrora-insight-pill {
   padding: 4px 4px;
   border-radius: 6px;
   font-size: 10.5px;
@@ -328,11 +328,11 @@
   opacity: 0.65;
   transition-duration: 80ms;
 }
-.codeburn-insight-pill:hover {
+.metrora-insight-pill:hover {
   background: rgba(232, 89, 12, 0.08);
   opacity: 1;
 }
-.codeburn-insight-pill-active {
+.metrora-insight-pill-active {
   background: rgba(232, 89, 12, 0.18);
   color: #e8590c;
   opacity: 1;
@@ -340,120 +340,120 @@
 }
 
 /* ---- token histogram chart ---- */
-.codeburn-chart {
+.metrora-chart {
   padding: 0 16px 10px 16px;
   spacing: 4px;
 }
-.codeburn-chart-header {
+.metrora-chart-header {
   spacing: 6px;
 }
-.codeburn-chart-label {
+.metrora-chart-label {
   font-weight: 600;
   font-size: 11px;
   opacity: 0.6;
 }
-.codeburn-chart-total {
+.metrora-chart-total {
   font-family: monospace;
   font-size: 11px;
   opacity: 0.7;
   color: #e8590c;
 }
-.codeburn-chart-bars {
+.metrora-chart-bars {
   spacing: 2px;
   height: 52px;
 }
-.codeburn-chart-col {
+.metrora-chart-col {
   height: 52px;
 }
-.codeburn-chart-spacer {
+.metrora-chart-spacer {
   background: transparent;
 }
-.codeburn-chart-bar {
+.metrora-chart-bar {
   background-color: #e8590c;
   border-radius: 2px 2px 0 0;
 }
-.codeburn-chart-bar-hover {
+.metrora-chart-bar-hover {
   background-color: #f2701c;
 }
-.codeburn-chart-total-hover {
+.metrora-chart-total-hover {
   font-weight: 600;
 }
-.codeburn-divider {
+.metrora-divider {
   height: 1px;
   background-color: rgba(255, 255, 255, 0.08);
   margin: 4px 16px;
 }
 
 /* ---- trend, pulse, stats, kv rows ---- */
-.codeburn-content {
+.metrora-content {
   padding: 6px 16px 10px 16px;
   spacing: 6px;
 }
-.codeburn-trend-row,
-.codeburn-kv-row {
+.metrora-trend-row,
+.metrora-kv-row {
   padding: 4px 0;
   spacing: 8px;
 }
-.codeburn-trend-date,
-.codeburn-kv-label {
+.metrora-trend-date,
+.metrora-kv-label {
   font-size: 11.5px;
   font-weight: 500;
 }
-.codeburn-trend-cost,
-.codeburn-kv-value {
+.metrora-trend-cost,
+.metrora-kv-value {
   font-family: monospace;
   font-size: 11.5px;
   font-weight: 600;
   color: #f2701c;
 }
-.codeburn-trend-calls {
+.metrora-trend-calls {
   font-size: 10.5px;
   opacity: 0.6;
   min-width: 62px;
 }
 
 /* ---- pulse tiles ---- */
-.codeburn-pulse-row {
+.metrora-pulse-row {
   spacing: 6px;
   padding: 4px 0;
 }
-.codeburn-pulse-tile {
+.metrora-pulse-tile {
   padding: 10px 8px;
   border-radius: 8px;
   background: rgba(232, 89, 12, 0.08);
   spacing: 2px;
 }
-.codeburn-pulse-value {
+.metrora-pulse-value {
   font-size: 16px;
   font-weight: 700;
   color: #e8590c;
   font-family: monospace;
 }
-.codeburn-pulse-label {
+.metrora-pulse-label {
   font-size: 10px;
   opacity: 0.6;
 }
 
 /* ---- models rows ---- */
-.codeburn-models-rows {
+.metrora-models-rows {
   spacing: 0;
   padding-top: 4px;
 }
-.codeburn-model-row {
+.metrora-model-row {
   spacing: 8px;
   padding: 6px 0;
 }
-.codeburn-model-name {
+.metrora-model-name {
   font-size: 11.5px;
   min-width: 120px;
 }
-.codeburn-model-cost {
+.metrora-model-cost {
   font-family: monospace;
   font-size: 11.5px;
   color: #f2701c;
   min-width: 64px;
 }
-.codeburn-model-calls {
+.metrora-model-calls {
   font-family: monospace;
   font-size: 10.5px;
   opacity: 0.6;
@@ -461,13 +461,13 @@
 }
 
 /* ---- settings gear button ---- */
-.codeburn-prefs-btn {
+.metrora-prefs-btn {
   padding: 6px 8px;
   font-size: 14px;
 }
 
 /* ---- budget warning ---- */
-.codeburn-budget-warning {
+.metrora-budget-warning {
   color: #e5a50a;
   font-weight: bold;
   font-size: 11.5px;
@@ -475,136 +475,136 @@
 }
 
 /* ---- dark theme ---- */
-.codeburn-dark {
+.metrora-dark {
   background-color: rgba(30, 30, 30, 0.98);
   color: #e0e0e0;
   border-radius: 12px;
 }
-.codeburn-dark .codeburn-brand-primary {
+.metrora-dark .metrora-brand-primary {
   color: #ffffff;
 }
-.codeburn-dark .codeburn-brand-subhead {
+.metrora-dark .metrora-brand-subhead {
   color: rgba(255, 255, 255, 0.55);
 }
-.codeburn-dark .codeburn-hero-label,
-.codeburn-dark .codeburn-hero-meta {
+.metrora-dark .metrora-hero-label,
+.metrora-dark .metrora-hero-meta {
   color: rgba(255, 255, 255, 0.65);
 }
-.codeburn-dark .codeburn-section-title,
-.codeburn-dark .codeburn-th,
-.codeburn-dark .codeburn-chart-label {
+.metrora-dark .metrora-section-title,
+.metrora-dark .metrora-th,
+.metrora-dark .metrora-chart-label {
   color: rgba(255, 255, 255, 0.5);
 }
-.codeburn-dark .codeburn-activity-name,
-.codeburn-dark .codeburn-model-name,
-.codeburn-dark .codeburn-trend-date,
-.codeburn-dark .codeburn-kv-label {
+.metrora-dark .metrora-activity-name,
+.metrora-dark .metrora-model-name,
+.metrora-dark .metrora-trend-date,
+.metrora-dark .metrora-kv-label {
   color: #e0e0e0;
 }
-.codeburn-dark .codeburn-activity-turns,
-.codeburn-dark .codeburn-model-calls,
-.codeburn-dark .codeburn-trend-calls {
+.metrora-dark .metrora-activity-turns,
+.metrora-dark .metrora-model-calls,
+.metrora-dark .metrora-trend-calls {
   color: rgba(255, 255, 255, 0.5);
 }
-.codeburn-dark .codeburn-footer-btn {
+.metrora-dark .metrora-footer-btn {
   background: rgba(255, 255, 255, 0.08);
   color: #e0e0e0;
 }
-.codeburn-dark .codeburn-footer-btn:hover {
+.metrora-dark .metrora-footer-btn:hover {
   background: rgba(255, 255, 255, 0.14);
 }
-.codeburn-dark .codeburn-currency-picker {
+.metrora-dark .metrora-currency-picker {
   background: rgba(20, 20, 20, 0.98);
 }
-.codeburn-dark .codeburn-currency-item {
+.metrora-dark .metrora-currency-item {
   color: #e0e0e0;
 }
-.codeburn-dark .codeburn-tab,
-.codeburn-dark .codeburn-period,
-.codeburn-dark .codeburn-insight-pill {
+.metrora-dark .metrora-tab,
+.metrora-dark .metrora-period,
+.metrora-dark .metrora-insight-pill {
   color: rgba(255, 255, 255, 0.7);
 }
-.codeburn-dark .codeburn-updated {
+.metrora-dark .metrora-updated {
   color: rgba(255, 255, 255, 0.45);
 }
 
 /* ---- light theme ---- */
-.codeburn-light {
+.metrora-light {
   background-color: rgba(255, 255, 255, 0.98);
   color: #1a1a1a;
   border-radius: 12px;
 }
-.codeburn-light .codeburn-brand-primary {
+.metrora-light .metrora-brand-primary {
   color: #1a1a1a;
 }
-.codeburn-light .codeburn-brand-subhead {
+.metrora-light .metrora-brand-subhead {
   color: rgba(0, 0, 0, 0.5);
 }
-.codeburn-light .codeburn-hero-label,
-.codeburn-light .codeburn-hero-meta {
+.metrora-light .metrora-hero-label,
+.metrora-light .metrora-hero-meta {
   color: rgba(0, 0, 0, 0.6);
 }
-.codeburn-light .codeburn-hero-amount {
+.metrora-light .metrora-hero-amount {
   color: #bf4808;
 }
-.codeburn-light .codeburn-section-title,
-.codeburn-light .codeburn-th,
-.codeburn-light .codeburn-chart-label {
+.metrora-light .metrora-section-title,
+.metrora-light .metrora-th,
+.metrora-light .metrora-chart-label {
   color: rgba(0, 0, 0, 0.45);
 }
-.codeburn-light .codeburn-activity-name,
-.codeburn-light .codeburn-model-name,
-.codeburn-light .codeburn-trend-date,
-.codeburn-light .codeburn-kv-label {
+.metrora-light .metrora-activity-name,
+.metrora-light .metrora-model-name,
+.metrora-light .metrora-trend-date,
+.metrora-light .metrora-kv-label {
   color: #1a1a1a;
 }
-.codeburn-light .codeburn-activity-cost,
-.codeburn-light .codeburn-model-cost,
-.codeburn-light .codeburn-trend-cost,
-.codeburn-light .codeburn-kv-value {
+.metrora-light .metrora-activity-cost,
+.metrora-light .metrora-model-cost,
+.metrora-light .metrora-trend-cost,
+.metrora-light .metrora-kv-value {
   color: #bf4808;
 }
-.codeburn-light .codeburn-activity-turns,
-.codeburn-light .codeburn-model-calls,
-.codeburn-light .codeburn-trend-calls {
+.metrora-light .metrora-activity-turns,
+.metrora-light .metrora-model-calls,
+.metrora-light .metrora-trend-calls {
   color: rgba(0, 0, 0, 0.5);
 }
-.codeburn-light .codeburn-activity-oneshot {
+.metrora-light .metrora-activity-oneshot {
   color: #1b7a35;
 }
-.codeburn-light .codeburn-bar-track {
+.metrora-light .metrora-bar-track {
   background-color: rgba(0, 0, 0, 0.08);
 }
-.codeburn-light .codeburn-bar-fill {
+.metrora-light .metrora-bar-fill {
   background-color: #bf4808;
 }
-.codeburn-light .codeburn-chart-bar {
+.metrora-light .metrora-chart-bar {
   background-color: #bf4808;
 }
-.codeburn-light .codeburn-footer-btn {
+.metrora-light .metrora-footer-btn {
   background: rgba(0, 0, 0, 0.06);
   color: #1a1a1a;
 }
-.codeburn-light .codeburn-footer-btn:hover {
+.metrora-light .metrora-footer-btn:hover {
   background: rgba(0, 0, 0, 0.1);
 }
-.codeburn-light .codeburn-currency-picker {
+.metrora-light .metrora-currency-picker {
   background: rgba(245, 245, 245, 0.98);
 }
-.codeburn-light .codeburn-currency-item {
+.metrora-light .metrora-currency-item {
   color: #1a1a1a;
 }
-.codeburn-light .codeburn-tab,
-.codeburn-light .codeburn-period,
-.codeburn-light .codeburn-insight-pill {
+.metrora-light .metrora-tab,
+.metrora-light .metrora-period,
+.metrora-light .metrora-insight-pill {
   color: rgba(0, 0, 0, 0.65);
 }
-.codeburn-light .codeburn-pulse-tile {
+.metrora-light .metrora-pulse-tile {
   background: rgba(232, 89, 12, 0.1);
 }
-.codeburn-light .codeburn-updated {
+.metrora-light .metrora-updated {
   color: rgba(0, 0, 0, 0.4);
 }
-.codeburn-light .codeburn-divider {
+.metrora-light .metrora-divider {
   background-color: rgba(0, 0, 0, 0.1);
 }

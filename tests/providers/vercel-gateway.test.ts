@@ -64,19 +64,81 @@ describe('vercel-gateway provider', () => {
     }
     expect(calls).toHaveLength(1)
     expect(calls[0]?.costUSD).toBe(1.25)
+    expect(calls[0]?.inputTokens).toBe(1000)
+    expect(calls[0]?.outputTokens).toBe(200)
+    expect(calls[0]?.deduplicationKey).toBe('vercel-gateway:2026-06-01:anthropic/claude-sonnet-4.6')
     expect(calls[0]?.model).toBe('anthropic/claude-sonnet-4.6')
+  })
+
+  it('retains cache/reasoning-only report rows', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        results: [{
+          day: '2026-06-02',
+          model: 'gpt-5',
+          total_cost: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cached_input_tokens: 120,
+          cache_creation_input_tokens: 8,
+          reasoning_tokens: 4,
+          request_count: 400,
+        }],
+      }),
+    })) as typeof fetch
+
+    const range = {
+      start: new Date('2026-06-02T00:00:00.000Z'),
+      end: new Date('2026-06-02T23:59:59.999Z'),
+    }
+    const calls = []
+    for await (const call of vercelGateway.createSessionParser({
+      path: 'vercel-ai-gateway:report', project: 'Vercel AI Gateway', provider: 'vercel-gateway',
+    }, new Set(), range).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.cacheReadInputTokens).toBe(120)
+    expect(calls[0]?.cacheCreationInputTokens).toBe(8)
+    expect(calls[0]?.reasoningTokens).toBe(4)
+  })
+
+  it('retains one bounded aggregate row for explicit free usage', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        results: [{
+          day: '2026-06-03',
+          model: 'deepseek/deepseek-v4-flash-free',
+          total_cost: 0,
+          request_count: 2,
+        }],
+      }),
+    })) as typeof fetch
+
+    const range = {
+      start: new Date('2026-06-03T00:00:00.000Z'),
+      end: new Date('2026-06-03T23:59:59.999Z'),
+    }
+    const calls = []
+    for await (const call of vercelGateway.createSessionParser({
+      path: 'vercel-ai-gateway:report', project: 'Vercel AI Gateway', provider: 'vercel-gateway',
+    }, new Set(), range).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costUSD).toBe(0)
   })
 })
 
 describe('vercel-gateway end-to-end (parseAllSessions network path)', () => {
   const originalFetch = globalThis.fetch
   const originalKey = process.env.AI_GATEWAY_API_KEY
-  const originalCacheDir = process.env.CODEBURN_CACHE_DIR
+  const originalCacheDir = process.env.METRORA_CACHE_DIR
   let cacheDir: string
 
   beforeEach(async () => {
     cacheDir = await mkdtemp(join(tmpdir(), 'cb-vercel-cache-'))
-    process.env.CODEBURN_CACHE_DIR = cacheDir
+    process.env.METRORA_CACHE_DIR = cacheDir
     process.env.AI_GATEWAY_API_KEY = 'test-key'
     clearSessionCache()
   })
@@ -85,8 +147,8 @@ describe('vercel-gateway end-to-end (parseAllSessions network path)', () => {
     globalThis.fetch = originalFetch
     if (originalKey === undefined) delete process.env.AI_GATEWAY_API_KEY
     else process.env.AI_GATEWAY_API_KEY = originalKey
-    if (originalCacheDir === undefined) delete process.env.CODEBURN_CACHE_DIR
-    else process.env.CODEBURN_CACHE_DIR = originalCacheDir
+    if (originalCacheDir === undefined) delete process.env.METRORA_CACHE_DIR
+    else process.env.METRORA_CACHE_DIR = originalCacheDir
     clearSessionCache()
     vi.restoreAllMocks()
     await rm(cacheDir, { recursive: true, force: true })

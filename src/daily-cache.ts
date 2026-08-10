@@ -108,9 +108,19 @@ function applyRetention(days: core.DailyEntry[], newestDate: string): core.Daily
   return days.filter(day => day.date >= cutoff)
 }
 
-async function parseIsAuthoritative(sessionComplete: () => boolean): Promise<boolean> {
+async function parseIsAuthoritative(
+  sessionComplete: () => boolean,
+  allowDegradedSourceReconciliation = false,
+): Promise<boolean> {
   if (!sessionComplete()) return false
   if (sessionComplete !== isSessionHydrationComplete) return true
+  // A parser/model-identity migration is an explicit one-time re-derivation
+  // from the freshly published session cache. The live source set may change
+  // again while it is being checked (especially SQLite/WAL and active JSONL),
+  // but rejecting this migration would leave the old model population in the
+  // durable cache forever. Ordinary future hydrations keep the stricter
+  // fingerprint authority below.
+  if (allowDegradedSourceReconciliation) return true
   return await currentSessionSnapshotCompleteness('all') === 'complete'
 }
 
@@ -124,6 +134,7 @@ export async function ensureCacheHydrated(
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const yesterdayEnd = new Date(todayStart.getTime() - 1)
   const yesterdayStr = core.toDateString(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
+  const allowDegradedSourceReconciliation = /modelIdentity=v[23](?:\u0002|$)/.test(savingsConfigHash)
 
   return core.withDailyCacheLock(async () => {
     let cache = await loadDailyCache()
@@ -163,7 +174,7 @@ export async function ensureCacheHydrated(
       if (backfillStart.getTime() <= yesterdayEnd.getTime()) {
         freshDays = aggregateDays(await parseSessions({ start: backfillStart, end: yesterdayEnd }))
       }
-      const parseWasComplete = await parseIsAuthoritative(sessionComplete)
+      const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
       const days = parseWasComplete
         ? core.mergeDayEntries(freshDays, baseline, true)
         : core.mergeDayEntries(baseline, freshDays, false)
@@ -193,7 +204,7 @@ export async function ensureCacheHydrated(
     if (gapStart.getTime() <= yesterdayEnd.getTime()) {
       const priorWatermark = cache.lastComputedDate
       const projects = await parseSessions({ start: gapStart, end: yesterdayEnd })
-      const parseWasComplete = await parseIsAuthoritative(sessionComplete)
+      const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
       cache = addNewDays(cache, aggregateDays(projects), yesterdayStr)
       cache = withTrust({
         ...cache,
@@ -201,7 +212,7 @@ export async function ensureCacheHydrated(
         complete: parseWasComplete,
       }, parseWasComplete)
       await saveDailyCache(cache)
-    } else if (cache.complete !== true && await parseIsAuthoritative(sessionComplete)) {
+    } else if (cache.complete !== true && await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)) {
       cache = withTrust({ ...cache, complete: true }, true)
       await saveDailyCache(cache)
     }

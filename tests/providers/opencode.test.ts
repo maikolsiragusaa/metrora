@@ -76,6 +76,7 @@ function insertSession(
 
 type MessageFixture = {
   role: string
+  providerID?: string
   modelID?: string
   cost?: number
   tokens?: {
@@ -182,7 +183,7 @@ skipUnlessSqlite('opencode provider - session discovery', () => {
     expect(sessions[0]!.path).toBe(`${dbPath}:sess-1`)
   })
 
-  it('excludes archived sessions', async () => {
+  it('discovers archived root sessions because they retain valid usage evidence', async () => {
     const dbPath = createTestDb(tmpDir)
     withTestDb(dbPath, (db) => {
       insertSession(db, 'sess-archived', { archived: 1700000001000 })
@@ -190,7 +191,8 @@ skipUnlessSqlite('opencode provider - session discovery', () => {
 
     const provider = createOpenCodeProvider(tmpDir)
     const sessions = await provider.discoverSessions()
-    expect(sessions).toHaveLength(0)
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.path).toContain('sess-archived')
   })
 
   it('excludes child sessions', async () => {
@@ -300,6 +302,7 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
 
       insertMessage(db, 'msg-2', 'sess-1', 1700000001000, {
         role: 'assistant',
+        providerID: 'opencode-go',
         modelID: 'claude-opus-4-6',
         cost: 0.05,
         tokens: { input: 100, output: 200, reasoning: 50, cache: { read: 500, write: 300 } },
@@ -319,6 +322,7 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.provider).toBe('opencode')
+    expect(call.modelProvider).toBe('opencode-go')
     expect(call.model).toBe('claude-opus-4-6')
     expect(call.inputTokens).toBe(100)
     expect(call.outputTokens).toBe(200)
@@ -563,6 +567,25 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls[0]!.costUSD).not.toBe(999.99)
   })
 
+  it('preserves route-specific source cost when the provider id is explicit', async () => {
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, 'sess-1')
+      insertMessage(db, 'msg-1', 'sess-1', 1700000001000, {
+        role: 'assistant',
+        providerID: 'opencode-go',
+        modelID: 'deepseek-v4-pro',
+        cost: 63.281744016,
+        tokens: { input: 100, output: 200, reasoning: 50, cache: { read: 500, write: 0 } },
+      })
+    })
+
+    const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'sess-1')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.modelProvider).toBe('opencode-go')
+    expect(calls[0]!.costUSD).toBe(63.281744016)
+  })
+
   it('handles missing tokens field gracefully', async () => {
     const dbPath = createTestDb(tmpDir)
     withTestDb(dbPath, (db) => {
@@ -756,7 +779,7 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls[2]!.bashCommands).toEqual(['npm'])
   })
 
-  it('does not include archived child sessions in the root subtree', async () => {
+  it('includes archived child sessions in the root subtree', async () => {
     const dbPath = createTestDb(tmpDir)
     withTestDb(dbPath, (db) => {
       insertSession(db, 'root')
@@ -779,8 +802,11 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
 
     const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'root')
 
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.deduplicationKey).toBe('opencode:root:msg-root-assistant')
+    expect(calls).toHaveLength(2)
+    expect(calls.map(call => call.deduplicationKey)).toEqual([
+      'opencode:root:msg-root-assistant',
+      'opencode:archived-child:msg-child-assistant',
+    ])
   })
 
   it('joins multiple text parts in user messages', async () => {

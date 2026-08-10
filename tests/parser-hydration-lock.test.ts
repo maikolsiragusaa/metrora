@@ -16,6 +16,10 @@ import { sessionCachePath } from '../src/session-cache.js'
 let tmpHome: string
 let cacheDir: string
 
+// PID 1 is not a portable "live process" sentinel (notably on Windows), so
+// use the test runner's parent process for foreign-lock fixtures.
+const liveForeignPid = process.ppid
+
 function lockPath(): string {
   return join(cacheDir, 'hydrating.lock')
 }
@@ -52,8 +56,8 @@ beforeEach(async () => {
   tmpHome = await mkdtemp(join(tmpdir(), 'cb-hydlock-home-'))
   cacheDir = await mkdtemp(join(tmpdir(), 'cb-hydlock-cache-'))
   process.env['CLAUDE_CONFIG_DIR'] = tmpHome
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
-  process.env['CODEBURN_DESKTOP_SESSIONS_DIR'] = join(tmpHome, 'desktop-sessions')
+  process.env['METRORA_CACHE_DIR'] = cacheDir
+  process.env['METRORA_DESKTOP_SESSIONS_DIR'] = join(tmpHome, 'desktop-sessions')
 })
 
 afterEach(async () => {
@@ -84,9 +88,9 @@ describe('parseAllSessions hydration lock', () => {
     await unlink(sessionCachePath())
     clearSessionCache()
 
-    // A fresh lock held by another live process (pid 1 is always alive and is
-    // not us). The cold parse must block on it.
-    await writeFile(lockPath(), JSON.stringify({ pid: 1, at: Date.now() }))
+    // A fresh lock held by another live process. The cold parse must block on
+    // it.
+    await writeFile(lockPath(), JSON.stringify({ pid: liveForeignPid, at: Date.now() }))
 
     let resolved = false
     const promise = parseAllSessions(undefined, 'claude').then(r => { resolved = true; return r })
@@ -140,8 +144,8 @@ describe('parseAllSessions hydration lock', () => {
     await writeClaudeSession(50)
     await mkdir(cacheDir, { recursive: true })
 
-    // A fresh lock held by a live process (pid 1): the cold parse starts waiting.
-    await writeFile(lockPath(), JSON.stringify({ pid: 1, at: Date.now() }))
+    // A fresh lock held by a live process: the cold parse starts waiting.
+    await writeFile(lockPath(), JSON.stringify({ pid: liveForeignPid, at: Date.now() }))
     let resolved = false
     const promise = parseAllSessions(undefined, 'claude').then(r => { resolved = true; return r })
     await delay(60)

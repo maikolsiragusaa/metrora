@@ -39,10 +39,10 @@ function emptyDay(date: string, cost = 0, calls = 0): DailyEntry {
   }
 }
 
-const TMP_CACHE_ROOT = join(tmpdir(), `codeburn-cache-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+const TMP_CACHE_ROOT = join(tmpdir(), `metrora-cache-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
 
 beforeEach(() => {
-  process.env['CODEBURN_CACHE_DIR'] = TMP_CACHE_ROOT
+  process.env['METRORA_CACHE_DIR'] = TMP_CACHE_ROOT
 })
 
 afterEach(async () => {

@@ -54,7 +54,7 @@ describe('yield attribution for overlapping sessions (issue #641)', () => {
   let repoDir: string
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), 'codeburn-yield-overlap-'))
+    repoDir = await mkdtemp(join(tmpdir(), 'metrora-yield-overlap-'))
     git(repoDir, ['init', '-b', 'main'])
     git(repoDir, ['config', 'user.email', 'test@example.com'])
     git(repoDir, ['config', 'user.name', 'Test'])

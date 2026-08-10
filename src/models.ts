@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { homedir } from 'os'
+import { getMetroraCacheDir } from './product-paths.js'
 import snapshotData from './data/litellm-snapshot.json'
 import fallbackData from './data/pricing-fallback.json'
 import { fetchWithTimeout } from './fetch-utils.js'
@@ -144,14 +144,9 @@ function getLowercasePricingIndex(): Map<string, ModelCosts> {
   return lowercasePricingIndex
 }
 
-function getCacheDir(): string {
-  if (process.env['CODEBURN_CACHE_DIR']) return process.env['CODEBURN_CACHE_DIR']
-  return join(homedir(), '.cache', 'codeburn')
-}
+const getCacheDir = (): string => getMetroraCacheDir()
 
-function getCachePath(): string {
-  return join(getCacheDir(), 'litellm-pricing.json')
-}
+const getCachePath = (): string => join(getCacheDir(), 'litellm-pricing.json')
 
 /// Clamp a per-token rate to a sane non-negative value. Defense in depth
 /// against a tampered LiteLLM JSON shipping a negative `input_cost_per_token`,
@@ -533,7 +528,7 @@ export function getPriceOverridesConfigHash(): string {
 // Absolute directory prefixes whose sessions are routed through a
 // subscription-backed proxy (config `proxyPaths`). Stored already-normalized so
 // the per-project match is a cheap compare. Set during preAction. See
-// CodeburnConfig.proxyPaths for the product rationale.
+// MetroraConfig.proxyPaths for the product rationale.
 let userProxyPaths: string[] = []
 
 /// Normalize a path for prefix comparison: backslashes -> forward slashes
@@ -592,7 +587,7 @@ function resolveAlias(model: string): string {
 function getCanonicalName(model: string): string {
   return model
     .replace(/@.*$/, '')       // strip pin: claude-sonnet-4-6@20250929 -> claude-sonnet-4-6
-    .replace(/-\d{8}$/, '')   // strip date: claude-sonnet-4-20250514 -> claude-sonnet-4
+    .replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '') // strip date pins
     .replace(/^[^/]+\//, '').replace(/\[(?:\d+(?:\.\d+)?(?:k|m|g)?)\]$/i, '') // provider prefix + numeric context tag
 }
 
@@ -616,7 +611,7 @@ function stripKnownPricingVariantSuffix(model: string): string | null {
 
 export function getModelCosts(model: string): ModelCosts | null {
   // Try with provider prefix preserved (azure/gpt-5.4, openrouter/anthropic/claude-opus-4.6)
-  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const withPrefix = model.replace(/@.*$/, '').replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '')
   const canonicalName = getCanonicalName(model)
   const canonical = resolveAlias(canonicalName)
 
@@ -683,7 +678,7 @@ const warnedUnknownModels = new Set<string>()
 
 /// Heuristic for "this looks like a local model that will never be in LiteLLM's
 /// pricing JSON". We suppress the unknown-model warning for these because the
-/// "update codeburn" advice can't help — local Ollama models, llama.cpp tags,
+/// "update metrora" advice can't help — local Ollama models, llama.cpp tags,
 /// LM Studio loads, etc. are billed locally and don't have public pricing.
 /// Users still get $0 in cost reports for them (correct — local inference is
 /// effectively free); the warning was just noise.
@@ -694,6 +689,9 @@ function looksLikeLocalModel(name: string): boolean {
   if (/[-_](q[2-8](_[a-z0-9]+)?|bf16|fp16|gguf|f16|f32)$/i.test(name)) return true
   return false
 }
+
+/// A free route is usage identity, not a reason to discard the call or apply paid rates.
+export const isExplicitFreeModel = (model: string): boolean => /(?:^|[-:])free(?:$|[-:])/i.test(model.trim())
 
 export interface UnpricedModelUsage {
   model: string
@@ -717,7 +715,7 @@ function hasBillableRate(costs: ModelCosts): boolean {
 // resolve AFTER table hits and so cannot prove the $0 was intentional; a
 // zero-rate stub shadowed by one still gets flagged (the honest direction).
 function exactPriceOverrideFor(model: string): ModelCosts | null {
-  const withPrefix = model.replace(/@.*$/, '').replace(/-\d{8}$/, '')
+  const withPrefix = model.replace(/@.*$/, '').replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '')
   const canonicalName = getCanonicalName(model)
   const canonical = resolveAlias(canonicalName)
   return getPriceOverrideExact(model, withPrefix, canonicalName, canonical)
@@ -746,6 +744,7 @@ function exactPriceOverrideFor(model: string): ModelCosts | null {
 /// denominator — otherwise a 95%-ollama user reads high coverage while every
 /// genuinely cost-bearing call is unpriced.
 export function isExpectedFreeModel(model: string): boolean {
+  if (isExplicitFreeModel(model)) return true
   if (looksLikeLocalModel(model)) return true
   if (getLocalSavingsBaseline(model)) return true
   const costs = getModelCosts(model)
@@ -758,7 +757,8 @@ export function isExpectedFreeModel(model: string): boolean {
 /// that mapping is a presentation/accounting overlay whose API-equivalent
 /// baseline remains separately priced and may change without rewriting settled
 /// history.
-export function explicitZeroReasonForModel(model: string): 'local-inference' | 'manual-reviewed' | undefined {
+export function explicitZeroReasonForModel(model: string): 'free-route' | 'local-inference' | 'manual-reviewed' | undefined {
+  if (isExplicitFreeModel(model)) return 'free-route'
   if (looksLikeLocalModel(model)) return 'local-inference'
   const costs = getModelCosts(model)
   if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return 'manual-reviewed'
@@ -789,7 +789,7 @@ export function findUnpricedModels(
 function shouldWarnAboutUnknownModel(name: string): boolean {
   if (!name || name === '<synthetic>') return false
   if (warnedUnknownModels.has(name)) return false
-  // Suppress for local/quantized models — the "update codeburn" hint is
+  // Suppress for local/quantized models — the "update metrora" hint is
   // actively misleading there. Users who need cost visibility for local
   // inference can still set an alias via `metrora model-alias`.
   if (looksLikeLocalModel(name)) return false
@@ -797,8 +797,8 @@ function shouldWarnAboutUnknownModel(name: string): boolean {
   // dashboard) which made first launches look broken — three "no pricing
   // data" lines greet a user before the dashboard even draws. Now opt-in
   // via --verbose. The unknown model still costs $0 in reports; users who
-  // suspect missing models run `codeburn --verbose` to see the list.
-  if (process.env['CODEBURN_VERBOSE'] !== '1') return false
+  // suspect missing models run `metrora --verbose` to see the list.
+  if (process.env['METRORA_VERBOSE'] !== '1') return false
   return true
 }
 

@@ -182,7 +182,7 @@ beforeEach(async () => {
   tmpCache = await mkdtemp(join(tmpdir(), 'cb-parser-test-cache-'))
 
   process.env['HOME']               = tmpHome
-  process.env['CODEBURN_CACHE_DIR'] = tmpCache
+  process.env['METRORA_CACHE_DIR'] = tmpCache
 
   // Reset synthetic provider state
   _synthSources = []
@@ -208,9 +208,9 @@ describe('(a) copilot JSONL file-purge monotonic', () => {
     const sessionStateDir = join(tmpHome, 'session-state')
     await mkdir(sessionStateDir, { recursive: true })
 
-    vi.stubEnv('CODEBURN_COPILOT_SESSION_STATE_DIR', sessionStateDir)
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '1')
-    vi.stubEnv('CODEBURN_COPILOT_WS_STORAGE_DIR', join(tmpHome, 'no-ws'))
+    vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', sessionStateDir)
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
+    vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR', join(tmpHome, 'no-ws'))
 
     const eventsPath = await createJsonlSession(sessionStateDir, 'sess-del', 200)
 
@@ -239,10 +239,10 @@ describe.skipIf(!isSqliteAvailable())(
   () => {
     it('preserves total after one conversation is pruned from the OTel DB', async () => {
       const dbPath = join(tmpHome, 'agent-traces.db')
-      vi.stubEnv('CODEBURN_COPILOT_OTEL_DB', dbPath)
-      vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '')
-      vi.stubEnv('CODEBURN_COPILOT_SESSION_STATE_DIR', join(tmpHome, 'no-jsonl'))
-      vi.stubEnv('CODEBURN_COPILOT_WS_STORAGE_DIR',   join(tmpHome, 'no-ws'))
+      vi.stubEnv('METRORA_COPILOT_OTEL_DB', dbPath)
+      vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '')
+      vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', join(tmpHome, 'no-jsonl'))
+      vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR',   join(tmpHome, 'no-ws'))
 
       // DB with two conversations
       createOtelDb(dbPath)
@@ -278,10 +278,10 @@ describe.skipIf(!isSqliteAvailable())(
   () => {
     it('second parse of unchanged DB yields same total, not double', async () => {
       const dbPath = join(tmpHome, 'agent-traces.db')
-      vi.stubEnv('CODEBURN_COPILOT_OTEL_DB', dbPath)
-      vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '')
-      vi.stubEnv('CODEBURN_COPILOT_SESSION_STATE_DIR', join(tmpHome, 'no-jsonl'))
-      vi.stubEnv('CODEBURN_COPILOT_WS_STORAGE_DIR',   join(tmpHome, 'no-ws'))
+      vi.stubEnv('METRORA_COPILOT_OTEL_DB', dbPath)
+      vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '')
+      vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', join(tmpHome, 'no-jsonl'))
+      vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR',   join(tmpHome, 'no-ws'))
 
       createOtelDb(dbPath)
       insertOtelConv(dbPath, { spanId: 'dedup-s1', traceId: 'dedup-t1', convId: 'dedup-c1', model: 'gpt-4.1', input: 300, output: 30 })
@@ -428,9 +428,9 @@ describe('(f) durable orphans survive a parse-version bump', () => {
   it('keeps counting a pruned-source orphan after the provider fingerprint changes', async () => {
     const sessionStateDir = join(tmpHome, 'session-state')
     await mkdir(sessionStateDir, { recursive: true })
-    vi.stubEnv('CODEBURN_COPILOT_SESSION_STATE_DIR', sessionStateDir)
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '1')
-    vi.stubEnv('CODEBURN_COPILOT_WS_STORAGE_DIR', join(tmpHome, 'no-ws'))
+    vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', sessionStateDir)
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
+    vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR', join(tmpHome, 'no-ws'))
 
     // Parse once so the session is cached, then prune the source: the cache
     // entry becomes a durable orphan (its only record).

@@ -71,7 +71,7 @@ function getFactoryDir(): string {
 
 // Strip Droid-specific wrapper to get the model's display name.
 // e.g. "custom:GLM-5.1-[Proxy]-0" -> "GLM-5.1"
-// Cost lookup is handled by codeburn's existing calculateCost/getCanonicalName
+// Cost lookup is handled by metrora's existing calculateCost/getCanonicalName
 // which normalizes case and strips date suffixes automatically.
 function stripModelPrefix(raw: string): string {
   return raw

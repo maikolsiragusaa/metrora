@@ -148,9 +148,16 @@ See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERS
 
 ## Local files and compatibility
 
-The canonical command is `metrora`. The former `qovrion` command and inherited `codeburn` command remain temporary compatibility aliases so existing local state, scripts and integrations can migrate without abrupt breakage.
+The canonical command is `metrora`. Temporary inherited command aliases may
+continue to invoke the same implementation so existing local state, scripts
+and integrations can migrate without abrupt breakage. They are compatibility
+entry points only, not current product names.
 
-Fresh configuration paths use Metrora identity. Existing Qovrion/CodeBurn roots remain readable where required to avoid stranding user state. Some frozen v1 protocol fields, environment aliases and platform-specific integration identifiers also retain historical names; they are compatibility details, not current product names or distribution channels.
+Fresh configuration paths use Metrora identity. Existing legacy roots remain
+readable where required to avoid stranding user state. Some frozen v1 protocol
+fields, environment aliases and platform-specific integration identifiers also
+retain historical values; they are compatibility details, not current product
+names or distribution channels.
 
 Do not rename or delete compatibility state manually unless the relevant migration documentation explicitly instructs you to do so.
 

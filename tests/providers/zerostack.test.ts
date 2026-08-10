@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 import { createZerostackProvider } from '../../src/providers/zerostack.js'
+import { cachedCallToApiCall, providerCallToCachedCall } from '../../src/parser.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 
 let tmpDir: string
@@ -25,6 +26,9 @@ function session(opts: {
   workingDir?: string
   input?: number
   output?: number
+  totalCost?: number | null
+  cacheRead?: number
+  cacheWrite?: number
   updatedAt?: string
 } = {}) {
   return JSON.stringify({
@@ -39,7 +43,9 @@ function session(opts: {
     updated_at: opts.updatedAt ?? '2026-06-19T11:34:14.140631+00:00',
     total_input_tokens: opts.input ?? 34119,
     total_output_tokens: opts.output ?? 961,
-    total_cost: 0.015677835,
+    total_cost: Object.hasOwn(opts, 'totalCost') ? opts.totalCost : 0.015677835,
+    ...(Object.hasOwn(opts, 'cacheRead') ? { total_cached_input_tokens: opts.cacheRead } : {}),
+    ...(Object.hasOwn(opts, 'cacheWrite') ? { total_cache_creation_input_tokens: opts.cacheWrite } : {}),
     total_estimated_tokens: 446,
     model: opts.model ?? 'deepseek/deepseek-v4-pro',
     provider: opts.provider ?? 'openrouter',
@@ -94,18 +100,57 @@ describe('zerostack provider - parsing', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]!
     expect(call.model).toBe('deepseek/deepseek-v4-pro')
+    expect(call.modelProvider).toBe('openrouter')
     expect(call.inputTokens).toBe(34119)
     expect(call.outputTokens).toBe(961)
     expect(call.sessionId).toBe('sess-abc')
     expect(call.userMessage).toBe('hello, what is this repo about?')
     expect(call.timestamp).toBe('2026-06-19T11:34:14.140631+00:00')
     expect(call.costUSD).toBeGreaterThan(0)
+    expect(call.costUSD).toBe(0.015677835)
+    expect(call.costIsEstimated).toBe(true)
     expect(call.deduplicationKey).toContain('zerostack:')
+
+    const cached = providerCallToCachedCall(call)
+    expect(cached.provider).toBe('zerostack')
+    expect(cached.modelProvider).toBe('openrouter')
+    expect(cached.isEstimated).toBe(true)
+    expect(cached.costAssignment.kind).not.toBe('metered')
+    expect(cachedCallToApiCall(cached).costAssignment.kind).not.toBe('metered')
   })
 
-  it('skips sessions with zero tokens', async () => {
-    const path = await write('empty.json', session({ input: 0, output: 0 }))
+  it('ignores zero-token sessions with zero total cost', async () => {
+    const path = await write('empty.json', session({ input: 0, output: 0, totalCost: 0 }))
     expect(await parse(path)).toHaveLength(0)
+  })
+
+  it('preserves real token usage when total cost is zero', async () => {
+    const path = await write('free-usage.json', session({ input: 12, output: 8, totalCost: 0 }))
+    const calls = await parse(path)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ inputTokens: 12, outputTokens: 8, costIsEstimated: true })
+  })
+
+  it('retains positive explicit cost-only evidence', async () => {
+    const paidPath = await write('cost-only.json', session({ input: 0, output: 0, totalCost: 0.5 }))
+
+    const paid = await parse(paidPath)
+    expect(paid).toHaveLength(1)
+    expect(paid[0]!.costUSD).toBe(0.5)
+    expect(paid[0]!.costIsEstimated).toBe(true)
+  })
+
+  it('characterizes Zerostack cache counters without importing schema-only fields', async () => {
+    const path = await write('cache-fields.json', session({ cacheRead: 1234, cacheWrite: 567 }))
+    const calls = await parse(path)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      inputTokens: 34119,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    })
   })
 
   it('deduplicates across repeated parses', async () => {
@@ -116,7 +161,7 @@ describe('zerostack provider - parsing', () => {
   })
 
   it('prices unknown local models at zero without throwing', async () => {
-    const path = await write('local.json', session({ model: 'my-local-model', provider: 'ollama' }))
+    const path = await write('local.json', session({ model: 'my-local-model', provider: 'ollama', totalCost: null }))
     const calls = await parse(path)
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(0)

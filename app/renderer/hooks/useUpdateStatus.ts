@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { codeburn } from '../lib/ipc'
+import { metrora } from '../lib/ipc'
 import type { UpdateStatus } from '../lib/types'
 
 export const METRORA_RELEASES_URL = 'https://github.com/maikolsiragusaa/metrora/releases'
@@ -12,11 +12,11 @@ export const METRORA_RELEASES_URL = 'https://github.com/maikolsiragusaa/metrora/
 export function useUpdateStatus(): UpdateStatus | null {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   useEffect(() => {
-    if (typeof codeburn.getUpdateStatus !== 'function') return
+    if (typeof metrora.getUpdateStatus !== 'function') return
     let active = true
-    codeburn.getUpdateStatus().then(next => { if (active) setStatus(next) }).catch(() => {})
-    const unsubscribe = typeof codeburn.onUpdateStatus === 'function'
-      ? codeburn.onUpdateStatus(next => { if (active) setStatus(next) })
+    metrora.getUpdateStatus().then(next => { if (active) setStatus(next) }).catch(() => {})
+    const unsubscribe = typeof metrora.onUpdateStatus === 'function'
+      ? metrora.onUpdateStatus(next => { if (active) setStatus(next) })
       : undefined
     return () => { active = false; unsubscribe?.() }
   }, [])

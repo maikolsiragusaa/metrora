@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-UUID="codeburn@codeburn.dev"
+UUID="metrora@metrora.dev"
 INSTALL_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Installing CodeBurn GNOME extension..."
+echo "Installing Metrora GNOME extension..."
 
 # Compile GSettings schema
 echo "Compiling schemas..."

@@ -248,7 +248,7 @@ export function startCallbackServer(
     const tryListen = (ports: readonly number[], idx: number) => {
       if (idx >= ports.length) {
         clearTimeout(timer)
-        const err = new AuthError(`All callback ports (${ports.join(', ')}) are in use. Close other codeburn instances and retry.`)
+        const err = new AuthError(`All callback ports (${ports.join(', ')}) are in use. Close other metrora instances and retry.`)
         readyReject(err)
         reject(err)
         return

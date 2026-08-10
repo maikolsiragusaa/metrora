@@ -3,11 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { allProviderNames, getAllProviders } from '../src/providers/index.js'
 
 let homes: string[] = []
+vi.setConfig({ testTimeout: 30_000 })
 
 afterEach(async () => {
   while (homes.length > 0) {
@@ -17,7 +18,7 @@ afterEach(async () => {
 })
 
 async function makeHome(): Promise<string> {
-  const home = await mkdtemp(join(tmpdir(), 'codeburn-provider-cli-'))
+  const home = await mkdtemp(join(tmpdir(), 'metrora-provider-cli-'))
   homes.push(home)
   return home
 }
@@ -25,7 +26,24 @@ async function makeHome(): Promise<string> {
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: join(home, '.claude'), TZ: 'UTC' },
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      CODEX_HOME: join(home, '.codex'),
+      METRORA_CACHE_DIR: join(home, '.metrora-cache'),
+      METRORA_CONFIG_DIR: join(home, '.metrora-config'),
+      OPENCODE_DATA_DIR: join(home, '.opencode'),
+      TZ: 'UTC',
+    },
     encoding: 'utf-8',
     timeout: 30_000,
   })
@@ -48,7 +66,7 @@ describe('allProviderNames', () => {
   })
 })
 
-describe('codeburn --provider validation', () => {
+describe('metrora --provider validation', () => {
   it('rejects an unknown provider with a clear error and exit 1', async () => {
     const home = await makeHome()
     const res = runCli(['report', '--provider', 'claud', '-p', 'today'], home)

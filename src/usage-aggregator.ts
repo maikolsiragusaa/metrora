@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
-import { findUnpricedModels, getLocalModelSavingsConfigHash, getPriceOverridesConfigHash, getShortModelName, isExpectedFreeModel } from './models.js'
+import { findUnpricedModels, getShortModelName, isExpectedFreeModel } from './models.js'
 import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
 import { stat } from 'node:fs/promises'
@@ -14,17 +14,18 @@ import {
   sliceDayToProvider,
 } from './durable-project-reconciliation.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
+import { enrichModelsWithObservedPerformance } from './model-performance.js'
 import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
-import { getDaysInRange, ensureCacheHydrated, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
-import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
-import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
+import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { getDailyCacheConfigHash } from './daily-cache-config.js'
+export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
+import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
-
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
   const sessions = projects.flatMap(p => p.sessions)
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
@@ -86,21 +87,6 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
   }
 }
 
-export function getDailyCacheConfigHash(): string {
-  const savingsHash = getLocalModelSavingsConfigHash()
-  const overridesHash = getPriceOverridesConfigHash()
-  const accountingHash = overridesHash
-    ? `localModelSavings=${savingsHash}\u0002priceOverrides=${overridesHash}`
-    : savingsHash
-  // Daily entries store the runtime-visible cost, not only immutable
-  // per-call assignments. Switching historical/compare/legacy must
-  // therefore re-derive surviving source slices; otherwise a daily
-  // headline from one mode can be combined with model/project rows
-  // from another. Sourceless slices are still carried forward by the
-  // v14+ merge contract and remain conservatively legacy-frozen.
-  return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}\u0002${accountingHash}`
-}
-
 async function hydrateCache(): Promise<DailyCache> {
   try {
     return await ensureCacheHydrated(
@@ -123,7 +109,6 @@ async function hydrateCache(): Promise<DailyCache> {
     return emptyCache()
   }
 }
-
 export type PeriodInfo = { range: DateRange; label: string }
 export type AggregateOpts = {
   provider?: string
@@ -272,7 +257,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const rangeEndStr = toDateString(periodInfo.range.end)
   const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
 
-  const cache = await hydrateCache()
+  const cache = isSnapshotReadMode() ? await loadDailyCache() : await hydrateCache()
 
   // Today's live data always comes from an all-provider parse so the union (and
   // any per-provider slice of it) sees every provider's today. `todayAllDays` is
@@ -445,7 +430,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     (sum, r) => sum + (r.provider === 'codex' && r.credits != null ? r.credits : 0),
     0,
   )
-
+  currentData.models = enrichModelsWithObservedPerformance(currentData.models, scanProjects)
   // PROVIDERS
   // For .all: enumerate every provider with cost across the period (from cache) + installed-but-zero.
   // For specific: just this single provider with its scoped cost.
@@ -774,5 +759,5 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
-  return buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs, granularHistory)
+  return withReadFreshness(buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs, granularHistory), cache, effectivelyScoped)
 }

@@ -1,25 +1,71 @@
-/* Metrora visual identity v1 — Signal Grid */
+/* Metrora visual identity — graphite surfaces + restrained indigo signal.
+   Orange remains a warning color in the base design system; it is no longer the
+   product accent. Keep this layer small and semantic so components inherit the
+   identity instead of accumulating page-specific hex values. */
 :root {
-  --accent: #e8590c;
-  --accent-text: #bf4808;
-  --grad: var(--accent);
+  --accent: #5948d8;
+  --accent-text: #4d3bc6;
+  --grad: linear-gradient(135deg, #5948d8 0%, #7567e8 100%);
+  --canvas: #f6f7f9;
+  --bg: #f6f7f9;
+  --side: #f1f2f6;
+  --phead: #f7f7fa;
+  --hover: #f0effa;
+  --card-shadow: 0 1px 2px rgba(23, 25, 36, .045), 0 4px 14px rgba(23, 25, 36, .035);
+  --brand-boot: #101116;
+  --brand-boot-soft: #171720;
+  --brand-boot-ink: #f4f3f8;
+  --brand-boot-muted: #aaa6b8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #f2701c;
-    --accent-text: #f2701c;
+    --accent: #8e85ff;
+    --accent-text: #a39cff;
+    --grad: linear-gradient(135deg, #8177f4 0%, #9c94ff 100%);
+    --canvas: #0d0f13;
+    --bg: #0d0f13;
+    --side: #111318;
+    --panel: #15171c;
+    --phead: #191b21;
+    --line: #282b34;
+    --line2: #20232a;
+    --fill: #1d2027;
+    --hover: #20212c;
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, .24), 0 5px 18px rgba(0, 0, 0, .16);
   }
 }
 
 :root[data-theme='dark'] {
-  --accent: #f2701c;
-  --accent-text: #f2701c;
+  --accent: #8e85ff;
+  --accent-text: #a39cff;
+  --grad: linear-gradient(135deg, #8177f4 0%, #9c94ff 100%);
+  --canvas: #0d0f13;
+  --bg: #0d0f13;
+  --side: #111318;
+  --panel: #15171c;
+  --phead: #191b21;
+  --line: #282b34;
+  --line2: #20232a;
+  --fill: #1d2027;
+  --hover: #20212c;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, .24), 0 5px 18px rgba(0, 0, 0, .16);
 }
 
 :root[data-theme='light'] {
-  --accent: #e8590c;
-  --accent-text: #bf4808;
+  --accent: #5948d8;
+  --accent-text: #4d3bc6;
+  --grad: linear-gradient(135deg, #5948d8 0%, #7567e8 100%);
+  --canvas: #f6f7f9;
+  --bg: #f6f7f9;
+  --side: #f1f2f6;
+  --panel: #ffffff;
+  --phead: #f7f7fa;
+  --line: #e4e5eb;
+  --line2: #ececf1;
+  --fill: #f0f1f4;
+  --hover: #f0effa;
+  --card-shadow: 0 1px 2px rgba(23, 25, 36, .045), 0 4px 14px rgba(23, 25, 36, .035);
 }
 
 .metrora-mark {
@@ -35,4 +81,98 @@
 
 .app b {
   color: var(--ink);
+}
+
+/* Startup/onboarding use the same dark brand canvas in both themes. */
+.splash,
+.onboard {
+  background:
+    radial-gradient(70% 60% at 50% 38%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 74%),
+    linear-gradient(180deg, var(--brand-boot-soft), var(--brand-boot));
+}
+.splash-mark::before {
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 38%, transparent), transparent 68%);
+}
+.splash-word,
+.onboard-glyph { color: #9b93ff; }
+.splash-version,
+.splash-status-note,
+.onboard-body,
+.onboard-link { color: var(--brand-boot-muted); }
+.splash-status-line,
+.onboard-title,
+.onboard-consent { color: var(--brand-boot-ink); }
+.splash-status-note { opacity: .72; }
+
+.onboard-btn.primary {
+  background: #6657dc;
+  border-color: #6657dc;
+  color: #fff;
+}
+.onboard-btn.primary:hover { background: #7568e5; }
+.onboard-btn:focus-visible,
+.switch:focus-visible { outline-color: #9188ff; }
+.onboard-dot.on,
+.switch.on {
+  background: #6657dc;
+  border-color: #6657dc;
+}
+
+/* Make the main surfaces feel less like isolated spreadsheet boxes while
+   retaining dense information layouts. */
+.panel,
+.ov-card,
+.pr-card,
+.sessions-empty {
+  border-radius: 11px;
+}
+.panel:hover,
+.ov-card:hover {
+  box-shadow: var(--card-shadow), 0 8px 22px rgba(22, 22, 32, .055);
+}
+
+/* Progressive Spend flow keeps its height while the relationship graph is
+   computed, avoiding the impression of a late card popping into the page. */
+.spend-flow-panel { min-height: 310px; }
+.spend-flow-loading { min-height: 250px; display: flex; align-items: stretch; }
+.spend-flow-loading > * { width: 100%; }
+
+/* Insights intro: one calm decision surface before the detailed deterministic
+   evidence, not another KPI grid. */
+.opt-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, var(--panel)), var(--panel) 48%);
+  box-shadow: var(--card-shadow);
+}
+.opt-intro > div:first-child { min-width: 0; }
+.opt-intro strong { display: block; margin-top: 4px; font-size: 17px; letter-spacing: -.015em; }
+.opt-intro p { max-width: 660px; margin: 5px 0 0; color: var(--mut); font-size: var(--fs-meta); line-height: 1.5; }
+.opt-intro-kpi { flex: 0 0 auto; text-align: right; }
+.opt-intro-kpi > span,
+.opt-intro-kpi > small { display: block; color: var(--mut2); font-size: var(--fs-label); }
+.opt-intro-kpi > strong { color: var(--accent-text); font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+.opt-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 10px 14px; color: var(--mut); font-size: var(--fs-meta); }
+.opt-summary strong { color: var(--ink); }
+.opt-summary-secondary { color: var(--mut2); margin-left: auto; }
+.opt-finding-preview {
+  display: block;
+  max-width: 70ch;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--mut2);
+  font-size: var(--fs-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .opt-intro { align-items: flex-start; flex-direction: column; }
+  .opt-intro-kpi { text-align: left; }
 }

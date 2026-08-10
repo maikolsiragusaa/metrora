@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildPersistentCodeburnLookupPath,
+  buildPersistentMetroraLookupPath,
   formatGitHubReleaseLookupError,
   resolveLatestMenubarReleaseAssets,
   resolveMenubarReleaseAssets,
-  resolvePersistentCodeburnPathFromWhichOutput,
+  resolvePersistentMetroraPathFromWhichOutput,
   resolveProxyUrlForUrl,
   resolveVersionedMenubarReleaseAssets,
   shouldFallbackToReleaseApi,
@@ -20,25 +20,25 @@ describe('resolveMenubarReleaseAssets', () => {
     const release: ReleaseResponse = {
       tag_name: 'mac-v0.9.8',
       assets: [
-        asset('CodeBurnMenubar-dev.zip'),
-        asset('CodeBurnMenubar-dev.zip.sha256'),
-        asset('CodeBurnMenubar-v0.9.8.zip'),
-        asset('CodeBurnMenubar-v0.9.8.zip.sha256'),
+        asset('MetroraMenubar-dev.zip'),
+        asset('MetroraMenubar-dev.zip.sha256'),
+        asset('MetroraMenubar-v0.9.8.zip'),
+        asset('MetroraMenubar-v0.9.8.zip.sha256'),
       ],
     }
 
     const resolved = resolveMenubarReleaseAssets(release)
 
-    expect(resolved.zip.name).toBe('CodeBurnMenubar-v0.9.8.zip')
-    expect(resolved.checksum?.name).toBe('CodeBurnMenubar-v0.9.8.zip.sha256')
+    expect(resolved.zip.name).toBe('MetroraMenubar-v0.9.8.zip')
+    expect(resolved.checksum?.name).toBe('MetroraMenubar-v0.9.8.zip.sha256')
   })
 
   it('fails when a release only contains dev assets', () => {
     const release: ReleaseResponse = {
       tag_name: 'mac-v0.9.8',
       assets: [
-        asset('CodeBurnMenubar-dev.zip'),
-        asset('CodeBurnMenubar-dev.zip.sha256'),
+        asset('MetroraMenubar-dev.zip'),
+        asset('MetroraMenubar-dev.zip.sha256'),
       ],
     }
 
@@ -49,7 +49,7 @@ describe('resolveMenubarReleaseAssets', () => {
     const release: ReleaseResponse = {
       tag_name: 'mac-v0.9.8',
       assets: [
-        asset('CodeBurnMenubar-v0.9.8.zip'),
+        asset('MetroraMenubar-v0.9.8.zip'),
       ],
     }
 
@@ -61,14 +61,14 @@ describe('resolveMenubarReleaseAssets', () => {
       {
         tag_name: 'v0.9.9',
         assets: [
-          asset('codeburn-0.9.9.tgz'),
+          asset('metrora-0.9.9.tgz'),
         ],
       },
       {
         tag_name: 'mac-v0.9.8',
         assets: [
-          asset('CodeBurnMenubar-v0.9.8.zip'),
-          asset('CodeBurnMenubar-v0.9.8.zip.sha256'),
+          asset('MetroraMenubar-v0.9.8.zip'),
+          asset('MetroraMenubar-v0.9.8.zip.sha256'),
         ],
       },
     ]
@@ -76,20 +76,20 @@ describe('resolveMenubarReleaseAssets', () => {
     const resolved = resolveLatestMenubarReleaseAssets(releases)
 
     expect(resolved.release.tag_name).toBe('mac-v0.9.8')
-    expect(resolved.zip.name).toBe('CodeBurnMenubar-v0.9.8.zip')
+    expect(resolved.zip.name).toBe('MetroraMenubar-v0.9.8.zip')
   })
 
   it('builds direct release asset URLs from the CLI version', () => {
     const resolved = resolveVersionedMenubarReleaseAssets('0.9.15')
 
     expect(resolved.release.tag_name).toBe('mac-v0.9.15')
-    expect(resolved.zip.name).toBe('CodeBurnMenubar-v0.9.15.zip')
+    expect(resolved.zip.name).toBe('MetroraMenubar-v0.9.15.zip')
     expect(resolved.zip.browser_download_url).toBe(
-      'https://github.com/getagentseal/codeburn/releases/download/mac-v0.9.15/CodeBurnMenubar-v0.9.15.zip'
+      'https://github.com/maikolsiragusaa/metrora/releases/download/mac-v0.9.15/MetroraMenubar-v0.9.15.zip'
     )
-    expect(resolved.checksum.name).toBe('CodeBurnMenubar-v0.9.15.zip.sha256')
+    expect(resolved.checksum.name).toBe('MetroraMenubar-v0.9.15.zip.sha256')
     expect(resolved.checksum.browser_download_url).toBe(
-      'https://github.com/getagentseal/codeburn/releases/download/mac-v0.9.15/CodeBurnMenubar-v0.9.15.zip.sha256'
+      'https://github.com/maikolsiragusaa/metrora/releases/download/mac-v0.9.15/MetroraMenubar-v0.9.15.zip.sha256'
     )
   })
 
@@ -97,7 +97,7 @@ describe('resolveMenubarReleaseAssets', () => {
     const resolved = resolveVersionedMenubarReleaseAssets('v0.9.15')
 
     expect(resolved.release.tag_name).toBe('mac-v0.9.15')
-    expect(resolved.zip.name).toBe('CodeBurnMenubar-v0.9.15.zip')
+    expect(resolved.zip.name).toBe('MetroraMenubar-v0.9.15.zip')
   })
 
   it('falls back to the release API only for missing direct assets', () => {
@@ -123,29 +123,29 @@ describe('resolveMenubarReleaseAssets', () => {
   })
 
   it('preserves the caller PATH when building the persistent CLI lookup PATH', () => {
-    const lookupPath = buildPersistentCodeburnLookupPath('/Users/me/.nvm/versions/node/v22.13.0/bin:/usr/bin')
+    const lookupPath = buildPersistentMetroraLookupPath('/Users/me/.nvm/versions/node/v22.13.0/bin:/usr/bin')
 
     expect(lookupPath.split(':')).toContain('/Users/me/.nvm/versions/node/v22.13.0/bin')
-    expect(lookupPath.split(':')).toContain('/opt/homebrew/bin')
+    if (process.platform !== 'win32') expect(lookupPath.split(':')).toContain('/opt/homebrew/bin')
   })
 
-  it('selects a persistent codeburn binary when npx is first in which output', () => {
-    const resolved = resolvePersistentCodeburnPathFromWhichOutput([
-      '/Users/me/.npm/_npx/abcd/node_modules/.bin/codeburn',
-      '/Users/me/.nvm/versions/node/v22.13.0/bin/codeburn',
+  it('selects a persistent metrora binary when npx is first in which output', () => {
+    const resolved = resolvePersistentMetroraPathFromWhichOutput([
+      '/Users/me/.npm/_npx/abcd/node_modules/.bin/metrora',
+      '/Users/me/.nvm/versions/node/v22.13.0/bin/metrora',
     ].join('\n'))
 
-    expect(resolved).toBe('/Users/me/.nvm/versions/node/v22.13.0/bin/codeburn')
+    expect(resolved).toBe('/Users/me/.nvm/versions/node/v22.13.0/bin/metrora')
   })
 
   it('shows the install guidance instead of a raw env failure when only npx is available', () => {
-    expect(() => resolvePersistentCodeburnPathFromWhichOutput(
-      '/Users/me/.npm/_npx/abcd/node_modules/.bin/codeburn'
-    )).toThrow(/Install CodeBurn globally first/)
+    expect(() => resolvePersistentMetroraPathFromWhichOutput(
+      '/Users/me/.npm/_npx/abcd/node_modules/.bin/metrora'
+    )).toThrow(/Install Metrora globally first/)
   })
 
   it('uses HTTPS proxy for GitHub HTTPS downloads', () => {
-    const proxyUrl = resolveProxyUrlForUrl('https://api.github.com/repos/getagentseal/codeburn/releases', {
+    const proxyUrl = resolveProxyUrlForUrl('https://api.github.com/repos/maikolsiragusaa/metrora/releases', {
       HTTPS_PROXY: 'http://proxy.company.test:8080',
     })
 
@@ -153,7 +153,7 @@ describe('resolveMenubarReleaseAssets', () => {
   })
 
   it('bypasses proxy when NO_PROXY matches the download host', () => {
-    const proxyUrl = resolveProxyUrlForUrl('https://api.github.com/repos/getagentseal/codeburn/releases', {
+    const proxyUrl = resolveProxyUrlForUrl('https://api.github.com/repos/maikolsiragusaa/metrora/releases', {
       HTTPS_PROXY: 'http://proxy.company.test:8080',
       NO_PROXY: '.github.com',
     })

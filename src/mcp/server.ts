@@ -42,7 +42,7 @@ export function createServer(deps: { version: string; aggregate?: Aggregate }): 
     return p
   }
 
-  const server = new McpServer({ name: 'codeburn', version: deps.version }, { instructions: INSTRUCTIONS })
+  const server = new McpServer({ name: 'metrora', version: deps.version }, { instructions: INSTRUCTIONS })
 
   server.registerTool(
     'get_usage',

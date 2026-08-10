@@ -1,8 +1,8 @@
 {
   "name": "Metrora Monitor",
   "description": "Monitor local AI coding usage, tokens and costs with Metrora",
-  "uuid": "codeburn@codeburn.dev",
+  "uuid": "metrora@metrora.dev",
   "shell-version": ["45", "46", "47", "48", "49", "50"],
   "url": "https://github.com/maikolsiragusaa/metrora",
-  "settings-schema": "org.gnome.shell.extensions.codeburn"
+  "settings-schema": "org.gnome.shell.extensions.metrora"
 }

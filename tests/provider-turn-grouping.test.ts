@@ -11,11 +11,14 @@ let vibeHome: string
 let clearParserCache: (() => void) | undefined
 
 beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), 'codeburn-turn-group-home-'))
-  cacheDir = await mkdtemp(join(tmpdir(), 'codeburn-turn-group-cache-'))
-  vibeHome = await mkdtemp(join(tmpdir(), 'codeburn-turn-group-vibe-'))
+  home = await mkdtemp(join(tmpdir(), 'metrora-turn-group-home-'))
+  cacheDir = await mkdtemp(join(tmpdir(), 'metrora-turn-group-cache-'))
+  vibeHome = await mkdtemp(join(tmpdir(), 'metrora-turn-group-vibe-'))
   process.env['HOME'] = home
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
+  process.env['USERPROFILE'] = home
+  process.env['HOMEPATH'] = home
+  process.env['HOMEDRIVE'] = ''
+  process.env['METRORA_CACHE_DIR'] = cacheDir
   process.env['VIBE_HOME'] = vibeHome
 })
 

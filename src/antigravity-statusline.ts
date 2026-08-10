@@ -10,13 +10,13 @@ import {
 import {
   buildPersistentMetroraLookupPath,
   resolvePersistentMetroraPathFromPath,
-} from './persistent-codeburn.js'
+} from './persistent-metrora.js'
+import { getMetroraCacheDir } from './product-paths.js'
 
-export { buildPersistentMetroraLookupPath as buildAntigravityHookLookupPath } from './persistent-codeburn.js'
+export { buildPersistentMetroraLookupPath as buildAntigravityHookLookupPath } from './persistent-metrora.js'
 export {
-  resolvePersistentCodeburnPathFromPath,
   resolvePersistentMetroraPathFromPath,
-} from './persistent-codeburn.js'
+} from './persistent-metrora.js'
 
 type Settings = Record<string, unknown> & {
   statusLine?: {
@@ -29,7 +29,7 @@ type Settings = Record<string, unknown> & {
 type StatusLineSettings = NonNullable<Settings['statusLine']>
 
 const PERSISTENT_CLI_REQUIRED_MESSAGE =
-  'The Antigravity hook needs a persistent metrora command. Install Metrora so metrora is available on PATH. Existing codeburn installs remain supported.'
+  'The Antigravity hook needs a persistent metrora command. Install Metrora so metrora is available on PATH. Existing installations remain supported.'
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -53,16 +53,16 @@ async function hookCommand(): Promise<string> {
 }
 
 function settingsPath(): string {
-  return process.env['CODEBURN_ANTIGRAVITY_SETTINGS_PATH']
+  return process.env['METRORA_ANTIGRAVITY_SETTINGS_PATH']
     ?? join(homedir(), '.gemini', 'antigravity-cli', 'settings.json')
 }
 
-function codeburnCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+function metroraCacheDir(): string {
+  return getMetroraCacheDir()
 }
 
 function previousStatusLinePath(): string {
-  return join(codeburnCacheDir(), 'antigravity-statusline-previous.json')
+  return join(metroraCacheDir(), 'antigravity-statusline-previous.json')
 }
 
 async function readSettings(): Promise<Settings> {

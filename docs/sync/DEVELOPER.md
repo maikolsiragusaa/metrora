@@ -23,17 +23,17 @@ metrora sync push
   └─ update lastSync
 ```
 
-Fresh installations use canonical Metrora config/cache roots. Existing Qovrion or CodeBurn roots are adopted in place when present so upgrades do not silently abandon state.
+Fresh installations use canonical Metrora config/cache roots. Existing legacy roots are adopted in place when present so upgrades do not silently abandon state.
 
 ## Discovery protocol
 
 The v1 protocol currently discovers endpoint metadata at:
 
 ```text
-GET {baseUrl}/.well-known/codeburn-export.json
+GET {baseUrl}/.well-known/metrora-export.json
 ```
 
-The `codeburn-export.json` route name is a **frozen compatibility wire identifier**. It remains only to avoid breaking already compatible endpoints and must not be treated as current product branding.
+The `metrora-export.json` route name is a **frozen compatibility wire identifier**. It remains only to avoid breaking already compatible endpoints and must not be treated as current product branding.
 
 Example shape:
 
@@ -82,7 +82,7 @@ Supported storage backends are:
 | Linux | libsecret, with permission-restricted file fallback |
 | Windows | DPAPI-protected local file |
 
-Canonical credential identity is `metrora-sync`. Existing Qovrion/CodeBurn keychain service entries can be adopted into the canonical service after a successful read. Legacy files remain readable through the shared config-root compatibility boundary.
+Canonical credential identity is `metrora-sync`. Existing legacy keychain service entries can be adopted into the canonical service after a successful read. Legacy files remain readable through the shared config-root compatibility boundary.
 
 Secrets are never written to `sync.json` or the sent-ledger.
 
@@ -123,7 +123,7 @@ HTTP 429 handling honors bounded `Retry-After` delays. Authentication or server 
 
 A compatible endpoint implements:
 
-1. `GET {baseUrl}/.well-known/codeburn-export.json` for the v1 discovery document;
+1. `GET {baseUrl}/.well-known/metrora-export.json` for the v1 discovery document;
 2. `POST {baseUrl}{traces_path}` accepting OTLP/HTTP JSON with Bearer authentication.
 
 The server is responsible for validating tokens, applying its own authorization/retention policy and handling deterministic span IDs idempotently.

@@ -2,6 +2,35 @@ import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cach
 import type { PeriodData } from './menubar-json.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 
+// Raw model IDs remain human-readable in legacy daily caches. New rows use an
+// additive envelope so a source-recorded route can survive the daily
+// projection without changing the model ID used for pricing.
+const MODEL_KEY_PREFIX = '\u0001metrora-model\u0001'
+function modelStorageKey(model: string, modelProvider?: string): string {
+  return modelProvider ? `${MODEL_KEY_PREFIX}${JSON.stringify([modelProvider, model])}` : model
+}
+
+function decodeModelStorageKey(key: string): { name: string; modelProvider?: string } {
+  if (!key.startsWith(MODEL_KEY_PREFIX)) return { name: key }
+  try {
+    const value = JSON.parse(key.slice(MODEL_KEY_PREFIX.length)) as unknown
+    if (Array.isArray(value) && typeof value[1] === 'string') {
+      return {
+        name: value[1],
+        ...(typeof value[0] === 'string' && value[0].length > 0 ? { modelProvider: value[0] } : {}),
+      }
+    }
+  } catch {
+    // A malformed foreign key stays visible as its raw key rather than being
+    // dropped from durable accounting.
+  }
+  return { name: key }
+}
+
+function addSourceProvider(target: { sourceProviders?: string[] }, provider: string): void {
+  target.sourceProviders = [...new Set([...(target.sourceProviders ?? []), provider])].sort()
+}
+
 function emptyEntry(date: string): DailyEntry {
   return {
     date,
@@ -146,6 +175,7 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
           turnDay.calls += 1
           turnDay.inputTokens += call.usage.inputTokens
           turnDay.outputTokens += call.usage.outputTokens
+          if (call.usage.reasoningTokens > 0) turnDay.reasoningTokens = (turnDay.reasoningTokens ?? 0) + call.usage.reasoningTokens
           turnDay.cacheReadTokens += call.usage.cacheReadInputTokens
           turnDay.cacheWriteTokens += call.usage.cacheCreationInputTokens
 
@@ -154,7 +184,8 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
           dayProject.calls += 1
           dayProject.savingsUSD += callSavings
 
-          const model = turnDay.models[call.model] ?? {
+          const modelKey = modelStorageKey(call.model, call.modelProvider)
+          const model = turnDay.models[modelKey] ?? {
             calls: 0, cost: 0, savingsUSD: 0,
             inputTokens: 0, outputTokens: 0,
             cacheReadTokens: 0, cacheWriteTokens: 0,
@@ -164,9 +195,12 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
           model.savingsUSD += callSavings
           model.inputTokens += call.usage.inputTokens
           model.outputTokens += call.usage.outputTokens
+          if (call.usage.reasoningTokens > 0) model.reasoningTokens = (model.reasoningTokens ?? 0) + call.usage.reasoningTokens
           model.cacheReadTokens += call.usage.cacheReadInputTokens
           model.cacheWriteTokens += call.usage.cacheCreationInputTokens
-          turnDay.models[call.model] = model
+          if (call.modelProvider) model.modelProvider = call.modelProvider
+          addSourceProvider(model, call.provider)
+          turnDay.models[modelKey] = model
 
           const slice = ensureSlice(turnDay, call.provider)
           slice.calls += 1
@@ -174,6 +208,7 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
           slice.savingsUSD += callSavings
           slice.inputTokens! += call.usage.inputTokens
           slice.outputTokens! += call.usage.outputTokens
+          if (call.usage.reasoningTokens > 0) slice.reasoningTokens = (slice.reasoningTokens ?? 0) + call.usage.reasoningTokens
           slice.cacheReadTokens! += call.usage.cacheReadInputTokens
           slice.cacheWriteTokens! += call.usage.cacheCreationInputTokens
 
@@ -182,7 +217,7 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
           sliceProject.calls += 1
           sliceProject.savingsUSD += callSavings
 
-          const sliceModel = slice.models![call.model] ?? {
+          const sliceModel = slice.models![modelKey] ?? {
             calls: 0, cost: 0, savingsUSD: 0,
             inputTokens: 0, outputTokens: 0,
             cacheReadTokens: 0, cacheWriteTokens: 0,
@@ -192,9 +227,12 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
           sliceModel.savingsUSD += callSavings
           sliceModel.inputTokens += call.usage.inputTokens
           sliceModel.outputTokens += call.usage.outputTokens
+          if (call.usage.reasoningTokens > 0) sliceModel.reasoningTokens = (sliceModel.reasoningTokens ?? 0) + call.usage.reasoningTokens
           sliceModel.cacheReadTokens += call.usage.cacheReadInputTokens
           sliceModel.cacheWriteTokens += call.usage.cacheCreationInputTokens
-          slice.models![call.model] = sliceModel
+          if (call.modelProvider) sliceModel.modelProvider = call.modelProvider
+          addSourceProvider(sliceModel, call.provider)
+          slice.models![modelKey] = sliceModel
         }
       }
     }
@@ -206,8 +244,21 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
 export function buildPeriodDataFromDays(days: DailyEntry[], label: string): PeriodData {
   let cost = 0, savingsUSD = 0, calls = 0, sessions = 0
   let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0
+  let reasoningTokens = 0
+  let hasReasoningTokens = false
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
-  const modelTotals: Record<string, { calls: number; cost: number; savingsUSD: number }> = {}
+  const modelTotals: Record<string, {
+    calls: number
+    cost: number
+    savingsUSD: number
+    inputTokens: number
+    outputTokens: number
+    reasoningTokens?: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    modelProvider?: string
+    sourceProviders?: string[]
+  }> = {}
 
   for (const d of days) {
     cost += d.cost
@@ -216,14 +267,35 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     sessions += d.sessions
     inputTokens += d.inputTokens
     outputTokens += d.outputTokens
+    if (d.reasoningTokens !== undefined) {
+      reasoningTokens += d.reasoningTokens
+      hasReasoningTokens = true
+    }
     cacheReadTokens += d.cacheReadTokens
     cacheWriteTokens += d.cacheWriteTokens
 
     for (const [name, m] of Object.entries(d.models)) {
-      const acc = modelTotals[name] ?? { calls: 0, cost: 0, savingsUSD: 0 }
+      const acc = modelTotals[name] ?? {
+        calls: 0,
+        cost: 0,
+        savingsUSD: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      }
       acc.calls += m.calls
       acc.cost += m.cost
       acc.savingsUSD += (m.savingsUSD ?? 0)
+      acc.inputTokens += m.inputTokens
+      acc.outputTokens += m.outputTokens
+      if (m.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + m.reasoningTokens
+      acc.cacheReadTokens += m.cacheReadTokens
+      acc.cacheWriteTokens += m.cacheWriteTokens
+      if (m.modelProvider) acc.modelProvider = m.modelProvider
+      if (m.sourceProviders && m.sourceProviders.length > 0) {
+        acc.sourceProviders = [...new Set([...(acc.sourceProviders ?? []), ...m.sourceProviders])].sort()
+      }
       modelTotals[name] = acc
     }
     for (const [cat, c] of Object.entries(d.categories)) {
@@ -245,6 +317,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     sessions,
     inputTokens,
     outputTokens,
+    ...(hasReasoningTokens ? { reasoningTokens } : {}),
     cacheReadTokens,
     cacheWriteTokens,
     categories: Object.entries(catTotals)
@@ -252,6 +325,23 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
       .map(([cat, d]) => ({ name: CATEGORY_LABELS[cat as TaskCategory] ?? cat, ...d })),
     models: Object.entries(modelTotals)
       .sort(([, a], [, b]) => b.cost - a.cost)
-      .map(([name, d]) => ({ name, ...d })),
+      .map(([storageKey, d]) => {
+        const identity = decodeModelStorageKey(storageKey)
+        return {
+          name: identity.name,
+          ...(identity.modelProvider || d.modelProvider
+            ? { modelProvider: identity.modelProvider ?? d.modelProvider }
+            : {}),
+          ...(d.sourceProviders && d.sourceProviders.length > 0 ? { sourceProviders: d.sourceProviders } : {}),
+          calls: d.calls,
+          cost: d.cost,
+          savingsUSD: d.savingsUSD,
+          inputTokens: d.inputTokens,
+          outputTokens: d.outputTokens,
+          ...(d.reasoningTokens !== undefined ? { reasoningTokens: d.reasoningTokens } : {}),
+          cacheReadTokens: d.cacheReadTokens,
+          cacheWriteTokens: d.cacheWriteTokens,
+        }
+      }),
   }
 }

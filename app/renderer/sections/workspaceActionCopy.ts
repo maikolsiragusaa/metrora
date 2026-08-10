@@ -24,6 +24,7 @@ export function workspaceProductionToast(summary: DesktopReviewedProductionSumma
 export function workspaceRecoveryLabel(summary: DesktopWorkspaceRecoverySummary): string {
   if (summary.outcome === 'workspace-required') return 'Recovery: Workspace required · retry skipped'
   if (summary.outcome === 'paused') return 'Recovery: Paused · retry skipped'
+  if (summary.outcome === 'verified-read-only') return 'Recovery: Verified · read-only compatibility preserved'
   if (summary.outcome === 'blocked') return `Recovery: Blocked · ${summary.blocker ?? 'blocked-evidence'}`
   if (summary.outcome === 'healthy') return 'Recovery: Healthy · no reconciliation needed'
   return 'Recovery: Reconciled · existing evidence preserved'
@@ -38,6 +39,9 @@ export function workspaceRecoveryToast(summary: DesktopWorkspaceRecoverySummary)
   }
   if (summary.outcome === 'paused') {
     return { message: 'Reviewed production is paused. Recovery stopped before scanning.', error: false }
+  }
+  if (summary.outcome === 'verified-read-only') {
+    return { message: 'Verified historical evidence remains unchanged. Current compatibility is read-only.', error: false }
   }
   if (summary.outcome === 'workspace-required') {
     return { message: 'Create the local Workspace before recovery can run.', error: true }

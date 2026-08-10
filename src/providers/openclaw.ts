@@ -5,6 +5,7 @@ import { homedir } from 'os'
 import { readSessionFile } from '../fs-utils.js'
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 const toolNameMap: Record<string, string> = {
@@ -96,9 +97,11 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       let sessionId = ''
       let sessionTimestamp = ''
       let currentModel = ''
+      let currentModelProvider: string | undefined
 
       const calls: {
         model: string
+        modelProvider?: string
         usage: OpenClawUsage
         tools: string[]
         bashCommands: string[]
@@ -125,11 +128,13 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
         if (entry.type === 'model_change') {
           currentModel = entry.modelId ?? currentModel
+          currentModelProvider = normalizeExplicitModelProvider(entry.provider) ?? currentModelProvider
           continue
         }
 
         if (entry.type === 'custom' && entry.customType === 'model-snapshot') {
           currentModel = entry.data?.modelId ?? currentModel
+          currentModelProvider = normalizeExplicitModelProvider(entry.data?.provider ?? entry.provider) ?? currentModelProvider
           continue
         }
 
@@ -147,10 +152,12 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (msg.role !== 'assistant') continue
 
         const model = msg.model ?? currentModel
+        const modelProvider = normalizeExplicitModelProvider(msg.provider ?? entry.provider) ?? currentModelProvider
         if (msg.usage) {
           const { tools, bashCommands } = extractTools(msg.content)
           calls.push({
             model,
+            ...(modelProvider ? { modelProvider } : {}),
             usage: msg.usage,
             tools,
             bashCommands,
@@ -182,6 +189,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         yield {
           provider: 'openclaw',
           model: call.model || 'openclaw-auto',
+          ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
           inputTokens: u.input,
           outputTokens: u.output,
           cacheCreationInputTokens: u.cacheWrite,

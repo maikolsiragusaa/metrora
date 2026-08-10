@@ -14,7 +14,7 @@ CodeWhale CLI saved sessions.
 | Legacy sessions not yet migrated | `~/.deepseek/sessions/*.json` |
 | Explicit home | `$CODEWHALE_HOME/sessions/*.json` |
 
-`CODEWHALE_HOME` is an exact CodeWhale home override. CodeBurn appends only
+`CODEWHALE_HOME` is an exact CodeWhale home override. Metrora appends only
 `sessions`; it does not append `.codewhale` and does not scan ambient legacy
 state while the override is set.
 
@@ -48,23 +48,23 @@ One JSON object per saved session:
 Like CodeWhale's own session picker, discovery first extracts the top-level
 metadata object from a 64 KiB prefix. Full session JSON is read only when the
 provider parses a discovered session (or metadata has an unusual layout). If a
-transcript exceeds CodeBurn's full-file safety cap, authoritative aggregate
+transcript exceeds Metrora's full-file safety cap, authoritative aggregate
 tokens and cost are still emitted from the prefix; only message/tool details
 are omitted.
 
 ## Accounting
 
 CodeWhale persists cumulative accounting at session level, not per LLM call,
-so CodeBurn emits one record per saved session at `metadata.updated_at` (then
+so Metrora emits one record per saved session at `metadata.updated_at` (then
 `created_at`, then file mtime as fallbacks).
 
 - `metadata.total_tokens` is the only token counter. CodeWhale does not persist
-  a reliable input/output/cache/reasoning split. CodeBurn puts the full value
+  a reliable input/output/cache/reasoning split. Metrora puts the full value
   in the input column so the total remains exact and leaves the other token
   columns at zero rather than estimating a split.
 - Exact stored USD cost is
   `session_cost_usd + subagent_cost_usd`, matching CodeWhale's `total_usd()`.
-- When the cost snapshot is absent, CodeBurn prices the aggregate token total
+- When the cost snapshot is absent, Metrora prices the aggregate token total
   as input using the normal model table and treats the result as estimated.
 - A stored zero-dollar snapshot remains authoritative; it is not replaced by
   an estimate.
@@ -73,7 +73,7 @@ so CodeBurn emits one record per saved session at `metadata.updated_at` (then
 
 The first user text block becomes the session prompt. Assistant `tool_use` and
 `server_tool_use` blocks populate tool and tool-sequence data. Native names are
-normalized to CodeBurn's standard set, including:
+normalized to Metrora's standard set, including:
 
 - `exec_shell*` / `task_shell*` -> `Bash`
 - `read_file` -> `Read`

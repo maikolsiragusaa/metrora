@@ -1,5 +1,6 @@
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import type { ParsedProviderCall } from './types.js'
 
 // The message/part shape shared by OpenCode-style stores (OpenCode SQLite, the
@@ -7,6 +8,8 @@ import type { ParsedProviderCall } from './types.js'
 // messages carry either the normalized `tokens` object or a raw `usage` block.
 export type MessageData = {
   role: string
+  /** Provider/route identifier recorded by OpenCode for the assistant turn. */
+  providerID?: unknown
   modelID?: string
   model?: string
   cost?: number
@@ -130,14 +133,21 @@ export function buildAssistantCall(opts: {
     .filter(Boolean)
 
   const model = data.modelID ?? data.model ?? 'unknown'
-  let costUSD = calculateCost(
-    model,
-    tokens.input,
-    tokens.output + tokens.reasoning,
-    tokens.cacheWrite,
-    tokens.cacheRead,
-    0,
-  )
+  const modelProvider = normalizeExplicitModelProvider(data.providerID)
+  // OpenCode's explicit provider id identifies a route, and its `cost` field
+  // is the source's route-specific valuation. Keep that evidence when present
+  // (for example opencode-go DeepSeek), while retaining the historical
+  // calculated-cost behavior for records that expose no provider/route id.
+  let costUSD = modelProvider && typeof data.cost === 'number' && Number.isFinite(data.cost) && data.cost > 0
+    ? data.cost
+    : calculateCost(
+        model,
+        tokens.input,
+        tokens.output + tokens.reasoning,
+        tokens.cacheWrite,
+        tokens.cacheRead,
+        0,
+      )
 
   if (costUSD === 0 && typeof data.cost === 'number' && data.cost > 0) {
     costUSD = data.cost
@@ -146,6 +156,7 @@ export function buildAssistantCall(opts: {
   return {
     provider: opts.providerName,
     model,
+    ...(modelProvider ? { modelProvider } : {}),
     inputTokens: tokens.input,
     outputTokens: tokens.output,
     cacheCreationInputTokens: tokens.cacheWrite,

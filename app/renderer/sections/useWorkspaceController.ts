@@ -27,6 +27,7 @@ export function useWorkspaceController(
     action,
     setAction,
     loadBootstrap,
+    retryStatus,
     reload,
   } = useWorkspaceStatus(bridge)
   const [workspaceName, setWorkspaceName] = useState('My workspace')
@@ -156,6 +157,7 @@ export function useWorkspaceController(
     setWorkspaceName,
     setEndpointName,
     loadBootstrap,
+    retryStatus,
     reload,
     createWorkspace,
     produceMeasurements,

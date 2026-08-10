@@ -2,7 +2,7 @@ import { app, dialog, ipcMain } from 'electron'
 import path from 'node:path'
 
 import { ipcChannelAliases } from './identity'
-import { getDesktopWorkspaceRuntimeState } from './local-state'
+import { getDesktopWorkspaceRuntimeState, retryDesktopWorkspaceRuntime } from './local-state'
 import { createWorkspaceBridgeHandlers } from './workspace'
 
 let registered = false
@@ -12,6 +12,7 @@ export function registerWorkspaceHandlers(): void {
   registered = true
   const handlers = createWorkspaceBridgeHandlers({
     getRuntimeState: getDesktopWorkspaceRuntimeState,
+    retryRuntime: retryDesktopWorkspaceRuntime,
     chooseExportPath: async suggestedName => {
       const result = await dialog.showSaveDialog({
         title: 'Export Workspace evidence',

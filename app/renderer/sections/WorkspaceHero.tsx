@@ -9,16 +9,16 @@ export function WorkspaceHero({
   evidenceView: WorkspaceEvidenceViewState
 }) {
   return (
-    <section className="workspace-hero" aria-label="Workspace identity">
+    <section className="workspace-hero" aria-label="Personal workspace">
       <div>
-        <div className="workspace-kicker">Local personal workspace</div>
-        <h2>{workspace?.displayName ?? 'Create your Workspace'}</h2>
+        <div className="workspace-kicker">Personal workspace · This device</div>
+        <h2>{workspace?.displayName ?? 'Set up your personal workspace'}</h2>
         <p>{workspace
-          ? 'A user-owned evidence boundary on this computer. No account or server is required.'
-          : 'Turn reviewed local usage into signed, independently verifiable evidence without uploading private content.'}</p>
+          ? 'Your local Metrora workspace keeps usage, device identity, and exports under your control. No Metrora account or server is required.'
+          : 'Set up a local workspace when you want signed exports and device-level verification. Your normal analytics already work without it.'}</p>
       </div>
       <div className="workspace-hero-state">
-        <span className="workspace-local-badge">Local only</span>
+        <span className="workspace-local-badge">On this device</span>
         <span className={`workspace-state workspace-state-${evidenceView.stateClass}`}>{evidenceView.label}</span>
       </div>
     </section>

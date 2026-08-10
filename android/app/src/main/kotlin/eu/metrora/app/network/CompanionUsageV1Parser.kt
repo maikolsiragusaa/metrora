@@ -11,7 +11,7 @@ internal object CompanionUsageV1Parser {
 
     fun parse(raw: String, credentials: PairingCredentials): UsageSnapshot {
         val root = JSONObject(raw)
-        require(root.getString("kind") in setOf(MetroraProtocol.USAGE_KIND, MetroraProtocol.LEGACY_USAGE_KIND)) {
+        require(root.getString("kind") == MetroraProtocol.USAGE_KIND) {
             "The desktop returned an unsupported companion payload."
         }
         require(root.getInt("version") == MetroraProtocol.API_VERSION) {

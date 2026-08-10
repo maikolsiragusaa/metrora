@@ -1,9 +1,9 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { homedir } from 'os'
 
 import { readConfig } from './config.js'
 import { fetchWithTimeout } from './fetch-utils.js'
+import { getMetroraCacheDir } from './product-paths.js'
 
 type CurrencyState = {
   code: string
@@ -73,10 +73,7 @@ export function roundForActiveCurrency(value: number): number {
 }
 
 function getCacheDir(): string {
-  // Honor the same relocation override every other cache module uses
-  // (session-cache, daily-cache, codex-cache, models); this was the one
-  // straggler still hardcoding the default path.
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return getMetroraCacheDir()
 }
 
 function getRateCachePath(): string {

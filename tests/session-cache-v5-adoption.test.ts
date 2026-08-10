@@ -31,13 +31,13 @@ beforeEach(async () => {
     JSON.stringify({ type: 'user', sessionId: 'present', timestamp: '2026-07-20T09:00:00.000Z', cwd: '/present', message: { role: 'user', content: 'hi' } }) + '\n' +
     JSON.stringify({ type: 'assistant', sessionId: 'present', timestamp: '2026-07-20T09:00:01.000Z', cwd: '/present', message: { id: 'p1', type: 'message', role: 'assistant', model: 'claude-opus-4-6', content: [], usage: { input_tokens: 10, output_tokens: 5 } } }) + '\n')
   process.env['CLAUDE_CONFIG_DIR'] = configDir
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
+  process.env['METRORA_CACHE_DIR'] = cacheDir
 })
 
 afterEach(async () => {
   clearSessionCache()
   delete process.env['CLAUDE_CONFIG_DIR']
-  delete process.env['CODEBURN_CACHE_DIR']
+  delete process.env['METRORA_CACHE_DIR']
   await rm(tmpDir, { recursive: true, force: true })
 })
 

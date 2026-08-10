@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { correlateCrossProviderPrSessions, extractPrUrlsFromText } from '../src/parser.js'
 import type { ClassifiedTurn, ParsedApiCall, ProjectSummary, SessionSummary } from '../src/types.js'
 
-const A = 'https://github.com/getagentseal/codeburn/pull/790'
-const B = 'https://github.com/getagentseal/codeburn/pull/791'
+const A = 'https://github.com/maikolsiragusaa/metrora/pull/790'
+const B = 'https://github.com/maikolsiragusaa/metrora/pull/791'
 
 function call(provider: string, timestamp: string, command?: string): ParsedApiCall {
   return {
@@ -28,7 +28,7 @@ function turn(provider: string, timestamp: string, userMessage: string, refs?: s
 function session(opts: { id: string; provider: string; timestamp: string; message: string; refs?: string[]; cwd?: string; command?: string; parentId?: string; agentId?: string }): SessionSummary {
   const turns = [turn(opts.provider, opts.timestamp, opts.message, opts.refs, opts.command)]
   return {
-    sessionId: opts.id, project: 'codeburn', firstTimestamp: opts.timestamp, lastTimestamp: opts.timestamp,
+    sessionId: opts.id, project: 'metrora', firstTimestamp: opts.timestamp, lastTimestamp: opts.timestamp,
     totalCostUSD: 1, totalSavingsUSD: 0, totalInputTokens: 1, totalOutputTokens: 1,
     totalReasoningTokens: 0, totalCacheReadTokens: 0, totalCacheWriteTokens: 0, apiCalls: 1, turns,
     modelBreakdown: {}, toolBreakdown: {}, mcpBreakdown: {}, bashBreakdown: {}, categoryBreakdown: {}, skillBreakdown: {}, subagentBreakdown: {},
@@ -40,7 +40,7 @@ function session(opts: { id: string; provider: string; timestamp: string; messag
 }
 
 function project(sessions: SessionSummary[]): ProjectSummary {
-  return { project: 'codeburn', projectPath: '/repo/codeburn', sessions, totalCostUSD: sessions.length, totalSavingsUSD: 0, totalApiCalls: sessions.length, totalProxiedCostUSD: 0 }
+  return { project: 'metrora', projectPath: '/repo/metrora', sessions, totalCostUSD: sessions.length, totalSavingsUSD: 0, totalApiCalls: sessions.length, totalProxiedCostUSD: 0 }
 }
 
 describe('provider-neutral PR references', () => {
@@ -86,7 +86,7 @@ describe('cross-provider PR correlation', () => {
   })
 
   it('leaves a shared cwd unattributed when two PRs used it', () => {
-    const cwd = '/repo/codeburn'
+    const cwd = '/repo/metrora'
     const a = session({ id: 'a', provider: 'claude', timestamp: '2026-07-21T00:00:00Z', message: 'a', refs: [A], cwd })
     const b = session({ id: 'b', provider: 'claude', timestamp: '2026-07-21T01:00:00Z', message: 'b', refs: [B], cwd })
     const candidate = session({ id: 'c', provider: 'codex', timestamp: '2026-07-21T02:00:00Z', message: 'short', cwd })

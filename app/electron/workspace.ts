@@ -2,6 +2,7 @@ import path from 'node:path'
 
 import type { Envelope } from './main'
 import type {
+  DesktopWorkspaceUnavailableReason,
   DesktopWorkspaceRuntimeState,
   DesktopWorkspaceSnapshot,
 } from './local-state'
@@ -17,10 +18,11 @@ export type DesktopWorkspaceAvailability =
       snapshot: DesktopWorkspaceSnapshot
     }
   | { availability: 'unsupported-platform'; platform: NodeJS.Platform }
-  | { availability: 'unavailable'; reason: 'vault-unavailable' | 'initialization-failed' }
+  | { availability: 'unavailable'; reason: DesktopWorkspaceUnavailableReason }
 
 export type WorkspaceBridgeDeps = {
   getRuntimeState(): Promise<DesktopWorkspaceRuntimeState>
+  retryRuntime?: () => Promise<DesktopWorkspaceRuntimeState>
   chooseExportPath(suggestedName: string): Promise<string | null>
   now?: () => Date
 }
@@ -49,12 +51,14 @@ function unavailableError(state: Exclude<DesktopWorkspaceRuntimeState, { status:
   if (state.status === 'unsupported-platform') {
     return workspaceError('workspace-unsupported', 'Workspace signing requires Windows or macOS OS-backed encryption.')
   }
-  return workspaceError(
-    'workspace-unavailable',
-    state.reason === 'vault-unavailable'
-      ? 'The operating-system vault is unavailable. Workspace actions remain disabled.'
-      : 'The local Workspace runtime could not be initialized.',
-  )
+  const message = state.reason === 'vault-unavailable'
+    ? 'The operating-system vault is unavailable. Workspace actions remain disabled.'
+    : state.reason === 'packaged-runtime-unavailable'
+      ? 'The packaged Workspace runtime is unavailable or invalid. Workspace actions remain disabled.'
+      : state.reason === 'local-state-unavailable'
+        ? 'The existing encrypted Workspace state could not be read. Workspace actions remain disabled.'
+        : 'The local Workspace runtime could not be initialized. Workspace actions remain disabled.'
+  return workspaceError('workspace-unavailable', message)
 }
 
 function sanitizeActionError(error: unknown): { kind: string; message: string } {
@@ -77,6 +81,9 @@ function sanitizeActionError(error: unknown): { kind: string; message: string } 
   }
   if (name === 'LocalWorkspaceEvidenceBlockedError') {
     return { kind: 'workspace-blocked', message: 'Workspace evidence is blocked or requires review.' }
+  }
+  if (name === 'WorkspaceCapabilityDeniedError') {
+    return { kind: 'workspace-capability-denied', message: 'This Workspace action is unavailable for the verified local evidence state.' }
   }
   return { kind: 'workspace-action-failed', message: 'The local Workspace action failed.' }
 }
@@ -115,6 +122,33 @@ async function readyState(deps: WorkspaceBridgeDeps): Promise<
   return state.status === 'ready' ? state : unavailableError(state)
 }
 
+async function workspaceStatus(
+  getRuntimeState: () => Promise<DesktopWorkspaceRuntimeState>,
+): Promise<Envelope> {
+  try {
+    const state = await getRuntimeState()
+    if (state.status === 'unsupported-platform') {
+      return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
+    }
+    if (state.status === 'unavailable') {
+      return { ok: true, value: { availability: 'unavailable', reason: state.reason } satisfies DesktopWorkspaceAvailability }
+    }
+    const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceBootstrapRuntime>
+    if (typeof runtime.getBootstrapSnapshot === 'function') {
+      return {
+        ok: true,
+        value: readyAvailability(state, await runtime.getBootstrapSnapshot(), 'pending'),
+      }
+    }
+    return {
+      ok: true,
+      value: readyAvailability(state, await runtime.getSnapshot(), 'complete'),
+    }
+  } catch (error) {
+    return { ok: false, error: sanitizeActionError(error) }
+  }
+}
+
 function readyAvailability(
   state: Extract<DesktopWorkspaceRuntimeState, { status: 'ready' }>,
   snapshot: DesktopWorkspaceSnapshot,
@@ -130,32 +164,13 @@ function readyAvailability(
 
 export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record<string, WorkspaceHandler> {
   return {
-    'codeburn:getWorkspaceStatus': async () => {
-      const state = await deps.getRuntimeState()
-      if (state.status === 'unsupported-platform') {
-        return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
-      }
-      if (state.status === 'unavailable') {
-        return { ok: true, value: { availability: 'unavailable', reason: state.reason } satisfies DesktopWorkspaceAvailability }
-      }
-      try {
-        const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceBootstrapRuntime>
-        if (typeof runtime.getBootstrapSnapshot === 'function') {
-          return {
-            ok: true,
-            value: readyAvailability(state, await runtime.getBootstrapSnapshot(), 'pending'),
-          }
-        }
-        return {
-          ok: true,
-          value: readyAvailability(state, await runtime.getSnapshot(), 'complete'),
-        }
-      } catch (error) {
-        return { ok: false, error: sanitizeActionError(error) }
-      }
-    },
+    'metrora:getWorkspaceStatus': async () => workspaceStatus(deps.getRuntimeState),
 
-    'codeburn:inspectWorkspaceStatus': async () => {
+    'metrora:retryWorkspaceStatus': async () => deps.retryRuntime
+      ? workspaceStatus(deps.retryRuntime)
+      : workspaceError('workspace-retry-unavailable', 'Workspace runtime retry is unavailable in this desktop host.'),
+
+    'metrora:inspectWorkspaceStatus': async () => {
       const state = await deps.getRuntimeState()
       if (state.status === 'unsupported-platform') {
         return { ok: true, value: { availability: 'unsupported-platform', platform: state.platform } satisfies DesktopWorkspaceAvailability }
@@ -173,7 +188,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:createWorkspace': async (input?: unknown) => {
+    'metrora:createWorkspace': async (input?: unknown) => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -183,7 +198,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:pauseWorkspaceProduction': async () => {
+    'metrora:pauseWorkspaceProduction': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -193,7 +208,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:resumeWorkspaceProduction': async () => {
+    'metrora:resumeWorkspaceProduction': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -203,7 +218,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:produceWorkspaceMeasurements': async () => {
+    'metrora:produceWorkspaceMeasurements': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -213,7 +228,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:recoverWorkspaceState': async () => {
+    'metrora:recoverWorkspaceState': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       const runtime = state.runtime as typeof state.runtime & Partial<WorkspaceRecoveryRuntime>
@@ -230,7 +245,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:createWorkspaceBatch': async () => {
+    'metrora:createWorkspaceBatch': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       try {
@@ -240,7 +255,7 @@ export function createWorkspaceBridgeHandlers(deps: WorkspaceBridgeDeps): Record
       }
     },
 
-    'codeburn:exportWorkspaceEvidence': async () => {
+    'metrora:exportWorkspaceEvidence': async () => {
       const state = await readyState(deps)
       if ('ok' in state) return state
       const outputPath = await deps.chooseExportPath(suggestedExportName((deps.now ?? (() => new Date()))()))

@@ -4,6 +4,7 @@ import {
   DesktopWorkspaceSnapshotV1Schema,
   type DesktopWorkspaceSnapshotV1,
 } from './desktop-workspace-runtime.js'
+import { uninspectedWorkspaceCapabilitiesV1 } from './workspace-capability-policy.js'
 import { inspectLocalWorkspaceProductionLifecycleV1 } from './workspace-production-lifecycle.js'
 
 export const DESKTOP_WORKSPACE_EVIDENCE_INSPECTION_PENDING =
@@ -58,6 +59,8 @@ export async function createDesktopWorkspaceBootstrapSnapshotV1(
       productionLifecycle: null,
       evidence: {
         state: 'workspace-required',
+        integrity: 'unverified',
+        compatibility: 'workspace-required',
         pendingEventCount: 0,
         unbatchedEventCount: 0,
         acknowledgedEventCount: 0,
@@ -65,8 +68,17 @@ export async function createDesktopWorkspaceBootstrapSnapshotV1(
         quarantinedEventCount: 0,
         pendingBatchCount: 0,
         acknowledgedBatchCount: 0,
+        storage: {
+          canonicalEventCount: 0,
+          historicalEventCount: 0,
+          canonicalUnbatchedEventCount: 0,
+          historicalUnbatchedEventCount: 0,
+          canonicalBatchCount: 0,
+          historicalBatchCount: 0,
+        },
         blockers: ['Local personal workspace is not configured.'],
       },
+      capabilities: uninspectedWorkspaceCapabilitiesV1(false),
       privacy,
     })
   }
@@ -96,7 +108,7 @@ export async function createDesktopWorkspaceBootstrapSnapshotV1(
         architecture: workspace.endpoint.platform.architecture,
         identityGeneration: workspace.endpointIdentityGeneration,
         publicKeyFingerprintSha256: workspace.endpoint.identity.publicKeyFingerprintSha256,
-        metroraVersion: workspace.endpoint.software.qovrionVersion,
+        metroraVersion: workspace.endpoint.software.metroraVersion,
         collectorVersion: workspace.endpoint.software.collectorVersion,
         capabilities: workspace.endpoint.capabilities,
         enrollmentState: workspace.endpoint.enrollment.state,
@@ -105,6 +117,8 @@ export async function createDesktopWorkspaceBootstrapSnapshotV1(
     productionLifecycle,
     evidence: {
       state: 'blocked',
+      integrity: 'unverified',
+      compatibility: 'uninspected',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -112,8 +126,17 @@ export async function createDesktopWorkspaceBootstrapSnapshotV1(
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: [DESKTOP_WORKSPACE_EVIDENCE_INSPECTION_PENDING],
     },
+    capabilities: uninspectedWorkspaceCapabilitiesV1(true),
     privacy,
   })
 }

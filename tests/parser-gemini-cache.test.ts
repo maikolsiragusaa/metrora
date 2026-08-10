@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { clearSessionCache, parseAllSessions } from '../src/parser.js'
 import { CACHE_VERSION, computeEnvFingerprint, sessionCachePath } from '../src/session-cache.js'
@@ -11,17 +11,29 @@ import type { DateRange } from '../src/types.js'
 let home: string
 let cacheDir: string
 
+const initialEnv = vi.hoisted(() => {
+  const keys = ['HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE', 'METRORA_CACHE_DIR']
+  return Object.fromEntries(keys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
+})
+
 beforeEach(async () => {
-  home = await mkdtemp(join(tmpdir(), 'codeburn-gemini-home-'))
-  cacheDir = await mkdtemp(join(tmpdir(), 'codeburn-gemini-cache-'))
+  home = await mkdtemp(join(tmpdir(), 'metrora-gemini-home-'))
+  cacheDir = await mkdtemp(join(tmpdir(), 'metrora-gemini-cache-'))
   process.env['HOME'] = home
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
+  process.env['USERPROFILE'] = home
+  process.env['HOMEPATH'] = home
+  process.env['HOMEDRIVE'] = ''
+  process.env['METRORA_CACHE_DIR'] = cacheDir
 })
 
 afterEach(async () => {
   clearSessionCache()
   await rm(home, { recursive: true, force: true })
   await rm(cacheDir, { recursive: true, force: true })
+  for (const [key, value] of Object.entries(initialEnv)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
 })
 
 describe('Gemini session cache migration', () => {

@@ -51,6 +51,11 @@ describe('cursor provider', () => {
       const start = new Date(2026, 3, 1)
       expect(getCursorTimeFloor({ start, end: new Date(2026, 5, 2) })).toBe(start.toISOString())
     })
+
+    it('honors an explicit historical range instead of applying the default cap', () => {
+      const start = new Date('2024-01-01T00:00:00.000Z')
+      expect(getCursorTimeFloor({ start, end: new Date('2024-01-31T23:59:59.999Z') })).toBe(start.toISOString())
+    })
   })
 
   describe('session discovery', () => {

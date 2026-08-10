@@ -12,7 +12,6 @@ class ProtocolTest {
         assertEquals("/api/v1/peer/revoke", MetroraProtocol.REVOKE_PATH)
         assertEquals("/api/v1/usage?period=month", MetroraProtocol.usagePath("month"))
         assertEquals("metrora.companion.usage", MetroraProtocol.USAGE_KIND)
-        assertEquals("qovrion.companion.usage", MetroraProtocol.LEGACY_USAGE_KIND)
     }
 
     @Test

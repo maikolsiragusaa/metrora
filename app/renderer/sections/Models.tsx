@@ -8,19 +8,17 @@ import { SectionSkeleton } from '../components/Skeleton'
 import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
 import type { Section } from '../components/Sidebar'
-import { usePolled } from '../hooks/usePolled'
+import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
-import { codeburn } from '../lib/ipc'
-import type { AuditRow, DateRange, MenubarPayload, ModelReportRow, Period } from '../lib/types'
+import { metrora } from '../lib/ipc'
+import { cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
+import type { AuditRow, DateRange, DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation, ModelReportRow, Period, ReasoningTokenSemantics } from '../lib/types'
 import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
+import { DurableModelsTable, ModelIdentity, providerTagStyle } from './ModelsDurableTable'
 
 type ModelsLens = 'model' | 'task' | 'audit'
-type DurableModelAccounting = {
-  rows: Array<{ name: string; cost: number; savingsUSD: number; calls: number }>
-  gap: { cost: number; savingsUSD: number; calls: number }
-  coverage: { cost: number; calls: number }
-}
+type DurableModelAccounting = ModelAccounting
 
 const LENSES = [
   { value: 'model', label: 'By model' },
@@ -34,20 +32,24 @@ function fmtInt(n: number): string {
 
 // Muted secondary tag naming a row's provider, so the same model name coming
 // from different providers reads as distinct rows.
-const providerTagStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', fontWeight: 450 } as const
 const authorityNoteStyle = { color: 'var(--mut)', fontSize: 'var(--fs-label)', lineHeight: 1.45 } as const
 
 function durableAccounting(data: MenubarPayload): DurableModelAccounting {
-  const emitted = (data.current as MenubarPayload['current'] & { modelAccounting?: DurableModelAccounting }).modelAccounting
+  const emitted = data.current.modelAccounting
   if (emitted) return emitted
 
   // Compatibility fallback for an older CLI payload: retain the durable headline
-  // and make any top-N tail explicit rather than pretending topModels is complete.
-  const rows = data.current.topModels.map(model => ({
+  // but do not invent a token split the old payload never carried.
+  const rows: DurableModelAccountingRow[] = data.current.topModels.map(model => ({
     name: model.name,
     cost: model.cost,
     savingsUSD: model.savingsUSD,
     calls: model.calls,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    tokenDetail: false,
   }))
   const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
   const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
@@ -60,6 +62,37 @@ function durableAccounting(data: MenubarPayload): DurableModelAccounting {
       cost: data.current.cost > 0 ? Math.max(0, Math.min(1, representedCost / data.current.cost)) : 1,
       calls: data.current.calls > 0 ? Math.max(0, Math.min(1, representedCalls / data.current.calls)) : 1,
     },
+    tokenCoverage: { cost: 0, calls: 0 },
+  }
+}
+
+function legacyPresentationRow(row: DurableModelAccountingRow, index: number): DurableModelPresentationRow {
+  const reasoningSemantics: ReasoningTokenSemantics = row.reasoningSemantics ?? 'unavailable'
+  const hasRoute = Boolean(row.provider || (row.sourceProviders?.length ?? 0) > 0)
+  const deliveryStatus = !hasRoute
+    ? 'unavailable' as const
+    : row.provider && (row.sourceProviders?.length ?? 0) > 0
+      ? 'exact' as const
+      : 'partial' as const
+  return {
+    ...row,
+    presentationIdentity: `legacy:${row.name}:${index}`,
+    providers: row.provider ? [row.provider] : [],
+    sourceProviders: row.sourceProviders ?? [],
+    rawModels: row.rawModels ?? [row.name],
+    canonicalIdentities: row.canonicalIdentity ? [row.canonicalIdentity] : [],
+    economicVariants: [row.semanticVariant ?? 'default'],
+    reasoningSemantics,
+    timingCoverage: row.timingCoverage ?? (row.activeDurationMs && row.activeGeneratedTokens ? 'observed' : 'unavailable'),
+    deliveryRows: [row],
+    deliveryStatus,
+  }
+}
+
+function durablePresentation(data: MenubarPayload, accounting: DurableModelAccounting): ModelPresentation {
+  return data.current.modelPresentation ?? {
+    rows: accounting.rows.map(legacyPresentationRow),
+    accountingRowCount: accounting.rows.length,
   }
 }
 
@@ -73,6 +106,7 @@ export function Models({
   range = null,
   refreshToken = 0,
   onNavigate,
+  overview,
   ready = true,
 }: {
   period: Period
@@ -80,6 +114,7 @@ export function Models({
   range?: DateRange | null
   refreshToken?: number
   onNavigate?: (section: Section, pane?: SettingsPane) => void
+  overview: Polled<MenubarPayload>
   ready?: boolean
 }) {
   const [lens, setLens] = useState<ModelsLens>('model')
@@ -105,6 +140,7 @@ export function Models({
           byTask={lens === 'task'}
           refreshToken={refreshToken}
           onAddAlias={onAddAlias}
+          overview={overview}
           ready={ready}
         />
       )}
@@ -119,6 +155,7 @@ function ModelsUsage({
   byTask,
   refreshToken,
   onAddAlias,
+  overview,
   ready,
 }: {
   period: Period
@@ -127,120 +164,70 @@ function ModelsUsage({
   byTask: boolean
   refreshToken: number
   onAddAlias: () => void
+  overview: Polled<MenubarPayload>
   ready: boolean
 }) {
-  // The normal model lens is an accounting surface. Its primary values come
-  // from the same durable Overview authority as Home, so expired source
-  // transcripts cannot silently make lifetime model spend shrink. The detailed
-  // report remains useful for token/task inspection, but it is explicitly
-  // presented as surviving-session detail below.
-  const durable = usePolled<MenubarPayload>(
-    () => range ? codeburn.getOverview(period, provider, range) : codeburn.getOverview(period, provider),
-    [period, provider, range?.from, range?.to, refreshToken],
-    { enabled: ready && !byTask, memoKey: `models-durable|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
-  )
+  // Task attribution genuinely requires surviving source sessions. The primary
+  // model table does not: it reads the already-loaded durable Overview payload,
+  // avoiding both a second authority and another CLI spawn on first navigation.
   const report = usePolled<ModelReportRow[]>(
-    () => range ? codeburn.getModels(period, provider, byTask, range) : codeburn.getModels(period, provider, byTask),
-    [period, provider, byTask, range?.from, range?.to, refreshToken],
-    { enabled: ready, memoKey: `models|${period}|${provider}|${byTask}|${range?.from ?? ''}-${range?.to ?? ''}` },
+    () => range ? metrora.getModels(period, provider, true, range) : metrora.getModels(period, provider, true),
+    [period, provider, range?.from, range?.to, refreshToken],
+    { enabled: ready && byTask, memoKey: `models|${period}|${provider}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
   if (byTask) {
     if (!report.data) {
       if (report.error) return <CliErrorPanel error={report.error} subject="model task detail" />
-      return <SectionSkeleton label="Scanning available task detail…" rows={5} />
+      return <SectionSkeleton label="Loading available task detail…" rows={5} />
     }
     return (
       <>
         {report.error && <StaleBanner error={report.error} />}
         <Panel className="scroll-x">
           <div style={{ padding: '12px 14px 4px' }}>
-            <strong>Available session detail</strong>
-            <div style={authorityNoteStyle}>Task attribution requires original session records. Older durable spend can remain in By model after those source sessions expire.</div>
+            <strong>Task breakdown · Available detail</strong>
+            <div style={authorityNoteStyle}>Task attribution needs the original session records. Model totals above remain durable after those records expire.</div>
           </div>
           {report.data.length ? (
-            <ModelsTable rows={report.data} byTask onAddAlias={onAddAlias} />
+            <ModelsByTaskTable rows={report.data} onAddAlias={onAddAlias} />
           ) : (
-            <EmptyNote>No surviving task detail in this range yet.</EmptyNote>
+            <EmptyNote>No task-level session detail is available in this range.</EmptyNote>
           )}
         </Panel>
       </>
     )
   }
 
-  if (!durable.data) {
-    if (durable.error) return <CliErrorPanel error={durable.error} subject="durable model usage" />
-    return <SectionSkeleton label="Loading durable model accounting…" rows={5} />
+  if (!overview.data) {
+    if (overview.error) return <CliErrorPanel error={overview.error} subject="model usage" />
+    return <SectionSkeleton label="Loading model totals…" rows={5} />
   }
 
-  const accounting = durableAccounting(durable.data)
+  const accounting = durableAccounting(overview.data)
+  const presentation = durablePresentation(overview.data, accounting)
   const incomplete = accounting.coverage.cost < 0.999999 || accounting.coverage.calls < 0.999999
+  const tokenIncomplete = (accounting.tokenCoverage?.cost ?? 0) < 0.999999 || (accounting.tokenCoverage?.calls ?? 0) < 0.999999
 
   return (
     <>
-      {durable.error && <StaleBanner error={durable.error} />}
+      {overview.error && <StaleBanner error={overview.error} />}
       <Panel className="scroll-x">
-        <div style={{ padding: '12px 14px 4px' }}>
-          <strong>Historical accounting</strong>
-          <div style={authorityNoteStyle}>Durable totals preserve model spend after original session files expire. This is the same accounting authority used by Home.</div>
-          {incomplete ? <div style={authorityNoteStyle}>Some older durable usage no longer retains a provable model split; that remainder is shown as Other models.</div> : null}
+          <div style={{ padding: '12px 14px 4px' }}>
+            <strong>Model usage</strong>
+            <div style={authorityNoteStyle}>Historical cost, calls and retained token detail from Metrora&apos;s durable local ledger.</div>
+            <div style={authorityNoteStyle}>Generated tok/s uses retained active-generation evidence only. Observed active-generation timing is shown where the source provides it; Active ms / 1K is the inverse secondary view and unavailable routes remain —.</div>
+            <div style={authorityNoteStyle}>Total = Input + Output + separately reported Reasoning + Cache R + Cache W. Reasoning is never guessed.</div>
+          {incomplete ? <div style={authorityNoteStyle}>Some older usage no longer has a reliable model identity; that remainder is shown as Other models.</div> : null}
+          {tokenIncomplete ? <div style={authorityNoteStyle}>Legacy rows without a durable token split show — for token-derived metrics instead of guessing.</div> : null}
         </div>
         {hasAccountingValue(accounting) ? (
-          <DurableModelsTable accounting={accounting} />
+          <DurableModelsTable accounting={accounting} presentation={presentation} legacyPresentationRow={legacyPresentationRow} />
         ) : (
           <EmptyNote>No model usage in this range yet.</EmptyNote>
         )}
       </Panel>
-
-      <Panel className="scroll-x">
-        <div style={{ padding: '12px 14px 4px' }}>
-          <strong>Available session detail</strong>
-          <div style={authorityNoteStyle}>Token columns and call-level pricing evidence below cover source sessions that are still locally reconstructible. They may be a subset of historical accounting.</div>
-        </div>
-        {report.error && <StaleBanner error={report.error} />}
-        {!report.data ? (
-          <SectionSkeleton label="Scanning available session detail…" rows={4} />
-        ) : report.data.length ? (
-          <ModelsTable rows={report.data} byTask={false} onAddAlias={onAddAlias} />
-        ) : (
-          <EmptyNote>No surviving session detail in this range yet.</EmptyNote>
-        )}
-      </Panel>
     </>
-  )
-}
-
-function DurableModelsTable({ accounting }: { accounting: DurableModelAccounting }) {
-  const rows = [...accounting.rows]
-  if (accounting.gap.cost > 0.000001 || accounting.gap.calls > 0 || accounting.gap.savingsUSD > 0.000001) {
-    rows.push({ name: 'Other models', ...accounting.gap })
-  }
-  rows.sort((left, right) => (right.cost - left.cost) || (right.calls - left.calls))
-
-  return (
-    <table aria-label="Durable model accounting">
-      <thead>
-        <tr>
-          <th>Model</th>
-          <th>Calls</th>
-          <th>Cost</th>
-          <th>Saved</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((model, index) => (
-          <tr key={`${model.name}-${index}`}>
-            <td>
-              <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(model.name), marginRight: 8 }} />
-              {model.name}
-            </td>
-            <td>{fmtInt(model.calls)}</td>
-            <td>{formatUsd(model.cost)}</td>
-            <td className={model.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(model.savingsUSD)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   )
 }
 
@@ -266,7 +253,7 @@ function AuditLens({
   ready: boolean
 }) {
   const report = usePolled<AuditRow[]>(
-    () => range ? codeburn.getAudit(period, provider, range) : codeburn.getAudit(period, provider),
+    () => range ? metrora.getAudit(period, provider, range) : metrora.getAudit(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `audit|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
@@ -338,31 +325,6 @@ function AuditTableRow({ row }: { row: AuditRow }) {
   )
 }
 
-function ModelsTable({ rows, byTask, onAddAlias }: { rows: ModelReportRow[]; byTask: boolean; onAddAlias: () => void }) {
-  if (byTask) return <ModelsByTaskTable rows={rows} onAddAlias={onAddAlias} />
-
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Model</th>
-          <th>Calls</th>
-          <th>Input</th>
-          <th>Output</th>
-          <th>Cache read</th>
-          <th>Cost</th>
-          <th>Saved</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, i) => (
-          <ModelTableRow key={`${row.provider}-${row.model}-${i}`} row={row} onAddAlias={onAddAlias} />
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
 function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
   const groups = groupTaskRows(rows)
 
@@ -372,11 +334,15 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
         <tr>
           <th>Task</th>
           <th>Calls</th>
+          <th>Reasoning</th>
           <th>Input</th>
           <th>Output</th>
-          <th>Cache read</th>
+          <th>Cache R</th>
+          <th>Cache W</th>
+          <th>Cache ×</th>
+          <th>Total</th>
           <th>Cost</th>
-          <th>Saved</th>
+          <th>Cost / 1M</th>
         </tr>
       </thead>
       {groups.map(group => (
@@ -391,63 +357,41 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
   )
 }
 
-function ModelTableRow({ row, onAddAlias }: { row: ModelReportRow; onAddAlias: () => void }) {
-  const pricing = modelPricingPresentation(row.pricing, row.calls)
-  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
-  const dotStyle = {
-    display: 'inline-block',
-    background: seriesColorForModel(row.modelDisplayName || row.model),
-    marginRight: 8,
-  }
-
-  return (
-    <tr>
-      <td title={row.model}>
-        <span className="mdot" style={dotStyle} />
-        {row.modelDisplayName}
-        <span style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}>{row.providerDisplayName}</span>
-        <span
-          style={{ ...providerTagStyle, display: 'block', marginTop: 2, paddingLeft: 16 }}
-          title={pricing.title}
-        >
-          {pricing.label}
-        </span>
-        {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
-      </td>
-      <td>{fmtInt(row.calls)}</td>
-      <td>{formatCompact(row.inputTokens)}</td>
-      <td>{formatCompact(row.outputTokens)}</td>
-      <td>{formatCompact(row.cacheReadTokens)}</td>
-      <td
-        className={pricing.muteCost ? 'dim' : undefined}
-        title={pricing.title}
-        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
-      >
-        {costValue}
-      </td>
-      <td className={row.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(row.savingsUSD)}</td>
-    </tr>
-  )
+function reportRowTotal(row: ModelReportRow): number {
+  return totalTokenCount({
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    reasoningTokens: row.reasoningTokens,
+    reasoningSemantics: row.reasoningSemantics,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+  })
 }
 
 function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
-  const model = rows[0]
+  const model = rows[0]!
   const calls = rows.reduce((sum, row) => sum + row.calls, 0)
   const costUSD = rows.reduce((sum, row) => sum + row.costUSD, 0)
-  const savingsUSD = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
+  const input = rows.reduce((sum, row) => sum + row.inputTokens, 0)
+  const output = rows.reduce((sum, row) => sum + row.outputTokens, 0)
+  const reasoning = rows.reduce((sum, row) => sum + (row.reasoningTokens ?? 0), 0)
+  const reasoningSemantics: ReasoningTokenSemantics = rows.some(row => row.reasoningSemantics === 'separate' || row.reasoningSemantics === 'mixed')
+    ? 'separate'
+    : 'unavailable'
+  const cacheRead = rows.reduce((sum, row) => sum + row.cacheReadTokens, 0)
+  const cacheWrite = rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0)
+  const total = totalTokenCount({ inputTokens: input, outputTokens: output, reasoningTokens: reasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
   const pricing = modelPricingPresentation(combineModelPricing(rows), calls)
   const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(costUSD)
+  const reuse = cacheReuseMultiple(input, cacheRead)
+  const unitCost = costPerMillionTotal(costUSD, { inputTokens: input, outputTokens: output, reasoningTokens: reasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
 
   return (
     <tr className="model-group-row">
       <td title={model.model}>
         <span className="model-group-lead">
-          <span
-            className="mdot"
-            style={{ background: seriesColorForModel(model.modelDisplayName || model.model) }}
-          />
+          <ModelIdentity name={model.modelDisplayName} />
           <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <span className="model-group-name">{model.modelDisplayName}</span>
             <span style={providerTagStyle}>{model.providerDisplayName}</span>
             <span style={providerTagStyle} title={pricing.title}>{pricing.label}</span>
           </span>
@@ -455,17 +399,15 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
         </span>
       </td>
       <td>{fmtInt(calls)}</td>
-      <td aria-label="No aggregate input" />
-      <td aria-label="No aggregate output" />
-      <td aria-label="No aggregate cache read" />
-      <td
-        className={pricing.muteCost ? 'dim' : undefined}
-        title={pricing.title}
-        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
-      >
-        {costValue}
-      </td>
-      <td className={savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(savingsUSD)}</td>
+      <td>{reasoningSemantics === 'separate' ? formatCompact(reasoning) : '—'}</td>
+      <td>{formatCompact(input)}</td>
+      <td>{formatCompact(output)}</td>
+      <td>{formatCompact(cacheRead)}</td>
+      <td>{formatCompact(cacheWrite)}</td>
+      <td>{formatReuseMultiple(reuse)}</td>
+      <td>{formatCompact(total)}</td>
+      <td className={pricing.muteCost ? 'dim' : undefined} title={pricing.title}>{costValue}</td>
+      <td>{pricing.costMode === 'unavailable' || unitCost == null ? '—' : formatUsd(unitCost)}</td>
     </tr>
   )
 }
@@ -473,22 +415,30 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
 function ModelTaskRow({ row }: { row: ModelReportRow }) {
   const pricing = modelPricingPresentation(row.pricing, row.calls)
   const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
+  const total = reportRowTotal(row)
+  const reuse = cacheReuseMultiple(row.inputTokens, row.cacheReadTokens)
+  const unitCost = costPerMillionTotal(row.costUSD, {
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    reasoningTokens: row.reasoningTokens,
+    reasoningSemantics: row.reasoningSemantics,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+  })
 
   return (
     <tr className="model-task-row">
       <td>{row.category ?? 'general'}</td>
       <td>{fmtInt(row.calls)}</td>
+      <td>{row.reasoningSemantics === 'separate' || row.reasoningSemantics === 'mixed' ? formatCompact(row.reasoningTokens ?? 0) : '—'}</td>
       <td>{formatCompact(row.inputTokens)}</td>
       <td>{formatCompact(row.outputTokens)}</td>
       <td>{formatCompact(row.cacheReadTokens)}</td>
-      <td
-        className={pricing.muteCost ? 'dim' : undefined}
-        title={pricing.title}
-        aria-label={pricing.costMode === 'partial' ? `Priced portion ${costValue}` : pricing.costMode === 'unavailable' ? 'Cost unavailable' : `Cost ${costValue}`}
-      >
-        {costValue}
-      </td>
-      <td className={row.savingsUSD > 0 ? 'pos' : undefined}>{formatUsd(row.savingsUSD)}</td>
+      <td>{formatCompact(row.cacheWriteTokens)}</td>
+      <td>{formatReuseMultiple(reuse)}</td>
+      <td>{formatCompact(total)}</td>
+      <td className={pricing.muteCost ? 'dim' : undefined} title={pricing.title}>{costValue}</td>
+      <td>{pricing.costMode === 'unavailable' || unitCost == null ? '—' : formatUsd(unitCost)}</td>
     </tr>
   )
 }
@@ -496,7 +446,7 @@ function ModelTaskRow({ row }: { row: ModelReportRow }) {
 function groupTaskRows(rows: ModelReportRow[]) {
   const groups = new Map<string, { provider: string; model: string; rows: ModelReportRow[] }>()
   for (const row of rows) {
-    const key = `${row.provider}\u0000${row.model}`
+    const key = JSON.stringify([row.provider, row.model])
     const group = groups.get(key)
     if (group) group.rows.push(row)
     else groups.set(key, { provider: row.provider, model: row.model, rows: [row] })

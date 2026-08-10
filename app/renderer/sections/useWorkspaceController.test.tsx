@@ -18,6 +18,7 @@ vi.mock('../lib/toast', () => ({ showToast }))
 
 const bridge = {
   getWorkspaceStatus: vi.fn<WorkspaceBridge['getWorkspaceStatus']>(),
+  retryWorkspaceStatus: vi.fn<WorkspaceBridge['retryWorkspaceStatus']>(),
   inspectWorkspaceStatus: vi.fn<WorkspaceBridge['inspectWorkspaceStatus']>(),
   createWorkspace: vi.fn<WorkspaceBridge['createWorkspace']>(),
   pauseWorkspaceProduction: vi.fn<WorkspaceBridge['pauseWorkspaceProduction']>(),
@@ -63,6 +64,8 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
     } : null,
     evidence: {
       state: withWorkspace ? 'ready' : 'workspace-required',
+      integrity: withWorkspace ? 'verified' : 'unverified',
+      compatibility: withWorkspace ? 'empty' : 'workspace-required',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -70,7 +73,23 @@ function snapshot(withWorkspace = true): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      batchSign: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      canonicalExport: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: withWorkspace, reason: withWorkspace ? null : 'workspace-required' },
     },
     privacy: {
       networkRequired: false,
@@ -123,6 +142,7 @@ describe('useWorkspaceController', () => {
     showToast.mockReset()
     for (const method of Object.values(bridge)) method.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(ready())
+    bridge.retryWorkspaceStatus.mockResolvedValue(ready())
     bridge.inspectWorkspaceStatus.mockResolvedValue(ready())
   })
 
@@ -152,6 +172,19 @@ describe('useWorkspaceController', () => {
 
     resolveStatus(ready())
     await waitFor(() => expect(result.current.busy).toBe(false))
+  })
+
+  it('uses the retry runtime operation after an initialization failure', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
+    bridge.retryWorkspaceStatus.mockResolvedValue(ready())
+    const { result } = renderHook(() => useWorkspaceController(bridge))
+    await waitFor(() => expect(result.current.availability?.availability).toBe('unavailable'))
+
+    await act(async () => { await result.current.retryStatus() })
+
+    expect(bridge.getWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(bridge.retryWorkspaceStatus).toHaveBeenCalledTimes(1)
+    expect(result.current.availability).toEqual(ready())
   })
 
   it('trims creation input, accepts the returned snapshot and clears bounded result state', async () => {

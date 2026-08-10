@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, open, readFile, stat, unlink, utimes } from 'fs/promises'
-import { homedir } from 'os'
 import { join, resolve } from 'path'
+import { getMetroraCacheDir } from './product-paths.js'
 
 const LOCK_FILE = 'session-refresh.lock'
 const TAKEOVER_FILE = `${LOCK_FILE}.takeover`
@@ -49,7 +49,7 @@ const defaultClock: RefreshLockClock = {
 }
 
 function defaultCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return getMetroraCacheDir()
 }
 
 function delay(ms: number): Promise<void> {

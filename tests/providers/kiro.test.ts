@@ -105,6 +105,7 @@ describe('kiro provider - chat file parsing', () => {
     const call = calls[0]!
     expect(call.provider).toBe('kiro')
     expect(call.model).toBe('claude-haiku-4-5')
+    expect(call.modelProvider).toBe('qdev')
     expect(call.outputTokens).toBeGreaterThan(0)
     expect(call.userMessage).toBe('explain the code')
     expect(call.bashCommands).toEqual([])
@@ -1133,7 +1134,7 @@ describe('kiro provider - v2 sess_ format', () => {
     // cliDir override sits at <sessionsRoot>/cli, so v2 root = dirname(cliDir) = sessionsRoot.
     const provider = createKiroProvider('/nonexistent', '/nonexistent', join(sessionsRoot, 'cli'))
     const sources = await provider.discoverSessions()
-    const v2 = sources.filter(s => /\/sess_[^/]+\/messages\.jsonl$/.test(s.path))
+    const v2 = sources.filter(s => /[/\\]sess_[^/\\]+[/\\]messages\.jsonl$/.test(s.path))
     expect(v2).toHaveLength(1)
     expect(v2[0]!.project).toBe('test-proj')
 
@@ -1267,7 +1268,7 @@ describe('kiro provider - v2 sess_ format', () => {
     })
     const provider = createKiroProvider('/nonexistent', '/nonexistent', join(sessionsRoot, 'cli'))
     const sources = await provider.discoverSessions()
-    const v2 = sources.filter(s => /\/sess_[^/]+\/messages\.jsonl$/.test(s.path))
+    const v2 = sources.filter(s => /[/\\]sess_[^/\\]+[/\\]messages\.jsonl$/.test(s.path))
     expect(v2).toHaveLength(1)
     expect(v2[0]!.project).toBe('kiro-ide')
   })
@@ -1279,7 +1280,7 @@ describe('kiro provider - v2 sess_ format', () => {
 
     const provider = createKiroProvider('/nonexistent', '/nonexistent', join(sessionsRoot, 'cli'))
     const sources = await provider.discoverSessions()
-    const v2 = sources.filter(s => /\/sess_[^/]+\/messages\.jsonl$/.test(s.path))
+    const v2 = sources.filter(s => /[/\\]sess_[^/\\]+[/\\]messages\.jsonl$/.test(s.path))
     expect(v2).toHaveLength(0)
   })
 
@@ -1293,7 +1294,7 @@ describe('kiro provider - v2 sess_ format', () => {
 
     const provider = createKiroProvider('/nonexistent', '/nonexistent', join(sessionsRoot, 'cli'))
     const sources = await provider.discoverSessions()
-    const v2 = sources.filter(s => /\/sess_[^/]+\/messages\.jsonl$/.test(s.path))
+    const v2 = sources.filter(s => /[/\\]sess_[^/\\]+[/\\]messages\.jsonl$/.test(s.path))
     expect(v2).toHaveLength(0)
   })
 })

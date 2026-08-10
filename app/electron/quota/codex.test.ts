@@ -50,7 +50,7 @@ describe('Codex quota', () => {
     const result = await fetchCodexQuota({ fetch: fetchMock, readFile: vi.fn(async () => JSON.stringify(auth)), now: () => now })
     expect(result.retryAfterSeconds).toBe(120)
     const usageInit = (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1]
-    expect(usageInit.headers).toMatchObject({ 'ChatGPT-Account-Id': 'acct_1', 'User-Agent': 'CodeBurn' })
+    expect(usageInit.headers).toMatchObject({ 'ChatGPT-Account-Id': 'acct_1', 'User-Agent': 'Metrora' })
   })
 
   it('refreshes after eight days and preserves unrelated auth keys on write-back', async () => {
@@ -67,7 +67,7 @@ describe('Codex quota', () => {
   })
 })
 
-// The CodeBurn menubar caches its Codex OAuth as a Swift CredentialRecord blob.
+// The Metrora menubar caches its Codex OAuth as a Swift CredentialRecord blob.
 const menubarRecord = JSON.stringify({
   accessToken: 'eyJmenubar.token.sig', refreshToken: 'mb-refresh', idToken: 'mb-id', accountId: 'acct_mb', lastRefresh: 1_234_567,
 })
@@ -87,7 +87,7 @@ describe('Codex menubar keychain source', () => {
     const init = (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1]
     expect(init.headers).toMatchObject({ Authorization: 'Bearer eyJmenubar.token.sig', 'ChatGPT-Account-Id': 'acct_mb' })
     expect(writeFile).not.toHaveBeenCalled()
-    expect(keychain).toHaveBeenCalledWith('org.agentseal.codeburn.menubar.codex.oauth.v1')
+    expect(keychain).toHaveBeenCalledWith('org.agentseal.metrora.menubar.codex.oauth.v1')
   })
 
   it('re-reads the keychain once on a 401 and adopts a rotated token, never a refresh POST', async () => {

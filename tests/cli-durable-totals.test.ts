@@ -1,5 +1,5 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, rm, writeFile } from 'fs/promises'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdir, readFile, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -14,8 +14,11 @@ import {
   getDailyCacheConfigHash,
 } from '../src/usage-aggregator.js'
 import { parseAllSessions, filterProjectsByName, clearSessionCache } from '../src/parser.js'
+import { sessionCachePath } from '../src/session-cache.js'
 import { renderOverview } from '../src/overview.js'
 import type { DateRange } from '../src/types.js'
+
+vi.setConfig({ testTimeout: 15_000 })
 
 // The point of #755: Claude deletes transcripts after ~30 days, so a day that
 // can no longer be re-derived from session files exists ONLY in the durable
@@ -27,8 +30,35 @@ import type { DateRange } from '../src/types.js'
 // included — across all-provider, provider-filtered, custom-range, and lifetime
 // queries, and in the plain live regime with no carried days at all.
 
-const ROOT = join(tmpdir(), `codeburn-durable-totals-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
-const ENV_KEYS = ['HOME', 'CODEBURN_CACHE_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME'] as const
+const { ROOT, ENV_KEYS, INITIAL_ENV } = vi.hoisted(() => {
+  const envKeys = [
+    'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE',
+    'APPDATA', 'LOCALAPPDATA', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
+    'METRORA_CACHE_DIR', 'METRORA_READ_MODE', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME', 'OPENCODE_DATA_DIR',
+  ] as const
+  const initialEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.env['TMPDIR'] ?? process.env['TMP'] ?? process.env['TEMP'] ?? '.'
+  const root = `${base}${base.endsWith(separator) ? '' : separator}metrora-durable-totals-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const home = `${root}${separator}home`
+  const isolatedEnv: Record<string, string> = {
+    HOME: home,
+    USERPROFILE: home,
+    HOMEPATH: home,
+    HOMEDRIVE: '',
+    APPDATA: `${home}${separator}AppData${separator}Roaming`,
+    LOCALAPPDATA: `${home}${separator}AppData${separator}Local`,
+    XDG_DATA_HOME: `${home}${separator}.local${separator}share`,
+    XDG_CONFIG_HOME: `${home}${separator}.config`,
+    METRORA_CACHE_DIR: `${root}${separator}cache`,
+    CLAUDE_CONFIG_DIR: `${home}${separator}.claude`,
+    OPENCODE_DATA_DIR: `${home}${separator}.local${separator}share${separator}opencode`,
+  }
+  for (const [key, value] of Object.entries(isolatedEnv)) process.env[key] = value
+  delete process.env['CLAUDE_CONFIG_DIRS']
+  delete process.env['CODEX_HOME']
+  return { ROOT: root, ENV_KEYS: envKeys, INITIAL_ENV: initialEnv }
+})
 let savedEnv: Record<string, string | undefined>
 
 const CARRIED_COST = 100
@@ -79,6 +109,7 @@ async function seedCarriedCache(): Promise<string> {
     lastComputedDate: daysAgoStr(1),
     days: [carriedDay(day)],
     complete: true,
+    watermarkTrusted: true,
   }
   await writeFile(join(ROOT, 'cache', `daily-cache.v${DAILY_CACHE_VERSION}.json`), JSON.stringify(cache), 'utf-8')
   return day
@@ -109,7 +140,7 @@ async function seedLiveTodaySession(): Promise<void> {
 /** Live-only headline over the surviving files for the range (no cache union). */
 async function liveOnly(range: DateRange): Promise<{ cost: number; calls: number }> {
   clearSessionCache()
-  const projects = filterProjectsByName(await parseAllSessions(range, 'all'), [], [])
+  const projects = filterProjectsByName(await parseAllSessions(range, 'claude'), [], [])
   const data = buildPeriodData('live', projects)
   return { cost: data.cost, calls: data.calls }
 }
@@ -119,11 +150,20 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
-  savedEnv = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
+  savedEnv = { ...INITIAL_ENV }
   await mkdir(join(ROOT, 'home', '.claude'), { recursive: true })
   await mkdir(join(ROOT, 'cache'), { recursive: true })
-  process.env['HOME'] = join(ROOT, 'home')
-  process.env['CODEBURN_CACHE_DIR'] = join(ROOT, 'cache')
+  const home = join(ROOT, 'home')
+  process.env['HOME'] = home
+  process.env['USERPROFILE'] = home
+  process.env['HOMEPATH'] = home
+  process.env['HOMEDRIVE'] = ''
+  process.env['APPDATA'] = join(home, 'AppData', 'Roaming')
+  process.env['LOCALAPPDATA'] = join(home, 'AppData', 'Local')
+  process.env['XDG_DATA_HOME'] = join(home, '.local', 'share')
+  process.env['XDG_CONFIG_HOME'] = join(home, '.config')
+  process.env['OPENCODE_DATA_DIR'] = join(home, '.local', 'share', 'opencode')
+  process.env['METRORA_CACHE_DIR'] = join(ROOT, 'cache')
   process.env['CLAUDE_CONFIG_DIR'] = join(ROOT, 'home', '.claude')
   delete process.env['CLAUDE_CONFIG_DIRS']
   delete process.env['CODEX_HOME']
@@ -204,6 +244,40 @@ describe('CLI totals ↔ menubar parity through the durable daily cache', () => 
     expect(carried).toBe(0)
     expect(menubarCost).toBeGreaterThan(0)
     expect(menubarCost).toBeCloseTo(live.cost, 6)
+  })
+})
+
+describe('snapshot read lifecycle', () => {
+  it('serves a degraded complete:false baseline repeatedly without hydrating or writing', async () => {
+    const carriedDate = await seedCarriedCache()
+    await seedLiveTodaySession()
+
+    // Publish one accepted session snapshot, then mark only current-source
+    // reconciliation as degraded. The durable baseline remains safe to serve.
+    await parseAllSessions(getDateRange('today').range, 'all')
+    const dailyPath = join(ROOT, 'cache', `daily-cache.v${DAILY_CACHE_VERSION}.json`)
+    const daily = JSON.parse(await readFile(dailyPath, 'utf-8')) as DailyCache
+    daily.complete = false
+    await writeFile(dailyPath, JSON.stringify(daily), 'utf-8')
+    const dailyBefore = await readFile(dailyPath, 'utf-8')
+    const sessionBefore = await readFile(sessionCachePath(), 'utf-8')
+
+    process.env['METRORA_READ_MODE'] = 'snapshot'
+    try {
+      clearSessionCache()
+      const first = await buildMenubarPayloadForRange(getDateRange('lifetime'), { provider: 'all', optimize: false, timeline: false })
+      clearSessionCache()
+      const second = await buildMenubarPayloadForRange(getDateRange('lifetime'), { provider: 'all', optimize: false, timeline: false })
+
+      expect(first.current.calls).toBe(second.current.calls)
+      expect(first.current.calls).toBeGreaterThan(40)
+      expect(first.history.daily.some(day => day.date === carriedDate)).toBe(true)
+      expect(await readFile(dailyPath, 'utf-8')).toBe(dailyBefore)
+      expect(await readFile(sessionCachePath(), 'utf-8')).toBe(sessionBefore)
+      expect((JSON.parse(dailyBefore) as DailyCache).complete).toBe(false)
+    } finally {
+      delete process.env['METRORA_READ_MODE']
+    }
   })
 })
 

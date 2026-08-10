@@ -28,6 +28,12 @@ import {
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { atomicWritePrivateFile, readOptionalPrivateFile } from './atomic-file.js'
+import {
+  LEGACY_ENDPOINT_KIND,
+  LEGACY_SOFTWARE_VERSION_FIELD,
+  LEGACY_WORKSPACE_KIND,
+  LEGACY_WORKSPACE_MEMBERSHIP_KIND,
+} from './legacy-identity-compatibility.js'
 import { withLocalStateLease } from './local-state-lease.js'
 
 export const LOCAL_PERSONAL_WORKSPACE_STATE_KIND = 'metrora.local-personal-workspace-state' as const
@@ -168,9 +174,62 @@ function opaqueId(prefix: 'workspace' | 'membership' | 'subject', uuid: () => st
   return OpaqueIdSchema.parse(`${prefix}_${uuid()}`)
 }
 
-function parseState(bytes: Uint8Array): LocalPersonalWorkspaceStateV1 {
+type ParsedLocalPersonalWorkspaceState = {
+  state: LocalPersonalWorkspaceStateV1
+  namespaceMigrated: boolean
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function normalizeLegacyNamespace(value: unknown): { value: unknown; migrated: boolean } {
+  const root = record(value)
+  if (!root) return { value, migrated: false }
+
+  let migrated = false
+  let workspace = record(root.workspace)
+  if (workspace?.kind === LEGACY_WORKSPACE_KIND) {
+    workspace = { ...workspace, kind: 'metrora.workspace' }
+    migrated = true
+  }
+
+  let ownerMembership = record(root.ownerMembership)
+  if (ownerMembership?.kind === LEGACY_WORKSPACE_MEMBERSHIP_KIND) {
+    ownerMembership = { ...ownerMembership, kind: 'metrora.workspace-membership' }
+    migrated = true
+  }
+
+  let endpoint = record(root.endpoint)
+  if (endpoint?.kind === LEGACY_ENDPOINT_KIND) {
+    endpoint = { ...endpoint, kind: 'metrora.endpoint' }
+    migrated = true
+  }
+  const software = record(endpoint?.software)
+  const legacySoftwareVersion = software?.[LEGACY_SOFTWARE_VERSION_FIELD]
+  if (software && software.metroraVersion === undefined && legacySoftwareVersion !== undefined) {
+    const { [LEGACY_SOFTWARE_VERSION_FIELD]: _legacyVersion, ...rest } = software
+    endpoint = { ...endpoint, software: { ...rest, metroraVersion: legacySoftwareVersion } }
+    migrated = true
+  }
+
+  return {
+    value: migrated
+      ? { ...root, ...(workspace ? { workspace } : {}), ...(ownerMembership ? { ownerMembership } : {}), ...(endpoint ? { endpoint } : {}) }
+      : value,
+    migrated,
+  }
+}
+
+function parseState(bytes: Uint8Array): ParsedLocalPersonalWorkspaceState {
   try {
-    return LocalPersonalWorkspaceStateV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
+    const normalized = normalizeLegacyNamespace(JSON.parse(Buffer.from(bytes).toString('utf-8')))
+    return {
+      state: LocalPersonalWorkspaceStateV1Schema.parse(normalized.value),
+      namespaceMigrated: normalized.migrated,
+    }
   } catch (error) {
     throw new LocalWorkspaceRecoveryRequiredError(
       `local workspace state is invalid: ${error instanceof Error ? error.message : String(error)}`,
@@ -194,7 +253,7 @@ function buildState(input: {
   const localSubjectId = opaqueId('subject', input.randomUUID)
 
   const workspace: WorkspaceV1 = WorkspaceV1Schema.parse({
-    kind: 'qovrion.workspace',
+    kind: 'metrora.workspace',
     version: 1,
     workspaceId,
     slug: input.intent.workspace.slug,
@@ -206,7 +265,7 @@ function buildState(input: {
   })
 
   const ownerMembership: WorkspaceMembershipV1 = WorkspaceMembershipV1Schema.parse({
-    kind: 'qovrion.workspace-membership',
+    kind: 'metrora.workspace-membership',
     version: 1,
     membershipId,
     workspaceId,
@@ -221,7 +280,7 @@ function buildState(input: {
   })
 
   const endpoint: EndpointV1 = EndpointV1Schema.parse({
-    kind: 'qovrion.endpoint',
+    kind: 'metrora.endpoint',
     version: 1,
     endpointId: input.identity.endpointId,
     workspaceId,
@@ -232,10 +291,10 @@ function buildState(input: {
       keyAlgorithm: 'ed25519',
       publicKeyFingerprintSha256: input.identity.publicKeyFingerprintSha256,
     },
-    // The qovrionVersion field name is frozen in public contract v1. Its value
+    // The metroraVersion field name is frozen in public contract v1. Its value
     // is the current Metrora version and must not be interpreted as old branding.
     software: {
-      qovrionVersion: input.intent.endpoint.metroraVersion,
+      metroraVersion: input.intent.endpoint.metroraVersion,
       collectorVersion: input.intent.endpoint.collectorVersion,
     },
     capabilities: input.intent.endpoint.capabilities,
@@ -262,7 +321,7 @@ function buildState(input: {
   })
 }
 
-async function readState(path: string): Promise<LocalPersonalWorkspaceStateV1 | undefined> {
+async function readState(path: string): Promise<ParsedLocalPersonalWorkspaceState | undefined> {
   let bytes: Buffer | undefined
   try {
     bytes = await readOptionalPrivateFile(path)
@@ -279,8 +338,9 @@ async function loadAndReconcileUnlocked(input: {
   identity: LocalEndpointIdentityMetadataV1
   now: () => Date
 }): Promise<LocalPersonalWorkspaceStateV1 | undefined> {
-  const stored = await readState(input.statePath)
-  if (!stored) return undefined
+  const parsed = await readState(input.statePath)
+  if (!parsed) return undefined
+  const stored = parsed.state
 
   if (stored.endpoint.endpointId !== input.identity.endpointId) {
     throw new LocalWorkspaceRecoveryRequiredError(
@@ -297,6 +357,9 @@ async function loadAndReconcileUnlocked(input: {
       throw new LocalWorkspaceRecoveryRequiredError(
         'local workspace endpoint fingerprint does not match the current identity generation',
       )
+    }
+    if (parsed.namespaceMigrated) {
+      await atomicWritePrivateFile(input.statePath, JSON.stringify(stored))
     }
     return stored
   }

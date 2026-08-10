@@ -16,7 +16,7 @@ export const LARGE_STREAM_LINE_BYTES = 32 * 1024
 export const MAX_STREAM_SESSION_FILE_BYTES = 4 * 1024 * 1024 * 1024
 
 function verbose(): boolean {
-  return process.env.CODEBURN_VERBOSE === '1'
+  return process.env.METRORA_VERBOSE === '1'
 }
 
 function warn(msg: string): void {

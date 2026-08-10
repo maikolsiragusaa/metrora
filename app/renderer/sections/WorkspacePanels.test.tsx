@@ -45,6 +45,8 @@ function snapshot(): DesktopWorkspaceSnapshot {
     },
     evidence: {
       state: 'ready',
+      integrity: 'verified',
+      compatibility: 'canonical',
       pendingEventCount: 3,
       unbatchedEventCount: 3,
       acknowledgedEventCount: 5,
@@ -52,7 +54,23 @@ function snapshot(): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 1,
       acknowledgedBatchCount: 2,
+      storage: {
+        canonicalEventCount: 8,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 3,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 3,
+        historicalBatchCount: 0,
+      },
       blockers: [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: true, reason: null },
+      batchSign: { allowed: true, reason: null },
+      canonicalExport: { allowed: false, reason: 'unbatched-evidence' },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: true, reason: null },
     },
     privacy: {
       networkRequired: false,
@@ -146,7 +164,14 @@ describe('Workspace focused panels', () => {
     const { rerender } = render(
       <WorkspaceProductionPanel
         productionPaused={false}
-        evidenceView={evidenceView({ blocked: true })}
+        capabilities={{
+          inspection: { allowed: true, reason: null },
+          reviewedProduction: { allowed: false, reason: 'invalid-evidence' },
+          batchSign: { allowed: false, reason: 'invalid-evidence' },
+          canonicalExport: { allowed: false, reason: 'invalid-evidence' },
+          recovery: { allowed: true, reason: null },
+          productionLifecycle: { allowed: true, reason: null },
+        }}
         action={null}
         busy={false}
         lastProduction={null}
@@ -161,7 +186,14 @@ describe('Workspace focused panels', () => {
     rerender(
       <WorkspaceProductionPanel
         productionPaused
-        evidenceView={evidenceView()}
+        capabilities={{
+          inspection: { allowed: true, reason: null },
+          reviewedProduction: { allowed: false, reason: 'production-paused' },
+          batchSign: { allowed: true, reason: null },
+          canonicalExport: { allowed: true, reason: null },
+          recovery: { allowed: true, reason: null },
+          productionLifecycle: { allowed: true, reason: null },
+        }}
         action={null}
         busy={false}
         lastProduction={null}
@@ -184,16 +216,23 @@ describe('Workspace focused panels', () => {
   })
 
   it('preserves inspection, batching and export gates in the evidence actions panel', () => {
-    const availability = readyAvailability()
+    const pendingSnapshot = snapshot()
+    pendingSnapshot.capabilities = {
+      inspection: { allowed: false, reason: 'inspection-pending' },
+      reviewedProduction: { allowed: false, reason: 'inspection-pending' },
+      batchSign: { allowed: false, reason: 'inspection-pending' },
+      canonicalExport: { allowed: false, reason: 'inspection-pending' },
+      recovery: { allowed: false, reason: 'inspection-pending' },
+      productionLifecycle: { allowed: false, reason: 'inspection-pending' },
+    }
+    const availability = readyAvailability(pendingSnapshot)
     const onReload = vi.fn().mockResolvedValue(undefined)
     const onRecover = vi.fn().mockResolvedValue(undefined)
     const onBatch = vi.fn().mockResolvedValue(undefined)
     const onExport = vi.fn().mockResolvedValue(undefined)
     const { rerender } = render(
-      <WorkspaceEvidenceActionsPanel
+        <WorkspaceEvidenceActionsPanel
         availability={availability}
-        workspace={availability.snapshot.workspace}
-        evidence={availability.snapshot.evidence}
         evidenceView={evidenceView({ inspectionPending: true, inspectionComplete: false, blocked: true })}
         action={null}
         busy={false}
@@ -205,18 +244,18 @@ describe('Workspace focused panels', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
 
     const batched = snapshot()
     batched.evidence.unbatchedEventCount = 0
+    batched.evidence.storage.canonicalUnbatchedEventCount = 0
+    batched.capabilities.canonicalExport = { allowed: true, reason: null }
     const batchedAvailability = readyAvailability(batched)
     rerender(
       <WorkspaceEvidenceActionsPanel
         availability={batchedAvailability}
-        workspace={batched.workspace}
-        evidence={batched.evidence}
         evidenceView={evidenceView()}
         action={null}
         busy={false}
@@ -228,8 +267,44 @@ describe('Workspace focused panels', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Check & recover local state' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Create signed batch' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Export verifiable evidence' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Check & recover' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Sign pending usage' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeEnabled()
+
+    const deniedByCapability = snapshot()
+    deniedByCapability.evidence.unbatchedEventCount = 0
+    deniedByCapability.capabilities.canonicalExport = { allowed: false, reason: 'historical-evidence-read-only' }
+    rerender(
+      <WorkspaceEvidenceActionsPanel
+        availability={readyAvailability(deniedByCapability)}
+        evidenceView={evidenceView()}
+        action={null}
+        busy={false}
+        lastRecovery={null}
+        onReload={onReload}
+        onRecover={onRecover}
+        onBatch={onBatch}
+        onExport={onExport}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeDisabled()
+
+    const allowedByCapability = snapshot()
+    allowedByCapability.evidence.unbatchedEventCount = 99
+    allowedByCapability.capabilities.canonicalExport = { allowed: true, reason: null }
+    rerender(
+      <WorkspaceEvidenceActionsPanel
+        availability={readyAvailability(allowedByCapability)}
+        evidenceView={evidenceView({ blocked: true })}
+        action={null}
+        busy={false}
+        lastRecovery={null}
+        onReload={onReload}
+        onRecover={onRecover}
+        onBatch={onBatch}
+        onExport={onExport}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Export signed data' })).toBeEnabled()
   })
 })

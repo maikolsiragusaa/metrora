@@ -55,12 +55,20 @@ function SplashStatus({ progress }: { progress: Progress }) {
   const counter = active === 'claude' && progress.claudeTotal > 0
     ? ` · ${progress.claudeDone.toLocaleString('en-US')}/${progress.claudeTotal.toLocaleString('en-US')}`
     : ''
-  const line = active ? `Indexing ${providerLabel(active)}${counter}` : 'Indexing your usage history…'
+  const line = active
+    ? `Indexing ${providerLabel(active)}${counter}`
+    : progress.order.length > 0
+      ? 'Preparing your usage history…'
+      : 'Loading local analytics…'
+  const note = progress.cold
+    ? 'First history scan · future launches reuse the local index'
+    : 'Reading your local Metrora data'
+
   return (
-    <div className="splash-status">
+    <div className="splash-status" role="status" aria-live="polite">
       <div className="splash-status-line">{line}</div>
       {progress.order.length > 0 && (
-        <div className="splash-prov-strip">
+        <div className="splash-prov-strip" aria-hidden="true">
           {progress.order.map(id => (
             <span key={id} className={`splash-prov ${progress.status[id] ?? 'pending'}`} title={providerLabel(id)}>
               <ProviderLogo provider={id} size={15} />
@@ -68,7 +76,7 @@ function SplashStatus({ progress }: { progress: Progress }) {
           ))}
         </div>
       )}
-      <div className="splash-status-note">One-time scan · future launches are faster</div>
+      <div className="splash-status-note">{note}</div>
     </div>
   )
 }
@@ -77,7 +85,6 @@ function SplashStatus({ progress }: { progress: Progress }) {
 export function Splash({ hasData, hasError }: { hasData: boolean; hasError: boolean }) {
   const [phase, setPhase] = useState<Phase>('lit')
   const [progress, setProgress] = useState<Progress>(EMPTY)
-  const [reveal, setReveal] = useState(false)
   const shownAt = useRef(Date.now())
   const done = useRef(false)
 
@@ -85,8 +92,6 @@ export function Splash({ hasData, hasError }: { hasData: boolean; hasError: bool
     if (!metrora || typeof metrora.onProgress !== 'function') return
     return metrora.onProgress(event => setProgress(previous => reduceProgress(previous, event)))
   }, [])
-
-  useEffect(() => { if (progress.cold) setReveal(true) }, [progress.cold])
 
   useEffect(() => {
     if (done.current || (!hasData && !hasError)) return
@@ -113,11 +118,11 @@ export function Splash({ hasData, hasError }: { hasData: boolean; hasError: bool
 
   const base = phase === 'out' ? 'splash splash-out' : 'splash'
   return createPortal(
-    <div className={motionClass(base, 'splash-lit')} aria-hidden="true">
+    <div className={motionClass(base, 'splash-lit')} aria-label="Metrora is loading">
       <div className="splash-mark"><MetroraMark size={76} /></div>
       <div className="splash-word">Metrora</div>
       <div className="splash-version">v{version}</div>
-      {reveal && phase === 'lit' && <SplashStatus progress={progress} />}
+      {phase === 'lit' && <SplashStatus progress={progress} />}
     </div>,
     document.body,
   )

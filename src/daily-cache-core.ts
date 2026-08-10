@@ -1,10 +1,11 @@
 import { randomBytes } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'fs/promises'
-import { homedir } from 'os'
 import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
-
+import { getMetroraCacheDir } from './product-paths.js'
+import { migrateLegacyDailyCacheRoot } from './daily-cache-root-migration.js'
+import { emptyModelStats, mergeModelStats, sanitizeModels } from './daily-cache-model-detail.js'
 // Bumped to 16: historical per-call cost assignments. Surviving source days
 // re-derive under immutable date-effective settlements; sourceless provider
 // slices continue to carry forward losslessly from v15.
@@ -76,8 +77,15 @@ export type ModelDayStats = {
   savingsUSD: number
   inputTokens: number
   outputTokens: number
+  /// Separately observed reasoning/thinking tokens. Optional for legacy days.
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  /// Source-recorded model/API provider when the collector exposes it.
+  modelProvider?: string
+  /// Collector/tool names contributing to this model row. Additive provenance;
+  /// it is not used to split otherwise equivalent accounting rows.
+  sourceProviders?: string[]
 }
 
 export type CategoryDayStats = { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }
@@ -98,6 +106,7 @@ export type ProviderDaySlice = {
   sessions?: number
   inputTokens?: number
   outputTokens?: number
+  reasoningTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   editTurns?: number
@@ -115,6 +124,8 @@ export type DailyEntry = {
   sessions: number
   inputTokens: number
   outputTokens: number
+  /// Separately observed reasoning/thinking tokens. Optional for legacy days.
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   editTurns: number
@@ -157,7 +168,7 @@ export type DailyCache = {
 }
 
 function getCacheDir(): string {
-  return process.env['CODEBURN_CACHE_DIR'] ?? join(homedir(), '.cache', 'codeburn')
+  return getMetroraCacheDir()
 }
 
 /** IANA name of the current local timezone (respects the TZ env var). Days are
@@ -179,7 +190,7 @@ export function emptyCache(savingsConfigHash = ''): DailyCache {
   return { version: DAILY_CACHE_VERSION, savingsConfigHash, tzKey: currentTzKey(), lastComputedDate: null, days: [], complete: false }
 }
 
-function isMigratableCache(parsed: unknown): parsed is { version: number; lastComputedDate: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean } {
+export function isMigratableCache(parsed: unknown): parsed is { version: number; lastComputedDate: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean } {
   if (!parsed || typeof parsed !== 'object') return false
   const c = parsed as Partial<DailyCache>
   if (typeof c.version !== 'number') return false
@@ -193,24 +204,6 @@ function num(v: unknown): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function sanitizeModels(raw: unknown): DailyEntry['models'] {
-  if (!isRecord(raw)) return {}
-  const out: DailyEntry['models'] = {}
-  for (const [name, m] of Object.entries(raw)) {
-    if (name in Object.prototype || !isRecord(m)) continue
-    setOwn(out, name, {
-      calls: num(m.calls),
-      cost: num(m.cost),
-      savingsUSD: num(m.savingsUSD),
-      inputTokens: num(m.inputTokens),
-      outputTokens: num(m.outputTokens),
-      cacheReadTokens: num(m.cacheReadTokens),
-      cacheWriteTokens: num(m.cacheWriteTokens),
-    })
-  }
-  return out
 }
 
 function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
@@ -229,7 +222,7 @@ function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
   return out
 }
 
-const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
+const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
 
 /// Same junk-tolerance as sanitizeProjects, one level up: a foreign cache can
 /// hold anything under a provider slice, and structuredClone in the merge
@@ -275,7 +268,7 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
 
-function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
+export function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
   return days
     .filter(d => d && typeof d === 'object' && typeof d.date === 'string' && DATE_KEY_RE.test(d.date))
     .map(d => ({
@@ -286,6 +279,9 @@ function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
       sessions: num(d.sessions),
       inputTokens: num(d.inputTokens),
       outputTokens: num(d.outputTokens),
+      ...(typeof d.reasoningTokens === 'number' && Number.isFinite(d.reasoningTokens)
+        ? { reasoningTokens: Math.max(0, d.reasoningTokens) }
+        : {}),
       cacheReadTokens: num(d.cacheReadTokens),
       cacheWriteTokens: num(d.cacheWriteTokens),
       editTurns: num(d.editTurns),
@@ -298,7 +294,7 @@ function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
     }))
 }
 
-function migratedFrom(parsed: { version: number; lastComputedDate: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean }): DailyCache {
+export function migratedFrom(parsed: { version: number; lastComputedDate: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean }): DailyCache {
   return {
     version: DAILY_CACHE_VERSION,
     savingsConfigHash: parsed.savingsConfigHash ?? '',
@@ -314,7 +310,7 @@ function migratedFrom(parsed: { version: number; lastComputedDate: string | null
 }
 
 export async function loadDailyCache(): Promise<DailyCache> {
-  const path = getCachePath()
+  const path = (await migrateLegacyDailyCacheRoot(), getCachePath())
   if (existsSync(path)) {
     try {
       const parsed: unknown = JSON.parse(await readFile(path, 'utf-8'))
@@ -349,7 +345,7 @@ function isAdoptableCache(parsed: unknown): parsed is AdoptableCache {
 /// slices it alone still has, marked `carried`. This is what makes a schema
 /// bump lossless: the new version starts from the union of everything every
 /// previous version ever recorded, then re-derives what sources still support.
-async function adoptOlderDailyCaches(): Promise<DailyCache> {
+export async function adoptOlderDailyCaches(): Promise<DailyCache> {
   const dir = getCacheDir()
   let names: string[] = []
   try {
@@ -463,7 +459,7 @@ export function addNewDays(cache: DailyCache, incoming: DailyEntry[], newestDate
 /// a stale or stuck clock can't accidentally evict everything. Skip the prune
 /// entirely if newestDate is malformed — an invalid Date would produce a NaN
 /// cutoff and `d.date >= "Invalid Date"` would silently drop every entry.
-function applyRetention(days: DailyEntry[], newestDate: string): DailyEntry[] {
+export function applyRetention(days: DailyEntry[], newestDate: string): DailyEntry[] {
   const cutoffDate = new Date(`${newestDate}T00:00:00Z`)
   if (isNaN(cutoffDate.getTime())) return days
   cutoffDate.setUTCDate(cutoffDate.getUTCDate() - DAILY_CACHE_RETENTION_DAYS)
@@ -481,10 +477,6 @@ function hasSliceData(slice: ProviderDaySlice): boolean {
 /// of its totals the incoming provider already contributed.
 function isOpaqueDay(day: DailyEntry): boolean {
   return (day.cost > 0 || day.calls > 0) && Object.keys(day.providers).length === 0
-}
-
-function emptyModelStats(): ModelDayStats {
-  return { calls: 0, cost: 0, savingsUSD: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
 }
 
 /// Fold one provider's day slice into a day: the providers map, the day-level
@@ -510,19 +502,14 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
   day.sessions += Math.max(0, (slice.sessions ?? 0) - placeholderSessions)
   day.inputTokens += slice.inputTokens ?? 0
   day.outputTokens += slice.outputTokens ?? 0
+  if (slice.reasoningTokens !== undefined) day.reasoningTokens = (day.reasoningTokens ?? 0) + slice.reasoningTokens
   day.cacheReadTokens += slice.cacheReadTokens ?? 0
   day.cacheWriteTokens += slice.cacheWriteTokens ?? 0
   day.editTurns += slice.editTurns ?? 0
   day.oneShotTurns += slice.oneShotTurns ?? 0
   for (const [name, m] of Object.entries(slice.models ?? {})) {
     const acc = Object.hasOwn(day.models, name) ? day.models[name]! : emptyModelStats()
-    acc.calls += m.calls
-    acc.cost += m.cost
-    acc.savingsUSD += m.savingsUSD ?? 0
-    acc.inputTokens += m.inputTokens
-    acc.outputTokens += m.outputTokens
-    acc.cacheReadTokens += m.cacheReadTokens
-    acc.cacheWriteTokens += m.cacheWriteTokens
+    mergeModelStats(acc, m)
     setOwn(day.models, name, acc)
   }
   for (const [cat, c] of Object.entries(slice.categories ?? {})) {

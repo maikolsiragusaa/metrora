@@ -13,6 +13,11 @@ import type {
   DesktopWorkspaceRuntimeV1,
   DesktopWorkspaceSnapshotV1,
 } from './desktop-workspace-runtime.js'
+import {
+  assertWorkspaceCapabilityV1,
+  evaluateWorkspaceCapabilitiesV1,
+  isReadOnlyCompatibilityV1,
+} from './workspace-capability-policy.js'
 
 export type DesktopCanonicalReviewedScannerInputV1 = {
   endpointId: string
@@ -32,13 +37,15 @@ export type DesktopReviewedProductionResultV1 = {
 export const DesktopWorkspaceRecoverySummaryV1Schema = z.strictObject({
   kind: z.literal('metrora.desktop-workspace-recovery-summary'),
   version: z.literal(1),
-  outcome: z.enum(['workspace-required', 'paused', 'blocked', 'healthy', 'reconciled']),
+  outcome: z.enum(['workspace-required', 'paused', 'verified-read-only', 'blocked', 'healthy', 'reconciled']),
   retryAttempted: z.boolean(),
   blocker: z.enum(['invalid-evidence', 'quarantined-evidence', 'blocked-evidence']).nullable(),
   receiptRepairCount: z.number().int().nonnegative(),
   production: CanonicalReviewedProductionSummaryV1Schema.nullable(),
 }).superRefine((value, context) => {
-  const passive = value.outcome === 'workspace-required' || value.outcome === 'paused'
+  const passive = value.outcome === 'workspace-required'
+    || value.outcome === 'paused'
+    || value.outcome === 'verified-read-only'
   if (passive && (
     value.retryAttempted
     || value.blocker !== null
@@ -144,9 +151,30 @@ export function attachDesktopReviewedProductionV1(
   input: AttachDesktopReviewedProductionV1Options,
 ): DesktopReviewedProductionRuntimeV1 {
   const now = input.now ?? (() => new Date())
+  const getProjectedSnapshot = async (): Promise<DesktopWorkspaceSnapshotV1> => {
+    const snapshot = await input.runtime.getSnapshot()
+    if (input.scanCanonicalCandidates) return snapshot
+    return {
+      ...snapshot,
+      capabilities: evaluateWorkspaceCapabilitiesV1({
+        inspected: true,
+        workspaceConfigured: snapshot.workspace !== null,
+        integrity: snapshot.evidence.integrity,
+        compatibility: snapshot.evidence.compatibility,
+        productionMode: snapshot.productionLifecycle?.mode ?? 'active',
+        unbatchedEventCount: snapshot.evidence.unbatchedEventCount,
+        pendingBatchCount: snapshot.evidence.pendingBatchCount,
+        reviewedProductionAvailable: false,
+      }),
+    }
+  }
 
   return {
     ...input.runtime,
+
+    async getSnapshot() {
+      return getProjectedSnapshot()
+    },
 
     async getBootstrapSnapshot() {
       return createDesktopWorkspaceBootstrapSnapshotV1({
@@ -157,6 +185,24 @@ export function attachDesktopReviewedProductionV1(
     },
 
     async produceReviewedMeasurements() {
+      const current = await this.getSnapshot()
+      if (current.productionLifecycle?.mode === 'paused') {
+        return {
+          summary: {
+            kind: 'metrora.canonical-reviewed-production-summary' as const,
+            version: 1 as const,
+            outcome: 'paused' as const,
+            scanned: false,
+            eligibleCount: 0,
+            producedCount: 0,
+            existingCount: 0,
+            withheldCount: 0,
+            failedCount: 0,
+          },
+          snapshot: current,
+        }
+      }
+      assertWorkspaceCapabilityV1(current.capabilities, 'reviewedProduction')
       if (!input.scanCanonicalCandidates) {
         throw new DesktopReviewedProductionUnavailableError()
       }
@@ -185,6 +231,7 @@ export function attachDesktopReviewedProductionV1(
 
     async recoverLocalState() {
       const snapshot = await this.getSnapshot()
+      assertWorkspaceCapabilityV1(snapshot.capabilities, 'recovery')
       if (!snapshot.workspace) {
         return recoveryResult({
           outcome: 'workspace-required',
@@ -211,6 +258,16 @@ export function attachDesktopReviewedProductionV1(
           outcome: 'blocked',
           retryAttempted: false,
           blocker,
+          receiptRepairCount: 0,
+          production: null,
+        }, snapshot)
+      }
+
+      if (isReadOnlyCompatibilityV1(snapshot.evidence.compatibility)) {
+        return recoveryResult({
+          outcome: 'verified-read-only',
+          retryAttempted: false,
+          blocker: null,
           receiptRepairCount: 0,
           production: null,
         }, snapshot)

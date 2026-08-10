@@ -18,13 +18,39 @@ export type PeriodData = {
   sessions: number
   inputTokens: number
   outputTokens: number
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   /// Total Codex credits consumed in the period (issues #408/#495). Optional so
   /// non-menubar PeriodData producers don't have to compute it.
   codexCredits?: number
   categories: Array<{ name: string; cost: number; savingsUSD: number; turns: number; editTurns: number; oneShotTurns: number }>
-  models: Array<{ name: string; cost: number; savingsUSD: number; calls: number; estimatedCostUSD?: number }>
+  /// Token fields are add-only for compatibility with older PeriodData fixtures
+  /// and producers. Durable day-backed producers populate all four; callers must
+  /// treat their absence as unavailable detail, never as zero usage.
+  /// Timing fields are also optional: they come only from surviving source
+  /// sessions whose collector exposes active-generation timing. They never make
+  /// historical cost/call/token totals less durable.
+  models: Array<{
+    name: string
+    cost: number
+    savingsUSD: number
+    calls: number
+    estimatedCostUSD?: number
+    inputTokens?: number
+    outputTokens?: number
+    reasoningTokens?: number
+    reasoningSemantics?: 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+    /// Source-recorded model/API provider, when the durable source exposed it.
+    modelProvider?: string
+    /// Collector/tool names that contributed to this model row.
+    sourceProviders?: string[]
+    activeDurationMs?: number
+    activeGeneratedTokens?: number
+    timingCoverage?: 'observed' | 'partial' | 'unavailable'
+  }>
   /// Models with usage in the period whose pricing lookup fails against the
   /// current tables (#638): their calls contribute $0 to `cost`. Optional so
   /// PeriodData producers that predate the field keep compiling.
@@ -84,15 +110,16 @@ export type ProviderCost = {
 import type { OptimizeResult } from './optimize.js'
 import { getCurrency } from './currency.js'
 import type { GranularHistory } from './granular-history.js'
-import { getShortModelName } from './models.js'
+import { buildModelAccounting, buildTopModels } from './model-accounting.js'
+import { buildModelPresentation } from './model-presentation.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
+export type { ModelAccountingRow } from './model-accounting-types.js'
+import type { ModelAccountingRow } from './model-accounting-types.js'
 
 const TOP_ACTIVITIES_LIMIT = 20
-const TOP_MODELS_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
 const HISTORY_DAYS_LIMIT = 365
-const SYNTHETIC_MODEL_NAME = '<synthetic>'
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
@@ -114,6 +141,7 @@ export type DailyHistoryEntry = {
   calls: number
   inputTokens: number
   outputTokens: number
+  reasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   topModels: DailyModelBreakdown[]
@@ -136,11 +164,16 @@ export type LocalModelSavings = {
 
 export type ModelAccounting = {
   /** Full, untruncated model rows from the same PeriodData authority as current.cost. */
-  rows: Array<{ name: string; cost: number; savingsUSD: number; calls: number }>
+  rows: ModelAccountingRow[]
   /** Historical total that cannot be assigned to a retained model without guessing. */
   gap: { cost: number; savingsUSD: number; calls: number }
   coverage: { cost: number; calls: number }
+  /** Share of represented model accounting that also has durable token detail. */
+  tokenCoverage: { cost: number; calls: number }
 }
+
+export type { ModelPresentation, ModelPresentationRow, DeliveryStatus } from './model-presentation.js'
+import type { ModelPresentation } from './model-presentation.js'
 
 export type DeviceSummary = {
   id: string
@@ -186,6 +219,12 @@ export type ClaudeConfigSelector = {
 
 export type MenubarPayload = {
   generated: string
+  /** Read lifecycle metadata. Optional for compatibility with older clients. */
+  freshness?: {
+    readMode: 'snapshot' | 'fresh'
+    reconciliation: 'complete' | 'degraded' | 'targeted'
+    durableThrough: string | null
+  }
   current: {
     label: string
     cost: number
@@ -228,6 +267,8 @@ export type MenubarPayload = {
     /// payloads; current producers always emit it from the same PeriodData used
     /// by headline cost/calls.
     modelAccounting?: ModelAccounting
+    /** Presentation-sized projection above exact modelAccounting rows. */
+    modelPresentation?: ModelPresentation
     /// See PeriodData.unpricedModels: usage priced at $0 for lack of pricing
     /// data. Empty when every model in the period resolved a price. Optional
     /// so payload producers that predate the field stay source-compatible.
@@ -240,7 +281,7 @@ export type MenubarPayload = {
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
     /// Provider identity alongside the `providers` map: `id` is the internal
-    /// provider name (round-trips as `--provider`), `label` the display name.
+    /// provider name (round-trips as --provider), `label` the display name.
     /// The `providers` map keys stay lowercased display names for compatibility.
     providerDetails: Array<{ id: string; label: string; cost: number }>
     topProjects: Array<{
@@ -285,7 +326,7 @@ export type MenubarPayload = {
     /// for privacy; distinct sessions and total edit calls per file.
     topReworkedFiles: Array<{ path: string; sessions: number; edits: number }>
     /// Share (0-1) of cost-bearing calls that resolved a price.
-    /// null when not computable (no scan data on this path) — "unknown" must
+    /// null when not computable (no scan data on this path) — unknown must
     /// never render as 100% coverage.
     pricingCoverage: number | null
     retryTax: {
@@ -379,51 +420,6 @@ function buildTopActivities(categories: PeriodData['categories']): MenubarPayloa
     turns: cat.turns,
     oneShotRate: oneShotRateFor(cat.editTurns, cat.oneShotTurns),
   }))
-}
-
-function mergedModelRows(models: PeriodData['models']): Array<{ name: string; cost: number; calls: number; savingsUSD: number; estimatedCostUSD: number }> {
-  // Day entries key models by the raw provider id (day-aggregator), so resolve
-  // display names here — the menubar shows "Kimi K3" rather than "k3". Ids that
-  // collapse to one display name (e.g. k3 and kimi-k3) merge into a single row.
-  const merged = new Map<string, { cost: number; calls: number; savingsUSD: number; estimatedCostUSD: number }>()
-  for (const m of models) {
-    if (m.name === SYNTHETIC_MODEL_NAME) continue
-    const name = getShortModelName(m.name)
-    const acc = merged.get(name) ?? { cost: 0, calls: 0, savingsUSD: 0, estimatedCostUSD: 0 }
-    acc.cost += m.cost
-    acc.calls += m.calls
-    acc.savingsUSD += m.savingsUSD ?? 0
-    acc.estimatedCostUSD += m.estimatedCostUSD ?? 0
-    merged.set(name, acc)
-  }
-  return [...merged.entries()]
-    .sort(([, a], [, b]) => b.cost - a.cost)
-    .map(([name, data]) => ({ name, ...data }))
-}
-
-function buildTopModels(models: PeriodData['models']): MenubarPayload['current']['topModels'] {
-  return mergedModelRows(models)
-    .slice(0, TOP_MODELS_LIMIT)
-    .map(row => ({ ...row, savingsBaselineModel: '' }))
-}
-
-function buildModelAccounting(models: PeriodData['models'], totalCost: number, totalCalls: number): ModelAccounting {
-  const rows = mergedModelRows(models).map(({ name, cost, savingsUSD, calls }) => ({ name, cost, savingsUSD, calls }))
-  const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)
-  const representedSavings = rows.reduce((sum, row) => sum + row.savingsUSD, 0)
-  const representedCalls = rows.reduce((sum, row) => sum + row.calls, 0)
-  const gapCost = Math.max(0, totalCost - representedCost)
-  const gapCalls = Math.max(0, totalCalls - representedCalls)
-  const totalSavings = models.reduce((sum, model) => sum + (model.savingsUSD ?? 0), 0)
-  const gapSavings = Math.max(0, totalSavings - representedSavings)
-  return {
-    rows,
-    gap: { cost: gapCost > 1e-9 ? gapCost : 0, savingsUSD: gapSavings > 1e-9 ? gapSavings : 0, calls: gapCalls },
-    coverage: {
-      cost: totalCost > 1e-9 ? Math.max(0, Math.min(1, representedCost / totalCost)) : 1,
-      calls: totalCalls > 0 ? Math.max(0, Math.min(1, representedCalls / totalCalls)) : 1,
-    },
-  }
 }
 
 function buildOptimize(optimize: OptimizeResult | null): MenubarPayload['optimize'] {
@@ -544,6 +540,7 @@ export function buildMenubarPayload(
   claudeConfigs?: ClaudeConfigSelector,
   granularHistory?: GranularHistory,
 ): MenubarPayload {
+  const modelAccounting = buildModelAccounting(current.models, current.cost, current.calls)
   const payload: MenubarPayload = {
     generated: new Date().toISOString(),
     current: {
@@ -561,7 +558,8 @@ export function buildMenubarPayload(
       estimatedCostUSD: current.estimatedCostUSD ?? 0,
       topActivities: buildTopActivities(current.categories),
       topModels: buildTopModels(current.models),
-      modelAccounting: buildModelAccounting(current.models, current.cost, current.calls),
+      modelAccounting,
+      modelPresentation: buildModelPresentation(modelAccounting),
       unpricedModels: current.unpricedModels ?? [],
       localModelSavings: breakdowns?.localModelSavings ?? { totalUSD: 0, calls: 0, byModel: [], byProvider: [] },
       providers: buildProviders(providers),

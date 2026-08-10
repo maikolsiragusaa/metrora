@@ -21,6 +21,8 @@ function snapshot(): DesktopWorkspaceSnapshot {
     productionLifecycle: null,
     evidence: {
       state: 'workspace-required',
+      integrity: 'unverified',
+      compatibility: 'workspace-required',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -28,7 +30,23 @@ function snapshot(): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: [],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: false, reason: 'workspace-required' },
+      batchSign: { allowed: false, reason: 'workspace-required' },
+      canonicalExport: { allowed: false, reason: 'workspace-required' },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: false, reason: 'workspace-required' },
     },
     privacy: {
       networkRequired: false,
@@ -122,7 +140,7 @@ describe('Workspace recovery IPC', () => {
       chooseExportPath: async () => null,
     })
 
-    const result = await handlers['codeburn:recoverWorkspaceState']!({
+    const result = await handlers['metrora:recoverWorkspaceState']!({
       reset: true,
       deleteEvidence: true,
       sourcePath: '/private/path',
@@ -153,7 +171,7 @@ describe('Workspace recovery IPC', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:recoverWorkspaceState']!()).resolves.toEqual({
+    await expect(handlers['metrora:recoverWorkspaceState']!()).resolves.toEqual({
       ok: false,
       error: {
         kind: 'workspace-recovery-unavailable',
@@ -174,7 +192,7 @@ describe('Workspace recovery IPC', () => {
       chooseExportPath: async () => null,
     })
 
-    const result = await handlers['codeburn:recoverWorkspaceState']!()
+    const result = await handlers['metrora:recoverWorkspaceState']!()
     expect(result).toEqual({
       ok: false,
       error: {

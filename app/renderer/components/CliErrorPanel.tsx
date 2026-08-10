@@ -8,8 +8,8 @@ export function isPermissionCliError(error: CliError | null): boolean {
 export function cliErrorDisplay(error: CliError): { title: string; message: string; tone: 'amber' | 'red' | 'muted' } {
   if (error.kind === 'not-found') {
     return {
-      title: 'Locate the codeburn CLI',
-      message: 'Install it with npm i -g codeburn, then reopen this window.',
+      title: 'Locate the metrora CLI',
+      message: 'Install it with npm i -g metrora, then reopen this window.',
       tone: 'muted',
     }
   }
@@ -40,12 +40,12 @@ export function CliErrorPanel({ error, subject = 'usage' }: { error: CliError; s
     return (
       <Panel title={display.title}>
         <p style={{ color: 'var(--mut)', margin: '0 0 6px', fontSize: 12.5 }}>
-          CodeBurn Desktop reads {subject} by running the{' '}
-          <code style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>codeburn</code> command, but it isn&apos;t
+          Metrora Desktop reads {subject} by running the{' '}
+          <code style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>metrora</code> command, but it isn&apos;t
           on your PATH yet.
         </p>
         <p style={{ color: colorForTone(display.tone), margin: 0, fontSize: 11.5 }}>
-          Install it with <code style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>npm i -g codeburn</code>,
+          Install it with <code style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>npm i -g metrora</code>,
           then reopen this window.
         </p>
       </Panel>

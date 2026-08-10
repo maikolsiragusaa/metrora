@@ -13,7 +13,7 @@ async function waitFor(name: string): Promise<void> {
   while (!existsSync(path)) await new Promise(resolve => { setTimeout(resolve, 5) })
 }
 
-process.env['CODEBURN_CACHE_DIR'] = cacheDir
+process.env['METRORA_CACHE_DIR'] = cacheDir
 await mkdir(barrierDir, { recursive: true })
 
 const refresh = bypass === 'true' ? null : await acquireCacheRefreshLock({ cacheDir, waitMs: 2_000, pollMs: 5 })

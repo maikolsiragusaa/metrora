@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'path'
 import { homedir } from 'os'
 
 import { calculateCost, getShortModelName } from '../models.js'
+import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { isSqliteAvailable, getSqliteLoadError, openDatabase, isSqliteBusyError, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 import type { ToolCall } from '../types.js'
@@ -165,6 +166,8 @@ function usageExpression(columns: Set<string>): string {
     'cache_read_tokens',
     'cache_write_tokens',
     'reasoning_tokens',
+    'actual_cost_usd',
+    'estimated_cost_usd',
   ]
   const parts = usageColumns
     .filter(name => columns.has(name))
@@ -373,9 +376,13 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         const cacheReadTokens = row.cache_read_tokens ?? 0
         const cacheWriteTokens = row.cache_write_tokens ?? 0
         const reasoningTokens = row.reasoning_tokens ?? 0
-        if (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens + reasoningTokens === 0) return
+        const hasRecordedCost =
+          (typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd)) ||
+          (typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd))
+        if (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens + reasoningTokens === 0 && !hasRecordedCost) return
 
         const model = row.model ?? 'unknown'
+        const modelProvider = normalizeExplicitModelProvider(row.billing_provider)
         const { tools, toolSequence, bashCommands } = collectTools(messages)
         // Hermes records the session's working directory in sessions.cwd.
         // Prefer it; fall back to scraping a "Current working directory:" line
@@ -400,18 +407,20 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
           cacheReadTokens,
           0,
         )
-        const recordedCost =
-          (row.actual_cost_usd ?? 0) > 0 ? row.actual_cost_usd!
-          : (row.estimated_cost_usd ?? 0) > 0 ? row.estimated_cost_usd!
-          : null
+        const hasActualCost = typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd)
+        const hasEstimatedCost = typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd)
+        const recordedCost = hasActualCost
+          ? row.actual_cost_usd
+          : hasEstimatedCost ? row.estimated_cost_usd : null
         // When Hermes stored no cost (e.g. subscription-billed sessions), the
         // figure is our LiteLLM-priced estimate from the session token totals.
         const costUSD = recordedCost ?? calculatedCost
-        const costIsEstimated = recordedCost === null
+        const costIsEstimated = !hasActualCost
 
         result = {
           provider: 'hermes',
           model,
+          ...(modelProvider ? { modelProvider } : {}),
           inputTokens,
           outputTokens,
           cacheCreationInputTokens: cacheWriteTokens,

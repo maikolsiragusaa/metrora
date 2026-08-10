@@ -34,7 +34,7 @@ export type ReconcileLocalWorkspaceSoftwareV1Result = {
 /**
  * Persist the software versions currently running on an already-enrolled local
  * endpoint without minting a new Workspace, endpoint identity, membership or
- * evidence chain. The frozen `qovrionVersion` field name remains a v1 wire
+ * evidence chain. The frozen `metroraVersion` field name remains a v1 wire
  * compatibility detail; its value is always the current Metrora version.
  */
 export async function reconcileLocalWorkspaceSoftwareV1(
@@ -82,7 +82,7 @@ export async function reconcileLocalWorkspaceSoftwareV1(
     }
 
     if (
-      stored.endpoint.software.qovrionVersion === metroraVersion &&
+      stored.endpoint.software.metroraVersion === metroraVersion &&
       stored.endpoint.software.collectorVersion === collectorVersion
     ) {
       return { outcome: 'unchanged', state: stored }
@@ -94,7 +94,7 @@ export async function reconcileLocalWorkspaceSoftwareV1(
       endpoint: {
         ...stored.endpoint,
         software: {
-          qovrionVersion: metroraVersion,
+          metroraVersion: metroraVersion,
           collectorVersion,
         },
         updatedAt,

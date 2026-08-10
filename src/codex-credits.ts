@@ -1,6 +1,6 @@
 // Codex credit pricing. ChatGPT/Codex subscription users consume *credits*, a
 // separate unit from API dollars: usage is billed as "credits per million
-// tokens" at per-model rates that differ from the API USD pricing CodeBurn uses
+// tokens" at per-model rates that differ from the API USD pricing Metrora uses
 // for cost. This module computes credit consumption from token counts so the
 // app can show usage in credits (issues #408 and #495).
 //
@@ -31,13 +31,13 @@ export function codexCreditRate(model: string): CodexCreditRate | null {
 }
 
 export type CodexCreditTokens = {
-  /// Non-cached input tokens (CodeBurn normalizes Codex to Anthropic semantics,
+  /// Non-cached input tokens (Metrora normalizes Codex to Anthropic semantics,
   /// so this excludes cache-read tokens).
   inputTokens: number
   /// Cache-read (cached input) tokens, billed at the cheaper cached rate.
   cachedReadTokens: number
   outputTokens: number
-  /// Reasoning tokens are billed as output, matching CodeBurn's cost model.
+  /// Reasoning tokens are billed as output, matching Metrora's cost model.
   reasoningTokens?: number
 }
 

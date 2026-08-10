@@ -90,7 +90,7 @@ function warnUnrecognizedSchemaOnce(providerLabel: string, missing: string[]): v
   warnedSchemas.set(providerLabel, providerSet)
   process.stderr.write(
     `metrora: ${providerLabel} database is missing expected tables (${missing.join(', ')}). ` +
-    `Run ${providerLabel} once to apply migrations, or report at https://github.com/getagentseal/codeburn/issues if this persists.\n`
+    `Run ${providerLabel} once to apply migrations, or report at https://github.com/maikolsiragusaa/metrora/issues if this persists.\n`
   )
 }
 
@@ -139,7 +139,6 @@ export function createSqliteSessionParser(
             SELECT child.id
             FROM session child
             JOIN session_tree parent ON child.parent_id = parent.id
-            WHERE child.time_archived IS NULL
           )
           SELECT session_id, id, time_created, CAST(data AS BLOB) AS data
           FROM message
@@ -155,7 +154,6 @@ export function createSqliteSessionParser(
             SELECT child.id
             FROM session child
             JOIN session_tree parent ON child.parent_id = parent.id
-            WHERE child.time_archived IS NULL
           )
           SELECT message_id, CAST(data AS BLOB) AS data
           FROM part
@@ -227,7 +225,14 @@ export function createSqliteSessionParser(
 
         if (yieldCount === 0 && messages.length > 0) {
           const sessionTokens = tryQuerySessionTokens(db, sessionId)
-          if (sessionTokens && (sessionTokens.cost > 0 || sessionTokens.input > 0 || sessionTokens.output > 0)) {
+          if (sessionTokens && (
+            sessionTokens.cost > 0 ||
+            sessionTokens.input > 0 ||
+            sessionTokens.output > 0 ||
+            sessionTokens.reasoning > 0 ||
+            sessionTokens.cacheRead > 0 ||
+            sessionTokens.cacheWrite > 0
+          )) {
             const dedupKey = `${config.providerName}:${sessionId}:session-level`
             if (!seenKeys.has(dedupKey)) {
               seenKeys.add(dedupKey)
@@ -257,7 +262,7 @@ export function createSqliteSessionParser(
             }
           }
 
-          if (yieldCount === 0 && process.env['CODEBURN_VERBOSE'] === '1') {
+          if (yieldCount === 0 && process.env['METRORA_VERBOSE'] === '1') {
             process.stderr.write(
               `metrora: ${config.displayName} session ${sessionId} has ${messages.length} messages ` +
               `(${parseFailCount} unparseable, ${roleSkipCount} non-user/assistant roles) ` +
@@ -303,7 +308,7 @@ export async function discoverSqliteSessions(
       if (!schema.ok) continue
 
       const rows = db.query<SessionRow>(
-        'SELECT id, CAST(directory AS BLOB) AS directory, CAST(title AS BLOB) AS title, time_created FROM session WHERE time_archived IS NULL AND parent_id IS NULL ORDER BY time_created DESC',
+        'SELECT id, CAST(directory AS BLOB) AS directory, CAST(title AS BLOB) AS title, time_created FROM session WHERE parent_id IS NULL ORDER BY time_created DESC',
       )
 
       for (const row of rows) {

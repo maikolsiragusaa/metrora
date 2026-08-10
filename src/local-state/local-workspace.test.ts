@@ -14,6 +14,12 @@ import {
   type LocalEndpointIdentityMetadataV1,
 } from './endpoint-identity.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
+import {
+  LEGACY_ENDPOINT_KIND,
+  LEGACY_SOFTWARE_VERSION_FIELD,
+  LEGACY_WORKSPACE_KIND,
+  LEGACY_WORKSPACE_MEMBERSHIP_KIND,
+} from './legacy-identity-compatibility.js'
 
 const roots: string[] = []
 const NOW = '2026-08-01T12:00:00.000Z'
@@ -31,7 +37,7 @@ function identity(
   endpointId = 'ep_11111111-2222-4333-8444-555555555555',
 ): LocalEndpointIdentityMetadataV1 {
   return {
-    kind: 'qovrion.local-endpoint-identity',
+    kind: 'metrora.local-endpoint-identity',
     version: 1,
     endpointId,
     generation,
@@ -100,7 +106,7 @@ describe.sequential('local personal workspace v1', () => {
       localSubjectId: 'subject_00000000-0000-4000-8000-000000000003',
       endpointIdentityGeneration: 1,
       workspace: {
-        kind: 'qovrion.workspace',
+        kind: 'metrora.workspace',
         workspaceId: 'workspace_00000000-0000-4000-8000-000000000001',
         displayName: 'Maikol Workspace',
         slug: 'maikol-workspace',
@@ -108,7 +114,7 @@ describe.sequential('local personal workspace v1', () => {
         status: 'active',
       },
       ownerMembership: {
-        kind: 'qovrion.workspace-membership',
+        kind: 'metrora.workspace-membership',
         membershipId: 'membership_00000000-0000-4000-8000-000000000002',
         principal: {
           type: 'user',
@@ -118,7 +124,7 @@ describe.sequential('local personal workspace v1', () => {
         status: 'active',
       },
       endpoint: {
-        kind: 'qovrion.endpoint',
+        kind: 'metrora.endpoint',
         endpointId: identity().endpointId,
         endpointType: 'desktop',
         identity: {
@@ -126,7 +132,7 @@ describe.sequential('local personal workspace v1', () => {
           publicKeyFingerprintSha256: 'a'.repeat(64),
         },
         software: {
-          qovrionVersion: '0.9.19',
+          metroraVersion: '0.9.19',
           collectorVersion: '0.9.19',
         },
         enrollment: {
@@ -219,6 +225,45 @@ describe.sequential('local personal workspace v1', () => {
     expect(workspaceText).not.toContain('privateKeyPkcs8')
     expect(workspaceText).not.toContain('eventIdentityKey')
     expect(workspaceText).not.toContain(endpointIdentity.metadata.publicKeySpkiBase64)
+  })
+
+  it('migrates the legacy workspace namespace without minting a new workspace or endpoint', async () => {
+    const dataDir = await root()
+    const created = await createLocalPersonalWorkspaceV1({
+      dataDir,
+      endpointIdentity: identity(),
+      intent: intent(),
+      now: () => new Date(NOW),
+      randomUUID: uuidSource().next,
+    })
+    const statePath = join(dataDir, 'workspace', 'local-personal-workspace.v1.json')
+    await writeFile(statePath, JSON.stringify({
+      ...created.state,
+      workspace: { ...created.state.workspace, kind: LEGACY_WORKSPACE_KIND },
+      ownerMembership: { ...created.state.ownerMembership, kind: LEGACY_WORKSPACE_MEMBERSHIP_KIND },
+      endpoint: {
+        ...created.state.endpoint,
+        kind: LEGACY_ENDPOINT_KIND,
+        software: {
+          [LEGACY_SOFTWARE_VERSION_FIELD]: created.state.endpoint.software.metroraVersion,
+          collectorVersion: created.state.endpoint.software.collectorVersion,
+        },
+      },
+    }))
+
+    const loaded = await loadLocalPersonalWorkspaceV1({
+      dataDir,
+      endpointIdentity: identity(),
+    })
+
+    expect(loaded?.workspace.workspaceId).toBe(created.state.workspace.workspaceId)
+    expect(loaded?.endpoint.endpointId).toBe(created.state.endpoint.endpointId)
+    expect(loaded?.endpoint.software.metroraVersion).toBe('0.9.19')
+    const migrated = JSON.parse(await readFile(statePath, 'utf8'))
+    expect(migrated.workspace.kind).toBe('metrora.workspace')
+    expect(migrated.ownerMembership.kind).toBe('metrora.workspace-membership')
+    expect(migrated.endpoint.kind).toBe('metrora.endpoint')
+    expect(migrated.endpoint.software).toEqual({ metroraVersion: '0.9.19', collectorVersion: '0.9.19' })
   })
 
   it('reconciles a forward endpoint-key rotation without replacing workspace identity', async () => {

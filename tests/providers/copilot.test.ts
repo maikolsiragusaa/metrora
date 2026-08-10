@@ -509,6 +509,22 @@ describe('copilot provider - session.shutdown token/cost rollup', () => {
     expect(call.costUSD).toBeCloseTo(calculateCost('claude-sonnet-4-5', 0, 150, 0, 0, 0), 12)
   })
 
+  it('retains reasoning-only session.shutdown usage', async () => {
+    const eventsPath = await createSessionDir('sess-reasoning-only', [
+      modelChange('gpt-5'),
+      shutdownEvent({
+        modelMetrics: {
+          'gpt-5': { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 17 },
+        },
+      }),
+    ])
+
+    const calls = await collectCalls({ path: eventsPath, project: 'myproject', provider: 'copilot' })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.reasoningTokens).toBe(17)
+  })
+
   it('attributes shutdown tokens and cost per model', async () => {
     const eventsPath = await createSessionDir('sess-multi', [
       modelChange('claude-sonnet-4-5'),
@@ -617,7 +633,7 @@ describe('copilot provider - session.shutdown token/cost rollup', () => {
 describe('copilot provider - chatSessions parsing', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'copilot-chatsessions-test-'))
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '1')
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
   })
 
   afterEach(async () => {
@@ -680,8 +696,8 @@ describe('copilot provider - chatSessions parsing', () => {
 
     vi.unstubAllEnvs()
     const dbPath = join(tmpDir, 'agent-traces.db')
-    vi.stubEnv('CODEBURN_COPILOT_OTEL_DB', dbPath)
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '')
+    vi.stubEnv('METRORA_COPILOT_OTEL_DB', dbPath)
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '')
     createOtelDb(dbPath)
     insertSpan(dbPath, {
       spanId: 'span-chatsession-skip',
@@ -793,7 +809,7 @@ describe('copilot provider - discoverSessions', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'copilot-test-'))
     // Disable OTel discovery so tests aren't contaminated by real sessions
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '1')
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
   })
 
   afterEach(async () => {
@@ -1000,8 +1016,8 @@ describe('copilot provider - OTel cache token parsing', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'copilot-otel-test-'))
     dbPath = join(tmpDir, 'agent-traces.db')
-    vi.stubEnv('CODEBURN_COPILOT_OTEL_DB', dbPath)
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '')
+    vi.stubEnv('METRORA_COPILOT_OTEL_DB', dbPath)
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '')
   })
 
   afterEach(async () => {
@@ -1190,7 +1206,7 @@ describe('copilot provider - OTel cache token parsing', () => {
     expect(calls[0]!.cacheReadInputTokens).toBe(10000)
   })
 
-  it('skips OTel spans with zero input and output tokens', async () => {
+  it('retains OTel spans with cache tokens even when input and output are zero', async () => {
     if (!isSqliteAvailable()) return
 
     createOtelDb(dbPath)
@@ -1215,8 +1231,11 @@ describe('copilot provider - OTel cache token parsing', () => {
     for await (const call of provider.createSessionParser(src!, new Set()).parse()) {
       calls.push(call)
     }
-    // Span with zero input AND output tokens is skipped
-    expect(calls).toHaveLength(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.inputTokens).toBe(0)
+    expect(calls[0]!.outputTokens).toBe(0)
+    expect(calls[0]!.cacheReadInputTokens).toBe(50000)
+    expect(calls[0]!.cacheCreationInputTokens).toBe(500)
   })
 
   it('OTel source path equals the plain DB file path and durableSources is true', async () => {
@@ -1387,7 +1406,7 @@ describe('copilot provider - OTel cache token parsing', () => {
 describe('copilot provider - JetBrains parsing', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'copilot-jetbrains-test-'))
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '1')
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
   })
 
   afterEach(async () => {
@@ -1984,7 +2003,7 @@ describe('copilot provider - JetBrains parsing', () => {
 describe('copilot provider - JetBrains dedup key stability across store rewrites', () => {
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'copilot-jetbrains-dedup-'))
-    vi.stubEnv('CODEBURN_COPILOT_DISABLE_OTEL', '1')
+    vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
   })
 
   afterEach(async () => {

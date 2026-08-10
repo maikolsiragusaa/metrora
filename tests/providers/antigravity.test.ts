@@ -8,15 +8,19 @@ import { isSqliteAvailable } from '../../src/sqlite.js'
 import {
   antigravityAppDataDirFromSourcePath,
   antigravityCascadeIdFromPath,
+  buildCallsFromGeneratorMetadata,
   createAntigravityProvider,
   discoverAntigravitySessionSources,
   extractAntigravityAppDataDirFromLine,
   extractAntigravityGeneratorMetadata,
   extractAntigravityModelMap,
+  flushAntigravityCache,
   getAntigravityStatusLineEventsPath,
   parseAntigravityServerInfo,
   parseAntigravityServerInfoFromLine,
+  reconcileAntigravityStatusLineCalls,
   recordAntigravityStatusLinePayload,
+  resetAntigravityMemoryCacheForTests,
   shouldReparseAntigravitySource,
 } from '../../src/providers/antigravity.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
@@ -214,6 +218,107 @@ describe('antigravity provider helpers', () => {
     expect(extractAntigravityGeneratorMetadata(null)).toEqual([])
   })
 
+  it('retains the explicit generator provider on normalized calls', () => {
+    const calls = buildCallsFromGeneratorMetadata('cascade-1', [{
+      chatModel: {
+        model: 'gemini-3-pro',
+        usage: {
+          model: 'gemini-3-pro',
+          inputTokens: '10',
+          outputTokens: '4',
+          responseOutputTokens: '4',
+          apiProvider: 'Google',
+        },
+      },
+    }], {})
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.modelProvider).toBe('google')
+  })
+
+  it('preserves cache reads and total output for legacy direct generator usage', () => {
+    const calls = buildCallsFromGeneratorMetadata('cascade-legacy', [{
+      chatModel: {
+        model: 'gemini-3-pro',
+        usage: {
+          model: 'gemini-3-pro',
+          inputTokens: '10',
+          outputTokens: '4',
+          cacheReadTokens: '30',
+          apiProvider: 'Google',
+          responseId: 'legacy-response',
+        },
+      },
+    }], {})
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 4,
+      cacheReadInputTokens: 30,
+      reasoningTokens: 0,
+      modelProvider: 'google',
+      deduplicationKey: 'antigravity:cascade-legacy:legacy-response',
+    })
+  })
+
+  it('supports retryInfos usage without replacing or duplicating old metadata', () => {
+    const calls = buildCallsFromGeneratorMetadata('cascade-retries', [{
+      chatModel: {
+        model: 'MODEL_PLACEHOLDER_M8',
+        responseModel: 'gemini-3.6-flash',
+        usage: {
+          model: 'gemini-3.6-flash', inputTokens: '5', outputTokens: '2',
+          apiProvider: 'google', responseId: 'shared-response',
+        },
+        retryInfos: [
+          { usage: {
+            inputTokens: '5', outputTokens: '2', cacheReadTokens: '11',
+            thinkingOutputTokens: '1', responseOutputTokens: '1',
+            apiProvider: 'google', responseId: 'shared-response',
+          } },
+          { usage: {
+            inputTokens: 7, outputTokens: 4, cacheReadTokens: 13,
+            thinkingOutputTokens: 1, responseOutputTokens: 3,
+            apiProvider: 'google', responseId: 'retry-response',
+            timestamp: 1786123456789,
+          } },
+        ],
+      },
+    }], {})
+
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toMatchObject({
+      model: 'gemini-3.6-flash',
+      modelProvider: 'google',
+      inputTokens: 7,
+      outputTokens: 3,
+      reasoningTokens: 1,
+      cacheReadInputTokens: 13,
+      deduplicationKey: 'antigravity:cascade-retries:retry-response',
+      timestamp: new Date(1786123456789).toISOString(),
+    })
+  })
+
+  it('retains generator records with reasoning but no input/output', () => {
+    const calls = buildCallsFromGeneratorMetadata('cascade-reasoning', [{
+      chatModel: {
+        model: 'gemini-3-pro',
+        usage: {
+          model: 'gemini-3-pro',
+          inputTokens: '0',
+          outputTokens: '0',
+          responseOutputTokens: '0',
+          thinkingOutputTokens: '3',
+          apiProvider: 'google',
+        },
+      },
+    }], {})
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.reasoningTokens).toBe(3)
+  })
+
   it('derives cascade ids from legacy .pb and Antigravity 2 .db files', () => {
     expect(antigravityCascadeIdFromPath('/tmp/123.pb')).toBe('123')
     expect(antigravityCascadeIdFromPath('/tmp/456.db')).toBe('456')
@@ -243,7 +348,7 @@ describe('antigravity provider helpers', () => {
   })
 
   it('discovers legacy .pb files and Antigravity 2 .db files only', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-'))
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-'))
 
     try {
       await writeFile(join(dir, 'legacy.pb'), '')
@@ -269,7 +374,7 @@ describe('antigravity provider helpers', () => {
   })
 
   it('discovers antigravity-ide conversation and implicit files', async () => {
-    const tempHome = await mkdtemp(join(tmpdir(), 'codeburn-home-'))
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-home-'))
     const conversationsDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
     const implicitDir = join(tempHome, '.gemini', 'antigravity-ide', 'implicit')
 
@@ -312,8 +417,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('captures exact Antigravity CLI statusLine usage as fallback calls', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     try {
       const payload = {
@@ -371,8 +476,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('skips statusLine fallback calls when RPC cache already covered the conversation', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-rpc-dedup-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-rpc-dedup-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     try {
       expect(await recordAntigravityStatusLinePayload({
@@ -404,9 +509,73 @@ describe('antigravity provider helpers', () => {
     }
   })
 
+  it('keeps Status Line cache enrichment out of API and model call cardinality', () => {
+    const direct: ParsedProviderCall[] = [{
+      provider: 'antigravity', model: 'gemini-3.5-flash-high', modelProvider: 'google',
+      inputTokens: 100, outputTokens: 40, reasoningTokens: 10,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 20, cachedInputTokens: 0,
+      webSearchRequests: 0, costUSD: 1, tools: [], bashCommands: [],
+      timestamp: '2026-08-01T00:00:00.000Z', speed: 'standard',
+      deduplicationKey: 'antigravity:conversation:response', userMessage: '', sessionId: 'conversation',
+    }]
+    const status: ParsedProviderCall[] = [{
+      ...direct[0]!, model: 'Gemini 3.5 Flash (High)', modelProvider: undefined,
+      outputTokens: 50, reasoningTokens: 0, cacheCreationInputTokens: 5, cacheReadInputTokens: 30,
+      deduplicationKey: 'antigravity-statusline:conversation:0:signature',
+      timestamp: '2026-08-01T00:01:00.000Z', project: 'antigravity-cli',
+    }]
+
+    const enrichment = reconcileAntigravityStatusLineCalls(direct, status)
+    expect(enrichment).toEqual([{
+      model: 'gemini-3.5-flash-high', modelProvider: 'google',
+      cacheCreationInputTokens: 5, cacheReadInputTokens: 10,
+    }])
+    expect(enrichment[0]).not.toHaveProperty('inputTokens')
+    expect(enrichment[0]).not.toHaveProperty('outputTokens')
+    expect(enrichment[0]).not.toHaveProperty('costUSD')
+    expect(direct).toHaveLength(1)
+    expect(direct[0]).toMatchObject({
+      model: 'gemini-3.5-flash-high', inputTokens: 100, outputTokens: 40,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 20,
+    })
+    expect(reconcileAntigravityStatusLineCalls([
+      { ...direct[0]!, cacheCreationInputTokens: 5, cacheReadInputTokens: 30 },
+    ], status)).toEqual([])
+  })
+
+  it('does not cross-match mixed Gemini high, medium, low, or agent identities', () => {
+    const variants = [
+      { directModel: 'gemini-3.5-flash-high', statusModel: 'Gemini 3.5 Flash (High)', input: 100, output: 40, read: 20 },
+      { directModel: 'gemini-3.5-flash-medium', statusModel: 'Gemini 3.5 Flash (Medium)', input: 200, output: 50, read: 30 },
+      { directModel: 'gemini-3.5-flash-low', statusModel: 'Gemini 3.5 Flash (Low)', input: 300, output: 60, read: 40 },
+      { directModel: 'gemini-3-flash-agent', statusModel: 'Gemini 3 Flash (Agent)', input: 400, output: 70, read: 50 },
+    ]
+    const direct: ParsedProviderCall[] = variants.map((variant, index) => ({
+      provider: 'antigravity', model: variant.directModel, modelProvider: 'google',
+      inputTokens: variant.input, outputTokens: variant.output, reasoningTokens: 0,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: variant.read, cachedInputTokens: 0,
+      webSearchRequests: 0, costUSD: 1, tools: [], bashCommands: [],
+      timestamp: `2026-08-01T00:0${index}:00.000Z`, speed: 'standard',
+      deduplicationKey: `antigravity:conversation:response-${index}`, userMessage: '', sessionId: 'conversation',
+    }))
+    const status: ParsedProviderCall[] = variants.map((variant, index) => ({
+      ...direct[index]!, model: variant.statusModel, modelProvider: undefined,
+      cacheCreationInputTokens: 5, cacheReadInputTokens: variant.read + 10,
+      deduplicationKey: `antigravity-statusline:conversation:${index}:signature`,
+      timestamp: `2026-08-01T01:0${index}:00.000Z`, project: 'antigravity-cli',
+    }))
+
+    expect(reconcileAntigravityStatusLineCalls(direct, status)).toEqual(
+      variants.map(variant => ({
+        model: variant.directModel, modelProvider: 'google',
+        cacheCreationInputTokens: 5, cacheReadInputTokens: 10,
+      })),
+    )
+  })
+
   it('skips singleton statusLine snapshots and deltas monotonic usage', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-runs-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-runs-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     const basePayload = {
       conversation_id: 'statusline-runs',
@@ -457,8 +626,8 @@ describe('antigravity provider helpers', () => {
   })
 
   it('treats non-monotonic statusLine usage as a new request snapshot', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-statusline-reset-'))
-    process.env['CODEBURN_CACHE_DIR'] = dir
+    const dir = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-reset-'))
+    process.env['METRORA_CACHE_DIR'] = dir
 
     const payload = (
       input_tokens: number,
@@ -513,10 +682,10 @@ describe('antigravity provider helpers', () => {
   it('parses current Antigravity CLI SQLite conversations with non-zero token usage', async () => {
     if (!isSqliteAvailable()) return
 
-    const tempHome = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-current-cli-'))
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-current-cli-'))
     const cacheDir = join(tempHome, 'cache')
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = cacheDir
 
     try {
       const fixture = JSON.parse(await readFile(
@@ -563,7 +732,7 @@ describe('antigravity provider helpers', () => {
       expect(calls[0]).toMatchObject({
         provider: 'antigravity',
         model: 'gemini-3.1-pro-high',
-        inputTokens: 30265,
+        inputTokens: 31281,
         outputTokens: 659,
         reasoningTokens: 71,
         sessionId: fixture.conversationId,
@@ -572,8 +741,8 @@ describe('antigravity provider helpers', () => {
       expect(calls[0]!.projectPath).toBeUndefined()
       expect(calls[0]!.costUSD).toBeGreaterThan(0)
     } finally {
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       await rm(tempHome, { recursive: true, force: true })
     }
   })
@@ -581,10 +750,10 @@ describe('antigravity provider helpers', () => {
   it('deduplicates current SQLite rows against RPC response ids with hyphens', async () => {
     if (!isSqliteAvailable()) return
 
-    const tempHome = await mkdtemp(join(tmpdir(), 'codeburn-antigravity-current-cli-dedup-'))
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-current-cli-dedup-'))
     const cacheDir = join(tempHome, 'cache')
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = cacheDir
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = cacheDir
 
     try {
       const fixture = JSON.parse(await readFile(
@@ -608,29 +777,120 @@ describe('antigravity provider helpers', () => {
 
       expect(calls).toEqual([])
     } finally {
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       await rm(tempHome, { recursive: true, force: true })
     }
   })
 
   async function withTempAntigravityHome(prefix: string, fn: (tempHome: string) => Promise<void>): Promise<void> {
     const tempHome = await mkdtemp(join(tmpdir(), prefix))
-    const previousCacheDir = process.env['CODEBURN_CACHE_DIR']
-    process.env['CODEBURN_CACHE_DIR'] = join(tempHome, 'cache')
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = join(tempHome, 'cache')
     try {
       await fn(tempHome)
     } finally {
-      if (previousCacheDir === undefined) delete process.env['CODEBURN_CACHE_DIR']
-      else process.env['CODEBURN_CACHE_DIR'] = previousCacheDir
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
       await rm(tempHome, { recursive: true, force: true })
     }
   }
 
+  it('characterizes protobuf usage fields #1/#2/#5/#9/#10/#11', async () => {
+    if (!isSqliteAvailable()) return
+
+    await withTempAntigravityHome('metrora-antigravity-fields-', async (tempHome) => {
+      const varint = (n: number): number[] => {
+        const out: number[] = []
+        let value = n
+        while (value > 0x7f) { out.push((value & 0x7f) | 0x80); value = Math.floor(value / 128) }
+        out.push(value)
+        return out
+      }
+      const field = (number: number, value: number): number[] => [...varint(number * 8), ...varint(value)]
+      const bytes = (number: number, value: number[] | Uint8Array): number[] => [
+        ...varint(number * 8 + 2), ...varint(value.length), ...value,
+      ]
+      const usage = [
+        ...field(1, 100), ...field(2, 200), ...field(3, 50), ...field(5, 700),
+        ...field(9, 30), ...field(10, 20), ...bytes(11, new TextEncoder().encode('response-fields')),
+      ]
+      const chat = [...bytes(4, usage), ...bytes(19, new TextEncoder().encode('gemini-3.6-flash'))]
+      const conversationsDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
+      await mkdir(conversationsDir, { recursive: true })
+      const dbPath = join(conversationsDir, 'field-session.db')
+      createCurrentAntigravityCliDb(dbPath, {
+        conversationId: 'field-session', rows: [{ idx: 0, hex: Buffer.from(bytes(1, chat)).toString('hex') }],
+      })
+
+      const calls = await collectAntigravityCalls({ path: dbPath, project: 'antigravity-ide', provider: 'antigravity' })
+      expect(calls).toHaveLength(1)
+      expect(calls[0]).toMatchObject({
+        inputTokens: 300,
+        outputTokens: 30,
+        reasoningTokens: 20,
+        cacheReadInputTokens: 700,
+        deduplicationKey: 'antigravity:field-session:response-fields',
+      })
+    })
+  })
+
+  it('migrates the v5 derived cache, reparses SQLite once, and stays idempotent', async () => {
+    if (!isSqliteAvailable()) return
+
+    await withTempAntigravityHome('metrora-antigravity-cache-v6-', async (tempHome) => {
+      const cacheDir = join(tempHome, 'cache')
+      const conversationsDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
+      await mkdir(conversationsDir, { recursive: true })
+      await mkdir(cacheDir, { recursive: true })
+      const fixture = JSON.parse(await readFile(
+        new URL('../fixtures/antigravity-cli-current/gen-metadata.json', import.meta.url),
+        'utf-8',
+      )) as CurrentCliFixture
+      const dbPath = join(conversationsDir, `${fixture.conversationId}.db`)
+      createCurrentAntigravityCliDb(dbPath, fixture)
+      const dbStat = await stat(dbPath)
+      await writeFile(join(cacheDir, 'antigravity-results.json'), JSON.stringify({
+        version: 5,
+        cascades: {
+          [fixture.conversationId]: {
+            mtimeMs: dbStat.mtimeMs,
+            sizeBytes: dbStat.size,
+            calls: [{
+              provider: 'antigravity', model: 'stale-model', inputTokens: 1, outputTokens: 1,
+              cacheCreationInputTokens: 0, cacheReadInputTokens: 0, cachedInputTokens: 0,
+              reasoningTokens: 0, webSearchRequests: 0, costUSD: 0, tools: [], bashCommands: [],
+              timestamp: '', speed: 'standard', deduplicationKey: 'antigravity:stale',
+              userMessage: '', sessionId: fixture.conversationId,
+            }],
+          },
+        },
+      }))
+
+      resetAntigravityMemoryCacheForTests()
+      const source = { path: dbPath, project: 'antigravity-ide', provider: 'antigravity' }
+      const first = await collectAntigravityCalls(source)
+      await flushAntigravityCache(new Set([fixture.conversationId]))
+      const migrated = JSON.parse(await readFile(join(cacheDir, 'antigravity-results.json'), 'utf-8'))
+
+      expect(first).toHaveLength(1)
+      expect(first[0]).toMatchObject({ inputTokens: 31281, model: 'gemini-3.1-pro-high' })
+      expect(migrated).toMatchObject({
+        version: 6,
+        cascades: { [fixture.conversationId]: { parserVersion: 6 } },
+      })
+
+      resetAntigravityMemoryCacheForTests()
+      const second = await collectAntigravityCalls(source)
+      expect(second).toEqual(first)
+      resetAntigravityMemoryCacheForTests()
+    })
+  })
+
   it('stamps file mtime as fallback timestamp for SQLite-parsed calls', async () => {
     if (!isSqliteAvailable()) return
 
-    await withTempAntigravityHome('codeburn-antigravity-timestamp-', async (tempHome) => {
+    await withTempAntigravityHome('metrora-antigravity-timestamp-', async (tempHome) => {
       const fixture = JSON.parse(await readFile(
         new URL('../fixtures/antigravity-cli-current/gen-metadata.json', import.meta.url),
         'utf-8',
@@ -664,7 +924,7 @@ describe('antigravity provider helpers', () => {
   it('decodes ChatStartMetadata.created_at and prefers it over the file mtime', async () => {
     if (!isSqliteAvailable()) return
 
-    await withTempAntigravityHome('codeburn-antigravity-createdat-', async (tempHome) => {
+    await withTempAntigravityHome('metrora-antigravity-createdat-', async (tempHome) => {
       // Encode a gen_metadata blob matching the real on-disk shape:
       //   GeneratorMetadata.chatModel(#1) {
       //     usage(#4) { input(#2), totalOutput(#3) }

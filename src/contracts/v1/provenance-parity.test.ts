@@ -73,7 +73,7 @@ async function providerFixtureCall(
 ): Promise<ParsedApiCall> {
   const source: SessionSource = {
     path: join(FIXTURES, name),
-    project: 'qovrion-fixture',
+    project: 'metrora-fixture',
     provider,
   }
   const implementation = provider === 'codex' ? createCodexProvider() : createGeminiProvider()
@@ -85,9 +85,9 @@ async function providerFixtureCall(
 }
 
 async function codexFixtureCall(name: string): Promise<ParsedApiCall> {
-  const cacheRoot = await mkdtemp(join(tmpdir(), 'qovrion-provenance-'))
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'metrora-provenance-'))
   temporaryRoots.push(cacheRoot)
-  process.env['CODEBURN_CACHE_DIR'] = cacheRoot
+  process.env['METRORA_CACHE_DIR'] = cacheRoot
   return providerFixtureCall('codex', name)
 }
 
@@ -96,7 +96,7 @@ async function geminiFixtureCall(name: string): Promise<ParsedApiCall> {
 }
 
 afterEach(async () => {
-  delete process.env['CODEBURN_CACHE_DIR']
+  delete process.env['METRORA_CACHE_DIR']
   await Promise.all(temporaryRoots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
@@ -217,7 +217,7 @@ describe.sequential('collector fixture parity and evidence resolution v1', () =>
     const call = await codexFixtureCall('codex-token-count-v1.jsonl')
 
     const unpriced = resolveMeasurementEvidenceV1(
-      { ...call, model: 'qovrion-unpriced-fixture-model', costUSD: 0 },
+      { ...call, model: 'metrora-unpriced-fixture-model', costUSD: 0 },
       { sessionId: 'codex-measured-01' },
     )
     expect(unpriced?.costEvidence).toEqual({ kind: 'unavailable' })

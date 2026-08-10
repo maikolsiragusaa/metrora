@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   clearPolledMemo: vi.fn(),
   getOverview: vi.fn(),
   refresh: vi.fn(),
+  refreshFresh: vi.fn(),
   setActiveCurrency: vi.fn(),
   usePolled: vi.fn(),
   useProviderPrefetch: vi.fn(),
@@ -21,7 +22,7 @@ vi.mock('../lib/format', () => ({
 }))
 
 vi.mock('../lib/ipc', () => ({
-  codeburn: {
+  metrora: {
     getOverview: mocks.getOverview,
   },
 }))
@@ -50,7 +51,7 @@ const emptyPayload = {
 
 let polled: Polled<MenubarPayload>
 let capturedFetcher: (() => Promise<MenubarPayload>) | undefined
-let capturedOptions: { memoKey?: string } | undefined
+let capturedOptions: { memoKey?: string; manualFetcher?: () => Promise<MenubarPayload>; onManualSuccess?: (result: MenubarPayload) => void } | undefined
 
 function runtimeOptions(overrides: Partial<Parameters<typeof useOverviewRuntime>[0]> = {}) {
   return {
@@ -69,6 +70,7 @@ describe('useOverviewRuntime', () => {
     mocks.clearPolledMemo.mockReset()
     mocks.getOverview.mockReset().mockResolvedValue(emptyPayload)
     mocks.refresh.mockReset()
+    mocks.refreshFresh.mockReset()
     mocks.setActiveCurrency.mockReset()
     mocks.useProviderPrefetch.mockReset()
     capturedFetcher = undefined
@@ -80,6 +82,7 @@ describe('useOverviewRuntime', () => {
       switching: false,
       lastSuccessAt: null,
       refresh: mocks.refresh,
+      refreshFresh: mocks.refreshFresh,
     }
     mocks.usePolled.mockReset().mockImplementation((fetcher, _deps, options) => {
       capturedFetcher = fetcher
@@ -132,7 +135,7 @@ describe('useOverviewRuntime', () => {
     expect(result.current.ready).toBe(true)
   })
 
-  it('owns provider discovery, accepted currency and prefetch inputs', async () => {
+  it('owns provider discovery and accepted currency without arming prefetch', async () => {
     const payload = {
       current: {
         providerDetails: [
@@ -156,12 +159,7 @@ describe('useOverviewRuntime', () => {
       { id: 'codex', label: 'Codex' },
     ]))
     expect(mocks.setActiveCurrency).toHaveBeenCalledWith({ code: 'EUR', rate: 0.92, symbol: '€' })
-    expect(mocks.useProviderPrefetch).toHaveBeenLastCalledWith(expect.objectContaining({
-      ready: true,
-      hasOverviewData: true,
-      overviewLoading: false,
-      detectedProviders: result.current.detectedProviders,
-    }))
+    expect(mocks.useProviderPrefetch).not.toHaveBeenCalled()
   })
 
   it('does not accept currency from a memo-served switching payload', () => {
@@ -178,18 +176,31 @@ describe('useOverviewRuntime', () => {
     expect(mocks.setActiveCurrency).not.toHaveBeenCalled()
   })
 
-  it('refreshes every visible section and invalidates stale memo after config changes', () => {
+  it('uses explicit fresh reconciliation and invalidates accounting memo', async () => {
     const { result } = renderHook(() => useOverviewRuntime(runtimeOptions()))
 
     act(() => result.current.refreshVisible())
-    expect(mocks.refresh).toHaveBeenCalledTimes(1)
-    expect(result.current.refreshToken).toBe(1)
+    expect(mocks.refreshFresh).toHaveBeenCalledTimes(1)
+    expect(result.current.refreshToken).toBe(0)
+
+    act(() => capturedOptions?.onManualSuccess?.(emptyPayload))
+    await waitFor(() => expect(result.current.refreshToken).toBe(1))
 
     act(() => result.current.onConfigMutated())
     expect(mocks.clearPolledMemo).toHaveBeenCalledOnce()
-    expect(mocks.refresh).toHaveBeenCalledTimes(2)
-    expect(result.current.refreshToken).toBe(2)
+    expect(mocks.refreshFresh).toHaveBeenCalledTimes(2)
+
+    act(() => result.current.onConfigMutated('display'))
+    expect(mocks.refresh).toHaveBeenCalledOnce()
   })
+
+  it('wires manual Refresh to the fresh bridge mode only', async () => {
+    const { result } = renderHook(() => useOverviewRuntime(runtimeOptions()))
+    act(() => result.current.refreshVisible())
+    await capturedOptions?.manualFetcher?.()
+    expect(mocks.getOverview).toHaveBeenLastCalledWith('30days', 'all', undefined, undefined, false, true)
+  })
+
 })
 
 describe('detectedProvidersFromOverview', () => {

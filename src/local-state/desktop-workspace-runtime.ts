@@ -30,10 +30,35 @@ import {
   verifyLocalWorkspaceEvidenceExportV1,
   type LocalWorkspaceEvidenceStateKindV1,
 } from './workspace-evidence.js'
+import {
+  assertWorkspaceCapabilityV1,
+  DesktopWorkspaceCapabilitiesV1Schema,
+  evaluateWorkspaceCapabilitiesV1,
+  uninspectedWorkspaceCapabilitiesV1,
+  WorkspaceEvidenceCompatibilityV1Schema,
+  WorkspaceEvidenceIntegrityV1Schema,
+} from './workspace-capability-policy.js'
 
 const DisplayNameSchema = z.string().trim().min(1).max(120)
 const SoftwareVersionSchema = z.string().trim().min(1).max(64)
 const OutputPathSchema = z.string().trim().min(1).max(32_768)
+const DesktopWorkspaceStorageDispositionV1Schema = z.strictObject({
+  canonicalEventCount: z.number().int().nonnegative(),
+  historicalEventCount: z.number().int().nonnegative(),
+  canonicalUnbatchedEventCount: z.number().int().nonnegative(),
+  historicalUnbatchedEventCount: z.number().int().nonnegative(),
+  canonicalBatchCount: z.number().int().nonnegative(),
+  historicalBatchCount: z.number().int().nonnegative(),
+})
+const EMPTY_STORAGE_DISPOSITION = {
+  canonicalEventCount: 0,
+  historicalEventCount: 0,
+  canonicalUnbatchedEventCount: 0,
+  historicalUnbatchedEventCount: 0,
+  canonicalBatchCount: 0,
+  historicalBatchCount: 0,
+} as const
+const DEFAULT_UNINSPECTED_CAPABILITIES = uninspectedWorkspaceCapabilitiesV1(true)
 
 const DesktopWorkspaceEvidenceSummaryV1Schema = z.strictObject({
   state: z.enum([
@@ -44,6 +69,8 @@ const DesktopWorkspaceEvidenceSummaryV1Schema = z.strictObject({
     'quarantined',
     'blocked',
   ]),
+  integrity: WorkspaceEvidenceIntegrityV1Schema.default('unverified'),
+  compatibility: WorkspaceEvidenceCompatibilityV1Schema.default('uninspected'),
   pendingEventCount: z.number().int().nonnegative(),
   unbatchedEventCount: z.number().int().nonnegative(),
   acknowledgedEventCount: z.number().int().nonnegative(),
@@ -51,6 +78,7 @@ const DesktopWorkspaceEvidenceSummaryV1Schema = z.strictObject({
   quarantinedEventCount: z.number().int().nonnegative(),
   pendingBatchCount: z.number().int().nonnegative(),
   acknowledgedBatchCount: z.number().int().nonnegative(),
+  storage: DesktopWorkspaceStorageDispositionV1Schema.default(EMPTY_STORAGE_DISPOSITION),
   blockers: z.array(z.string().trim().min(1).max(500)).max(32),
 })
 
@@ -94,6 +122,7 @@ export const DesktopWorkspaceSnapshotV1Schema = z.strictObject({
   workspace: DesktopWorkspaceRecordV1Schema.nullable(),
   productionLifecycle: DesktopWorkspaceProductionLifecycleV1Schema.nullable().optional(),
   evidence: DesktopWorkspaceEvidenceSummaryV1Schema,
+  capabilities: DesktopWorkspaceCapabilitiesV1Schema.default(DEFAULT_UNINSPECTED_CAPABILITIES),
   privacy: z.strictObject({
     networkRequired: z.literal(false),
     promptsIncluded: z.literal(false),
@@ -195,6 +224,8 @@ function slugifyWorkspaceName(input: string): string {
 function emptyEvidence(state: LocalWorkspaceEvidenceStateKindV1 = 'workspace-required') {
   return DesktopWorkspaceEvidenceSummaryV1Schema.parse({
     state,
+    integrity: 'unverified',
+    compatibility: state === 'workspace-required' ? 'workspace-required' : 'uninspected',
     pendingEventCount: 0,
     unbatchedEventCount: 0,
     acknowledgedEventCount: 0,
@@ -202,6 +233,7 @@ function emptyEvidence(state: LocalWorkspaceEvidenceStateKindV1 = 'workspace-req
     quarantinedEventCount: 0,
     pendingBatchCount: 0,
     acknowledgedBatchCount: 0,
+    storage: EMPTY_STORAGE_DISPOSITION,
     blockers: state === 'workspace-required' ? ['Local personal workspace is not configured.'] : [],
   })
 }
@@ -256,6 +288,15 @@ export function createDesktopWorkspaceRuntimeV1(
         workspace: null,
         productionLifecycle: null,
         evidence: emptyEvidence(),
+        capabilities: evaluateWorkspaceCapabilitiesV1({
+          inspected: true,
+          workspaceConfigured: false,
+          integrity: 'unverified',
+          compatibility: 'workspace-required',
+          productionMode: 'active',
+          unbatchedEventCount: 0,
+          pendingBatchCount: 0,
+        }),
         privacy: {
           networkRequired: false,
           promptsIncluded: false,
@@ -302,7 +343,7 @@ export function createDesktopWorkspaceRuntimeV1(
           architecture: workspace.endpoint.platform.architecture,
           identityGeneration: workspace.endpointIdentityGeneration,
           publicKeyFingerprintSha256: workspace.endpoint.identity.publicKeyFingerprintSha256,
-          metroraVersion: workspace.endpoint.software.qovrionVersion,
+          metroraVersion: workspace.endpoint.software.metroraVersion,
           collectorVersion: workspace.endpoint.software.collectorVersion,
           capabilities: workspace.endpoint.capabilities,
           enrollmentState: workspace.endpoint.enrollment.state,
@@ -311,6 +352,8 @@ export function createDesktopWorkspaceRuntimeV1(
       productionLifecycle,
       evidence: {
         state: evidence.state,
+        integrity: evidence.integrity,
+        compatibility: evidence.compatibility,
         pendingEventCount: evidence.pendingEventCount,
         unbatchedEventCount: evidence.unbatchedEventCount,
         acknowledgedEventCount: evidence.acknowledgedEventCount,
@@ -318,8 +361,18 @@ export function createDesktopWorkspaceRuntimeV1(
         quarantinedEventCount: evidence.quarantinedEventCount,
         pendingBatchCount: evidence.pendingBatchCount,
         acknowledgedBatchCount: evidence.acknowledgedBatchCount,
+        storage: evidence.storage,
         blockers: evidence.blockers,
       },
+      capabilities: evaluateWorkspaceCapabilitiesV1({
+        inspected: true,
+        workspaceConfigured: true,
+        integrity: evidence.integrity,
+        compatibility: evidence.compatibility,
+        productionMode: productionLifecycle.mode,
+        unbatchedEventCount: evidence.unbatchedEventCount,
+        pendingBatchCount: evidence.pendingBatchCount,
+      }),
       privacy: {
         networkRequired: false,
         promptsIncluded: false,
@@ -361,6 +414,8 @@ export function createDesktopWorkspaceRuntimeV1(
     async setProductionMode(rawMode) {
       requireActive()
       const mode = LocalWorkspaceProductionModeV1Schema.parse(rawMode)
+      const current = await getSnapshot()
+      assertWorkspaceCapabilityV1(current.capabilities, 'productionLifecycle')
       const result = await setLocalWorkspaceProductionModeV1({
         dataDir: options.dataDir,
         endpointIdentity: options.identity.metadata,
@@ -372,10 +427,12 @@ export function createDesktopWorkspaceRuntimeV1(
 
     async createNextBatch() {
       requireActive()
+      const current = await getSnapshot()
+      assertWorkspaceCapabilityV1(current.capabilities, 'batchSign')
       const signed = await createNextLocalWorkspaceSignedBatchV1({
         dataDir: options.dataDir,
         identity: options.identity,
-        qovrionVersion: options.metroraVersion,
+        metroraVersion: options.metroraVersion,
         adapterSetSha256,
         openTelemetryGenAiVersion: options.openTelemetryGenAiVersion,
         now: options.now,
@@ -399,6 +456,8 @@ export function createDesktopWorkspaceRuntimeV1(
     async exportEvidence(rawOutputPath) {
       requireActive()
       const outputPath = OutputPathSchema.parse(rawOutputPath)
+      const current = await getSnapshot()
+      assertWorkspaceCapabilityV1(current.capabilities, 'canonicalExport')
       const exported = await createLocalWorkspaceEvidenceExportV1({
         dataDir: options.dataDir,
         identity: options.identity,

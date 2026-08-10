@@ -40,6 +40,8 @@ function snapshot(): DesktopWorkspaceSnapshot {
     productionLifecycle: { mode: 'active', revision: 0, persisted: false, updatedAt: null },
     evidence: {
       state: 'blocked',
+      integrity: 'unverified',
+      compatibility: 'uninspected',
       pendingEventCount: 0,
       unbatchedEventCount: 0,
       acknowledgedEventCount: 0,
@@ -47,7 +49,23 @@ function snapshot(): DesktopWorkspaceSnapshot {
       quarantinedEventCount: 0,
       pendingBatchCount: 0,
       acknowledgedBatchCount: 0,
+      storage: {
+        canonicalEventCount: 0,
+        historicalEventCount: 0,
+        canonicalUnbatchedEventCount: 0,
+        historicalUnbatchedEventCount: 0,
+        canonicalBatchCount: 0,
+        historicalBatchCount: 0,
+      },
       blockers: ['Full local evidence inspection is pending.'],
+    },
+    capabilities: {
+      inspection: { allowed: true, reason: null },
+      reviewedProduction: { allowed: false, reason: 'inspection-pending' },
+      batchSign: { allowed: false, reason: 'inspection-pending' },
+      canonicalExport: { allowed: false, reason: 'inspection-pending' },
+      recovery: { allowed: true, reason: null },
+      productionLifecycle: { allowed: false, reason: 'inspection-pending' },
     },
     privacy: {
       networkRequired: false,
@@ -64,6 +82,8 @@ function inspectedSnapshot(): DesktopWorkspaceSnapshot {
   const value = snapshot()
   value.evidence = {
     state: 'ready',
+    integrity: 'verified',
+    compatibility: 'canonical',
     pendingEventCount: 12,
     unbatchedEventCount: 8,
     acknowledgedEventCount: 0,
@@ -71,7 +91,23 @@ function inspectedSnapshot(): DesktopWorkspaceSnapshot {
     quarantinedEventCount: 0,
     pendingBatchCount: 1,
     acknowledgedBatchCount: 0,
+    storage: {
+      canonicalEventCount: 12,
+      historicalEventCount: 0,
+      canonicalUnbatchedEventCount: 8,
+      historicalUnbatchedEventCount: 0,
+      canonicalBatchCount: 1,
+      historicalBatchCount: 0,
+    },
     blockers: [],
+  }
+  value.capabilities = {
+    inspection: { allowed: true, reason: null },
+    reviewedProduction: { allowed: true, reason: null },
+    batchSign: { allowed: true, reason: null },
+    canonicalExport: { allowed: false, reason: 'unbatched-evidence' },
+    recovery: { allowed: true, reason: null },
+    productionLifecycle: { allowed: true, reason: null },
   }
   return value
 }
@@ -111,7 +147,7 @@ describe('Workspace bootstrap status', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:getWorkspaceStatus']!()).resolves.toMatchObject({
+    await expect(handlers['metrora:getWorkspaceStatus']!()).resolves.toMatchObject({
       ok: true,
       value: {
         availability: 'ready',
@@ -133,7 +169,7 @@ describe('Workspace bootstrap status', () => {
       chooseExportPath: async () => null,
     })
 
-    await expect(handlers['codeburn:inspectWorkspaceStatus']!()).resolves.toMatchObject({
+    await expect(handlers['metrora:inspectWorkspaceStatus']!()).resolves.toMatchObject({
       ok: true,
       value: {
         availability: 'ready',

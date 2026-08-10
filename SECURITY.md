@@ -37,8 +37,8 @@ The latest public Windows technical preview is the **unsigned** GitHub pre-relea
 
 Metrora also has an assigned Microsoft Store package identity and a reviewed non-publishing AppX build/local-acceptance path. That work is **pre-submission**: no Microsoft Store certification or publication is claimed by this repository until Microsoft has actually accepted and published the corresponding submission.
 
-Stable signing, Store publication, and any future update-channel claims must remain explicit and channel-specific. Upstream CodeBurn artifacts are not Metrora releases.
+Stable signing, Store publication, and any future update-channel claims must remain explicit and channel-specific. Upstream Metrora artifacts are not Metrora releases.
 
 ## Upstream reports
 
-A vulnerability that exists unchanged in the CodeBurn-derived baseline may also require responsible disclosure to the upstream project. Metrora will preserve reporter confidentiality and coordinate when appropriate.
+A vulnerability that exists unchanged in the reviewed inherited baseline may also require responsible disclosure to the upstream project. Metrora will preserve reporter confidentiality and coordinate when appropriate.

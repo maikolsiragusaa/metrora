@@ -38,10 +38,10 @@ RC7 was published as an **unsigned Windows x64 GitHub technical preview**. It re
 - Completed public provider-guide coverage for all 38 registered local collectors and corrected stale inventory metadata without changing evidence approval.
 - Established Metrora™ as the product identity, Signal Grid™ as the canonical visual identity and Vensent™ as the publisher identity.
 - Established the independent `1.0.0-rc.N` candidate line while preserving `0.9.19` as an immutable historical source and migration baseline.
-- Separated the Metrora MIT licence from the preserved CodeBurn upstream notice.
+- Separated the project MIT licence from the preserved upstream notice.
 - Added a source-first getting-started guide, task-oriented CLI reference and public documentation index.
 - Added a truthful supported-tools matrix that separates local analysis from signed Workspace eligibility.
-- Added a functional product-lineage document distinguishing inherited foundations, material Metrora changes and compatibility identifiers.
+- Added a functional product-lineage document distinguishing inherited foundations, material Metrora changes and compatibility boundaries.
 - Reduced public documentation to current product behavior, stable principles, known limitations and verifiable release status.
 - Added public contribution, issue and pull-request hygiene guidance.
 - Added canonical copyright, licence, publisher and repository metadata for public product surfaces.
@@ -89,7 +89,7 @@ RC7 was published as an **unsigned Windows x64 GitHub technical preview**. It re
 
 ## 0.9.19 — Metrora public source baseline
 
-- Introduced the Metrora-branded public source tree from the reviewed CodeBurn 0.9.19 baseline.
+- Introduced the Metrora-branded public source tree from the reviewed historical 0.9.19 baseline.
 - Preserved local-first multi-tool collection, CLI, desktop, dashboard, pricing, export and compatibility behavior while establishing an independent product identity and development history.
 - Retained temporary compatibility identifiers where immediate removal would break local state, packaging or integrations.
 

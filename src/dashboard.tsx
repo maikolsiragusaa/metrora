@@ -388,14 +388,14 @@ function DailyActivity({ projects, days = 14, pw, bw, scrollable = false, cursor
   )
 }
 
-const _home = homedir()
-const _homePrefix = _home.endsWith('/') ? _home : _home + '/'
+const _home = homedir().replace(/\\/g, '/').replace(/\/+$/, '')
+const _homePrefix = _home.endsWith('/') ? _home : _home + '/'; const _homeKey = process.platform === 'win32' ? _home.toLowerCase() : _home; const _homePrefixKey = process.platform === 'win32' ? _homePrefix.toLowerCase() : _homePrefix
 
 export function shortProject(absPath: string): string {
-  const normalized = absPath.replace(/\\/g, '/')
+  const normalized = absPath.replace(/\\/g, '/'); const normalizedKey = process.platform === 'win32' ? normalized.toLowerCase() : normalized
   let path: string
-  if (normalized === _home) path = ''
-  else if (normalized.startsWith(_homePrefix)) path = normalized.slice(_homePrefix.length)
+  if (normalizedKey === _homeKey) path = ''
+  else if (normalizedKey.startsWith(_homePrefixKey)) path = normalized.slice(_homePrefix.length)
   else path = normalized
   path = path.replace(/^\/+/, '')
   path = path.replace(/^private\/tmp\/[^/]+\/[^/]+\//, '').replace(/^private\/tmp\//, '').replace(/^tmp\//, '')

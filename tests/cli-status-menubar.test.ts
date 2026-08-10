@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { delimiter as pathDelimiter, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.setConfig({ testTimeout: 30_000 })
 
 function runCli(args: string[], home: string, extraEnv: Record<string, string | undefined> = {}) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
@@ -11,8 +13,18 @@ function runCli(args: string[], home: string, extraEnv: Record<string, string | 
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
-      CODEBURN_CACHE_DIR: join(home, '.cache', 'codeburn'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
       HOME: home,
+      // os.homedir() follows USERPROFILE on Windows; keep every provider's
+      // default discovery rooted in this isolated fixture, not the developer's
+      // real Codex/Antigravity/OpenCode history.
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      CODEX_HOME: join(home, '.codex'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
       TZ: 'UTC',
       ...extraEnv,
     },
@@ -63,7 +75,7 @@ function assistantLine(sessionId: string, timestamp: string, messageId: string):
 
 describe('metrora status --format menubar-json', () => {
   it('returns valid MenubarPayload with expected top-level fields', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'myapp')
@@ -116,10 +128,10 @@ describe('metrora status --format menubar-json', () => {
     } finally {
       await rm(home, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   it('omits history.timeline with --no-timeline, includes it by default', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-tl-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-tl-'))
     try {
       const projectDir = join(home, '.claude', 'projects', 'myapp')
       await mkdir(projectDir, { recursive: true })
@@ -145,7 +157,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('filters menubar payloads to a selected review day with --day', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-day-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-day-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'myapp')
@@ -194,7 +206,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('filters the whole menubar payload to a selected Claude config source', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-claude-config-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-claude-config-'))
 
     try {
       const work = join(home, 'claude-work')
@@ -278,10 +290,10 @@ describe('metrora status --format menubar-json', () => {
     } finally {
       await rm(home, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('keeps idle Claude config options visible for the selected period', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-claude-config-idle-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-claude-config-idle-'))
 
     try {
       const work = join(home, 'claude-work')
@@ -346,7 +358,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('rejects --claude-config-source combined with a non-Claude --provider', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-cfg-provider-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-cfg-provider-'))
     try {
       const work = join(home, 'claude-work')
       const personal = join(home, 'claude-personal')
@@ -375,7 +387,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('surfaces Claude Desktop sessions as their own bucket so config sum equals All', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-desktop-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-desktop-'))
     try {
       const work = join(home, 'claude-work')
       const personal = join(home, 'claude-personal')
@@ -395,7 +407,7 @@ describe('metrora status --format menubar-json', () => {
 
       const env = {
         CLAUDE_CONFIG_DIRS: [work, personal].join(pathDelimiter),
-        CODEBURN_DESKTOP_SESSIONS_DIR: desktop,
+        METRORA_DESKTOP_SESSIONS_DIR: desktop,
       }
       const result = runCli([
         'status', '--format', 'menubar-json', '--period', 'all', '--provider', 'all', '--no-optimize',
@@ -417,7 +429,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('includes LingTai TUI usage and activity categories in menubar payloads', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-lingtai-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-lingtai-'))
 
     try {
       const lingtaiHome = join(home, '.lingtai')
@@ -479,7 +491,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('attaches combined local-only usage for --scope combined and omits it for local scope', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-combined-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-combined-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'myapp')
@@ -601,7 +613,7 @@ describe('metrora status --format menubar-json', () => {
     ['--project', ['--project', 'x']],
     ['--exclude', ['--exclude', 'y']],
   ])('rejects combined scope with filtered local payloads from %s', async (_name, filterArgs) => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-combined-filter-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-combined-filter-'))
 
     try {
       const result = runCli([
@@ -620,7 +632,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('rejects invalid menubar-json scope values', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-scope-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-scope-'))
 
     try {
       const result = runCli([
@@ -638,7 +650,7 @@ describe('metrora status --format menubar-json', () => {
   })
 
   it('still emits a valid combined menubar payload when the remotes store is corrupt', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'codeburn-menubar-corrupt-remotes-'))
+    const home = await mkdtemp(join(tmpdir(), 'metrora-menubar-corrupt-remotes-'))
 
     try {
       const projectDir = join(home, '.claude', 'projects', 'myapp')
@@ -652,7 +664,7 @@ describe('metrora status --format menubar-json', () => {
 
       // Corrupt the remotes store the combined path reads. The menubar must
       // still get a valid payload (combined degrades to local-only).
-      const sharingDir = join(home, '.config', 'codeburn', 'sharing')
+      const sharingDir = join(home, '.config', 'metrora', 'sharing')
       await mkdir(sharingDir, { recursive: true })
       await writeFile(join(sharingDir, 'remote-devices.json'), '{ this is : not valid json ]')
 

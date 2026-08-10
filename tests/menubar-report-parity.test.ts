@@ -1,7 +1,41 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { ORIGINAL_ENV } = vi.hoisted(() => {
+  const envKeys = [
+    'HOME', 'USERPROFILE', 'HOMEPATH', 'HOMEDRIVE', 'APPDATA', 'LOCALAPPDATA',
+    'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'METRORA_CACHE_DIR',
+    'METRORA_CONFIG_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CONFIG_DIRS', 'CODEX_HOME',
+    'OPENCODE_DATA_DIR',
+  ] as const
+  const original = Object.fromEntries(envKeys.map(key => [key, process.env[key]])) as Record<string, string | undefined>
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  const base = process.env['TMPDIR'] ?? process.env['TMP'] ?? process.env['TEMP'] ?? '.'
+  const root = `${base}${base.endsWith(separator) ? '' : separator}metrora-parity-isolated-home`
+  const home = `${root}${separator}home`
+  const isolated: Record<string, string> = {
+    HOME: home,
+    USERPROFILE: home,
+    HOMEPATH: home,
+    HOMEDRIVE: '',
+    APPDATA: `${home}${separator}AppData${separator}Roaming`,
+    LOCALAPPDATA: `${home}${separator}AppData${separator}Local`,
+    XDG_DATA_HOME: `${home}${separator}.local${separator}share`,
+    XDG_CONFIG_HOME: `${home}${separator}.config`,
+    XDG_CACHE_HOME: `${home}${separator}.cache`,
+    METRORA_CACHE_DIR: `${root}${separator}cache`,
+    METRORA_CONFIG_DIR: `${home}${separator}.config${separator}metrora`,
+    CODEX_HOME: `${home}${separator}.codex`,
+    OPENCODE_DATA_DIR: `${home}${separator}.local${separator}share${separator}opencode`,
+  }
+  for (const [key, value] of Object.entries(isolated)) process.env[key] = value
+  delete process.env['CLAUDE_CONFIG_DIRS']
+  return { ORIGINAL_ENV: original }
+})
+
+vi.setConfig({ testTimeout: 30_000 })
 
 import { loadPricing, setLocalModelSavings, setModelAliases } from '../src/models.js'
 import { buildMenubarPayloadForRange, buildPeriodData } from '../src/usage-aggregator.js'
@@ -39,11 +73,18 @@ afterEach(async () => {
   }
 })
 
+afterAll(() => {
+  for (const [key, value] of Object.entries(ORIGINAL_ENV)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+})
+
 /** Seed one priced Claude session on the fixture day and point discovery + the
  *  cache dir at isolated temp dirs. Returns the range's expected corpus root. */
 async function seedFixture(): Promise<void> {
-  const base = await mkdtemp(join(tmpdir(), 'codeburn-parity-src-'))
-  const cacheDir = await mkdtemp(join(tmpdir(), 'codeburn-parity-cache-'))
+  const base = await mkdtemp(join(tmpdir(), 'metrora-parity-src-'))
+  const cacheDir = await mkdtemp(join(tmpdir(), 'metrora-parity-cache-'))
   tmpDirs.push(base, cacheDir)
 
   const projectDir = join(base, 'projects', 'p')
@@ -65,7 +106,7 @@ async function seedFixture(): Promise<void> {
   )
 
   process.env['CLAUDE_CONFIG_DIR'] = base
-  process.env['CODEBURN_CACHE_DIR'] = cacheDir
+  process.env['METRORA_CACHE_DIR'] = cacheDir
 }
 
 /** Everything but the per-call wall-clock `generated` stamp. */

@@ -1,11 +1,11 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
 
 import { defaultMetroraDataDir } from './endpoint-identity.js'
 import {
   enqueueMeasurementEventV1,
-  LocalMeasurementProductionReceiptV1Schema,
+  readValidatedLocalMeasurementProductionReceiptV1,
   scanMeasurementOutboxV1,
 } from './measurement-outbox.js'
 
@@ -35,7 +35,10 @@ export class MeasurementProductionRecoveryIntegrityError extends Error {
 }
 
 function eventCount(scan: Awaited<ReturnType<typeof scanMeasurementOutboxV1>>): number {
-  return scan.pending.length + scan.acknowledged.length
+  return scan.pending.length
+    + (scan.legacyPending ?? []).length
+    + scan.acknowledged.length
+    + (scan.legacyAcknowledged ?? []).length
 }
 
 function requireUnblocked(
@@ -78,36 +81,32 @@ export async function reconcileMeasurementProductionReceiptsV1(
       )
     }
 
-    let receipt: z.infer<typeof LocalMeasurementProductionReceiptV1Schema>
     try {
-      receipt = LocalMeasurementProductionReceiptV1Schema.parse(
-        JSON.parse(await readFile(join(productionDir, file), 'utf8')),
+      const productionKeySha256 = file.slice(0, -'.json'.length)
+      const validated = await readValidatedLocalMeasurementProductionReceiptV1(
+        dataDir,
+        productionKeySha256,
       )
+      if (!validated) throw new Error('local production receipt could not be validated')
+      receiptCount += 1
+      if (validated.legacyRecord) {
+        if (!validated.sourcePresent) {
+          throw new Error('historical production receipt is missing its immutable outbox event')
+        }
+        continue
+      }
+      if (!validated.sourcePresent) {
+        // The existing enqueue path re-reads and fully validates the private
+        // receipt before publishing the original immutable record.
+        await enqueueMeasurementEventV1(validated.receipt.record.event, {
+          dataDir,
+          productionKeySha256,
+          ...(options.now !== undefined ? { now: options.now } : {}),
+        })
+      }
     } catch {
       throw new MeasurementProductionRecoveryIntegrityError(
         'local production receipt could not be validated',
-      )
-    }
-
-    if (file !== `${receipt.productionKeySha256}.json`) {
-      throw new MeasurementProductionRecoveryIntegrityError(
-        'local production receipt does not match its private index key',
-      )
-    }
-
-    receiptCount += 1
-    try {
-      // The existing enqueue path re-reads and fully validates the private
-      // receipt, including event and semantic digests, before publishing a
-      // missing immutable outbox record.
-      await enqueueMeasurementEventV1(receipt.record.event, {
-        dataDir,
-        productionKeySha256: receipt.productionKeySha256,
-        ...(options.now !== undefined ? { now: options.now } : {}),
-      })
-    } catch {
-      throw new MeasurementProductionRecoveryIntegrityError(
-        'local production receipt conflicts with canonical evidence',
       )
     }
   }

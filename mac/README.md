@@ -6,9 +6,9 @@ Native Swift + SwiftUI menubar companion for local Metrora usage and subscriptio
 
 - macOS 14+ (Sonoma)
 - Swift 6.0+ toolchain
-- a local Metrora checkout or the inherited `codeburn` CLI compatibility command
+- a local Metrora checkout with the canonical `metrora` CLI
 
-The Swift target, process name, bundle identifier, persisted CLI path and current release asset filenames still use inherited CodeBurn identifiers. They remain intentionally stable until the installer and update channel migrate as one compatibility-safe release. The visible app name, icon and product identity are Metrora.
+The Swift target, process name, bundle identifier, persisted CLI path and release asset filenames use the canonical Metrora identity. Existing local state is adopted through the shared compatibility boundary where required.
 
 ## Build from source
 
@@ -26,21 +26,21 @@ For a Sonoma machine with only Command Line Tools and a standalone Swift 6.x too
 mac/Scripts/build-local.sh dev
 ```
 
-Both scripts regenerate the canonical Signal Grid icon before assembling the app. The resulting bundle presents itself as **Metrora Menubar**, while retaining internal compatibility identifiers needed by the existing CLI and local state.
+Both scripts regenerate the canonical Signal Grid icon before assembling the app. The resulting bundle presents itself as **Metrora Menubar**.
 
 ## Development
 
 ```bash
 cd mac
 swift build
-CODEBURN_ALLOW_DEV_BIN=1 CODEBURN_BIN="node $(pwd)/../dist/cli.js" swift run
+METRORA_ALLOW_DEV_BIN=1 METRORA_BIN="node $(pwd)/../dist/cli.js" swift run
 ```
 
 The environment names above are compatibility boundaries, not product branding.
 
 ## Data source
 
-The app reads structured usage and quota payloads from the local compatibility CLI. No AI traffic is routed through the menubar app. Existing persistent paths under `Application Support/CodeBurn` are retained to avoid breaking installed users until a reviewed migration exists.
+The app reads structured usage and quota payloads from the local compatibility CLI. No AI traffic is routed through the menubar app. Existing persistent paths under `Application Support/Metrora` are retained to avoid breaking installed users until a reviewed migration exists.
 
 ## Project layout
 
@@ -50,7 +50,7 @@ mac/
 ├── Scripts/
 │   ├── package-app.sh
 │   └── build-local.sh
-├── Sources/CodeBurnMenubar/   # inherited internal module name
+├── Sources/MetroraMenubar/   # canonical internal module
 └── README.md
 ```
 

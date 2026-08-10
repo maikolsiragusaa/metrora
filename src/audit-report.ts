@@ -206,7 +206,7 @@ export function renderAuditTable(rows: AuditRow[]): string {
   const table = renderTable(columns, body, { boldRows: new Set([body.length - 1]) })
   const legend = [
     '',
-    'Columns are the raw token fields each provider records. codeburn then normalizes for pricing:',
+    'Columns are the raw token fields each provider records. metrora then normalizes for pricing:',
     '  - Reason folds into Output (priced output = output + reasoning)',
     '  - Cache rd = max(Anthropic cacheReadInput, OpenAI cached), since providers fill one or both',
     '  - Cache wr is priced at 1.25x the input rate, Cache rd at 0.1x, when a model omits explicit cache rates',

@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
   [string]$OutputDirectory,
-  [string]$CodeBurnPath,
-  [switch]$SkipCodeBurn,
+  [string]$MetroraPath,
+  [switch]$SkipMetrora,
   [switch]$SkipPrivateCacheBackup,
   [switch]$NoArchive
 )
@@ -158,17 +158,17 @@ function Invoke-CapturedCommand {
   }
 }
 
-function Resolve-CodeBurnExecutable {
+function Resolve-MetroraExecutable {
   param([string]$ExplicitPath)
 
   if ($ExplicitPath) {
     if (-not (Test-Path -LiteralPath $ExplicitPath)) {
-      throw "The supplied CodeBurn path does not exist: $ExplicitPath"
+      throw "The supplied Metrora path does not exist: $ExplicitPath"
     }
     return (Resolve-Path -LiteralPath $ExplicitPath).Path
   }
 
-  $command = Get-Command codeburn -ErrorAction SilentlyContinue | Select-Object -First 1
+  $command = Get-Command metrora -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $command) { return $null }
   $resolved = if ($command.Source) { $command.Source } elseif ($command.Path) { $command.Path } else { $command.Name }
   if ($resolved -and [System.IO.Path]::GetExtension($resolved) -ieq '.ps1') {
@@ -207,39 +207,39 @@ $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-report-month' -Execu
 $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-status' -Executable $metroraExe -Arguments ($qPrefix + @('status', '--format', 'json', '--period', 'lifetime')) -OutputFile (Join-Path $OutputDirectory 'metrora-status.json') -UseElectronAsNode -ExpectJson))
 $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-overview-lifetime' -Executable $metroraExe -Arguments ($qPrefix + @('overview', '--period', 'lifetime', '--no-color')) -OutputFile (Join-Path $OutputDirectory 'metrora-overview-lifetime.txt') -UseElectronAsNode))
 
-$resolvedCodeBurn = $null
-$codeBurnDetectionError = $null
-if (-not $SkipCodeBurn) {
+$resolvedMetrora = $null
+$metroraDetectionError = $null
+if (-not $SkipMetrora) {
   try {
-    $resolvedCodeBurn = Resolve-CodeBurnExecutable -ExplicitPath $CodeBurnPath
+    $resolvedMetrora = Resolve-MetroraExecutable -ExplicitPath $MetroraPath
   } catch {
-    $codeBurnDetectionError = $_.Exception.Message
+    $metroraDetectionError = $_.Exception.Message
   }
 
-  if ($resolvedCodeBurn) {
-    Write-Host "CodeBurn detected: $resolvedCodeBurn"
-    $null = $results.Add((Invoke-CapturedCommand -Name 'codeburn-version' -Executable $resolvedCodeBurn -Arguments @('--version') -OutputFile (Join-Path $OutputDirectory 'codeburn-version.txt')))
-    $null = $results.Add((Invoke-CapturedCommand -Name 'codeburn-doctor' -Executable $resolvedCodeBurn -Arguments @('doctor', '--json') -OutputFile (Join-Path $OutputDirectory 'codeburn-doctor.json') -ExpectJson))
-    $null = $results.Add((Invoke-CapturedCommand -Name 'codeburn-report-lifetime' -Executable $resolvedCodeBurn -Arguments @('report', '--period', 'lifetime', '--format', 'json') -OutputFile (Join-Path $OutputDirectory 'codeburn-report-lifetime.json') -ExpectJson))
-    $null = $results.Add((Invoke-CapturedCommand -Name 'codeburn-report-month' -Executable $resolvedCodeBurn -Arguments @('report', '--period', 'month', '--format', 'json') -OutputFile (Join-Path $OutputDirectory 'codeburn-report-month.json') -ExpectJson))
-    $null = $results.Add((Invoke-CapturedCommand -Name 'codeburn-overview-lifetime' -Executable $resolvedCodeBurn -Arguments @('overview', '--period', 'lifetime', '--no-color') -OutputFile (Join-Path $OutputDirectory 'codeburn-overview-lifetime.txt')))
+  if ($resolvedMetrora) {
+    Write-Host "Metrora detected: $resolvedMetrora"
+    $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-version' -Executable $resolvedMetrora -Arguments @('--version') -OutputFile (Join-Path $OutputDirectory 'metrora-version.txt')))
+    $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-doctor' -Executable $resolvedMetrora -Arguments @('doctor', '--json') -OutputFile (Join-Path $OutputDirectory 'metrora-doctor.json') -ExpectJson))
+    $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-report-lifetime' -Executable $resolvedMetrora -Arguments @('report', '--period', 'lifetime', '--format', 'json') -OutputFile (Join-Path $OutputDirectory 'metrora-report-lifetime.json') -ExpectJson))
+    $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-report-month' -Executable $resolvedMetrora -Arguments @('report', '--period', 'month', '--format', 'json') -OutputFile (Join-Path $OutputDirectory 'metrora-report-month.json') -ExpectJson))
+    $null = $results.Add((Invoke-CapturedCommand -Name 'metrora-overview-lifetime' -Executable $resolvedMetrora -Arguments @('overview', '--period', 'lifetime', '--no-color') -OutputFile (Join-Path $OutputDirectory 'metrora-overview-lifetime.txt')))
   } else {
-    Write-Utf8File -Path (Join-Path $OutputDirectory 'codeburn-not-detected.txt') -Content @"
-CodeBurn was not found in PATH and no -CodeBurnPath was supplied.
+    Write-Utf8File -Path (Join-Path $OutputDirectory 'metrora-not-detected.txt') -Content @"
+Metrora was not found in PATH and no -MetroraPath was supplied.
 This does not invalidate the Metrora baseline. Run the script again with:
-  powershell -ExecutionPolicy Bypass -File .\Run-Metrora-Baseline.ps1 -CodeBurnPath "C:\path\to\codeburn.cmd"
+  powershell -ExecutionPolicy Bypass -File .\Run-Metrora-Baseline.ps1 -MetroraPath "C:\path\to\metrora.cmd"
 "@
   }
 }
 
 $privateBackupName = $null
 $privateBackupStatus = 'skipped'
-$cacheDir = if ($env:CODEBURN_CACHE_DIR) { $env:CODEBURN_CACHE_DIR } else { Join-Path $HOME '.cache\codeburn' }
+$cacheDir = if ($env:METRORA_CACHE_DIR) { $env:METRORA_CACHE_DIR } else { Join-Path $HOME '.cache\metrora' }
 if (-not $SkipPrivateCacheBackup) {
   if (Test-Path -LiteralPath $cacheDir) {
     $cacheItems = @(Get-ChildItem -LiteralPath $cacheDir -Force -ErrorAction SilentlyContinue)
     if ($cacheItems.Count -gt 0) {
-      $privateBackupName = "PRIVATE-DO-NOT-UPLOAD-codeburn-cache-$stamp.zip"
+      $privateBackupName = "PRIVATE-DO-NOT-UPLOAD-metrora-cache-$stamp.zip"
       $privateBackupPath = Join-Path $baselineRoot $privateBackupName
       try {
         Compress-Archive -Path (Join-Path $cacheDir '*') -DestinationPath $privateBackupPath -CompressionLevel Optimal -Force
@@ -276,11 +276,11 @@ $manifest = [ordered]@{
     architecture = $env:PROCESSOR_ARCHITECTURE
     powershellVersion = $PSVersionTable.PSVersion.ToString()
   }
-  codeburn = [ordered]@{
-    skipped = [bool]$SkipCodeBurn
-    detected = [bool]$resolvedCodeBurn
-    executableName = if ($resolvedCodeBurn) { [System.IO.Path]::GetFileName($resolvedCodeBurn) } else { $null }
-    detectionError = $codeBurnDetectionError
+  comparison = [ordered]@{
+    skipped = [bool]$SkipMetrora
+    detected = [bool]$resolvedMetrora
+    executableName = if ($resolvedMetrora) { [System.IO.Path]::GetFileName($resolvedMetrora) } else { $null }
+    detectionError = $metroraDetectionError
   }
   privateCacheBackup = [ordered]@{
     status = $privateBackupStatus
@@ -334,10 +334,10 @@ if ($privateBackupName) {
   Write-Host "Private local backup: $(Join-Path $baselineRoot $privateBackupName)"
   Write-Host 'Do not upload the PRIVATE backup.'
 }
-if ($resolvedCodeBurn) {
-  Write-Host 'CodeBurn comparison was captured.'
-} elseif (-not $SkipCodeBurn) {
-  Write-Host 'CodeBurn was not detected; Metrora baseline was still captured.'
+if ($resolvedMetrora) {
+  Write-Host 'Metrora comparison was captured.'
+} elseif (-not $SkipMetrora) {
+  Write-Host 'Metrora was not detected; Metrora baseline was still captured.'
 }
 
 if ($metroraFailures.Count -gt 0) {

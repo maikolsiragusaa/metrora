@@ -4,6 +4,19 @@
 
 // ————— Period + IPC error contract —————
 
+import type { ModelAccounting, ModelPresentation, ReasoningTokenSemantics } from './model-projection-types'
+import type { ModelReportRow } from './model-report-types'
+
+export type {
+  DurableModelAccountingRow,
+  DurableModelPresentationRow,
+  ModelAccounting,
+  ModelPresentation,
+  ReasoningTokenSemantics,
+} from './model-projection-types'
+
+export type { ModelReportRow } from './model-report-types'
+
 export type Period = 'today' | 'week' | '30days' | 'month' | 'all' | 'lifetime'
 
 export type DateRange = { from: string; to: string }
@@ -118,6 +131,7 @@ export type ClaudeConfigSelector = {
 
 export type MenubarPayload = {
   generated: string
+  freshness?: { readMode: 'snapshot' | 'fresh'; reconciliation: 'complete' | 'degraded' | 'targeted'; durableThrough: string | null }
   current: {
     label: string
     cost: number
@@ -144,6 +158,8 @@ export type MenubarPayload = {
       savingsBaselineModel: string
       calls: number
     }>
+    modelAccounting?: ModelAccounting
+    modelPresentation?: ModelPresentation
     unpricedModels?: Array<{ model: string; calls: number; tokens: number }>
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
@@ -288,27 +304,6 @@ export type TaskCategory =
   | 'general'
 export type ModelPricingState = 'priced' | 'explicit-zero' | 'partial' | 'unavailable' | 'unknown'
 export type ModelPricingSummary = { state: ModelPricingState; totalCalls: number; coveredCalls: number; pricedCalls: number; explicitZeroCalls: number; unavailableCalls: number; unknownCalls: number; missingPriceRecordCalls: number }
-export type ModelReportRow = {
-  provider: string
-  providerDisplayName: string
-  model: string
-  modelDisplayName: string
-  category: TaskCategory | null
-  inputTokens: number
-  outputTokens: number
-  cacheWriteTokens: number
-  cacheReadTokens: number
-  totalTokens: number
-  costUSD: number
-  savingsUSD: number
-  savingsBaselineModel: string
-  calls: number
-  pricing?: ModelPricingSummary
-  credits: number | null
-  topCategory?: TaskCategory
-  topCategoryCost?: number
-  topCategoryShare?: number
-}
 // ————— src/yield.ts —————
 
 export type YieldCategory = 'productive' | 'reverted' | 'abandoned'
@@ -372,7 +367,7 @@ export type JsonPlanSummary = {
   periodEnd: string
 }
 
-/** `codeburn status --format json` payload (src/main.ts:751), with plan summaries attached. */
+/** `metrora status --format json` payload (src/main.ts:751), with plan summaries attached. */
 export type StatusJson = {
   currency: string
   today: { cost: number; savings: number; calls: number }
@@ -484,6 +479,8 @@ export type ReasoningMix = {
 
 export type SessionRow = {
   sessionId: string
+  /** Provider + exact id + project/source authority; never raw id alone. */
+  sessionKey?: string
   // Captured human title (src/sessions-report.ts). Empty string when the
   // transcript produced none; optional so older CLIs that predate the field
   // render unchanged (the row falls back to the project as its primary label).
@@ -500,6 +497,7 @@ export type SessionRow = {
   cacheReadTokens: number
   cacheWriteTokens: number
   reasoningTokens?: number
+  reasoningSemantics?: ReasoningTokenSemantics
   reasoningMix?: ReasoningMix
   startedAt: string
   endedAt: string
@@ -509,9 +507,12 @@ export type SessionRow = {
 // ————— src/compare-stats.ts —————
 export type ModelStats = {
   model: string
+  presentationIdentity?: string
   calls: number
   cost: number
   outputTokens: number
+  reasoningTokens?: number
+  reasoningSemantics?: ReasoningTokenSemantics
   inputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
@@ -570,7 +571,7 @@ export type ModelCosts = {
 }
 
 /** One (provider, model) audit bucket (src/audit-report.ts AuditRow): raw
- * provider token fields vs the normalized totals codeburn prices. */
+ * provider token fields vs the normalized totals metrora prices. */
 export type AuditRow = {
   provider: string
   providerDisplayName: string
@@ -618,7 +619,7 @@ export type PriceOverrideList = { overrides: PriceOverrideRow[]; configPath: str
 /** A partial set of the four price-override rates, USD per 1M tokens. */
 export type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 
-// ————— IPC surface (preload contextBridge → window.codeburn) —————
+// ————— IPC surface (preload contextBridge → window.metrora) —————
 
 /** Anonymous-telemetry consent state (app/electron/telemetry.ts). Null when
  * telemetry is unavailable in the main process. */
@@ -647,7 +648,7 @@ export type UpdateStatus = {
   tag: string | null
 }
 
-export interface CodeburnBridge {
+export interface MetroraBridge {
   /** Subscribe to cold-start scan progress; returns an unsubscribe fn. */
   onProgress(cb: (event: ScanProgressEvent) => void): () => void
   /** Read the cached update-availability status (launch + 24h background check). */
@@ -655,9 +656,8 @@ export interface CodeburnBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
-  // `background` (prefetch only) requests background CLI-spawn priority; optional
-  // so an older preload that ignores it degrades to interactive priority.
-  getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean): Promise<MenubarPayload>
+  // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
+  getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>
   getActReport(): Promise<ActReportJson>
   readonly platform: string

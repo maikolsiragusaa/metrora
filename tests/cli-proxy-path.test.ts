@@ -29,7 +29,24 @@ async function makeHome(): Promise<string> {
 function runCli(args: string[], home: string) {
   return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: join(home, '.claude'), TZ: 'UTC' },
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      HOMEPATH: home,
+      HOMEDRIVE: '',
+      APPDATA: join(home, 'AppData', 'Roaming'),
+      LOCALAPPDATA: join(home, 'AppData', 'Local'),
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
+      METRORA_CACHE_DIR: join(home, '.cache', 'metrora'),
+      METRORA_CONFIG_DIR: join(home, '.config', 'metrora'),
+      CLAUDE_CONFIG_DIR: join(home, '.claude'),
+      CODEX_HOME: join(home, '.codex'),
+      OPENCODE_DATA_DIR: join(home, '.local', 'share', 'opencode'),
+      TZ: 'UTC',
+    },
     encoding: 'utf-8',
     timeout: 30_000,
   })

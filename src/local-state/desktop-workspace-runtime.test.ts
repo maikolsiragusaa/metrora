@@ -33,7 +33,7 @@ function event(workspaceId: string, endpointId: string): UsageMeasurementEventV1
   return {
     specversion: '1.0',
     id: 'evt_desktop_workspace_runtime',
-    source: `urn:qovrion:endpoint:${endpointId}`,
+    source: `urn:metrora:endpoint:${endpointId}`,
     type: USAGE_MEASUREMENT_EVENT_TYPE,
     time: NOW,
     subject: `workspace/${workspaceId}/endpoint/${endpointId}`,
