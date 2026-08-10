@@ -4,6 +4,7 @@ import { dirname, join } from 'path'
 import { isSessionHydrationComplete } from './parser.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
+import { aggregateProjectsIntoDays, dateKeyInTz } from './day-aggregator.js'
 import { mergeTimezoneRebucketedDays } from './daily-cache-tz-reconcile.js'
 import * as core from './daily-cache-core.js'
 
@@ -133,7 +134,8 @@ export async function ensureCacheHydrated(
   aggregateDays: (projects: ProjectSummary[]) => core.DailyEntry[],
   savingsConfigHash: string = '',
   sessionComplete: () => boolean = () => true,
-  aggregateDaysInTz?: (projects: ProjectSummary[], tz: string) => core.DailyEntry[],
+  aggregateDaysInTz: (projects: ProjectSummary[], tz: string) => core.DailyEntry[] =
+    (projects, tz) => aggregateProjectsIntoDays(projects, iso => dateKeyInTz(iso, tz)),
 ): Promise<DailyCache> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -193,7 +195,6 @@ export async function ensureCacheHydrated(
         && tzChanged
         && cache.savingsConfigHash === savingsConfigHash
         && cache.tzKey !== undefined
-        && aggregateDaysInTz
       ) {
         const wideProjects = await parseSessions({ start: backfillStart, end: now })
         const wideParseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
