@@ -690,56 +690,34 @@ function inferTranscriptModel(lines: string[]): string {
   return openaiCount >= anthropicCount ? 'copilot-openai-auto' : 'copilot-anthropic-auto'
 }
 
-// ---------------------------------------------------------------------------
-// JSONL parser (handles both regular session-state events and VS Code
-// transcript format via session.start { producer: 'copilot-agent' })
-// ---------------------------------------------------------------------------
+// JSONL parser for CLI session-state and VS Code transcripts.
 
 function createJsonlParser(
   source: SessionSource,
-  seenKeys: Set<string>
+  seenKeys: Set<string>,
+  isTranscript: boolean,
 ): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
       const content = await readSessionFile(source.path)
       if (!content) return
-      const sessionId = basename(dirname(source.path))
+      // CLI uses <sessionId>/events.jsonl; transcripts use transcripts/<sessionId>.jsonl.
+      const sessionId = isTranscript
+        ? basename(source.path, '.jsonl')
+        : basename(dirname(source.path))
       const lines = content.split('\n').filter((l) => l.trim())
 
-      // Detect VS Code transcript format: the first session.start event has
-      // { producer: 'copilot-agent' } and no outputTokens in messages.
-      let isTranscript = false
       let currentModel = ''
       let pendingUserMessage = ''
-      // Track the active subagent for this session (from subagent.selected events).
-      // Resets when a new subagent is selected.
+      // Track the active subagent; reset when a new one is selected.
       let currentSubagentType: string | undefined
 
-      // First pass: detect format and infer transcript model if needed.
-      for (const line of lines) {
-        try {
-          const ev = JSON.parse(line) as CopilotEvent
-          if (ev.type === 'session.start') {
-            const data = ev.data as SessionStartData & { producer?: string }
-            if (data.producer === 'copilot-agent') {
-              isTranscript = true
-            }
-            break
-          }
-          if (ev.type === 'session.model_change') break // regular format
-        } catch {
-          continue
-        }
-      }
-
       if (isTranscript) {
+        // Tool-call-id inference seeds legacy transcript models only.
         currentModel = inferTranscriptModel(lines)
-        if (!currentModel) return // no toolCallIds to infer model from
       }
 
-      // Shutdown rollups may lack their own timestamp; remember the last
-      // stamped event so the supplementary call is never left with an empty
-      // timestamp, which the date-range filters silently drop.
+      // Use the last stamped event when a shutdown has no timestamp.
       let lastEventTimestamp = ''
 
       for (const line of lines) {
@@ -774,18 +752,8 @@ function createJsonlParser(
         }
 
         if (event.type === 'session.shutdown') {
-          // The Copilot CLI writes a per-model token/cost rollup here at
-          // shutdown: the only place a CLI session records input, cache-read
-          // and cache-write tokens (assistant.message events carry output
-          // only). VS Code transcripts never carry this rollup, so this path
-          // is gated to the CLI (non-transcript) format, leaving VS Code,
-          // JetBrains and OTel sources untouched.
-          //
-          // We emit one supplementary call per model carrying ONLY the
-          // input/cache tokens the per-turn events lack; output is excluded so
-          // the assistant.message output (and its cost) is not double-counted.
-          // Combined with the per-turn output cost, this yields the full,
-          // CLI-measured session cost.
+          // CLI shutdowns carry input/cache/reasoning; transcripts do not. Keep
+          // output on assistant.message so it is not counted twice.
           if (isTranscript) continue
           const shutdownData = event.data as SessionShutdownData
           const modelMetrics = shutdownData.modelMetrics
@@ -802,25 +770,20 @@ function createJsonlParser(
             const cacheReadTokens = numberOrZero(usage['cacheReadTokens'])
             const cacheWriteTokens = numberOrZero(usage['cacheWriteTokens'])
             const reasoningTokens = numberOrZero(usage['reasoningTokens'])
-            // usage.inputTokens is cache-INCLUSIVE (input + cache_read +
-            // cache_write). calculateCost expects the uncached input alone with
-            // cache tokens billed separately, so subtract the cache components.
-            // Clamp at 0 in case a future schema reports input non-inclusively.
+            // inputTokens is cache-inclusive; calculateCost receives uncached input.
             const inputTokens = Math.max(
               0,
               numberOrZero(usage['inputTokens']) - cacheReadTokens - cacheWriteTokens
             )
 
-            // Nothing this call would add over the per-turn events, so skip it
-            // to avoid an empty $0 row (output is intentionally excluded).
+            // Skip empty supplementary rows (output is intentionally excluded).
             if (inputTokens === 0 && cacheReadTokens === 0 && cacheWriteTokens === 0 && reasoningTokens === 0) continue
 
             const dedupKey = `copilot:${sessionId}:shutdown:${model}`
             if (seenKeys.has(dedupKey)) continue
             seenKeys.add(dedupKey)
 
-            // Tokens are real counts written by the CLI, so this cost is
-            // measured, not char-estimated: costIsEstimated is false.
+            // CLI-written token counts are measured, not char-estimated.
             const costUSD = calculateCost(model, inputTokens, 0, cacheWriteTokens, cacheReadTokens, 0)
 
             yield {
@@ -1836,6 +1799,12 @@ interface JsonlSessionSource extends SessionSource {
   sourceType: 'jsonl'
 }
 
+// A VS Code workspaceStorage transcript. Distinct from 'jsonl' (CLI
+// session-state) so classification rides provenance, not file contents.
+interface TranscriptSessionSource extends SessionSource {
+  sourceType: 'transcript'
+}
+
 interface ChatSessionSource extends SessionSource {
   sourceType: 'chatsession'
 }
@@ -1867,6 +1836,10 @@ function isOtelSource(source: SessionSource): source is OTelSessionSource {
 
 function isChatSessionSource(source: SessionSource): source is ChatSessionSource {
   return (source as ChatSessionSource).sourceType === 'chatsession'
+}
+
+function isTranscriptSource(source: SessionSource): source is TranscriptSessionSource {
+  return (source as TranscriptSessionSource).sourceType === 'transcript'
 }
 
 function isJetBrainsSource(source: SessionSource): source is JetBrainsSessionSource {
@@ -2241,8 +2214,8 @@ async function discoverEmptyWindowChatSessions(
  */
 async function discoverTranscriptSessions(
   workspaceStorageDirs: string[]
-): Promise<JsonlSessionSource[]> {
-  const sources: JsonlSessionSource[] = []
+): Promise<TranscriptSessionSource[]> {
+  const sources: TranscriptSessionSource[] = []
 
   for (const wsDir of workspaceStorageDirs) {
     let hashDirs: string[]
@@ -2274,7 +2247,7 @@ async function discoverTranscriptSessions(
           path: join(transcriptsDir, file),
           project,
           provider: 'copilot',
-          sourceType: 'jsonl',
+          sourceType: 'transcript',
         })
       }
     }
@@ -2417,7 +2390,7 @@ export function createCopilotProvider(
       if (isJetBrainsSource(source)) {
         return createJetBrainsParser(source, seenKeys)
       }
-      return createJsonlParser(source, seenKeys)
+      return createJsonlParser(source, seenKeys, isTranscriptSource(source))
     },
   }
 }

@@ -237,7 +237,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
-  copilot: 'cli-shutdown-cost-v2-preserve-observed-reasoning-cache',
+  copilot: 'cli-shutdown-cost-v3-source-provenance',
   goose: 'sqlite-session-v1-provider-provenance',
   grok: 'estimated-cost-v1',
   hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2',

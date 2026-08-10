@@ -346,7 +346,7 @@ describe('copilot provider - JSONL parsing', () => {
       }),
     ])
 
-    const source = { path: eventsPath, project: 'test', provider: 'copilot' }
+    const source = { path: eventsPath, project: 'test', provider: 'copilot', sourceType: 'transcript' }
     const calls: ParsedProviderCall[] = []
     for await (const call of copilot.createSessionParser(source, new Set()).parse()) calls.push(call)
 
@@ -365,7 +365,7 @@ describe('copilot provider - JSONL parsing', () => {
       }),
     ])
 
-    const source = { path: eventsPath, project: 'test', provider: 'copilot' }
+    const source = { path: eventsPath, project: 'test', provider: 'copilot', sourceType: 'transcript' }
     const calls: ParsedProviderCall[] = []
     for await (const call of copilot.createSessionParser(source, new Set()).parse()) calls.push(call)
 
@@ -394,7 +394,7 @@ describe('copilot provider - JSONL parsing', () => {
       }),
     ])
 
-    const source = { path: eventsPath, project: 'test', provider: 'copilot' }
+    const source = { path: eventsPath, project: 'test', provider: 'copilot', sourceType: 'transcript' }
     const calls: ParsedProviderCall[] = []
     for await (const call of copilot.createSessionParser(source, new Set()).parse()) calls.push(call)
 
@@ -414,12 +414,32 @@ describe('copilot provider - JSONL parsing', () => {
       }),
     ])
 
-    const source = { path: eventsPath, project: 'test', provider: 'copilot' }
+    const source = { path: eventsPath, project: 'test', provider: 'copilot', sourceType: 'transcript' }
     const calls: ParsedProviderCall[] = []
     for await (const call of copilot.createSessionParser(source, new Set()).parse()) calls.push(call)
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.tools).toEqual(['mcp__github_mcp_server__list_issues', 'Read'])
+  })
+
+  it('uses the discovered transcript filename as its session identity', async () => {
+    const transcriptDir = join(tmpDir, 'transcripts')
+    await mkdir(transcriptDir, { recursive: true })
+    const eventsPath = join(transcriptDir, 'session-by-filename.jsonl')
+    await writeFile(eventsPath, [
+      transcriptSessionStart('payload-session-id'),
+      transcriptAssistantMessage({ messageId: 'msg-1', content: 'done', toolCallIds: ['call_abc'] }),
+    ].join('\n') + '\n')
+
+    const calls = await collectCalls({
+      path: eventsPath,
+      project: 'test',
+      provider: 'copilot',
+      sourceType: 'transcript',
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.sessionId).toBe('session-by-filename')
   })
 })
 
@@ -430,6 +450,36 @@ describe('copilot provider - session.shutdown token/cost rollup', () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true })
+  })
+
+  it('uses discovered CLI provenance even when producer is copilot-agent', async () => {
+    const eventsPath = await createSessionDir('sess-cli-provenance', [
+      JSON.stringify({
+        type: 'session.start',
+        timestamp: '2026-04-15T10:00:00Z',
+        data: { sessionId: 'sess-cli-provenance', producer: 'copilot-agent', selectedModel: 'claude-sonnet-4-5' },
+      }),
+      assistantMessage({ messageId: 'msg-1', outputTokens: 345 }),
+      shutdownEvent({
+        modelMetrics: {
+          'claude-sonnet-4-5': { inputTokens: 71282, outputTokens: 345, cacheReadTokens: 35495, cacheWriteTokens: 35783, reasoningTokens: 31 },
+        },
+      }),
+    ])
+
+    const calls = await collectCalls({
+      path: eventsPath,
+      project: 'myproject',
+      provider: 'copilot',
+      sourceType: 'jsonl',
+    })
+
+    expect(calls).toHaveLength(2)
+    expect(calls.find(c => c.deduplicationKey.includes(':shutdown:'))).toBeDefined()
+    expect(calls.reduce((sum, call) => sum + call.outputTokens, 0)).toBe(345)
+    expect(calls.reduce((sum, call) => sum + call.inputTokens, 0)).toBe(4)
+    expect(calls.reduce((sum, call) => sum + call.cacheReadInputTokens, 0)).toBe(35495)
+    expect(calls.reduce((sum, call) => sum + call.cacheCreationInputTokens, 0)).toBe(35783)
   })
 
   it('reads input/cache tokens and measured cost from session.shutdown', async () => {
@@ -620,7 +670,7 @@ describe('copilot provider - session.shutdown token/cost rollup', () => {
         },
       }),
     ])
-    const source = { path: eventsPath, project: 'test', provider: 'copilot' }
+    const source = { path: eventsPath, project: 'test', provider: 'copilot', sourceType: 'transcript' }
     const calls = await collectCalls(source)
 
     // Only the transcript assistant call; the shutdown rollup is CLI-only.
@@ -880,6 +930,7 @@ describe('copilot provider - discoverSessions', () => {
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.project).toBe('myapp')
     expect(sessions[0]!.path).toContain('session-1.jsonl')
+    expect((sessions[0] as { sourceType?: string }).sourceType).toBe('transcript')
   })
 
   it('includes VSCodium workspaceStorage paths on all supported platforms', () => {
