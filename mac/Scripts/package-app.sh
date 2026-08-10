@@ -14,7 +14,7 @@ VERSION="${1:-dev}"
 ASSET_VERSION="${VERSION#mac-}"
 BUNDLE_VERSION="${ASSET_VERSION#v}"
 BUNDLE_NAME="MetroraMenubar.app"
-BUNDLE_ID="org.agentseal.metrora-menubar"
+BUNDLE_ID="eu.metrora.menubar"
 EXECUTABLE_NAME="MetroraMenubar"
 MIN_MACOS="14.0"
 

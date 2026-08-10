@@ -16,8 +16,8 @@ function makeProject(project: string, projectPath = project): ProjectSummary {
 describe('filterProjectsByName', () => {
   const projects = [
     makeProject('metrora', '/Users/alice/metrora'),
-    makeProject('AgentSeal', '/Users/alice/projects/AgentSeal'),
-    makeProject('dashboard', '/Users/alice/AgentSeal/dashboard'),
+    makeProject('ExampleOrg', '/Users/alice/projects/ExampleOrg'),
+    makeProject('dashboard', '/Users/alice/ExampleOrg/dashboard'),
     makeProject('sandbox', '/tmp/sandbox'),
   ]
 
@@ -33,13 +33,13 @@ describe('filterProjectsByName', () => {
   })
 
   it('include is case-insensitive', () => {
-    const result = filterProjectsByName(projects, ['AGENTSEAL'])
-    expect(result.map(p => p.project).sort()).toEqual(['AgentSeal', 'dashboard'])
+    const result = filterProjectsByName(projects, ['EXAMPLEORG'])
+    expect(result.map(p => p.project).sort()).toEqual(['ExampleOrg', 'dashboard'])
   })
 
   it('include matches substring in path when name does not match', () => {
     const result = filterProjectsByName(projects, ['alice/projects'])
-    expect(result.map(p => p.project)).toEqual(['AgentSeal'])
+    expect(result.map(p => p.project)).toEqual(['ExampleOrg'])
   })
 
   it('include uses OR semantics across patterns', () => {
@@ -49,7 +49,7 @@ describe('filterProjectsByName', () => {
 
   it('exclude removes matching projects (AND-negation across patterns)', () => {
     const result = filterProjectsByName(projects, undefined, ['metrora', 'sandbox'])
-    expect(result.map(p => p.project).sort()).toEqual(['AgentSeal', 'dashboard'])
+    expect(result.map(p => p.project).sort()).toEqual(['ExampleOrg', 'dashboard'])
   })
 
   it('exclude matches path substring', () => {
@@ -58,8 +58,8 @@ describe('filterProjectsByName', () => {
   })
 
   it('exclude is applied after include', () => {
-    const result = filterProjectsByName(projects, ['AgentSeal'], ['dashboard'])
-    expect(result.map(p => p.project)).toEqual(['AgentSeal'])
+    const result = filterProjectsByName(projects, ['ExampleOrg'], ['dashboard'])
+    expect(result.map(p => p.project)).toEqual(['ExampleOrg'])
   })
 
   it('returns empty array when no project matches include', () => {

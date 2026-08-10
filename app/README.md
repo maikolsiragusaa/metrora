@@ -35,7 +35,9 @@ The renderer runs with context isolation and no Node integration. It receives pu
 
 ## Compatibility boundary
 
-Inherited identifiers may remain internally where changing them would break stored state, packaging or integrations. They are technical compatibility boundaries, not product branding.
+Historical signed-data identifiers remain internally where changing them would
+break verification. They are technical protocol boundaries, not product
+branding.
 
 New user-facing text, artifact names, documentation and release metadata use **Metrora**.
 

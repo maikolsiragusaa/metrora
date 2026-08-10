@@ -4,7 +4,6 @@ import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'fs/promise
 import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
 import { getMetroraCacheDir } from './product-paths.js'
-import { migrateLegacyDailyCacheRoot } from './daily-cache-root-migration.js'
 import { emptyModelStats, mergeModelStats, sanitizeModels } from './daily-cache-model-detail.js'
 // Bumped to 16: historical per-call cost assignments. Surviving source days
 // re-derive under immutable date-effective settlements; sourceless provider
@@ -310,7 +309,7 @@ export function migratedFrom(parsed: { version: number; lastComputedDate: string
 }
 
 export async function loadDailyCache(): Promise<DailyCache> {
-  const path = (await migrateLegacyDailyCacheRoot(), getCachePath())
+  const path = getCachePath()
   if (existsSync(path)) {
     try {
       const parsed: unknown = JSON.parse(await readFile(path, 'utf-8'))

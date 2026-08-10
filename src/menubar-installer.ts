@@ -18,7 +18,7 @@ import {
 const RELEASE_API = 'https://api.github.com/repos/maikolsiragusaa/metrora/releases?per_page=20'
 const RELEASE_DOWNLOAD_BASE = 'https://github.com/maikolsiragusaa/metrora/releases/download'
 const APP_BUNDLE_NAME = 'MetroraMenubar.app'
-const EXPECTED_BUNDLE_ID = 'org.agentseal.metrora-menubar'
+export const METRORA_MENUBAR_BUNDLE_ID = 'eu.metrora.menubar'
 const VERSIONED_ASSET_PATTERN = /^MetroraMenubar-v.+\.zip$/
 const APP_PROCESS_NAME = 'MetroraMenubar'
 const SUPPORTED_OS = 'darwin'
@@ -290,8 +290,8 @@ async function verifyBundleIdentity(appPath: string): Promise<void> {
     'Print :CFBundleIdentifier',
     join(appPath, 'Contents', 'Info.plist'),
   ])
-  if (bundleID !== EXPECTED_BUNDLE_ID) {
-    throw new Error(`Unexpected menubar bundle id ${bundleID}; expected ${EXPECTED_BUNDLE_ID}.`)
+  if (bundleID !== METRORA_MENUBAR_BUNDLE_ID) {
+    throw new Error(`Unexpected menubar bundle id ${bundleID}; expected ${METRORA_MENUBAR_BUNDLE_ID}.`)
   }
   await runCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath])
 }

@@ -15,7 +15,7 @@ import { metrora } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
 import { REFRESH_OPTIONS, useRefreshCadence } from '../lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from '../lib/shortcuts'
-import { readCompatStorage, writeCompatStorage } from '../lib/storage'
+import { readStorage, writeStorage } from '../lib/storage'
 import { showToast } from '../lib/toast'
 import { ToastHost } from '../components/ToastHost'
 import { rateLimitedNote } from './Plans'
@@ -48,16 +48,15 @@ const CURRENCIES = [
 
 function storageSuffix(key: string): string {
   if (key.startsWith('metrora.')) return key.slice('metrora.'.length)
-  if (key.startsWith('metrora.')) return key.slice('metrora.'.length)
   return key
 }
 
 function readSetting(key: string): string | null {
-  return readCompatStorage(storageSuffix(key))
+  return readStorage(storageSuffix(key))
 }
 
 function writeSetting(key: string, value: string): void {
-  writeCompatStorage(storageSuffix(key), value)
+  writeStorage(storageSuffix(key), value)
 }
 
 const RAIL_ITEMS: Array<{ id: Pane; label: string; icon: React.ReactNode }> = [

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,24 +7,44 @@ import { fileURLToPath } from 'node:url'
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
 function readTrackedText(path) {
-  const bytes = readFileSync(resolve(repositoryRoot, path))
-  if (bytes.includes(0)) return null
-  return bytes.toString('utf8')
+  try {
+    const bytes = readFileSync(resolve(repositoryRoot, path))
+    if (bytes.includes(0)) return null
+    return bytes.toString('utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw error
+  }
 }
 
 const findings = []
-const trackedFiles = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' })
-  .trim()
-  .split(/\r?\n/)
-  .filter(Boolean)
 
-// Assemble the retired marker without spelling it in the checker: the current
-// tree invariant is that the marker itself is absent everywhere.
-const retiredNamespace = String.fromCharCode(113, 111, 118, 114, 105, 111, 110)
-for (const path of trackedFiles) {
-  const text = readTrackedText(path)
-  if (path.toLowerCase().includes(retiredNamespace) || text?.toLowerCase().includes(retiredNamespace)) {
-    findings.push({ path, line: 1, message: 'retired namespace must not appear in the current tree' })
+// First-party technical identities are asserted positively. The public tree
+// records what Metrora is today; it does not keep a blacklist of retired names
+// or inherited authorities.
+const canonicalTechnicalIdentity = {
+  'mac/Scripts/build-local.sh': [
+    'BUNDLE_ID="eu.metrora.menubar"',
+  ],
+  'mac/Scripts/package-app.sh': [
+    'BUNDLE_ID="eu.metrora.menubar"',
+  ],
+  'src/menubar-installer.ts': [
+    "METRORA_MENUBAR_BUNDLE_ID = 'eu.metrora.menubar'",
+  ],
+  'mac/Sources/MetroraMenubar/MetroraApp.swift': [
+    'identifier: "eu.metrora.menubar.refresh-backstop"',
+  ],
+  'app/electron/quota/codex.ts': [
+    "MENUBAR_KEYCHAIN_SERVICE = 'eu.metrora.menubar.codex.oauth.v1'",
+  ],
+}
+
+for (const [path, markers] of Object.entries(canonicalTechnicalIdentity)) {
+  const text = readTrackedText(path) ?? ''
+  for (const marker of markers) {
+    if (text.includes(marker)) continue
+    findings.push({ path, line: 1, message: `canonical first-party technical identity marker is missing: ${marker}` })
   }
 }
 
@@ -33,11 +52,12 @@ const requiredFiles = {
   LICENSE: [
     'Copyright (c) 2026 Metrora contributors',
   ],
-  'LICENSES/CodeBurn-MIT.txt': [
-    'Copyright (c) 2026 AgentSeal',
+  'LICENSES/UPSTREAM-MIT.txt': [
+    'MIT License',
+    'Permission is hereby granted',
   ],
   'THIRD_PARTY_NOTICES.md': [
-    'LICENSES/CodeBurn-MIT.txt',
+    'LICENSES/UPSTREAM-MIT.txt',
     'LICENSES/Apache-2.0.txt',
   ],
   'NOTICE.md': [
@@ -95,15 +115,6 @@ for (const [path, markers] of Object.entries(forbiddenStoreSurfaceMarkers)) {
       findings.push({ path, line: 1, message: `historical marker must not appear on the Store-facing surface: ${marker}` })
     }
   }
-}
-
-const rootLicense = readTrackedText('LICENSE') ?? ''
-if (rootLicense.includes('AgentSeal')) {
-  findings.push({
-    path: 'LICENSE',
-    line: 1,
-    message: 'upstream copyright must remain scoped to its dedicated licence notice',
-  })
 }
 
 if (findings.length > 0) {

@@ -7,7 +7,6 @@ import type { ToolCall } from './types.js'
 import { CostAssignmentV1Schema, costAssignmentMatchesUsdV1, type CostAssignmentV1 } from './pricing/cost-assignment.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
-import { migrateLegacyDurableSessionCache } from './session-cache-root-migration.js'
 // ── Types ──────────────────────────────────────────────────────────────
 
 export type CachedUsage = {
@@ -549,9 +548,9 @@ export async function loadCache(): Promise<SessionCache> {
   try {
     const raw = await readFile(getCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
-    if (isValidCache(parsed)) return migrateLegacyDurableSessionCache(parsed, true)
+    if (isValidCache(parsed)) return parsed
   } catch { /* fall through to safe adoption */ }
-  return migrateLegacyDurableSessionCache(await afterMissingVersionedCache())
+  return afterMissingVersionedCache()
 }
 
 // The current versioned file is absent/unreadable. Prefer adopting the newest

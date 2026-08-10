@@ -148,18 +148,12 @@ See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERS
 
 ## Local files and compatibility
 
-The canonical command is `metrora`. Temporary inherited command aliases may
-continue to invoke the same implementation so existing local state, scripts
-and integrations can migrate without abrupt breakage. They are compatibility
-entry points only, not current product names.
-
-Fresh configuration paths use Metrora identity. Existing legacy roots remain
-readable where required to avoid stranding user state. Some frozen v1 protocol
-fields, environment aliases and platform-specific integration identifiers also
-retain historical values; they are compatibility details, not current product
-names or distribution channels.
-
-Do not rename or delete compatibility state manually unless the relevant migration documentation explicitly instructs you to do so.
+The current package publishes only the `metrora` command. Fresh installations
+use canonical Metrora config and cache roots and do not infer retired
+pre-release roots, aliases or pointers. Existing canonical analytics and
+history are preserved; historical Workspace and signed-evidence identifiers
+remain a separate technical boundary documented in
+[`TECHNICAL_IDENTITY_COMPATIBILITY.md`](TECHNICAL_IDENTITY_COMPATIBILITY.md).
 
 ## Troubleshooting
 

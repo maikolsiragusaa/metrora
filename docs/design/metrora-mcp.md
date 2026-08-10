@@ -34,7 +34,9 @@ The MCP server must not become a general filesystem, shell or model-proxy tool.
 
 ## Compatibility
 
-The canonical command is `metrora mcp`. Temporary inherited CLI aliases may continue to invoke the same implementation while compatibility migrations remain active. Those aliases are technical boundaries, not current product names.
+The canonical command is `metrora mcp`. The current package publishes no
+alternate CLI alias; historical signed-data identifiers are internal protocol
+details, not current product names.
 
 ## Maintenance rules
 

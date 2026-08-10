@@ -23,7 +23,6 @@ const DOCUMENTATION_EXACT = new Set([
   'CODE_OF_CONDUCT.md',
   'SUPPORT.md',
   'GOVERNANCE.md',
-  'UPSTREAM.md',
   'THIRD_PARTY_NOTICES.md',
   'AUTHORS',
   'COPYING',

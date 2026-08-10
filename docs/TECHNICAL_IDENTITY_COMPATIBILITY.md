@@ -1,4 +1,4 @@
-# Metrora technical identity compatibility
+# Metrora technical identity and state boundaries
 
 Metrora is the only canonical product identity. New code, UI, documentation,
 release metadata and generated artifacts use Metrora names exclusively.
@@ -8,6 +8,8 @@ release metadata and generated artifacts use Metrora names exclusively.
 - Product and desktop application: `Metrora`
 - Website: `metrora.eu`
 - Repository: `maikolsiragusaa/metrora`
+- First-party reverse-DNS authority: `eu.metrora` (shared by the desktop,
+  Store/AppX and Android package identities)
 - CLI command: `metrora`
 - Desktop bridge: `window.metrora`
 - IPC prefix: `metrora:`
@@ -16,47 +18,46 @@ release metadata and generated artifacts use Metrora names exclusively.
 - Desktop CLI pointer directory: `Metrora`
 - Default local data directory: `Metrora` / `metrora`
 
-## Compatibility boundary
+## Current product boundary
 
-The repository retains a narrowly scoped read-only compatibility boundary for
-older installations and integrations that would otherwise strand user-owned
-state. It is implemented only in:
+The current product emits canonical identifiers only:
 
-- `app/electron/identity.ts` and `app/electron/cli.ts` for legacy executable,
-  environment-variable and persisted-pointer lookup;
-- `src/product-paths.ts` for existing config/cache roots;
-- `app/renderer/lib/storage.ts` for existing local-storage keys;
-- the package `bin` map for an old command-line shim.
+- `app/electron/identity.ts` and `app/electron/cli.ts` resolve Metrora
+  executables, environment variables and persisted pointers;
+- `src/product-paths.ts` creates and resolves Metrora config and cache roots;
+- `app/renderer/lib/storage.ts` uses the `metrora.` renderer namespace;
+- the package `bin` map publishes only the `metrora` command.
 
-The precedence is always canonical first. New files, writes, IPC messages,
-preload globals, diagnostics and release artifacts use Metrora names only.
-Legacy values are read or adopted in place, never emitted as current product
-identity, and are not deleted automatically. The compatibility tests document
-the exact precedence and migration behavior at each boundary.
+New files, writes, IPC messages, preload globals, diagnostics and release
+artifacts use Metrora names only. Retired product roots, aliases and renderer
+keys are not adopted or deleted automatically.
 
-## Local-state adoption
+## Local data outcome
 
 - `METRORA_DATA_DIR` wins when defined.
 - Fresh config and cache paths use the canonical Metrora roots.
-- An existing legacy root is adopted in place when the canonical root is not
-  present, preserving durable user history without silently replacing it.
-- Desktop endpoint state is read from an explicitly supplied legacy data root
-  only for controlled migration callers; no old product namespace is inferred
-  from a new installation.
 - Existing canonical files are never overwritten.
+- Canonical Metrora analytics and history remain in place, including schema
+  migrations within the canonical roots.
+- Retired pre-release config, cache and CLI pointer roots are no longer
+  inferred by a fresh installation and are not removed by the application.
 - No migration performs telemetry or uploads data.
 
-## Versioned identifiers
+## Historical Workspace and evidence boundary
 
-Current v1 evidence, local-state records and wire contracts use the canonical
-Metrora namespace. Their identifiers are protocol provenance, not visible
-branding. Signed or hashed records are not rewritten in place; a future
-namespace change must be introduced as an explicit versioned migration that
-preserves verification semantics.
+`src/local-state/legacy-identity-compatibility.ts` and its consumers retain a
+separate read/verification boundary for historical pre-release Workspace and
+signed evidence state. Such state may remain verifiable read-only. Signed or
+hashed historical state is not rewritten automatically. This code is not a
+current product alias: it must not emit retired identity, rewrite records, or
+change the canonical analytics path.
+
+Retiring that state or introducing a new clean-start/migration procedure
+requires a separately reviewed migration or retirement decision.
 
 ## Removal criteria
 
-The compatibility boundary can be removed only after a stable Metrora release
-has shipped with adoption support, rollback no longer depends on it, release
-notes have announced the removal, and tests prove that supported local state no
-longer requires the aliases. Removal must be a separate reviewed change.
+The historical evidence boundary can be removed only through a separately
+reviewed migration that preserves verification semantics and does not destroy
+user-owned analytics or evidence. The current cleanup intentionally does not
+perform that migration.

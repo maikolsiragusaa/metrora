@@ -2,13 +2,15 @@
 
 Metrora includes third-party and upstream-licensed components. Those components retain their original copyright notices and licence terms.
 
-## CodeBurn
+## Incorporated MIT component
 
-Portions of Metrora were originally derived from CodeBurn 0.9.19 at commit `146037bfd533edff85cd39f322571b2c5434fcca`.
+Portions of Metrora were derived from an upstream source snapshot at commit
+`146037bfd533edff85cd39f322571b2c5434fcca`.
 
-CodeBurn is Copyright (c) 2026 AgentSeal and is licensed under the MIT License. The original notice and complete licence text are preserved in [`LICENSES/CodeBurn-MIT.txt`](LICENSES/CodeBurn-MIT.txt).
+The original copyright notice and complete MIT licence text are preserved in
+[`LICENSES/UPSTREAM-MIT.txt`](LICENSES/UPSTREAM-MIT.txt).
 
-Original project: `https://github.com/getagentseal/codeburn`
+Source repository: `https://github.com/getagentseal/codeburn`
 
 ## RFC 8785 canonicalization
 

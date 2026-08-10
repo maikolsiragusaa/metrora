@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  migrateKnownStorage,
-  readCompatStorage,
-  removeCompatStorage,
-  storageKeys,
-  writeCompatStorage,
+  METRORA_STORAGE_PREFIX,
+  readStorage,
+  removeStorage,
+  storageKey,
+  writeStorage,
 } from './storage'
 
 type MemoryStorage = Storage & { values: Map<string, string> }
@@ -23,51 +23,34 @@ function memoryStorage(seed: Record<string, string> = {}): MemoryStorage {
   }
 }
 
-describe('renderer storage compatibility', () => {
-  it('prefers Metrora over the legacy compatibility key', () => {
-    const keys = storageKeys('theme')
-    const storage = memoryStorage({ [keys.canonical]: 'dark', [keys.legacy]: 'system' })
-    expect(readCompatStorage('theme', storage)).toBe('dark')
+describe('renderer storage', () => {
+  it('uses the canonical Metrora namespace', () => {
+    expect(METRORA_STORAGE_PREFIX).toBe('metrora.')
+    expect(storageKey('theme')).toBe('metrora.theme')
   })
 
-  it('copies a legacy value forward without deleting it', () => {
-    const keys = storageKeys('defaultPeriod')
-    const storage = memoryStorage({ [keys.legacy]: '30days' })
-    expect(readCompatStorage('defaultPeriod', storage)).toBe('30days')
-    expect(storage.getItem(keys.canonical)).toBe('30days')
-    expect(storage.getItem(keys.legacy)).toBe('30days')
+  it('reads a canonical value without creating other keys', () => {
+    const storage = memoryStorage({ [storageKey('defaultPeriod')]: '30days' })
+    expect(readStorage('defaultPeriod', storage)).toBe('30days')
+    expect([...storage.values.keys()]).toEqual(['metrora.defaultPeriod'])
   })
 
-  it('returns null when no canonical or legacy value exists', () => {
-    const keys = storageKeys('theme')
+  it('returns null when no canonical value exists', () => {
     const storage = memoryStorage()
-    expect(readCompatStorage('theme', storage)).toBeNull()
-    expect(storage.getItem(keys.canonical)).toBeNull()
+    expect(readStorage('theme', storage)).toBeNull()
   })
 
   it('writes only the canonical Metrora generation', () => {
-    const keys = storageKeys('refreshInterval')
     const storage = memoryStorage()
-    writeCompatStorage('refreshInterval', '5m', storage)
-    expect(storage.getItem(keys.canonical)).toBe('5m')
-    expect(storage.getItem(keys.legacy)).toBeNull()
+    writeStorage('refreshInterval', '5m', storage)
+    expect(storage.getItem(storageKey('refreshInterval'))).toBe('5m')
+    expect([...storage.values.keys()]).toEqual(['metrora.refreshInterval'])
   })
 
-  it('removes canonical and legacy keys only for an explicit removal', () => {
-    const keys = storageKeys('dailyBudget')
-    const storage = memoryStorage({ [keys.canonical]: 'a', [keys.legacy]: 'a' })
-    removeCompatStorage('dailyBudget', storage)
-    expect(storage.getItem(keys.canonical)).toBeNull()
-    expect(storage.getItem(keys.legacy)).toBeNull()
-  })
-
-  it('migrates the known key set idempotently', () => {
-    const theme = storageKeys('theme')
-    const budget = storageKeys('dailyBudget')
-    const storage = memoryStorage({ [theme.legacy]: 'dark', [budget.legacy]: '{"kind":"usd","value":10}' })
-    migrateKnownStorage(storage)
-    migrateKnownStorage(storage)
-    expect(storage.getItem(theme.canonical)).toBe('dark')
-    expect(storage.getItem(budget.canonical)).toBe('{"kind":"usd","value":10}')
+  it('removes only the canonical key', () => {
+    const storage = memoryStorage({ [storageKey('dailyBudget')]: 'a', 'previous-product.dailyBudget': 'a' })
+    removeStorage('dailyBudget', storage)
+    expect(storage.getItem(storageKey('dailyBudget'))).toBeNull()
+    expect(storage.getItem('previous-product.dailyBudget')).toBe('a')
   })
 })

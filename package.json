@@ -6,8 +6,7 @@
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
-    "metrora": "dist/cli.js",
-    "codeburn": "dist/cli.js"
+    "metrora": "dist/cli.js"
   },
   "files": [
     "dist"

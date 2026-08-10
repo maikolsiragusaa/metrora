@@ -13,11 +13,9 @@ describe('Metrora release boundary', () => {
     expect(directDownloadUrl('desktop-v99.0.0', 'linux', 'x64')).toBeNull()
   })
 
-  it('never points to CodeBurn or its Store identity', () => {
+  it('stays on the Metrora release surface', () => {
     expect(releasePageUrl('desktop-v0.9.19')).toBe(METRORA_RELEASES_URL)
     expect(updateDownloadUrl('desktop-v0.9.19')).toBe(METRORA_RELEASES_URL)
     expect(METRORA_RELEASES_URL).toBe('https://github.com/maikolsiragusaa/metrora/releases')
-    expect(METRORA_RELEASES_URL).not.toContain('getagentseal')
-    expect(METRORA_RELEASES_URL).not.toContain('codeburn')
   })
 })
