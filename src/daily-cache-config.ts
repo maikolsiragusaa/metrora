@@ -13,6 +13,7 @@ export function getDailyCacheConfigHash(): string {
     : savingsHash
   return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}`
     + `\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}`
+    + `\u0002codexCollector=legacy-session-meta-v1`
     + `\u0002copilotCollector=${PROVIDER_PARSE_VERSIONS['copilot'] ?? ''}`
     + `\u0002copilotJournal=${COPILOT_CHAT_JOURNAL_AUTHORITY}`
     + `\u0002antigravityCollector=${PROVIDER_PARSE_VERSIONS['antigravity'] ?? ''}`
