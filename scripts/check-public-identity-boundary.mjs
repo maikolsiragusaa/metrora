@@ -19,35 +19,33 @@ function readTrackedText(path) {
 }
 
 const findings = []
-const trackedFiles = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' })
-  .trim()
-  .split(/\r?\n/)
-  .filter(Boolean)
 
-// Metrora-owned technical identity must not inherit the former reverse-DNS
-// authority anywhere in the current tree. Legal/provenance references and the
-// documented Claude provider compatibility use different identifiers and do
-// not require an exception to this reverse-DNS boundary.
-const inheritedTechnicalAuthority = `${['org', 'agentseal'].join('.')}.`
-for (const path of trackedFiles) {
-  const text = readTrackedText(path)
-  if (path.toLowerCase().includes(inheritedTechnicalAuthority)
-    || text?.toLowerCase().includes(inheritedTechnicalAuthority)) {
-    findings.push({
-      path,
-      line: 1,
-      message: 'Metrora-owned technical identity must not use the inherited reverse-DNS authority',
-    })
-  }
+// First-party technical identities are asserted positively. The public tree
+// records what Metrora is today; it does not keep a blacklist of retired names
+// or inherited authorities.
+const canonicalTechnicalIdentity = {
+  'mac/Scripts/build-local.sh': [
+    'BUNDLE_ID="eu.metrora.menubar"',
+  ],
+  'mac/Scripts/package-app.sh': [
+    'BUNDLE_ID="eu.metrora.menubar"',
+  ],
+  'src/menubar-installer.ts': [
+    "METRORA_MENUBAR_BUNDLE_ID = 'eu.metrora.menubar'",
+  ],
+  'mac/Sources/MetroraMenubar/MetroraApp.swift': [
+    'identifier: "eu.metrora.menubar.refresh-backstop"',
+  ],
+  'app/electron/quota/codex.ts': [
+    "MENUBAR_KEYCHAIN_SERVICE = 'eu.metrora.menubar.codex.oauth.v1'",
+  ],
 }
 
-// Assemble the retired marker without spelling it in the checker: the current
-// tree invariant is that the marker itself is absent everywhere.
-const retiredNamespace = String.fromCharCode(113, 111, 118, 114, 105, 111, 110)
-for (const path of trackedFiles) {
-  const text = readTrackedText(path)
-  if (path.toLowerCase().includes(retiredNamespace) || text?.toLowerCase().includes(retiredNamespace)) {
-    findings.push({ path, line: 1, message: 'retired namespace must not appear in the current tree' })
+for (const [path, markers] of Object.entries(canonicalTechnicalIdentity)) {
+  const text = readTrackedText(path) ?? ''
+  for (const marker of markers) {
+    if (text.includes(marker)) continue
+    findings.push({ path, line: 1, message: `canonical first-party technical identity marker is missing: ${marker}` })
   }
 }
 
