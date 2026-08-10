@@ -41,7 +41,10 @@ async function readTrust(path: string): Promise<{ version: number; trusted: bool
 }
 
 function supportsActiveTrust(version: number): boolean {
-  return version === core.DAILY_CACHE_VERSION || version === core.DAILY_CACHE_VERSION - 1
+  // The immediately previous envelope is an adoptable baseline, not active
+  // authority: Copilot accounting changed in v18 and must re-derive surviving
+  // sources before its watermark becomes trusted again.
+  return version === core.DAILY_CACHE_VERSION
 }
 
 async function readPersistedTrust(): Promise<boolean> {
@@ -74,7 +77,7 @@ export function emptyCache(savingsConfigHash = ''): DailyCache {
 
 export async function loadDailyCache(): Promise<DailyCache> {
   // Read before the core migration/adoption path sanitizes unknown fields, then
-  // re-persist a trusted stamp when that path minted the active v16 envelope.
+  // re-persist a trusted stamp when that path minted the active envelope.
   const watermarkTrusted = await readPersistedTrust()
   const cache = withTrust(await core.loadDailyCache(), watermarkTrusted)
   if (watermarkTrusted) {
