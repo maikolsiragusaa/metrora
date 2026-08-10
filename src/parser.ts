@@ -3042,22 +3042,19 @@ async function parseProviderSources(
         const canonicalCalls = await Promise.all(providerCalls.map(canonicalizeProviderCallProject))
         const turns = providerCallsToCachedTurns(canonicalCalls)
 
-        // Store/merge parsed turns into the cache.
-        // Durable providers use a union-by-deduplicationKey merge: existing turns
-        // are NEVER deleted (preserves data for spans pruned from the DB), and
-        // only turns whose dedup keys are not already cached are appended.
-        // Non-durable providers keep the original overwrite-or-append behaviour.
+        // Durable sources retain absent fresh calls; Antigravity fresh native
+        // identities replace stale values on source rewrites.
         if (provider.durableSources) {
-          const existingEntry = section.files[source.path]
-          if (existingEntry) {
-            const existingKeys = new Set(
-              existingEntry.turns.flatMap(t => t.calls.map(c => c.deduplicationKey))
-            )
-            const newTurns = turns.filter(t =>
-              t.calls.every(c => !existingKeys.has(c.deduplicationKey))
-            )
-            existingEntry.turns = [...existingEntry.turns, ...newTurns]
-            existingEntry.fingerprint = fp
+            const existingEntry = section.files[source.path]
+            if (existingEntry) {
+              if (provider.durableFreshWins) {
+                const freshKeys = new Set(turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
+                existingEntry.turns = existingEntry.turns.map(t => ({ ...t, calls: t.calls.filter(c => !freshKeys.has(c.deduplicationKey)) })).filter(t => t.calls.length > 0)
+              }
+              const existingKeys = new Set(existingEntry.turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
+              const newTurns = turns.filter(t => t.calls.every(c => !existingKeys.has(c.deduplicationKey)))
+              existingEntry.turns = [...existingEntry.turns, ...newTurns]
+              existingEntry.fingerprint = fp
           } else {
             section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns }
           }

@@ -1311,7 +1311,7 @@ export function createAntigravityProvider(): Provider {
   return {
     name: 'antigravity',
     displayName: 'Antigravity',
-    durableSources: true,
+    durableSources: true, durableFreshWins: true,
 
     modelDisplayName(model: string): string {
       return modelDisplayNames[model] ?? model

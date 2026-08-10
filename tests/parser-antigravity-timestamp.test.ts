@@ -20,6 +20,43 @@ type TestDb = {
   close(): void
 }
 
+type CachedCallSnapshot = { deduplicationKey: string; usage: { inputTokens: number } }
+type CachedSnapshot = {
+  envFingerprint?: string
+  file?: {
+    fingerprint: unknown
+    turns: Array<{ timestamp: string; calls: CachedCallSnapshot[] }>
+  }
+}
+
+function encodeVarint(value: number | bigint): Buffer {
+  let remaining = BigInt(value)
+  const bytes: number[] = []
+  do {
+    const low = Number(remaining & 0x7fn)
+    remaining >>= 7n
+    bytes.push(low | (remaining > 0n ? 0x80 : 0))
+  } while (remaining > 0n)
+  return Buffer.from(bytes)
+}
+
+function encodeProtoBytes(fieldNumber: number, value: Uint8Array | string): Buffer {
+  const data = typeof value === 'string' ? Buffer.from(value) : Buffer.from(value)
+  return Buffer.concat([encodeVarint((BigInt(fieldNumber) << 3n) | 2n), encodeVarint(data.length), data])
+}
+
+function encodeProtoVarint(fieldNumber: number, value: number): Buffer {
+  return Buffer.concat([encodeVarint(BigInt(fieldNumber) << 3n), encodeVarint(value)])
+}
+
+function sqliteUsageRow(idx: number, responseId: string, inputTokens: number, outputTokens: number): { idx: number; hex: string } {
+  const usage = Buffer.concat([
+    encodeProtoVarint(1, inputTokens), encodeProtoVarint(3, outputTokens), encodeProtoBytes(11, responseId),
+  ])
+  const chatModel = Buffer.concat([encodeProtoBytes(4, usage), encodeProtoBytes(19, 'gemini-3-pro')])
+  return { idx, hex: encodeProtoBytes(1, chatModel).toString('hex') }
+}
+
 function createGenMetadataDb(dbPath: string, fixture: Fixture): void {
   const { DatabaseSync: Database } = requireForTest('node:sqlite')
   const db = new Database(dbPath) as TestDb
@@ -40,10 +77,21 @@ function createGenMetadataDb(dbPath: string, fixture: Fixture): void {
 }
 
 async function cachedAntigravityTurns(cacheDir: string, dbPath: string): Promise<Array<{ timestamp: string }>> {
+  return (await cachedAntigravitySnapshot(dbPath)).file?.turns ?? []
+}
+
+async function cachedAntigravitySnapshot(dbPath: string): Promise<CachedSnapshot> {
   const saved = JSON.parse(await readFile(sessionCachePath(), 'utf-8')) as {
-    providers: Record<string, { files: Record<string, { turns: Array<{ timestamp: string }> }> }>
+    providers: Record<string, { envFingerprint?: string; files: Record<string, CachedSnapshot['file']> }>
   }
-  return saved.providers['antigravity']?.files[dbPath]?.turns ?? []
+  const provider = saved.providers['antigravity']
+  return { envFingerprint: provider?.envFingerprint, file: provider?.files[dbPath] }
+}
+
+function summarizeCachedCalls(snapshot: CachedSnapshot): Array<{ key: string; input: number }> {
+  return (snapshot.file?.turns ?? [])
+    .flatMap(turn => turn.calls.map(call => ({ key: call.deduplicationKey, input: call.usage.inputTokens })))
+    .sort((a, b) => a.key.localeCompare(b.key))
 }
 
 let home: string
@@ -149,6 +197,71 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
       ),
     )
     expect(todayKeys).toHaveLength(0)
+  })
+
+  it('lets fresh native usage replace stale durable usage after an ordinary DB rewrite', async () => {
+    if (!isSqliteAvailable()) return
+
+    const conversationId = 'durable-rewrite-cascade'
+    const conversationsDir = join(home, '.gemini', 'antigravity-ide', 'conversations')
+    await mkdir(conversationsDir, { recursive: true })
+    const dbPath = join(conversationsDir, `${conversationId}.db`)
+    const wideRange: DateRange = {
+      start: new Date('2026-01-01T00:00:00.000Z'),
+      end: new Date('2026-12-31T23:59:59.999Z'),
+    }
+
+    createGenMetadataDb(dbPath, {
+      conversationId,
+      rows: [sqliteUsageRow(0, 'K', 100, 1), sqliteUsageRow(1, 'B', 50, 1)],
+    })
+    const firstSeen = new Date('2026-07-02T03:04:05.000Z')
+    await utimes(dbPath, firstSeen, firstSeen)
+
+    await parseAllSessions(wideRange, 'antigravity')
+    const first = await cachedAntigravitySnapshot(dbPath)
+    expect(summarizeCachedCalls(first)).toEqual([
+      { key: `antigravity:${conversationId}:B`, input: 50 },
+      { key: `antigravity:${conversationId}:K`, input: 100 },
+    ])
+    expect(first.envFingerprint).toBeDefined()
+    expect(first.file).toBeDefined()
+
+    clearSessionCache()
+    await rm(dbPath)
+    createGenMetadataDb(dbPath, {
+      conversationId,
+      rows: [sqliteUsageRow(0, 'K', 120, 1), sqliteUsageRow(1, 'C', 30, 1)],
+    })
+    const rewritten = new Date('2026-07-07T08:09:10.000Z')
+    await utimes(dbPath, rewritten, rewritten)
+
+    const secondProjects = await parseAllSessions(wideRange, 'antigravity')
+    const second = await cachedAntigravitySnapshot(dbPath)
+    expect(second.envFingerprint).toBe(first.envFingerprint)
+    expect(second.file?.fingerprint).not.toEqual(first.file?.fingerprint)
+    expect(summarizeCachedCalls(second)).toEqual([
+      { key: `antigravity:${conversationId}:B`, input: 50 },
+      { key: `antigravity:${conversationId}:C`, input: 30 },
+      { key: `antigravity:${conversationId}:K`, input: 120 },
+    ])
+    expect(summarizeCachedCalls(second).reduce((sum, call) => sum + call.input, 0)).toBe(200)
+
+    const summarizeProjects = (projects: typeof secondProjects) => projects.flatMap(project =>
+      project.sessions.flatMap(session =>
+        session.turns.flatMap(turn => turn.assistantCalls.map(call => ({
+          key: call.deduplicationKey, input: call.usage.inputTokens,
+        }))),
+      ),
+    ).sort((a, b) => a.key.localeCompare(b.key))
+    expect(summarizeProjects(secondProjects)).toEqual(summarizeCachedCalls(second))
+
+    clearSessionCache()
+    const thirdProjects = await parseAllSessions(wideRange, 'antigravity')
+    const third = await cachedAntigravitySnapshot(dbPath)
+    expect(summarizeCachedCalls(third)).toEqual(summarizeCachedCalls(second))
+    expect(summarizeProjects(thirdProjects)).toEqual(summarizeProjects(secondProjects))
+    expect(new Set(summarizeCachedCalls(third).map(call => call.key)).size).toBe(3)
   })
 
   it('preserves durable orphan usage after source pruning and a cache fingerprint change', async () => {

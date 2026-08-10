@@ -97,6 +97,9 @@ export type Provider = {
   // are never evicted, and orphaned entries (paths no longer discovered) are
   // kept and included in query-time aggregation so the monthly total never drops.
   durableSources?: boolean
+  // Fresh derivation for a present durable source replaces cached calls with the
+  // same native identity while retaining cached calls absent from that derivation.
+  durableFreshWins?: boolean
   modelDisplayName(model: string): string
   toolDisplayName(rawTool: string): string
   discoverSessions(): Promise<SessionSource[]>
