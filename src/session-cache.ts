@@ -251,7 +251,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   'roo-code': 'worktree-project-grouping-v1',
   zerostack: 'cumulative-session-v1-provider-provenance-estimated-cost-v2',
   warp: 'worktree-project-grouping-v1-est-cost',
-  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1',
+  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1-output-reasoning-map-v2',
   // OpenCode keeps valid usage in archived root/child sessions. The parser
   // must scan the complete SQLite session tree, not only active sessions.
   opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1',
@@ -719,7 +719,7 @@ export function mergeCallByDedupKey(
   }
 }
 
-// ── Temp Cleanup ───────────────────────────────────────────────────────
+// ── Temp Cleanup ────────────────────────────────────────────────────────
 
 export async function cleanupOrphanedTempFiles(): Promise<void> {
   const dir = getCacheDir()
