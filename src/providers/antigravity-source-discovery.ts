@@ -2,7 +2,7 @@ import { readdir, stat } from 'fs/promises'
 import { basename, join } from 'path'
 import { homedir } from 'os'
 
-import type { ProbeRoot, SessionSource } from './types.js'
+import type { ProbeRoot, SessionSource, SessionSourceLocator } from './types.js'
 
 export type AntigravityConversationRoot = {
   dir: string
@@ -33,8 +33,8 @@ function isImplicitRoot(path: string): boolean {
 // Native cascade identity is authoritative: direct SQLite beats protobuf,
 // non-implicit roots beat mirrors, and root order breaks remaining ties.
 function compareSourceAuthority(
-  left: { source: { path: string }; rootIndex: number },
-  right: { source: { path: string }; rootIndex: number },
+  left: { source: SessionSourceLocator; rootIndex: number },
+  right: { source: SessionSourceLocator; rootIndex: number },
 ): number {
   const leftPath = left.source.path
   const rightPath = right.source.path
@@ -60,7 +60,7 @@ export async function discoverAntigravitySources(
 ): Promise<SessionSource[]> {
   const includeStatusLineEvents = roots === undefined
   const effectiveRoots = roots ?? conversationRoots()
-  const selected = new Map<string, { source: SessionSource; rootIndex: number }>()
+  const grouped = new Map<string, Array<{ source: SessionSourceLocator; rootIndex: number }>>()
 
   for (let rootIndex = 0; rootIndex < effectiveRoots.length; rootIndex++) {
     const root = effectiveRoots[rootIndex]!
@@ -75,12 +75,16 @@ export async function discoverAntigravitySources(
       const source = { path, project: root.project, provider: 'antigravity' }
       const candidate = { source, rootIndex }
       const cascadeId = antigravityCascadeIdFromPath(path)
-      const prior = selected.get(cascadeId)
-      if (!prior || compareSourceAuthority(candidate, prior) < 0) selected.set(cascadeId, candidate)
+      grouped.set(cascadeId, [...(grouped.get(cascadeId) ?? []), candidate])
     }
   }
 
-  const sources = [...selected.values()].map(candidate => candidate.source)
+  const sources = [...grouped.values()].map(candidates => {
+    const ordered = candidates.sort(compareSourceAuthority)
+    const canonical = ordered[0]!.source
+    const alternateLocators = ordered.slice(1).map(candidate => candidate.source)
+    return alternateLocators.length > 0 ? { ...canonical, alternateLocators } : canonical
+  })
   if (!includeStatusLineEvents) return sources
 
   const statusLineStat = await stat(statusLinePath).catch(() => null)
@@ -88,6 +92,10 @@ export async function discoverAntigravitySources(
     sources.push({ path: statusLinePath, project: 'antigravity-cli', provider: 'antigravity' })
   }
   return sources
+}
+
+export function antigravitySourceLocators(source: SessionSource): SessionSourceLocator[] {
+  return [source, ...(source.alternateLocators ?? [])]
 }
 
 export function antigravityProbeRoots(statusLinePath: string): ProbeRoot[] {

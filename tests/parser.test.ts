@@ -14,7 +14,7 @@ import { createRequire } from 'node:module'
 
 import { isSqliteAvailable } from '../src/sqlite.js'
 import { clearSessionCache, parseAllSessions } from '../src/parser.js'
-import { loadCache, saveCache, sessionCachePath } from '../src/session-cache.js'
+import { loadCache, PROVIDER_PARSE_VERSIONS, saveCache, sessionCachePath } from '../src/session-cache.js'
 import type { SessionSource, SessionParser, ParsedProviderCall } from '../src/providers/types.js'
 
 // ── Synthetic provider state ───────────────────────────────────────────────
@@ -171,6 +171,14 @@ function totalOutput(projects: Awaited<ReturnType<typeof parseAllSessions>>): nu
     .flatMap(s => s.turns)
     .flatMap(t => t.assistantCalls)
     .reduce((s, c) => s + c.usage.outputTokens, 0)
+}
+
+function totalInput(projects: Awaited<ReturnType<typeof parseAllSessions>>): number {
+  return projects
+    .flatMap(p => p.sessions)
+    .flatMap(s => s.turns)
+    .flatMap(t => t.assistantCalls)
+    .reduce((s, c) => s + c.usage.inputTokens, 0)
 }
 
 // ── Common env setup ──────────────────────────────────────────────────────
@@ -432,31 +440,96 @@ describe('(f) durable orphans survive a parse-version bump', () => {
     vi.stubEnv('METRORA_COPILOT_DISABLE_OTEL', '1')
     vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR', join(tmpHome, 'no-ws'))
 
-    // Parse once so the session is cached, then prune the source: the cache
-    // entry becomes a durable orphan (its only record).
+    // Parse once so the session is cached, then rewrite the still-present
+    // source with corrected usage. A fingerprint bump must replace its key.
     const eventsPath = await createJsonlSession(sessionStateDir, 'sess-bump', 200)
     const before = totalOutput(await parseAllSessions(undefined, 'copilot'))
     expect(before).toBe(200)
-    await unlink(eventsPath)
-    clearSessionCache()
 
     // Simulate the fingerprint a PREVIOUS release computed (any mismatching
     // value takes the same code path as a real parse-version bump).
     const { readFile, writeFile: writeFileFs } = await import('fs/promises')
     const cachePath = sessionCachePath()
-    const disk = JSON.parse(await readFile(cachePath, 'utf-8')) as { providers: Record<string, { envFingerprint: string }> }
-    expect(disk.providers['copilot']).toBeDefined()
-    disk.providers['copilot']!.envFingerprint = '0000000000000000'
-    await writeFileFs(cachePath, JSON.stringify(disk), 'utf-8')
+    const setStaleFingerprint = async (): Promise<void> => {
+      const disk = JSON.parse(await readFile(cachePath, 'utf-8')) as { providers: Record<string, { envFingerprint: string }> }
+      expect(disk.providers['copilot']).toBeDefined()
+      disk.providers['copilot']!.envFingerprint = '0000000000000000'
+      await writeFileFs(cachePath, JSON.stringify(disk), 'utf-8')
+    }
+
+    await createJsonlSession(sessionStateDir, 'sess-bump', 240)
+    clearSessionCache()
+    await setStaleFingerprint()
+    expect(totalOutput(await parseAllSessions(undefined, 'copilot'))).toBe(240)
+
+    // Delete the source (simulates VS Code / CLI pruning it): the corrected
+    // entry becomes a durable orphan (its only record).
+    await unlink(eventsPath)
+    clearSessionCache()
+    await setStaleFingerprint()
 
     // First parse after the "upgrade": the orphan must still be counted and
     // must survive in the rewritten cache, not be erased with the section.
     const after = totalOutput(await parseAllSessions(undefined, 'copilot'))
-    expect(after).toBe(200)
+    expect(after).toBe(240)
 
     clearSessionCache()
     const again = totalOutput(await parseAllSessions(undefined, 'copilot'))
-    expect(again).toBe(200)
+    expect(again).toBe(240)
+  })
+})
+
+describe('(h) fresh durable accounting wins over carried entries on a parser bump', () => {
+  it('replaces a present K=100 source with K=120 while retaining a missing orphan', async () => {
+    const fileA = join(tmpHome, 'synth-authority-a.txt')
+    const fileB = join(tmpHome, 'synth-authority-orphan.txt')
+    await writeFile(fileA, 'source-a')
+    await writeFile(fileB, 'source-b')
+
+    const call = (deduplicationKey: string, inputTokens: number): ParsedProviderCall => ({
+      provider: 'test-synthetic', model: 'gpt-4o',
+      inputTokens, outputTokens: 1,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 0,
+      cachedInputTokens: 0, reasoningTokens: 0, webSearchRequests: 0,
+      costUSD: 0.001, tools: [], bashCommands: [],
+      timestamp: '2026-08-01T00:00:00.000Z', speed: 'standard',
+      deduplicationKey, userMessage: '', sessionId: deduplicationKey,
+    })
+
+    _synthDurable = true
+    _synthSources = [{ path: fileA, project: 'test', provider: 'test-synthetic' }]
+    _synthYields = [call('K', 100)]
+    expect(totalInput(await parseAllSessions(undefined, 'test-synthetic'))).toBe(100)
+
+    // Add a second physical source so its usage is cached under a distinct
+    // path, then remove that source before the parser fingerprint changes.
+    _synthSources = [
+      { path: fileA, project: 'test', provider: 'test-synthetic' },
+      { path: fileB, project: 'test', provider: 'test-synthetic' },
+    ]
+    _synthYields = [call('ORPHAN', 7)]
+    clearSessionCache()
+    expect(totalInput(await parseAllSessions(undefined, 'test-synthetic'))).toBe(107)
+
+    await unlink(fileB)
+    _synthSources = [{ path: fileA, project: 'test', provider: 'test-synthetic' }]
+    _synthYields = [call('K', 120)]
+    const previousVersion = PROVIDER_PARSE_VERSIONS['test-synthetic']
+    PROVIDER_PARSE_VERSIONS['test-synthetic'] = `${previousVersion ?? 'v1'}-bump`
+    try {
+      clearSessionCache()
+      const projects = await parseAllSessions(undefined, 'test-synthetic')
+      expect(totalInput(projects)).toBe(127)
+      const calls = projects.flatMap(project => project.sessions)
+        .flatMap(session => session.turns)
+        .flatMap(turn => turn.assistantCalls)
+      expect(calls.filter(c => c.deduplicationKey === 'K')).toHaveLength(1)
+      expect(calls.find(c => c.deduplicationKey === 'K')!.usage.inputTokens).toBe(120)
+      expect(calls.find(c => c.deduplicationKey === 'ORPHAN')!.usage.inputTokens).toBe(7)
+    } finally {
+      if (previousVersion === undefined) delete PROVIDER_PARSE_VERSIONS['test-synthetic']
+      else PROVIDER_PARSE_VERSIONS['test-synthetic'] = previousVersion
+    }
   })
 })
 

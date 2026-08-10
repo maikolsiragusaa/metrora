@@ -21,9 +21,11 @@ import {
   reconcileAntigravityStatusLineCalls,
   recordAntigravityStatusLinePayload,
   resetAntigravityMemoryCacheForTests,
+  setAntigravityRpcDataForTests,
+  snapshotAntigravityStatusLinePayload,
   shouldReparseAntigravitySource,
 } from '../../src/providers/antigravity.js'
-import type { ParsedProviderCall } from '../../src/providers/types.js'
+import type { ParsedProviderCall, SessionSource } from '../../src/providers/types.js'
 
 const requireForTest = createRequire(import.meta.url)
 
@@ -57,11 +59,26 @@ function createCurrentAntigravityCliDb(dbPath: string, fixture: CurrentCliFixtur
   }
 }
 
-async function collectAntigravityCalls(source: { path: string; project: string; provider: string }): Promise<ParsedProviderCall[]> {
+async function collectAntigravityCalls(source: SessionSource): Promise<ParsedProviderCall[]> {
   const parser = createAntigravityProvider().createSessionParser(source, new Set())
   const calls: ParsedProviderCall[] = []
   for await (const call of parser.parse()) calls.push(call)
   return calls
+}
+
+function rpcData(responseId: string) {
+  return {
+    metadata: [{
+      chatModel: {
+        model: 'gemini-3-pro',
+        usage: {
+          model: 'gemini-3-pro', inputTokens: '10', outputTokens: '4',
+          apiProvider: 'google', responseId,
+        },
+      },
+    }],
+    modelMap: {},
+  }
 }
 
 describe('antigravity provider helpers', () => {
@@ -438,10 +455,16 @@ describe('antigravity provider helpers', () => {
 
       const sources = await discoverAntigravitySessionSources()
       expect(sources.filter(source => antigravityCascadeIdFromPath(source.path) === 'shared-cascade')).toEqual([
-        { path: join(ideConversations, 'shared-cascade.db'), project: 'antigravity-ide', provider: 'antigravity' },
+        {
+          path: join(ideConversations, 'shared-cascade.db'), project: 'antigravity-ide', provider: 'antigravity',
+          alternateLocators: [{ path: join(appConversations, 'shared-cascade.pb'), project: 'antigravity', provider: 'antigravity' }],
+        },
       ])
       expect(sources.filter(source => antigravityCascadeIdFromPath(source.path) === 'implicit-cascade')).toEqual([
-        { path: join(appImplicit, 'implicit-cascade.pb'), project: 'antigravity', provider: 'antigravity' },
+        {
+          path: join(appImplicit, 'implicit-cascade.pb'), project: 'antigravity', provider: 'antigravity',
+          alternateLocators: [{ path: join(ideImplicit, 'implicit-cascade.pb'), project: 'antigravity-ide', provider: 'antigravity' }],
+        },
       ])
 
       const roots = await createAntigravityProvider().probeRoots?.()
@@ -453,6 +476,173 @@ describe('antigravity provider helpers', () => {
       ])
       expect(roots?.at(-1)?.path).toBe(join(cacheDir, 'antigravity-statusline.jsonl'))
     } finally {
+      if (previousHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previousHome
+      if (previousUserProfile === undefined) delete process.env['USERPROFILE']
+      else process.env['USERPROFILE'] = previousUserProfile
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
+      await rm(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps alternate PB locators and falls back across appDataDir without double counting', async () => {
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-rpc-locators-'))
+    const previousHome = process.env['HOME']
+    const previousUserProfile = process.env['USERPROFILE']
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    const cacheDir = join(tempHome, 'cache')
+
+    try {
+      process.env['HOME'] = tempHome
+      process.env['USERPROFILE'] = tempHome
+      process.env['METRORA_CACHE_DIR'] = cacheDir
+      const appDir = join(tempHome, '.gemini', 'antigravity', 'conversations')
+      const ideDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
+      await mkdir(appDir, { recursive: true })
+      await mkdir(ideDir, { recursive: true })
+
+      for (const id of ['pb-fallback', 'pb-both', 'pb-blocked']) {
+        await writeFile(join(appDir, `${id}.pb`), '')
+        await writeFile(join(ideDir, `${id}.pb`), '')
+      }
+
+      const roots = [
+        { dir: appDir, project: 'antigravity', extensions: ['.pb'] as const },
+        { dir: ideDir, project: 'antigravity-ide', extensions: ['.pb'] as const },
+      ]
+      const discovered = await discoverAntigravitySessionSources(roots)
+      const fallbackSource = discovered.find(source => antigravityCascadeIdFromPath(source.path) === 'pb-fallback')!
+      expect(fallbackSource.alternateLocators).toEqual([{
+        path: join(ideDir, 'pb-fallback.pb'), project: 'antigravity-ide', provider: 'antigravity',
+      }])
+
+      const attempts: string[] = []
+      setAntigravityRpcDataForTests(async (appDataDir, cascadeId) => {
+        attempts.push(`${cascadeId}:${appDataDir}`)
+        if (cascadeId === 'pb-fallback') {
+          return appDataDir === 'antigravity-ide' ? rpcData('fallback-response') : null
+        }
+        if (cascadeId === 'pb-both') return rpcData('both-response')
+        return null
+      })
+
+      const fallbackCalls = await collectAntigravityCalls(fallbackSource)
+      expect(fallbackCalls).toHaveLength(1)
+      expect(fallbackCalls[0]!.deduplicationKey).toBe('antigravity:pb-fallback:fallback-response')
+      expect(attempts).toEqual(['pb-fallback:antigravity', 'pb-fallback:antigravity-ide'])
+
+      attempts.length = 0
+      const bothSource = discovered.find(source => antigravityCascadeIdFromPath(source.path) === 'pb-both')!
+      const bothCalls = await collectAntigravityCalls(bothSource)
+      expect(bothCalls).toHaveLength(1)
+      expect(attempts).toEqual(['pb-both:antigravity'])
+
+      attempts.length = 0
+      const blockedSource = discovered.find(source => antigravityCascadeIdFromPath(source.path) === 'pb-blocked')!
+      expect(await collectAntigravityCalls(blockedSource)).toEqual([])
+      expect(attempts).toEqual(['pb-blocked:antigravity', 'pb-blocked:antigravity-ide'])
+    } finally {
+      resetAntigravityMemoryCacheForTests()
+      if (previousHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previousHome
+      if (previousUserProfile === undefined) delete process.env['USERPROFILE']
+      else process.env['USERPROFILE'] = previousUserProfile
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
+      await rm(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps SQLite primary and uses an alternate RPC locator when the DB has no usage', async () => {
+    if (!isSqliteAvailable()) return
+
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-db-rpc-'))
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['METRORA_CACHE_DIR'] = join(tempHome, 'cache')
+    const appDir = join(tempHome, '.gemini', 'antigravity', 'conversations')
+    const ideDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
+
+    try {
+      await mkdir(appDir, { recursive: true })
+      await mkdir(ideDir, { recursive: true })
+      const fixture = JSON.parse(await readFile(
+        new URL('../fixtures/antigravity-cli-current/gen-metadata.json', import.meta.url),
+        'utf-8',
+      )) as CurrentCliFixture
+      const primaryDb = join(appDir, `${fixture.conversationId}.db`)
+      createCurrentAntigravityCliDb(primaryDb, fixture)
+      await writeFile(join(ideDir, `${fixture.conversationId}.pb`), '')
+
+      const emptyId = 'empty-db-rpc-fallback'
+      const emptyDb = join(appDir, `${emptyId}.db`)
+      createCurrentAntigravityCliDb(emptyDb, { conversationId: emptyId, rows: [] })
+      await writeFile(join(ideDir, `${emptyId}.pb`), '')
+      const roots = [
+        { dir: appDir, project: 'antigravity', extensions: ['.db'] as const },
+        { dir: ideDir, project: 'antigravity-ide', extensions: ['.pb'] as const },
+      ]
+      const sources = await discoverAntigravitySessionSources(roots)
+      const primarySource = sources.find(source => antigravityCascadeIdFromPath(source.path) === fixture.conversationId)!
+      const emptySource = sources.find(source => antigravityCascadeIdFromPath(source.path) === emptyId)!
+      const attempts: string[] = []
+
+      setAntigravityRpcDataForTests(async (appDataDir, cascadeId) => {
+        attempts.push(`${cascadeId}:${appDataDir}`)
+        return cascadeId === emptyId && appDataDir === 'antigravity-ide'
+          ? rpcData('empty-db-rpc-response')
+          : null
+      })
+
+      const primaryCalls = await collectAntigravityCalls(primarySource)
+      expect(primaryCalls).toHaveLength(1)
+      expect(primaryCalls[0]!.deduplicationKey).toContain(`${fixture.conversationId}:fixture-response-1`)
+      expect(attempts).toEqual([])
+
+      const emptyCalls = await collectAntigravityCalls(emptySource)
+      expect(emptyCalls).toHaveLength(1)
+      expect(emptyCalls[0]!.deduplicationKey).toBe(`antigravity:${emptyId}:empty-db-rpc-response`)
+      expect(attempts).toEqual([`${emptyId}:antigravity`, `${emptyId}:antigravity-ide`])
+    } finally {
+      resetAntigravityMemoryCacheForTests()
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
+      await rm(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it('finds an IDE alternate locator for the statusline snapshot path', async () => {
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-statusline-locator-'))
+    const previousHome = process.env['HOME']
+    const previousUserProfile = process.env['USERPROFILE']
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    const cacheDir = join(tempHome, 'cache')
+
+    try {
+      process.env['HOME'] = tempHome
+      process.env['USERPROFILE'] = tempHome
+      process.env['METRORA_CACHE_DIR'] = cacheDir
+      const appDir = join(tempHome, '.gemini', 'antigravity', 'conversations')
+      const ideDir = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
+      await mkdir(appDir, { recursive: true })
+      await mkdir(ideDir, { recursive: true })
+      await writeFile(join(appDir, 'statusline-shared.pb'), '')
+      await writeFile(join(ideDir, 'statusline-shared.pb'), '')
+
+      const attempts: string[] = []
+      setAntigravityRpcDataForTests(async appDataDir => {
+        attempts.push(appDataDir)
+        return appDataDir === 'antigravity-ide' ? rpcData('statusline-response') : null
+      })
+
+      expect(await snapshotAntigravityStatusLinePayload({
+        conversation_id: 'statusline-shared',
+        model: 'gemini-3-pro',
+        context_window: { current_usage: { input_tokens: 10, output_tokens: 4 } },
+      })).toBe(true)
+      expect(attempts).toEqual(['antigravity-ide'])
+    } finally {
+      resetAntigravityMemoryCacheForTests()
       if (previousHome === undefined) delete process.env['HOME']
       else process.env['HOME'] = previousHome
       if (previousUserProfile === undefined) delete process.env['USERPROFILE']
@@ -948,7 +1138,7 @@ describe('antigravity provider helpers', () => {
         version: 6,
         cascades: { [fixture.conversationId]: { parserVersion: 6 } },
       })
-      expect(migrated.cascades.orphanedCascade.calls).toHaveLength(1)
+      expect(migrated.cascades.orphanedCascade).toBeUndefined()
 
       resetAntigravityMemoryCacheForTests()
       const second = await collectAntigravityCalls(source)

@@ -2,14 +2,18 @@ import type { DateRange, ToolCall } from '../types.js'
 import type { ReasoningLevel, ReasoningLevelSource } from '../reasoning-level.js'
 import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 
-export type SessionSource = {
+export type SessionSourceLocator = {
   path: string
   project: string
   provider: string
+}
+
+export type SessionSource = SessionSourceLocator & {
   sourceId?: string
   sourceLabel?: string
   sourcePath?: string
   sourceKind?: 'claude-config' | 'claude-desktop'
+  alternateLocators?: readonly SessionSourceLocator[]
 }
 
 export type SessionParser = {
@@ -93,9 +97,6 @@ export type Provider = {
   // are never evicted, and orphaned entries (paths no longer discovered) are
   // kept and included in query-time aggregation so the monthly total never drops.
   durableSources?: boolean
-  // `undefined` keeps the existing 90-day durable-cache retention. `null`
-  // disables age-out for providers whose local history is the durable record.
-  durableHistoryRetentionDays?: number | null
   modelDisplayName(model: string): string
   toolDisplayName(rawTool: string): string
   discoverSessions(): Promise<SessionSource[]>

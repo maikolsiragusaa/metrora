@@ -91,8 +91,8 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     createGenMetadataDb(dbPath, fixture)
 
     // The fixture row carries no ChatStartMetadata.created_at, so the call
-    // inherits the file mtime as its first-seen fallback. Pin it to January.
-    const firstSeen = new Date('2026-01-02T03:04:05.000Z')
+    // inherits the file mtime as its first-seen fallback. Pin it to July.
+    const firstSeen = new Date('2026-07-02T03:04:05.000Z')
     await utimes(dbPath, firstSeen, firstSeen)
 
     const wideRange: DateRange = {
@@ -116,30 +116,30 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     // source is cleared and reparsed, but the dedup key must retain its
     // first-seen time rather than jumping to the new mtime.
     clearSessionCache()
-    const rewritten = new Date('2026-06-07T08:09:10.000Z')
+    const rewritten = new Date('2026-07-07T08:09:10.000Z')
     await utimes(dbPath, rewritten, rewritten)
     await parseAllSessions(wideRange, 'antigravity')
     const afterRewrite = await cachedAntigravityTurns(cacheDir, dbPath)
     expect(afterRewrite[0]!.timestamp).toBe(firstTs)
     expect(Math.abs(new Date(afterRewrite[0]!.timestamp).getTime() - rewritten.getTime())).toBeGreaterThan(1000)
 
-    // Date-range consequence: a January-only range still includes the call
-    // after the June rewrite, because its timestamp stayed in January.
+    // Date-range consequence: the first-seen month still includes the call
+    // after the July rewrite, because its timestamp stayed in early July.
     clearSessionCache()
-    const januaryRange: DateRange = {
-      start: new Date('2026-01-01T00:00:00.000Z'),
-      end: new Date('2026-01-31T23:59:59.999Z'),
+    const firstSeenMonthRange: DateRange = {
+      start: new Date('2026-07-01T00:00:00.000Z'),
+      end: new Date('2026-07-31T23:59:59.999Z'),
     }
-    const januaryProjects = await parseAllSessions(januaryRange, 'antigravity')
-    const januaryKeys = januaryProjects.flatMap(project =>
+    const firstSeenMonthProjects = await parseAllSessions(firstSeenMonthRange, 'antigravity')
+    const firstSeenMonthKeys = firstSeenMonthProjects.flatMap(project =>
       project.sessions.flatMap(session =>
         session.turns.flatMap(turn => turn.assistantCalls.map(call => call.deduplicationKey)),
       ),
     )
-    expect(januaryKeys.length).toBeGreaterThan(0)
+    expect(firstSeenMonthKeys.length).toBeGreaterThan(0)
 
-    // `today` must NOT include the call: first-seen is January, not "now",
-    // even though the file mtime was rewritten to June (and wall-clock is later).
+    // `today` must NOT include the call: first-seen is in July, not "now",
+    // even though the file mtime was rewritten within July.
     clearSessionCache()
     const { range: todayRange } = getDateRange('today')
     const todayProjects = await parseAllSessions(todayRange, 'antigravity')

@@ -7,10 +7,11 @@ import https from 'https'
 import { calculateCost } from '../models.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
 import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
-import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import type { Provider, SessionSource, SessionSourceLocator, SessionParser, ParsedProviderCall } from './types.js'
 import {
   antigravityCascadeIdFromPath,
   antigravityProbeRoots,
+  antigravitySourceLocators,
   discoverAntigravitySources,
   type AntigravityConversationRoot,
 } from './antigravity-source-discovery.js'
@@ -99,6 +100,12 @@ type AntigravityCache = {
   cascades: Record<string, CachedCascade>
 }
 
+type AntigravityRpcData = { metadata: GeneratorMetadata[]; modelMap: ModelMap }
+export type AntigravityRpcDataOverride = (
+  appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide',
+  cascadeId: string,
+) => Promise<AntigravityRpcData | null>
+
 type ProtoField = {
   number: number
   wireType: number
@@ -121,6 +128,7 @@ const cachedModelMaps = new Map<string, ModelMap>()
 let memCache: AntigravityCache | null = null
 let memCachePath = ''
 let cacheDirty = false
+let rpcDataOverride: AntigravityRpcDataOverride | null = null
 let httpsAgent: https.Agent | undefined
 const protoTextDecoder = new TextDecoder('utf-8', { fatal: false })
 
@@ -266,12 +274,18 @@ async function loadCache(): Promise<AntigravityCache> {
   return memCache
 }
 
-async function flushCache(_liveCascadeIds?: Set<string>): Promise<void> {
+async function flushCache(liveCascadeIds?: Set<string>): Promise<void> {
   if (!memCache) return
-  // The result cache is the provider-level durable evidence for cascades whose
-  // source file is later pruned or temporarily unavailable. Never evict by the
-  // current discovery set: the session/daily caches can still rehydrate these
-  // calls without a live server, and their first-seen timestamps must survive.
+  // Keep detailed result-cache retention bounded by the live cascade set. The
+  // durable session/daily caches preserve older orphan history.
+  if (liveCascadeIds) {
+    for (const id of Object.keys(memCache.cascades)) {
+      if (!liveCascadeIds.has(id)) {
+        delete memCache.cascades[id]
+        cacheDirty = true
+      }
+    }
+  }
   if (!cacheDirty) return
   try {
 
@@ -496,10 +510,11 @@ async function getModelMap(server: ServerInfo): Promise<ModelMap> {
   return {}
 }
 
-async function fetchCascadeRpcData(
+async function fetchCascadeRpcDataForAppDataDir(
   appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide',
   cascadeId: string,
-): Promise<{ metadata: GeneratorMetadata[]; modelMap: ModelMap } | null> {
+): Promise<AntigravityRpcData | null> {
+  if (rpcDataOverride) return rpcDataOverride(appDataDir, cascadeId)
   return runWithSingleServerRediscovery({
     detect: () => detectServer(appDataDir),
     invalidate: server => invalidateServer(appDataDir, server),
@@ -511,6 +526,21 @@ async function fetchCascadeRpcData(
       return { metadata, modelMap }
     },
   })
+}
+
+async function fetchCascadeRpcData(
+  locators: readonly SessionSourceLocator[],
+  cascadeId: string,
+): Promise<AntigravityRpcData | null> {
+  const tried = new Set<string>()
+  for (const locator of locators) {
+    const appDataDir = antigravityAppDataDirFromSourcePath(locator.path)
+    if (tried.has(appDataDir)) continue
+    tried.add(appDataDir)
+    const data = await fetchCascadeRpcDataForAppDataDir(appDataDir, cascadeId)
+    if (data?.metadata.length) return data
+  }
+  return null
 }
 
 function readProtoVarint(data: Uint8Array, startOffset: number): ProtoVarint | null {
@@ -1008,13 +1038,19 @@ export function shouldReparseAntigravitySource(path: string, cachedTurnCount: nu
   return isAntigravityStatusLineEventsPath(path)
 }
 
-async function findCascadeSource(cascadeId: string): Promise<SessionSource | null> {
+async function findCascadeLocators(cascadeId: string): Promise<SessionSourceLocator[]> {
   const sources = await discoverAntigravitySessionSources()
-  return sources.find(source => {
-    const lower = source.path.replace(/\\/g, '/').toLowerCase()
-    return (lower.includes('/.gemini/antigravity-cli/') || lower.includes('/.gemini/antigravity-ide/')) &&
-      antigravityCascadeIdFromPath(source.path) === cascadeId
-  }) ?? null
+  const locators: SessionSourceLocator[] = []
+  for (const source of sources) {
+    for (const locator of antigravitySourceLocators(source)) {
+      const lower = locator.path.replace(/\\/g, '/').toLowerCase()
+      if (
+        (lower.includes('/.gemini/antigravity-cli/') || lower.includes('/.gemini/antigravity-ide/')) &&
+        antigravityCascadeIdFromPath(locator.path) === cascadeId
+      ) locators.push(locator)
+    }
+  }
+  return locators
 }
 
 export async function snapshotAntigravityStatusLinePayload(input: unknown): Promise<boolean> {
@@ -1022,30 +1058,36 @@ export async function snapshotAntigravityStatusLinePayload(input: unknown): Prom
   if (!event) return false
 
   const cascadeId = event.conversationId
-  const source = await findCascadeSource(cascadeId)
-  if (!source) return false
+  const locators = await findCascadeLocators(cascadeId)
+  if (locators.length === 0) return false
 
-  const s = await stat(source.path).catch(() => null)
-  if (!s) return false
+  let sourceStat: Awaited<ReturnType<typeof stat>> | null = null
+  for (const locator of locators) {
+    const candidateStat = await stat(locator.path).catch(() => null)
+    if (!candidateStat) continue
+    sourceStat ??= candidateStat
+  }
+  if (!sourceStat) return false
 
   const cache = await loadCache()
   const cached = cache.cascades[cascadeId]
   if (
     cached?.parserVersion === CACHE_VERSION &&
-    cached.mtimeMs === s.mtimeMs && cached.sizeBytes === s.size && cached.calls.length > 0
+    cached.mtimeMs === sourceStat.mtimeMs && cached.sizeBytes === sourceStat.size &&
+    cached.calls.length > 0
   ) {
     return true
   }
 
-  const rpcData = await fetchCascadeRpcData(antigravityAppDataDirFromSourcePath(source.path), cascadeId)
+  const rpcData = await fetchCascadeRpcData(locators, cascadeId)
   if (!rpcData) return false
 
   const snapshotCalls = buildCallsFromGeneratorMetadata(cascadeId, rpcData.metadata, rpcData.modelMap)
-  assignStableTimestamps(snapshotCalls, cached?.calls, new Date(s.mtimeMs).toISOString())
+  assignStableTimestamps(snapshotCalls, cached?.calls, new Date(sourceStat.mtimeMs).toISOString())
   cache.cascades[cascadeId] = {
     parserVersion: CACHE_VERSION,
-    mtimeMs: s.mtimeMs,
-    sizeBytes: s.size,
+    mtimeMs: sourceStat.mtimeMs,
+    sizeBytes: sourceStat.size,
     calls: snapshotCalls,
   }
   cacheDirty = true
@@ -1150,6 +1192,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       }
 
       const cascadeId = antigravityCascadeIdFromPath(source.path)
+      const locators = antigravitySourceLocators(source)
+      const isDbSource = source.path.toLowerCase().endsWith('.db')
       const cache = await loadCache()
 
       const s = await stat(source.path).catch(() => null)
@@ -1159,10 +1203,10 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       const fallbackTimestamp = new Date(s.mtimeMs).toISOString()
 
       const cached = cache.cascades[cascadeId]
-      if (
-        cached?.parserVersion === CACHE_VERSION &&
+      const cacheMatchesSource = cached !== undefined &&
+        cached.parserVersion === CACHE_VERSION &&
         cached.mtimeMs === s.mtimeMs && cached.sizeBytes === s.size && cached.calls.length > 0
-      ) {
+      if (cacheMatchesSource && (!isDbSource || locators.length === 1)) {
         for (const call of cached.calls) {
           applyAntigravityProject(call, source, projectPath)
           if (seenKeys.has(call.deduplicationKey)) continue
@@ -1195,7 +1239,19 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         return
       }
 
-      const rpcData = await fetchCascadeRpcData(antigravityAppDataDirFromSourcePath(source.path), cascadeId)
+      // A DB with no local usage must still expose alternate PB locators to
+      // RPC. Only use its old result cache after those routes have been tried.
+      if (cacheMatchesSource && locators.length === 1) {
+        for (const call of cached.calls) {
+          applyAntigravityProject(call, source, projectPath)
+          if (seenKeys.has(call.deduplicationKey)) continue
+          seenKeys.add(call.deduplicationKey)
+          yield withFallbackTimestamp(call, fallbackTimestamp)
+        }
+        return
+      }
+
+      const rpcData = await fetchCascadeRpcData(locators, cascadeId)
       if (!rpcData) {
         if (cached) {
           for (const call of cached.calls) {
@@ -1256,7 +1312,6 @@ export function createAntigravityProvider(): Provider {
     name: 'antigravity',
     displayName: 'Antigravity',
     durableSources: true,
-    durableHistoryRetentionDays: null,
 
     modelDisplayName(model: string): string {
       return modelDisplayNames[model] ?? model
@@ -1288,6 +1343,11 @@ export function resetAntigravityMemoryCacheForTests(): void {
   memCache = null
   memCachePath = ''
   cacheDirty = false
+  rpcDataOverride = null
+}
+
+export function setAntigravityRpcDataForTests(override: AntigravityRpcDataOverride | null): void {
+  rpcDataOverride = override
 }
 
 export const antigravity = createAntigravityProvider()

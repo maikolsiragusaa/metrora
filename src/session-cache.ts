@@ -217,8 +217,8 @@ export const DURABLE_PROVIDER_NAMES: ReadonlySet<string> = new Set(['copilot', '
 // `-est-cost` suffix (or a new entry) so their already-cached sessions reparse
 // once and the flag lands, instead of silently reading as measured. Copilot
 // needs no suffix: the cli-shutdown-cost-v1 bump below already forces its one
-// re-parse, which lands the flag too, and durable orphans now survive
-// fingerprint changes (the carry-forward in getOrCreateProviderSection).
+// re-parse, which lands the flag too. Durable orphans survive fingerprint
+// changes through the present-source check in the parser.
 export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // rich-session-capture-v1: parse-time capture of per-turn gitBranch, per-call
   // LOC deltas / interruptions / userModified / toolErrors, and session-level
@@ -505,7 +505,7 @@ async function adoptPriorCache(version: number): Promise<SessionCache | null> {
         for (const [path, file] of Object.entries(rawFiles as Record<string, unknown>)) {
           if (!validateCachedFile(file)) continue
           const durable = (section as Record<string, unknown>)['durable'] === true || DURABLE_PROVIDER_NAMES.has(provider)
-          if ((durable || !existsSync(path)) && (file.prLinks?.length || durable)) files[path] = file
+          if (!existsSync(path) && (file.prLinks?.length || durable)) files[path] = file
         }
       }
       migrated.providers[provider] = {
