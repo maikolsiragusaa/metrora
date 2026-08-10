@@ -16,7 +16,10 @@ import { getMetroraCacheDir } from './product-paths.js'
 // v8: persist native MCP timing and compact invocation attribution.
 // v9: persist explicit per-call reasoning attribution from turn_context.
 // v10: reprice raw Codex model ids carrying numeric context-capacity tags.
-const CODEX_CACHE_VERSION = 10
+// v11: legacy session_meta.payload.id is a native session identity fallback.
+// Reparse any surviving result-cache entries so their session identity cannot
+// remain pinned to the pre-v11 admission/identity contract.
+const CODEX_CACHE_VERSION = 11
 const CACHE_FILE = 'codex-results.json'
 
 type FileFingerprint = { mtimeMs: number; sizeBytes: number }
