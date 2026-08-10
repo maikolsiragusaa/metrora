@@ -146,8 +146,17 @@ export async function ensureCacheHydrated(
   return core.withDailyCacheLock(async () => {
     let cache = await loadDailyCache()
     const todayStr = core.toDateString(now)
+    const tzKey = core.currentTzKey()
+    const tzChanged = cache.tzKey !== undefined && cache.tzKey !== tzKey
 
-    if (cache.days.some(day => day.date >= todayStr)) {
+    // On ordinary runs an accidental/current-day cache row is discarded because
+    // live parsing owns today. During a timezone migration, however, a day that
+    // was FINALIZED as yesterday in the old timezone can have the same date as
+    // today's new-timezone label (for example a large westward offset change).
+    // Dropping it here would bypass NEVER-LOSE carry semantics and permanently
+    // erase sourceless history before the old/new timezone reconciliation sees
+    // it. Keep the complete old baseline intact whenever tzKey changes.
+    if (!tzChanged && cache.days.some(day => day.date >= todayStr)) {
       const days = cache.days.filter(day => day.date < todayStr)
       const lastComputedDate = days.length > 0 ? days[days.length - 1]!.date : null
       cache = { ...cache, days, lastComputedDate }
@@ -171,8 +180,6 @@ export async function ensureCacheHydrated(
       }
     }
 
-    const tzKey = core.currentTzKey()
-    const tzChanged = cache.tzKey !== undefined && cache.tzKey !== tzKey
     if (cache.savingsConfigHash !== savingsConfigHash || cache.complete !== true || tzChanged) {
       const baseline = cache.days
       const priorWatermark = cache.lastComputedDate
