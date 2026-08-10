@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, utimes } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createRequire } from 'node:module'
@@ -149,5 +149,53 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
       ),
     )
     expect(todayKeys).toHaveLength(0)
+  })
+
+  it('preserves durable orphan usage after source pruning and a cache fingerprint change', async () => {
+    if (!isSqliteAvailable()) return
+
+    const fixture = JSON.parse(await readFile(
+      new URL('./fixtures/antigravity-cli-current/gen-metadata.json', import.meta.url),
+      'utf-8',
+    )) as Fixture
+    const conversationsDir = join(home, '.gemini', 'antigravity-ide', 'conversations')
+    await mkdir(conversationsDir, { recursive: true })
+    const dbPath = join(conversationsDir, `${fixture.conversationId}.db`)
+    createGenMetadataDb(dbPath, fixture)
+
+    const wideRange: DateRange = {
+      start: new Date('2026-01-01T00:00:00.000Z'),
+      end: new Date('2026-12-31T23:59:59.999Z'),
+    }
+
+    const firstProjects = await parseAllSessions(wideRange, 'antigravity')
+    const firstKeys = firstProjects.flatMap(project =>
+      project.sessions.flatMap(session =>
+        session.turns.flatMap(turn => turn.assistantCalls.map(call => call.deduplicationKey)),
+      ),
+    )
+    expect(firstKeys.length).toBeGreaterThan(0)
+
+    const saved = JSON.parse(await readFile(sessionCachePath(), 'utf-8')) as {
+      providers: Record<string, { envFingerprint: string; durable?: boolean }>
+    }
+    saved.providers['antigravity']!.envFingerprint = 'stale-antigravity-fingerprint'
+    await writeFile(sessionCachePath(), JSON.stringify(saved))
+    await rm(dbPath)
+
+    clearSessionCache()
+    const secondProjects = await parseAllSessions(wideRange, 'antigravity')
+    const secondKeys = secondProjects.flatMap(project =>
+      project.sessions.flatMap(session =>
+        session.turns.flatMap(turn => turn.assistantCalls.map(call => call.deduplicationKey)),
+      ),
+    )
+
+    expect(secondKeys).toEqual(firstKeys)
+    expect((await cachedAntigravityTurns(cacheDir, dbPath)).length).toBeGreaterThan(0)
+    const migrated = JSON.parse(await readFile(sessionCachePath(), 'utf-8')) as {
+      providers: Record<string, { durable?: boolean }>
+    }
+    expect(migrated.providers['antigravity']?.durable).toBe(true)
   })
 })

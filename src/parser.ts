@@ -2791,16 +2791,11 @@ function getOrCreateProviderSection(cache: SessionCache, provider: string): Prov
   const existing = cache.providers[provider]
   if (existing && existing.envFingerprint === envFp) return existing
   const section: ProviderSection = { envFingerprint: envFp, files: {} }
-  // A fingerprint change (env override or parse-version bump) must re-parse
-  // every present source, but for durable providers the cache is the ONLY
-  // remaining record of usage whose source rows were already pruned (OTel
-  // orphans). Discarding those with the section would permanently erase
-  // month-to-date history that cannot be re-derived, so carry forward exactly
-  // the entries whose source no longer exists; everything present on disk is
-  // dropped and re-parsed under the new fingerprint.
+  // Durable sources may lose authority without disappearing from disk, so
+  // carry every prior entry through a fingerprint change and dedupe fresh calls.
   if (existing && DURABLE_PROVIDER_NAMES.has(provider)) {
     for (const [path, file] of Object.entries(existing.files)) {
-      if (!existsSync(path)) section.files[path] = file
+      section.files[path] = file
     }
   }
   cache.providers[provider] = section
@@ -2956,7 +2951,9 @@ async function parseProviderSources(
   const provider = await getProvider(providerName)
   if (!provider) return []
 
+  const priorSection = diskCache.providers[providerName]
   const section = getOrCreateProviderSection(diskCache, providerName)
+  const forceReparse = diskCache.complete !== true || priorSection?.envFingerprint !== section.envFingerprint
   const allDiscoveredFiles = new Set<string>()
   const servedSources = [...sources]
 
@@ -2984,7 +2981,7 @@ async function parseProviderSources(
     // A cached parse failure at this same fingerprint stays skipped — don't
     // re-read a file that already threw and hasn't changed. It re-parses only
     // when the file changes (then `reconcileFile` reports non-'unchanged').
-    if (cached && (readOnly || (action.action === 'unchanged' && (cached.failed || !cachedFileNeedsProviderReparse(providerName, source.path, cached))))) {
+    if (cached && (readOnly || (!forceReparse && action.action === 'unchanged' && (cached.failed || !cachedFileNeedsProviderReparse(providerName, source.path, cached))))) {
       unchangedSources.push({ source, cached })
     } else if (!readOnly) {
       changedSources.push({ source, fp })
@@ -3121,10 +3118,10 @@ async function parseProviderSources(
     }
   }
 
-  // 90-day age-out for durable providers: remove entries whose newest call is
-  // older than 90 days so the cache doesn't grow unboundedly over time.
-  if (!readOnly && provider.durableSources) {
-    const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000
+  // Durable providers retain 90-day history by default; providers whose local
+  // source is the durable record may opt out.
+  if (!readOnly && provider.durableSources && provider.durableHistoryRetentionDays !== null) {
+    const cutoffMs = Date.now() - (provider.durableHistoryRetentionDays ?? 90) * 24 * 60 * 60 * 1000
     for (const [cachedPath, cachedFile] of Object.entries(section.files)) {
       const newestTs = cachedFile.turns
         .flatMap(t => t.calls)

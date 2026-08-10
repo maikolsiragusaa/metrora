@@ -93,6 +93,9 @@ export type Provider = {
   // are never evicted, and orphaned entries (paths no longer discovered) are
   // kept and included in query-time aggregation so the monthly total never drops.
   durableSources?: boolean
+  // `undefined` keeps the existing 90-day durable-cache retention. `null`
+  // disables age-out for providers whose local history is the durable record.
+  durableHistoryRetentionDays?: number | null
   modelDisplayName(model: string): string
   toolDisplayName(rawTool: string): string
   discoverSessions(): Promise<SessionSource[]>

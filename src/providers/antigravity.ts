@@ -1,14 +1,19 @@
-import { readdir, readFile, mkdir, stat, open, rename, unlink } from 'fs/promises'
+import { readFile, mkdir, stat, open, rename, unlink } from 'fs/promises'
 import { execFile } from 'child_process'
 import { randomBytes } from 'crypto'
 import { basename, join } from 'path'
-import { homedir } from 'os'
 import { fileURLToPath } from 'url'
 import https from 'https'
 import { calculateCost } from '../models.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
 import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import {
+  antigravityCascadeIdFromPath,
+  antigravityProbeRoots,
+  discoverAntigravitySources,
+  type AntigravityConversationRoot,
+} from './antigravity-source-discovery.js'
 import { getMetroraCacheDir } from '../product-paths.js'
 import {
   buildCallsFromGeneratorMetadata,
@@ -19,44 +24,7 @@ import {
 } from './antigravity-accounting.js'
 export { buildCallsFromGeneratorMetadata, reconcileAntigravityStatusLineCalls } from './antigravity-accounting.js'
 export type { AntigravityCacheEnrichment, GeneratorMetadata } from './antigravity-accounting.js'
-type AntigravityConversationRoot = {
-  dir: string
-  project: string
-  extensions: readonly string[]
-}
-
-// Computed on each call rather than frozen at module load so discovery honors
-// the current home directory (env overrides in tests, and any runtime change).
-function conversationRoots(): readonly AntigravityConversationRoot[] {
-  const home = homedir()
-  return [
-    {
-      dir: join(home, '.gemini', 'antigravity', 'conversations'),
-      project: 'antigravity',
-      extensions: ['.pb', '.db'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-cli', 'conversations'),
-      project: 'antigravity-cli',
-      extensions: ['.pb', '.db'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-cli', 'implicit'),
-      project: 'antigravity-cli',
-      extensions: ['.pb'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-ide', 'conversations'),
-      project: 'antigravity-ide',
-      extensions: ['.pb', '.db'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-ide', 'implicit'),
-      project: 'antigravity-ide',
-      extensions: ['.pb'],
-    },
-  ]
-}
+export { antigravityCascadeIdFromPath }
 const CACHE_VERSION = 6
 const PREVIOUS_CACHE_VERSION = 5
 
@@ -298,21 +266,12 @@ async function loadCache(): Promise<AntigravityCache> {
   return memCache
 }
 
-async function flushCache(liveCascadeIds?: Set<string>): Promise<void> {
+async function flushCache(_liveCascadeIds?: Set<string>): Promise<void> {
   if (!memCache) return
-  // If the caller supplied liveCascadeIds, we must run the eviction step
-  // even when no cascade was added or updated this run; otherwise deleted
-  // .pb files would persist in the cache forever once it stops getting
-  // dirty writes. Mark the cache dirty when an eviction happens so the
-  // file write below proceeds.
-  if (liveCascadeIds) {
-    for (const id of Object.keys(memCache.cascades)) {
-      if (!liveCascadeIds.has(id)) {
-        delete memCache.cascades[id]
-        cacheDirty = true
-      }
-    }
-  }
+  // The result cache is the provider-level durable evidence for cascades whose
+  // source file is later pruned or temporarily unavailable. Never evict by the
+  // current discovery set: the session/daily caches can still rehydrate these
+  // calls without a live server, and their first-seen timestamps must survive.
   if (!cacheDirty) return
   try {
 
@@ -845,15 +804,6 @@ function usageDelta(current: StatusLineEvent['usage'], previous: StatusLineEvent
   }
 }
 
-export function antigravityCascadeIdFromPath(path: string): string {
-  return basename(path).replace(/\.(pb|db)$/i, '')
-}
-
-function isConversationFile(file: string, extensions: readonly string[]): boolean {
-  const lowerFile = file.toLowerCase()
-  return extensions.some(ext => lowerFile.endsWith(ext))
-}
-
 export function isAntigravityStatusLineEventsPath(path: string): boolean {
   return path === getAntigravityStatusLineEventsPath()
 }
@@ -861,45 +811,7 @@ export function isAntigravityStatusLineEventsPath(path: string): boolean {
 export async function discoverAntigravitySessionSources(
   roots?: readonly AntigravityConversationRoot[],
 ): Promise<SessionSource[]> {
-  // The statusline JSONL is a synthetic source only appended for the real
-  // default roots, not when a caller passes an explicit (test) root set.
-  const includeStatusLineEvents = roots === undefined
-  const effectiveRoots = roots ?? conversationRoots()
-  const sources: SessionSource[] = []
-  for (const root of effectiveRoots) {
-    let files: string[]
-    try {
-      files = await readdir(root.dir)
-    } catch {
-      continue
-    }
-
-    for (const file of files.sort()) {
-      if (!isConversationFile(file, root.extensions)) continue
-      const path = join(root.dir, file)
-      const s = await stat(path).catch(() => null)
-      if (!s?.isFile()) continue
-      sources.push({
-        path,
-        project: root.project,
-        provider: 'antigravity',
-      })
-    }
-  }
-
-  if (includeStatusLineEvents) {
-    const statusLinePath = getAntigravityStatusLineEventsPath()
-    const statusLineStat = await stat(statusLinePath).catch(() => null)
-    if (statusLineStat?.isFile()) {
-      sources.push({
-        path: statusLinePath,
-        project: 'antigravity-cli',
-        provider: 'antigravity',
-      })
-    }
-  }
-
-  return sources
+  return discoverAntigravitySources(getAntigravityStatusLineEventsPath(), roots)
 }
 
 function parseStatusLinePayload(input: unknown): StatusLineEvent | null {
@@ -1343,6 +1255,8 @@ export function createAntigravityProvider(): Provider {
   return {
     name: 'antigravity',
     displayName: 'Antigravity',
+    durableSources: true,
+    durableHistoryRetentionDays: null,
 
     modelDisplayName(model: string): string {
       return modelDisplayNames[model] ?? model
@@ -1350,6 +1264,10 @@ export function createAntigravityProvider(): Provider {
 
     toolDisplayName(rawTool: string): string {
       return rawTool
+    },
+
+    async probeRoots() {
+      return antigravityProbeRoots(getAntigravityStatusLineEventsPath())
     },
 
     async discoverSessions(): Promise<SessionSource[]> {

@@ -406,6 +406,63 @@ describe('antigravity provider helpers', () => {
     await rm(tempHome, { recursive: true, force: true })
   })
 
+  it('unions real roots by native cascade identity and exposes the same roots to doctor', async () => {
+    const tempHome = await mkdtemp(join(tmpdir(), 'metrora-antigravity-root-union-'))
+    const cacheDir = join(tempHome, 'cache')
+    const previousHome = process.env['HOME']
+    const previousUserProfile = process.env['USERPROFILE']
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+
+    try {
+      process.env['HOME'] = tempHome
+      process.env['USERPROFILE'] = tempHome
+      process.env['METRORA_CACHE_DIR'] = cacheDir
+
+      const appConversations = join(tempHome, '.gemini', 'antigravity', 'conversations')
+      const appImplicit = join(tempHome, '.gemini', 'antigravity', 'implicit')
+      const ideConversations = join(tempHome, '.gemini', 'antigravity-ide', 'conversations')
+      const ideImplicit = join(tempHome, '.gemini', 'antigravity-ide', 'implicit')
+      await Promise.all([
+        mkdir(appConversations, { recursive: true }),
+        mkdir(appImplicit, { recursive: true }),
+        mkdir(ideConversations, { recursive: true }),
+        mkdir(ideImplicit, { recursive: true }),
+      ])
+
+      // The SQLite source is authoritative over a same-ID protobuf copy.
+      await writeFile(join(appConversations, 'shared-cascade.pb'), '')
+      await writeFile(join(ideConversations, 'shared-cascade.db'), '')
+      // Identical implicit mirrors collapse to one native cascade as well.
+      await writeFile(join(appImplicit, 'implicit-cascade.pb'), '')
+      await writeFile(join(ideImplicit, 'implicit-cascade.pb'), '')
+
+      const sources = await discoverAntigravitySessionSources()
+      expect(sources.filter(source => antigravityCascadeIdFromPath(source.path) === 'shared-cascade')).toEqual([
+        { path: join(ideConversations, 'shared-cascade.db'), project: 'antigravity-ide', provider: 'antigravity' },
+      ])
+      expect(sources.filter(source => antigravityCascadeIdFromPath(source.path) === 'implicit-cascade')).toEqual([
+        { path: join(appImplicit, 'implicit-cascade.pb'), project: 'antigravity', provider: 'antigravity' },
+      ])
+
+      const roots = await createAntigravityProvider().probeRoots?.()
+      expect(roots?.map(root => root.label)).toEqual([
+        'conversations', 'implicit',
+        'conversations', 'implicit',
+        'conversations', 'implicit',
+        'statusline',
+      ])
+      expect(roots?.at(-1)?.path).toBe(join(cacheDir, 'antigravity-statusline.jsonl'))
+    } finally {
+      if (previousHome === undefined) delete process.env['HOME']
+      else process.env['HOME'] = previousHome
+      if (previousUserProfile === undefined) delete process.env['USERPROFILE']
+      else process.env['USERPROFILE'] = previousUserProfile
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
+      await rm(tempHome, { recursive: true, force: true })
+    }
+  })
+
   it('displays Gemini 3.5 Flash thinking variants as the base model', () => {
     const provider = createAntigravityProvider()
 
@@ -864,6 +921,18 @@ describe('antigravity provider helpers', () => {
               userMessage: '', sessionId: fixture.conversationId,
             }],
           },
+          orphanedCascade: {
+            mtimeMs: 0,
+            sizeBytes: 0,
+            calls: [{
+              provider: 'antigravity', model: 'gemini-3.6-flash', inputTokens: 2, outputTokens: 1,
+              cacheCreationInputTokens: 0, cacheReadInputTokens: 0, cachedInputTokens: 0,
+              reasoningTokens: 0, webSearchRequests: 0, costUSD: 0, tools: [], bashCommands: [],
+              timestamp: '2026-08-01T00:00:00.000Z', speed: 'standard',
+              deduplicationKey: 'antigravity:orphanedCascade:response', userMessage: '',
+              sessionId: 'orphanedCascade',
+            }],
+          },
         },
       }))
 
@@ -879,6 +948,7 @@ describe('antigravity provider helpers', () => {
         version: 6,
         cascades: { [fixture.conversationId]: { parserVersion: 6 } },
       })
+      expect(migrated.cascades.orphanedCascade.calls).toHaveLength(1)
 
       resetAntigravityMemoryCacheForTests()
       const second = await collectAntigravityCalls(source)
