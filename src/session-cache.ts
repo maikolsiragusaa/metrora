@@ -211,14 +211,14 @@ export const PROVIDER_ENV_VARS: Record<string, string[]> = {
 
 // Names of providers whose cache entries are never evicted when source files
 // disappear — they are preserved so month-to-date totals never drop.
-export const DURABLE_PROVIDER_NAMES: ReadonlySet<string> = new Set(['copilot'])
+export const DURABLE_PROVIDER_NAMES: ReadonlySet<string> = new Set(['copilot', 'antigravity'])
 
 // Estimated-cost surfacing (#639): providers that set `costIsEstimated` carry a
 // `-est-cost` suffix (or a new entry) so their already-cached sessions reparse
 // once and the flag lands, instead of silently reading as measured. Copilot
 // needs no suffix: the cli-shutdown-cost-v1 bump below already forces its one
-// re-parse, which lands the flag too, and durable orphans now survive
-// fingerprint changes (the carry-forward in getOrCreateProviderSection).
+// re-parse, which lands the flag too. Durable orphans survive fingerprint
+// changes through the present-source check in the parser.
 export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // rich-session-capture-v1: parse-time capture of per-turn gitBranch, per-call
   // LOC deltas / interruptions / userModified / toolErrors, and session-level
@@ -251,7 +251,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   'roo-code': 'worktree-project-grouping-v1',
   zerostack: 'cumulative-session-v1-provider-provenance-estimated-cost-v2',
   warp: 'worktree-project-grouping-v1-est-cost',
-  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2',
+  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1',
   // OpenCode keeps valid usage in archived root/child sessions. The parser
   // must scan the complete SQLite session tree, not only active sessions.
   opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1',
@@ -504,14 +504,14 @@ async function adoptPriorCache(version: number): Promise<SessionCache | null> {
       if (rawFiles && typeof rawFiles === 'object' && !Array.isArray(rawFiles)) {
         for (const [path, file] of Object.entries(rawFiles as Record<string, unknown>)) {
           if (!validateCachedFile(file)) continue
-          const durable = (section as Record<string, unknown>)['durable'] === true
+          const durable = (section as Record<string, unknown>)['durable'] === true || DURABLE_PROVIDER_NAMES.has(provider)
           if (!existsSync(path) && (file.prLinks?.length || durable)) files[path] = file
         }
       }
       migrated.providers[provider] = {
         envFingerprint: computeEnvFingerprint(provider),
         files,
-        ...((section as Record<string, unknown>)['durable'] ? { durable: true } : {}),
+        ...((section as Record<string, unknown>)['durable'] || DURABLE_PROVIDER_NAMES.has(provider) ? { durable: true } : {}),
       }
     }
     return migrated

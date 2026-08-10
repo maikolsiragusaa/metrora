@@ -1,14 +1,20 @@
-import { readdir, readFile, mkdir, stat, open, rename, unlink } from 'fs/promises'
+import { readFile, mkdir, stat, open, rename, unlink } from 'fs/promises'
 import { execFile } from 'child_process'
 import { randomBytes } from 'crypto'
 import { basename, join } from 'path'
-import { homedir } from 'os'
 import { fileURLToPath } from 'url'
 import https from 'https'
 import { calculateCost } from '../models.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
 import { ExpiringServerDiscoveryCache, runWithSingleServerRediscovery } from './antigravity-server-recovery.js'
-import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import type { Provider, SessionSource, SessionSourceLocator, SessionParser, ParsedProviderCall } from './types.js'
+import {
+  antigravityCascadeIdFromPath,
+  antigravityProbeRoots,
+  antigravitySourceLocators,
+  discoverAntigravitySources,
+  type AntigravityConversationRoot,
+} from './antigravity-source-discovery.js'
 import { getMetroraCacheDir } from '../product-paths.js'
 import {
   buildCallsFromGeneratorMetadata,
@@ -19,44 +25,7 @@ import {
 } from './antigravity-accounting.js'
 export { buildCallsFromGeneratorMetadata, reconcileAntigravityStatusLineCalls } from './antigravity-accounting.js'
 export type { AntigravityCacheEnrichment, GeneratorMetadata } from './antigravity-accounting.js'
-type AntigravityConversationRoot = {
-  dir: string
-  project: string
-  extensions: readonly string[]
-}
-
-// Computed on each call rather than frozen at module load so discovery honors
-// the current home directory (env overrides in tests, and any runtime change).
-function conversationRoots(): readonly AntigravityConversationRoot[] {
-  const home = homedir()
-  return [
-    {
-      dir: join(home, '.gemini', 'antigravity', 'conversations'),
-      project: 'antigravity',
-      extensions: ['.pb', '.db'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-cli', 'conversations'),
-      project: 'antigravity-cli',
-      extensions: ['.pb', '.db'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-cli', 'implicit'),
-      project: 'antigravity-cli',
-      extensions: ['.pb'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-ide', 'conversations'),
-      project: 'antigravity-ide',
-      extensions: ['.pb', '.db'],
-    },
-    {
-      dir: join(home, '.gemini', 'antigravity-ide', 'implicit'),
-      project: 'antigravity-ide',
-      extensions: ['.pb'],
-    },
-  ]
-}
+export { antigravityCascadeIdFromPath }
 const CACHE_VERSION = 6
 const PREVIOUS_CACHE_VERSION = 5
 
@@ -131,6 +100,12 @@ type AntigravityCache = {
   cascades: Record<string, CachedCascade>
 }
 
+type AntigravityRpcData = { metadata: GeneratorMetadata[]; modelMap: ModelMap }
+export type AntigravityRpcDataOverride = (
+  appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide',
+  cascadeId: string,
+) => Promise<AntigravityRpcData | null>
+
 type ProtoField = {
   number: number
   wireType: number
@@ -153,6 +128,7 @@ const cachedModelMaps = new Map<string, ModelMap>()
 let memCache: AntigravityCache | null = null
 let memCachePath = ''
 let cacheDirty = false
+let rpcDataOverride: AntigravityRpcDataOverride | null = null
 let httpsAgent: https.Agent | undefined
 const protoTextDecoder = new TextDecoder('utf-8', { fatal: false })
 
@@ -300,11 +276,8 @@ async function loadCache(): Promise<AntigravityCache> {
 
 async function flushCache(liveCascadeIds?: Set<string>): Promise<void> {
   if (!memCache) return
-  // If the caller supplied liveCascadeIds, we must run the eviction step
-  // even when no cascade was added or updated this run; otherwise deleted
-  // .pb files would persist in the cache forever once it stops getting
-  // dirty writes. Mark the cache dirty when an eviction happens so the
-  // file write below proceeds.
+  // Keep detailed result-cache retention bounded by the live cascade set. The
+  // durable session/daily caches preserve older orphan history.
   if (liveCascadeIds) {
     for (const id of Object.keys(memCache.cascades)) {
       if (!liveCascadeIds.has(id)) {
@@ -537,10 +510,11 @@ async function getModelMap(server: ServerInfo): Promise<ModelMap> {
   return {}
 }
 
-async function fetchCascadeRpcData(
+async function fetchCascadeRpcDataForAppDataDir(
   appDataDir: 'antigravity' | 'antigravity-cli' | 'antigravity-ide',
   cascadeId: string,
-): Promise<{ metadata: GeneratorMetadata[]; modelMap: ModelMap } | null> {
+): Promise<AntigravityRpcData | null> {
+  if (rpcDataOverride) return rpcDataOverride(appDataDir, cascadeId)
   return runWithSingleServerRediscovery({
     detect: () => detectServer(appDataDir),
     invalidate: server => invalidateServer(appDataDir, server),
@@ -552,6 +526,21 @@ async function fetchCascadeRpcData(
       return { metadata, modelMap }
     },
   })
+}
+
+async function fetchCascadeRpcData(
+  locators: readonly SessionSourceLocator[],
+  cascadeId: string,
+): Promise<AntigravityRpcData | null> {
+  const tried = new Set<string>()
+  for (const locator of locators) {
+    const appDataDir = antigravityAppDataDirFromSourcePath(locator.path)
+    if (tried.has(appDataDir)) continue
+    tried.add(appDataDir)
+    const data = await fetchCascadeRpcDataForAppDataDir(appDataDir, cascadeId)
+    if (data?.metadata.length) return data
+  }
+  return null
 }
 
 function readProtoVarint(data: Uint8Array, startOffset: number): ProtoVarint | null {
@@ -845,15 +834,6 @@ function usageDelta(current: StatusLineEvent['usage'], previous: StatusLineEvent
   }
 }
 
-export function antigravityCascadeIdFromPath(path: string): string {
-  return basename(path).replace(/\.(pb|db)$/i, '')
-}
-
-function isConversationFile(file: string, extensions: readonly string[]): boolean {
-  const lowerFile = file.toLowerCase()
-  return extensions.some(ext => lowerFile.endsWith(ext))
-}
-
 export function isAntigravityStatusLineEventsPath(path: string): boolean {
   return path === getAntigravityStatusLineEventsPath()
 }
@@ -861,45 +841,7 @@ export function isAntigravityStatusLineEventsPath(path: string): boolean {
 export async function discoverAntigravitySessionSources(
   roots?: readonly AntigravityConversationRoot[],
 ): Promise<SessionSource[]> {
-  // The statusline JSONL is a synthetic source only appended for the real
-  // default roots, not when a caller passes an explicit (test) root set.
-  const includeStatusLineEvents = roots === undefined
-  const effectiveRoots = roots ?? conversationRoots()
-  const sources: SessionSource[] = []
-  for (const root of effectiveRoots) {
-    let files: string[]
-    try {
-      files = await readdir(root.dir)
-    } catch {
-      continue
-    }
-
-    for (const file of files.sort()) {
-      if (!isConversationFile(file, root.extensions)) continue
-      const path = join(root.dir, file)
-      const s = await stat(path).catch(() => null)
-      if (!s?.isFile()) continue
-      sources.push({
-        path,
-        project: root.project,
-        provider: 'antigravity',
-      })
-    }
-  }
-
-  if (includeStatusLineEvents) {
-    const statusLinePath = getAntigravityStatusLineEventsPath()
-    const statusLineStat = await stat(statusLinePath).catch(() => null)
-    if (statusLineStat?.isFile()) {
-      sources.push({
-        path: statusLinePath,
-        project: 'antigravity-cli',
-        provider: 'antigravity',
-      })
-    }
-  }
-
-  return sources
+  return discoverAntigravitySources(getAntigravityStatusLineEventsPath(), roots)
 }
 
 function parseStatusLinePayload(input: unknown): StatusLineEvent | null {
@@ -1096,13 +1038,19 @@ export function shouldReparseAntigravitySource(path: string, cachedTurnCount: nu
   return isAntigravityStatusLineEventsPath(path)
 }
 
-async function findCascadeSource(cascadeId: string): Promise<SessionSource | null> {
+async function findCascadeLocators(cascadeId: string): Promise<SessionSourceLocator[]> {
   const sources = await discoverAntigravitySessionSources()
-  return sources.find(source => {
-    const lower = source.path.replace(/\\/g, '/').toLowerCase()
-    return (lower.includes('/.gemini/antigravity-cli/') || lower.includes('/.gemini/antigravity-ide/')) &&
-      antigravityCascadeIdFromPath(source.path) === cascadeId
-  }) ?? null
+  const locators: SessionSourceLocator[] = []
+  for (const source of sources) {
+    for (const locator of antigravitySourceLocators(source)) {
+      const lower = locator.path.replace(/\\/g, '/').toLowerCase()
+      if (
+        (lower.includes('/.gemini/antigravity-cli/') || lower.includes('/.gemini/antigravity-ide/')) &&
+        antigravityCascadeIdFromPath(locator.path) === cascadeId
+      ) locators.push(locator)
+    }
+  }
+  return locators
 }
 
 export async function snapshotAntigravityStatusLinePayload(input: unknown): Promise<boolean> {
@@ -1110,30 +1058,36 @@ export async function snapshotAntigravityStatusLinePayload(input: unknown): Prom
   if (!event) return false
 
   const cascadeId = event.conversationId
-  const source = await findCascadeSource(cascadeId)
-  if (!source) return false
+  const locators = await findCascadeLocators(cascadeId)
+  if (locators.length === 0) return false
 
-  const s = await stat(source.path).catch(() => null)
-  if (!s) return false
+  let sourceStat: Awaited<ReturnType<typeof stat>> | null = null
+  for (const locator of locators) {
+    const candidateStat = await stat(locator.path).catch(() => null)
+    if (!candidateStat) continue
+    sourceStat ??= candidateStat
+  }
+  if (!sourceStat) return false
 
   const cache = await loadCache()
   const cached = cache.cascades[cascadeId]
   if (
     cached?.parserVersion === CACHE_VERSION &&
-    cached.mtimeMs === s.mtimeMs && cached.sizeBytes === s.size && cached.calls.length > 0
+    cached.mtimeMs === sourceStat.mtimeMs && cached.sizeBytes === sourceStat.size &&
+    cached.calls.length > 0
   ) {
     return true
   }
 
-  const rpcData = await fetchCascadeRpcData(antigravityAppDataDirFromSourcePath(source.path), cascadeId)
+  const rpcData = await fetchCascadeRpcData(locators, cascadeId)
   if (!rpcData) return false
 
   const snapshotCalls = buildCallsFromGeneratorMetadata(cascadeId, rpcData.metadata, rpcData.modelMap)
-  assignStableTimestamps(snapshotCalls, cached?.calls, new Date(s.mtimeMs).toISOString())
+  assignStableTimestamps(snapshotCalls, cached?.calls, new Date(sourceStat.mtimeMs).toISOString())
   cache.cascades[cascadeId] = {
     parserVersion: CACHE_VERSION,
-    mtimeMs: s.mtimeMs,
-    sizeBytes: s.size,
+    mtimeMs: sourceStat.mtimeMs,
+    sizeBytes: sourceStat.size,
     calls: snapshotCalls,
   }
   cacheDirty = true
@@ -1238,6 +1192,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       }
 
       const cascadeId = antigravityCascadeIdFromPath(source.path)
+      const locators = antigravitySourceLocators(source)
+      const isDbSource = source.path.toLowerCase().endsWith('.db')
       const cache = await loadCache()
 
       const s = await stat(source.path).catch(() => null)
@@ -1247,10 +1203,10 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       const fallbackTimestamp = new Date(s.mtimeMs).toISOString()
 
       const cached = cache.cascades[cascadeId]
-      if (
-        cached?.parserVersion === CACHE_VERSION &&
+      const cacheMatchesSource = cached !== undefined &&
+        cached.parserVersion === CACHE_VERSION &&
         cached.mtimeMs === s.mtimeMs && cached.sizeBytes === s.size && cached.calls.length > 0
-      ) {
+      if (cacheMatchesSource && (!isDbSource || locators.length === 1)) {
         for (const call of cached.calls) {
           applyAntigravityProject(call, source, projectPath)
           if (seenKeys.has(call.deduplicationKey)) continue
@@ -1283,7 +1239,19 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         return
       }
 
-      const rpcData = await fetchCascadeRpcData(antigravityAppDataDirFromSourcePath(source.path), cascadeId)
+      // A DB with no local usage must still expose alternate PB locators to
+      // RPC. Only use its old result cache after those routes have been tried.
+      if (cacheMatchesSource && locators.length === 1) {
+        for (const call of cached.calls) {
+          applyAntigravityProject(call, source, projectPath)
+          if (seenKeys.has(call.deduplicationKey)) continue
+          seenKeys.add(call.deduplicationKey)
+          yield withFallbackTimestamp(call, fallbackTimestamp)
+        }
+        return
+      }
+
+      const rpcData = await fetchCascadeRpcData(locators, cascadeId)
       if (!rpcData) {
         if (cached) {
           for (const call of cached.calls) {
@@ -1343,6 +1311,7 @@ export function createAntigravityProvider(): Provider {
   return {
     name: 'antigravity',
     displayName: 'Antigravity',
+    durableSources: true, durableFreshWins: true,
 
     modelDisplayName(model: string): string {
       return modelDisplayNames[model] ?? model
@@ -1350,6 +1319,10 @@ export function createAntigravityProvider(): Provider {
 
     toolDisplayName(rawTool: string): string {
       return rawTool
+    },
+
+    async probeRoots() {
+      return antigravityProbeRoots(getAntigravityStatusLineEventsPath())
     },
 
     async discoverSessions(): Promise<SessionSource[]> {
@@ -1370,6 +1343,11 @@ export function resetAntigravityMemoryCacheForTests(): void {
   memCache = null
   memCachePath = ''
   cacheDirty = false
+  rpcDataOverride = null
+}
+
+export function setAntigravityRpcDataForTests(override: AntigravityRpcDataOverride | null): void {
+  rpcDataOverride = override
 }
 
 export const antigravity = createAntigravityProvider()

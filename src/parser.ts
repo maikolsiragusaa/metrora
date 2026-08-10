@@ -2791,14 +2791,9 @@ function getOrCreateProviderSection(cache: SessionCache, provider: string): Prov
   const existing = cache.providers[provider]
   if (existing && existing.envFingerprint === envFp) return existing
   const section: ProviderSection = { envFingerprint: envFp, files: {} }
-  // A fingerprint change (env override or parse-version bump) must re-parse
-  // every present source, but for durable providers the cache is the ONLY
-  // remaining record of usage whose source rows were already pruned (OTel
-  // orphans). Discarding those with the section would permanently erase
-  // month-to-date history that cannot be re-derived, so carry forward exactly
-  // the entries whose source no longer exists; everything present on disk is
-  // dropped and re-parsed under the new fingerprint.
-  if (existing && DURABLE_PROVIDER_NAMES.has(provider)) {
+  // A fingerprint change re-parses every present source. Durable providers
+  // carry only entries whose source was pruned and cannot be re-derived.
+  if (existing && (existing.durable || DURABLE_PROVIDER_NAMES.has(provider))) {
     for (const [path, file] of Object.entries(existing.files)) {
       if (!existsSync(path)) section.files[path] = file
     }
@@ -3047,22 +3042,19 @@ async function parseProviderSources(
         const canonicalCalls = await Promise.all(providerCalls.map(canonicalizeProviderCallProject))
         const turns = providerCallsToCachedTurns(canonicalCalls)
 
-        // Store/merge parsed turns into the cache.
-        // Durable providers use a union-by-deduplicationKey merge: existing turns
-        // are NEVER deleted (preserves data for spans pruned from the DB), and
-        // only turns whose dedup keys are not already cached are appended.
-        // Non-durable providers keep the original overwrite-or-append behaviour.
+        // Durable sources retain absent fresh calls; Antigravity fresh native
+        // identities replace stale values on source rewrites.
         if (provider.durableSources) {
-          const existingEntry = section.files[source.path]
-          if (existingEntry) {
-            const existingKeys = new Set(
-              existingEntry.turns.flatMap(t => t.calls.map(c => c.deduplicationKey))
-            )
-            const newTurns = turns.filter(t =>
-              t.calls.every(c => !existingKeys.has(c.deduplicationKey))
-            )
-            existingEntry.turns = [...existingEntry.turns, ...newTurns]
-            existingEntry.fingerprint = fp
+            const existingEntry = section.files[source.path]
+            if (existingEntry) {
+              if (provider.durableFreshWins) {
+                const freshKeys = new Set(turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
+                existingEntry.turns = existingEntry.turns.map(t => ({ ...t, calls: t.calls.filter(c => !freshKeys.has(c.deduplicationKey)) })).filter(t => t.calls.length > 0)
+              }
+              const existingKeys = new Set(existingEntry.turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
+              const newTurns = turns.filter(t => t.calls.every(c => !existingKeys.has(c.deduplicationKey)))
+              existingEntry.turns = [...existingEntry.turns, ...newTurns]
+              existingEntry.fingerprint = fp
           } else {
             section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns }
           }
@@ -3122,7 +3114,7 @@ async function parseProviderSources(
   }
 
   // 90-day age-out for durable providers: remove entries whose newest call is
-  // older than 90 days so the cache doesn't grow unboundedly over time.
+  // older than 90 days so the detailed cache remains bounded.
   if (!readOnly && provider.durableSources) {
     const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000
     for (const [cachedPath, cachedFile] of Object.entries(section.files)) {
