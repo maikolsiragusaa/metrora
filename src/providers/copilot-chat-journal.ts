@@ -2,7 +2,6 @@ import { basename } from 'path'
 
 import { readSessionFile } from '../fs-utils.js'
 import { calculateCost } from '../models.js'
-import { PROVIDER_PARSE_VERSIONS } from '../session-cache.js'
 import type { ParsedProviderCall, Provider, SessionParser, SessionSource } from './types.js'
 
 type JournalPathSegment = string | number
@@ -14,15 +13,11 @@ type ChatSessionSource = SessionSource & {
 type JournalRequest = Record<string, unknown>
 
 const FORBIDDEN_PATH_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
-const CHAT_JOURNAL_PARSE_VERSION = 'current-chat-journal-v2'
+export const COPILOT_CHAT_JOURNAL_AUTHORITY = 'current-chat-journal-v3'
+export const COPILOT_CHAT_JOURNAL_PROVIDER = `copilot-chat-journal-${COPILOT_CHAT_JOURNAL_AUTHORITY}`
 
-function registerParseVersion(): void {
-  const current = PROVIDER_PARSE_VERSIONS['copilot'] ?? ''
-  if (!current.split('-').join('-').includes(CHAT_JOURNAL_PARSE_VERSION)) {
-    PROVIDER_PARSE_VERSIONS['copilot'] = current
-      ? `${current}-${CHAT_JOURNAL_PARSE_VERSION}`
-      : CHAT_JOURNAL_PARSE_VERSION
-  }
+function isChatSessionSource(source: SessionSource): source is ChatSessionSource {
+  return (source as ChatSessionSource).sourceType === 'chatsession'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -336,21 +331,47 @@ function createChatJournalParser(
 }
 
 /**
- * Adds the current VS Code mutation-log accounting contract to the existing
- * multi-source Copilot provider without changing its CLI, transcript, OTel,
- * JetBrains, discovery, or display behavior. Installing the adapter also
- * registers its parser authority so unchanged journals are reparsed once.
+ * Decorates Copilot discovery so current VS Code chat journals are routed into
+ * their own cache namespace. Those journals are authoritative snapshots of the
+ * replayed mutation log, unlike Copilot's durable/prunable sources: when a
+ * present journal changes, its cached calls must be replaced rather than kept
+ * monotonically. The parser override is retained for direct/unit use.
  */
 export function withCopilotChatJournalAccounting(provider: Provider): Provider {
-  registerParseVersion()
   return {
     ...provider,
-    durableFreshWins: true,
+    async discoverSessions(): Promise<SessionSource[]> {
+      const sources = await provider.discoverSessions()
+      return sources.map(source => isChatSessionSource(source)
+        ? { ...source, provider: COPILOT_CHAT_JOURNAL_PROVIDER }
+        : source)
+    },
     createSessionParser(source, seenKeys, dateRange) {
-      if ((source as ChatSessionSource).sourceType === 'chatsession') {
+      if (isChatSessionSource(source)) {
         return createChatJournalParser(source, seenKeys, provider)
       }
       return provider.createSessionParser(source, seenKeys, dateRange)
+    },
+  }
+}
+
+/**
+ * Internal parser authority for the remapped chat-journal sources. It is not
+ * part of provider discovery or the public --provider surface; `copilot`
+ * discovery emits these sources and the parser registry resolves this internal
+ * name. Non-durable semantics make a changed journal replace its prior snapshot.
+ */
+export function createCopilotChatJournalProvider(provider: Provider): Provider {
+  return {
+    ...provider,
+    name: COPILOT_CHAT_JOURNAL_PROVIDER,
+    durableSources: false,
+    durableFreshWins: undefined,
+    async discoverSessions(): Promise<SessionSource[]> {
+      return []
+    },
+    createSessionParser(source, seenKeys): SessionParser {
+      return createChatJournalParser(source, seenKeys, provider)
     },
   }
 }
