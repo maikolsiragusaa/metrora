@@ -3,6 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
+import { getDailyCacheConfigHash } from '../../src/daily-cache-config.js'
+import {
+  CODEX_LEGACY_SESSION_META_AUTHORITY,
+  ensureCodexLegacySessionMetaAuthority,
+} from '../../src/provider-parse-authorities.js'
+import { computeEnvFingerprint, PROVIDER_PARSE_VERSIONS } from '../../src/session-cache.js'
 import { createCodexProvider } from '../../src/providers/codex.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
 
@@ -89,5 +95,19 @@ describe('codex provider - legacy session_meta identity', () => {
     expect(calls.reduce((sum, call) => sum + call.cacheReadInputTokens, 0)).toBe(30)
     expect(calls.reduce((sum, call) => sum + call.outputTokens, 0)).toBe(80)
     expect(calls.reduce((sum, call) => sum + call.reasoningTokens, 0)).toBe(20)
+  })
+
+  it('uses the same legacy parser authority for warm session cache and daily history', () => {
+    const effective = ensureCodexLegacySessionMetaAuthority()
+    const fingerprint = computeEnvFingerprint('codex')
+    const repeated = ensureCodexLegacySessionMetaAuthority()
+    const repeatedFingerprint = computeEnvFingerprint('codex')
+    const dailyHash = getDailyCacheConfigHash()
+
+    expect(effective).toContain(CODEX_LEGACY_SESSION_META_AUTHORITY)
+    expect(PROVIDER_PARSE_VERSIONS['codex']).toBe(effective)
+    expect(repeated).toBe(effective)
+    expect(repeatedFingerprint).toBe(fingerprint)
+    expect(dailyHash).toContain(`codexCollector=${effective}`)
   })
 })
