@@ -1,21 +1,14 @@
 import { existsSync } from 'fs'
-import { readFile } from 'fs/promises'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
 
-import { Chalk } from 'chalk'
-
-import { getClaudeConfigDirs } from './providers/claude.js'
-import { getAllProviders } from './providers/index.js'
+import { allProviderNames, getAllProviders, safeDiscoverSessions } from './providers/index.js'
+import { emptyCache, loadCache, PROVIDER_ENV_VARS, type SessionCache } from './session-cache.js'
 import type { Provider } from './providers/types.js'
-import {
-  PROVIDER_ENV_VARS,
-  PROVIDER_PARSE_VERSIONS,
-  loadCache,
-  type SessionCache,
-} from './session-cache.js'
-import { renderTable } from './text-table.js'
 
-// ── Types ──────────────────────────────────────────────────────────────
+export type DoctorEnvOverride = {
+  name: string
+  value: string
+}
 
 export type DoctorProbePath = {
   path: string
@@ -23,58 +16,21 @@ export type DoctorProbePath = {
   exists: boolean
 }
 
-export type DoctorEnvOverride = {
-  name: string
-  value: string
-}
-
-export type DoctorStatus = 'ok' | 'empty' | 'errors' | 'error' | 'network'
-
 export type DoctorProviderReport = {
   provider: string
   displayName: string
-  status: DoctorStatus
-  /** Directories/dbs the provider scans, with existence checked (may be empty
-   *  for providers that do not expose probeRoots). */
+  status: 'ok' | 'empty' | 'error'
+  discoveredSources: number
+  sampledCalls: number
   probePaths: DoctorProbePath[]
-  /** Env overrides that are actually set for this provider. */
   envOverrides: DoctorEnvOverride[]
-  parseVersion?: string
-  /** Session sources discovered (candidate files/dbs). */
-  candidatesFound: number
-  /** How many discovered sources we attempted to parse (bounded sample). */
-  sampled: number
-  parsedOk: number
-  parseFailed: number
-  /** True when we sampled fewer sources than were discovered. */
-  bounded: boolean
-  /** Files cached for this provider in session-cache.json. */
-  cachedFiles: number
-  /** Cached entries flagged as parse failures. */
-  cachedFailed: number
-  /** One-line human verdict. */
   verdict: string
-  /** Message when the provider itself threw (status 'error'). */
   error?: string
-}
-
-export type ClaudeRetentionNote = {
-  /// Effective transcript retention in days. Claude Code deletes session
-  /// files older than cleanupPeriodDays at startup; 30 is its default when
-  /// the setting is absent.
-  effectiveDays: number
-  /// True when cleanupPeriodDays is explicitly set in settings.json.
-  configured: boolean
-  settingsPath: string
 }
 
 export type DoctorReport = {
   generatedAt: string
   providers: DoctorProviderReport[]
-  /// Present when the Claude provider is in the report and a config dir was
-  /// found. Surfaced because deleted transcripts are unrecoverable: daily
-  /// totals survive in Metrora's cache, but per-session detail does not.
-  claudeRetention?: ClaudeRetentionNote
 }
 
 export type CollectDoctorOptions = {
@@ -99,10 +55,22 @@ const PARSE_CALL_CAP = 500
 // (readdir/stat only) still runs, so session counts stay meaningful.
 const PARSE_SPAWNS = new Set(['antigravity'])
 
-// Metrora's own cache location: listed in PROVIDER_ENV_VARS for cache
-// fingerprinting, but it is not a discovery path, so it must never be blamed
-// in a NOTHING FOUND hint.
-const NON_DISCOVERY_ENV_VARS = new Set(['METRORA_CACHE_DIR'])
+// Declared env inputs that change parsing/accounting but not where discovery
+// looks. They belong in the cache fingerprint, but must never be blamed for a
+// NOTHING FOUND result.
+const NON_DISCOVERY_ENV_VARS = new Set([
+  'METRORA_CACHE_DIR',
+  'METRORA_CURSOR_MAX_BUBBLES',
+  'KIMI_MODEL_NAME',
+])
+
+// Windows supplies these to ordinary processes, so they move discovery roots
+// and must be fingerprinted but do not represent deliberate user overrides.
+const AMBIENT_ENV_VARS = new Set(['APPDATA', 'LOCALAPPDATA'])
+
+// Credential presence is useful diagnostic state; the value is a live secret
+// and must never reach text or JSON doctor output.
+const SECRET_ENV_VARS = new Set(['AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'])
 
 // ── Collect (pure, testable) ─────────────────────────────────────────────
 
@@ -110,8 +78,11 @@ function collectEnvOverrides(providerName: string): DoctorEnvOverride[] {
   const vars = PROVIDER_ENV_VARS[providerName] ?? []
   const out: DoctorEnvOverride[] = []
   for (const name of vars) {
+    if (AMBIENT_ENV_VARS.has(name)) continue
     const value = process.env[name]
-    if (value !== undefined && value !== '') out.push({ name, value })
+    if (value !== undefined && value !== '') {
+      out.push(SECRET_ENV_VARS.has(name) ? { name, value: '<set>' } : { name, value })
+    }
   }
   return out
 }
@@ -168,277 +139,137 @@ function emptyVerdict(
   // With an override set, a missing probed path is the likely culprit; name it
   // so the row itself points at the misconfiguration (Details lists them all).
   if (hasOverride) {
-    return missing.length > 0
-      ? `NOTHING FOUND (override ${overrideNames} set; ${missing[0]!.path} does not exist)`
-      : `NOTHING FOUND (override ${overrideNames} set; ${present[0]!.path} holds no sessions)`
+    if (missing.length > 0) return `NOTHING FOUND (override ${overrideNames} set; ${missing[0]!.path} does not exist)`
+    return `NOTHING FOUND (override ${overrideNames} set; probed path exists but holds no sessions)`
   }
-  // No override. If every probed path is missing, the tool is likely not
-  // installed; if some exist, the data dir is there but empty (no history).
-  return present.length === 0
-    ? `NOTHING FOUND (${missing[0]!.path} does not exist; tool likely not installed)`
-    : `NOTHING FOUND (${present[0]!.path} exists but holds no sessions; no history yet)`
+  if (present.length > 0) return `NOTHING FOUND (${present[0]!.path} exists but holds no sessions; no history yet)`
+  return `NOTHING FOUND (${missing[0]?.path ?? 'probed path'} does not exist; tool likely not installed)`
 }
 
-async function collectOneProvider(
-  provider: Provider,
-  cache: SessionCache,
-  sampleLimit: number,
-): Promise<DoctorProviderReport> {
-  const base: DoctorProviderReport = {
-    provider: provider.name,
-    displayName: provider.displayName,
-    status: 'ok',
-    probePaths: [],
-    envOverrides: collectEnvOverrides(provider.name),
-    parseVersion: PROVIDER_PARSE_VERSIONS[provider.name],
-    candidatesFound: 0,
-    sampled: 0,
-    parsedOk: 0,
-    parseFailed: 0,
-    bounded: false,
-    cachedFiles: 0,
-    cachedFailed: 0,
-    verdict: '',
+function okVerdict(discoveredSources: number, sampledCalls: number): string {
+  if (sampledCalls > 0) return `OK (${pluralSessions(discoveredSources)}, sampled ${sampledCalls.toLocaleString('en-US')} calls)`
+  return `OK (${pluralSessions(discoveredSources)} discovered)`
+}
+
+async function sampleProvider(provider: Provider, sources: Awaited<ReturnType<typeof safeDiscoverSessions>>, limit: number): Promise<number> {
+  if (PARSE_SPAWNS.has(provider.name)) return 0
+  let calls = 0
+  const seen = new Set<string>()
+  for (const source of sources.slice(0, limit)) {
+    const parser = provider.createSessionParser(source, seen)
+    for await (const _call of parser.parse()) {
+      calls++
+      if (calls >= PARSE_CALL_CAP) return calls
+    }
   }
-
-  const section = cache.providers[provider.name]
-  if (section) {
-    const files = Object.values(section.files)
-    base.cachedFiles = files.length
-    base.cachedFailed = files.filter(f => f.failed).length
-  }
-
-  // Any single provider throwing (probe, discovery, or a parser) must never
-  // crash doctor or blank the other rows: catch and report it as an ERROR row.
-  try {
-    base.probePaths = await collectProbePaths(provider)
-
-    const sources = await provider.discoverSessions()
-    base.candidatesFound = sources.length
-    if (base.probePaths.length === 0) {
-      base.probePaths = derivePathsFromSources(sources.map(s => s.path))
-    }
-
-    // Network providers fetch on parse; doctor runs offline, so we never parse
-    // them. Discovery for the one network provider is offline (it only checks
-    // for a configured API key), so the count above still means something.
-    if (provider.network) {
-      base.status = 'network'
-      base.verdict = base.candidatesFound > 0
-        ? `NETWORK (${base.candidatesFound} source configured; parse skipped offline)`
-        : 'NETWORK (not configured; no API key)'
-      return base
-    }
-
-    if (sources.length > 0 && PARSE_SPAWNS.has(provider.name)) {
-      base.status = 'ok'
-      base.verdict = `OK (${pluralSessions(sources.length)}; parse sample skipped, provider probes live processes)`
-      return base
-    }
-
-    if (sources.length > 0) {
-      const sample = sources.slice(0, sampleLimit)
-      base.bounded = sample.length < sources.length
-      const seenKeys = new Set<string>()
-      for (const source of sample) {
-        base.sampled++
-        try {
-          const parser = provider.createSessionParser(source, seenKeys)
-          let n = 0
-          for await (const _call of parser.parse()) {
-            if (++n >= PARSE_CALL_CAP) break
-          }
-          base.parsedOk++
-        } catch {
-          base.parseFailed++
-        }
-      }
-    }
-
-    if (base.parseFailed > 0) {
-      base.status = 'errors'
-      base.verdict = `ERRORS (${base.parseFailed}/${base.sampled} sampled file${base.sampled === 1 ? '' : 's'} failed to parse)`
-    } else if (base.candidatesFound === 0) {
-      base.status = 'empty'
-      base.verdict = emptyVerdict(base.probePaths, base.envOverrides)
-    } else {
-      base.status = 'ok'
-      base.verdict = `OK (${pluralSessions(base.candidatesFound)})`
-    }
-  } catch (err) {
-    base.status = 'error'
-    base.error = err instanceof Error ? err.message : String(err)
-    base.verdict = `ERROR (${base.error})`
-  }
-
-  return base
+  return calls
 }
 
 export async function collectDoctorReport(
-  providerFilter?: string,
+  providerName = 'all',
   opts: CollectDoctorOptions = {},
 ): Promise<DoctorReport> {
-  const all = opts.providers ?? await getAllProviders()
-  const filtered = providerFilter && providerFilter !== 'all'
-    ? all.filter(p => p.name === providerFilter)
-    : all
-  const cache = opts.cache ?? await loadCache()
-  const sampleLimit = opts.sampleLimit ?? DEFAULT_SAMPLE_LIMIT
+  const providers = opts.providers ?? await getAllProviders()
+  const cache = opts.cache ?? (await loadCache().catch(() => null) ?? emptyCache())
+  const sampleLimit = Math.max(0, opts.sampleLimit ?? DEFAULT_SAMPLE_LIMIT)
+  const selected = providerName === 'all'
+    ? providers
+    : providers.filter(p => p.name === providerName)
 
-  // Doctor promises to be strictly read-only, but sample-parsing drives real
-  // provider parsers, and cursor's writes its results cache to disk before its
-  // first yield. The flag tells cache writers to stand down for this process
-  // while doctor collects; restored afterwards so long-lived embedders (tests,
-  // MCP) keep normal behavior.
-  const prevSuppress = process.env['METRORA_SUPPRESS_CACHE_WRITES']
-  process.env['METRORA_SUPPRESS_CACHE_WRITES'] = '1'
-  try {
-    const providers: DoctorProviderReport[] = []
-    for (const provider of filtered) {
-      providers.push(await collectOneProvider(provider, cache, sampleLimit))
-    }
-    providers.sort((a, b) => (a.displayName < b.displayName ? -1 : a.displayName > b.displayName ? 1 : 0))
-
-    const report: DoctorReport = { generatedAt: new Date().toISOString(), providers }
-    if (providers.some(p => p.provider === 'claude')) {
-      const retention = await collectClaudeRetention()
-      if (retention) report.claudeRetention = retention
-    }
-    return report
-  } finally {
-    if (prevSuppress === undefined) delete process.env['METRORA_SUPPRESS_CACHE_WRITES']
-    else process.env['METRORA_SUPPRESS_CACHE_WRITES'] = prevSuppress
+  if (providerName !== 'all' && !allProviderNames().includes(providerName) && selected.length === 0) {
+    return { generatedAt: new Date().toISOString(), providers: [] }
   }
-}
 
-// Claude Code's documented default when cleanupPeriodDays is absent.
-const CLAUDE_DEFAULT_CLEANUP_DAYS = 30
-// Below this, long-horizon views depend entirely on Metrora's daily cache;
-// the doctor line turns into a warning.
-const CLAUDE_RETENTION_WARN_DAYS = 365
-
-async function collectClaudeRetention(): Promise<ClaudeRetentionNote | undefined> {
-  for (const dir of await getClaudeConfigDirs()) {
-    const settingsPath = join(dir, 'settings.json')
-    let raw: string
+  const rows: DoctorProviderReport[] = []
+  for (const provider of selected) {
     try {
-      raw = await readFile(settingsPath, 'utf-8')
-    } catch {
-      continue
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw)
-      const days = (parsed as Record<string, unknown> | null)?.['cleanupPeriodDays']
-      if (typeof days === 'number' && Number.isFinite(days)) {
-        return { effectiveDays: days, configured: true, settingsPath }
-      }
-      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath }
-    } catch {
-      // Unparseable settings: report the default; Claude Code would apply it too.
-      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath }
+      const sources = await safeDiscoverSessions(provider)
+      let probePaths = await collectProbePaths(provider)
+      if (probePaths.length === 0 && sources.length > 0) probePaths = derivePathsFromSources(sources.map(s => s.path))
+      const envOverrides = collectEnvOverrides(provider.name)
+      const sampledCalls = sampleLimit > 0 && sources.length > 0
+        ? await sampleProvider(provider, sources, sampleLimit)
+        : 0
+      const status: DoctorProviderReport['status'] = sources.length > 0 ? 'ok' : 'empty'
+      rows.push({
+        provider: provider.name,
+        displayName: provider.displayName,
+        status,
+        discoveredSources: sources.length,
+        sampledCalls,
+        probePaths,
+        envOverrides,
+        verdict: status === 'ok'
+          ? okVerdict(sources.length, sampledCalls)
+          : emptyVerdict(probePaths, envOverrides),
+      })
+    } catch (err) {
+      rows.push({
+        provider: provider.name,
+        displayName: provider.displayName,
+        status: 'error',
+        discoveredSources: 0,
+        sampledCalls: 0,
+        probePaths: [],
+        envOverrides: collectEnvOverrides(provider.name),
+        verdict: 'ERROR',
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
-  return undefined
+
+  // Cache-only providers are useful evidence too: an installed source may have
+  // disappeared while durable history remains. Add them only for an all-provider
+  // diagnostic and never duplicate a real provider row.
+  if (providerName === 'all') {
+    const seen = new Set(rows.map(row => row.provider))
+    for (const [name, section] of Object.entries(cache.providers)) {
+      if (seen.has(name)) continue
+      rows.push({
+        provider: name,
+        displayName: name,
+        status: Object.keys(section.files).length > 0 ? 'ok' : 'empty',
+        discoveredSources: 0,
+        sampledCalls: 0,
+        probePaths: [],
+        envOverrides: collectEnvOverrides(name),
+        verdict: Object.keys(section.files).length > 0
+          ? `CACHE ONLY (${Object.keys(section.files).length.toLocaleString('en-US')} retained sources)`
+          : 'CACHE ONLY (empty)',
+      })
+    }
+  }
+
+  rows.sort((a, b) => a.displayName.localeCompare(b.displayName))
+  return { generatedAt: new Date().toISOString(), providers: rows }
 }
 
-// ── Render ────────────────────────────────────────────────────────────────
+function renderPathSummary(paths: DoctorProbePath[]): string {
+  if (paths.length === 0) return '-'
+  return paths.map(p => `${p.exists ? '✓' : '✗'} ${p.path}`).join(', ')
+}
+
+function renderOverrideSummary(overrides: DoctorEnvOverride[]): string {
+  if (overrides.length === 0) return '-'
+  return overrides.map(o => `${o.name}=${o.value}`).join(', ')
+}
+
+export function renderDoctorTable(report: DoctorReport): string {
+  const rows = report.providers.map(r => [
+    r.displayName,
+    r.status.toUpperCase(),
+    r.discoveredSources.toLocaleString('en-US'),
+    r.sampledCalls.toLocaleString('en-US'),
+    r.verdict,
+    renderPathSummary(r.probePaths),
+    renderOverrideSummary(r.envOverrides),
+  ])
+  const headers = ['Provider', 'Status', 'Sources', 'Calls', 'Verdict', 'Paths', 'Overrides']
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map(r => r[i]?.length ?? 0)))
+  const line = (cells: string[]) => cells.map((c, i) => c.padEnd(widths[i]!)).join('  ')
+  return [line(headers), line(widths.map(w => '-'.repeat(w))), ...rows.map(line)].join('\n')
+}
 
 export function renderDoctorJson(report: DoctorReport): string {
   return JSON.stringify(report, null, 2)
-}
-
-export function renderDoctorTable(
-  report: DoctorReport,
-  opts: { color?: boolean } = {},
-): string {
-  const c = new Chalk(opts.color === false ? { level: 0 } : {})
-  const out: string[] = []
-
-  const n = report.providers.length
-  out.push(c.bold('Metrora doctor') + c.dim(`   ${n} provider${n === 1 ? '' : 's'}   ${report.generatedAt.slice(0, 19).replace('T', ' ')} UTC`))
-  out.push('')
-
-  const colorVerdict = (r: DoctorProviderReport): string => {
-    if (r.status === 'ok') return c.green(r.verdict)
-    if (r.status === 'network') return c.cyan(r.verdict)
-    if (r.status === 'empty') return c.yellow(r.verdict)
-    return c.red(r.verdict)
-  }
-
-  const rows = report.providers.map(r => [
-    r.displayName,
-    r.status === 'network' ? '-' : String(r.candidatesFound),
-    r.status === 'network' || r.sampled === 0 ? '-' : `${r.parsedOk}/${r.sampled}${r.bounded ? '+' : ''}`,
-    String(r.cachedFiles),
-    colorVerdict(r),
-  ])
-
-  out.push(renderTable(
-    [
-      { header: 'Provider' },
-      { header: 'Sessions', right: true },
-      { header: 'Parsed', right: true },
-      { header: 'Cached', right: true },
-      { header: 'Verdict' },
-    ],
-    rows,
-    { color: opts.color },
-  ))
-
-  // Detail: show the exact probed paths + overrides only where there is
-  // something diagnostic to show (known probe roots, an override, a hard
-  // error, or cached parse failures), so a wrong path is spotted at a glance
-  // without a wall of empty blocks for tools that are simply not installed.
-  const detail = report.providers.filter(
-    r =>
-      r.status === 'error' ||
-      r.status === 'errors' ||
-      r.envOverrides.length > 0 ||
-      r.cachedFailed > 0 ||
-      r.probePaths.some(p => p.label !== 'discovered'),
-  )
-  if (detail.length > 0) {
-    out.push('')
-    out.push(c.bold('Details'))
-    for (const r of detail) {
-      out.push('  ' + c.bold(r.displayName))
-      for (const o of r.envOverrides) {
-        out.push('    ' + c.dim('override ') + `${o.name}=${o.value}`)
-      }
-      for (const p of r.probePaths) {
-        const mark = p.exists ? c.green('exists') : c.red('missing')
-        out.push('    ' + c.dim(`${p.label}: `) + p.path + ' ' + c.dim('(') + mark + c.dim(')'))
-      }
-      if (r.parseVersion) out.push('    ' + c.dim('parser: ') + r.parseVersion)
-      if (r.cachedFailed > 0) out.push('    ' + c.dim('cached parse failures: ') + String(r.cachedFailed))
-      if (r.error) out.push('    ' + c.red('error: ') + r.error)
-    }
-  }
-
-  if (report.claudeRetention) {
-    const r = report.claudeRetention
-    const source = r.configured ? 'cleanupPeriodDays' : 'cleanupPeriodDays not set; Claude Code default'
-    const line = `Claude Code deletes transcripts after ${r.effectiveDays} day${r.effectiveDays === 1 ? '' : 's'} (${source}).`
-    out.push('')
-    if (r.effectiveDays < CLAUDE_RETENTION_WARN_DAYS) {
-      out.push(
-        c.yellow(line) + ' ' +
-        `Daily totals survive in Metrora's cache, but per-session detail older than that is gone for good. ` +
-        `To keep it, set "cleanupPeriodDays": 3650 in ${r.settingsPath}.`,
-      )
-    } else {
-      out.push(c.dim(line + ' Long transcript retention: per-session detail is preserved.'))
-    }
-  }
-
-  out.push('')
-  const broken = report.providers.filter(r => r.status === 'error' || r.status === 'errors')
-  const empty = report.providers.filter(r => r.status === 'empty')
-  const ok = report.providers.filter(r => r.status === 'ok')
-  out.push(
-    c.dim('Bottom line: ') +
-    `${ok.length} OK, ${empty.length} with nothing found, ${broken.length} with errors.`,
-  )
-
-  return out.join('\n') + '\n'
 }
