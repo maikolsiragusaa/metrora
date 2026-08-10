@@ -1,14 +1,11 @@
 import { getLocalModelSavingsConfigHash, getPriceOverridesConfigHash } from './models.js'
 import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
 import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
+import {
+  CODEX_LEGACY_SESSION_META_AUTHORITY,
+  ensureCodexLegacySessionMetaAuthority,
+} from './providers/codex-model-provider.js'
 import { COPILOT_CHAT_JOURNAL_AUTHORITY } from './providers/copilot-chat-journal.js'
-
-const CODEX_LEGACY_SESSION_META_AUTHORITY = 'legacy-session-meta-v1'
-
-function extendAuthority(base: string | undefined, authority: string): string {
-  if (!base) return authority
-  return base.includes(authority) ? base : `${base}-${authority}`
-}
 
 /** Hashes every authority that can change a durable daily/model projection. */
 export function getDailyCacheConfigHash(): string {
@@ -17,10 +14,10 @@ export function getDailyCacheConfigHash(): string {
   const accountingHash = overridesHash
     ? `localModelSavings=${savingsHash}\u0002priceOverrides=${overridesHash}`
     : savingsHash
-  const codexCollector = extendAuthority(
-    PROVIDER_PARSE_VERSIONS['codex'],
-    CODEX_LEGACY_SESSION_META_AUTHORITY,
-  )
+  const codexCollector = ensureCodexLegacySessionMetaAuthority()
+  if (!codexCollector.includes(CODEX_LEGACY_SESSION_META_AUTHORITY)) {
+    throw new Error('Codex legacy session-meta authority was not installed')
+  }
   return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}`
     + `\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}`
     + `\u0002codexCollector=${codexCollector}`
