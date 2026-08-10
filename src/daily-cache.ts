@@ -4,6 +4,7 @@ import { dirname, join } from 'path'
 import { isSessionHydrationComplete } from './parser.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
+import { mergeTimezoneRebucketedDays } from './daily-cache-tz-reconcile.js'
 import * as core from './daily-cache-core.js'
 
 export * from './daily-cache-core.js'
@@ -132,6 +133,7 @@ export async function ensureCacheHydrated(
   aggregateDays: (projects: ProjectSummary[]) => core.DailyEntry[],
   savingsConfigHash: string = '',
   sessionComplete: () => boolean = () => true,
+  aggregateDaysInTz?: (projects: ProjectSummary[], tz: string) => core.DailyEntry[],
 ): Promise<DailyCache> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -177,10 +179,39 @@ export async function ensureCacheHydrated(
       if (backfillStart.getTime() <= yesterdayEnd.getTime()) {
         freshDays = aggregateDays(await parseSessions({ start: backfillStart, end: yesterdayEnd }))
       }
-      const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
-      const days = parseWasComplete
-        ? core.mergeDayEntries(freshDays, baseline, true)
-        : core.mergeDayEntries(baseline, freshDays, false)
+      let parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
+      let days: core.DailyEntry[]
+
+      // A timezone change is not a pricing/source change: the same physical
+      // usage can simply cross a local-midnight boundary. Re-aggregate a WIDE
+      // copy of the same parse under the cache's old timezone and subtract that
+      // evidence from carried baseline slices before the normal NEVER-LOSE
+      // merge. Without this step, a rebucketed turn can survive on its old day
+      // as carried history and also appear on its new day.
+      if (
+        parseWasComplete
+        && tzChanged
+        && cache.savingsConfigHash === savingsConfigHash
+        && cache.tzKey !== undefined
+        && aggregateDaysInTz
+      ) {
+        const wideProjects = await parseSessions({ start: backfillStart, end: now })
+        const wideParseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
+        if (wideParseWasComplete) {
+          const freshUnderOldTimezone = aggregateDaysInTz(wideProjects, cache.tzKey)
+          days = mergeTimezoneRebucketedDays(freshDays, baseline, freshUnderOldTimezone)
+        } else {
+          // The subtraction must never be built from a partial wide snapshot.
+          // Preserve the baseline as authority and leave the cache incomplete so
+          // the next run retries the migration rather than freezing a guess.
+          parseWasComplete = false
+          days = core.mergeDayEntries(baseline, freshDays, false)
+        }
+      } else {
+        days = parseWasComplete
+          ? core.mergeDayEntries(freshDays, baseline, true)
+          : core.mergeDayEntries(baseline, freshDays, false)
+      }
 
       cache = withTrust({
         version: core.DAILY_CACHE_VERSION,
