@@ -2,6 +2,9 @@ import { basename } from 'path'
 
 import { readSessionFile } from '../fs-utils.js'
 import { calculateCost } from '../models.js'
+import {
+  COPILOT_CHAT_JOURNAL_PROVIDER,
+} from '../provider-parse-authorities.js'
 import type { ParsedProviderCall, Provider, SessionParser, SessionSource } from './types.js'
 
 type JournalPathSegment = string | number
@@ -13,8 +16,6 @@ type ChatSessionSource = SessionSource & {
 type JournalRequest = Record<string, unknown>
 
 const FORBIDDEN_PATH_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
-export const COPILOT_CHAT_JOURNAL_AUTHORITY = 'current-chat-journal-v3'
-export const COPILOT_CHAT_JOURNAL_PROVIDER = `copilot-chat-journal-${COPILOT_CHAT_JOURNAL_AUTHORITY}`
 
 function isChatSessionSource(source: SessionSource): source is ChatSessionSource {
   return (source as ChatSessionSource).sourceType === 'chatsession'
@@ -366,7 +367,6 @@ export function createCopilotChatJournalProvider(provider: Provider): Provider {
     ...provider,
     name: COPILOT_CHAT_JOURNAL_PROVIDER,
     durableSources: false,
-    durableFreshWins: undefined,
     async discoverSessions(): Promise<SessionSource[]> {
       return []
     },
