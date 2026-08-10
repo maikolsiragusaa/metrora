@@ -2,9 +2,21 @@ import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 
 import { normalizeExplicitModelProvider } from '../model-provider.js'
+import { PROVIDER_PARSE_VERSIONS } from '../session-cache.js'
 import type { Provider, SessionParser, SessionSource } from './types.js'
 
 const MAX_SESSION_META_LINES = 256
+export const CODEX_LEGACY_SESSION_META_AUTHORITY = 'legacy-session-meta-v1'
+
+export function ensureCodexLegacySessionMetaAuthority(): string {
+  const current = PROVIDER_PARSE_VERSIONS['codex'] ?? ''
+  if (current.includes(CODEX_LEGACY_SESSION_META_AUTHORITY)) return current
+  const effective = current
+    ? `${current}-${CODEX_LEGACY_SESSION_META_AUTHORITY}`
+    : CODEX_LEGACY_SESSION_META_AUTHORITY
+  PROVIDER_PARSE_VERSIONS['codex'] = effective
+  return effective
+}
 
 export class CodexModelProviderContradictionError extends Error {
   constructor() {
@@ -53,12 +65,16 @@ export type CodexModelProviderReader = (sourcePath: string) => Promise<string | 
 
 /**
  * Decorate the canonical Codex provider so fresh parser output carries the
- * source-recorded model/API provider into the ordinary session cache.
+ * source-recorded model/API provider into the ordinary session cache. Installing
+ * the provider also advances the session-cache parser authority for the legacy
+ * session_meta identity admission change, so unchanged warm-cache rollouts are
+ * reparsed before daily history is rehydrated.
  */
 export function withCodexModelProvider(
   provider: Provider,
   readProvider: CodexModelProviderReader = readCodexSessionModelProvider,
 ): Provider {
+  ensureCodexLegacySessionMetaAuthority()
   return {
     ...provider,
     createSessionParser(source: SessionSource, seenKeys, dateRange): SessionParser {
