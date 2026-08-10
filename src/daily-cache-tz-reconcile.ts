@@ -28,6 +28,17 @@ function hasSliceData(slice: ProviderDaySlice): boolean {
     || num(slice.oneShotTurns) > 0
 }
 
+function hasModelData(model: ModelDayStats): boolean {
+  return model.calls > 0
+    || model.cost > 0
+    || num(model.savingsUSD) > 0
+    || model.inputTokens > 0
+    || model.outputTokens > 0
+    || num(model.reasoningTokens) > 0
+    || model.cacheReadTokens > 0
+    || model.cacheWriteTokens > 0
+}
+
 function subtractModelStats(base: ModelDayStats, sub: ModelDayStats): ModelDayStats | null {
   const calls = Math.max(0, base.calls - num(sub.calls))
   const cost = Math.max(0, base.cost - num(sub.cost))
@@ -185,6 +196,24 @@ function projectDelta(base: ProjectDayStats, reduced: ProjectDayStats | undefine
   }
 }
 
+function refreshModelSourceProviders(day: DailyEntry, modelName: string): void {
+  const aggregate = Object.hasOwn(day.models, modelName) ? day.models[modelName] : undefined
+  if (!aggregate) return
+
+  let hasSliceEvidence = false
+  const providers: string[] = []
+  for (const [provider, slice] of Object.entries(day.providers)) {
+    if (!slice.models || !Object.hasOwn(slice.models, modelName)) continue
+    hasSliceEvidence = true
+    const stats = slice.models[modelName]
+    if (stats && hasModelData(stats)) providers.push(provider)
+  }
+  if (!hasSliceEvidence) return
+
+  if (providers.length > 0) aggregate.sourceProviders = [...new Set(providers)].sort()
+  else delete aggregate.sourceProviders
+}
+
 function subtractSliceFromDay(day: DailyEntry, provider: string, sub: ProviderDaySlice): void {
   const current = Object.hasOwn(day.providers, provider) ? day.providers[provider] : undefined
   if (!current) return
@@ -212,6 +241,7 @@ function subtractSliceFromDay(day: DailyEntry, provider: string, sub: ProviderDa
     const next = subtractModelStats(day.models[name]!, removed)
     if (next) setOwn(day.models, name, next)
     else delete day.models[name]
+    refreshModelSourceProviders(day, name)
   }
 
   for (const [name, stats] of Object.entries(current.categories ?? {})) {
