@@ -24,23 +24,15 @@ const trackedFiles = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, en
   .split(/\r?\n/)
   .filter(Boolean)
 
-// Metrora-owned technical identity must not inherit the former authority.
-// Keep the exceptions exact: legal/provenance files and the two documented
-// Claude provider compatibility comments are the only places where an
-// upstream/provider reference may be retained by this boundary.
+// Metrora-owned technical identity must not inherit the former reverse-DNS
+// authority anywhere in the current tree. Legal/provenance references and the
+// documented Claude provider compatibility use different identifiers and do
+// not require an exception to this reverse-DNS boundary.
 const inheritedTechnicalAuthority = `${['org', 'agentseal'].join('.')}.`
-const allowedInheritedTechnicalAuthorityPaths = new Set([
-  'LICENSES/UPSTREAM-MIT.txt',
-  'THIRD_PARTY_NOTICES.md',
-  'app/electron/quota/claude.ts',
-  'mac/Sources/MetroraMenubar/Data/ClaudeCredentialStore.swift',
-])
-
 for (const path of trackedFiles) {
   const text = readTrackedText(path)
-  const hasInheritedAuthority = path.toLowerCase().includes(inheritedTechnicalAuthority)
-    || text?.toLowerCase().includes(inheritedTechnicalAuthority)
-  if (hasInheritedAuthority && !allowedInheritedTechnicalAuthorityPaths.has(path)) {
+  if (path.toLowerCase().includes(inheritedTechnicalAuthority)
+    || text?.toLowerCase().includes(inheritedTechnicalAuthority)) {
     findings.push({
       path,
       line: 1,
