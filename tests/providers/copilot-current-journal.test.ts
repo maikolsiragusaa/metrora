@@ -3,9 +3,9 @@ import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
+import { COPILOT_CHAT_JOURNAL_PROVIDER } from '../../src/provider-parse-authorities.js'
 import { createCopilotProvider } from '../../src/providers/copilot.js'
 import {
-  COPILOT_CHAT_JOURNAL_PROVIDER,
   createCopilotChatJournalProvider,
   replayCopilotChatJournal,
   withCopilotChatJournalAccounting,
