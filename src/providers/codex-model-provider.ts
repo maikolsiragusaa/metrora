@@ -2,21 +2,10 @@ import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 
 import { normalizeExplicitModelProvider } from '../model-provider.js'
-import { PROVIDER_PARSE_VERSIONS } from '../session-cache.js'
+import { ensureCodexLegacySessionMetaAuthority } from '../provider-parse-authorities.js'
 import type { Provider, SessionParser, SessionSource } from './types.js'
 
 const MAX_SESSION_META_LINES = 256
-export const CODEX_LEGACY_SESSION_META_AUTHORITY = 'legacy-session-meta-v1'
-
-export function ensureCodexLegacySessionMetaAuthority(): string {
-  const current = PROVIDER_PARSE_VERSIONS['codex'] ?? ''
-  if (current.includes(CODEX_LEGACY_SESSION_META_AUTHORITY)) return current
-  const effective = current
-    ? `${current}-${CODEX_LEGACY_SESSION_META_AUTHORITY}`
-    : CODEX_LEGACY_SESSION_META_AUTHORITY
-  PROVIDER_PARSE_VERSIONS['codex'] = effective
-  return effective
-}
 
 export class CodexModelProviderContradictionError extends Error {
   constructor() {
