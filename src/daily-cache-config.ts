@@ -1,11 +1,11 @@
 import { getLocalModelSavingsConfigHash, getPriceOverridesConfigHash } from './models.js'
 import { runtimeHistoricalPricingCacheKeyV1 } from './pricing/runtime-cost-assignment.js'
-import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
 import {
   CODEX_LEGACY_SESSION_META_AUTHORITY,
+  COPILOT_CHAT_JOURNAL_AUTHORITY,
   ensureCodexLegacySessionMetaAuthority,
-} from './providers/codex-model-provider.js'
-import { COPILOT_CHAT_JOURNAL_AUTHORITY } from './providers/copilot-chat-journal.js'
+} from './provider-parse-authorities.js'
+import { PROVIDER_PARSE_VERSIONS } from './session-cache.js'
 
 /** Hashes every authority that can change a durable daily/model projection. */
 export function getDailyCacheConfigHash(): string {
