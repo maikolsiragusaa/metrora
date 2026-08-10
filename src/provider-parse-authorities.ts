@@ -9,10 +9,10 @@ export const COPILOT_CLI_RESUME_AUTHORITY = 'resumed-shutdown-delta-v1'
 export const COPILOT_CLI_RESUME_PROVIDER = `copilot-cli-resume-${COPILOT_CLI_RESUME_AUTHORITY}`
 
 /**
- * Provider env reads that materially change discovery, parsing, or the account
- * queried by a provider. Metrora inherited a smaller declaration map than its
- * current provider set actually reads, so changing one of these overrides could
- * leave a warm session-cache section attached to the previous source/profile.
+ * Provider env reads that materially change discovery or parsing. Metrora
+ * inherited a smaller declaration map than its current provider set actually
+ * reads, so changing one of these overrides could leave a warm session-cache
+ * section attached to the previous source/profile.
  *
  * Keep this list Metrora-owned: names intentionally use Metrora's compatibility
  * env contract rather than upstream aliases.
@@ -33,7 +33,6 @@ export const PROVIDER_ENV_FINGERPRINT_ADDITIONS: Readonly<Record<string, readonl
   mux: ['MUX_ROOT', 'METRORA_MUX_DIR'],
   zerostack: ['ZS_DATA_DIR', 'XDG_DATA_HOME'],
   'ibm-bob': ['APPDATA'],
-  'vercel-gateway': ['AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'],
 }
 
 /**
@@ -55,6 +54,17 @@ export const COPILOT_DEFERRED_ENV_FINGERPRINTS = [
   'XDG_CONFIG_HOME',
 ] as const
 
+/**
+ * Vercel credentials also influence account identity, but are intentionally not
+ * declared here yet. `doctor` renders declared overrides, so credential-backed
+ * fingerprints must land together with collect-time redaction; adding the names
+ * alone would risk leaking a live key in diagnostic output.
+ */
+export const VERCEL_DEFERRED_SECRET_FINGERPRINTS = [
+  'AI_GATEWAY_API_KEY',
+  'VERCEL_OIDC_TOKEN',
+] as const
+
 /** Install the static provider env declarations before any cache fingerprint. */
 export function ensureProviderEnvFingerprintAuthorities(): void {
   for (const [provider, additions] of Object.entries(PROVIDER_ENV_FINGERPRINT_ADDITIONS)) {
@@ -69,8 +79,7 @@ export function ensureProviderEnvFingerprintAuthorities(): void {
 
 /**
  * Hash, never serialize, the values behind every declared provider env input.
- * Daily history must move with the same source/account identity as the session
- * cache, while credentials themselves must never land in the cache config key.
+ * Daily history must move with the same source identity as the session cache.
  */
 export function getProviderEnvConfigHash(): string {
   ensureProviderEnvFingerprintAuthorities()
