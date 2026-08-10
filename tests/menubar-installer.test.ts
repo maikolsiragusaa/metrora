@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 import {
   buildPersistentMetroraLookupPath,
   formatGitHubReleaseLookupError,
+  METRORA_MENUBAR_BUNDLE_ID,
   resolveLatestMenubarReleaseAssets,
   resolveMenubarReleaseAssets,
   resolvePersistentMetroraPathFromWhichOutput,
@@ -11,11 +15,26 @@ import {
   type ReleaseResponse,
 } from '../src/menubar-installer.js'
 
+const repositoryRoot = process.cwd()
+
 function asset(name: string) {
   return { name, browser_download_url: `https://example.test/${name}` }
 }
 
 describe('resolveMenubarReleaseAssets', () => {
+  it('uses the canonical Metrora reverse-DNS authority across bundle consumers', () => {
+    expect(METRORA_MENUBAR_BUNDLE_ID).toBe('eu.metrora.menubar')
+    for (const path of [
+      'mac/Scripts/build-local.sh',
+      'mac/Scripts/package-app.sh',
+      'src/menubar-installer.ts',
+    ]) {
+      expect(readFileSync(join(repositoryRoot, path), 'utf8')).toContain('eu.metrora.menubar')
+    }
+    expect(readFileSync(join(repositoryRoot, 'mac/Sources/MetroraMenubar/MetroraApp.swift'), 'utf8'))
+      .toContain('eu.metrora.menubar.refresh-backstop')
+  })
+
   it('ignores dev zips and pairs the checksum with the versioned zip', () => {
     const release: ReleaseResponse = {
       tag_name: 'mac-v0.9.8',

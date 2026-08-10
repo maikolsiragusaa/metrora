@@ -87,7 +87,7 @@ describe('Codex menubar keychain source', () => {
     const init = (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1]
     expect(init.headers).toMatchObject({ Authorization: 'Bearer eyJmenubar.token.sig', 'ChatGPT-Account-Id': 'acct_mb' })
     expect(writeFile).not.toHaveBeenCalled()
-    expect(keychain).toHaveBeenCalledWith('org.agentseal.metrora.menubar.codex.oauth.v1')
+    expect(keychain).toHaveBeenCalledWith('eu.metrora.menubar.codex.oauth.v1')
   })
 
   it('re-reads the keychain once on a 401 and adopts a rotated token, never a refresh POST', async () => {

@@ -25,7 +25,7 @@
 set -euo pipefail
 
 VERSION="${1:-dev}"
-BUNDLE_ID="org.agentseal.metrora-menubar"
+BUNDLE_ID="eu.metrora.menubar"
 EXE="MetroraMenubar"
 MIN_MACOS="14.0"
 

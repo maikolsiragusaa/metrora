@@ -24,6 +24,31 @@ const trackedFiles = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, en
   .split(/\r?\n/)
   .filter(Boolean)
 
+// Metrora-owned technical identity must not inherit the former authority.
+// Keep the exceptions exact: legal/provenance files and the two documented
+// Claude provider compatibility comments are the only places where an
+// upstream/provider reference may be retained by this boundary.
+const inheritedTechnicalAuthority = `${['org', 'agentseal'].join('.')}.`
+const allowedInheritedTechnicalAuthorityPaths = new Set([
+  'LICENSES/UPSTREAM-MIT.txt',
+  'THIRD_PARTY_NOTICES.md',
+  'app/electron/quota/claude.ts',
+  'mac/Sources/MetroraMenubar/Data/ClaudeCredentialStore.swift',
+])
+
+for (const path of trackedFiles) {
+  const text = readTrackedText(path)
+  const hasInheritedAuthority = path.toLowerCase().includes(inheritedTechnicalAuthority)
+    || text?.toLowerCase().includes(inheritedTechnicalAuthority)
+  if (hasInheritedAuthority && !allowedInheritedTechnicalAuthorityPaths.has(path)) {
+    findings.push({
+      path,
+      line: 1,
+      message: 'Metrora-owned technical identity must not use the inherited reverse-DNS authority',
+    })
+  }
+}
+
 // Assemble the retired marker without spelling it in the checker: the current
 // tree invariant is that the marker itself is absent everywhere.
 const retiredNamespace = String.fromCharCode(113, 111, 118, 114, 105, 111, 110)

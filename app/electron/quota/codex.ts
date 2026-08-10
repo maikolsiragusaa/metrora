@@ -13,7 +13,7 @@ const EIGHT_DAYS = 8 * 24 * 60 * 60_000
 // `CredentialRecord` JSON blob (accessToken/refreshToken/idToken/accountId/…),
 // account "default". Same brand, same machine, already consented — preferred
 // over any OpenAI-owned storage.
-const MENUBAR_KEYCHAIN_SERVICE = 'org.agentseal.metrora.menubar.codex.oauth.v1'
+const MENUBAR_KEYCHAIN_SERVICE = 'eu.metrora.menubar.codex.oauth.v1'
 
 type AuthDoc = Record<string, any> & {
   auth_mode?: string

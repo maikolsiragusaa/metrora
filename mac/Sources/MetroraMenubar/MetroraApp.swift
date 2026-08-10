@@ -699,7 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
 
     private func startNapBackstop() {
         let scheduler = NSBackgroundActivityScheduler(
-            identifier: "org.agentseal.metrora-menubar.refresh-backstop")
+            identifier: "eu.metrora.menubar.refresh-backstop")
         scheduler.repeats = true
         scheduler.interval = 180
         scheduler.tolerance = 60

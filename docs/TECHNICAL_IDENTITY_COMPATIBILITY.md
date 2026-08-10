@@ -8,6 +8,8 @@ release metadata and generated artifacts use Metrora names exclusively.
 - Product and desktop application: `Metrora`
 - Website: `metrora.eu`
 - Repository: `maikolsiragusaa/metrora`
+- First-party reverse-DNS authority: `eu.metrora` (shared by the desktop,
+  Store/AppX and Android package identities)
 - CLI command: `metrora`
 - Desktop bridge: `window.metrora`
 - IPC prefix: `metrora:`
@@ -44,14 +46,14 @@ keys are not adopted or deleted automatically.
 ## Historical Workspace and evidence boundary
 
 `src/local-state/legacy-identity-compatibility.ts` and its consumers retain a
-separate read/verification boundary for pre-release Workspace and signed
-evidence records. This code is not a current product alias: it must not emit
-retired identity, rewrite signed or hashed records, or change the canonical
-analytics path.
+separate read/verification boundary for historical pre-release Workspace and
+signed evidence state. Such state may remain verifiable read-only. Signed or
+hashed historical state is not rewritten automatically. This code is not a
+current product alias: it must not emit retired identity, rewrite records, or
+change the canonical analytics path.
 
-Candidate #694 Workspace/evidence artifacts are historical development state
-and are not transformed by this cleanup. Retiring that state or introducing a
-new clean-start/migration procedure requires a separately reviewed change.
+Retiring that state or introducing a new clean-start/migration procedure
+requires a separately reviewed migration or retirement decision.
 
 ## Removal criteria
 
