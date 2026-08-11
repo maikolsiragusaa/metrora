@@ -25,8 +25,20 @@ function extract(source, startNeedle, endNeedle, label) {
   }
 }
 
-// parser.ts: move the two R2 accounting authorities into focused modules.
+// parser.ts: move R2 accounting authorities and stable project-path helpers into focused modules.
 let parser = await read('src/parser.ts')
+
+const projectPaths = extract(
+  parser,
+  'function unsanitizePath(',
+  '\n\n\n// Returns true for sessions whose canonical project key must NOT be derived',
+  'project path helpers',
+)
+parser = projectPaths.source
+await write(
+  'src/project-path-utils.ts',
+  `${projectPaths.block.trim().replace(/^function /gm, 'export function ')}\n`,
+)
 
 const claude = extract(
   parser,
@@ -56,7 +68,7 @@ await write(
 parser = replaceOnce(
   parser,
   "import { isSnapshotReadMode } from './read-lifecycle.js'\n",
-  "import { isSnapshotReadMode } from './read-lifecycle.js'\nimport { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'\nimport { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'\n",
+  "import { isSnapshotReadMode } from './read-lifecycle.js'\nimport { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'\nimport { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'\nimport { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'\n",
   'parser helper import anchor',
 )
 parser = replaceOnce(
@@ -168,6 +180,7 @@ for (const path of [
   'src/usage-aggregator.ts',
   'src/claude-native-reconciliation.ts',
   'src/date-range-projection.ts',
+  'src/project-path-utils.ts',
   'src/daily-cache-types.ts',
 ]) {
   const lines = (await read(path)).split(/\r?\n/).length
