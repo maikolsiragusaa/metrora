@@ -71,12 +71,14 @@ function ensureParent(root: object, path: readonly JournalPathSegment[]): object
   for (let index = 0; index < path.length - 1; index++) {
     const segment = path[index]!
     const nextSegment = path[index + 1]!
-    let child = getValue(current, segment)
-    if (!isContainer(child)) {
-      child = containerFor(nextSegment)
-      setValue(current, segment, child)
+    const child = getValue(current, segment)
+    if (isContainer(child)) {
+      current = child
+      continue
     }
-    current = child
+    const created = containerFor(nextSegment)
+    setValue(current, segment, created)
+    current = created
   }
   return current
 }
