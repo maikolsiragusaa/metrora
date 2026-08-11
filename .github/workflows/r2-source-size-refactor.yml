@@ -25,7 +25,7 @@ jobs:
           node-version: '22.13.0'
           cache: npm
 
-      - name: Apply behavior-preserving extraction
+      - name: Apply behavior-preserving extraction v2
         run: node scripts/r2-source-size-refactor.mjs
 
       - name: Verify source-size ratchet
@@ -58,7 +58,7 @@ jobs:
         run: |
           git diff --check
           git rm .github/workflows/r2-source-size-refactor.yml scripts/r2-source-size-refactor.mjs
-          allowed='^(src/(claude-native-reconciliation|date-range-projection|daily-cache-types|daily-cache-core|parser|session-cache|usage-aggregator)\.ts|src/providers/(antigravity|codex)\.ts)$'
+          allowed='^(src/(claude-native-reconciliation|date-range-projection|project-path-utils|daily-cache-types|daily-cache-core|parser|session-cache|usage-aggregator)\.ts|src/providers/(antigravity|codex)\.ts)$'
           unexpected="$(git diff --name-only ef18932c14462efc3df1ee90aa6058f20917933c -- | grep -Ev "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo "Unexpected final paths:"
