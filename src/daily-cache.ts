@@ -148,6 +148,15 @@ export async function ensureCacheHydrated(
     const todayStr = core.toDateString(now)
     const tzKey = core.currentTzKey()
     const tzChanged = cache.tzKey !== undefined && cache.tzKey !== tzKey
+    const accountingChanged = cache.savingsConfigHash !== savingsConfigHash
+
+    // A timezone rebucket can be reconciled losslessly only when the baseline
+    // and the fresh projection share the same accounting authority. If both
+    // authorities change in one run, the old-day cost cannot be subtracted
+    // from the new-day cost without inventing a cross-authority monetary
+    // delta. Keep the old cache untouched and require the caller to retry
+    // after the two invalidations have been serialized.
+    if (tzChanged && accountingChanged) return cache
 
     // On ordinary runs an accidental/current-day cache row is discarded because
     // live parsing owns today. During a timezone migration, however, a day that
@@ -180,7 +189,7 @@ export async function ensureCacheHydrated(
       }
     }
 
-    if (cache.savingsConfigHash !== savingsConfigHash || cache.complete !== true || tzChanged) {
+    if (accountingChanged || cache.complete !== true || tzChanged) {
       const baseline = cache.days
       const priorWatermark = cache.lastComputedDate
       const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - core.BACKFILL_DAYS)
