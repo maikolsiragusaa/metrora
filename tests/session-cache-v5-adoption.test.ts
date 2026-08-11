@@ -185,12 +185,12 @@ describe('v5 -> v6 cache adoption of expired PR sessions', () => {
   })
 })
 
-function expiredPrEntry(cwd: string, name: string, prUrl: string): Record<string, unknown> {
+function expiredPrEntry(cwd: string, name: string, prUrl: string, deduplicationKey = 'kk'): Record<string, unknown> {
   return {
     fingerprint: { dev: 1, ino: 2, mtimeMs: 3, sizeBytes: 4 },
     mcpInventory: [], canonicalCwd: cwd, canonicalProjectName: name,
     prLinks: [prUrl],
-    turns: [{ timestamp: '2026-07-20T10:00:00.000Z', sessionId: 'gone', userMessage: 'shipped', calls: [cachedCall('kk', 40)] }],
+    turns: [{ timestamp: '2026-07-20T10:00:00.000Z', sessionId: 'gone', userMessage: 'shipped', calls: [cachedCall(deduplicationKey, 40)] }],
   }
 }
 
@@ -221,11 +221,11 @@ describe('newest-prior cache adoption (v6 then v5)', () => {
     const v5Path = join(configDir, 'projects', 'in5', 'in5.jsonl')
     await writeFile(join(cacheDir, 'session-cache.v6.json'), JSON.stringify({
       version: 6, complete: true,
-      providers: { claude: { envFingerprint: 'v6', files: { [v6Path]: expiredPrEntry('/in6', 'in6', 'https://github.com/o/r/pull/60') } } },
+      providers: { claude: { envFingerprint: 'v6', files: { [v6Path]: expiredPrEntry('/in6', 'in6', 'https://github.com/o/r/pull/60', 'kk-v6') } } },
     }))
     await writeFile(join(cacheDir, 'session-cache.v5.json'), JSON.stringify({
       version: 5, complete: true,
-      providers: { claude: { envFingerprint: 'v5', files: { [v5Path]: expiredPrEntry('/in5', 'in5', 'https://github.com/o/r/pull/50') } } },
+      providers: { claude: { envFingerprint: 'v5', files: { [v5Path]: expiredPrEntry('/in5', 'in5', 'https://github.com/o/r/pull/50', 'kk-v5') } } },
     }))
 
     const range = { start: new Date('2026-07-20T00:00:00Z'), end: new Date('2026-07-20T23:59:59Z') }
@@ -233,6 +233,46 @@ describe('newest-prior cache adoption (v6 then v5)', () => {
     // A sparse newer file must NOT mask older-only orphans: BOTH survive.
     expect(urls).toContain('https://github.com/o/r/pull/60') // from v6
     expect(urls).toContain('https://github.com/o/r/pull/50') // from v5, not masked
+  })
+
+  it('deduplicates the same legacy native identity across different source paths', async () => {
+    await loadPricing()
+    const v6Path = join(configDir, 'projects', 'same-native-v6', 'same-native-v6.jsonl')
+    const v5Path = join(configDir, 'projects', 'same-native-v5', 'same-native-v5.jsonl')
+    const sharedNativeKey = 'legacy-native-message'
+    await writeFile(join(cacheDir, 'session-cache.v6.json'), JSON.stringify({
+      version: 6, complete: true,
+      providers: { claude: { envFingerprint: 'v6', files: { [v6Path]: expiredPrEntry('/same-native-v6', 'same-native-v6', 'https://github.com/o/r/pull/60', sharedNativeKey) } } },
+    }))
+    await writeFile(join(cacheDir, 'session-cache.v5.json'), JSON.stringify({
+      version: 5, complete: true,
+      providers: { claude: { envFingerprint: 'v5', files: { [v5Path]: expiredPrEntry('/same-native-v5', 'same-native-v5', 'https://github.com/o/r/pull/50', sharedNativeKey) } } },
+    }))
+
+    const range = { start: new Date('2026-07-20T00:00:00Z'), end: new Date('2026-07-20T23:59:59Z') }
+    const urls = aggregateByPr(await parseAllSessions(range, 'claude')).map(r => r.url)
+    expect(urls).toHaveLength(1)
+    expect(['https://github.com/o/r/pull/60', 'https://github.com/o/r/pull/50']).toContain(urls[0])
+  })
+
+  it('keeps separate synthetic legacy orphans when their key is not authoritative', async () => {
+    await loadPricing()
+    const v6Path = join(configDir, 'projects', 'synthetic-v6', 'synthetic-v6.jsonl')
+    const v5Path = join(configDir, 'projects', 'synthetic-v5', 'synthetic-v5.jsonl')
+    const syntheticKey = 'claude:2026-07-20T10:00:00.000Z'
+    await writeFile(join(cacheDir, 'session-cache.v6.json'), JSON.stringify({
+      version: 6, complete: true,
+      providers: { claude: { envFingerprint: 'v6', files: { [v6Path]: expiredPrEntry('/synthetic-v6', 'synthetic-v6', 'https://github.com/o/r/pull/60', syntheticKey) } } },
+    }))
+    await writeFile(join(cacheDir, 'session-cache.v5.json'), JSON.stringify({
+      version: 5, complete: true,
+      providers: { claude: { envFingerprint: 'v5', files: { [v5Path]: expiredPrEntry('/synthetic-v5', 'synthetic-v5', 'https://github.com/o/r/pull/50', syntheticKey) } } },
+    }))
+
+    const range = { start: new Date('2026-07-20T00:00:00Z'), end: new Date('2026-07-20T23:59:59Z') }
+    const urls = aggregateByPr(await parseAllSessions(range, 'claude')).map(r => r.url)
+    expect(urls).toContain('https://github.com/o/r/pull/60')
+    expect(urls).toContain('https://github.com/o/r/pull/50')
   })
 
   it('a newer version wins per source path when both hold the same path', async () => {
