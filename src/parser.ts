@@ -1980,17 +1980,13 @@ async function parseSessionFile(
   const dedupedEntries = dedupeStreamingMessageIds(entries)
   let turns = groupIntoTurns(dedupedEntries, seenMsgIds)
   if (dateRange) {
-    // Bucket a turn by the timestamp of its first assistant call (when the cost was
-    // actually incurred). Filtering entries directly produced orphan assistant calls
-    // when a user message sat in one day and the response landed in another -- those
-    // got pushed as turns with empty timestamps, which some code paths counted and
-    // others dropped, producing inconsistent Today totals.
-    turns = turns.filter(turn => {
-      if (turn.assistantCalls.length === 0) return false
-      const firstCallTs = turn.assistantCalls[0]!.timestamp
-      if (!firstCallTs) return false
-      const ts = new Date(firstCallTs)
-      return ts >= dateRange.start && ts <= dateRange.end
+    // Accounting membership is call-level even when turn/day attribution remains
+    // turn-anchored. A turn may span either range boundary; retaining the whole
+    // turn would publish usage outside an exact requested cutoff, while rejecting
+    // it by its first call would lose a later call that enters the range.
+    turns = turns.flatMap(turn => {
+      const sliced = sliceParsedTurnToDateRange(turn, dateRange)
+      return sliced ? [sliced] : []
     })
     if (turns.length === 0) return null
   }
@@ -2342,17 +2338,18 @@ async function scanProjectDirs(
     let carriedPrRefs: string[] | undefined
     let prRefsAtRangeStart: string[] | undefined
     let frozePrRefs = !dateRange
-    let classifiedTurns = reconciledTurns.map(turn => {
+    const classifiedTurns = reconciledTurns.flatMap(turn => {
       if (turn.gitBranch) carriedBranch = turn.gitBranch
       if (dateRange && !frozePrRefs) {
-        const firstTs = turn.calls[0]?.timestamp
-        if (firstTs && new Date(firstTs) >= dateRange.start) {
+        const firstInRange = turn.calls.find(call => callIsInDateRange(call, dateRange))
+        if (firstInRange) {
           prRefsAtRangeStart = carriedPrRefs
           frozePrRefs = true
         }
       }
       if (turn.prRefs?.length) carriedPrRefs = turn.prRefs
-      return cachedTurnToClassified(turn, carriedBranch)
+      const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
+      return projectedTurn ? [cachedTurnToClassified(projectedTurn, carriedBranch)] : []
     })
     // Captured from the FULL turn list, before the date slice below can drop the
     // turn a branch was first seen on. Lets the by-branch report keep this
@@ -2364,16 +2361,6 @@ async function scanProjectDirs(
     // right PR even when its launching turn is later sliced out of range. Only for
     // sessions that both spawned subagents and referenced a PR.
     const spawnPrSets = cachedFile.prLinks?.length ? buildSpawnPrSets(reconciledTurns) : {}
-
-    if (dateRange) {
-      classifiedTurns = classifiedTurns.filter(turn => {
-        if (turn.assistantCalls.length === 0) return false
-        const firstCallTs = turn.assistantCalls[0]!.timestamp
-        if (!firstCallTs) return false
-        const ts = new Date(firstCallTs)
-        return ts >= dateRange.start && ts <= dateRange.end
-      })
-    }
 
     // A PR-linked parent that spawned subagents is kept even when its OWN turns all
     // fall out of range, as a 0-cost fold ANCHOR: an in-range child (an async agent
@@ -2865,6 +2852,31 @@ function cachedTurnToClassified(turn: CachedTurn, resolvedBranch?: string): Clas
   return classifyTurn(parsed)
 }
 
+function callIsInDateRange(call: Pick<ParsedApiCall, 'timestamp'>, dateRange: DateRange): boolean {
+  const timestampMs = Date.parse(call.timestamp)
+  if (!Number.isFinite(timestampMs)) return false
+  return timestampMs >= dateRange.start.getTime() && timestampMs <= dateRange.end.getTime()
+}
+
+function sliceParsedTurnToDateRange(turn: ParsedTurn, dateRange: DateRange): ParsedTurn | null {
+  const assistantCalls = turn.assistantCalls.filter(call => callIsInDateRange(call, dateRange))
+  if (assistantCalls.length === 0) return null
+  if (assistantCalls.length === turn.assistantCalls.length) return turn
+  return { ...turn, assistantCalls }
+}
+
+function sliceClassifiedTurnToDateRange(turn: ClassifiedTurn, dateRange: DateRange): ClassifiedTurn | null {
+  const sliced = sliceParsedTurnToDateRange(turn, dateRange)
+  return sliced ? classifyTurn(sliced) : null
+}
+
+function sliceCachedTurnToDateRange(turn: CachedTurn, dateRange: DateRange): CachedTurn | null {
+  const calls = turn.calls.filter(call => callIsInDateRange(call, dateRange))
+  if (calls.length === 0) return null
+  if (calls.length === turn.calls.length) return turn
+  return { ...turn, calls }
+}
+
 // ── Cache-Aware Parsing Helpers ────────────────────────────────────────
 
 // Merge the calls of the last cached turn with the calls parsed from the
@@ -3264,29 +3276,25 @@ async function parseProviderSources(
     if (!cachedFile) continue
 
     for (const turn of cachedFile.turns) {
-      const hasDup = turn.calls.some(c => seenKeys.has(c.deduplicationKey))
+      const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
+      if (!projectedTurn) continue
+
+      const hasDup = projectedTurn.calls.some(c => seenKeys.has(c.deduplicationKey))
       if (hasDup) continue
 
-      for (const c of turn.calls) seenKeys.add(c.deduplicationKey)
+      for (const c of projectedTurn.calls) seenKeys.add(c.deduplicationKey)
 
-      if (dateRange) {
-        const callTs = turn.calls[0]?.timestamp
-        if (!callTs) continue
-        const ts = new Date(callTs)
-        if (ts < dateRange.start || ts > dateRange.end) continue
-      }
-
-      const classified = cachedTurnToClassified(turn)
-      const project = turn.calls[0]?.project ?? source.project
+      const classified = cachedTurnToClassified(projectedTurn)
+      const project = projectedTurn.calls[0]?.project ?? source.project
       const key = `${providerName}:${turn.sessionId}:${project}`
 
       const existing = sessionMap.get(key)
       if (existing) {
         existing.turns.push(classified)
-        if (!existing.projectPath && turn.calls[0]?.projectPath) {
-          existing.projectPath = turn.calls[0]!.projectPath
+        if (!existing.projectPath && projectedTurn.calls[0]?.projectPath) {
+          existing.projectPath = projectedTurn.calls[0]!.projectPath
         }
-        if (!existing.workingDirectory && turn.calls[0]?.workingDirectory) existing.workingDirectory = turn.calls[0].workingDirectory
+        if (!existing.workingDirectory && projectedTurn.calls[0]?.workingDirectory) existing.workingDirectory = projectedTurn.calls[0].workingDirectory
         if (cachedFile.prLinks?.length) {
           const links = (existing.prLinks ??= new Set())
           for (const link of cachedFile.prLinks) links.add(link)
@@ -3295,8 +3303,8 @@ async function parseProviderSources(
       } else {
         sessionMap.set(key, {
           project,
-          projectPath: turn.calls[0]?.projectPath,
-          workingDirectory: turn.calls[0]?.workingDirectory,
+          projectPath: projectedTurn.calls[0]?.projectPath,
+          workingDirectory: projectedTurn.calls[0]?.workingDirectory,
           turns: [classified],
           ...(cachedFile.prLinks?.length ? { prLinks: new Set(cachedFile.prLinks) } : {}),
           ...(cachedFile.title ? { title: cachedFile.title } : {}),
@@ -3313,30 +3321,26 @@ async function parseProviderSources(
       if (allDiscoveredFiles.has(cachedPath)) continue  // already counted above
 
       for (const turn of cachedFile.turns) {
-        const hasDup = turn.calls.some(c => seenKeys.has(c.deduplicationKey))
+        const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
+        if (!projectedTurn) continue
+
+        const hasDup = projectedTurn.calls.some(c => seenKeys.has(c.deduplicationKey))
         if (hasDup) continue
 
-        for (const c of turn.calls) seenKeys.add(c.deduplicationKey)
+        for (const c of projectedTurn.calls) seenKeys.add(c.deduplicationKey)
 
-        if (dateRange) {
-          const callTs = turn.calls[0]?.timestamp
-          if (!callTs) continue
-          const ts = new Date(callTs)
-          if (ts < dateRange.start || ts > dateRange.end) continue
-        }
-
-        const classified = cachedTurnToClassified(turn)
-        const project = turn.calls[0]?.project ?? providerName
+        const classified = cachedTurnToClassified(projectedTurn)
+        const project = projectedTurn.calls[0]?.project ?? providerName
         const key = `${providerName}:${turn.sessionId}:${project}`
 
         const existingEntry = sessionMap.get(key)
         if (existingEntry) {
           existingEntry.turns.push(classified)
-          if (!existingEntry.projectPath && turn.calls[0]?.projectPath) {
-            existingEntry.projectPath = turn.calls[0]!.projectPath
+          if (!existingEntry.projectPath && projectedTurn.calls[0]?.projectPath) {
+            existingEntry.projectPath = projectedTurn.calls[0]!.projectPath
           }
         } else {
-          sessionMap.set(key, { project, projectPath: turn.calls[0]?.projectPath, workingDirectory: turn.calls[0]?.workingDirectory, turns: [classified] })
+          sessionMap.set(key, { project, projectPath: projectedTurn.calls[0]?.projectPath, workingDirectory: projectedTurn.calls[0]?.workingDirectory, turns: [classified] })
         }
       }
     }
@@ -3449,14 +3453,6 @@ export function filterProjectsByName(
     })
   }
   return result
-}
-
-function turnIsInDateRange(turn: ClassifiedTurn, dateRange: DateRange): boolean {
-  if (turn.assistantCalls.length === 0) return false
-  const firstCallTs = turn.assistantCalls[0]!.timestamp
-  if (!firstCallTs) return false
-  const ts = new Date(firstCallTs)
-  return ts >= dateRange.start && ts <= dateRange.end
 }
 
 function turnDayString(turn: ClassifiedTurn): string | null {
@@ -3796,7 +3792,10 @@ export function filterProjectsByDateRange(projects: ProjectSummary[], dateRange:
     const anchors: SessionSummary[] = [...(project.subagentAnchors ?? [])]
     const survivingIdentities = new Set<string>()
     for (const session of project.sessions) {
-      const turns = session.turns.filter(turn => turnIsInDateRange(turn, dateRange))
+      const turns = session.turns.flatMap(turn => {
+        const sliced = sliceClassifiedTurnToDateRange(turn, dateRange)
+        return sliced ? [sliced] : []
+      })
       if (turns.length === 0) {
         if (isSpawnParent(session)) anchors.push(session)
         continue
