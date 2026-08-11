@@ -1,0 +1,77 @@
+name: R2 source-size refactor helper
+
+on:
+  push:
+    branches:
+      - refactor/r2-source-size-ratchet
+    paths:
+      - '.github/workflows/r2-source-size-refactor.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refactor/r2-source-size-ratchet
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Apply behavior-preserving extraction
+        run: node scripts/r2-source-size-refactor.mjs
+
+      - name: Verify source-size ratchet
+        env:
+          SOURCE_SIZE_BASE_REF: c8e5a13db55e43104a41667eab48242616819312
+        run: node scripts/check-source-size-ratchet.mjs
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Targeted R2 regressions
+        run: >-
+          npx vitest run
+          tests/parser.test.ts
+          tests/r2-claude-native-identity-reconciliation.test.ts
+          tests/r2-range-boundary.test.ts
+          tests/r2-final-audit-remediation.test.ts
+          tests/session-cache-v5-adoption.test.ts
+          tests/daily-cache-tz-reconcile.test.ts
+          tests/daily-cache-tz-provenance.test.ts
+          tests/providers/antigravity.test.ts
+          tests/providers/codex-legacy-session-meta.test.ts
+          tests/provider-env-authorities.test.ts
+
+      - name: Verify final diff and remove helper
+        shell: bash
+        run: |
+          git diff --check
+          git rm .github/workflows/r2-source-size-refactor.yml scripts/r2-source-size-refactor.mjs
+          allowed='^(src/(claude-native-reconciliation|date-range-projection|daily-cache-types|daily-cache-core|parser|session-cache|usage-aggregator)\.ts|src/providers/(antigravity|codex)\.ts)$'
+          unexpected="$(git diff --name-only ef18932c14462efc3df1ee90aa6058f20917933c -- | grep -Ev "$allowed" || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Unexpected final paths:"
+            echo "$unexpected"
+            exit 1
+          fi
+          git diff --check ef18932c14462efc3df1ee90aa6058f20917933c --
+
+      - name: Commit and push verified refactor
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor: extract R2 accounting authorities [skip ci]'
+          git push origin HEAD:refactor/r2-source-size-ratchet
