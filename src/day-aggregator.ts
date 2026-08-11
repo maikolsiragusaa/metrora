@@ -55,6 +55,27 @@ export function dateKey(iso: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** Bucket an ISO timestamp under an explicit IANA timezone. */
+export function dateKeyInTz(iso: string, tz: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return dateKey(iso)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  let year = ''
+  let month = ''
+  let day = ''
+  for (const part of parts) {
+    if (part.type === 'year') year = part.value
+    else if (part.type === 'month') month = part.value
+    else if (part.type === 'day') day = part.value
+  }
+  return year && month && day ? `${year}-${month}-${day}` : dateKey(iso)
+}
+
 function emptySlice(): ProviderDaySlice {
   return {
     calls: 0, cost: 0, savingsUSD: 0,
@@ -63,7 +84,10 @@ function emptySlice(): ProviderDaySlice {
   }
 }
 
-export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntry[] {
+export function aggregateProjectsIntoDays(
+  projects: ProjectSummary[],
+  dateKeyFn: (iso: string) => string = dateKey,
+): DailyEntry[] {
   const byDate = new Map<string, DailyEntry>()
   const ensure = (date: string): DailyEntry => {
     let d = byDate.get(date)
@@ -90,7 +114,7 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
 
   for (const project of projects) {
     for (const session of project.sessions) {
-      const sessionDate = dateKey(session.firstTimestamp)
+      const sessionDate = dateKeyFn(session.firstTimestamp)
       const sessionDay = ensure(sessionDate)
       sessionDay.sessions += 1
       ensureProject(sessionDay, session.project, project.projectPath).sessions += 1
@@ -112,7 +136,7 @@ export function aggregateProjectsIntoDays(projects: ProjectSummary[]): DailyEntr
         // bucketed per-call by each call's own timestamp, so a midnight-
         // straddling turn split across two days and history.daily / the provider
         // breakdown never reconciled to current.cost (a constant offset).
-        const turnDate = dateKey(turn.timestamp || turn.assistantCalls[0]!.timestamp)
+        const turnDate = dateKeyFn(turn.timestamp || turn.assistantCalls[0]!.timestamp)
         const turnDay = ensure(turnDate)
 
         const editTurns = turn.hasEdits ? 1 : 0

@@ -6,6 +6,14 @@ import { codebuff } from './codebuff.js'
 import { codex } from './codex.js'
 import { withCodexModelProvider } from './codex-model-provider.js'
 import { copilot } from './copilot.js'
+import {
+  createCopilotChatJournalProvider,
+  withCopilotChatJournalAccounting,
+} from './copilot-chat-journal.js'
+import {
+  createCopilotCliResumeProvider,
+  withCopilotCliResumeAccounting,
+} from './copilot-cli-resume.js'
 import { droid } from './droid.js'
 import { devin } from './devin.js'
 import { gemini } from './gemini.js'
@@ -26,7 +34,14 @@ import { quickdesk } from './quickdesk.js'
 import { rooCode } from './roo-code.js'
 import { zerostack } from './zerostack.js'
 import { grok } from './grok.js'
+import { ensureProviderEnvFingerprintAuthorities } from '../provider-parse-authorities.js'
 import type { Provider, SessionSource } from './types.js'
+
+// Install deterministic source/profile env inputs before parser code computes a
+// session-cache fingerprint. The installer is idempotent and intentionally does
+// not declare Copilot's provider-wide overrides until durable present-path
+// carry-forward can preserve pruned OTel history safely.
+ensureProviderEnvFingerprintAuthorities()
 
 let antigravityProvider: Provider | null = null
 let antigravityLoadAttempted = false
@@ -192,15 +207,21 @@ async function loadZed(): Promise<Provider | null> {
   }
 }
 
-const coreProviders: Provider[] = [claude, cline, clineCli, codewhale, codebuff, withCodexModelProvider(codex), copilot, devin, droid, gemini, hermes, ibmBob, kiloCode, kiro, kimi, kimicode, lingtaiTui, mistralVibe, mux, openclaw, openDesign, pi, omp, qwen, quickdesk, rooCode, zerostack, grok]
+const copilotWithCliResume = withCopilotCliResumeAccounting(copilot)
+const copilotWithChatJournal = withCopilotChatJournalAccounting(copilotWithCliResume)
+const internalProviders: Provider[] = [
+  createCopilotChatJournalProvider(copilot),
+  createCopilotCliResumeProvider(copilot),
+]
+const coreProviders: Provider[] = [claude, cline, clineCli, codewhale, codebuff, withCodexModelProvider(codex), copilotWithChatJournal, devin, droid, gemini, hermes, ibmBob, kiloCode, kiro, kimi, kimicode, lingtaiTui, mistralVibe, mux, openclaw, openDesign, pi, omp, qwen, quickdesk, rooCode, zerostack, grok]
 
 // Lazily loaded providers, listed by name so --provider validation works even
 // when an optional module fails to load. Must stay in sync with getAllProviders.
 const lazyProviderNames = ['antigravity', 'forge', 'goose', 'cursor', 'opencode', 'cursor-agent', 'crush', 'warp', 'vercel-gateway', 'zcode', 'zed']
 
 // Canonical set of every provider name (core + lazy), used to validate the
-// --provider CLI flag. Computed lazily so importing this module never depends on
-// every provider object being defined at load time (e.g. under test mocks).
+// --provider CLI flag. Internal source-parser namespaces are deliberately
+// excluded: discovery remains exposed as the canonical provider (`copilot`).
 let allProviderNamesCache: string[] | undefined
 export function allProviderNames(): readonly string[] {
   allProviderNamesCache ??= [
@@ -316,4 +337,5 @@ export async function getProvider(name: string): Promise<Provider | undefined> {
     return z ?? undefined
   }
   return coreProviders.find(p => p.name === name)
+    ?? internalProviders.find(p => p.name === name)
 }

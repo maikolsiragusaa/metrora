@@ -77,6 +77,7 @@ type CodexEntry = {
     cwd?: string
     model_provider?: string
     originator?: string
+    id?: string
     session_id?: string
     forked_from_id?: string
     model?: string
@@ -158,12 +159,17 @@ async function isValidCodexSession(filePath: string): Promise<{ valid: boolean; 
   if (!entry) return { valid: false }
   const payload: unknown = entry.payload
   // Admission is structural and remains confined to Codex-owned roots plus
-  // rollout filename/layout rules. `originator` is untrusted metadata:
-  // third-party app servers may emit valid Codex rollouts without a
-  // Codex-branded value, so branding alone must never decide admission.
+  // rollout filename/layout rules. Legacy Codex session_meta used `payload.id`
+  // before the current `payload.session_id`; both are native session identities.
+  // `originator` is untrusted metadata: third-party app servers may emit valid
+  // Codex rollouts without a Codex-branded value, so branding alone must never
+  // decide admission.
   const valid = entry.type === 'session_meta'
     && isPlainObject(payload)
-    && nonEmptyString(payload['session_id']) !== undefined
+    && (
+      nonEmptyString(payload['session_id']) !== undefined
+      || nonEmptyString(payload['id']) !== undefined
+    )
   return { valid, meta: valid ? entry : undefined }
 }
 
@@ -425,6 +431,7 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
       cwd: getRawJsonStringField(pHead, 'cwd'),
       model_provider: getRawJsonStringField(pHead, 'model_provider'),
       originator: getRawJsonStringField(pHead, 'originator'),
+      id: getRawJsonStringField(pHead, 'id'),
       session_id: getRawJsonStringField(pHead, 'session_id'),
       forked_from_id: getRawJsonStringField(pHead, 'forked_from_id'),
       model: getRawJsonStringField(pHead, 'model'),
@@ -623,7 +630,9 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (!entry) continue
 
         if (entry.type === 'session_meta') {
-          sessionId = nonEmptyString(entry.payload?.session_id) ?? basename(source.path, '.jsonl')
+          sessionId = nonEmptyString(entry.payload?.session_id)
+            ?? nonEmptyString(entry.payload?.id)
+            ?? basename(source.path, '.jsonl')
           sessionCwd = nonEmptyString(entry.payload?.cwd) ?? sessionCwd
           sessionTimestamp = finiteTimestamp(entry.timestamp) ?? sessionTimestamp
           forkedFromId = nonEmptyString(entry.payload?.forked_from_id) ?? ''

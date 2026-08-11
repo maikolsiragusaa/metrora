@@ -1049,6 +1049,7 @@ export function compactEntry(raw: JournalEntry): JournalEntry {
     usage: compactUsage,
     content: compactContent,
     ...(msg.id ? { id: msg.id } : {}),
+    ...(msg.stop_reason ? { stop_reason: msg.stop_reason } : {}),
   }
 
   return entry
@@ -1417,6 +1418,11 @@ export function parseApiCall(entry: JournalEntry, toolResultMeta?: Map<string, T
     timestamp: entry.timestamp ?? '',
     bashCommands: bashCmds,
     deduplicationKey: msg.id ?? `claude:${entry.timestamp}`,
+    ...(msg.id ? { nativeMessageId: msg.id } : {}),
+    ...(typeof entry['nativeEmissionTimestamp'] === 'string' && entry['nativeEmissionTimestamp']
+      ? { nativeEmissionTimestamp: entry['nativeEmissionTimestamp'] }
+      : { nativeEmissionTimestamp: entry.timestamp ?? '' }),
+    ...(msg.stop_reason ? { nativeSnapshotTerminal: true } : {}),
     cacheCreationOneHourTokens: cacheCreation.oneHourTokens || undefined,
     toolSequence: toolSeq.length > 0 ? toolSeq : undefined,
     ...(spawnIds.length > 0 ? { spawnToolUseIds: spawnIds } : {}),
@@ -1511,12 +1517,126 @@ export function dedupeStreamingMessageIds(entries: JournalEntry[]): JournalEntry
     if (id && lastIdxById.get(id) !== i) continue
     if (id && firstIdxById.get(id) !== i) {
       const firstTs = entries[firstIdxById.get(id)!]!.timestamp
-      result.push({ ...entries[i]!, timestamp: firstTs ?? entries[i]!.timestamp })
+      result.push({
+        ...entries[i]!,
+        timestamp: firstTs ?? entries[i]!.timestamp,
+        nativeEmissionTimestamp: entries[i]!.timestamp ?? firstTs ?? '',
+      })
       continue
     }
     result.push(entries[i]!)
   }
   return result
+}
+
+/**
+ * A Claude JSONL message id is a native accounting identity, not a file-local
+ * key. A parent transcript and a sidechain/mirror can therefore contain two
+ * snapshots of one API response. This comparator deliberately uses only
+ * evidence carried by the native snapshot:
+ *
+ *   1. later native emission timestamp;
+ *   2. a native terminal marker when timestamps tie;
+ *   3. a stable path/ordinal tie-break only when the accounting tuple is
+ *      already identical (or when an ambiguity is explicitly recorded).
+ *
+ * It never takes a maximum per field, adds duplicate snapshots, or lets file
+ * discovery order decide the accounting winner.
+ */
+export type ClaudeNativeCallCandidate = {
+  filePath: string
+  call: CachedCall
+  ordinal: number
+}
+
+export type ClaudeNativeIdentityAmbiguity = {
+  identity: string
+  candidates: ClaudeNativeCallCandidate[]
+}
+
+export type ClaudeNativeReconciliation = {
+  winners: Map<string, ClaudeNativeCallCandidate>
+  ambiguities: ClaudeNativeIdentityAmbiguity[]
+}
+
+export function getClaudeNativeIdentity(call: Pick<CachedCall, 'provider' | 'deduplicationKey' | 'nativeMessageId'>): string | undefined {
+  if (call.provider !== 'claude') return undefined
+  if (call.nativeMessageId) return call.nativeMessageId
+  // Support a one-run projection of a pre-migration cache. Advisor calls use a
+  // derived `:advisor:` key and are deliberately excluded from this fallback.
+  if (call.deduplicationKey.startsWith('claude:') || call.deduplicationKey.includes(':advisor:')) return undefined
+  return call.deduplicationKey || undefined
+}
+
+function nativeAccountingTuple(call: CachedCall): string {
+  return JSON.stringify({
+    model: call.model,
+    modelProvider: call.modelProvider ?? null,
+    inputTokens: call.usage.inputTokens,
+    outputTokens: call.usage.outputTokens,
+    cacheCreationInputTokens: call.usage.cacheCreationInputTokens,
+    cacheReadInputTokens: call.usage.cacheReadInputTokens,
+    cachedInputTokens: call.usage.cachedInputTokens,
+    reasoningTokens: call.usage.reasoningTokens,
+    webSearchRequests: call.usage.webSearchRequests,
+    cacheCreationOneHourTokens: call.usage.cacheCreationOneHourTokens,
+  })
+}
+
+function nativeEmissionMs(call: CachedCall): number | undefined {
+  const raw = call.nativeEmissionTimestamp ?? call.timestamp
+  const ms = Date.parse(raw)
+  return Number.isFinite(ms) ? ms : undefined
+}
+
+function nativeStableKey(candidate: ClaudeNativeCallCandidate): string {
+  const path = candidate.filePath.replace(/\\/g, '/').toLowerCase()
+  return `${path}\u0000${String(candidate.ordinal).padStart(12, '0')}\u0000${nativeAccountingTuple(candidate.call)}`
+}
+
+/** Positive when `a` has stronger native chronology/finality evidence. */
+function compareNativeEvidence(a: ClaudeNativeCallCandidate, b: ClaudeNativeCallCandidate): number {
+  const aMs = nativeEmissionMs(a.call)
+  const bMs = nativeEmissionMs(b.call)
+  if (aMs !== undefined && bMs !== undefined && aMs !== bMs) return aMs > bMs ? 1 : -1
+  if (aMs !== undefined && bMs === undefined) return 1
+  if (aMs === undefined && bMs !== undefined) return -1
+  const aTerminal = a.call.nativeSnapshotTerminal === true
+  const bTerminal = b.call.nativeSnapshotTerminal === true
+  if (aTerminal !== bTerminal) return aTerminal ? 1 : -1
+  return 0
+}
+
+export function reconcileClaudeNativeCalls(
+  files: ReadonlyArray<{ filePath: string; calls: readonly CachedCall[] }>,
+): ClaudeNativeReconciliation {
+  const groups = new Map<string, ClaudeNativeCallCandidate[]>()
+  for (const file of files) {
+    let ordinal = 0
+    for (const call of file.calls) {
+      const identity = getClaudeNativeIdentity(call)
+      if (!identity) continue
+      const group = groups.get(identity) ?? []
+      group.push({ filePath: file.filePath, call, ordinal: ordinal++ })
+      groups.set(identity, group)
+    }
+  }
+
+  const winners = new Map<string, ClaudeNativeCallCandidate>()
+  const ambiguities: ClaudeNativeIdentityAmbiguity[] = []
+  for (const [identity, candidates] of groups) {
+    const ranked = [...candidates].sort((a, b) => {
+      const evidence = compareNativeEvidence(b, a)
+      return evidence !== 0 ? evidence : nativeStableKey(a).localeCompare(nativeStableKey(b))
+    })
+    const winner = ranked[0]
+    if (!winner) continue
+    const equallyAuthoritative = candidates.filter(candidate => compareNativeEvidence(candidate, winner) === 0)
+    const tuples = new Set(equallyAuthoritative.map(candidate => nativeAccountingTuple(candidate.call)))
+    if (tuples.size > 1) ambiguities.push({ identity, candidates: equallyAuthoritative })
+    winners.set(identity, winner)
+  }
+  return { winners, ambiguities }
 }
 
 export function groupIntoTurns(entries: JournalEntry[], seenMsgIds: Set<string>, toolResultMeta?: Map<string, ToolResultMeta>): ParsedTurn[] {
@@ -1860,17 +1980,13 @@ async function parseSessionFile(
   const dedupedEntries = dedupeStreamingMessageIds(entries)
   let turns = groupIntoTurns(dedupedEntries, seenMsgIds)
   if (dateRange) {
-    // Bucket a turn by the timestamp of its first assistant call (when the cost was
-    // actually incurred). Filtering entries directly produced orphan assistant calls
-    // when a user message sat in one day and the response landed in another -- those
-    // got pushed as turns with empty timestamps, which some code paths counted and
-    // others dropped, producing inconsistent Today totals.
-    turns = turns.filter(turn => {
-      if (turn.assistantCalls.length === 0) return false
-      const firstCallTs = turn.assistantCalls[0]!.timestamp
-      if (!firstCallTs) return false
-      const ts = new Date(firstCallTs)
-      return ts >= dateRange.start && ts <= dateRange.end
+    // Accounting membership is call-level even when turn/day attribution remains
+    // turn-anchored. A turn may span either range boundary; retaining the whole
+    // turn would publish usage outside an exact requested cutoff, while rejecting
+    // it by its first call would lose a later call that enters the range.
+    turns = turns.flatMap(turn => {
+      const sliced = sliceParsedTurnToDateRange(turn, dateRange)
+      return sliced ? [sliced] : []
     })
     if (turns.length === 0) return null
   }
@@ -1933,7 +2049,6 @@ export async function readAgentType(filePath: string): Promise<string | undefine
 
 async function scanProjectDirs(
   dirs: Array<{ path: string; name: string; source?: SessionSourceMetadata }>,
-  seenMsgIds: Set<string>,
   diskCache: SessionCache,
   dateRange?: DateRange,
   // Cold-run robustness: called after every parsed Claude file so a throttled
@@ -1994,15 +2109,6 @@ async function scanProjectDirs(
     unchangedFiles.push({ filePath, dirName, cached })
   }
 
-  // Pre-seed dedup set from cached (unchanged) files
-  for (const { cached } of unchangedFiles) {
-    for (const turn of cached.turns) {
-      for (const call of turn.calls) {
-        seenMsgIds.add(call.deduplicationKey)
-      }
-    }
-  }
-
   const parseProgress = createScanProgress('parsing changed claude sessions', changedFiles.length)
   const progressTotal = changedFiles.length
   let filesDone = 0
@@ -2026,11 +2132,11 @@ async function scanProjectDirs(
         // Straddle guard: a streamed assistant message id that first appeared in
         // the committed prefix can be restated inside the appended region
         // (image-heavy turns stream one id across several records over seconds).
-        // The appended region is grouped before this file's cached keys join
-        // seenMsgIds, so the restated id would count twice; suppressing it
-        // instead would freeze the stale first emission. Neither matches a full
-        // re-parse, so on any id overlap the shortcut is abandoned and the file
-        // re-parses from byte 0 (rare: ~0.3% of real files).
+        // The appended region is grouped with a file-local identity set, then
+        // merged with the cached prefix. A restated id across that boundary
+        // must not freeze the stale first emission, so on any overlap the
+        // shortcut is abandoned and the file re-parses from byte 0 (rare:
+        // ~0.3% of real files).
         const cachedIds = new Set(cached.turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
         const straddles = newEntries !== null && newEntries.some(e => {
           const id = getMessageId(e)
@@ -2038,7 +2144,7 @@ async function scanProjectDirs(
         })
         if (!straddles) {
           const newTurns = newEntries
-            ? parsedTurnsToCachedTurns(groupIntoTurns(dedupeStreamingMessageIds(newEntries), seenMsgIds, toolResultMeta))
+            ? parsedTurnsToCachedTurns(groupIntoTurns(dedupeStreamingMessageIds(newEntries), new Set<string>(), toolResultMeta))
             : []
 
           const mergedTurns: CachedTurn[] = cached.turns.map(t => ({ ...t, calls: [...t.calls] }))
@@ -2062,11 +2168,6 @@ async function scanProjectDirs(
             }
             for (let i = startIdx; i < newTurns.length; i++) mergedTurns.push(newTurns[i]!)
           }
-
-          // The cached region's dedup keys were not added to seenMsgIds (only
-          // unchanged files pre-seed it), so add them now — a full re-parse would
-          // have, and later files dedup cross-file against them.
-          for (const t of cached.turns) for (const c of t.calls) seenMsgIds.add(c.deduplicationKey)
 
           // First-cwd wins, and the first cwd lives in the cached region whenever
           // one was resolved there; only re-derive if the cached region had none.
@@ -2131,7 +2232,10 @@ async function scanProjectDirs(
       const entries = await parseClaudeEntries(filePath, tracker, undefined, { toolResultMeta, sessionMeta })
       if (!entries) { filesDone++; await parseProgress.tick(filesDone); continue }
 
-      const turns = groupIntoTurns(dedupeStreamingMessageIds(entries), seenMsgIds, toolResultMeta)
+      // Streaming deduplication is deliberately file-local. Native message ids
+      // are reconciled after every file is parsed, so discovery order cannot
+      // decide which cross-file snapshot is accounted.
+      const turns = groupIntoTurns(dedupeStreamingMessageIds(entries), new Set<string>(), toolResultMeta)
       const cwd = extractCanonicalCwd(entries)
       const canonical = (cwd && !isCoworkSession(cwd, filePath)) ? await resolveCanonicalProjectPath(cwd) : undefined
       section.files[filePath] = {
@@ -2190,9 +2294,37 @@ async function scanProjectDirs(
     ...changedFiles.map(f => ({ filePath: f.filePath, dirName: f.info.dirName, source: f.info.source })),
   ]
 
+  // Reconcile the complete cached file set, including unchanged files and any
+  // surviving PR-linked orphan. This is the cross-file authority boundary: a
+  // newly discovered mirror can supersede a partial cached parent without
+  // reparsing the parent, and a warm run is therefore equivalent to cold.
+  const claudeNativeReconciliation = reconcileClaudeNativeCalls(
+    Object.entries(section.files).map(([filePath, cached]) => ({
+      filePath,
+      calls: cached.turns.flatMap(turn => turn.calls),
+    })),
+  )
+  if (claudeNativeReconciliation.ambiguities.length > 0) {
+    process.stderr.write(
+      `metrora: Claude native identity ambiguity for ${claudeNativeReconciliation.ambiguities.length} identity group(s); deterministic single-call projection retained without field-wise merging.\n`,
+    )
+  }
+
   for (const { filePath, dirName, source } of allFiles) {
     const cachedFile = section.files[filePath]
     if (!cachedFile || cachedFile.turns.length === 0) continue
+
+    const reconciledTurns = cachedFile.turns
+      .map(turn => {
+        const calls = turn.calls.filter(call => {
+          const identity = getClaudeNativeIdentity(call)
+          if (!identity) return true
+          return claudeNativeReconciliation.winners.get(identity)?.call === call
+        })
+        return calls.length > 0 ? { ...turn, calls } : null
+      })
+      .filter((turn): turn is CachedTurn => turn !== null)
+    if (reconciledTurns.length === 0) continue
 
     // Carry the git branch forward BEFORE the date filter below: the cache
     // stores a turn's branch only when it changes, so resolving here (over the
@@ -2206,17 +2338,18 @@ async function scanProjectDirs(
     let carriedPrRefs: string[] | undefined
     let prRefsAtRangeStart: string[] | undefined
     let frozePrRefs = !dateRange
-    let classifiedTurns = cachedFile.turns.map(turn => {
+    const classifiedTurns = reconciledTurns.flatMap(turn => {
       if (turn.gitBranch) carriedBranch = turn.gitBranch
       if (dateRange && !frozePrRefs) {
-        const firstTs = turn.calls[0]?.timestamp
-        if (firstTs && new Date(firstTs) >= dateRange.start) {
+        const firstInRange = turn.calls.find(call => callIsInDateRange(call, dateRange))
+        if (firstInRange) {
           prRefsAtRangeStart = carriedPrRefs
           frozePrRefs = true
         }
       }
       if (turn.prRefs?.length) carriedPrRefs = turn.prRefs
-      return cachedTurnToClassified(turn, carriedBranch)
+      const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
+      return projectedTurn ? [cachedTurnToClassified(projectedTurn, carriedBranch)] : []
     })
     // Captured from the FULL turn list, before the date slice below can drop the
     // turn a branch was first seen on. Lets the by-branch report keep this
@@ -2227,17 +2360,7 @@ async function scanProjectDirs(
     // the PR set active at the turn that emitted it. Lets a subagent fold into the
     // right PR even when its launching turn is later sliced out of range. Only for
     // sessions that both spawned subagents and referenced a PR.
-    const spawnPrSets = cachedFile.prLinks?.length ? buildSpawnPrSets(cachedFile.turns) : {}
-
-    if (dateRange) {
-      classifiedTurns = classifiedTurns.filter(turn => {
-        if (turn.assistantCalls.length === 0) return false
-        const firstCallTs = turn.assistantCalls[0]!.timestamp
-        if (!firstCallTs) return false
-        const ts = new Date(firstCallTs)
-        return ts >= dateRange.start && ts <= dateRange.end
-      })
-    }
+    const spawnPrSets = cachedFile.prLinks?.length ? buildSpawnPrSets(reconciledTurns) : {}
 
     // A PR-linked parent that spawned subagents is kept even when its OWN turns all
     // fall out of range, as a 0-cost fold ANCHOR: an in-range child (an async agent
@@ -2517,6 +2640,9 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     skills: call.skills,
     subagentTypes: call.subagentTypes,
     deduplicationKey: call.deduplicationKey,
+    ...(call.nativeMessageId ? { nativeMessageId: call.nativeMessageId } : {}),
+    ...(call.nativeEmissionTimestamp ? { nativeEmissionTimestamp: call.nativeEmissionTimestamp } : {}),
+    ...(call.nativeSnapshotTerminal ? { nativeSnapshotTerminal: true } : {}),
     toolSequence: call.toolSequence,
     ...(call.locAdded ? { locAdded: call.locAdded } : {}),
     ...(call.locRemoved ? { locRemoved: call.locRemoved } : {}),
@@ -2695,6 +2821,9 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
     timestamp: call.timestamp,
     bashCommands: call.bashCommands,
     deduplicationKey: call.deduplicationKey,
+    ...(call.nativeMessageId ? { nativeMessageId: call.nativeMessageId } : {}),
+    ...(call.nativeEmissionTimestamp ? { nativeEmissionTimestamp: call.nativeEmissionTimestamp } : {}),
+    ...(call.nativeSnapshotTerminal ? { nativeSnapshotTerminal: true } : {}),
     cacheCreationOneHourTokens: u.cacheCreationOneHourTokens || undefined,
     toolSequence: call.toolSequence,
     activeDurationMs: call.activeDurationMs,
@@ -2721,6 +2850,31 @@ function cachedTurnToClassified(turn: CachedTurn, resolvedBranch?: string): Clas
     ...(turn.spawnToolUseIds?.length ? { spawnToolUseIds: turn.spawnToolUseIds } : {}),
   }
   return classifyTurn(parsed)
+}
+
+function callIsInDateRange(call: Pick<ParsedApiCall, 'timestamp'>, dateRange: DateRange): boolean {
+  const timestampMs = Date.parse(call.timestamp)
+  if (!Number.isFinite(timestampMs)) return false
+  return timestampMs >= dateRange.start.getTime() && timestampMs <= dateRange.end.getTime()
+}
+
+function sliceParsedTurnToDateRange(turn: ParsedTurn, dateRange: DateRange): ParsedTurn | null {
+  const assistantCalls = turn.assistantCalls.filter(call => callIsInDateRange(call, dateRange))
+  if (assistantCalls.length === 0) return null
+  if (assistantCalls.length === turn.assistantCalls.length) return turn
+  return { ...turn, assistantCalls }
+}
+
+function sliceClassifiedTurnToDateRange(turn: ClassifiedTurn, dateRange: DateRange): ClassifiedTurn | null {
+  const sliced = sliceParsedTurnToDateRange(turn, dateRange)
+  return sliced ? classifyTurn(sliced) : null
+}
+
+function sliceCachedTurnToDateRange(turn: CachedTurn, dateRange: DateRange): CachedTurn | null {
+  const calls = turn.calls.filter(call => callIsInDateRange(call, dateRange))
+  if (calls.length === 0) return null
+  if (calls.length === turn.calls.length) return turn
+  return { ...turn, calls }
 }
 
 // ── Cache-Aware Parsing Helpers ────────────────────────────────────────
@@ -3113,23 +3267,6 @@ async function parseProviderSources(
     }
   }
 
-  // 90-day age-out for durable providers: remove entries whose newest call is
-  // older than 90 days so the detailed cache remains bounded.
-  if (!readOnly && provider.durableSources) {
-    const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000
-    for (const [cachedPath, cachedFile] of Object.entries(section.files)) {
-      const newestTs = cachedFile.turns
-        .flatMap(t => t.calls)
-        .map(c => new Date(c.timestamp).getTime())
-        .filter(ts => !isNaN(ts))
-        .reduce((max, ts) => Math.max(max, ts), 0)
-      if (newestTs > 0 && newestTs < cutoffMs) {
-        delete section.files[cachedPath]
-        ;(diskCache as { _dirty?: boolean })._dirty = true
-      }
-    }
-  }
-
   // Query-time: derive SessionSummary from all cached turns.
   // Uses seenKeys (shared across providers) for cross-provider dedup.
   const sessionMap = new Map<string, { project: string; projectPath?: string; workingDirectory?: string; turns: ClassifiedTurn[]; prLinks?: Set<string>; title?: string }>()
@@ -3139,29 +3276,25 @@ async function parseProviderSources(
     if (!cachedFile) continue
 
     for (const turn of cachedFile.turns) {
-      const hasDup = turn.calls.some(c => seenKeys.has(c.deduplicationKey))
+      const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
+      if (!projectedTurn) continue
+
+      const hasDup = projectedTurn.calls.some(c => seenKeys.has(c.deduplicationKey))
       if (hasDup) continue
 
-      for (const c of turn.calls) seenKeys.add(c.deduplicationKey)
+      for (const c of projectedTurn.calls) seenKeys.add(c.deduplicationKey)
 
-      if (dateRange) {
-        const callTs = turn.calls[0]?.timestamp
-        if (!callTs) continue
-        const ts = new Date(callTs)
-        if (ts < dateRange.start || ts > dateRange.end) continue
-      }
-
-      const classified = cachedTurnToClassified(turn)
-      const project = turn.calls[0]?.project ?? source.project
+      const classified = cachedTurnToClassified(projectedTurn)
+      const project = projectedTurn.calls[0]?.project ?? source.project
       const key = `${providerName}:${turn.sessionId}:${project}`
 
       const existing = sessionMap.get(key)
       if (existing) {
         existing.turns.push(classified)
-        if (!existing.projectPath && turn.calls[0]?.projectPath) {
-          existing.projectPath = turn.calls[0]!.projectPath
+        if (!existing.projectPath && projectedTurn.calls[0]?.projectPath) {
+          existing.projectPath = projectedTurn.calls[0]!.projectPath
         }
-        if (!existing.workingDirectory && turn.calls[0]?.workingDirectory) existing.workingDirectory = turn.calls[0].workingDirectory
+        if (!existing.workingDirectory && projectedTurn.calls[0]?.workingDirectory) existing.workingDirectory = projectedTurn.calls[0].workingDirectory
         if (cachedFile.prLinks?.length) {
           const links = (existing.prLinks ??= new Set())
           for (const link of cachedFile.prLinks) links.add(link)
@@ -3170,8 +3303,8 @@ async function parseProviderSources(
       } else {
         sessionMap.set(key, {
           project,
-          projectPath: turn.calls[0]?.projectPath,
-          workingDirectory: turn.calls[0]?.workingDirectory,
+          projectPath: projectedTurn.calls[0]?.projectPath,
+          workingDirectory: projectedTurn.calls[0]?.workingDirectory,
           turns: [classified],
           ...(cachedFile.prLinks?.length ? { prLinks: new Set(cachedFile.prLinks) } : {}),
           ...(cachedFile.title ? { title: cachedFile.title } : {}),
@@ -3188,30 +3321,26 @@ async function parseProviderSources(
       if (allDiscoveredFiles.has(cachedPath)) continue  // already counted above
 
       for (const turn of cachedFile.turns) {
-        const hasDup = turn.calls.some(c => seenKeys.has(c.deduplicationKey))
+        const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
+        if (!projectedTurn) continue
+
+        const hasDup = projectedTurn.calls.some(c => seenKeys.has(c.deduplicationKey))
         if (hasDup) continue
 
-        for (const c of turn.calls) seenKeys.add(c.deduplicationKey)
+        for (const c of projectedTurn.calls) seenKeys.add(c.deduplicationKey)
 
-        if (dateRange) {
-          const callTs = turn.calls[0]?.timestamp
-          if (!callTs) continue
-          const ts = new Date(callTs)
-          if (ts < dateRange.start || ts > dateRange.end) continue
-        }
-
-        const classified = cachedTurnToClassified(turn)
-        const project = turn.calls[0]?.project ?? providerName
+        const classified = cachedTurnToClassified(projectedTurn)
+        const project = projectedTurn.calls[0]?.project ?? providerName
         const key = `${providerName}:${turn.sessionId}:${project}`
 
         const existingEntry = sessionMap.get(key)
         if (existingEntry) {
           existingEntry.turns.push(classified)
-          if (!existingEntry.projectPath && turn.calls[0]?.projectPath) {
-            existingEntry.projectPath = turn.calls[0]!.projectPath
+          if (!existingEntry.projectPath && projectedTurn.calls[0]?.projectPath) {
+            existingEntry.projectPath = projectedTurn.calls[0]!.projectPath
           }
         } else {
-          sessionMap.set(key, { project, projectPath: turn.calls[0]?.projectPath, workingDirectory: turn.calls[0]?.workingDirectory, turns: [classified] })
+          sessionMap.set(key, { project, projectPath: projectedTurn.calls[0]?.projectPath, workingDirectory: projectedTurn.calls[0]?.workingDirectory, turns: [classified] })
         }
       }
     }
@@ -3243,6 +3372,28 @@ async function parseProviderSources(
   const projects: ProjectSummary[] = []
   for (const [dirName, { projectPath, sessions }] of projectMap) {
     projects.push(summarizeProject(dirName, projectPath ?? unsanitizePath(dirName), sessions))
+  }
+
+  // Durable source evidence must be materialized into the caller's result
+  // before detailed-cache retention is applied.  The detailed session cache is
+  // intentionally bounded, but a source that is still physically available may
+  // be the only evidence from which the durable daily ledger can be rebuilt.
+  // Evicting it before the query-time projection made cold bootstrap silently
+  // lose old Antigravity responses (and any other durable provider with the same
+  // lifecycle).
+  if (!readOnly && provider.durableSources) {
+    const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000
+    for (const [cachedPath, cachedFile] of Object.entries(section.files)) {
+      const newestTs = cachedFile.turns
+        .flatMap(t => t.calls)
+        .map(c => new Date(c.timestamp).getTime())
+        .filter(ts => !isNaN(ts))
+        .reduce((max, ts) => Math.max(max, ts), 0)
+      if (newestTs > 0 && newestTs < cutoffMs) {
+        delete section.files[cachedPath]
+        ;(diskCache as { _dirty?: boolean })._dirty = true
+      }
+    }
   }
 
   return projects
@@ -3302,14 +3453,6 @@ export function filterProjectsByName(
     })
   }
   return result
-}
-
-function turnIsInDateRange(turn: ClassifiedTurn, dateRange: DateRange): boolean {
-  if (turn.assistantCalls.length === 0) return false
-  const firstCallTs = turn.assistantCalls[0]!.timestamp
-  if (!firstCallTs) return false
-  const ts = new Date(firstCallTs)
-  return ts >= dateRange.start && ts <= dateRange.end
 }
 
 function turnDayString(turn: ClassifiedTurn): string | null {
@@ -3649,7 +3792,10 @@ export function filterProjectsByDateRange(projects: ProjectSummary[], dateRange:
     const anchors: SessionSummary[] = [...(project.subagentAnchors ?? [])]
     const survivingIdentities = new Set<string>()
     for (const session of project.sessions) {
-      const turns = session.turns.filter(turn => turnIsInDateRange(turn, dateRange))
+      const turns = session.turns.flatMap(turn => {
+        const sliced = sliceClassifiedTurnToDateRange(turn, dateRange)
+        return sliced ? [sliced] : []
+      })
       if (turns.length === 0) {
         if (isSpawnParent(session)) anchors.push(session)
         continue
@@ -3744,7 +3890,6 @@ async function runParse(
   options: RunParseOptions = {},
 ): Promise<ProjectSummary[]> {
   const { isCold = false, readOnly = false, cachedOnly = false, refreshLock } = options
-  const seenMsgIds = new Set<string>()
   const seenKeys = new Set<string>()
   const allSources = cachedOnly ? [] : await discoverAllSessions(providerFilter)
 
@@ -3788,7 +3933,7 @@ async function runParse(
   if (includeClaude) {
     if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'start' })
     try {
-      claudeProjects = await scanProjectDirs(claudeDirs, seenMsgIds, diskCache, dateRange, saveProgress, readOnly)
+      claudeProjects = await scanProjectDirs(claudeDirs, diskCache, dateRange, saveProgress, readOnly)
       if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
     } catch (err) {
       if (!isPermissionError(err)) throw err

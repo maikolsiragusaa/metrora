@@ -51,6 +51,12 @@ export type CachedCall = {
   projectPath?: string
   workingDirectory?: string
   toolSequence?: ToolCall[][]
+  // Claude native identity reconciliation metadata. `timestamp` remains the
+  // first logical emission timestamp; these fields preserve native identity
+  // and final-emission evidence for cross-file arbitration.
+  nativeMessageId?: string
+  nativeEmissionTimestamp?: string
+  nativeSnapshotTerminal?: boolean
   // Rich-session-capture (capture-only; no report consumes these yet). All
   // optional and omitted at zero/false to keep the per-call cache cost minimal.
   // Lines added/removed by this call's edits, counted from tool-result diffs
@@ -224,7 +230,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // LOC deltas / interruptions / userModified / toolErrors, and session-level
   // title / prLinks / isSidechain. Forces one re-parse so cached sessions gain
   // the new optional fields.
-  claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1',
+  claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1-native-id-reconciliation-v1',
   cline: 'worktree-project-grouping-v1-vscode-variants-v2-provider-zero-cost',
   codewhale: 'aggregate-session-v2-provider-provenance',
   // Bump when the Codex parser changes attribution so unchanged, already-cached
@@ -251,7 +257,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   'roo-code': 'worktree-project-grouping-v1',
   zerostack: 'cumulative-session-v1-provider-provenance-estimated-cost-v2',
   warp: 'worktree-project-grouping-v1-est-cost',
-  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1',
+  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1-output-reasoning-map-v2',
   // OpenCode keeps valid usage in archived root/child sessions. The parser
   // must scan the complete SQLite session tree, not only active sessions.
   opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1',
@@ -399,6 +405,9 @@ function validateCall(c: unknown): c is CachedCall {
     && isOptionalString(o['project'])
     && isOptionalString(o['projectPath'])
     && isOptionalString(o['workingDirectory'])
+    && isOptionalString(o['nativeMessageId'])
+    && isOptionalString(o['nativeEmissionTimestamp'])
+    && isOptionalBool(o['nativeSnapshotTerminal'])
     && (o['toolSequence'] === undefined || (Array.isArray(o['toolSequence']) && (o['toolSequence'] as unknown[]).every(s => isToolCallArray(s))))
     && isOptionalNum(o['locAdded'])
     && isOptionalNum(o['locRemoved'])
@@ -719,7 +728,7 @@ export function mergeCallByDedupKey(
   }
 }
 
-// ── Temp Cleanup ───────────────────────────────────────────────────────
+// ── Temp Cleanup ────────────────────────────────────────────────────────
 
 export async function cleanupOrphanedTempFiles(): Promise<void> {
   const dir = getCacheDir()

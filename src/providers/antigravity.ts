@@ -26,8 +26,8 @@ import {
 export { buildCallsFromGeneratorMetadata, reconcileAntigravityStatusLineCalls } from './antigravity-accounting.js'
 export type { AntigravityCacheEnrichment, GeneratorMetadata } from './antigravity-accounting.js'
 export { antigravityCascadeIdFromPath }
-const CACHE_VERSION = 6
-const PREVIOUS_CACHE_VERSION = 5
+const CACHE_VERSION = 7
+const PREVIOUS_CACHE_VERSIONS = new Set([6, 5])
 
 const RPC_TIMEOUT_MS = 5000
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024
@@ -260,7 +260,7 @@ async function loadCache(): Promise<AntigravityCache> {
     const raw = await readFile(cachePath, 'utf-8')
     const cache = JSON.parse(raw) as AntigravityCache
     if (
-      (cache.version === CACHE_VERSION || cache.version === PREVIOUS_CACHE_VERSION) &&
+      (cache.version === CACHE_VERSION || PREVIOUS_CACHE_VERSIONS.has(cache.version)) &&
       cache.cascades && typeof cache.cascades === 'object'
     ) {
       memCache = cache.version === CACHE_VERSION
@@ -718,8 +718,10 @@ function buildCallFromSqliteGenMetadataRow(cascadeId: string, row: AntigravityGe
     + protoFieldPositiveInteger(firstProtoField(usageFields, 2))
   const cacheReadTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 5))
   const totalOutputTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 3))
-  let responseTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 9))
-  let thinkingTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 10))
+  // Correlation against same-response RPC metadata establishes #9 as thinking
+  // and #10 as response output. #3 remains the inclusive generated-token total.
+  let thinkingTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 9))
+  let responseTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 10))
 
   if (responseTokens === 0 && thinkingTokens === 0) {
     responseTokens = totalOutputTokens

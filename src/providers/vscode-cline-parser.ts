@@ -200,7 +200,10 @@ export function createClineParser(source: SessionSource, seenKeys: Set<string>, 
 
         if (tokensIn === 0 && tokensOut === 0 && cacheReads === 0 && cacheWrites === 0 && cost === undefined) continue
 
-        const timestamp = entry.ts ? new Date(entry.ts).toISOString() : ''
+        const rawTimestamp = entry.ts === undefined ? null : new Date(entry.ts)
+        const timestamp = rawTimestamp && !Number.isNaN(rawTimestamp.getTime())
+          ? rawTimestamp.toISOString()
+          : ''
         const costUSD = cost ?? calculateCost(model, tokensIn, tokensOut, cacheWrites, cacheReads, 0)
 
         yield {

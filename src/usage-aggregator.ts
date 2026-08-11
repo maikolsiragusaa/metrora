@@ -19,7 +19,7 @@ import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
-import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, DURABLE_HISTORY_AUTHORITY, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
@@ -96,6 +96,8 @@ async function hydrateCache(): Promise<DailyCache> {
       // Never finalize the daily history off a partial (interrupted) session
       // hydration — that is what froze empty older days into the chart.
       isSessionHydrationComplete,
+      undefined,
+      { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
     )
   } catch (err) {
     // Previously swallowed silently, which turned any backfill failure into an

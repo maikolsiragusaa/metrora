@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 
 import { normalizeExplicitModelProvider } from '../model-provider.js'
+import { ensureCodexLegacySessionMetaAuthority } from '../provider-parse-authorities.js'
 import type { Provider, SessionParser, SessionSource } from './types.js'
 
 const MAX_SESSION_META_LINES = 256
@@ -53,12 +54,16 @@ export type CodexModelProviderReader = (sourcePath: string) => Promise<string | 
 
 /**
  * Decorate the canonical Codex provider so fresh parser output carries the
- * source-recorded model/API provider into the ordinary session cache.
+ * source-recorded model/API provider into the ordinary session cache. Installing
+ * the provider also advances the session-cache parser authority for the legacy
+ * session_meta identity admission change, so unchanged warm-cache rollouts are
+ * reparsed before daily history is rehydrated.
  */
 export function withCodexModelProvider(
   provider: Provider,
   readProvider: CodexModelProviderReader = readCodexSessionModelProvider,
 ): Provider {
+  ensureCodexLegacySessionMetaAuthority()
   return {
     ...provider,
     createSessionParser(source: SessionSource, seenKeys, dateRange): SessionParser {

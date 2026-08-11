@@ -980,8 +980,8 @@ describe('antigravity provider helpers', () => {
         provider: 'antigravity',
         model: 'gemini-3.1-pro-high',
         inputTokens: 31281,
-        outputTokens: 659,
-        reasoningTokens: 71,
+        outputTokens: 71,
+        reasoningTokens: 659,
         sessionId: fixture.conversationId,
         project: 'antigravity-cli',
       })
@@ -1074,8 +1074,8 @@ describe('antigravity provider helpers', () => {
       expect(calls).toHaveLength(1)
       expect(calls[0]).toMatchObject({
         inputTokens: 300,
-        outputTokens: 30,
-        reasoningTokens: 20,
+        outputTokens: 20,
+        reasoningTokens: 30,
         cacheReadInputTokens: 700,
         deduplicationKey: 'antigravity:field-session:response-fields',
       })
@@ -1135,8 +1135,8 @@ describe('antigravity provider helpers', () => {
       expect(first).toHaveLength(1)
       expect(first[0]).toMatchObject({ inputTokens: 31281, model: 'gemini-3.1-pro-high' })
       expect(migrated).toMatchObject({
-        version: 6,
-        cascades: { [fixture.conversationId]: { parserVersion: 6 } },
+        version: 7,
+        cascades: { [fixture.conversationId]: { parserVersion: 7 } },
       })
       expect(migrated.cascades.orphanedCascade).toBeUndefined()
 

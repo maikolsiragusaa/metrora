@@ -4,6 +4,8 @@ import { dirname, join } from 'path'
 import { isSessionHydrationComplete } from './parser.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
+import { aggregateProjectsIntoDays, dateKeyInTz } from './day-aggregator.js'
+import { mergeTimezoneRebucketedDays } from './daily-cache-tz-reconcile.js'
 import * as core from './daily-cache-core.js'
 
 export * from './daily-cache-core.js'
@@ -132,6 +134,9 @@ export async function ensureCacheHydrated(
   aggregateDays: (projects: ProjectSummary[]) => core.DailyEntry[],
   savingsConfigHash: string = '',
   sessionComplete: () => boolean = () => true,
+  aggregateDaysInTz: (projects: ProjectSummary[], tz: string) => core.DailyEntry[] =
+    (projects, tz) => aggregateProjectsIntoDays(projects, iso => dateKeyInTz(iso, tz)),
+  options: core.CacheHydrationOptions = {},
 ): Promise<DailyCache> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -142,8 +147,58 @@ export async function ensureCacheHydrated(
   return core.withDailyCacheLock(async () => {
     let cache = await loadDailyCache()
     const todayStr = core.toDateString(now)
+    const tzKey = core.currentTzKey()
+    const tzChanged = cache.tzKey !== undefined && cache.tzKey !== tzKey
+    const accountingChanged = cache.savingsConfigHash !== savingsConfigHash
+    const durableHistoryAuthority = options.durableHistoryAuthority
+    const historyAuthorityChanged = durableHistoryAuthority !== undefined
+      && cache.durableHistoryAuthority !== durableHistoryAuthority
 
-    if (cache.days.some(day => day.date >= todayStr)) {
+    // Serialize simultaneous invalidations. First re-derive the accounting
+    // authority while retaining the old timezone, then persist that intermediate
+    // state. The next run sees accounting=B/tz=A and can perform the lossless
+    // timezone rebucket under one accounting authority. This avoids subtracting
+    // old-money from new-money while still guaranteeing finite progress.
+    if (tzChanged && accountingChanged) {
+      const baseline = cache.days
+      const horizonDays = historyAuthorityChanged ? core.DAILY_CACHE_RETENTION_DAYS : core.BACKFILL_DAYS
+      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - horizonDays)
+      let freshDays: core.DailyEntry[] = []
+      if (backfillStart.getTime() <= yesterdayEnd.getTime() && cache.tzKey !== undefined) {
+        const projects = await parseSessions({ start: backfillStart, end: yesterdayEnd })
+        freshDays = aggregateDaysInTz(projects, cache.tzKey)
+      }
+      const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
+      // If the parse is partial, keep A/A completely intact and retry this same
+      // first phase. In particular, do not publish a B/A intermediate state from
+      // an undercounted snapshot.
+      if (!parseWasComplete) return cache
+
+      cache = withTrust({
+        version: core.DAILY_CACHE_VERSION,
+        savingsConfigHash,
+        tzKey: cache.tzKey,
+        ...(durableHistoryAuthority !== undefined
+          ? { durableHistoryAuthority }
+          : typeof cache.durableHistoryAuthority === 'string'
+            ? { durableHistoryAuthority: cache.durableHistoryAuthority }
+            : {}),
+        lastComputedDate: yesterdayStr,
+        days: applyRetention(core.mergeDayEntries(freshDays, baseline, true), yesterdayStr),
+        complete: true,
+      }, true)
+      await saveDailyCache(cache)
+      return cache
+    }
+
+    // On ordinary runs an accidental/current-day cache row is discarded because
+    // live parsing owns today. During a timezone migration, however, a day that
+    // was FINALIZED as yesterday in the old timezone can have the same date as
+    // today's new-timezone label (for example a large westward offset change).
+    // Dropping it here would bypass NEVER-LOSE carry semantics and permanently
+    // erase sourceless history before the old/new timezone reconciliation sees
+    // it. Keep the complete old baseline intact whenever tzKey changes.
+    if (!tzChanged && cache.days.some(day => day.date >= todayStr)) {
       const days = cache.days.filter(day => day.date < todayStr)
       const lastComputedDate = days.length > 0 ? days[days.length - 1]!.date : null
       cache = { ...cache, days, lastComputedDate }
@@ -167,25 +222,57 @@ export async function ensureCacheHydrated(
       }
     }
 
-    const tzKey = core.currentTzKey()
-    const tzChanged = cache.tzKey !== undefined && cache.tzKey !== tzKey
-    if (cache.savingsConfigHash !== savingsConfigHash || cache.complete !== true || tzChanged) {
+    if (accountingChanged || cache.complete !== true || tzChanged || historyAuthorityChanged) {
       const baseline = cache.days
       const priorWatermark = cache.lastComputedDate
-      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - core.BACKFILL_DAYS)
+      const horizonDays = historyAuthorityChanged ? core.DAILY_CACHE_RETENTION_DAYS : core.BACKFILL_DAYS
+      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - horizonDays)
       let freshDays: core.DailyEntry[] = []
       if (backfillStart.getTime() <= yesterdayEnd.getTime()) {
         freshDays = aggregateDays(await parseSessions({ start: backfillStart, end: yesterdayEnd }))
       }
-      const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
-      const days = parseWasComplete
-        ? core.mergeDayEntries(freshDays, baseline, true)
-        : core.mergeDayEntries(baseline, freshDays, false)
+      let parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
+      let days: core.DailyEntry[]
+
+      // A timezone change is not a pricing/source change: the same physical
+      // usage can simply cross a local-midnight boundary. Re-aggregate a WIDE
+      // copy of the same parse under the cache's old timezone and subtract that
+      // evidence from carried baseline slices before the normal NEVER-LOSE
+      // merge. Without this step, a rebucketed turn can survive on its old day
+      // as carried history and also appear on its new day.
+      if (
+        parseWasComplete
+        && tzChanged
+        && cache.savingsConfigHash === savingsConfigHash
+        && cache.tzKey !== undefined
+      ) {
+        const wideProjects = await parseSessions({ start: backfillStart, end: now })
+        const wideParseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
+        if (wideParseWasComplete) {
+          const freshUnderOldTimezone = aggregateDaysInTz(wideProjects, cache.tzKey)
+          days = mergeTimezoneRebucketedDays(freshDays, baseline, freshUnderOldTimezone)
+        } else {
+          // The subtraction must never be built from a partial wide snapshot.
+          // Preserve the baseline as authority and leave the cache incomplete so
+          // the next run retries the migration rather than freezing a guess.
+          parseWasComplete = false
+          days = core.mergeDayEntries(baseline, freshDays, false)
+        }
+      } else {
+        days = parseWasComplete
+          ? core.mergeDayEntries(freshDays, baseline, true)
+          : core.mergeDayEntries(baseline, freshDays, false)
+      }
 
       cache = withTrust({
         version: core.DAILY_CACHE_VERSION,
         savingsConfigHash,
         tzKey,
+        ...(durableHistoryAuthority !== undefined && parseWasComplete
+          ? { durableHistoryAuthority }
+          : typeof cache.durableHistoryAuthority === 'string'
+            ? { durableHistoryAuthority: cache.durableHistoryAuthority }
+            : {}),
         lastComputedDate: parseWasComplete ? yesterdayStr : priorWatermark,
         days: applyRetention(days, yesterdayStr),
         complete: parseWasComplete,

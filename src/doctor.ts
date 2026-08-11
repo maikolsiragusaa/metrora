@@ -99,10 +99,22 @@ const PARSE_CALL_CAP = 500
 // (readdir/stat only) still runs, so session counts stay meaningful.
 const PARSE_SPAWNS = new Set(['antigravity'])
 
-// Metrora's own cache location: listed in PROVIDER_ENV_VARS for cache
-// fingerprinting, but it is not a discovery path, so it must never be blamed
-// in a NOTHING FOUND hint.
-const NON_DISCOVERY_ENV_VARS = new Set(['METRORA_CACHE_DIR'])
+// Declared env inputs that change parsing/accounting but not where discovery
+// looks. They belong in the cache fingerprint, but must never be blamed in a
+// NOTHING FOUND hint.
+const NON_DISCOVERY_ENV_VARS = new Set([
+  'METRORA_CACHE_DIR',
+  'METRORA_CURSOR_MAX_BUBBLES',
+  'KIMI_MODEL_NAME',
+])
+
+// Windows supplies these to ordinary processes. They move discovery roots and
+// must be fingerprinted, but do not represent deliberate user overrides.
+const AMBIENT_ENV_VARS = new Set(['APPDATA', 'LOCALAPPDATA'])
+
+// Credential presence is useful diagnostic state; the value is a live secret
+// and must never reach text or JSON doctor output.
+const SECRET_ENV_VARS = new Set(['AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'])
 
 // ── Collect (pure, testable) ─────────────────────────────────────────────
 
@@ -110,8 +122,11 @@ function collectEnvOverrides(providerName: string): DoctorEnvOverride[] {
   const vars = PROVIDER_ENV_VARS[providerName] ?? []
   const out: DoctorEnvOverride[] = []
   for (const name of vars) {
+    if (AMBIENT_ENV_VARS.has(name)) continue
     const value = process.env[name]
-    if (value !== undefined && value !== '') out.push({ name, value })
+    if (value !== undefined && value !== '') {
+      out.push(SECRET_ENV_VARS.has(name) ? { name, value: '<set>' } : { name, value })
+    }
   }
   return out
 }
