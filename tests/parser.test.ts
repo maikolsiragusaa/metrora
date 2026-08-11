@@ -4,7 +4,8 @@
 //   (b) OTel-prune monotonic  — OTel DB rows pruned      → total unchanged
 //   (c) no double-count       — same source parsed twice  → counted once
 //   (d) non-durable evicts    — deleted source for non-durable provider IS removed
-//   (e) 90-day age-out        — orphan ≥ 91d old is pruned; ≤ 89d is retained
+//   (e) bounded durable detail — old physical evidence is projected before
+//       detailed-cache eviction; absent sources do not resurrect it
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm, unlink } from 'fs/promises'
@@ -357,10 +358,10 @@ describe('(d) non-durable provider evicts deleted sources', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// (e) 90-day age-out: orphan ≥ 91d old is pruned; ≤ 89d is retained
+// (e) bounded durable detail: materialize before eviction
 // ═══════════════════════════════════════════════════════════════════════════
-describe('(e) 90-day age-out for durable providers', () => {
-  it('prunes an orphaned cache entry whose newest call is 91 days old', async () => {
+describe('(e) bounded detailed cache for durable providers', () => {
+  it('projects a physically present 91-day-old source before evicting its detail', async () => {
     const synthFile = join(tmpHome, 'synth-age.txt')
     await writeFile(synthFile, 'placeholder')
 
@@ -380,15 +381,22 @@ describe('(e) 90-day age-out for durable providers', () => {
       userMessage: 'old', sessionId: 'synth-old',
     }]
 
-    // First parse: cached with 91d-old timestamp → immediately pruned by 90-day check
+    // The query result is the materialization boundary: the source is counted
+    // before its detailed session entry is pruned from the bounded cache.
     const proj1 = await parseAllSessions(undefined, 'test-synthetic')
-    expect(totalOutput(proj1)).toBe(0)  // pruned right away
+    expect(totalOutput(proj1)).toBe(8)
 
-    // Confirm: entry is not in the persistent cache after first parse
+    // Confirm: detail is not retained after the first materialization.
+    clearSessionCache()
+    const proj2 = await parseAllSessions(undefined, 'test-synthetic')
+    expect(totalOutput(proj2)).toBe(8)
+
+    // Once the physical source is genuinely absent, bounded detail cannot
+    // recreate it; the durable daily ledger is the history authority then.
     clearSessionCache()
     _synthSources = []  // no longer discovered
-    const proj2 = await parseAllSessions(undefined, 'test-synthetic')
-    expect(totalOutput(proj2)).toBe(0)
+    const proj3 = await parseAllSessions(undefined, 'test-synthetic')
+    expect(totalOutput(proj3)).toBe(0)
   })
 
   it('retains an orphaned cache entry whose newest call is 89 days old', async () => {
@@ -411,7 +419,7 @@ describe('(e) 90-day age-out for durable providers', () => {
       userMessage: 'recent-ish', sessionId: 'synth-recent',
     }]
 
-    // First parse: cached with 89d-old timestamp → NOT pruned (within 90d window)
+    // A recent durable entry remains in the detailed cache.
     const proj1 = await parseAllSessions(undefined, 'test-synthetic')
     expect(totalOutput(proj1)).toBe(7)
 

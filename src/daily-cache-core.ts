@@ -64,6 +64,10 @@ import { emptyModelStats, mergeModelStats, sanitizeModels } from './daily-cache-
 // user changes their `localModelSavings` mapping.
 export const DAILY_CACHE_VERSION = 18
 const MIN_SUPPORTED_VERSION = 15
+// A durable source is allowed to outlive the bounded detailed session cache.
+// This marker makes the first run after that contract change an explicit,
+// one-time reconciliation rather than relying on the ordinary 365-day poll.
+export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v1'
 // Version-suffixed so different binaries each own a distinct file and never
 // clobber an incompatible schema. Bumping the version mints a fresh filename;
 // adoptOlderDailyCaches then unions days out of every previous file (including
@@ -157,6 +161,10 @@ export type DailyCache = {
   /// (same self-heal as `savingsConfigHash`). Absent on caches written before
   /// this field existed → not treated as a mismatch (no gratuitous rebuild).
   tzKey?: string
+  /// Durable-source evidence was materialized into the daily ledger under this
+  /// authority. Absent on pre-remediation caches, which triggers one wide
+  /// reconciliation when the caller opts into the authority.
+  durableHistoryAuthority?: string
   lastComputedDate: string | null
   days: DailyEntry[]
   /// True only once the full backfill window has been hydrated from a COMPLETE
@@ -190,7 +198,15 @@ export function emptyCache(savingsConfigHash = ''): DailyCache {
   return { version: DAILY_CACHE_VERSION, savingsConfigHash, tzKey: currentTzKey(), lastComputedDate: null, days: [], complete: false }
 }
 
-export function isMigratableCache(parsed: unknown): parsed is { version: number; lastComputedDate: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean } {
+export function isMigratableCache(parsed: unknown): parsed is {
+  version: number
+  lastComputedDate: string | null
+  savingsConfigHash?: string
+  tzKey?: string
+  durableHistoryAuthority?: string
+  days: Record<string, unknown>[]
+  complete?: boolean
+} {
   if (!parsed || typeof parsed !== 'object') return false
   const c = parsed as Partial<DailyCache>
   if (typeof c.version !== 'number') return false
@@ -294,11 +310,22 @@ export function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
     }))
 }
 
-export function migratedFrom(parsed: { version: number; lastComputedDate: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean }): DailyCache {
+export function migratedFrom(parsed: {
+  version: number
+  lastComputedDate: string | null
+  savingsConfigHash?: string
+  tzKey?: string
+  durableHistoryAuthority?: string
+  days: Record<string, unknown>[]
+  complete?: boolean
+}): DailyCache {
   return {
     version: DAILY_CACHE_VERSION,
     savingsConfigHash: parsed.savingsConfigHash ?? '',
     tzKey: parsed.tzKey,
+    ...(typeof parsed.durableHistoryAuthority === 'string'
+      ? { durableHistoryAuthority: parsed.durableHistoryAuthority }
+      : {}),
     lastComputedDate: typeof parsed.lastComputedDate === 'string' && DATE_KEY_RE.test(parsed.lastComputedDate)
       ? parsed.lastComputedDate
       : null,
@@ -327,7 +354,15 @@ export async function loadDailyCache(): Promise<DailyCache> {
   return adoptOlderDailyCaches()
 }
 
-type AdoptableCache = { version: number; lastComputedDate?: string | null; savingsConfigHash?: string; tzKey?: string; days: Record<string, unknown>[]; complete?: boolean }
+type AdoptableCache = {
+  version: number
+  lastComputedDate?: string | null
+  savingsConfigHash?: string
+  tzKey?: string
+  durableHistoryAuthority?: string
+  days: Record<string, unknown>[]
+  complete?: boolean
+}
 
 function isAdoptableCache(parsed: unknown): parsed is AdoptableCache {
   if (!parsed || typeof parsed !== 'object') return false
@@ -447,6 +482,9 @@ export function addNewDays(cache: DailyCache, incoming: DailyEntry[], newestDate
     version: DAILY_CACHE_VERSION,
     savingsConfigHash: cache.savingsConfigHash,
     tzKey: cache.tzKey,
+    ...(typeof cache.durableHistoryAuthority === 'string'
+      ? { durableHistoryAuthority: cache.durableHistoryAuthority }
+      : {}),
     lastComputedDate: nextLast,
     days: applyRetention(merged, newestDate),
     complete: cache.complete,
@@ -622,6 +660,13 @@ export const BACKFILL_DAYS = 365
 // well under 100 ms on the polling path.
 export const DAILY_CACHE_RETENTION_DAYS = 3650
 
+export type CacheHydrationOptions = {
+  /// Opt into the durable-source materialization contract. The first run with
+  /// a new authority scans the full durable daily-retention horizon; subsequent
+  /// runs return to BACKFILL_DAYS.
+  durableHistoryAuthority?: string
+}
+
 export function toDateString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
@@ -640,6 +685,7 @@ export async function ensureCacheHydrated(
   /// So the backfill is only marked `complete` when this returns true. Defaults
   /// to a trusting `true` for callers that don't (or can't) supply it.
   sessionComplete: () => boolean = () => true,
+  options: CacheHydrationOptions = {},
 ): Promise<DailyCache> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -648,6 +694,9 @@ export async function ensureCacheHydrated(
 
   return withDailyCacheLock(async () => {
     let c = await loadDailyCache()
+    const durableHistoryAuthority = options.durableHistoryAuthority
+    const historyAuthorityChanged = durableHistoryAuthority !== undefined
+      && c.durableHistoryAuthority !== durableHistoryAuthority
 
     // Drop any cached entry dated today or later BEFORE anything else can
     // carry it forward. The cache only ever stores complete past days (up to
@@ -679,9 +728,10 @@ export async function ensureCacheHydrated(
     // into permanently lost history.
     const tzKey = currentTzKey()
     const tzChanged = c.tzKey !== undefined && c.tzKey !== tzKey
-    if (c.savingsConfigHash !== savingsConfigHash || c.complete !== true || tzChanged) {
+    if (c.savingsConfigHash !== savingsConfigHash || c.complete !== true || tzChanged || historyAuthorityChanged) {
       const baseline = c.days
-      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - BACKFILL_DAYS)
+      const horizonDays = historyAuthorityChanged ? DAILY_CACHE_RETENTION_DAYS : BACKFILL_DAYS
+      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - horizonDays)
       let freshDays: DailyEntry[] = []
       if (backfillStart.getTime() <= yesterdayEnd.getTime()) {
         freshDays = aggregateDays(await parseSessions({ start: backfillStart, end: yesterdayEnd }))
@@ -698,6 +748,11 @@ export async function ensureCacheHydrated(
         version: DAILY_CACHE_VERSION,
         savingsConfigHash,
         tzKey,
+        ...(durableHistoryAuthority !== undefined && parseWasComplete
+          ? { durableHistoryAuthority }
+          : typeof c.durableHistoryAuthority === 'string'
+            ? { durableHistoryAuthority: c.durableHistoryAuthority }
+            : {}),
         lastComputedDate: yesterdayStr,
         days: applyRetention(merged, yesterdayStr),
         complete: parseWasComplete,

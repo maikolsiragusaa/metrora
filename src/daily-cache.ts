@@ -136,6 +136,7 @@ export async function ensureCacheHydrated(
   sessionComplete: () => boolean = () => true,
   aggregateDaysInTz: (projects: ProjectSummary[], tz: string) => core.DailyEntry[] =
     (projects, tz) => aggregateProjectsIntoDays(projects, iso => dateKeyInTz(iso, tz)),
+  options: core.CacheHydrationOptions = {},
 ): Promise<DailyCache> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -149,14 +150,46 @@ export async function ensureCacheHydrated(
     const tzKey = core.currentTzKey()
     const tzChanged = cache.tzKey !== undefined && cache.tzKey !== tzKey
     const accountingChanged = cache.savingsConfigHash !== savingsConfigHash
+    const durableHistoryAuthority = options.durableHistoryAuthority
+    const historyAuthorityChanged = durableHistoryAuthority !== undefined
+      && cache.durableHistoryAuthority !== durableHistoryAuthority
 
-    // A timezone rebucket can be reconciled losslessly only when the baseline
-    // and the fresh projection share the same accounting authority. If both
-    // authorities change in one run, the old-day cost cannot be subtracted
-    // from the new-day cost without inventing a cross-authority monetary
-    // delta. Keep the old cache untouched and require the caller to retry
-    // after the two invalidations have been serialized.
-    if (tzChanged && accountingChanged) return cache
+    // Serialize simultaneous invalidations. First re-derive the accounting
+    // authority while retaining the old timezone, then persist that intermediate
+    // state. The next run sees accounting=B/tz=A and can perform the lossless
+    // timezone rebucket under one accounting authority. This avoids subtracting
+    // old-money from new-money while still guaranteeing finite progress.
+    if (tzChanged && accountingChanged) {
+      const baseline = cache.days
+      const horizonDays = historyAuthorityChanged ? core.DAILY_CACHE_RETENTION_DAYS : core.BACKFILL_DAYS
+      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - horizonDays)
+      let freshDays: core.DailyEntry[] = []
+      if (backfillStart.getTime() <= yesterdayEnd.getTime() && cache.tzKey !== undefined) {
+        const projects = await parseSessions({ start: backfillStart, end: yesterdayEnd })
+        freshDays = aggregateDaysInTz(projects, cache.tzKey)
+      }
+      const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
+      // If the parse is partial, keep A/A completely intact and retry this same
+      // first phase. In particular, do not publish a B/A intermediate state from
+      // an undercounted snapshot.
+      if (!parseWasComplete) return cache
+
+      cache = withTrust({
+        version: core.DAILY_CACHE_VERSION,
+        savingsConfigHash,
+        tzKey: cache.tzKey,
+        ...(durableHistoryAuthority !== undefined
+          ? { durableHistoryAuthority }
+          : typeof cache.durableHistoryAuthority === 'string'
+            ? { durableHistoryAuthority: cache.durableHistoryAuthority }
+            : {}),
+        lastComputedDate: yesterdayStr,
+        days: applyRetention(core.mergeDayEntries(freshDays, baseline, true), yesterdayStr),
+        complete: true,
+      }, true)
+      await saveDailyCache(cache)
+      return cache
+    }
 
     // On ordinary runs an accidental/current-day cache row is discarded because
     // live parsing owns today. During a timezone migration, however, a day that
@@ -189,10 +222,11 @@ export async function ensureCacheHydrated(
       }
     }
 
-    if (accountingChanged || cache.complete !== true || tzChanged) {
+    if (accountingChanged || cache.complete !== true || tzChanged || historyAuthorityChanged) {
       const baseline = cache.days
       const priorWatermark = cache.lastComputedDate
-      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - core.BACKFILL_DAYS)
+      const horizonDays = historyAuthorityChanged ? core.DAILY_CACHE_RETENTION_DAYS : core.BACKFILL_DAYS
+      const backfillStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - horizonDays)
       let freshDays: core.DailyEntry[] = []
       if (backfillStart.getTime() <= yesterdayEnd.getTime()) {
         freshDays = aggregateDays(await parseSessions({ start: backfillStart, end: yesterdayEnd }))
@@ -234,6 +268,11 @@ export async function ensureCacheHydrated(
         version: core.DAILY_CACHE_VERSION,
         savingsConfigHash,
         tzKey,
+        ...(durableHistoryAuthority !== undefined && parseWasComplete
+          ? { durableHistoryAuthority }
+          : typeof cache.durableHistoryAuthority === 'string'
+            ? { durableHistoryAuthority: cache.durableHistoryAuthority }
+            : {}),
         lastComputedDate: parseWasComplete ? yesterdayStr : priorWatermark,
         days: applyRetention(days, yesterdayStr),
         complete: parseWasComplete,

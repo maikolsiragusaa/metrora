@@ -3113,23 +3113,6 @@ async function parseProviderSources(
     }
   }
 
-  // 90-day age-out for durable providers: remove entries whose newest call is
-  // older than 90 days so the detailed cache remains bounded.
-  if (!readOnly && provider.durableSources) {
-    const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000
-    for (const [cachedPath, cachedFile] of Object.entries(section.files)) {
-      const newestTs = cachedFile.turns
-        .flatMap(t => t.calls)
-        .map(c => new Date(c.timestamp).getTime())
-        .filter(ts => !isNaN(ts))
-        .reduce((max, ts) => Math.max(max, ts), 0)
-      if (newestTs > 0 && newestTs < cutoffMs) {
-        delete section.files[cachedPath]
-        ;(diskCache as { _dirty?: boolean })._dirty = true
-      }
-    }
-  }
-
   // Query-time: derive SessionSummary from all cached turns.
   // Uses seenKeys (shared across providers) for cross-provider dedup.
   const sessionMap = new Map<string, { project: string; projectPath?: string; workingDirectory?: string; turns: ClassifiedTurn[]; prLinks?: Set<string>; title?: string }>()
@@ -3243,6 +3226,28 @@ async function parseProviderSources(
   const projects: ProjectSummary[] = []
   for (const [dirName, { projectPath, sessions }] of projectMap) {
     projects.push(summarizeProject(dirName, projectPath ?? unsanitizePath(dirName), sessions))
+  }
+
+  // Durable source evidence must be materialized into the caller's result
+  // before detailed-cache retention is applied.  The detailed session cache is
+  // intentionally bounded, but a source that is still physically available may
+  // be the only evidence from which the durable daily ledger can be rebuilt.
+  // Evicting it before the query-time projection made cold bootstrap silently
+  // lose old Antigravity responses (and any other durable provider with the same
+  // lifecycle).
+  if (!readOnly && provider.durableSources) {
+    const cutoffMs = Date.now() - 90 * 24 * 60 * 60 * 1000
+    for (const [cachedPath, cachedFile] of Object.entries(section.files)) {
+      const newestTs = cachedFile.turns
+        .flatMap(t => t.calls)
+        .map(c => new Date(c.timestamp).getTime())
+        .filter(ts => !isNaN(ts))
+        .reduce((max, ts) => Math.max(max, ts), 0)
+      if (newestTs > 0 && newestTs < cutoffMs) {
+        delete section.files[cachedPath]
+        ;(diskCache as { _dirty?: boolean })._dirty = true
+      }
+    }
   }
 
   return projects

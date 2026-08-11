@@ -5,6 +5,7 @@ import { join } from 'path'
 
 import {
   DAILY_CACHE_VERSION,
+  DURABLE_HISTORY_AUTHORITY,
   currentTzKey,
   ensureCacheHydrated,
   saveDailyCache,
@@ -96,23 +97,51 @@ describe('R2 timezone boundary characterization', () => {
     expect(out.days).toEqual([baseline])
   })
 
-  it('refuses to finalize when timezone and accounting config change together', async () => {
+  it('serializes simultaneous timezone and accounting changes and converges in three runs', async () => {
     const baseline = day('2026-08-10', 'codex', slice(5))
     const freshCurrentTimezone = day('2026-08-11', 'codex', slice(7))
     const freshOldTimezone = day('2026-08-10', 'codex', slice(7))
     await seed([baseline], 'cfg-A', 'America/New_York')
 
-    const out = await ensureCacheHydrated(
+    const first = await ensureCacheHydrated(
       async () => [],
       () => [freshCurrentTimezone],
       'cfg-B',
       () => true,
       () => [freshOldTimezone],
+      { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
     )
 
-    expect(out.days).toEqual([baseline])
-    expect(out.savingsConfigHash).toBe('cfg-A')
-    expect(out.tzKey).toBe('America/New_York')
+    // Phase 1 changes accounting only; the old timezone remains the explicit
+    // bucket authority and no old-money/new-money subtraction is attempted.
+    expect(first.savingsConfigHash).toBe('cfg-B')
+    expect(first.tzKey).toBe('America/New_York')
+    expect(first.days.find(entry => entry.date === '2026-08-10')?.cost).toBe(7)
+
+    // A restart between phases is represented by the persisted B/A state.
+    const second = await ensureCacheHydrated(
+      async () => [],
+      () => [freshCurrentTimezone],
+      'cfg-B',
+      () => true,
+      () => [freshOldTimezone],
+      { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
+    )
+    expect(second.savingsConfigHash).toBe('cfg-B')
+    expect(second.tzKey).toBe(currentTzKey())
+    expect(second.days).toEqual([freshCurrentTimezone])
+
+    const third = await ensureCacheHydrated(
+      async () => [],
+      () => [freshCurrentTimezone],
+      'cfg-B',
+      () => true,
+      () => [freshOldTimezone],
+      { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
+    )
+    expect(third).toEqual(second)
+    expect(third.days.reduce((sum, entry) => sum + entry.calls, 0)).toBe(1)
+    expect(third.complete).toBe(true)
   })
 
   it('does not finalize a timezone migration when the wide snapshot is incomplete', async () => {
