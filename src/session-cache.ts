@@ -33,12 +33,9 @@ export type CachedCall = {
   /// amount; the query layer may still display 0 while preserving that it is not
   /// an intentional free route.
   costAssignment?: CostAssignmentV1
-  /// Pre-historical API-equivalent value retained only when it differs from a
-  /// reviewed date-effective settlement. Enables compare/rollback mode without
-  /// mutating the authoritative assignment.
+  /// Pre-historical API-equivalent value retained for compare/rollback without mutating authority.
   legacyCostUSD?: number
-  /// True when `costUSD` (or the tokens it is priced from) is estimated rather
-  /// than metered. Persisted so the estimated-cost marker survives the cache.
+  /// True when cost/tokens are estimated rather than metered; persisted across cache reloads.
   isEstimated?: boolean
   speed: 'standard' | 'fast'
   timestamp: string
@@ -51,16 +48,12 @@ export type CachedCall = {
   projectPath?: string
   workingDirectory?: string
   toolSequence?: ToolCall[][]
-  // Claude native identity reconciliation metadata. `timestamp` remains the
-  // first logical emission timestamp; these fields preserve native identity
-  // and final-emission evidence for cross-file arbitration.
+  // Claude native identity/finality evidence; `timestamp` remains the first logical emission.
   nativeMessageId?: string
   nativeEmissionTimestamp?: string
   nativeSnapshotTerminal?: boolean
-  // Rich-session-capture (capture-only; no report consumes these yet). All
-  // optional and omitted at zero/false to keep the per-call cache cost minimal.
-  // Lines added/removed by this call's edits, counted from tool-result diffs
-  // (Claude structuredPatch / Codex unified_diff). Numbers only, never patch text.
+  // Rich-session-capture fields are optional/zero-omitted; reports do not consume them yet.
+  // LOC comes from Claude structuredPatch / Codex unified_diff metadata, never patch text.
   locAdded?: number
   locRemoved?: number
   // True only. Claude: a tool result was interrupted / user-modified its edit.
@@ -405,9 +398,7 @@ function validateCall(c: unknown): c is CachedCall {
     && isOptionalString(o['project'])
     && isOptionalString(o['projectPath'])
     && isOptionalString(o['workingDirectory'])
-    && isOptionalString(o['nativeMessageId'])
-    && isOptionalString(o['nativeEmissionTimestamp'])
-    && isOptionalBool(o['nativeSnapshotTerminal'])
+    && isOptionalString(o['nativeMessageId']) && isOptionalString(o['nativeEmissionTimestamp']) && isOptionalBool(o['nativeSnapshotTerminal'])
     && (o['toolSequence'] === undefined || (Array.isArray(o['toolSequence']) && (o['toolSequence'] as unknown[]).every(s => isToolCallArray(s))))
     && isOptionalNum(o['locAdded'])
     && isOptionalNum(o['locRemoved'])

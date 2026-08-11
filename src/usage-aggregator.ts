@@ -93,11 +93,9 @@ async function hydrateCache(): Promise<DailyCache> {
       (range) => parseAllSessions(range, 'all'),
       aggregateProjectsIntoDays,
       getDailyCacheConfigHash(),
-      // Never finalize the daily history off a partial (interrupted) session
-      // hydration — that is what froze empty older days into the chart.
+      // Never finalize daily history from a partial hydration; that previously froze empty older days.
       isSessionHydrationComplete,
-      undefined,
-      { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
+      undefined, { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
     )
   } catch (err) {
     // Previously swallowed silently, which turned any backfill failure into an

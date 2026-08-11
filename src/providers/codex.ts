@@ -158,18 +158,10 @@ async function isValidCodexSession(filePath: string): Promise<{ valid: boolean; 
   const entry = await readFirstLine(filePath)
   if (!entry) return { valid: false }
   const payload: unknown = entry.payload
-  // Admission is structural and remains confined to Codex-owned roots plus
-  // rollout filename/layout rules. Legacy Codex session_meta used `payload.id`
-  // before the current `payload.session_id`; both are native session identities.
-  // `originator` is untrusted metadata: third-party app servers may emit valid
-  // Codex rollouts without a Codex-branded value, so branding alone must never
-  // decide admission.
+  // Structural admission accepts current session_id and legacy id; originator branding is not authoritative.
   const valid = entry.type === 'session_meta'
     && isPlainObject(payload)
-    && (
-      nonEmptyString(payload['session_id']) !== undefined
-      || nonEmptyString(payload['id']) !== undefined
-    )
+    && (nonEmptyString(payload['session_id']) !== undefined || nonEmptyString(payload['id']) !== undefined)
   return { valid, meta: valid ? entry : undefined }
 }
 
@@ -630,9 +622,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         if (!entry) continue
 
         if (entry.type === 'session_meta') {
-          sessionId = nonEmptyString(entry.payload?.session_id)
-            ?? nonEmptyString(entry.payload?.id)
-            ?? basename(source.path, '.jsonl')
+          sessionId = nonEmptyString(entry.payload?.session_id) ?? nonEmptyString(entry.payload?.id) ?? basename(source.path, '.jsonl')
           sessionCwd = nonEmptyString(entry.payload?.cwd) ?? sessionCwd
           sessionTimestamp = finiteTimestamp(entry.timestamp) ?? sessionTimestamp
           forkedFromId = nonEmptyString(entry.payload?.forked_from_id) ?? ''
