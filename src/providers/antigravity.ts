@@ -718,10 +718,8 @@ function buildCallFromSqliteGenMetadataRow(cascadeId: string, row: AntigravityGe
     + protoFieldPositiveInteger(firstProtoField(usageFields, 2))
   const cacheReadTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 5))
   const totalOutputTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 3))
-  // Correlation against same-response RPC metadata establishes #9 as thinking
-  // and #10 as response output. #3 remains the inclusive generated-token total.
-  let thinkingTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 9))
-  let responseTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 10))
+  let thinkingTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 9)) // #9 reasoning
+  let responseTokens = protoFieldPositiveInteger(firstProtoField(usageFields, 10)) // #10 output; #3 is inclusive generated total
 
   if (responseTokens === 0 && thinkingTokens === 0) {
     responseTokens = totalOutputTokens
