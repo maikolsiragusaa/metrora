@@ -133,6 +133,12 @@ export type ParsedApiCall = {
   timestamp: string
   bashCommands: string[]
   deduplicationKey: string
+  /** Claude native message identity, when the source recorded one. */
+  nativeMessageId?: string
+  /** Timestamp of the selected source emission before logical-time rebucketing. */
+  nativeEmissionTimestamp?: string
+  /** Native terminal/final marker (for example Claude `stop_reason`). */
+  nativeSnapshotTerminal?: boolean
   cacheCreationOneHourTokens?: number
   toolSequence?: ToolCall[][]
   /// Claude Code: `tool_use` ids of the `Agent`/`Task` subagent-spawn blocks in

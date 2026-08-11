@@ -22,6 +22,7 @@ export function getDailyCacheConfigHash(): string {
   }
   return `historicalPricing=${runtimeHistoricalPricingCacheKeyV1()}`
     + `\u0002providerEnv=${getProviderEnvConfigHash()}`
+    + `\u0002claudeCollector=${PROVIDER_PARSE_VERSIONS['claude'] ?? ''}`
     + `\u0002clineCollector=${PROVIDER_PARSE_VERSIONS['cline'] ?? ''}`
     + `\u0002codexCollector=${codexCollector}`
     + `\u0002copilotCollector=${PROVIDER_PARSE_VERSIONS['copilot'] ?? ''}`

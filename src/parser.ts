@@ -1049,6 +1049,7 @@ export function compactEntry(raw: JournalEntry): JournalEntry {
     usage: compactUsage,
     content: compactContent,
     ...(msg.id ? { id: msg.id } : {}),
+    ...(msg.stop_reason ? { stop_reason: msg.stop_reason } : {}),
   }
 
   return entry
@@ -1417,6 +1418,11 @@ export function parseApiCall(entry: JournalEntry, toolResultMeta?: Map<string, T
     timestamp: entry.timestamp ?? '',
     bashCommands: bashCmds,
     deduplicationKey: msg.id ?? `claude:${entry.timestamp}`,
+    ...(msg.id ? { nativeMessageId: msg.id } : {}),
+    ...(typeof entry['nativeEmissionTimestamp'] === 'string' && entry['nativeEmissionTimestamp']
+      ? { nativeEmissionTimestamp: entry['nativeEmissionTimestamp'] }
+      : { nativeEmissionTimestamp: entry.timestamp ?? '' }),
+    ...(msg.stop_reason ? { nativeSnapshotTerminal: true } : {}),
     cacheCreationOneHourTokens: cacheCreation.oneHourTokens || undefined,
     toolSequence: toolSeq.length > 0 ? toolSeq : undefined,
     ...(spawnIds.length > 0 ? { spawnToolUseIds: spawnIds } : {}),
@@ -1511,12 +1517,126 @@ export function dedupeStreamingMessageIds(entries: JournalEntry[]): JournalEntry
     if (id && lastIdxById.get(id) !== i) continue
     if (id && firstIdxById.get(id) !== i) {
       const firstTs = entries[firstIdxById.get(id)!]!.timestamp
-      result.push({ ...entries[i]!, timestamp: firstTs ?? entries[i]!.timestamp })
+      result.push({
+        ...entries[i]!,
+        timestamp: firstTs ?? entries[i]!.timestamp,
+        nativeEmissionTimestamp: entries[i]!.timestamp ?? firstTs ?? '',
+      })
       continue
     }
     result.push(entries[i]!)
   }
   return result
+}
+
+/**
+ * A Claude JSONL message id is a native accounting identity, not a file-local
+ * key. A parent transcript and a sidechain/mirror can therefore contain two
+ * snapshots of one API response. This comparator deliberately uses only
+ * evidence carried by the native snapshot:
+ *
+ *   1. later native emission timestamp;
+ *   2. a native terminal marker when timestamps tie;
+ *   3. a stable path/ordinal tie-break only when the accounting tuple is
+ *      already identical (or when an ambiguity is explicitly recorded).
+ *
+ * It never takes a maximum per field, adds duplicate snapshots, or lets file
+ * discovery order decide the accounting winner.
+ */
+export type ClaudeNativeCallCandidate = {
+  filePath: string
+  call: CachedCall
+  ordinal: number
+}
+
+export type ClaudeNativeIdentityAmbiguity = {
+  identity: string
+  candidates: ClaudeNativeCallCandidate[]
+}
+
+export type ClaudeNativeReconciliation = {
+  winners: Map<string, ClaudeNativeCallCandidate>
+  ambiguities: ClaudeNativeIdentityAmbiguity[]
+}
+
+export function getClaudeNativeIdentity(call: Pick<CachedCall, 'provider' | 'deduplicationKey' | 'nativeMessageId'>): string | undefined {
+  if (call.provider !== 'claude') return undefined
+  if (call.nativeMessageId) return call.nativeMessageId
+  // Support a one-run projection of a pre-migration cache. Advisor calls use a
+  // derived `:advisor:` key and are deliberately excluded from this fallback.
+  if (call.deduplicationKey.startsWith('claude:') || call.deduplicationKey.includes(':advisor:')) return undefined
+  return call.deduplicationKey || undefined
+}
+
+function nativeAccountingTuple(call: CachedCall): string {
+  return JSON.stringify({
+    model: call.model,
+    modelProvider: call.modelProvider ?? null,
+    inputTokens: call.usage.inputTokens,
+    outputTokens: call.usage.outputTokens,
+    cacheCreationInputTokens: call.usage.cacheCreationInputTokens,
+    cacheReadInputTokens: call.usage.cacheReadInputTokens,
+    cachedInputTokens: call.usage.cachedInputTokens,
+    reasoningTokens: call.usage.reasoningTokens,
+    webSearchRequests: call.usage.webSearchRequests,
+    cacheCreationOneHourTokens: call.usage.cacheCreationOneHourTokens,
+  })
+}
+
+function nativeEmissionMs(call: CachedCall): number | undefined {
+  const raw = call.nativeEmissionTimestamp ?? call.timestamp
+  const ms = Date.parse(raw)
+  return Number.isFinite(ms) ? ms : undefined
+}
+
+function nativeStableKey(candidate: ClaudeNativeCallCandidate): string {
+  const path = candidate.filePath.replace(/\\/g, '/').toLowerCase()
+  return `${path}\u0000${String(candidate.ordinal).padStart(12, '0')}\u0000${nativeAccountingTuple(candidate.call)}`
+}
+
+/** Positive when `a` has stronger native chronology/finality evidence. */
+function compareNativeEvidence(a: ClaudeNativeCallCandidate, b: ClaudeNativeCallCandidate): number {
+  const aMs = nativeEmissionMs(a.call)
+  const bMs = nativeEmissionMs(b.call)
+  if (aMs !== undefined && bMs !== undefined && aMs !== bMs) return aMs > bMs ? 1 : -1
+  if (aMs !== undefined && bMs === undefined) return 1
+  if (aMs === undefined && bMs !== undefined) return -1
+  const aTerminal = a.call.nativeSnapshotTerminal === true
+  const bTerminal = b.call.nativeSnapshotTerminal === true
+  if (aTerminal !== bTerminal) return aTerminal ? 1 : -1
+  return 0
+}
+
+export function reconcileClaudeNativeCalls(
+  files: ReadonlyArray<{ filePath: string; calls: readonly CachedCall[] }>,
+): ClaudeNativeReconciliation {
+  const groups = new Map<string, ClaudeNativeCallCandidate[]>()
+  for (const file of files) {
+    let ordinal = 0
+    for (const call of file.calls) {
+      const identity = getClaudeNativeIdentity(call)
+      if (!identity) continue
+      const group = groups.get(identity) ?? []
+      group.push({ filePath: file.filePath, call, ordinal: ordinal++ })
+      groups.set(identity, group)
+    }
+  }
+
+  const winners = new Map<string, ClaudeNativeCallCandidate>()
+  const ambiguities: ClaudeNativeIdentityAmbiguity[] = []
+  for (const [identity, candidates] of groups) {
+    const ranked = [...candidates].sort((a, b) => {
+      const evidence = compareNativeEvidence(b, a)
+      return evidence !== 0 ? evidence : nativeStableKey(a).localeCompare(nativeStableKey(b))
+    })
+    const winner = ranked[0]
+    if (!winner) continue
+    const equallyAuthoritative = candidates.filter(candidate => compareNativeEvidence(candidate, winner) === 0)
+    const tuples = new Set(equallyAuthoritative.map(candidate => nativeAccountingTuple(candidate.call)))
+    if (tuples.size > 1) ambiguities.push({ identity, candidates: equallyAuthoritative })
+    winners.set(identity, winner)
+  }
+  return { winners, ambiguities }
 }
 
 export function groupIntoTurns(entries: JournalEntry[], seenMsgIds: Set<string>, toolResultMeta?: Map<string, ToolResultMeta>): ParsedTurn[] {
@@ -1933,7 +2053,6 @@ export async function readAgentType(filePath: string): Promise<string | undefine
 
 async function scanProjectDirs(
   dirs: Array<{ path: string; name: string; source?: SessionSourceMetadata }>,
-  seenMsgIds: Set<string>,
   diskCache: SessionCache,
   dateRange?: DateRange,
   // Cold-run robustness: called after every parsed Claude file so a throttled
@@ -1994,15 +2113,6 @@ async function scanProjectDirs(
     unchangedFiles.push({ filePath, dirName, cached })
   }
 
-  // Pre-seed dedup set from cached (unchanged) files
-  for (const { cached } of unchangedFiles) {
-    for (const turn of cached.turns) {
-      for (const call of turn.calls) {
-        seenMsgIds.add(call.deduplicationKey)
-      }
-    }
-  }
-
   const parseProgress = createScanProgress('parsing changed claude sessions', changedFiles.length)
   const progressTotal = changedFiles.length
   let filesDone = 0
@@ -2026,11 +2136,11 @@ async function scanProjectDirs(
         // Straddle guard: a streamed assistant message id that first appeared in
         // the committed prefix can be restated inside the appended region
         // (image-heavy turns stream one id across several records over seconds).
-        // The appended region is grouped before this file's cached keys join
-        // seenMsgIds, so the restated id would count twice; suppressing it
-        // instead would freeze the stale first emission. Neither matches a full
-        // re-parse, so on any id overlap the shortcut is abandoned and the file
-        // re-parses from byte 0 (rare: ~0.3% of real files).
+        // The appended region is grouped with a file-local identity set, then
+        // merged with the cached prefix. A restated id across that boundary
+        // must not freeze the stale first emission, so on any overlap the
+        // shortcut is abandoned and the file re-parses from byte 0 (rare:
+        // ~0.3% of real files).
         const cachedIds = new Set(cached.turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
         const straddles = newEntries !== null && newEntries.some(e => {
           const id = getMessageId(e)
@@ -2038,7 +2148,7 @@ async function scanProjectDirs(
         })
         if (!straddles) {
           const newTurns = newEntries
-            ? parsedTurnsToCachedTurns(groupIntoTurns(dedupeStreamingMessageIds(newEntries), seenMsgIds, toolResultMeta))
+            ? parsedTurnsToCachedTurns(groupIntoTurns(dedupeStreamingMessageIds(newEntries), new Set<string>(), toolResultMeta))
             : []
 
           const mergedTurns: CachedTurn[] = cached.turns.map(t => ({ ...t, calls: [...t.calls] }))
@@ -2062,11 +2172,6 @@ async function scanProjectDirs(
             }
             for (let i = startIdx; i < newTurns.length; i++) mergedTurns.push(newTurns[i]!)
           }
-
-          // The cached region's dedup keys were not added to seenMsgIds (only
-          // unchanged files pre-seed it), so add them now — a full re-parse would
-          // have, and later files dedup cross-file against them.
-          for (const t of cached.turns) for (const c of t.calls) seenMsgIds.add(c.deduplicationKey)
 
           // First-cwd wins, and the first cwd lives in the cached region whenever
           // one was resolved there; only re-derive if the cached region had none.
@@ -2131,7 +2236,10 @@ async function scanProjectDirs(
       const entries = await parseClaudeEntries(filePath, tracker, undefined, { toolResultMeta, sessionMeta })
       if (!entries) { filesDone++; await parseProgress.tick(filesDone); continue }
 
-      const turns = groupIntoTurns(dedupeStreamingMessageIds(entries), seenMsgIds, toolResultMeta)
+      // Streaming deduplication is deliberately file-local. Native message ids
+      // are reconciled after every file is parsed, so discovery order cannot
+      // decide which cross-file snapshot is accounted.
+      const turns = groupIntoTurns(dedupeStreamingMessageIds(entries), new Set<string>(), toolResultMeta)
       const cwd = extractCanonicalCwd(entries)
       const canonical = (cwd && !isCoworkSession(cwd, filePath)) ? await resolveCanonicalProjectPath(cwd) : undefined
       section.files[filePath] = {
@@ -2190,9 +2298,37 @@ async function scanProjectDirs(
     ...changedFiles.map(f => ({ filePath: f.filePath, dirName: f.info.dirName, source: f.info.source })),
   ]
 
+  // Reconcile the complete cached file set, including unchanged files and any
+  // surviving PR-linked orphan. This is the cross-file authority boundary: a
+  // newly discovered mirror can supersede a partial cached parent without
+  // reparsing the parent, and a warm run is therefore equivalent to cold.
+  const claudeNativeReconciliation = reconcileClaudeNativeCalls(
+    Object.entries(section.files).map(([filePath, cached]) => ({
+      filePath,
+      calls: cached.turns.flatMap(turn => turn.calls),
+    })),
+  )
+  if (claudeNativeReconciliation.ambiguities.length > 0) {
+    process.stderr.write(
+      `metrora: Claude native identity ambiguity for ${claudeNativeReconciliation.ambiguities.length} identity group(s); deterministic single-call projection retained without field-wise merging.\n`,
+    )
+  }
+
   for (const { filePath, dirName, source } of allFiles) {
     const cachedFile = section.files[filePath]
     if (!cachedFile || cachedFile.turns.length === 0) continue
+
+    const reconciledTurns = cachedFile.turns
+      .map(turn => {
+        const calls = turn.calls.filter(call => {
+          const identity = getClaudeNativeIdentity(call)
+          if (!identity) return true
+          return claudeNativeReconciliation.winners.get(identity)?.call === call
+        })
+        return calls.length > 0 ? { ...turn, calls } : null
+      })
+      .filter((turn): turn is CachedTurn => turn !== null)
+    if (reconciledTurns.length === 0) continue
 
     // Carry the git branch forward BEFORE the date filter below: the cache
     // stores a turn's branch only when it changes, so resolving here (over the
@@ -2206,7 +2342,7 @@ async function scanProjectDirs(
     let carriedPrRefs: string[] | undefined
     let prRefsAtRangeStart: string[] | undefined
     let frozePrRefs = !dateRange
-    let classifiedTurns = cachedFile.turns.map(turn => {
+    let classifiedTurns = reconciledTurns.map(turn => {
       if (turn.gitBranch) carriedBranch = turn.gitBranch
       if (dateRange && !frozePrRefs) {
         const firstTs = turn.calls[0]?.timestamp
@@ -2227,7 +2363,7 @@ async function scanProjectDirs(
     // the PR set active at the turn that emitted it. Lets a subagent fold into the
     // right PR even when its launching turn is later sliced out of range. Only for
     // sessions that both spawned subagents and referenced a PR.
-    const spawnPrSets = cachedFile.prLinks?.length ? buildSpawnPrSets(cachedFile.turns) : {}
+    const spawnPrSets = cachedFile.prLinks?.length ? buildSpawnPrSets(reconciledTurns) : {}
 
     if (dateRange) {
       classifiedTurns = classifiedTurns.filter(turn => {
@@ -2517,6 +2653,9 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     skills: call.skills,
     subagentTypes: call.subagentTypes,
     deduplicationKey: call.deduplicationKey,
+    ...(call.nativeMessageId ? { nativeMessageId: call.nativeMessageId } : {}),
+    ...(call.nativeEmissionTimestamp ? { nativeEmissionTimestamp: call.nativeEmissionTimestamp } : {}),
+    ...(call.nativeSnapshotTerminal ? { nativeSnapshotTerminal: true } : {}),
     toolSequence: call.toolSequence,
     ...(call.locAdded ? { locAdded: call.locAdded } : {}),
     ...(call.locRemoved ? { locRemoved: call.locRemoved } : {}),
@@ -2695,6 +2834,9 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
     timestamp: call.timestamp,
     bashCommands: call.bashCommands,
     deduplicationKey: call.deduplicationKey,
+    ...(call.nativeMessageId ? { nativeMessageId: call.nativeMessageId } : {}),
+    ...(call.nativeEmissionTimestamp ? { nativeEmissionTimestamp: call.nativeEmissionTimestamp } : {}),
+    ...(call.nativeSnapshotTerminal ? { nativeSnapshotTerminal: true } : {}),
     cacheCreationOneHourTokens: u.cacheCreationOneHourTokens || undefined,
     toolSequence: call.toolSequence,
     activeDurationMs: call.activeDurationMs,
@@ -3749,7 +3891,6 @@ async function runParse(
   options: RunParseOptions = {},
 ): Promise<ProjectSummary[]> {
   const { isCold = false, readOnly = false, cachedOnly = false, refreshLock } = options
-  const seenMsgIds = new Set<string>()
   const seenKeys = new Set<string>()
   const allSources = cachedOnly ? [] : await discoverAllSessions(providerFilter)
 
@@ -3793,7 +3934,7 @@ async function runParse(
   if (includeClaude) {
     if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'start' })
     try {
-      claudeProjects = await scanProjectDirs(claudeDirs, seenMsgIds, diskCache, dateRange, saveProgress, readOnly)
+      claudeProjects = await scanProjectDirs(claudeDirs, diskCache, dateRange, saveProgress, readOnly)
       if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
     } catch (err) {
       if (!isPermissionError(err)) throw err
