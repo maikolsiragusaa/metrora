@@ -2,9 +2,16 @@
 
 This file records Metrora-originated public changes. Required third-party notices and licence texts are maintained separately in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
-## Unreleased — current source line `1.0.0-rc.9`
+## Unreleased — current source line `1.0.0-rc.10`
 
-RC9 is the current source/pre-submission candidate. It is not yet a Microsoft Store submission, certification or publication.
+RC10 is the current source/pre-submission candidate. It advances RC9 after source-completeness and durable-history reconciliation materially changed user-visible accounting. It is not yet a Microsoft Store submission, certification or publication.
+
+### Source completeness and durable history
+
+- Reconciled exact native-source accounting with durable historical totals so source expiration or cache eviction does not silently lose previously observed usage.
+- Corrected provider identity, request-boundary and timezone reconciliation where those boundaries could change calls or token totals.
+- Preserved estimated or otherwise non-native rows as explicit non-exact accounting rather than blending them into native-source evidence.
+- Kept project, model, daily and filtered views conserved against their applicable durable accounting authority.
 
 ### Accounting reconciliation
 
