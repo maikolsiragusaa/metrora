@@ -1,9 +1,11 @@
 import { statSync } from 'node:fs'
 import { lstat, open, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter as pathDelimiter, join } from 'node:path'
 
 import { isSqliteBusyError, openDatabase, type SqliteDatabase } from './sqlite.js'
+import { COPILOT_DEFERRED_ENV_FINGERPRINTS, PROVIDER_ENV_FINGERPRINT_ADDITIONS } from './provider-parse-authorities.js'
+import { PROVIDER_ENV_VARS } from './session-cache.js'
 import type { ProbeRoot } from './providers/types.js'
 
 export const DOCTOR_SOURCE_STATES = [
@@ -88,6 +90,67 @@ export function redactPath(value: string): string {
   }
   if (/^(?:[a-z]:\/|\/|\\\\)/i.test(normalized)) return '<redacted-path>'
   return normalized
+}
+
+// An explicit provider override is user-controlled input, even when it happens
+// to sit below a familiar root such as %APPDATA% or ~. Do not preserve any
+// suffix: it may contain a profile, workspace, project, or session-derived
+// component. The family row still carries the static family name and the
+// override variable name, so the diagnostic remains actionable without
+// disclosing the configured value.
+export function redactOverridePath(_value: string): string {
+  return '<override-path>'
+}
+
+const NON_PATH_OVERRIDE_NAMES = new Set([
+  'AI_GATEWAY_API_KEY',
+  'KIMI_MODEL_NAME',
+  'METRORA_COPILOT_DISABLE_OTEL',
+  'VERCEL_OIDC_TOKEN',
+])
+
+function looksLikePathOverride(name: string): boolean {
+  return !NON_PATH_OVERRIDE_NAMES.has(name) && /(?:HOME|DIR|PATH|ROOT|DB|CONFIG|PREFIX)/i.test(name)
+}
+
+function overridePathCandidates(name: string, value: string): string[] {
+  const values = name.endsWith('DIRS') ? value.split(pathDelimiter) : [value]
+  return values.flatMap(item => {
+    const trimmed = item.trim()
+    if (!trimmed) return []
+    if (trimmed === '~') return [homedir()]
+    if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) return [join(homedir(), trimmed.slice(2))]
+    return [trimmed]
+  })
+}
+
+function isPathWithinRoot(value: string, root: string): boolean {
+  const normalizedValue = value.replace(/\\/g, '/').replace(/\/$/, '')
+  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/$/, '')
+  const valueLower = normalizedValue.toLowerCase()
+  const rootLower = normalizedRoot.toLowerCase()
+  return valueLower === rootLower || valueLower.startsWith(rootLower + '/')
+}
+
+function overrideNameForPath(value: string): string | undefined {
+  const names = new Set<string>([
+    ...Object.values(PROVIDER_ENV_VARS).flat(),
+    ...Object.values(PROVIDER_ENV_FINGERPRINT_ADDITIONS).flat(),
+    ...COPILOT_DEFERRED_ENV_FINGERPRINTS,
+    'METRORA_DESKTOP_SESSIONS_DIR',
+  ])
+  const active = [...names]
+    .filter(name => looksLikePathOverride(name))
+    .flatMap(name => {
+      const raw = process.env[name]
+      return raw ? overridePathCandidates(name, raw).map(root => ({ name, root })) : []
+    })
+    .sort((a, b) => b.root.length - a.root.length)
+  return active.find(candidate => isPathWithinRoot(value, candidate.root))?.name
+}
+
+export function redactDoctorPath(value: string): string {
+  return overrideNameForPath(value) ? redactOverridePath(value) : redactPath(value)
 }
 
 export function redactText(value: string): string {
@@ -187,7 +250,14 @@ export function inspectReadonlySqlite(
 }
 
 function diagnostic(family: string, root: string, probe: StateReason, override?: string): DoctorSourceDiagnostic {
-  return { family, root: redactPath(root), state: probe.state, reason: probe.reason, ...(override ? { override } : {}) }
+  const effectiveOverride = override ?? overrideNameForPath(root)
+  return {
+    family,
+    root: effectiveOverride ? redactOverridePath(root) : redactPath(root),
+    state: probe.state,
+    reason: probe.reason,
+    ...(effectiveOverride ? { override: effectiveOverride } : {}),
+  }
 }
 
 function overrideNameFor(providerName: string, family: string): string | undefined {
@@ -245,16 +315,17 @@ async function cursorWorkspace(path: string): Promise<DoctorSourceDiagnostic> {
 }
 
 function kiroDirectory(path: string, family: string): Promise<DoctorSourceDiagnostic> {
+  const override = overrideNameFor('kiro', family)
   return readDirectory(path).then(async directory => {
-    if (!directory.entries || directory.state !== 'PRESENT') return diagnostic(family, path, directory)
+    if (!directory.entries || directory.state !== 'PRESENT') return diagnostic(family, path, directory, override)
     if (family === 'cli') {
       const files = directory.entries.filter(entry => entry.endsWith('.jsonl'))
-      if (files.length === 0) return diagnostic(family, path, { state: 'PRESENT_EMPTY', reason: 'directory has no supported sessions' })
+      if (files.length === 0) return diagnostic(family, path, { state: 'PRESENT_EMPTY', reason: 'directory has no supported sessions' }, override)
       for (const file of files.slice(0, MAX_NESTED_ENTRIES)) {
         const probe = await inspectJsonLines(join(path, file))
-        if (probe.state === 'MALFORMED' || probe.state === 'UNKNOWN') return diagnostic(family, path, probe)
+        if (probe.state === 'MALFORMED' || probe.state === 'UNKNOWN') return diagnostic(family, path, probe, override)
       }
-      return diagnostic(family, path, { state: 'PRESENT', reason: 'recognized Kiro CLI sessions are readable' }, overrideNameFor('kiro', family))
+      return diagnostic(family, path, { state: 'PRESENT', reason: 'recognized Kiro CLI sessions are readable' }, override)
     }
     if (family === 'kiro-v2') {
       let supported = false
@@ -268,26 +339,27 @@ function kiroDirectory(path: string, family: string): Promise<DoctorSourceDiagno
           const messageProbe = await inspectPath(messagePath)
           if (messageProbe.state !== 'PRESENT') continue
           const meta = await inspectJsonDocument(join(sessionPath, 'session.json'), 'workspacePaths')
-          if (meta.state === 'MALFORMED' || meta.state === 'UNKNOWN') return diagnostic(family, path, meta, overrideNameFor('kiro', family))
+          if (meta.state === 'MALFORMED' || meta.state === 'UNKNOWN') return diagnostic(family, path, meta, override)
           if (meta.state === 'PRESENT' || meta.state === 'MISSING') supported = true
         }
       }
       return diagnostic(family, path, supported
         ? { state: 'PRESENT', reason: 'recognized Kiro v2 sessions are readable' }
-        : { state: 'PRESENT_EMPTY', reason: 'Kiro v2 root has no supported sessions' }, overrideNameFor('kiro', family))
+        : { state: 'PRESENT_EMPTY', reason: 'Kiro v2 root has no supported sessions' }, override)
     }
     const supported = family === 'legacy-ide' || family === 'legacy-ide-server'
       ? directory.entries.some(entry => entry === 'workspace-sessions' || /^[a-f0-9]{32}$/i.test(entry))
       : directory.entries.some(entry => entry.length > 0)
     return diagnostic(family, path, supported
       ? { state: 'PRESENT', reason: 'recognized Kiro IDE storage is readable' }
-      : { state: 'PRESENT_EMPTY', reason: 'Kiro storage has no supported sessions' })
+      : { state: 'PRESENT_EMPTY', reason: 'Kiro storage has no supported sessions' }, override)
   })
 }
 
 async function copilotJsonDirectory(path: string, family: string, nested: boolean): Promise<DoctorSourceDiagnostic> {
+  const override = overrideNameFor('copilot', family)
   const directory = await readDirectory(path)
-  if (!directory.entries || directory.state !== 'PRESENT') return diagnostic(family, path, directory)
+  if (!directory.entries || directory.state !== 'PRESENT') return diagnostic(family, path, directory, override)
   const files: string[] = []
   for (const entry of directory.entries.slice(0, MAX_NESTED_ENTRIES)) {
     const entryPath = join(path, entry)
@@ -308,17 +380,18 @@ async function copilotJsonDirectory(path: string, family: string, nested: boolea
       }
     }
   }
-  if (files.length === 0) return diagnostic(family, path, { state: 'PRESENT_EMPTY', reason: 'directory has no supported sessions' })
+  if (files.length === 0) return diagnostic(family, path, { state: 'PRESENT_EMPTY', reason: 'directory has no supported sessions' }, override)
   for (const file of files.slice(0, MAX_NESTED_ENTRIES)) {
     const probe = await inspectJsonLines(file)
-    if (probe.state === 'MALFORMED' || probe.state === 'UNKNOWN') return diagnostic(family, path, probe)
+    if (probe.state === 'MALFORMED' || probe.state === 'UNKNOWN') return diagnostic(family, path, probe, override)
   }
-  return diagnostic(family, path, { state: 'PRESENT', reason: 'recognized Copilot JSON sources are readable' })
+  return diagnostic(family, path, { state: 'PRESENT', reason: 'recognized Copilot JSON sources are readable' }, override)
 }
 
 async function copilotJetBrains(path: string): Promise<DoctorSourceDiagnostic> {
+  const override = overrideNameFor('copilot', 'jetbrains')
   const root = await readDirectory(path)
-  if (!root.entries || root.state !== 'PRESENT') return diagnostic('jetbrains', path, root)
+  if (!root.entries || root.state !== 'PRESENT') return diagnostic('jetbrains', path, root, override)
   let found = false
   for (const ide of root.entries.slice(0, MAX_NESTED_ENTRIES)) {
     const ideInfo = await inspectPath(join(path, ide))
@@ -339,7 +412,7 @@ async function copilotJetBrains(path: string): Promise<DoctorSourceDiagnostic> {
   }
   return diagnostic('jetbrains', path, found
     ? { state: 'PRESENT', reason: 'recognized JetBrains Copilot stores are readable' }
-    : { state: 'PRESENT_EMPTY', reason: 'JetBrains root has no supported stores' })
+    : { state: 'PRESENT_EMPTY', reason: 'JetBrains root has no supported stores' }, override)
 }
 
 export async function diagnoseProviderSources(
@@ -352,25 +425,22 @@ export async function diagnoseProviderSources(
     else if (providerName === 'cursor' && root.label === 'workspace-storage') out.push(await cursorWorkspace(root.path))
     else if (providerName === 'kiro') out.push(await kiroDirectory(root.path, root.label))
     else if (providerName === 'copilot' && root.label === 'otel-agent-traces') {
+      const override = overrideNameFor('copilot', root.label)
       const probe = inspectReadonlySqlite(root.path, ['spans', 'span_attributes'], db => {
         const rows = db.query<{ count: number }>('SELECT COUNT(*) AS count FROM spans')
         return Number(rows[0]?.count ?? 0) > 0
           ? { state: 'PRESENT', reason: 'recognized Copilot OTel store has spans' }
           : { state: 'PRESENT_EMPTY', reason: 'recognized Copilot OTel store has no spans' }
       })
-      out.push(diagnostic(root.label, root.path, probe, overrideNameFor('copilot', root.label)))
+      out.push(diagnostic(root.label, root.path, probe, override))
     } else if (providerName === 'copilot' && root.label === 'cli-session-state') {
-      const row = await copilotJsonDirectory(root.path, root.label, false)
-      out.push({ ...row, ...(overrideNameFor('copilot', root.label) ? { override: overrideNameFor('copilot', root.label) } : {}) })
+      out.push(await copilotJsonDirectory(root.path, root.label, false))
     } else if (providerName === 'copilot' && root.label === 'vscode-workspace-storage') {
-      const row = await copilotJsonDirectory(root.path, root.label, true)
-      out.push({ ...row, ...(overrideNameFor('copilot', root.label) ? { override: overrideNameFor('copilot', root.label) } : {}) })
+      out.push(await copilotJsonDirectory(root.path, root.label, true))
     } else if (providerName === 'copilot' && root.label === 'empty-window-global-storage') {
-      const row = await copilotJsonDirectory(root.path, root.label, false)
-      out.push({ ...row, ...(overrideNameFor('copilot', root.label) ? { override: overrideNameFor('copilot', root.label) } : {}) })
+      out.push(await copilotJsonDirectory(root.path, root.label, false))
     } else if (providerName === 'copilot' && root.label === 'jetbrains') {
-      const row = await copilotJetBrains(root.path)
-      out.push({ ...row, ...(overrideNameFor('copilot', root.label) ? { override: overrideNameFor('copilot', root.label) } : {}) })
+      out.push(await copilotJetBrains(root.path))
     } else {
       out.push(diagnostic(root.label, root.path, await inspectPath(root.path)))
     }

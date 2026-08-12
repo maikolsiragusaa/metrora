@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { collectDoctorReport, renderDoctorJson, renderDoctorTable } from '../src/doctor.js'
-import { classifyDoctorError, DOCTOR_SOURCE_STATES, redactText } from '../src/doctor-source-diagnostics.js'
+import { classifyDoctorError, DOCTOR_SOURCE_STATES, redactOverridePath, redactText } from '../src/doctor-source-diagnostics.js'
 import { getCopilotDoctorProbeRoots } from '../src/providers/copilot-paths.js'
 import { createCopilotProvider } from '../src/providers/copilot.js'
 import { getCursorDoctorProbeRoots, getCursorWorkspaceStorageDir } from '../src/providers/cursor-paths.js'
@@ -85,6 +85,73 @@ describe('bounded source diagnostic primitive', () => {
     expect(report.providers[0]?.envOverrides).toEqual([{ name: 'CODEX_HOME' }])
     expect(renderDoctorJson(report)).not.toContain('alice')
     expect(renderDoctorTable(report, { color: false })).not.toContain('Private Workspace')
+  })
+
+  it.each([
+    ['Windows absolute', 'C:\\Users\\alice\\AppData\\Roaming\\Private Workspace\\session'],
+    ['Unix absolute', '/home/alice/.config/private/workspace/session'],
+    ['UNC', '\\\\server\\share\\alice\\private\\workspace'],
+    ['home', 'C:\\Users\\alice'],
+    ['APPDATA', 'C:\\Users\\alice\\AppData\\Roaming\\private\\workspace'],
+    ['LOCALAPPDATA', 'C:\\Users\\alice\\AppData\\Local\\private\\workspace'],
+    ['XDG config', '/home/alice/.config/private/workspace'],
+    ['XDG data', '/home/alice/.local/share/private/workspace'],
+    ['outside standard roots', 'D:\\private\\workspace\\session'],
+    ['username component', '/srv/alice/private/cache'],
+    ['workspace-like suffix', 'C:\\Users\\alice\\workspace-like\\project'],
+    ['nested private suffix', '/home/alice/private/one/two/three'],
+    ['already symbolic', '%APPDATA%/SomePrivateWorkspace/session'],
+    ['relative safe label', 'relative-safe-label'],
+  ])('fully redacts %s override values', (_label, secretPath) => {
+    expect(redactOverridePath(secretPath)).toBe('<override-path>')
+  })
+
+  it('keeps Kiro override diagnostics useful without emitting the configured value', async () => {
+    const secretPath = join(root, 'Private Workspace', 'nested', 'session')
+    vi.stubEnv('KIRO_HOME', secretPath)
+    const provider: Provider = {
+      name: 'kiro',
+      displayName: 'Kiro',
+      modelDisplayName: model => model,
+      toolDisplayName: tool => tool,
+      probeRoots: async () => [{ path: secretPath, label: 'cli' }],
+      discoverSessions: async () => [],
+      createSessionParser: () => ({ async *parse() {} }),
+    }
+
+    const report = await collectDoctorReport('kiro', { providers: [provider], cache: emptyCache() })
+    const row = only(report, 'kiro')
+    const json = renderDoctorJson(report)
+    const table = renderDoctorTable(report, { color: false })
+
+    expect(row.envOverrides).toEqual([{ name: 'KIRO_HOME' }])
+    expect(row.families[0]).toMatchObject({ root: '<override-path>', override: 'KIRO_HOME' })
+    expect(json).not.toContain(secretPath)
+    expect(table).not.toContain(secretPath)
+    expect(json).toContain('<override-path>')
+    expect(table).toContain('override KIRO_HOME')
+  })
+
+  it('redacts relative override values from provider errors too', async () => {
+    const secretValue = 'relative-private-label'
+    vi.stubEnv('CODEX_HOME', secretValue)
+    const provider: Provider = {
+      name: 'codex',
+      displayName: 'Codex',
+      modelDisplayName: model => model,
+      toolDisplayName: tool => tool,
+      probeRoots: async () => { throw new Error(`cannot inspect ${secretValue}`) },
+      discoverSessions: async () => [],
+      createSessionParser: () => ({ async *parse() {} }),
+    }
+
+    const report = await collectDoctorReport('codex', { providers: [provider], cache: emptyCache() })
+    const json = renderDoctorJson(report)
+    const table = renderDoctorTable(report, { color: false })
+
+    expect(json).not.toContain(secretValue)
+    expect(table).not.toContain(secretValue)
+    expect(json).toContain('<override-path>')
   })
 })
 
@@ -169,6 +236,51 @@ describe('Kiro Doctor families', () => {
 })
 
 describe('Copilot Doctor families', () => {
+  it('redacts every explicit Copilot source override without changing family discovery', async () => {
+    const values = {
+      otel: join(root, 'private-otel', 'agent-traces.db'),
+      session: join(root, 'private-copilot', 'session-state'),
+      workspace: join(root, 'private-workspace'),
+      global: join(root, 'private-global'),
+      jetbrains: join(root, 'private-jetbrains'),
+    }
+    vi.stubEnv('METRORA_COPILOT_OTEL_DB', values.otel)
+    vi.stubEnv('METRORA_COPILOT_SESSION_STATE_DIR', values.session)
+    vi.stubEnv('METRORA_COPILOT_WS_STORAGE_DIR', values.workspace)
+    vi.stubEnv('METRORA_COPILOT_GLOBAL_STORAGE_DIR', values.global)
+    vi.stubEnv('METRORA_COPILOT_JETBRAINS_DIR', values.jetbrains)
+
+    const report = await collectDoctorReport('copilot', {
+      providers: [createCopilotProvider()],
+      cache: emptyCache(),
+      sampleLimit: 0,
+    })
+    const row = only(report, 'copilot')
+    const json = renderDoctorJson(report)
+    const table = renderDoctorTable(report, { color: false })
+
+    expect(row.envOverrides).toEqual(expect.arrayContaining([
+      { name: 'METRORA_COPILOT_OTEL_DB' },
+      { name: 'METRORA_COPILOT_SESSION_STATE_DIR' },
+      { name: 'METRORA_COPILOT_WS_STORAGE_DIR' },
+      { name: 'METRORA_COPILOT_GLOBAL_STORAGE_DIR' },
+      { name: 'METRORA_COPILOT_JETBRAINS_DIR' },
+    ]))
+    expect(row.families).toHaveLength(5)
+    expect(row.families.every(family => family.root === '<override-path>')).toBe(true)
+    expect(row.families.map(family => family.override)).toEqual([
+      'METRORA_COPILOT_OTEL_DB',
+      'METRORA_COPILOT_SESSION_STATE_DIR',
+      'METRORA_COPILOT_WS_STORAGE_DIR',
+      'METRORA_COPILOT_GLOBAL_STORAGE_DIR',
+      'METRORA_COPILOT_JETBRAINS_DIR',
+    ])
+    for (const value of Object.values(values)) {
+      expect(json).not.toContain(value)
+      expect(table).not.toContain(value)
+    }
+  })
+
   it('keeps OTel, CLI, VS Code, empty-window and JetBrains lanes separate', async () => {
     const otel = join(root, 'agent-traces.db')
     const cli = join(root, 'cli')
