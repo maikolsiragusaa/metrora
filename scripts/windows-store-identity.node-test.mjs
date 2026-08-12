@@ -69,11 +69,11 @@ assert.equal(
 )
 
 assert.equal(desktopPackage.version, rootPackage.version, 'desktop and root product SemVer must match')
-assert.equal(rootPackage.version, '1.0.0-rc.9', 'the current source candidate must remain 1.0.0-rc.9')
+assert.equal(rootPackage.version, '1.0.0-rc.10', 'the current source candidate must remain 1.0.0-rc.10')
 assert.equal(
   desktopPackage.build?.buildVersion,
-  '1.0.0.9',
-  'the current desktop build version authority must remain 1.0.0.9',
+  '1.0.0.10',
+  'the current desktop build version authority must remain 1.0.0.10',
 )
 
 const productCore = rootPackage.version.replace(/-rc\.\d+$/, '')
