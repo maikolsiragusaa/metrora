@@ -35,7 +35,7 @@ Security reports are welcome for:
 
 The latest public Windows technical preview is the **unsigned** GitHub pre-release `v1.0.0-rc.7`. Its release assets are bound to the published release evidence and checksums; it is not a signed stable channel, a Microsoft Store package, or an automatic update channel.
 
-Metrora also has an assigned Microsoft Store package identity and a reviewed non-publishing AppX build/local-acceptance path. That work is **pre-submission**: no Microsoft Store certification or publication is claimed by this repository until Microsoft has actually accepted and published the corresponding submission.
+Metrora also has an assigned Microsoft Store package identity and a reviewed non-publishing AppX build/local-acceptance path. RC10 is the source line associated with the Store submission. Submission is not certification or publication, and this repository makes no Store-availability claim.
 
 Stable signing, Store publication, and any future update-channel claims must remain explicit and channel-specific. Upstream Metrora artifacts are not Metrora releases.
 

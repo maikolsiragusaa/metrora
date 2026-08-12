@@ -2,9 +2,9 @@
 
 This file records Metrora-originated public changes. Required third-party notices and licence texts are maintained separately in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
-## Unreleased — current source line `1.0.0-rc.10`
+## `1.0.0-rc.10` — Microsoft Store submission source line
 
-RC10 is the current source/pre-submission candidate. It advances RC9 after source-completeness and durable-history reconciliation materially changed user-visible accounting. It is not yet a Microsoft Store submission, certification or publication.
+RC10 is the exact source line associated with the Microsoft Store submission. Submission, certification and publication are separate gates. Post-RC10 development is separate from the submitted package.
 
 ### Source completeness and durable history
 
@@ -34,6 +34,14 @@ RC10 is the current source/pre-submission candidate. It advances RC9 after sourc
 - Retained Windows PowerShell 5.1-compatible physical-test platform detection.
 - Retained persisted Workspace endpoint software reconciliation to the current packaged Metrora/collector version without replacing endpoint identity, membership or evidence history.
 - Retained Store-facing product identity cleanup, canonical Metrora local paths, sync credential adoption and public-identity regression checks introduced on the RC8 source line.
+
+## Unreleased — post-RC10 development
+
+### Copilot durable-history reconciliation
+
+- Reconcile only the affected source/day slices when a mutable current Copilot journal changes after daily history was materialized, so removed requests do not remain as daily-history ghosts.
+- Treat an explicit Copilot storage-root switch as an identity boundary when the account/profile identity cannot be established safely: current output follows the new root, while prior durable evidence remains separate rather than being merged or discarded.
+- Preserve other providers, sourceless validated durable history, provenance and historical pricing authority during the bounded reconciliation.
 
 ## `1.0.0-rc.7` — published unsigned Windows technical preview
 

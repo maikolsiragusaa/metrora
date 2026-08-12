@@ -33,13 +33,13 @@ The Microsoft Store AppX/MSIX manifest has a separate four-component package ide
 
 The final component is `0` for the Store package contract. The SemVer pre-release suffix (`-rc.N`) is **not** encoded into the AppX identity version, and the desktop build counter (`MAJOR.MINOR.PATCH.N`) must not be presented as the Store package version.
 
-For the current `1.0.0` pre-submission line:
+For the current `1.0.0` Store-associated source line:
 
 - source/product candidate: `1.0.0-rc.10`;
 - desktop build version: `1.0.0.10`;
-- local/non-publishing Store AppX identity version: `1.0.0.0`.
+- non-publishing Store AppX identity version: `1.0.0.0`.
 
-A locally validated `1.0.0.0` AppX does not mean that version has been submitted, certified or published. Once a package version is actually submitted to Microsoft, later Store updates must advance according to the Store's package-version rules rather than reusing an already submitted identity.
+A locally validated `1.0.0.0` AppX does not by itself mean that version was submitted, certified or published. Submission, certification and publication are separate gates. Later Store updates must advance according to the Store's package-version rules rather than reusing an already submitted identity.
 
 ## Ordering
 

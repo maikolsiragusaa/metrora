@@ -6,9 +6,9 @@ Metrora does not yet have an official stable Windows release.
 
 The latest public Windows technical preview is the **unsigned** GitHub pre-release `v1.0.0-rc.7`. It remains bound to its accepted source, manifests, checksums and publication evidence. It is not a signed stable package, a Microsoft Store package or an automatic update channel.
 
-The active source/pre-submission line is `1.0.0-rc.10`, with desktop build version `1.0.0.10`. RC10 advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and sealed Store CLI runtime.
+The active source line associated with the Store submission is `1.0.0-rc.10`, with desktop build version `1.0.0.10`. RC10 advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and sealed Store CLI runtime.
 
-Metrora has an assigned Microsoft Store identity and a reviewed non-publishing AppX workflow/local-test path. No Store submission, certification or publication is claimed until Microsoft actually accepts that channel.
+Metrora has an assigned Microsoft Store identity and a reviewed non-publishing AppX workflow/local-test path. Post-RC10 development is separate from the source line associated with the submission. Submission, certification, publication and Store availability are distinct gates; this document makes no certification or publication claim.
 
 Historical 0.9.19 acceptance material remains immutable engineering evidence for its own source line only.
 
@@ -49,11 +49,11 @@ An unsigned GitHub pre-release follows the separate source, candidate, physical 
 
 The existing RC7 release remains immutable. Later Store-readiness changes do not retroactively modify or re-label those artifacts.
 
-## Microsoft Store pre-submission
+## Microsoft Store candidate boundary
 
 The Store workflow builds an unsigned AppX candidate and inspects its identity, architecture, capabilities and payload boundary without publishing it. The packaged CLI production closure is sealed inside `cli.asar`; only a tiny stable launcher remains loose. The workflow must execute that packaged CLI from the extracted AppX payload using packaged `Metrora.exe`, and a loose CLI `node_modules` tree is not an accepted Store runtime boundary. A separate copy may be signed with a temporary local certificate only for physical acceptance.
 
-Before Partner Center submission, the exact source-bound candidate must pass the bounded local Store test and cleanup. A local PASS is pre-submission evidence only; it is not Microsoft certification.
+The source line associated with the Store submission passed the exact source-bound local Store test and cleanup. A local PASS is evidence for candidate acceptance; it is not Microsoft certification and does not establish publication or availability. Later source work remains separate from that submitted artifact.
 
 ## Accounting presentation boundary
 

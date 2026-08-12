@@ -56,6 +56,8 @@ import { isSnapshotReadMode } from './read-lifecycle.js'
 import { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'
 import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
+import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
+import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 
 
 
@@ -2963,9 +2965,8 @@ async function parseProviderSources(
   const allDiscoveredFiles = new Set<string>()
   const servedSources = [...sources]
 
-  type SourceInfo = { source: SessionSource; fp: NonNullable<Awaited<ReturnType<typeof fingerprintFile>>> }
   const unchangedSources: Array<{ source: SessionSource; cached: CachedFile }> = []
-  const changedSources: SourceInfo[] = []
+  const changedSources: Array<{ source: SessionSource; fp: NonNullable<Awaited<ReturnType<typeof fingerprintFile>>> }> = []
 
   for (const source of sources) {
     allDiscoveredFiles.add(source.path)
@@ -2990,7 +2991,7 @@ async function parseProviderSources(
     if (cached && (readOnly || (action.action === 'unchanged' && (cached.failed || !cachedFileNeedsProviderReparse(providerName, source.path, cached))))) {
       unchangedSources.push({ source, cached })
     } else if (!readOnly) {
-      changedSources.push({ source, fp })
+      changedSources.push(queueCopilotChatJournalSource(providerName, source, fp, cached?.turns ?? []))
     }
   }
 
@@ -3078,6 +3079,7 @@ async function parseProviderSources(
             section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns }
           }
         }
+        recordCopilotChatJournalSourceChange(providerName, source.path, turns)
         didParse = true
         ;(diskCache as { _dirty?: boolean })._dirty = true
       } catch (err) {
@@ -3092,6 +3094,7 @@ async function parseProviderSources(
         // on every refresh; it re-parses only if it changes. Empty turns => no
         // usage contributed.
         section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns: [], failed: true }
+        recordCopilotChatJournalSourceFailure(providerName, source.path)
         ;(diskCache as { _dirty?: boolean })._dirty = true
         warnProviderParseFailure(providerName, source.path, err)
         continue
@@ -3112,13 +3115,8 @@ async function parseProviderSources(
     ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
-  if (!readOnly && sources.length > 0 && !provider.durableSources) {
-    for (const cachedPath of Object.keys(section.files)) {
-      if (!allDiscoveredFiles.has(cachedPath)) {
-        delete section.files[cachedPath]
-        ;(diskCache as { _dirty?: boolean })._dirty = true
-      }
-    }
+  if (!readOnly && !provider.durableSources && shouldReconcileMissingProviderSources(providerName, sources.length)) {
+    reconcileMissingProviderSources(providerName, section, allDiscoveredFiles, diskCache)
   }
 
   // Query-time: derive SessionSummary from all cached turns.
@@ -3833,6 +3831,8 @@ async function runParse(
     const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly)
     otherProjects.push(...projects)
   }
+
+  if (!readOnly) await flushCopilotChatJournalInvalidations()
 
   // Every published v8 call carries an explicit valuation basis. This also
   // settles carried v7 PR/durable orphans that can no longer be re-parsed.

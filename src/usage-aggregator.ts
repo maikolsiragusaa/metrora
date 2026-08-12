@@ -19,11 +19,12 @@ import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
-import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, DURABLE_HISTORY_AUTHORITY, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { getDaysInRange, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
+import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -88,26 +89,12 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
 }
 
 async function hydrateCache(): Promise<DailyCache> {
-  try {
-    return await ensureCacheHydrated(
-      (range) => parseAllSessions(range, 'all'),
-      aggregateProjectsIntoDays,
-      getDailyCacheConfigHash(),
-      // Never finalize daily history from a partial hydration; that previously froze empty older days.
-      isSessionHydrationComplete,
-      undefined, { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
-    )
-  } catch (err) {
-    // Previously swallowed silently, which turned any backfill failure into an
-    // empty trend/history with no signal (issue #441). Per-file parse errors no
-    // longer reach here (they're isolated in parseProviderSources), so anything
-    // that does is exceptional and worth surfacing.
-    process.stderr.write(
-      `metrora: daily history backfill failed; the trend chart may be incomplete. ` +
-      `${err instanceof Error ? err.message : String(err)}\n`
-    )
-    return emptyCache()
-  }
+  return hydrateCopilotDailyCache(
+    (range) => parseAllSessions(range, 'all'),
+    aggregateProjectsIntoDays,
+    getDailyCacheConfigHash(),
+    isSessionHydrationComplete,
+  )
 }
 export type PeriodInfo = { range: DateRange; label: string }
 export type AggregateOpts = {

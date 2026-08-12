@@ -113,6 +113,76 @@ function applyRetention(days: core.DailyEntry[], newestDate: string): core.Daily
   return days.filter(day => day.date >= cutoff)
 }
 
+function dateFromKey(key: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function hasDailyData(day: core.DailyEntry): boolean {
+  return day.calls > 0 || day.cost !== 0 || day.savingsUSD !== 0 || day.sessions > 0
+    || day.inputTokens > 0 || day.outputTokens > 0 || day.cacheReadTokens > 0 || day.cacheWriteTokens > 0
+    || Object.keys(day.providers).length > 0
+}
+
+async function reconcileProviderDays(
+  cache: DailyCache,
+  parseSessions: (range: DateRange) => Promise<ProjectSummary[]>,
+  aggregateDays: (projects: ProjectSummary[]) => core.DailyEntry[],
+  sessionComplete: () => boolean,
+  requested: Readonly<Record<string, readonly string[]>> | undefined,
+  yesterdayEnd: Date,
+  yesterdayStr: string,
+): Promise<DailyCache> {
+  if (!requested) return cache
+
+  const requestedDays = new Map<string, Set<string>>()
+  for (const [provider, days] of Object.entries(requested)) {
+    for (const day of days) {
+      const parsed = dateFromKey(day)
+      if (!parsed || parsed.getTime() > yesterdayEnd.getTime()) continue
+      const existing = requestedDays.get(provider) ?? new Set<string>()
+      existing.add(day)
+      requestedDays.set(provider, existing)
+    }
+  }
+  if (requestedDays.size === 0) return cache
+
+  const affectedDays = [...new Set([...requestedDays.values()].flatMap(days => [...days]))].sort()
+  const first = dateFromKey(affectedDays[0]!)
+  const last = dateFromKey(affectedDays[affectedDays.length - 1]!)
+  if (!first || !last) return cache
+
+  const fresh = aggregateDays(await parseSessions({
+    start: first,
+    end: new Date(last.getTime() + 24 * 60 * 60 * 1000 - 1),
+  }))
+  if (!sessionComplete()) return cache
+
+  // An empty primary day is intentional: it prevents NEVER-LOSE carry-forward
+  // from resurrecting a deleted journal slice when the new snapshot has no
+  // calls on that date.
+  const primaryDates = new Set(fresh.map(day => day.date))
+  const primary = [...fresh]
+  for (const day of affectedDays) {
+    if (!primaryDates.has(day)) primary.push(core.emptyDailyEntry(day))
+  }
+
+  const blocked = new Set<string>()
+  for (const [provider, days] of requestedDays) {
+    for (const day of days) blocked.add(`${provider}\u0000${day}`)
+  }
+  const merged = core.mergeDayEntries(primary, cache.days, true, blocked)
+    .filter(hasDailyData)
+
+  return withTrust({
+    ...cache,
+    lastComputedDate: cache.lastComputedDate ?? yesterdayStr,
+    days: applyRetention(merged, yesterdayStr),
+  }, cache.watermarkTrusted === true)
+}
+
 async function parseIsAuthoritative(
   sessionComplete: () => boolean,
   allowDegradedSourceReconciliation = false,
@@ -153,6 +223,16 @@ export async function ensureCacheHydrated(
     const durableHistoryAuthority = options.durableHistoryAuthority
     const historyAuthorityChanged = durableHistoryAuthority !== undefined
       && cache.durableHistoryAuthority !== durableHistoryAuthority
+
+    cache = await reconcileProviderDays(
+      cache,
+      parseSessions,
+      aggregateDays,
+      sessionComplete,
+      options.reconcileProviderDays,
+      yesterdayEnd,
+      yesterdayStr,
+    )
 
     // Serialize simultaneous invalidations. First re-derive the accounting
     // authority while retaining the old timezone, then persist that intermediate
