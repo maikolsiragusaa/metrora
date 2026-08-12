@@ -1,6 +1,6 @@
 # Windows Store local package test
 
-This guide documents the physical-Windows test used before a Store submission. It remains a procedure for future candidates and does not authorize changing the frozen RC10 submission or publishing it.
+This guide documents the physical-Windows test used for Store candidates. It is a procedure for candidate acceptance and does not authorize changing a submitted artifact or making certification, publication or availability claims.
 
 It does not imitate Microsoft certification. The submission candidate remains unsigned and unchanged. A separate copy is signed with a temporary test certificate only so Windows can install it locally.
 
@@ -109,4 +109,4 @@ A passing local report is one submission input only. It does not authorize:
 - replacement of the existing portable or NSIS channels;
 - claims about Store-managed update behavior.
 
-RC10 is already submitted and remains frozen. Certification and any later publication remain separate decisions; this guide does not authorize a publication action or a Store-availability claim.
+Submission, certification, publication and availability remain separate gates; this guide does not authorize a publication action or a Store-availability claim.

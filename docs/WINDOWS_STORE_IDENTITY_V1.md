@@ -1,14 +1,14 @@
 # Windows Store package identity v1
 
-**Status:** identity assigned / RC10 package locally and physically accepted / RC10 submission frozen / publication pending
+**Status:** identity assigned / separate Store candidate boundary
 
 ## Purpose
 
 Define the separate Windows Store packaging boundary for Metrora.
 
-The exact manifest values are maintained in the reviewed desktop build configuration. They must match Partner Center byte-for-byte and must not be duplicated across public documentation.
+The exact manifest values are maintained in the reviewed desktop build configuration. They must match the Store authority byte-for-byte and must not be duplicated across public documentation.
 
-This document does not authorize a different submission, certification or publication, or any change to the already published GitHub `1.0.0-rc.7` artifacts. The RC10 package was submitted after acceptance and remains frozen; post-RC10 development is separate.
+RC10 is the source line associated with the Store submission. This document does not claim certification, publication or availability, and post-RC10 development is separate from that submitted artifact. It also does not authorize a different submission or any change to the already published GitHub `1.0.0-rc.7` artifacts.
 
 ## Build boundary
 
@@ -32,12 +32,12 @@ Neither channel inherits the signature, certification or publication status of t
 
 The guided local path is documented in [`WINDOWS_STORE_LOCAL_TEST_GUIDED.md`](WINDOWS_STORE_LOCAL_TEST_GUIDED.md).
 
-It signs only a temporary copy. The public test certificate is trusted at machine level while its private key remains in the current-user personal store; both are removed with the installed package after validation. The unsigned candidate intended for Partner Center is not modified.
+It signs only a temporary copy. The public test certificate is trusted at machine level while its private key remains in the current-user personal store; both are removed with the installed package after validation. The unsigned candidate intended for Store submission is not modified.
 
-A local PASS is not Store certification and does not authorize publication.
+A local PASS is not Store certification and does not authorize publication or availability claims.
 
 ## Current limitations
 
-The RC10 Store target is submitted and frozen. It is not certified, signed by Microsoft, published, or an automatic update for existing installations.
+The Store target has a separate package identity and local-acceptance path. It is not a signed Microsoft channel, an automatic update for existing installations, or a publication claim.
 
-Certification and separate manual publication authorization remain distinct requirements. No post-RC10 code is part of the submitted package.
+The RC10 source line is associated with the Store submission; certification and publication remain distinct gates. No post-RC10 code is part of that submitted artifact.
