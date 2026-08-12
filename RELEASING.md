@@ -96,7 +96,7 @@ The Store candidate must be built from the exact reviewed source commit using th
 7. the sanitized local acceptance report must pass;
 8. submission requires an explicit stop/go after those checks.
 
-A passing local test is not Microsoft certification and does not authorize a publication claim. The RC10 submission does not authorize changing the submitted package, modifying Partner Center metadata, executing a publication action or representing post-RC10 code as submitted code. A future Store update requires a new reviewed candidate and its own acceptance/submission decision.
+A passing local test is not Microsoft certification and does not authorize a publication claim. The RC10 submission does not authorize changing the submitted package, changing submission metadata, executing a publication action or representing post-RC10 code as submitted code. A future Store update requires a new reviewed candidate and its own acceptance/submission decision.
 
 ## Versioning and notes
 
