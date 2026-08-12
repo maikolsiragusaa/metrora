@@ -11,7 +11,7 @@ import { COPILOT_DEFERRED_ENV_FINGERPRINTS, ensureProviderEnvFingerprintAuthorit
 import {
   diagnoseProviderSources,
   doctorProbePath,
-  redactPath,
+  redactDoctorPath,
   redactText,
   type DoctorSourceDiagnostic,
   type DoctorSourceState,
@@ -146,6 +146,20 @@ function collectEnvOverrides(providerName: string): DoctorEnvOverride[] {
   return out
 }
 
+function redactProviderError(value: string, overrides: DoctorEnvOverride[]): string {
+  let safe = redactText(value)
+  for (const override of overrides) {
+    const raw = process.env[override.name]
+    if (!raw) continue
+    for (const candidate of new Set([raw, raw.replace(/\\/g, '/'), raw.replace(/\//g, '\\')])) {
+      if (!candidate) continue
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      safe = safe.replace(new RegExp(escaped, 'gi'), '<override-path>')
+    }
+  }
+  return safe
+}
+
 // A discovered source path can carry a virtual suffix (`<db>#cursor-ws=...`,
 // `<db>:<sessionId>`); strip it to the real on-disk path, then to its parent
 // dir so many per-session sources collapse to a handful of probed directories.
@@ -166,7 +180,7 @@ function derivePathsFromSources(sourcePaths: string[]): DoctorProbePath[] {
     dirs.add(existsSync(real) ? dirname(real) : real)
   }
   return [...dirs].sort().map(path => ({
-    path: redactPath(path),
+    path: redactDoctorPath(path),
     label: 'discovered',
     exists: existsSync(path),
     state: existsSync(path) ? 'PRESENT' : 'MISSING',
@@ -305,7 +319,7 @@ async function collectOneProvider(
     }
   } catch (err) {
     base.status = 'error'
-    base.error = redactText(err instanceof Error ? err.message : String(err))
+    base.error = redactProviderError(err instanceof Error ? err.message : String(err), base.envOverrides)
     base.verdict = `ERROR (${base.error})`
   }
 
@@ -368,12 +382,12 @@ async function collectClaudeRetention(): Promise<ClaudeRetentionNote | undefined
       const parsed: unknown = JSON.parse(raw)
       const days = (parsed as Record<string, unknown> | null)?.['cleanupPeriodDays']
       if (typeof days === 'number' && Number.isFinite(days)) {
-        return { effectiveDays: days, configured: true, settingsPath: redactPath(settingsPath) }
+        return { effectiveDays: days, configured: true, settingsPath: redactDoctorPath(settingsPath) }
       }
-      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath: redactPath(settingsPath) }
+      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath: redactDoctorPath(settingsPath) }
     } catch {
       // Unparseable settings: report the default; Claude Code would apply it too.
-      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath: redactPath(settingsPath) }
+      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath: redactDoctorPath(settingsPath) }
     }
   }
   return undefined
