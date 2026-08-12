@@ -6,7 +6,7 @@ Metrora does not yet have an official stable Windows release.
 
 The latest public Windows technical preview is the **unsigned** GitHub pre-release `v1.0.0-rc.7`. It remains bound to its accepted source, manifests, checksums and publication evidence. It is not a signed stable package, a Microsoft Store package or an automatic update channel.
 
-The active source/pre-submission line is `1.0.0-rc.9`, with desktop build version `1.0.0.9`. RC9 advances RC8 after pre-submission review found two material issues: model-accounting surfaces needed an explicit durable-vs-surviving-detail boundary, and the Store AppX needed a sealed CLI runtime rather than a loose scoped npm dependency tree.
+The active source/pre-submission line is `1.0.0-rc.10`, with desktop build version `1.0.0.10`. RC10 advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and sealed Store CLI runtime.
 
 Metrora has an assigned Microsoft Store identity and a reviewed non-publishing AppX workflow/local-test path. No Store submission, certification or publication is claimed until Microsoft actually accepts that channel.
 
@@ -24,8 +24,8 @@ Protected credentials and verification material remain outside untrusted public 
 
 Windows uses multiple version authorities deliberately:
 
-- product/source candidate: `1.0.0-rc.9`;
-- desktop build version: `1.0.0.9`;
+- product/source candidate: `1.0.0-rc.10`;
+- desktop build version: `1.0.0.10`;
 - current non-publishing Microsoft Store AppX identity version: `1.0.0.0`.
 
 The Store AppX four-part identity is not the desktop build counter. See [Versioning authority](VERSIONING.md).
