@@ -7,6 +7,15 @@ import { Chalk } from 'chalk'
 import { getClaudeConfigDirs } from './providers/claude.js'
 import { getAllProviders } from './providers/index.js'
 import type { Provider } from './providers/types.js'
+import { COPILOT_DEFERRED_ENV_FINGERPRINTS, ensureProviderEnvFingerprintAuthorities } from './provider-parse-authorities.js'
+import {
+  diagnoseProviderSources,
+  doctorProbePath,
+  redactPath,
+  redactText,
+  type DoctorSourceDiagnostic,
+  type DoctorSourceState,
+} from './doctor-source-diagnostics.js'
 import {
   PROVIDER_ENV_VARS,
   PROVIDER_PARSE_VERSIONS,
@@ -21,11 +30,12 @@ export type DoctorProbePath = {
   path: string
   label: string
   exists: boolean
+  state?: DoctorSourceState
+  reason?: string
 }
 
 export type DoctorEnvOverride = {
   name: string
-  value: string
 }
 
 export type DoctorStatus = 'ok' | 'empty' | 'errors' | 'error' | 'network'
@@ -37,6 +47,8 @@ export type DoctorProviderReport = {
   /** Directories/dbs the provider scans, with existence checked (may be empty
    *  for providers that do not expose probeRoots). */
   probePaths: DoctorProbePath[]
+  /** Bounded, family-level source diagnostics. Paths are always redacted. */
+  families: DoctorSourceDiagnostic[]
   /** Env overrides that are actually set for this provider. */
   envOverrides: DoctorEnvOverride[]
   parseVersion?: string
@@ -112,29 +124,26 @@ const NON_DISCOVERY_ENV_VARS = new Set([
 // must be fingerprinted, but do not represent deliberate user overrides.
 const AMBIENT_ENV_VARS = new Set(['APPDATA', 'LOCALAPPDATA'])
 
-// Credential presence is useful diagnostic state; the value is a live secret
-// and must never reach text or JSON doctor output.
-const SECRET_ENV_VARS = new Set(['AI_GATEWAY_API_KEY', 'VERCEL_OIDC_TOKEN'])
+const COPILOT_DIAGNOSTIC_ENV_OVERRIDES = [
+  ...COPILOT_DEFERRED_ENV_FINGERPRINTS,
+  'METRORA_COPILOT_GLOBAL_STORAGE_DIR',
+] as const
 
 // ── Collect (pure, testable) ─────────────────────────────────────────────
 
 function collectEnvOverrides(providerName: string): DoctorEnvOverride[] {
-  const vars = PROVIDER_ENV_VARS[providerName] ?? []
+  ensureProviderEnvFingerprintAuthorities()
+  const vars = [
+    ...(PROVIDER_ENV_VARS[providerName] ?? []),
+    ...(providerName === 'copilot' ? COPILOT_DIAGNOSTIC_ENV_OVERRIDES : []),
+  ]
   const out: DoctorEnvOverride[] = []
-  for (const name of vars) {
+  for (const name of new Set(vars)) {
     if (AMBIENT_ENV_VARS.has(name)) continue
     const value = process.env[name]
-    if (value !== undefined && value !== '') {
-      out.push(SECRET_ENV_VARS.has(name) ? { name, value: '<set>' } : { name, value })
-    }
+    if (value !== undefined && value !== '') out.push({ name })
   }
   return out
-}
-
-async function collectProbePaths(provider: Provider): Promise<DoctorProbePath[]> {
-  if (!provider.probeRoots) return []
-  const roots = await provider.probeRoots()
-  return roots.map(r => ({ path: r.path, label: r.label, exists: existsSync(r.path) }))
 }
 
 // A discovered source path can carry a virtual suffix (`<db>#cursor-ws=...`,
@@ -156,7 +165,13 @@ function derivePathsFromSources(sourcePaths: string[]): DoctorProbePath[] {
     const real = realPathOf(sp)
     dirs.add(existsSync(real) ? dirname(real) : real)
   }
-  return [...dirs].sort().map(path => ({ path, label: 'discovered', exists: existsSync(path) }))
+  return [...dirs].sort().map(path => ({
+    path: redactPath(path),
+    label: 'discovered',
+    exists: existsSync(path),
+    state: existsSync(path) ? 'PRESENT' : 'MISSING',
+    reason: existsSync(path) ? 'discovered source is present' : 'discovered source is absent',
+  }))
 }
 
 function pluralSessions(n: number): string {
@@ -164,10 +179,11 @@ function pluralSessions(n: number): string {
 }
 
 function emptyVerdict(
+  providerName: string,
   probePaths: DoctorProbePath[],
   envOverrides: DoctorEnvOverride[],
 ): string {
-  const discoveryOverrides = envOverrides.filter(o => !NON_DISCOVERY_ENV_VARS.has(o.name))
+  const discoveryOverrides = envOverrides.filter(o => !NON_DISCOVERY_ENV_VARS.has(o.name) && !(providerName === 'cursor' && o.name === 'XDG_DATA_HOME'))
   const overrideNames = discoveryOverrides.map(o => o.name).join(', ')
   const hasOverride = discoveryOverrides.length > 0
   const known = probePaths.filter(p => p.label !== 'discovered')
@@ -177,21 +193,21 @@ function emptyVerdict(
   // No known probe roots to check: honest, override-aware fallback.
   if (known.length === 0) {
     return hasOverride
-      ? `NOTHING FOUND (override ${overrideNames} set, but nothing was discovered)`
+      ? `NOTHING FOUND (override ${overrideNames} set, but no source was discovered)`
       : 'NOTHING FOUND (tool likely not installed or no history yet)'
   }
   // With an override set, a missing probed path is the likely culprit; name it
   // so the row itself points at the misconfiguration (Details lists them all).
   if (hasOverride) {
     return missing.length > 0
-      ? `NOTHING FOUND (override ${overrideNames} set; ${missing[0]!.path} does not exist)`
-      : `NOTHING FOUND (override ${overrideNames} set; ${present[0]!.path} holds no sessions)`
+      ? `NOTHING FOUND (override ${overrideNames} set; source is missing)`
+      : `NOTHING FOUND (override ${overrideNames} set; source is readable but empty)`
   }
   // No override. If every probed path is missing, the tool is likely not
   // installed; if some exist, the data dir is there but empty (no history).
   return present.length === 0
-    ? `NOTHING FOUND (${missing[0]!.path} does not exist; tool likely not installed)`
-    : `NOTHING FOUND (${present[0]!.path} exists but holds no sessions; no history yet)`
+    ? 'NOTHING FOUND (configured sources are missing; tool likely not installed)'
+    : 'NOTHING FOUND (configured sources are readable but empty; no history yet)'
 }
 
 async function collectOneProvider(
@@ -204,6 +220,7 @@ async function collectOneProvider(
     displayName: provider.displayName,
     status: 'ok',
     probePaths: [],
+    families: [],
     envOverrides: collectEnvOverrides(provider.name),
     parseVersion: PROVIDER_PARSE_VERSIONS[provider.name],
     candidatesFound: 0,
@@ -226,13 +243,17 @@ async function collectOneProvider(
   // Any single provider throwing (probe, discovery, or a parser) must never
   // crash doctor or blank the other rows: catch and report it as an ERROR row.
   try {
-    base.probePaths = await collectProbePaths(provider)
+    const roots = provider.probeRoots ? await provider.probeRoots() : []
+    base.families = await diagnoseProviderSources(provider.name, roots)
+    base.probePaths = base.families.map(doctorProbePath)
 
     const sources = await provider.discoverSessions()
     base.candidatesFound = sources.length
     if (base.probePaths.length === 0) {
       base.probePaths = derivePathsFromSources(sources.map(s => s.path))
     }
+
+    const diagnosticFailures = base.families.filter(f => ['INACCESSIBLE', 'MALFORMED', 'UNSUPPORTED_VARIANT', 'UNKNOWN'].includes(f.state))
 
     // Network providers fetch on parse; doctor runs offline, so we never parse
     // them. Discovery for the one network provider is offline (it only checks
@@ -270,19 +291,21 @@ async function collectOneProvider(
       }
     }
 
-    if (base.parseFailed > 0) {
+    if (diagnosticFailures.length > 0 || base.parseFailed > 0) {
       base.status = 'errors'
-      base.verdict = `ERRORS (${base.parseFailed}/${base.sampled} sampled file${base.sampled === 1 ? '' : 's'} failed to parse)`
+      base.verdict = diagnosticFailures.length > 0
+        ? `ERRORS (${diagnosticFailures.length} source diagnostic${diagnosticFailures.length === 1 ? '' : 's'} need attention)`
+        : `ERRORS (${base.parseFailed}/${base.sampled} sampled file${base.sampled === 1 ? '' : 's'} failed to parse)`
     } else if (base.candidatesFound === 0) {
       base.status = 'empty'
-      base.verdict = emptyVerdict(base.probePaths, base.envOverrides)
+      base.verdict = emptyVerdict(provider.name, base.probePaths, base.envOverrides)
     } else {
       base.status = 'ok'
       base.verdict = `OK (${pluralSessions(base.candidatesFound)})`
     }
   } catch (err) {
     base.status = 'error'
-    base.error = err instanceof Error ? err.message : String(err)
+    base.error = redactText(err instanceof Error ? err.message : String(err))
     base.verdict = `ERROR (${base.error})`
   }
 
@@ -345,12 +368,12 @@ async function collectClaudeRetention(): Promise<ClaudeRetentionNote | undefined
       const parsed: unknown = JSON.parse(raw)
       const days = (parsed as Record<string, unknown> | null)?.['cleanupPeriodDays']
       if (typeof days === 'number' && Number.isFinite(days)) {
-        return { effectiveDays: days, configured: true, settingsPath }
+        return { effectiveDays: days, configured: true, settingsPath: redactPath(settingsPath) }
       }
-      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath }
+      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath: redactPath(settingsPath) }
     } catch {
       // Unparseable settings: report the default; Claude Code would apply it too.
-      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath }
+      return { effectiveDays: CLAUDE_DEFAULT_CLEANUP_DAYS, configured: false, settingsPath: redactPath(settingsPath) }
     }
   }
   return undefined
@@ -408,6 +431,7 @@ export function renderDoctorTable(
     r =>
       r.status === 'error' ||
       r.status === 'errors' ||
+      r.families.length > 0 ||
       r.envOverrides.length > 0 ||
       r.cachedFailed > 0 ||
       r.probePaths.some(p => p.label !== 'discovered'),
@@ -418,15 +442,20 @@ export function renderDoctorTable(
     for (const r of detail) {
       out.push('  ' + c.bold(r.displayName))
       for (const o of r.envOverrides) {
-        out.push('    ' + c.dim('override ') + `${o.name}=${o.value}`)
+        out.push('    ' + c.dim('override ') + o.name)
       }
-      for (const p of r.probePaths) {
-        const mark = p.exists ? c.green('exists') : c.red('missing')
+      for (const family of r.families) {
+        const color = family.state === 'PRESENT' ? c.green : family.state === 'PRESENT_EMPTY' ? c.yellow : family.state === 'MISSING' ? c.dim : c.red
+        const override = family.override ? c.dim(` [${family.override}]`) : ''
+        out.push('    ' + c.dim(`${family.family}: `) + color(family.state) + ` ${family.root} ` + c.dim(`(${family.reason})`) + override)
+      }
+      if (r.families.length === 0) for (const p of r.probePaths) {
+        const mark = p.exists ? c.green('present') : c.red('missing')
         out.push('    ' + c.dim(`${p.label}: `) + p.path + ' ' + c.dim('(') + mark + c.dim(')'))
       }
       if (r.parseVersion) out.push('    ' + c.dim('parser: ') + r.parseVersion)
       if (r.cachedFailed > 0) out.push('    ' + c.dim('cached parse failures: ') + String(r.cachedFailed))
-      if (r.error) out.push('    ' + c.red('error: ') + r.error)
+      if (r.error) out.push('    ' + c.red('error: ') + redactText(r.error))
     }
   }
 
