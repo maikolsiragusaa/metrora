@@ -33,7 +33,7 @@ requireText('docs/VERSIONING.md', `- Current source candidate: \`${version}\``, 
 requireText('docs/VERSIONING.md', `- Desktop build version: \`${expectedBuildVersion}\``, 'desktop build version')
 requireText(
   'docs/WINDOWS_DISTRIBUTION.md',
-  `The active source/pre-submission line is \`${version}\`, with desktop build version \`${expectedBuildVersion}\`.`,
+  `The active submitted source line is \`${version}\`, with desktop build version \`${expectedBuildVersion}\`.`,
   'Windows distribution version',
 )
 
