@@ -1,19 +1,17 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
 import { getMetroraCacheDir } from './product-paths.js'
 import snapshotData from './data/litellm-snapshot.json'
 import fallbackData from './data/pricing-fallback.json'
-import { fetchWithTimeout } from './fetch-utils.js'
 import { REVIEWED_MODEL_DISPLAY_NAMES } from './model-display-labels.js'
+import { loadRemotePricing } from './pricing/litellm-pricing.js'
+import {
+  buildCosts,
+  safePerTokenRate,
+  tupleToCosts,
+  type ModelCosts,
+  type SnapshotEntry,
+} from './pricing/model-costs.js'
 
-export type ModelCosts = {
-  inputCostPerToken: number
-  outputCostPerToken: number
-  cacheWriteCostPerToken: number
-  cacheReadCostPerToken: number
-  webSearchCostPerRequest: number
-  fastMultiplier: number
-}
+export type { ModelCosts } from './pricing/model-costs.js'
 
 type PriceOverrideRates = {
   input: number
@@ -22,20 +20,6 @@ type PriceOverrideRates = {
   cacheCreation?: number
 }
 
-type JsonObject = Record<string, unknown>
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-// [input, output, cacheWrite, cacheRead, fastMultiplier]. The trailing fast
-// multiplier is carried straight from LiteLLM's provider_specific_entry.fast so
-// new models pick it up automatically — no hand-maintained per-model table.
-type SnapshotEntry = [number, number, number | null, number | null, (number | null)?]
-
-const LITELLM_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000
-const WEB_SEARCH_COST = 0.01
 export const PRICING_LOOKUP_VERSION = 'context-capacity-tags-v1'; const ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE = 1.6
 
 // Explicit USD/token prices that must override LiteLLM/cache data. Cursor
@@ -49,32 +33,6 @@ const BUILTIN_PRICE_OVERRIDES: Record<string, SnapshotEntry> = {
   'composer-2': [0.5e-6, 2.5e-6, 0.5e-6, 0.2e-6],
   'composer-1.5': [3.5e-6, 17.5e-6, 3.5e-6, 0.35e-6],
   'composer-1': [1.25e-6, 10e-6, 1.25e-6, 0.125e-6],
-}
-
-// Assemble a ModelCosts, applying the cache-cost heuristics (write = 1.25x
-// input, read = 0.1x input) when a source omits them. Shared by the bundled
-// tuple path (tupleToCosts) and the live LiteLLM path (parseLiteLLMEntry) so the
-// multipliers live in exactly one place.
-function buildCosts(
-  input: number,
-  output: number,
-  cacheWrite: number | null | undefined,
-  cacheRead: number | null | undefined,
-  fast: number | null | undefined,
-): ModelCosts {
-  return {
-    inputCostPerToken: input,
-    outputCostPerToken: output,
-    cacheWriteCostPerToken: cacheWrite ?? input * 1.25,
-    cacheReadCostPerToken: cacheRead ?? input * 0.1,
-    webSearchCostPerRequest: WEB_SEARCH_COST,
-    fastMultiplier: fast ?? 1,
-  }
-}
-
-function tupleToCosts(raw: SnapshotEntry): ModelCosts {
-  const [input, output, cacheWrite, cacheRead, fast] = raw
-  return buildCosts(input, output, cacheWrite, cacheRead, fast)
 }
 
 function applyBuiltinPriceOverrides(pricing: Map<string, ModelCosts>): Map<string, ModelCosts> {
@@ -142,87 +100,6 @@ function getLowercasePricingIndex(): Map<string, ModelCosts> {
   return lowercasePricingIndex
 }
 
-const getCacheDir = (): string => getMetroraCacheDir()
-
-const getCachePath = (): string => join(getCacheDir(), 'litellm-pricing.json')
-
-/// Clamp a per-token rate to a sane non-negative value. Defense in depth
-/// against a tampered LiteLLM JSON shipping a negative `input_cost_per_token`,
-/// which would otherwise produce negative costs that subtract from totals.
-/// We use Number.isFinite to also reject NaN/Infinity, and cap at $1/token
-/// (well above the most expensive frontier model) so a stray decimal-place
-/// shift in the upstream JSON can't wildly inflate spend numbers either.
-function safePerTokenRate(n: unknown): number | null {
-  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return null
-  if (n > 1) return 1
-  return n
-}
-
-function safeFastMultiplier(n: unknown): number | undefined {
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined
-}
-
-function parseLiteLLMEntry(entry: unknown): ModelCosts | null {
-  if (!isJsonObject(entry)) return null
-
-  const inputCost = safePerTokenRate(entry['input_cost_per_token'])
-  const outputCost = safePerTokenRate(entry['output_cost_per_token'])
-  if (inputCost === null || outputCost === null) return null
-
-  const providerSpecificEntry = isJsonObject(entry['provider_specific_entry'])
-    ? entry['provider_specific_entry']
-    : undefined
-  return buildCosts(
-    inputCost,
-    outputCost,
-    safePerTokenRate(entry['cache_creation_input_token_cost']),
-    safePerTokenRate(entry['cache_read_input_token_cost']),
-    safeFastMultiplier(providerSpecificEntry?.['fast']),
-  )
-}
-
-async function fetchAndCachePricing(): Promise<Map<string, ModelCosts>> {
-  // Bounded: runs on every CLI invocation (the menubar shells out and blocks on
-  // it). Without a timeout a half-open network after wake-from-sleep makes
-  // fetch() hang forever, wedging the menubar's loading spinner. On timeout the
-  // caller's catch falls back to the bundled price snapshot.
-  const response = await fetchWithTimeout(LITELLM_URL)
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  const payload = await response.json() as unknown
-  const data = isJsonObject(payload) ? payload : {}
-  const pricing = new Map<string, ModelCosts>()
-
-  for (const [name, entry] of Object.entries(data)) {
-    const costs = parseLiteLLMEntry(entry)
-    if (!costs) continue
-    pricing.set(name, costs)
-    // Also index by stripped name so lookups work without provider prefix:
-    // 'anthropic/claude-opus-4-6' is also queryable as 'claude-opus-4-6'.
-    // First write wins so direct-provider entries take precedence over re-hosters.
-    const stripped = name.replace(/^[^/]+\//, '')
-    if (stripped !== name && !pricing.has(stripped)) pricing.set(stripped, costs)
-  }
-
-  await mkdir(getCacheDir(), { recursive: true })
-  await writeFile(getCachePath(), JSON.stringify({
-    timestamp: Date.now(),
-    data: Object.fromEntries(pricing),
-  }))
-
-  return pricing
-}
-
-async function loadCachedPricing(): Promise<Map<string, ModelCosts> | null> {
-  try {
-    const raw = await readFile(getCachePath(), 'utf-8')
-    const cached = JSON.parse(raw) as { timestamp: number; data: Record<string, ModelCosts> }
-    if (Date.now() - cached.timestamp > CACHE_TTL_MS) return null
-    return new Map(Object.entries(cached.data))
-  } catch {
-    return null
-  }
-}
-
 function mergeSnapshotFallbacks(pricing: Map<string, ModelCosts>): Map<string, ModelCosts> {
   for (const [name, costs] of loadSnapshot()) {
     if (!pricing.has(name)) pricing.set(name, costs)
@@ -231,20 +108,11 @@ function mergeSnapshotFallbacks(pricing: Map<string, ModelCosts>): Map<string, M
 }
 
 export async function loadPricing(): Promise<void> {
-  const cached = await loadCachedPricing()
-  if (cached) {
-    pricingCache = mergeSnapshotFallbacks(cached)
+  const remotePricing = await loadRemotePricing(getMetroraCacheDir())
+  if (remotePricing) {
+    pricingCache = mergeSnapshotFallbacks(remotePricing)
     sortedPricingKeys = null
     lowercasePricingIndex = null
-    return
-  }
-
-  try {
-    pricingCache = mergeSnapshotFallbacks(await fetchAndCachePricing())
-    sortedPricingKeys = null
-    lowercasePricingIndex = null
-  } catch {
-    // snapshot already loaded at init; nothing more to do
   }
 }
 
