@@ -14,7 +14,19 @@ if (major < 22 || (major === 22 && minor < 13)) {
   process.exit(1)
 }
 
-import('./main.js').catch((err) => {
+async function launch() {
+  // `--version` is a metadata-only request. Keep it ahead of the Commander
+  // graph so a one-line health check does not load the full CLI bundle.
+  if (process.argv[2] === '--version' || process.argv[2] === '-V') {
+    const { readFile } = await import('node:fs/promises')
+    const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+    process.stdout.write(`${typeof packageJson.version === 'string' ? packageJson.version : ''}\n`)
+    return
+  }
+  await import('./main.js')
+}
+
+launch().catch((err) => {
   process.stderr.write(String(err?.message ?? err) + '\n')
   process.exit(1)
 })
