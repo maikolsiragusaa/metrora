@@ -28,6 +28,26 @@ export type ShareServerOptions = {
 
 export const SHARE_API_VERSION = 1 as const
 
+const SHARE_REQUEST_BASE_URL = 'https://localhost'
+const INVALID_SHARE_REQUEST_URL = 'invalid sharing request URL'
+
+class ShareRequestUrlError extends Error {}
+
+/** Parse only HTTPS/origin-form request targets without reflecting private input. */
+export function parseShareRequestUrl(value: string | undefined): URL {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new ShareRequestUrlError(INVALID_SHARE_REQUEST_URL)
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(value, SHARE_REQUEST_BASE_URL)
+  } catch {
+    throw new ShareRequestUrlError(INVALID_SHARE_REQUEST_URL)
+  }
+  if (parsed.protocol !== 'https:') throw new ShareRequestUrlError(INVALID_SHARE_REQUEST_URL)
+  return parsed
+}
+
 /**
  * Keep the inherited unversioned routes working while making `/api/v1` the
  * stable first-party surface for Metrora companions and integrations.
@@ -125,19 +145,25 @@ export class ShareServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = new URL(req.url ?? '/', 'https://localhost')
     const json = (code: number, body: unknown): void => {
       res.writeHead(code, { 'content-type': 'application/json' })
       res.end(JSON.stringify(body))
     }
     try {
+      const url = parseShareRequestUrl(req.url)
       await this.route(url, req, res, json)
     } catch (err) {
       // Never leave a request hanging (a hung peer makes the caller time out
       // and drop this device); always answer, even on an internal error.
       if (!res.headersSent) {
-        const message = err instanceof Error ? err.message : String(err)
-        json(err instanceof UsageQueryError ? 400 : 500, { error: message })
+        if (err instanceof ShareRequestUrlError) {
+          json(400, { error: INVALID_SHARE_REQUEST_URL })
+        } else if (err instanceof UsageQueryError) {
+          json(400, { error: err.message })
+        } else {
+          const message = err instanceof Error ? err.message : String(err)
+          json(500, { error: message })
+        }
       }
     }
   }
