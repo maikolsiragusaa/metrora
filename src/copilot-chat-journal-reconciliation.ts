@@ -1,9 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { getMetroraCacheDir } from './product-paths.js'
+import { copilot } from './providers/copilot.js'
+import type { SessionSource } from './providers/types.js'
+import type { FileFingerprint } from './session-cache.js'
+import { COPILOT_CHAT_JOURNAL_PROVIDER } from './provider-parse-authorities.js'
 
 const MANIFEST_VERSION = 1
 const MANIFEST_FILE = 'copilot-chat-journal-invalidations.v1.json'
@@ -15,7 +19,16 @@ type Manifest = {
 }
 
 const pending = new Map<string, Set<string>>()
+const previousTurns = new Map<string, JournalTurn[]>()
 let suppressPendingInvalidation = false
+
+export type CopilotChatJournalFingerprint = {
+  path: string
+  dev: number
+  ino: number
+  mtimeMs: number
+  sizeBytes: number
+}
 
 function manifestPath(): string {
   return join(getMetroraCacheDir(), MANIFEST_FILE)
@@ -43,6 +56,85 @@ function mergeSourceDays(target: Map<string, Set<string>>, source: string, days:
 export function recordCopilotChatJournalInvalidation(sourcePath: string, days: Iterable<string>): void {
   if (suppressPendingInvalidation) return
   mergeSourceDays(pending, sourceIdentity(sourcePath), days)
+}
+
+function isChatSessionSource(source: SessionSource): source is SessionSource & { sourceType: 'chatsession' } {
+  return (source as SessionSource & { sourceType?: unknown }).sourceType === 'chatsession'
+}
+
+/** Read only source identity/stat metadata; never return journal content. */
+export async function getCopilotChatJournalFingerprints(): Promise<CopilotChatJournalFingerprint[]> {
+  const sources = await copilot.discoverSessions().catch(() => [])
+  const fingerprints: CopilotChatJournalFingerprint[] = []
+  for (const source of sources) {
+    if (!isChatSessionSource(source)) continue
+    const current = await stat(source.path).catch(() => null)
+    if (!current?.isFile()) continue
+    fingerprints.push({
+      path: source.path,
+      dev: Number(current.dev),
+      ino: Number(current.ino),
+      mtimeMs: current.mtimeMs,
+      sizeBytes: current.size,
+    })
+  }
+  return fingerprints.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+type JournalTurn = { timestamp: string }
+
+type QueuedSource = {
+  source: SessionSource
+  fp: Pick<FileFingerprint, 'dev' | 'ino' | 'mtimeMs' | 'sizeBytes'>
+}
+
+export function queueCopilotChatJournalSource(
+  providerName: string,
+  source: SessionSource,
+  fp: QueuedSource['fp'],
+  turns: Iterable<JournalTurn>,
+): QueuedSource {
+  if (providerName === COPILOT_CHAT_JOURNAL_PROVIDER) {
+    previousTurns.set(source.path, [...turns].map(turn => ({ timestamp: turn.timestamp })))
+  }
+  return { source, fp }
+}
+
+function turnDayKey(timestamp: string): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function turnDays(turns: Iterable<JournalTurn>): string[] {
+  return [...turns].map(turn => turnDayKey(turn.timestamp)).filter(Boolean)
+}
+
+/** Parser-facing adapter keeps the provider-specific invalidation policy here. */
+export function recordCopilotChatJournalSourceChange(
+  providerName: string,
+  sourcePath: string,
+  currentTurns: Iterable<JournalTurn>,
+): void {
+  if (providerName !== COPILOT_CHAT_JOURNAL_PROVIDER) return
+  const oldTurns = previousTurns.get(sourcePath) ?? []
+  recordCopilotChatJournalInvalidation(sourcePath, [...turnDays(oldTurns), ...turnDays(currentTurns)])
+}
+
+export function recordCopilotChatJournalSourceFailure(
+  providerName: string,
+  sourcePath: string,
+): void {
+  recordCopilotChatJournalSourceChange(providerName, sourcePath, [])
+}
+
+export function recordCopilotChatJournalSourceEviction(
+  providerName: string,
+  sourcePath: string,
+  turns: Iterable<JournalTurn>,
+): void {
+  if (providerName !== COPILOT_CHAT_JOURNAL_PROVIDER) return
+  recordCopilotChatJournalInvalidation(sourcePath, turnDays(turns))
 }
 
 /** Used only for an identity-ambiguous source-root switch. */
@@ -91,12 +183,16 @@ async function writeManifest(values: Map<string, Set<string>>): Promise<void> {
 
 /** Publish parser-observed invalidations without exposing source content. */
 export async function flushCopilotChatJournalInvalidations(): Promise<void> {
-  if (pending.size === 0) return
+  if (pending.size === 0) {
+    previousTurns.clear()
+    return
+  }
   const updates = new Map([...pending.entries()].map(([source, days]) => [source, new Set(days)] as const))
   const merged = await readManifest()
   for (const [source, days] of updates) mergeSourceDays(merged, source, days)
   await writeManifest(merged)
   for (const source of updates.keys()) pending.delete(source)
+  previousTurns.clear()
 }
 
 /** Return all affected days, preserving source identity only inside the file. */

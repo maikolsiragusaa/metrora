@@ -1809,14 +1809,6 @@ interface ChatSessionSource extends SessionSource {
   sourceType: 'chatsession'
 }
 
-export type CopilotChatJournalFingerprint = {
-  path: string
-  dev: number
-  ino: number
-  mtimeMs: number
-  sizeBytes: number
-}
-
 interface JetBrainsSessionSource extends SessionSource {
   sourceType: 'jetbrains'
   // Fallback conversation id for turns whose own GUID can't be recovered (the
@@ -2405,26 +2397,3 @@ export function createCopilotProvider(
 
 // Default export for the provider registry
 export const copilot = createCopilotProvider()
-
-/**
- * Cheap source-authority probe used by daily hydration. It reads only source
- * identity/stat metadata; journal content is parsed by the normal provider
- * lifecycle and is never returned or logged here.
- */
-export async function getCopilotChatJournalFingerprints(): Promise<CopilotChatJournalFingerprint[]> {
-  const sources = await copilot.discoverSessions().catch(() => [])
-  const fingerprints: CopilotChatJournalFingerprint[] = []
-  for (const source of sources) {
-    if (!isChatSessionSource(source)) continue
-    const current = await stat(source.path).catch(() => null)
-    if (!current?.isFile()) continue
-    fingerprints.push({
-      path: source.path,
-      dev: Number(current.dev),
-      ino: Number(current.ino),
-      mtimeMs: current.mtimeMs,
-      sizeBytes: current.size,
-    })
-  }
-  return fingerprints.sort((left, right) => left.path.localeCompare(right.path))
-}

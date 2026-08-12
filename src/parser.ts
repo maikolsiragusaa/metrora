@@ -56,11 +56,8 @@ import { isSnapshotReadMode } from './read-lifecycle.js'
 import { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'
 import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
-import {
-  flushCopilotChatJournalInvalidations,
-  recordCopilotChatJournalInvalidation,
-} from './copilot-chat-journal-reconciliation.js'
-import { COPILOT_CHAT_JOURNAL_PROVIDER } from './provider-parse-authorities.js'
+import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
+import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 
 
 
@@ -2968,13 +2965,8 @@ async function parseProviderSources(
   const allDiscoveredFiles = new Set<string>()
   const servedSources = [...sources]
 
-  type SourceInfo = {
-    source: SessionSource
-    fp: NonNullable<Awaited<ReturnType<typeof fingerprintFile>>>
-    previousTurns: CachedTurn[]
-  }
   const unchangedSources: Array<{ source: SessionSource; cached: CachedFile }> = []
-  const changedSources: SourceInfo[] = []
+  const changedSources: Array<{ source: SessionSource; fp: NonNullable<Awaited<ReturnType<typeof fingerprintFile>>> }> = []
 
   for (const source of sources) {
     allDiscoveredFiles.add(source.path)
@@ -2984,7 +2976,7 @@ async function parseProviderSources(
     // fingerprint or incrementally cache, so re-fetch every run with a synthetic
     // fingerprint (mtime=now so the date-range filter below never excludes it).
     if (provider.network && !readOnly) {
-      changedSources.push({ source, fp: { dev: 0, ino: 0, mtimeMs: Date.now(), sizeBytes: 0 }, previousTurns: [] })
+      changedSources.push({ source, fp: { dev: 0, ino: 0, mtimeMs: Date.now(), sizeBytes: 0 } })
       continue
     }
 
@@ -2999,7 +2991,7 @@ async function parseProviderSources(
     if (cached && (readOnly || (action.action === 'unchanged' && (cached.failed || !cachedFileNeedsProviderReparse(providerName, source.path, cached))))) {
       unchangedSources.push({ source, cached })
     } else if (!readOnly) {
-      changedSources.push({ source, fp, previousTurns: cached?.turns ?? [] })
+      changedSources.push(queueCopilotChatJournalSource(providerName, source, fp, cached?.turns ?? []))
     }
   }
 
@@ -3035,7 +3027,7 @@ async function parseProviderSources(
   // being wiped on every iteration.
   const clearedPaths = new Set<string>()
   try {
-    for (const { source, fp, previousTurns } of changedSources) {
+    for (const { source, fp } of changedSources) {
       if (dateRange) {
         if (fp.mtimeMs < dateRange.start.getTime()) continue
       }
@@ -3087,12 +3079,7 @@ async function parseProviderSources(
             section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns }
           }
         }
-        if (providerName === COPILOT_CHAT_JOURNAL_PROVIDER) {
-          recordCopilotChatJournalInvalidation(source.path, [
-            ...previousTurns.map(turn => turnDayKey(turn.timestamp)),
-            ...turns.map(turn => turnDayKey(turn.timestamp)),
-          ])
-        }
+        recordCopilotChatJournalSourceChange(providerName, source.path, turns)
         didParse = true
         ;(diskCache as { _dirty?: boolean })._dirty = true
       } catch (err) {
@@ -3107,9 +3094,7 @@ async function parseProviderSources(
         // on every refresh; it re-parses only if it changes. Empty turns => no
         // usage contributed.
         section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns: [], failed: true }
-        if (providerName === COPILOT_CHAT_JOURNAL_PROVIDER) {
-          recordCopilotChatJournalInvalidation(source.path, previousTurns.map(turn => turnDayKey(turn.timestamp)))
-        }
+        recordCopilotChatJournalSourceFailure(providerName, source.path)
         ;(diskCache as { _dirty?: boolean })._dirty = true
         warnProviderParseFailure(providerName, source.path, err)
         continue
@@ -3130,16 +3115,8 @@ async function parseProviderSources(
     ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
-  if (!readOnly && !provider.durableSources && (sources.length > 0 || providerName === COPILOT_CHAT_JOURNAL_PROVIDER)) {
-    for (const cachedPath of Object.keys(section.files)) {
-      if (!allDiscoveredFiles.has(cachedPath)) {
-        if (providerName === COPILOT_CHAT_JOURNAL_PROVIDER) {
-          recordCopilotChatJournalInvalidation(cachedPath, section.files[cachedPath]!.turns.map(turn => turnDayKey(turn.timestamp)))
-        }
-        delete section.files[cachedPath]
-        ;(diskCache as { _dirty?: boolean })._dirty = true
-      }
-    }
+  if (!readOnly && !provider.durableSources && shouldReconcileMissingProviderSources(providerName, sources.length)) {
+    reconcileMissingProviderSources(providerName, section, allDiscoveredFiles, diskCache)
   }
 
   // Query-time: derive SessionSummary from all cached turns.
@@ -3272,12 +3249,6 @@ async function parseProviderSources(
   }
 
   return projects
-}
-
-function turnDayKey(timestamp: string): string {
-  const date = new Date(timestamp)
-  if (Number.isNaN(date.getTime())) return ''
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 const CACHE_TTL_MS = 180_000
