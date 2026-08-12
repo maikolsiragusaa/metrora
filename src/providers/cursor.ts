@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
 
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
@@ -9,6 +8,7 @@ import { isSqliteAvailable, isSqliteBusyError, getSqliteLoadError, openDatabase,
 import { estimateTokensFromChars } from '../token-estimate.js'
 import type { DateRange } from '../types.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import { getCursorDbPath, getCursorDoctorProbeRoots, getCursorWorkspaceStorageDir } from './cursor-paths.js'
 
 /** Default scan cap for Cursor when the caller did not request a range. */
 const CURSOR_MAX_LOOKBACK_MONTHS = 6
@@ -73,26 +73,6 @@ type AgentKvRow = {
 // contention does not change the main file's stat).
 function rethrowBusy(err: unknown): void {
   if (isSqliteBusyError(err)) throw err
-}
-
-function getCursorDbPath(): string {
-  if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'state.vscdb')
-  }
-  if (process.platform === 'win32') {
-    return join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'state.vscdb')
-  }
-  return join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'state.vscdb')
-}
-
-function getCursorWorkspaceStorageDir(globalDbPath: string): string {
-  // Sibling of globalStorage. Cursor lays out User/{globalStorage,workspaceStorage}/.
-  // We derive the workspaceStorage path from the global DB path so a test or
-  // override can supply both consistently from one root.
-  // globalDbPath = .../User/globalStorage/state.vscdb
-  // workspaceStorage = .../User/workspaceStorage
-  const userDir = join(globalDbPath, '..', '..')
-  return join(userDir, 'workspaceStorage')
 }
 
 /// Per-conversation workspace lookup table. Cursor stores each chat as
@@ -1073,6 +1053,8 @@ export function createCursorProvider(dbPathOverride?: string): Provider {
       })
       return sources
     },
+
+    probeRoots: async () => getCursorDoctorProbeRoots(dbPathOverride),
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>, dateRange?: DateRange): SessionParser {
       return createParser(source, seenKeys, dateRange)

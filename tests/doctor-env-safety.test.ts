@@ -44,10 +44,7 @@ describe('doctor env authority safety', () => {
       cache: emptyCache(),
     })
 
-    expect(report.providers[0]?.envOverrides).toContainEqual({
-      name: 'AI_GATEWAY_API_KEY',
-      value: '<set>',
-    })
+    expect(report.providers[0]?.envOverrides).toContainEqual({ name: 'AI_GATEWAY_API_KEY' })
     expect(JSON.stringify(report)).not.toContain(secret)
     expect(renderDoctorJson(report)).not.toContain(secret)
     expect(renderDoctorTable(report, { color: false })).not.toContain(secret)
@@ -73,7 +70,7 @@ describe('doctor env authority safety', () => {
       cache: emptyCache(),
     })
     const row = report.providers[0]!
-    expect(row.envOverrides).toContainEqual({ name: 'METRORA_CURSOR_MAX_BUBBLES', value: '50' })
+    expect(row.envOverrides).toContainEqual({ name: 'METRORA_CURSOR_MAX_BUBBLES' })
     expect(row.verdict).not.toContain('override METRORA_CURSOR_MAX_BUBBLES')
   })
 })

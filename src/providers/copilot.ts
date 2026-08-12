@@ -59,7 +59,7 @@
 
 import { readdir, stat } from 'fs/promises'
 import { homedir, platform } from 'os'
-import { join, basename, dirname, posix, win32 } from 'path'
+import { join, basename, dirname } from 'path'
 import { existsSync } from 'fs'
 import { createHash } from 'crypto'
 import { readSessionFile } from '../fs-utils.js'
@@ -72,6 +72,14 @@ import type {
   SessionParser,
   ParsedProviderCall,
 } from './types.js'
+import {
+  getAgentTracesDbPath,
+  getCopilotDoctorProbeRoots,
+  getCopilotSessionStateDir,
+  getJetBrainsCopilotRoot,
+  getVSCodeGlobalStorageDirs,
+  getVSCodeWorkspaceStorageDirs,
+} from './copilot-paths.js'
 
 // ---------------------------------------------------------------------------
 // Model display names (unchanged from original)
@@ -251,10 +259,6 @@ interface SpanAttributes {
 
 // ---------------------------------------------------------------------------
 
-function getCopilotSessionStateDir(override?: string): string {
-  return override ?? process.env['METRORA_COPILOT_SESSION_STATE_DIR'] ?? join(homedir(), '.copilot', 'session-state')
-}
-
 /**
  * Locate the agent-traces.db file.
  *
@@ -263,47 +267,6 @@ function getCopilotSessionStateDir(override?: string): string {
  *   2. Platform-specific default VS Code global storage path
  *   3. VSCodium variant paths
  */
-function getAgentTracesDbPath(): string | null {
-  // Allow explicit override
-  const envOverride = process.env['METRORA_COPILOT_OTEL_DB']
-  if (envOverride) {
-    return existsSync(envOverride) ? envOverride : null
-  }
-
-  const home = homedir()
-  const candidates: string[] = []
-
-  const p = platform()
-  if (p === 'darwin') {
-    // macOS: VS Code, VS Code Insiders, VSCodium
-    candidates.push(
-      join(home, 'Library', 'Application Support', 'Code', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-      join(home, 'Library', 'Application Support', 'Code - Insiders', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-      join(home, 'Library', 'Application Support', 'VSCodium', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-    )
-  } else if (p === 'linux') {
-    // Linux: VS Code, VS Code Insiders, VSCodium
-    candidates.push(
-      join(home, '.config', 'Code', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-      join(home, '.config', 'Code - Insiders', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-      join(home, '.config', 'VSCodium', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-    )
-  } else if (p === 'win32') {
-    // Windows
-    const appdata = process.env['APPDATA'] ?? join(home, 'AppData', 'Roaming')
-    candidates.push(
-      join(appdata, 'Code', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-      join(appdata, 'Code - Insiders', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-      join(appdata, 'VSCodium', 'User', 'globalStorage', 'github.copilot-chat', 'agent-traces.db'),
-    )
-  }
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate
-  }
-  return null
-}
-
 /**
  * Locate the GitHub Copilot config root used by the JetBrains IDE plugin
  * (IntelliJ IDEA, PyCharm, RubyMine, …). The JetBrains Copilot agent persists
@@ -321,23 +284,6 @@ function getAgentTracesDbPath(): string | null {
  * Ultimate, `intellij` for the community edition) containing
  * chat-agent-sessions/, chat-sessions/, and chat-edit-sessions/.
  */
-function getJetBrainsCopilotRoot(override?: string): string {
-  const envOverride = override ?? process.env['METRORA_COPILOT_JETBRAINS_DIR']
-  if (envOverride) return envOverride
-
-  const xdg = process.env['XDG_CONFIG_HOME']
-  if (xdg && (posix.isAbsolute(xdg) || win32.isAbsolute(xdg))) {
-    return join(xdg, 'github-copilot')
-  }
-
-  if (platform() === 'win32') {
-    const local = process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local')
-    return join(local, 'github-copilot')
-  }
-
-  return join(homedir(), '.config', 'github-copilot')
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2037,60 +1983,7 @@ async function resolveJetBrainsProjectNames(
 // Provider factory
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the VS Code workspaceStorage directories for all VS Code variants
- * (Code, Code Insiders, VSCodium) on the given platform. Used to discover
- * transcript sessions written by the Copilot Chat extension.
- *
- * Accepts explicit `home` and `os` arguments so callers (and tests) can pass
- * custom values without relying on process-level globals.
- */
-export function getVSCodeWorkspaceStorageDirs(home: string, os: string): string[] {
-  const j = os === 'win32' ? win32.join : posix.join
-  if (os === 'darwin') {
-    return [
-      j(home, 'Library', 'Application Support', 'Code', 'User', 'workspaceStorage'),
-      j(home, 'Library', 'Application Support', 'Code - Insiders', 'User', 'workspaceStorage'),
-      j(home, 'Library', 'Application Support', 'VSCodium', 'User', 'workspaceStorage'),
-    ]
-  }
-  if (os === 'linux') {
-    return [
-      j(home, '.config', 'Code', 'User', 'workspaceStorage'),
-      j(home, '.config', 'Code - Insiders', 'User', 'workspaceStorage'),
-      j(home, '.config', 'VSCodium', 'User', 'workspaceStorage'),
-    ]
-  }
-  // win32
-  return [
-    j(home, 'AppData', 'Roaming', 'Code', 'User', 'workspaceStorage'),
-    j(home, 'AppData', 'Roaming', 'Code - Insiders', 'User', 'workspaceStorage'),
-    j(home, 'AppData', 'Roaming', 'VSCodium', 'User', 'workspaceStorage'),
-  ]
-}
-
-export function getVSCodeGlobalStorageDirs(home: string, os: string): string[] {
-  const j = os === 'win32' ? win32.join : posix.join
-  if (os === 'darwin') {
-    return [
-      j(home, 'Library', 'Application Support', 'Code', 'User', 'globalStorage'),
-      j(home, 'Library', 'Application Support', 'Code - Insiders', 'User', 'globalStorage'),
-      j(home, 'Library', 'Application Support', 'VSCodium', 'User', 'globalStorage'),
-    ]
-  }
-  if (os === 'linux') {
-    return [
-      j(home, '.config', 'Code', 'User', 'globalStorage'),
-      j(home, '.config', 'Code - Insiders', 'User', 'globalStorage'),
-      j(home, '.config', 'VSCodium', 'User', 'globalStorage'),
-    ]
-  }
-  return [
-    j(home, 'AppData', 'Roaming', 'Code', 'User', 'globalStorage'),
-    j(home, 'AppData', 'Roaming', 'Code - Insiders', 'User', 'globalStorage'),
-    j(home, 'AppData', 'Roaming', 'VSCodium', 'User', 'globalStorage'),
-  ]
-}
+export { getVSCodeGlobalStorageDirs, getVSCodeWorkspaceStorageDirs } from './copilot-paths.js'
 
 async function resolveWorkspaceProject(wsDir: string, hashDir: string): Promise<string> {
   let project = hashDir
@@ -2290,6 +2183,7 @@ export function createCopilotProvider(
     name: 'copilot',
     displayName: 'Copilot',
     durableSources: true,
+    probeRoots: async () => getCopilotDoctorProbeRoots(sessionStateDir, workspaceStorageDir, globalStorageDir, jetbrainsDir),
 
     modelDisplayName(model: string): string {
       for (const [key, display] of modelDisplayEntries) {

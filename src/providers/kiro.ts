@@ -9,6 +9,13 @@ import { calculateCost } from '../models.js'
 import { estimateTokensFromChars } from '../token-estimate.js'
 import type { ToolCall } from '../types.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import {
+  getKiroAgentDir,
+  getKiroCliSessionsDir,
+  getKiroDoctorProbeRoots,
+  getKiroV2SessionsRoot,
+  getKiroWorkspaceStorageDir,
+} from './kiro-paths.js'
 
 // Kiro bills in credits: individual plans are $20/mo for 1,000 credits and
 // overage is billed at $0.04 per additional credit. We price credits at the
@@ -908,38 +915,6 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
 
 // --- Discovery ---
 
-function getKiroAgentDir(override?: string): string[] {
-  if (override) return [override]
-  if (process.platform === 'darwin') {
-    return [join(homedir(), 'Library', 'Application Support', 'Kiro', 'User', 'globalStorage', 'kiro.kiroagent')]
-  }
-  if (process.platform === 'win32') {
-    return [join(homedir(), 'AppData', 'Roaming', 'Kiro', 'User', 'globalStorage', 'kiro.kiroagent')]
-  }
-  // On Linux, scan both ~/.kiro-server/data/... (remote dev boxes) and
-  // ~/.config/Kiro/... (local installs). Both can have data simultaneously
-  // if the user switches between local and remote, or if .kiro-server exists
-  // but is stale while .config/Kiro has current sessions.
-  const paths: string[] = []
-  const kiroServer = join(homedir(), '.kiro-server', 'data', 'User', 'globalStorage', 'kiro.kiroagent')
-  const kiroConfig = join(homedir(), '.config', 'Kiro', 'User', 'globalStorage', 'kiro.kiroagent')
-  if (existsSync(kiroServer)) paths.push(kiroServer)
-  if (existsSync(kiroConfig)) paths.push(kiroConfig)
-  // Fallback to config path if neither exists (will just find nothing)
-  return paths.length > 0 ? paths : [kiroConfig]
-}
-
-function getKiroWorkspaceStorageDir(override?: string): string {
-  if (override) return override
-  if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'Kiro', 'User', 'workspaceStorage')
-  }
-  if (process.platform === 'win32') {
-    return join(homedir(), 'AppData', 'Roaming', 'Kiro', 'User', 'workspaceStorage')
-  }
-  return join(homedir(), '.config', 'Kiro', 'User', 'workspaceStorage')
-}
-
 async function readWorkspaceProject(workspaceDir: string): Promise<string> {
   try {
     const raw = await readFile(join(workspaceDir, 'workspace.json'), 'utf-8')
@@ -1109,15 +1084,13 @@ export function createKiroProvider(agentDirOverride?: string, workspaceStorageDi
   const agentDirs = getKiroAgentDir(agentDirOverride)
   const wsDir = getKiroWorkspaceStorageDir(workspaceStorageDirOverride)
   // When overrides are provided (tests), don't scan real CLI sessions unless explicitly given
-  const cliDir = cliSessionsDirOverride ?? (agentDirOverride ? join(agentDirOverride, '..', 'cli-sessions') : join(process.env['KIRO_HOME'] || join(homedir(), '.kiro'), 'sessions', 'cli'))
+  const cliDir = getKiroCliSessionsDir(agentDirOverride, cliSessionsDirOverride)
   // v2 IDE sessions live under ~/.kiro/sessions/<hash>/sess_*/, a sibling of the
   // CLI store (.../sessions/cli). Derive the root from cliDir ONLY when cliDir was
   // itself explicit (default path or cliSessionsDirOverride). When only
   // agentDirOverride is set (tests), the derived cliDir parent would point at an
   // arbitrary directory (e.g. the system tmpdir) — scan nothing in that case.
-  const v2Root = v2SessionsRootOverride ??
-    (cliSessionsDirOverride ? dirname(cliSessionsDirOverride) :
-      agentDirOverride ? undefined : dirname(cliDir))
+  const v2Root = getKiroV2SessionsRoot(agentDirOverride, cliSessionsDirOverride, v2SessionsRootOverride, cliDir)
 
   return {
     name: 'kiro',
@@ -1153,6 +1126,8 @@ export function createKiroProvider(agentDirOverride?: string, workspaceStorageDi
         return true
       })
     },
+
+    probeRoots: async () => getKiroDoctorProbeRoots(agentDirOverride, workspaceStorageDirOverride, cliSessionsDirOverride, v2SessionsRootOverride),
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
       return createParser(source, seenKeys)

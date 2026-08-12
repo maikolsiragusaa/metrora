@@ -91,7 +91,7 @@ describe('collectDoctorReport - codex fixture dirs', () => {
     expect(sessions?.exists).toBe(true)
   })
 
-  it('empty: sessions dir exists but holds nothing -> NOTHING FOUND (no sessions)', async () => {
+  it('empty: sessions dir exists but holds nothing -> readable but empty', async () => {
     await mkdir(join(tmpDir, 'sessions'), { recursive: true })
     const provider = createCodexProvider(tmpDir)
     const report = await collectDoctorReport('all', { providers: [provider], cache: emptyCache() })
@@ -99,11 +99,11 @@ describe('collectDoctorReport - codex fixture dirs', () => {
 
     expect(r.status).toBe('empty')
     expect(r.candidatesFound).toBe(0)
-    expect(r.verdict).toContain('holds no sessions')
+    expect(r.verdict).toContain('readable but empty')
     expect(r.probePaths.find(p => p.label === 'sessions')?.exists).toBe(true)
   })
 
-  it('missing: no sessions dir -> NOTHING FOUND names the missing path', async () => {
+  it('missing: no sessions dir -> NOTHING FOUND classifies the missing path', async () => {
     // tmpDir has no `sessions` subdir at all.
     const provider = createCodexProvider(tmpDir)
     const report = await collectDoctorReport('all', { providers: [provider], cache: emptyCache() })
@@ -111,11 +111,9 @@ describe('collectDoctorReport - codex fixture dirs', () => {
 
     expect(r.status).toBe('empty')
     expect(r.candidatesFound).toBe(0)
-    // Mutation guard: if the exists-check is broken to always return true, this
-    // flips to false and the verdict drops "does not exist".
     expect(r.probePaths.find(p => p.label === 'sessions')?.exists).toBe(false)
-    expect(r.verdict).toContain('does not exist')
-    expect(r.verdict).toContain(join(tmpDir, 'sessions'))
+    expect(r.probePaths.find(p => p.label === 'sessions')?.state).toBe('MISSING')
+    expect(r.verdict).toContain('configured sources are missing')
   })
 })
 
@@ -132,10 +130,10 @@ describe('collectDoctorReport - env override', () => {
       const report = await collectDoctorReport('all', { providers: [provider], cache: emptyCache() })
       const r = only(report, 'codex')
 
-      expect(r.envOverrides).toEqual([{ name: 'CODEX_HOME', value: bogus }])
+      expect(r.envOverrides).toEqual([{ name: 'CODEX_HOME' }])
       expect(r.status).toBe('empty')
       expect(r.verdict).toContain('override CODEX_HOME set')
-      expect(r.verdict).toContain('does not exist')
+      expect(r.verdict).toContain('source is missing')
     } finally {
       if (prev === undefined) delete process.env['CODEX_HOME']
       else process.env['CODEX_HOME'] = prev
@@ -240,7 +238,7 @@ describe('collectDoctorReport - isolation and edge cases', () => {
 // ── Rendering ──────────────────────────────────────────────────────────────
 
 describe('doctor rendering', () => {
-  it('renders a plain-text table naming the override and missing path', async () => {
+  it('renders a compact privacy-safe table naming the override and missing family', async () => {
     const provider = fakeProvider({
       name: 'claude',
       displayName: 'Claude',
@@ -254,9 +252,9 @@ describe('doctor rendering', () => {
       const out = renderDoctorTable(report, { color: false })
       expect(out).toContain('Metrora doctor')
       expect(out).toContain('NOTHING FOUND')
-      expect(out).toContain('CLAUDE_CONFIG_DIR=/nonexistent')
-      expect(out).toContain('/nonexistent/projects')
-      expect(out).toContain('missing')
+      expect(out).toContain('override CLAUDE_CONFIG_DIR')
+      expect(out).toContain('projects: MISSING')
+      expect(out).not.toContain('/nonexistent/projects')
       // no-color mode emits no ANSI escapes
       // eslint-disable-next-line no-control-regex
       expect(out).not.toMatch(/\[/)
