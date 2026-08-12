@@ -58,6 +58,7 @@ import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDat
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
 import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
+import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 
 
 
@@ -3492,11 +3493,6 @@ function summaryProvider(session: SessionSummary): string {
   return session.turns.flatMap(t => t.assistantCalls)[0]?.provider ?? 'unknown'
 }
 
-function normalizedWorkingDirectory(path: string | undefined): string | null {
-  if (!path?.trim()) return null
-  return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-}
-
 function normalizedPrompt(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
@@ -3516,11 +3512,12 @@ function assignCorrelatedPrs(
 }
 
 /**
- * Correlate saved sessions across AI providers without timestamp guessing.
+ * Correlate saved sessions across AI providers without an invented TTL.
  *
  * Evidence, strongest first:
  *  1. exact launch-prompt text embedded in a PR-linked session's shell command;
- *  2. exact provider-recorded cwd shared with one unambiguous PR.
+ *  2. exact provider-recorded cwd inside one locally observed PR-evidence
+ *     envelope.
  *
  * Timestamps only narrow prompt comparisons for performance; they can never
  * create attribution. Conflicting PR evidence is deliberately left unassigned.
@@ -3595,24 +3592,14 @@ export function correlateCrossProviderPrSessions(projects: ProjectSummary[]): vo
     }
   }
 
-  // Prompt-linked sessions become valid cwd anchors too. Attribute only when an
-  // exact cwd maps to one PR set; a main checkout used for multiple PRs remains
-  // intentionally ambiguous.
-  const refsByCwd = new Map<string, Map<string, string[]>>()
-  for (const [session, evidenceRefs] of evidence) {
-    const cwd = normalizedWorkingDirectory(session.workingDirectory)
-    if (!cwd || evidenceRefs.length !== 1) continue
-    const refs = evidenceRefs.slice().sort()
-    const sets = refsByCwd.get(cwd) ?? new Map<string, string[]>()
-    sets.set(refs.join('\0'), refs)
-    refsByCwd.set(cwd, sets)
-  }
+  // Prompt-linked sessions become valid cwd anchors too. The fallback is
+  // reconstructed from observed timestamps on every parse; it is not durable
+  // PR truth and cannot extend a checkout association beyond local evidence.
+  const cwdEvidence = buildCwdEvidenceIndex(evidence)
   for (const session of sessions) {
     if (session.prLinks?.length || session.parentSessionId) continue
-    const cwd = normalizedWorkingDirectory(session.workingDirectory)
-    if (!cwd) continue
-    const sets = refsByCwd.get(cwd)
-    if (sets?.size === 1) assignCorrelatedPrs(session, [...sets.values()][0]!, 'working-directory')
+    const refs = timeBoundCwdRefs(session, cwdEvidence)
+    if (refs) assignCorrelatedPrs(session, refs, 'working-directory')
   }
 }
 
