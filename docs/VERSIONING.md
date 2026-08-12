@@ -4,8 +4,8 @@ Metrora uses semantic versioning for public product identity and separate numeri
 
 ## Current line
 
-- Current source candidate: `1.0.0-rc.9`
-- Desktop build version: `1.0.0.9`
+- Current source candidate: `1.0.0-rc.10`
+- Desktop build version: `1.0.0.10`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - First intended stable release: `1.0.0`
 
@@ -35,8 +35,8 @@ The final component is `0` for the Store package contract. The SemVer pre-releas
 
 For the current `1.0.0` pre-submission line:
 
-- source/product candidate: `1.0.0-rc.9`;
-- desktop build version: `1.0.0.9`;
+- source/product candidate: `1.0.0-rc.10`;
+- desktop build version: `1.0.0.10`;
 - local/non-publishing Store AppX identity version: `1.0.0.0`.
 
 A locally validated `1.0.0.0` AppX does not mean that version has been submitted, certified or published. Once a package version is actually submitted to Microsoft, later Store updates must advance according to the Store's package-version rules rather than reusing an already submitted identity.
