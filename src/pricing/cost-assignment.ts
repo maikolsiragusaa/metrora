@@ -62,7 +62,7 @@ const UnavailableCostAssignmentV1Schema = z.strictObject({
   ]),
 })
 
-const CostAssignmentUnionV1Schema = z.union([
+const CostAssignmentUnionV1Schema = z.discriminatedUnion('kind', [
   MeteredCostAssignmentV1Schema,
   TokenPriceCostAssignmentV1Schema,
   ExplicitZeroCostAssignmentV1Schema,
@@ -110,6 +110,14 @@ export function costAssignmentMatchesUsdV1(
   costUSD: number,
 ): boolean {
   const assignment = CostAssignmentV1Schema.parse(assignmentValue)
+  return validatedCostAssignmentMatchesUsdV1(assignment, costUSD)
+}
+
+/** Compare a cost only after the assignment has already passed V1 validation. */
+export function validatedCostAssignmentMatchesUsdV1(
+  assignment: CostAssignmentV1,
+  costUSD: number,
+): boolean {
   const micros = settledCostMicrosV1(assignment)
   if (micros === undefined) return false
   return micros === costUsdToMicrosV1(costUSD)
@@ -120,7 +128,7 @@ export function assertCostAssignmentMatchesUsdV1(
   costUSD: number,
 ): CostAssignmentV1 {
   const assignment = CostAssignmentV1Schema.parse(assignmentValue)
-  if (!costAssignmentMatchesUsdV1(assignment, costUSD)) {
+  if (!validatedCostAssignmentMatchesUsdV1(assignment, costUSD)) {
     throw new Error('cost assignment does not match the call cost at micro-USD precision')
   }
   return assignment

@@ -4,9 +4,10 @@ import { createHash, randomBytes } from 'crypto'
 import { join } from 'path'
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
-import { CostAssignmentV1Schema, costAssignmentMatchesUsdV1, type CostAssignmentV1 } from './pricing/cost-assignment.js'
+import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
+import { validateCachedFile, validateSessionCache } from './session-cache-validation.js'
 // ── Types ──────────────────────────────────────────────────────────────
 
 export type CachedUsage = {
@@ -297,167 +298,11 @@ export function isCacheComplete(cache: SessionCache): boolean {
   return cache.complete === true
 }
 
-function isNum(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v)
-}
-
-function isStringArray(v: unknown): v is string[] {
-  return Array.isArray(v) && v.every(e => typeof e === 'string')
-}
-
-function isOptionalString(v: unknown): boolean {
-  return v === undefined || typeof v === 'string'
-}
-
-function isOptionalNum(v: unknown): boolean {
-  return v === undefined || isNum(v)
-}
-
-function isOptionalBool(v: unknown): boolean {
-  return v === undefined || typeof v === 'boolean'
-}
-
-function isOptionalCostAssignment(v: unknown): v is CostAssignmentV1 | undefined {
-  return v === undefined || CostAssignmentV1Schema.safeParse(v).success
-}
-
-// A plain object whose every value is a string (or undefined). Used for the
-// sidechain `agentSpawnLinks` map (agentId -> spawn tool_use id).
-function isOptionalStringRecord(v: unknown): boolean {
-  if (v === undefined) return true
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return false
-  return Object.values(v as Record<string, unknown>).every(e => typeof e === 'string')
-}
-
-function isToolCall(v: unknown): boolean {
-  if (!v || typeof v !== 'object') return false
-  const o = v as Record<string, unknown>
-  return typeof o['tool'] === 'string'
-    && isOptionalString(o['file'])
-    && isOptionalString(o['command'])
-}
-
-function isToolCallArray(v: unknown): boolean {
-  return Array.isArray(v) && (v as unknown[]).every(isToolCall)
-}
-
-function validateFingerprint(fp: unknown): fp is FileFingerprint {
-  if (!fp || typeof fp !== 'object') return false
-  const f = fp as Record<string, unknown>
-  const wal = f['sqliteWal']
-  return isNum(f['dev']) && isNum(f['ino']) && isNum(f['mtimeMs']) && isNum(f['sizeBytes'])
-    && (wal === undefined || (
-      !!wal && typeof wal === 'object'
-      && isNum((wal as Record<string, unknown>)['mtimeMs'])
-      && isNum((wal as Record<string, unknown>)['sizeBytes'])
-    ))
-}
-
-function validateUsage(u: unknown): u is CachedUsage {
-  if (!u || typeof u !== 'object') return false
-  const o = u as Record<string, unknown>
-  return isNum(o['inputTokens']) && isNum(o['outputTokens'])
-    && isNum(o['cacheCreationInputTokens']) && isNum(o['cacheReadInputTokens'])
-    && isNum(o['cachedInputTokens']) && isNum(o['reasoningTokens'])
-    && isNum(o['webSearchRequests']) && isNum(o['cacheCreationOneHourTokens'])
-}
-
-function validateCachedCostAssignment(assignmentValue: unknown, costValue: unknown): boolean {
-  if (assignmentValue === undefined) return true
-  const parsed = CostAssignmentV1Schema.safeParse(assignmentValue)
-  if (!parsed.success) return false
-  if (parsed.data.kind === 'unavailable') return costValue === undefined
-  if (typeof costValue !== 'number' || !Number.isFinite(costValue) || costValue < 0) return false
-  try {
-    return costAssignmentMatchesUsdV1(parsed.data, costValue)
-  } catch {
-    return false
-  }
-}
-
-function validateCall(c: unknown): c is CachedCall {
-  if (!c || typeof c !== 'object') return false
-  const o = c as Record<string, unknown>
-  return typeof o['provider'] === 'string'
-    && typeof o['model'] === 'string'
-    && typeof o['deduplicationKey'] === 'string'
-    && typeof o['timestamp'] === 'string'
-    && (o['speed'] === 'standard' || o['speed'] === 'fast')
-    && isOptionalNum(o['costUSD'])
-    && isOptionalNum(o['legacyCostUSD'])
-    && isOptionalCostAssignment(o['costAssignment'])
-    && validateCachedCostAssignment(o['costAssignment'], o['costUSD'])
-    && isOptionalBool(o['isEstimated'])
-    && isOptionalNum(o['activeDurationMs'])
-    && isOptionalNum(o['activeGeneratedTokens'])
-    && isOptionalNum(o['toolWaitMs'])
-    && isStringArray(o['tools'])
-    && isStringArray(o['bashCommands'])
-    && isStringArray(o['skills'])
-    && (o['subagentTypes'] === undefined || isStringArray(o['subagentTypes']))
-    && isOptionalString(o['project'])
-    && isOptionalString(o['projectPath'])
-    && isOptionalString(o['workingDirectory'])
-    && isOptionalString(o['nativeMessageId']) && isOptionalString(o['nativeEmissionTimestamp']) && isOptionalBool(o['nativeSnapshotTerminal'])
-    && (o['toolSequence'] === undefined || (Array.isArray(o['toolSequence']) && (o['toolSequence'] as unknown[]).every(s => isToolCallArray(s))))
-    && isOptionalNum(o['locAdded'])
-    && isOptionalNum(o['locRemoved'])
-    && isOptionalBool(o['interrupted'])
-    && isOptionalBool(o['userModified'])
-    && isOptionalNum(o['toolErrors'])
-    && isOptionalNum(o['editFailed'])
-    && validateUsage(o['usage'])
-}
-
-function validateTurn(t: unknown): t is CachedTurn {
-  if (!t || typeof t !== 'object') return false
-  const o = t as Record<string, unknown>
-  return typeof o['timestamp'] === 'string'
-    && typeof o['sessionId'] === 'string'
-    && typeof o['userMessage'] === 'string'
-    && isOptionalString(o['gitBranch'])
-    && (o['prRefs'] === undefined || isStringArray(o['prRefs']))
-    && (o['spawnToolUseIds'] === undefined || isStringArray(o['spawnToolUseIds']))
-    && Array.isArray(o['calls'])
-    && (o['calls'] as unknown[]).every(validateCall)
-}
-
-export function validateCachedFile(f: unknown): f is CachedFile {
-  if (!f || typeof f !== 'object') return false
-  const o = f as Record<string, unknown>
-  return validateFingerprint(o['fingerprint'])
-    && isOptionalNum(o['lastCompleteLineOffset'])
-    && isOptionalString(o['canonicalCwd'])
-    && isOptionalString(o['workingDirectory'])
-    && isOptionalString(o['canonicalProjectName'])
-    && isStringArray(o['mcpInventory'])
-    && isOptionalString(o['title'])
-    && (o['prLinks'] === undefined || isStringArray(o['prLinks']))
-    && isOptionalBool(o['isSidechain'])
-    && isOptionalString(o['agentType'])
-    && isOptionalBool(o['failed'])
-    && isOptionalString(o['parentSessionId'])
-    && isOptionalStringRecord(o['agentSpawnLinks'])
-    && (o['ambiguousSpawnAgentIds'] === undefined || isStringArray(o['ambiguousSpawnAgentIds']))
-    && Array.isArray(o['turns'])
-    && (o['turns'] as unknown[]).every(validateTurn)
-}
-
-function validateProviderSection(s: unknown): s is ProviderSection {
-  if (!s || typeof s !== 'object') return false
-  const o = s as Record<string, unknown>
-  if (typeof o['envFingerprint'] !== 'string') return false
-  if (!o['files'] || typeof o['files'] !== 'object' || Array.isArray(o['files'])) return false
-  return Object.values(o['files'] as Record<string, unknown>).every(validateCachedFile)
-}
-
 export function isValidCache(raw: unknown): raw is SessionCache {
-  if (!raw || typeof raw !== 'object') return false
-  const o = raw as Record<string, unknown>
-  if (o['version'] !== CACHE_VERSION) return false
-  if (!o['providers'] || typeof o['providers'] !== 'object' || Array.isArray(o['providers'])) return false
-  return Object.values(o['providers'] as Record<string, unknown>).every(validateProviderSection)
+  return validateSessionCache(raw, CACHE_VERSION)
 }
+
+export { validateCachedFile }
 
 // Every prior versioned cache file that can still exist on disk from a shipped or
 // dev build, NEWEST first. On a bump we adopt the newest one present: its
