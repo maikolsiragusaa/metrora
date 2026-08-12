@@ -8,8 +8,8 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Current source candidate: `1.0.0-rc.9`
-- Current desktop build version: `1.0.0.9`
+- Current source candidate: `1.0.0-rc.10`
+- Current desktop build version: `1.0.0.10`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 
 The published command is `metrora`. Historical protocol and signed-data
@@ -20,7 +20,7 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-`1.0.0-rc.9` is the current **source/pre-submission candidate line**. It advances RC8 because accounting presentation and the packaged Store CLI runtime changed materially after physical pre-submission review. Its metadata does not by itself make any artifact accepted, signed, submitted or published.
+`1.0.0-rc.10` is the current **source/pre-submission candidate line**. It advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and the sealed packaged Store CLI runtime. RC10 metadata does not by itself make any artifact accepted, signed, submitted or published.
 
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
@@ -32,8 +32,8 @@ Exact source commits and artifact digests belong in the applicable workflow/rele
 
 Metrora deliberately separates three version forms:
 
-- product/source SemVer: `1.0.0-rc.9`;
-- desktop build version: `1.0.0.9`;
+- product/source SemVer: `1.0.0-rc.10`;
+- desktop build version: `1.0.0.10`;
 - Microsoft Store AppX package identity version for the `1.0.0` line: `1.0.0.0`.
 
 The Store's four-component package identity is a platform contract and must not be confused with the desktop build counter or the SemVer pre-release label. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
