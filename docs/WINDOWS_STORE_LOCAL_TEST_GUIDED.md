@@ -1,6 +1,6 @@
 # Windows Store local package test
 
-This guide validates the current AppX candidate on physical Windows before any Partner Center submission.
+This guide documents the physical-Windows test used before a Store submission. It remains a procedure for future candidates and does not authorize changing the frozen RC10 submission or publishing it.
 
 It does not imitate Microsoft certification. The submission candidate remains unsigned and unchanged. A separate copy is signed with a temporary test certificate only so Windows can install it locally.
 
@@ -100,7 +100,7 @@ When cleanup is incomplete, the local context is deliberately preserved. Do not 
 
 ## Boundaries
 
-A passing local report is one pre-submission input only. It does not authorize:
+A passing local report is one submission input only. It does not authorize:
 
 - uploading or submitting a package;
 - Microsoft Store certification or publication claims;
@@ -109,4 +109,4 @@ A passing local report is one pre-submission input only. It does not authorize:
 - replacement of the existing portable or NSIS channels;
 - claims about Store-managed update behavior.
 
-Store submission and any later publication remain separate decisions.
+RC10 is already submitted and remains frozen. Certification and any later publication remain separate decisions; this guide does not authorize a `Publish now` action or a Store-availability claim.

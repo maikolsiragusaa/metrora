@@ -1,6 +1,6 @@
 # Windows Store package identity v1
 
-**Status:** identity assigned / packaging and local-test path implemented / not submitted
+**Status:** identity assigned / RC10 package locally and physically accepted / RC10 submission frozen / publication pending
 
 ## Purpose
 
@@ -8,7 +8,7 @@ Define the separate Windows Store packaging boundary for Metrora.
 
 The exact manifest values are maintained in the reviewed desktop build configuration. They must match Partner Center byte-for-byte and must not be duplicated across public documentation.
 
-This document does not authorize submission, certification, publication, stable `1.0.0`, or any change to the already published GitHub `1.0.0-rc.7` artifacts.
+This document does not authorize a different submission, certification or publication, or any change to the already published GitHub `1.0.0-rc.7` artifacts. The RC10 package was submitted after acceptance and remains frozen; post-RC10 development is separate.
 
 ## Build boundary
 
@@ -34,10 +34,10 @@ The guided local path is documented in [`WINDOWS_STORE_LOCAL_TEST_GUIDED.md`](WI
 
 It signs only a temporary copy. The public test certificate is trusted at machine level while its private key remains in the current-user personal store; both are removed with the installed package after validation. The unsigned candidate intended for Partner Center is not modified.
 
-A local PASS is not Store certification and does not authorize submission.
+A local PASS is not Store certification and does not authorize publication.
 
 ## Current limitations
 
-The Store target is packaging-ready only. It is not submitted, certified, signed by Microsoft, published, or an automatic update for existing installations.
+The RC10 Store target is submitted and frozen. It is not certified, signed by Microsoft, published, or an automatic update for existing installations.
 
-Store-specific acceptance and separate publication authorization remain required.
+Certification and separate manual publication authorization remain distinct requirements. No post-RC10 code is part of the submitted package.

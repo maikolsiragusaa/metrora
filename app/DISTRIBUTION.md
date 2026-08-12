@@ -10,7 +10,7 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Current source/desktop candidate: `1.0.0-rc.10`
 - Current desktop build version: `1.0.0.10`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
-- Current non-publishing Store AppX identity version: `1.0.0.0`
+- Current Store AppX identity version: `1.0.0.0` (frozen in the RC10 submission)
 
 Inherited names may remain only where required for compatibility or upstream provenance. They are not Metrora distribution names.
 

@@ -20,11 +20,11 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-`1.0.0-rc.10` is the current **source/pre-submission candidate line**. It advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and the sealed packaged Store CLI runtime. RC10 metadata does not by itself make any artifact accepted, signed, submitted or published.
+`1.0.0-rc.10` is the frozen **Microsoft Store submission source line**. It advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and the sealed packaged Store CLI runtime. The submitted RC10 package is separate from post-RC10 development. Submission is not certification and certification is not publication.
 
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
-The Microsoft Store path is separate. Metrora has an assigned Store identity and a non-publishing AppX build/local-acceptance workflow, but no Store certification or publication is claimed until Microsoft has accepted the corresponding submission.
+The Microsoft Store path is separate. Metrora has an assigned Store identity and a non-publishing AppX build/local-acceptance workflow. The RC10 package passed the recorded local and physical acceptance and was submitted to Microsoft; it remains frozen while certification is pending. No Store certification, publication or availability claim is made until the relevant state is independently known.
 
 Exact source commits and artifact digests belong in the applicable workflow/release acceptance evidence rather than being copied into general release guidance.
 
@@ -83,9 +83,9 @@ The public acceptance contract is [`docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V
 
 An unsigned GitHub pre-release must state that its portable/installer assets are unsigned, may trigger SmartScreen, require manual updates and are not Microsoft Store certified. It must not be presented as stable merely because GitHub represents it as a release object.
 
-## Microsoft Store pre-submission
+## Microsoft Store submission and publication
 
-The Store candidate must be built from the exact reviewed source commit using the non-publishing Store workflow. Before Partner Center submission:
+The Store candidate must be built from the exact reviewed source commit using the non-publishing Store workflow. The RC10 submission followed these boundaries and remains frozen:
 
 1. the exact AppX artifact and workflow manifest must verify;
 2. Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
@@ -96,7 +96,7 @@ The Store candidate must be built from the exact reviewed source commit using th
 7. the sanitized local acceptance report must pass;
 8. submission requires an explicit stop/go after those checks.
 
-A passing local test is not Microsoft certification and does not authorize a publication claim.
+A passing local test is not Microsoft certification and does not authorize a publication claim. The RC10 submission does not authorize changing the submitted package, modifying Partner Center metadata, pressing `Publish now` or representing post-RC10 code as submitted code. A future Store update requires a new reviewed candidate and its own acceptance/submission decision.
 
 ## Versioning and notes
 
