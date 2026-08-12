@@ -215,6 +215,22 @@ describe('canonical history shadow store v1', () => {
 
     await expect(readCanonicalHistoryShadowHeadV1({ dataDir: missingDataDir }))
       .rejects.toThrow(CanonicalHistoryShadowStoreIntegrityError)
+
+    const malformedHeadDataDir = await temporaryDataDir()
+    const malformedHeadPaths = canonicalHistoryShadowPathsV1(malformedHeadDataDir)
+    await mkdir(malformedHeadPaths.root, { recursive: true })
+    await writeFile(malformedHeadPaths.head, '{"kind":"wrong"}')
+    await expect(readCanonicalHistoryShadowHeadV1({ dataDir: malformedHeadDataDir }))
+      .rejects.toThrow(CanonicalHistoryShadowStoreIntegrityError)
+
+    const unexpectedFileDataDir = await temporaryDataDir()
+    const unexpectedFileStored = await persistCanonicalHistoryShadowV1(projection(), { dataDir: unexpectedFileDataDir })
+    const unexpectedFilePaths = canonicalHistoryShadowPathsV1(unexpectedFileDataDir)
+    await writeFile(join(unexpectedFilePaths.snapshots, 'unexpected.jsonl'), 'unexpected')
+    await expect(persistCanonicalHistoryShadowV1(projection(), { dataDir: unexpectedFileDataDir }))
+      .rejects.toThrow(CanonicalHistoryShadowStoreIntegrityError)
+    expect((await readCanonicalHistoryShadowHeadV1({ dataDir: unexpectedFileDataDir }))?.projectionSha256)
+      .toBe(unexpectedFileStored.projectionSha256)
   })
 
   it('refuses private source material before creating persistent shadow state', async () => {

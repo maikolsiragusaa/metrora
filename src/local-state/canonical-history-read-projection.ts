@@ -13,6 +13,7 @@ import {
   type CachedUsage,
   type SessionCache,
 } from '../session-cache.js'
+import { assertCanonicalCollectorIdentity } from '../provider-parse-authorities.js'
 import { canonicalSourceRecordFingerprintSha256V1 } from './canonical-reviewed-production-scanner.js'
 
 export const CANONICAL_HISTORY_READ_PROJECTION_VERSION = 1 as const
@@ -200,28 +201,34 @@ function validatedCost(call: CachedCall): Pick<CanonicalObservationReadV1, 'cost
 
 function observationForCall(input: {
   endpointId: string
-  collector: string
+  storageNamespace: string
   activityId: string
   call: CachedCall
 }): CanonicalObservationReadV1 {
   const timestamp = TimestampSchema.safeParse(input.call.timestamp)
   if (!timestamp.success) throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call has an invalid timestamp')
-  if (input.call.provider !== input.collector) {
-    throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call provider disagrees with its provider section')
+  let collector: string
+  try {
+    collector = assertCanonicalCollectorIdentity({
+      storageNamespace: input.storageNamespace,
+      callProvider: input.call.provider,
+    })
+  } catch {
+    throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call provider disagrees with its storage namespace')
   }
   if (!input.call.deduplicationKey) {
     throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call has an empty private deduplication key')
   }
   const sourceFingerprintSha256 = canonicalSourceRecordFingerprintSha256V1({
     endpointId: input.endpointId,
-    provider: input.collector,
+    provider: collector,
     privateDeduplicationKey: input.call.deduplicationKey,
   })
   return {
     observationId: `observation-v1:${sourceFingerprintSha256}`,
     activityId: input.activityId,
     sourceFingerprintSha256,
-    collector: input.collector,
+    collector,
     timestamp: timestamp.data,
     model: input.call.model,
     ...(input.call.modelProvider !== undefined ? { modelProvider: input.call.modelProvider } : {}),
@@ -257,7 +264,7 @@ export function projectCanonicalHistoryReadV1(
   const activitiesById = new Map<string, CanonicalActivityReadV1>()
   const activityByObservation = new Map<string, string>()
 
-  for (const [collector, section] of Object.entries(sessionCache.providers).sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [storageNamespace, section] of Object.entries(sessionCache.providers).sort(([a], [b]) => a.localeCompare(b))) {
     for (const [, file] of Object.entries(section.files).sort(([a], [b]) => a.localeCompare(b))) {
       if (file.failed) continue
       for (const turn of file.turns) {
@@ -269,6 +276,15 @@ export function projectCanonicalHistoryReadV1(
         const firstCall = turn.calls[0]!
         if (!firstCall.deduplicationKey) {
           throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call has an empty private deduplication key')
+        }
+        let collector: string
+        try {
+          collector = assertCanonicalCollectorIdentity({
+            storageNamespace,
+            callProvider: firstCall.provider,
+          })
+        } catch {
+          throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call provider disagrees with its storage namespace')
         }
         const firstFingerprint = canonicalSourceRecordFingerprintSha256V1({
           endpointId,
@@ -285,7 +301,7 @@ export function projectCanonicalHistoryReadV1(
 
         const observationIds: string[] = []
         for (const call of turn.calls) {
-          const observation = observationForCall({ endpointId, collector, activityId, call })
+          const observation = observationForCall({ endpointId, storageNamespace, activityId, call })
           const prior = observationsById.get(observation.observationId)
           if (prior && !sameValue(prior, observation)) {
             throw new CanonicalHistoryReadProjectionIntegrityError('one canonical source identity resolved to conflicting observations')

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 
 import { DAILY_CACHE_VERSION, type DailyCache, type DailyEntry } from '../daily-cache.js'
+import { COPILOT_CHAT_JOURNAL_PROVIDER } from '../provider-parse-authorities.js'
 import type { CachedCall, CachedFile, SessionCache } from '../session-cache.js'
 import { projectCanonicalHistoryReadV1 } from './canonical-history-read-projection.js'
 import {
@@ -72,17 +73,15 @@ function cachedFile(calls: CachedCall[], sessionId = 'session-1'): CachedFile {
   }
 }
 
-function sessionCache(files: Record<string, CachedFile>): SessionCache {
+function sessionCache(files: Record<string, CachedFile>, namespace = 'zed'): SessionCache {
   return {
     version: 8,
     complete: true,
-    providers: {
-      zed: { envFingerprint: 'zed-test', files },
-    },
+    providers: { [namespace]: { envFingerprint: `${namespace}-test`, files } },
   }
 }
 
-function day(): DailyEntry {
+function day(provider = 'zed'): DailyEntry {
   return {
     date: '2026-08-01',
     cost: 0,
@@ -110,7 +109,7 @@ function day(): DailyEntry {
       other: { turns: 1, cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 },
     },
     providers: {
-      zed: {
+      [provider]: {
         calls: 1,
         cost: 0,
         savingsUSD: 0,
@@ -180,6 +179,20 @@ describe('canonical history parity observer v1', () => {
       dailyCache: dailyCache(),
     }, { sourceFingerprint, persist })
 
+    expect(result.counts).toEqual({ observations: 1, activities: 1, dailySnapshots: 1 })
+  })
+
+  it('uses the canonical Copilot collector for an internal journal namespace', async () => {
+    const persist = vi.fn(async () => persisted())
+    const result = await observeCanonicalHistoryParityV1({
+      endpointId: ENDPOINT_ID,
+      sessionCache: sessionCache({ '/private/copilot-journal.sqlite': cachedFile([
+        call({ provider: 'copilot', modelProvider: 'copilot', deduplicationKey: 'copilot:journal:1' }),
+      ]) }, COPILOT_CHAT_JOURNAL_PROVIDER),
+      dailyCache: dailyCache([day('copilot')]),
+    }, { sourceFingerprint, persist })
+
+    expect(persist).toHaveBeenCalledTimes(1)
     expect(result.counts).toEqual({ observations: 1, activities: 1, dailySnapshots: 1 })
   })
 

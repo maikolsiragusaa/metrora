@@ -9,6 +9,7 @@ import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { cachedCallToApiCall, clearSessionCache, parseAllSessions } from '../parser.js'
 import { readCodexSessionModelProvider } from '../providers/codex-model-provider.js'
 import { getProvider } from '../providers/index.js'
+import { assertCanonicalCollectorIdentity } from '../provider-parse-authorities.js'
 import {
   isCacheComplete,
   loadCache,
@@ -190,7 +191,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
   let withheldCount = 0
   let failedCount = 0
 
-  for (const [sectionProvider, section] of Object.entries(cache.providers).sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [storageNamespace, section] of Object.entries(cache.providers).sort(([a], [b]) => a.localeCompare(b))) {
     let displayName: string | undefined
 
     for (const [sourcePath, file] of Object.entries(section.files).sort(([a], [b]) => a.localeCompare(b))) {
@@ -209,20 +210,26 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
         continue
       }
 
-      const codexSourceProvider = sectionProvider === 'codex'
+      const codexSourceProvider = storageNamespace === 'codex'
         ? normalizeExplicitModelProvider(await readCodexProvider(sourcePath))
         : undefined
-      if (sectionProvider === 'codex' && !codexSourceProvider) {
+      if (storageNamespace === 'codex' && !codexSourceProvider) {
         withheldCount += scopedCalls.length
         continue
       }
 
-      displayName ??= await dependencies.providerDisplayName(sectionProvider)
+      displayName ??= await dependencies.providerDisplayName(storageNamespace)
 
       for (const cachedCall of scopedCalls) {
-        if (cachedCall.provider !== sectionProvider) {
+        let canonicalCollector: string
+        try {
+          canonicalCollector = assertCanonicalCollectorIdentity({
+            storageNamespace,
+            callProvider: cachedCall.provider,
+          })
+        } catch {
           throw new CanonicalReviewedProductionScannerIntegrityError(
-            'canonical cached call provider disagrees with its provider section',
+            'canonical cached call provider disagrees with its storage namespace',
           )
         }
         if (!cachedCall.deduplicationKey) {
@@ -234,7 +241,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
         let call = canonicalApiCall(cachedCall)
         let explicitProvider = normalizeExplicitModelProvider(call.modelProvider)
 
-        if (sectionProvider === 'codex' && codexSourceProvider) {
+        if (storageNamespace === 'codex' && codexSourceProvider) {
           if (explicitProvider && explicitProvider !== codexSourceProvider) {
             throw new CanonicalReviewedProductionScannerIntegrityError(
               'canonical Codex call provider disagrees with source metadata',
@@ -261,7 +268,7 @@ export async function scanCanonicalReviewedProductionCandidatesV1(
               adapterVersion,
               sourceFingerprintSha256: canonicalSourceRecordFingerprintSha256V1({
                 endpointId,
-                provider: sectionProvider,
+                provider: canonicalCollector,
                 privateDeduplicationKey: cachedCall.deduplicationKey,
               }),
             },

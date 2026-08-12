@@ -7,6 +7,54 @@ export const COPILOT_CHAT_JOURNAL_AUTHORITY = 'current-chat-journal-v3'
 export const COPILOT_CHAT_JOURNAL_PROVIDER = `copilot-chat-journal-${COPILOT_CHAT_JOURNAL_AUTHORITY}`
 export const COPILOT_CLI_RESUME_AUTHORITY = 'resumed-shutdown-delta-v1'
 export const COPILOT_CLI_RESUME_PROVIDER = `copilot-cli-resume-${COPILOT_CLI_RESUME_AUTHORITY}`
+export const COPILOT_CANONICAL_COLLECTOR = 'copilot'
+
+/**
+ * Session-cache section names are parser/storage authorities. They are not
+ * automatically public collector identities. Only these two internal lanes
+ * are allowed to store Copilot calls under a distinct section name while
+ * retaining Copilot as their canonical-history collector.
+ */
+export const CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE: Readonly<Record<string, string>> = Object.freeze({
+  [COPILOT_CHAT_JOURNAL_PROVIDER]: COPILOT_CANONICAL_COLLECTOR,
+  [COPILOT_CLI_RESUME_PROVIDER]: COPILOT_CANONICAL_COLLECTOR,
+})
+
+export class CanonicalCollectorIdentityIntegrityError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CanonicalCollectorIdentityIntegrityError'
+  }
+}
+
+/** Resolve the public collector identity for one cache/storage namespace. */
+export function canonicalCollectorForStorageNamespace(storageNamespace: string): string {
+  if (!storageNamespace) {
+    throw new CanonicalCollectorIdentityIntegrityError('storage namespace must be non-empty')
+  }
+  return CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE[storageNamespace] ?? storageNamespace
+}
+
+/**
+ * Validate the parser-emitted provider against the explicit namespace map.
+ * Ordinary sections are identity-preserving; a differing provider is valid
+ * only when the namespace is one of the registered internal lanes above.
+ */
+export function assertCanonicalCollectorIdentity(input: {
+  storageNamespace: string
+  callProvider: string
+}): string {
+  if (!input.callProvider) {
+    throw new CanonicalCollectorIdentityIntegrityError('call provider must be non-empty')
+  }
+  const canonicalCollector = canonicalCollectorForStorageNamespace(input.storageNamespace)
+  if (input.callProvider !== canonicalCollector) {
+    throw new CanonicalCollectorIdentityIntegrityError(
+      `storage namespace ${input.storageNamespace} does not authorize call provider ${input.callProvider}`,
+    )
+  }
+  return canonicalCollector
+}
 
 /**
  * Provider env reads that materially change discovery, parsing, or the account

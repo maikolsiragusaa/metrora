@@ -11,7 +11,7 @@ It is deliberately read-only. It does not create a database, migrate a cache, ch
 The projection exposes three separate collections:
 
 1. **observations** — path-free identities and content-minimal accounting evidence derived from the complete current session cache;
-2. **activities** — deterministic groupings of source-observed calls derived from provider, private session identity, source timestamp and the first source-record fingerprint;
+2. **activities** — deterministic groupings of source-observed calls derived from the canonical collector, private session identity, source timestamp and the first source-record fingerprint;
 3. **daily snapshots** — sanitized copies of the trusted complete daily cache, including carried history that can no longer be reconstructed from source files.
 
 Observation and activity collections are shadow authorities in v1. Daily snapshots remain the totals authority.
@@ -25,8 +25,15 @@ The projection reuses `canonicalSourceRecordFingerprintSha256V1`, the same endpo
 The fingerprint is derived from:
 
 - protected endpoint identity;
-- collector/provider section;
+- canonical collector identity;
 - the collector's private deduplication key.
+
+The session-cache section name is a storage/parser namespace, not automatically
+the public collector identity. Ordinary sections use the same name for both.
+The current internal Copilot journal and CLI-resume lanes are explicitly
+registered exceptions: their storage namespaces remain versioned cache
+authorities while their canonical collector identity is `copilot`. Any other
+namespace/provider mismatch fails closed.
 
 The local source path and private deduplication key are not emitted. The endpoint scope prevents identical copied source records on different endpoints from becoming a public cross-device correlation handle.
 
@@ -39,7 +46,7 @@ An activity groups the ordered observations emitted by one cached turn.
 Its identity is derived from:
 
 - protected endpoint identity;
-- collector/provider section;
+- canonical collector identity;
 - private session identity;
 - source-observed turn timestamp;
 - the first observation fingerprint.
@@ -83,7 +90,7 @@ The projection requires:
 - a complete daily cache;
 - a trusted daily watermark;
 - valid timestamps;
-- provider-section agreement;
+- explicit storage-namespace/canonical-collector agreement;
 - non-empty private source and session identities;
 - internally consistent immutable cost assignments.
 
