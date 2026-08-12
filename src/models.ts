@@ -22,12 +22,10 @@ type PriceOverrideRates = {
   cacheCreation?: number
 }
 
-type LiteLLMEntry = {
-  input_cost_per_token?: number
-  output_cost_per_token?: number
-  cache_creation_input_token_cost?: number
-  cache_read_input_token_cost?: number
-  provider_specific_entry?: { fast?: number }
+type JsonObject = Record<string, unknown>
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 // [input, output, cacheWrite, cacheRead, fastMultiplier]. The trailing fast
@@ -154,22 +152,32 @@ const getCachePath = (): string => join(getCacheDir(), 'litellm-pricing.json')
 /// We use Number.isFinite to also reject NaN/Infinity, and cap at $1/token
 /// (well above the most expensive frontier model) so a stray decimal-place
 /// shift in the upstream JSON can't wildly inflate spend numbers either.
-function safePerTokenRate(n: number | undefined): number | null {
-  if (n === undefined || !Number.isFinite(n) || n < 0) return null
+function safePerTokenRate(n: unknown): number | null {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return null
   if (n > 1) return 1
   return n
 }
 
-function parseLiteLLMEntry(entry: LiteLLMEntry): ModelCosts | null {
-  const inputCost = safePerTokenRate(entry.input_cost_per_token)
-  const outputCost = safePerTokenRate(entry.output_cost_per_token)
+function safeFastMultiplier(n: unknown): number | undefined {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined
+}
+
+function parseLiteLLMEntry(entry: unknown): ModelCosts | null {
+  if (!isJsonObject(entry)) return null
+
+  const inputCost = safePerTokenRate(entry['input_cost_per_token'])
+  const outputCost = safePerTokenRate(entry['output_cost_per_token'])
   if (inputCost === null || outputCost === null) return null
+
+  const providerSpecificEntry = isJsonObject(entry['provider_specific_entry'])
+    ? entry['provider_specific_entry']
+    : undefined
   return buildCosts(
     inputCost,
     outputCost,
-    safePerTokenRate(entry.cache_creation_input_token_cost),
-    safePerTokenRate(entry.cache_read_input_token_cost),
-    entry.provider_specific_entry?.fast,
+    safePerTokenRate(entry['cache_creation_input_token_cost']),
+    safePerTokenRate(entry['cache_read_input_token_cost']),
+    safeFastMultiplier(providerSpecificEntry?.['fast']),
   )
 }
 
@@ -180,7 +188,8 @@ async function fetchAndCachePricing(): Promise<Map<string, ModelCosts>> {
   // caller's catch falls back to the bundled price snapshot.
   const response = await fetchWithTimeout(LITELLM_URL)
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  const data = await response.json() as Record<string, LiteLLMEntry>
+  const payload = await response.json() as unknown
+  const data = isJsonObject(payload) ? payload : {}
   const pricing = new Map<string, ModelCosts>()
 
   for (const [name, entry] of Object.entries(data)) {
