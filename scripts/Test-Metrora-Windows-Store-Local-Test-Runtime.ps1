@@ -73,7 +73,7 @@ try {
   $artifactManifest = [pscustomobject]@{
     schemaVersion = 1
     sourceCommit = ('a' * 40)
-    artifactName = 'Metrora-1.0.0-rc.9-Windows-Store-x64.appx'
+    artifactName = 'Metrora-1.0.0-rc.10-Windows-Store-x64.appx'
     sha256 = ('b' * 64)
     packageVersion = '1.0.0.0'
     architecture = 'x64'
