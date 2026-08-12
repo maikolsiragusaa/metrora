@@ -7,8 +7,8 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Product: `Metrora`
 - Desktop app ID: `eu.metrora.desktop`
 - Website: `https://metrora.eu`
-- Current source/desktop candidate: `1.0.0-rc.9`
-- Current desktop build version: `1.0.0.9`
+- Current source/desktop candidate: `1.0.0-rc.10`
+- Current desktop build version: `1.0.0.10`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - Current non-publishing Store AppX identity version: `1.0.0.0`
 
