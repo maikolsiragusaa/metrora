@@ -1,6 +1,6 @@
 # Metrora cost assignment v1
 
-Status: **assignment and settlement contract implemented; parser/cache wiring not enabled**.
+Status: **assignment and settlement contract implemented and wired through normalized calls and the session cache**.
 
 A historical price record is not sufficient by itself. Once one call has been valued, Metrora must preserve which evidence produced the amount so a later catalog refresh, alias update, cache rebuild, or model-price change cannot silently alter that settled call.
 
@@ -33,4 +33,8 @@ Settled values are stored as non-negative safe integer micro-USD. This matches t
 - zero plus `explicit-zero` assignment;
 - no amount plus `unavailable` when prompt-size, web-search, fast-route, or other required rate evidence is missing.
 
-The function does not change existing Metrora-derived runtime totals. The next tranche must carry this optional contract through normalized calls and the session cache, preserve old caches losslessly, and compare real Metrora and Metrora logs before historical assignments become authoritative.
+The function does not change existing Metrora-derived runtime totals. Runtime
+parsing now carries the assignment through normalized calls and the v8 session
+cache without changing the cache schema authority. Existing caches are adopted
+losslessly, and the canonical projection requires the immutable assignment
+before it can publish an observation.

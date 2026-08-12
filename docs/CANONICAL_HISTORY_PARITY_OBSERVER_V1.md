@@ -48,6 +48,12 @@ The comparison covers:
 
 Exact duplicate source records are counted once. Reuse of one source identity with a conflicting payload fails closed.
 
+The cache section name is interpreted through the explicit storage-namespace
+authority used by the projection. Ordinary sections preserve their name as the
+collector; the internal Copilot journal and CLI-resume namespaces both map to
+the canonical collector `copilot`. An unregistered mismatch is an integrity
+failure, not a reason to trust the call field.
+
 ### Activity parity
 
 The observer independently reconstructs the activity partition as ordered sets of observation identities anchored to collector and turn timestamp.

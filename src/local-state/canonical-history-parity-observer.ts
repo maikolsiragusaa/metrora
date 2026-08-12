@@ -11,6 +11,7 @@ import {
   costAssignmentMatchesUsdV1,
   type CostAssignmentV1,
 } from '../pricing/cost-assignment.js'
+import { assertCanonicalCollectorIdentity } from '../provider-parse-authorities.js'
 import { CACHE_VERSION, type CachedCall, type SessionCache } from '../session-cache.js'
 import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
 import {
@@ -157,6 +158,16 @@ function rawDailyPayload(day: DailyEntry, bucketTimeZone: string | null): DailyS
   }
 }
 
+function canonicalCollectorForCall(storageNamespace: string, callProvider: string): string {
+  try {
+    return assertCanonicalCollectorIdentity({ storageNamespace, callProvider })
+  } catch {
+    throw new CanonicalHistoryParityMismatchError(
+      'canonical cached call provider disagrees with its storage namespace',
+    )
+  }
+}
+
 function validatedCost(call: CachedCall): Pick<
   ObservationPayload,
   'costUSD' | 'costAssignment' | 'legacyCostUSD'
@@ -191,7 +202,7 @@ function validatedCost(call: CachedCall): Pick<
 
 function rawObservationPayload(input: {
   endpointId: string
-  collector: string
+  storageNamespace: string
   call: CachedCall
   sourceFingerprint: CanonicalHistoryParityObserverDependenciesV1['sourceFingerprint']
 }): ObservationPayload {
@@ -199,11 +210,7 @@ function rawObservationPayload(input: {
   if (!timestamp.success) {
     throw new CanonicalHistoryParityMismatchError('canonical cached call has an invalid timestamp')
   }
-  if (input.call.provider !== input.collector) {
-    throw new CanonicalHistoryParityMismatchError(
-      'canonical cached call provider disagrees with its provider section',
-    )
-  }
+  const collector = canonicalCollectorForCall(input.storageNamespace, input.call.provider)
   if (!input.call.deduplicationKey) {
     throw new CanonicalHistoryParityMismatchError(
       'canonical cached call has an empty private deduplication key',
@@ -211,12 +218,12 @@ function rawObservationPayload(input: {
   }
   const sourceFingerprintSha256 = input.sourceFingerprint({
     endpointId: input.endpointId,
-    provider: input.collector,
+    provider: collector,
     privateDeduplicationKey: input.call.deduplicationKey,
   })
   return {
     sourceFingerprintSha256,
-    collector: input.collector,
+    collector,
     timestamp: timestamp.data,
     model: input.call.model,
     ...(input.call.modelProvider !== undefined ? { modelProvider: input.call.modelProvider } : {}),
@@ -249,7 +256,7 @@ function expectedSessionAuthority(input: {
   const activities = new Set<string>()
   const observationActivity = new Map<string, string>()
 
-  for (const [collector, section] of Object.entries(input.sessionCache.providers)
+  for (const [storageNamespace, section] of Object.entries(input.sessionCache.providers)
     .sort(([left], [right]) => left.localeCompare(right))) {
     for (const [, file] of Object.entries(section.files)
       .sort(([left], [right]) => left.localeCompare(right))) {
@@ -260,11 +267,12 @@ function expectedSessionAuthority(input: {
         if (!timestamp.success) {
           throw new CanonicalHistoryParityMismatchError('canonical cached turn has an invalid timestamp')
         }
+        const collector = canonicalCollectorForCall(storageNamespace, turn.calls[0]!.provider)
         const observationIds: string[] = []
         for (const call of turn.calls) {
           const payload = rawObservationPayload({
             endpointId: input.endpointId,
-            collector,
+            storageNamespace,
             call,
             sourceFingerprint: input.sourceFingerprint,
           })
