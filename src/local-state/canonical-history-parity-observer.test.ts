@@ -182,6 +182,62 @@ describe('canonical history parity observer v1', () => {
     expect(result.counts).toEqual({ observations: 1, activities: 1, dailySnapshots: 1 })
   })
 
+  it('keeps parity with the production Claude snapshot winner', async () => {
+    const partial = call({
+      provider: 'claude',
+      modelProvider: undefined,
+      nativeMessageId: 'native-clash',
+      nativeEmissionTimestamp: '2026-08-01T21:00:00.000Z',
+      nativeSnapshotTerminal: false,
+      deduplicationKey: 'native-clash',
+      usage: { ...call().usage, outputTokens: 2 },
+    })
+    const final = call({
+      provider: 'claude',
+      modelProvider: undefined,
+      nativeMessageId: 'native-clash',
+      nativeEmissionTimestamp: '2026-08-01T21:00:00.000Z',
+      nativeSnapshotTerminal: true,
+      deduplicationKey: 'native-clash',
+      usage: { ...call().usage, outputTokens: 20 },
+    })
+    const persist = vi.fn(async () => persisted())
+    const result = await observeCanonicalHistoryParityV1({
+      endpointId: ENDPOINT_ID,
+      sessionCache: sessionCache({
+        '/private/parent.jsonl': cachedFile([partial], 'parent-session'),
+        '/private/sidechain.jsonl': cachedFile([final], 'sidechain-session'),
+      }, 'claude'),
+      dailyCache: dailyCache([day('claude')]),
+    }, { sourceFingerprint, persist })
+
+    expect(result.counts).toEqual({ observations: 1, activities: 1, dailySnapshots: 1 })
+    expect(persist).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails parity closed for equal-authority Claude accounting disagreement', async () => {
+    const a = call({
+      provider: 'claude',
+      modelProvider: undefined,
+      nativeMessageId: 'native-ambiguous',
+      nativeEmissionTimestamp: '2026-08-01T21:00:00.000Z',
+      nativeSnapshotTerminal: true,
+      deduplicationKey: 'native-ambiguous',
+      usage: { ...call().usage, outputTokens: 2 },
+    })
+    const b = { ...a, usage: { ...a.usage, outputTokens: 3 } }
+    const persist = vi.fn(async () => persisted())
+    await expect(observeCanonicalHistoryParityV1({
+      endpointId: ENDPOINT_ID,
+      sessionCache: sessionCache({
+        '/private/a.jsonl': cachedFile([a], 'a-session'),
+        '/private/b.jsonl': cachedFile([b], 'b-session'),
+      }, 'claude'),
+      dailyCache: dailyCache([day('claude')]),
+    }, { sourceFingerprint, persist })).rejects.toThrow('Claude native evidence')
+    expect(persist).not.toHaveBeenCalled()
+  })
+
   it('uses the canonical Copilot collector for an internal journal namespace', async () => {
     const persist = vi.fn(async () => persisted())
     const result = await observeCanonicalHistoryParityV1({

@@ -9,6 +9,11 @@ import {
   reconcileClaudeNativeCalls,
 } from '../src/parser.js'
 import { getDailyCacheConfigHash } from '../src/daily-cache-config.js'
+import {
+  assertClaudeNativeReconciliationSafe,
+  isClaudeNativeReconciliationWinner,
+  reconcileClaudeNativeSessionCache,
+} from '../src/claude-native-reconciliation.js'
 import { computeEnvFingerprint, PROVIDER_PARSE_VERSIONS, type CachedCall } from '../src/session-cache.js'
 import type { JournalEntry } from '../src/types.js'
 
@@ -193,6 +198,97 @@ describe('R2 Claude native message identity reconciliation', () => {
     ]
     expect(outputOf(files)).toBe(6)
     expect(outputOf(files)).toBe(6)
+  })
+
+  it('uses nativeMessageId before any legacy deduplication key', () => {
+    expect(getClaudeNativeIdentity(makeCall({
+      nativeMessageId: 'native-authority',
+      deduplicationKey: 'legacy-local-key',
+    }))).toBe('native-authority')
+  })
+
+  it('keeps the pre-migration deduplication fallback and excludes advisor calls', () => {
+    expect(getClaudeNativeIdentity(makeCall({
+      nativeMessageId: undefined,
+      deduplicationKey: 'legacy-native-key',
+    }))).toBe('legacy-native-key')
+    expect(getClaudeNativeIdentity(makeCall({
+      nativeMessageId: undefined,
+      deduplicationKey: 'legacy:advisor:call',
+    }))).toBeUndefined()
+  })
+
+  it('prefers known native emission evidence over a missing emission timestamp', () => {
+    const missing = makeCall({
+      nativeEmissionTimestamp: undefined,
+      nativeSnapshotTerminal: false,
+    })
+    const known = withOutput(makeCall({
+      nativeEmissionTimestamp: '2026-04-03T13:30:37.000Z',
+      nativeSnapshotTerminal: false,
+    }), 376)
+    const result = reconcileClaudeNativeCalls([
+      { filePath: 'known.jsonl', calls: [known] },
+      { filePath: 'missing.jsonl', calls: [missing] },
+    ])
+    expect(result.ambiguities).toHaveLength(0)
+    expect(result.winners.get('native-message-1')?.call).toBe(known)
+  })
+
+  it('selects the strongest of three snapshots independent of input order', () => {
+    const partial = withOutput(makeCall({
+      nativeEmissionTimestamp: '2026-04-03T13:30:36.000Z',
+      nativeSnapshotTerminal: false,
+    }), 5)
+    const intermediate = withOutput(makeCall({
+      nativeEmissionTimestamp: '2026-04-03T13:30:37.000Z',
+      nativeSnapshotTerminal: false,
+    }), 100)
+    const final = withOutput(makeCall({
+      nativeEmissionTimestamp: '2026-04-03T13:30:37.000Z',
+      nativeSnapshotTerminal: true,
+    }), 376)
+    const orders = [
+      [partial, intermediate, final],
+      [final, partial, intermediate],
+      [intermediate, final, partial],
+    ]
+    for (const order of orders) {
+      const result = reconcileClaudeNativeCalls(order.map((call, index) => ({
+        filePath: `candidate-${index}.jsonl`,
+        calls: [call],
+      })))
+      expect(result.winners.get('native-message-1')?.call.usage.outputTokens).toBe(376)
+      expect(result.ambiguities).toHaveLength(0)
+    }
+  })
+
+  it('fails closed for malformed native evidence at the canonical boundary', () => {
+    const malformed = makeCall({ nativeEmissionTimestamp: 'not-a-timestamp' })
+    const result = reconcileClaudeNativeCalls([{ filePath: 'malformed.jsonl', calls: [malformed] }])
+    expect(result.malformed).toHaveLength(1)
+    expect(() => assertClaudeNativeReconciliationSafe(result)).toThrow('malformed')
+  })
+
+  it('replays the same winner after a cache reload', () => {
+    const partial = makeCall({ nativeSnapshotTerminal: false })
+    const final = withOutput(makeCall({ nativeSnapshotTerminal: true }), 376)
+    const cache = {
+      providers: {
+        claude: {
+          envFingerprint: 'test',
+          files: {
+            'parent.jsonl': { turns: [{ calls: [partial] }] },
+            'sidechain.jsonl': { turns: [{ calls: [final] }] },
+          },
+        },
+      },
+    }
+    const first = reconcileClaudeNativeSessionCache(cache as never)
+    const reloaded = reconcileClaudeNativeSessionCache(structuredClone(cache) as never)
+    expect(first.winners.get('native-message-1')?.call.usage.outputTokens).toBe(376)
+    expect(reloaded.winners.get('native-message-1')?.call.usage.outputTokens).toBe(376)
+    expect(isClaudeNativeReconciliationWinner(reloaded.winners.get('native-message-1')!.call, reloaded)).toBe(true)
   })
 
   it('bumps both Claude parse and daily authorities for stale-cache self-healing', () => {

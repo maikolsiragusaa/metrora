@@ -8,6 +8,11 @@ import {
   type CostAssignmentV1,
 } from '../pricing/cost-assignment.js'
 import {
+  assertClaudeNativeReconciliationSafe,
+  isClaudeNativeReconciliationWinner,
+  reconcileClaudeNativeSessionCache,
+} from '../claude-native-reconciliation.js'
+import {
   CACHE_VERSION,
   type CachedCall,
   type CachedUsage,
@@ -263,6 +268,8 @@ export function projectCanonicalHistoryReadV1(
   const observationsById = new Map<string, CanonicalObservationReadV1>()
   const activitiesById = new Map<string, CanonicalActivityReadV1>()
   const activityByObservation = new Map<string, string>()
+  const claudeNativeReconciliation = reconcileClaudeNativeSessionCache(sessionCache)
+  assertClaudeNativeReconciliationSafe(claudeNativeReconciliation)
 
   for (const [storageNamespace, section] of Object.entries(sessionCache.providers).sort(([a], [b]) => a.localeCompare(b))) {
     for (const [, file] of Object.entries(section.files).sort(([a], [b]) => a.localeCompare(b))) {
@@ -271,9 +278,12 @@ export function projectCanonicalHistoryReadV1(
         if (!turn.sessionId) throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached turn has an empty private session id')
         const turnTimestamp = TimestampSchema.safeParse(turn.timestamp)
         if (!turnTimestamp.success) throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached turn has an invalid timestamp')
-        if (turn.calls.length === 0) continue
+        const calls = storageNamespace === 'claude'
+          ? turn.calls.filter(call => isClaudeNativeReconciliationWinner(call, claudeNativeReconciliation))
+          : turn.calls
+        if (calls.length === 0) continue
 
-        const firstCall = turn.calls[0]!
+        const firstCall = calls[0]!
         if (!firstCall.deduplicationKey) {
           throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached call has an empty private deduplication key')
         }
@@ -300,7 +310,7 @@ export function projectCanonicalHistoryReadV1(
         ])}`
 
         const observationIds: string[] = []
-        for (const call of turn.calls) {
+        for (const call of calls) {
           const observation = observationForCall({ endpointId, storageNamespace, activityId, call })
           const prior = observationsById.get(observation.observationId)
           if (prior && !sameValue(prior, observation)) {
