@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { lstat, open, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -164,7 +164,11 @@ export function inspectReadonlySqlite(
   requiredTables: readonly string[],
   classifyRows?: (db: SqliteDatabase) => StateReason,
 ): DoctorPathProbe {
-  if (!existsSync(path)) return { state: 'MISSING', reason: 'source is absent' }
+  try {
+    statSync(path)
+  } catch (error) {
+    return classifyDoctorError(error)
+  }
   try {
     const db = openDatabase(path)
     try {
