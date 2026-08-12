@@ -1,10 +1,12 @@
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
-import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
+import { parseAllSessions, clearSessionCache, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
 import { findUnpricedModels, getShortModelName, isExpectedFreeModel } from './models.js'
 import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
+import { getCopilotChatJournalFingerprints } from './providers/copilot.js'
 import { stat } from 'node:fs/promises'
 import { aggregateProjectsIntoDays, buildPeriodDataFromDays } from './day-aggregator.js'
 import {
@@ -24,6 +26,14 @@ import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
+import { COPILOT_CHAT_JOURNAL_PROVIDER } from './provider-parse-authorities.js'
+import { loadCache as loadSessionCache } from './session-cache.js'
+import {
+  beginCopilotChatJournalIdentityBoundary,
+  clearCopilotChatJournalInvalidations,
+  endCopilotChatJournalIdentityBoundary,
+  readCopilotChatJournalInvalidatedDays,
+} from './copilot-chat-journal-reconciliation.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -87,16 +97,94 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
   }
 }
 
+async function copilotChatJournalChanged(): Promise<boolean> {
+  const current = await getCopilotChatJournalFingerprints()
+  const sessionCache = await loadSessionCache()
+  const section = sessionCache.providers[COPILOT_CHAT_JOURNAL_PROVIDER]
+  const cached = section?.files ?? {}
+  if (current.length !== Object.keys(cached).length) return current.length > 0 || Object.keys(cached).length > 0
+
+  const byPath = new Map(current.map(fingerprint => [fingerprint.path, fingerprint]))
+  for (const [path, file] of Object.entries(cached)) {
+    const fingerprint = byPath.get(path)
+    if (!fingerprint) return true
+    if (
+      file.fingerprint.dev !== fingerprint.dev
+      || file.fingerprint.ino !== fingerprint.ino
+      || file.fingerprint.mtimeMs !== fingerprint.mtimeMs
+      || file.fingerprint.sizeBytes !== fingerprint.sizeBytes
+    ) return true
+  }
+  return false
+}
+
+async function copilotChatJournalRootChanged(): Promise<boolean> {
+  const configuredRoot = process.env['METRORA_COPILOT_WS_STORAGE_DIR']
+  if (!configuredRoot) return false
+  const sessionCache = await loadSessionCache()
+  const files = sessionCache.providers[COPILOT_CHAT_JOURNAL_PROVIDER]?.files ?? {}
+  if (Object.keys(files).length === 0) return false
+  const canonical = (value: string): string => {
+    const slashes = value.replaceAll('\\', '/')
+    const compared = process.platform === 'win32' ? slashes.toLowerCase() : slashes
+    return compared.replace(/\/+$/, '')
+  }
+  const normalizedRoot = canonical(resolve(configuredRoot))
+  const normalizedPrefix = `${normalizedRoot}/`
+  return Object.keys(files).some(path => {
+    const normalizedPath = canonical(resolve(path))
+    return normalizedPath !== normalizedRoot && !normalizedPath.startsWith(normalizedPrefix)
+  })
+}
+
+async function prepareCopilotChatJournalReconciliation(): Promise<string[]> {
+  if (await copilotChatJournalRootChanged()) {
+    // A root/profile/account switch is not evidence that the old and new
+    // journals are the same identity. Reparse the new root for current output,
+    // but leave the prior daily ledger untouched until an identity contract is
+    // available. This is deliberately fail-closed, not an implicit union/drop.
+    await clearCopilotChatJournalInvalidations()
+    clearSessionCache()
+    beginCopilotChatJournalIdentityBoundary()
+    try {
+      await parseAllSessions(undefined, 'all')
+    } finally {
+      endCopilotChatJournalIdentityBoundary()
+    }
+    await clearCopilotChatJournalInvalidations()
+    return []
+  }
+  let days = await readCopilotChatJournalInvalidatedDays()
+  if (await copilotChatJournalChanged()) {
+    // The parser's normal refresh path records old/new day keys and publishes
+    // them to the bounded invalidation manifest. Clear only the in-process
+    // result memo so a changed journal cannot be served for 180 seconds.
+    clearSessionCache()
+    await parseAllSessions(undefined, 'all')
+    days = await readCopilotChatJournalInvalidatedDays()
+  }
+  return days
+}
+
 async function hydrateCache(): Promise<DailyCache> {
   try {
-    return await ensureCacheHydrated(
+    const copilotJournalDays = await prepareCopilotChatJournalReconciliation()
+    const cache = await ensureCacheHydrated(
       (range) => parseAllSessions(range, 'all'),
       aggregateProjectsIntoDays,
       getDailyCacheConfigHash(),
       // Never finalize daily history from a partial hydration; that previously froze empty older days.
       isSessionHydrationComplete,
-      undefined, { durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY },
+      undefined,
+      {
+        durableHistoryAuthority: DURABLE_HISTORY_AUTHORITY,
+        ...(copilotJournalDays.length > 0 ? { reconcileProviderDays: { copilot: copilotJournalDays } } : {}),
+      },
     )
+    if (copilotJournalDays.length > 0 && cache.complete === true) {
+      await clearCopilotChatJournalInvalidations()
+    }
+    return cache
   } catch (err) {
     // Previously swallowed silently, which turned any backfill failure into an
     // empty trend/history with no signal (issue #441). Per-file parse errors no

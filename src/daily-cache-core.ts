@@ -102,6 +102,26 @@ export function emptyCache(savingsConfigHash = ''): DailyCache {
   return { version: DAILY_CACHE_VERSION, savingsConfigHash, tzKey: currentTzKey(), lastComputedDate: null, days: [], complete: false }
 }
 
+/** Empty primary row used to tombstone a provider slice on a re-derived day. */
+export function emptyDailyEntry(date: string): DailyEntry {
+  return {
+    date,
+    cost: 0,
+    savingsUSD: 0,
+    calls: 0,
+    sessions: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    editTurns: 0,
+    oneShotTurns: 0,
+    models: {},
+    categories: {},
+    providers: {},
+  }
+}
+
 export function isMigratableCache(parsed: unknown): parsed is {
   version: number
   lastComputedDate: string | null
@@ -516,7 +536,12 @@ function setOwn<T>(target: Record<string, T>, key: string, value: T): void {
 /// A primary slice blocks a secondary one only when it carries DATA; a
 /// zero-data placeholder (sessions only) is merged into, not treated as a
 /// re-derivation of the provider's day.
-export function mergeDayEntries(primary: DailyEntry[], secondary: DailyEntry[], markSecondaryCarried: boolean): DailyEntry[] {
+export function mergeDayEntries(
+  primary: DailyEntry[],
+  secondary: DailyEntry[],
+  markSecondaryCarried: boolean,
+  blockedSecondaryProviderDays: ReadonlySet<string> = new Set(),
+): DailyEntry[] {
   const byDate = new Map<string, DailyEntry>()
   for (const day of primary) byDate.set(day.date, structuredClone(day))
   for (const day of secondary) {
@@ -529,6 +554,7 @@ export function mergeDayEntries(primary: DailyEntry[], secondary: DailyEntry[], 
     }
     if (isOpaqueDay(existing)) continue
     for (const [provider, slice] of Object.entries(day.providers)) {
+      if (blockedSecondaryProviderDays.has(`${provider}\u0000${day.date}`)) continue
       // Sessions-only slices (a session whose calls all landed on another
       // day) still carry a real session count — worth preserving.
       if (!hasSliceData(slice) && !(slice.sessions ?? 0)) continue
@@ -569,6 +595,8 @@ export type CacheHydrationOptions = {
   /// a new authority scans the full durable daily-retention horizon; subsequent
   /// runs return to BACKFILL_DAYS.
   durableHistoryAuthority?: string
+  /** Replace only these provider slices on the listed dates. */
+  reconcileProviderDays?: Readonly<Record<string, readonly string[]>>
 }
 
 export function toDateString(date: Date): string {
