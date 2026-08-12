@@ -109,4 +109,4 @@ A passing local report is one submission input only. It does not authorize:
 - replacement of the existing portable or NSIS channels;
 - claims about Store-managed update behavior.
 
-RC10 is already submitted and remains frozen. Certification and any later publication remain separate decisions; this guide does not authorize a `Publish now` action or a Store-availability claim.
+RC10 is already submitted and remains frozen. Certification and any later publication remain separate decisions; this guide does not authorize a publication action or a Store-availability claim.
