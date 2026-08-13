@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,7 +12,13 @@ import {
   canonicalSourceRecordFingerprintSha256V1,
 } from './canonical-history-identity.js'
 import { publishCanonicalHistoryAnalyticsV1 } from './canonical-history-analytics-publication.js'
-import { canonicalHistoryShadowPathsV1 } from './canonical-history-shadow-store.js'
+import {
+  canonicalHistoryShadowPathsV1,
+  canonicalHistoryShadowProjectionSha256V1,
+  clearCanonicalHistoryShadowTrustMemoV1,
+  readCanonicalHistoryShadowProjectionV1,
+} from './canonical-history-shadow-store.js'
+import { projectCanonicalHistoryReadV1 } from './canonical-history-read-projection.js'
 import { loadOrCreateLocalEndpointIdentityV1 } from './endpoint-identity.js'
 import { Aes256GcmSecretProtector } from './secret-protector.js'
 
@@ -154,27 +160,129 @@ describe('generic canonical analytics publication boundary', () => {
     })).toMatch(/^[a-f0-9]{64}$/u)
   })
 
+  it('skips an exactly unchanged analytics generation without rebuilding the projection', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+    const before = await readFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'head.json'))
+
+    const second = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+
+    expect(first.status).toBe('published')
+    expect(second).toMatchObject({
+      status: 'skipped',
+      reason: 'unchanged-generation',
+      projectionSha256: first.projectionSha256,
+      shadowStatus: 'unchanged',
+    })
+    expect(second.timingsMs.projectionBuildMs).toBe(0)
+    expect(second.timingsMs.parityMs).toBe(0)
+    expect(second.timingsMs.shadowPersistenceMs).toBe(0)
+    expect(await readFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'head.json'))).toEqual(before)
+  })
+
+  it('does not trust a same-stat mutated snapshot after a cold trust lifecycle', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+    expect(first.status).toBe('published')
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    const beforeHead = await readFile(paths.head)
+    const snapshotPath = join(paths.snapshots, `${first.projectionSha256}.json`)
+    const beforeBytes = await readFile(snapshotPath)
+    const beforeStat = await stat(snapshotPath)
+    const marker = Buffer.from('2026-08-13T12:00:00.000Z', 'utf8')
+    const replacement = Buffer.from('2026-08-13T13:00:00.000Z', 'utf8')
+    const offset = beforeBytes.indexOf(marker)
+    expect(offset).toBeGreaterThanOrEqual(0)
+    const mutated = Buffer.from(beforeBytes)
+    replacement.copy(mutated, offset)
+    await writeFile(snapshotPath, mutated)
+    await utimes(snapshotPath, beforeStat.atime, beforeStat.mtime)
+    const afterStat = await stat(snapshotPath)
+    expect(afterStat.size).toBe(beforeStat.size)
+    expect(afterStat.mtimeMs).toBeCloseTo(beforeStat.mtimeMs, 0)
+    if (beforeStat.ino !== 0 && afterStat.ino !== 0) expect(afterStat.ino).toBe(beforeStat.ino)
+
+    // A fresh publisher process has no prior content-validation memo.
+    clearCanonicalHistoryShadowTrustMemoV1(dataDir)
+    const restarted = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+
+    expect(restarted.status).toBe('failed')
+    expect(restarted.reason).not.toBe('unchanged-generation')
+    expect(await readFile(paths.head)).toEqual(beforeHead)
+  })
+
   it('keeps an existing endpoint-scoped shadow on the same scope while the generation advances', async () => {
-    const { dataDir, session, daily } = await setup()
-    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, now: () => NOW })
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
     expect(first.status).toBe('published')
 
     const advancedSession = structuredClone(session)
-    advancedSession.providers.codex!.files['C:\\private\\codex-session.jsonl']!.turns[0]!.calls.push(call({
+    const advancedFile = advancedSession.providers.codex!.files['C:\\private\\codex-session.jsonl']!
+    advancedFile.turns[0]!.calls.push(call({
       deduplicationKey: 'codex:test:2',
       timestamp: '2026-08-13T10:01:00.000Z',
     }))
+    advancedFile.fingerprint.sizeBytes += 1
+    advancedFile.fingerprint.mtimeMs += 1
     await saveCache(advancedSession)
     const advanced = await publishCanonicalHistoryAnalyticsV1({
       sessionCache: advancedSession,
       dailyCache: daily,
       dataDir,
+      endpointId,
       now: () => NOW,
     })
 
     expect(advanced.status).toBe('published')
     expect(advanced.shadowStatus).toBe('advanced')
     expect(advanced.parity?.outcome).toBe('matched')
+    const projected = projectCanonicalHistoryReadV1({ endpointId, sessionCache: advancedSession, dailyCache: daily })
+    expect(advanced.projectionSha256).toBe(canonicalHistoryShadowProjectionSha256V1(projected))
+    expect((await readCanonicalHistoryShadowProjectionV1({ dataDir }))?.head.projectionSha256).toBe(advanced.projectionSha256)
+  })
+
+  it('rebuilds safely when the derived incremental state is corrupt', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+    expect(first.status).toBe('published')
+    await writeFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'publication-state.v1.json'), '{broken')
+
+    const advancedSession = structuredClone(session)
+    const advancedFile = advancedSession.providers.codex!.files['C:\\private\\codex-session.jsonl']!
+    advancedFile.turns[0]!.calls.push(call({ deduplicationKey: 'codex:test:recovery' }))
+    advancedFile.fingerprint.sizeBytes += 1
+    advancedFile.fingerprint.mtimeMs += 1
+    await saveCache(advancedSession)
+
+    const recovered = await publishCanonicalHistoryAnalyticsV1({
+      sessionCache: advancedSession,
+      dailyCache: daily,
+      dataDir,
+      endpointId,
+      now: () => NOW,
+    })
+    expect(recovered).toMatchObject({ status: 'published', shadowStatus: 'advanced', parity: { outcome: 'matched' } })
+  })
+
+  it('preserves retained-only history when a source disappears from the next generation', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+    const deletedSession = structuredClone(session)
+    delete deletedSession.providers.codex!.files['C:\\private\\codex-session.jsonl']
+    await saveCache(deletedSession)
+
+    const deleted = await publishCanonicalHistoryAnalyticsV1({
+      sessionCache: deletedSession,
+      dailyCache: daily,
+      dataDir,
+      endpointId,
+      now: () => NOW,
+    })
+    expect(deleted).toMatchObject({ status: 'published', shadowStatus: 'advanced', parity: { outcome: 'matched' } })
+    expect(deleted.parity?.reconciliation.observations.retainedOnly).toBe(1)
+    expect(deleted.parity?.reconciliation.activities.retainedOnly).toBe(1)
+    expect(deleted.projectionSha256).toBe(canonicalHistoryShadowProjectionSha256V1(projectCanonicalHistoryReadV1({ endpointId, sessionCache: deletedSession, dailyCache: daily })))
+    expect(first.projectionSha256).not.toBe(deleted.projectionSha256)
   })
 
   it('accepts a completed-generation headline after provider cache bytes advance, while standalone reads remain current-cache bound', async () => {

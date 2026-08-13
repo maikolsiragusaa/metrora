@@ -35,6 +35,7 @@ import {
   cachePayloadSha256V1,
   readCurrentDailyCacheGenerationV1,
   readCurrentSessionCacheGenerationV1,
+  sessionGenerationSourcePathSha256V1,
 } from '../cache-generation.js'
 import { dailyCachePath } from '../daily-cache.js'
 import { sessionCachePath } from '../session-cache.js'
@@ -69,6 +70,9 @@ export type CanonicalHistoryParityObserverDependenciesV1 = {
   persist?: (
     projection: CanonicalHistoryReadProjectionV1,
   ) => Promise<PersistCanonicalHistoryShadowResultV1>
+  expectedSessionAuthority?: (
+    input: CanonicalHistoryReadProjectionInputV1,
+  ) => CanonicalHistorySessionAuthorityV1
 }
 
 export class CanonicalHistoryParityMismatchError extends Error {
@@ -88,6 +92,11 @@ type DailySnapshotPayload = Omit<
   CanonicalHistoryReadProjectionV1['dailySnapshots'][number],
   'snapshotId'
 >
+
+export type CanonicalHistorySessionAuthorityV1 = {
+  observations: Map<string, ObservationPayload>
+  activities: Set<string>
+}
 
 function canonical(value: unknown): string {
   try {
@@ -264,7 +273,8 @@ function expectedSessionAuthority(input: {
   endpointId: string
   sessionCache: SessionCache
   sourceFingerprint: CanonicalHistoryParityObserverDependenciesV1['sourceFingerprint']
-}): { observations: Map<string, ObservationPayload>; activities: Set<string> } {
+  sourceKeys?: ReadonlySet<string>
+}): CanonicalHistorySessionAuthorityV1 {
   const observations = new Map<string, ObservationPayload>()
   const activities = new Set<string>()
   const observationActivity = new Map<string, string>()
@@ -277,8 +287,9 @@ function expectedSessionAuthority(input: {
 
   for (const [storageNamespace, section] of Object.entries(input.sessionCache.providers)
     .sort(([left], [right]) => left.localeCompare(right))) {
-    for (const [, file] of Object.entries(section.files)
+    for (const [path, file] of Object.entries(section.files)
       .sort(([left], [right]) => left.localeCompare(right))) {
+      if (input.sourceKeys && !input.sourceKeys.has(`${storageNamespace}\0${sessionGenerationSourcePathSha256V1(storageNamespace, path)}`)) continue
       if (file.failed) continue
       for (const turn of file.turns) {
         const calls = storageNamespace === 'claude'
@@ -327,7 +338,7 @@ function expectedSessionAuthority(input: {
 
 function projectedSessionAuthority(
   projection: CanonicalHistoryReadProjectionV1,
-): { observations: Map<string, ObservationPayload>; activities: Set<string> } {
+): CanonicalHistorySessionAuthorityV1 {
   const observations = new Map<string, ObservationPayload>()
   for (const observation of projection.observations) {
     const { observationId, activityId: _activityId, ...payload } = observation
@@ -364,6 +375,21 @@ function projectedSessionAuthority(
     )
   }
   return { observations, activities }
+}
+
+export function canonicalHistorySessionAuthorityForProjectionV1(
+  projection: CanonicalHistoryReadProjectionV1,
+): CanonicalHistorySessionAuthorityV1 {
+  return projectedSessionAuthority(projection)
+}
+
+export function expectedCanonicalHistorySessionAuthorityForSourcesV1(input: {
+  endpointId: string
+  sessionCache: SessionCache
+  sourceFingerprint: CanonicalHistoryParityObserverDependenciesV1['sourceFingerprint']
+  sourceKeys: ReadonlySet<string>
+}): CanonicalHistorySessionAuthorityV1 {
+  return expectedSessionAuthority(input)
 }
 
 function assertMapParity<T>(
@@ -452,11 +478,13 @@ export async function observeCanonicalHistoryParityV1(
     })
   })
   const projection = project(input)
-  const expected = expectedSessionAuthority({
-    endpointId: input.endpointId,
-    sessionCache: input.sessionCache,
-    sourceFingerprint: dependencies.sourceFingerprint,
-  })
+  const expected = dependencies.expectedSessionAuthority
+    ? dependencies.expectedSessionAuthority(input)
+    : expectedSessionAuthority({
+        endpointId: input.endpointId,
+        sessionCache: input.sessionCache,
+        sourceFingerprint: dependencies.sourceFingerprint,
+      })
   const actual = projectedSessionAuthority(projection)
 
   assertMapParity(expected.observations, actual.observations, 'observation')

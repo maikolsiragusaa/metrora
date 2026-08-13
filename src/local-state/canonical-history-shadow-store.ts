@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readdir } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
 
@@ -20,9 +20,30 @@ import {
   ensureCanonicalHistoryCliHeadlineIndexV1,
   prepareCanonicalHistoryCliHeadlineIndexStoreV1,
 } from './canonical-history-cli-headline-index-store.js'
+import {
+  buildCanonicalHistoryPublicationStateV1,
+  writeCanonicalHistoryPublicationStateV1,
+  type CanonicalHistoryPublicationSourceV1,
+} from './canonical-history-publication-state.js'
+import {
+  addCurrentProjectionToCanonicalHistoryRetainedV1,
+  assertActivitiesCompatibleWithCanonicalHistoryRetainedV1,
+  assertCompatibleWithCanonicalHistoryRetainedV1,
+  canonicalHistoryActivityPayloadIsOrderedExtensionV1,
+  readCanonicalHistoryRetainedIndexV1,
+  writeCanonicalHistoryRetainedIndexV1,
+} from './canonical-history-retained-index.js'
+import { CanonicalHistoryShadowStoreIntegrityError } from './canonical-history-shadow-errors.js'
+import {
+  clearCanonicalHistoryShadowTrustMemoV1 as clearPublicationTrustMemoV1,
+  readCanonicalHistoryPublicationTrustV1,
+  rememberCanonicalHistoryPublicationTrustV1,
+  type CanonicalHistoryShadowPublicationTrustV1,
+} from './canonical-history-publication-trust.js'
 import { defaultMetroraDataDir } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
+
 export const CANONICAL_HISTORY_SHADOW_SNAPSHOT_KIND = 'metrora.canonical-history-shadow-snapshot' as const
 export const CANONICAL_HISTORY_SHADOW_HEAD_KIND = 'metrora.canonical-history-shadow-head' as const
 export const CANONICAL_HISTORY_SHADOW_STORE_VERSION = 1 as const
@@ -53,6 +74,9 @@ export type CanonicalHistoryShadowStoreOptions = {
   now?: () => Date
   authorityGeneration?: CurrentCacheAuthorityGenerationV1
   analyticsGenerationId?: string
+  endpointScopeSha256?: string
+  sourceIndex?: CanonicalHistoryPublicationSourceV1[]
+  previousState?: CanonicalHistoryShadowLoadedStateV1
   /** Optional diagnostic timing hook; it never changes publication semantics. */
   onHeadlineIndexPersisted?: (elapsedMs: number) => void
 }
@@ -80,25 +104,20 @@ export type PersistCanonicalHistoryShadowResultV1 = {
   reconciliation: CanonicalHistoryShadowReconciliationV1
 }
 
-export class CanonicalHistoryShadowStoreIntegrityError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'CanonicalHistoryShadowStoreIntegrityError'
-  }
-}
+export { CanonicalHistoryShadowStoreIntegrityError } from './canonical-history-shadow-errors.js'
 
 type EntityIndex = Map<string, string>
 
-type ProjectionIndex = {
+export type CanonicalHistoryShadowProjectionIndexV1 = {
   observations: EntityIndex
   activities: EntityIndex
   dailySnapshots: EntityIndex
 }
 
-type RetainedProjectionIndex = {
-  observations: EntityIndex
-  activities: Map<string, string[]>
-  dailySnapshots: EntityIndex
+export type CanonicalHistoryShadowLoadedStateV1 = {
+  head: CanonicalHistoryShadowHeadV1
+  snapshot: CanonicalHistoryShadowSnapshotV1
+  index: CanonicalHistoryShadowProjectionIndexV1
 }
 
 const FORBIDDEN_PERSISTED_KEYS = new Set([
@@ -178,7 +197,7 @@ function indexEntities(
   return index
 }
 
-function indexProjection(value: unknown): ProjectionIndex {
+function indexProjection(value: unknown): CanonicalHistoryShadowProjectionIndexV1 {
   const projection = objectRecord(value, 'projection')
   if (projection.version !== CANONICAL_HISTORY_READ_PROJECTION_VERSION) {
     throw new CanonicalHistoryShadowStoreIntegrityError('shadow projection has an unsupported version')
@@ -197,154 +216,6 @@ function indexProjection(value: unknown): ProjectionIndex {
     observations: indexEntities(projection.observations, 'projection.observations', 'observationId'),
     activities: indexEntities(projection.activities, 'projection.activities', 'activityId'),
     dailySnapshots: indexEntities(projection.dailySnapshots, 'projection.dailySnapshots', 'snapshotId'),
-  }
-}
-
-function mergeEntityIndex(target: EntityIndex, incoming: EntityIndex, label: string): void {
-  for (const [id, payload] of incoming) {
-    const prior = target.get(id)
-    if (prior !== undefined && prior !== payload) {
-      throw new CanonicalHistoryShadowStoreIntegrityError(
-        `${label} identity ${id} conflicts with retained shadow history`,
-      )
-    }
-    target.set(id, prior ?? payload)
-  }
-}
-
-async function readRetainedIndex(
-  paths: ReturnType<typeof canonicalHistoryShadowPathsV1>,
-): Promise<RetainedProjectionIndex> {
-  const retained: RetainedProjectionIndex = {
-    observations: new Map(),
-    activities: new Map(),
-    dailySnapshots: new Map(),
-  }
-  const entries = await readdir(paths.snapshots, { withFileTypes: true })
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!entry.isFile() || entry.name.includes('.metrora-tmp-')) continue
-    const match = /^([a-f0-9]{64})\.json$/u.exec(entry.name)
-    if (!match) {
-      throw new CanonicalHistoryShadowStoreIntegrityError(
-        `canonical history shadow contains unexpected snapshot file ${entry.name}`,
-      )
-    }
-    const digest = match[1]!
-    const bytes = await readOptionalPrivateFile(join(paths.snapshots, entry.name))
-    if (!bytes) {
-      throw new CanonicalHistoryShadowStoreIntegrityError(
-        `canonical history shadow snapshot ${entry.name} disappeared during reconciliation`,
-      )
-    }
-    const parsed = parseSnapshot(bytes, digest)
-    mergeEntityIndex(retained.observations, parsed.index.observations, 'observation')
-    for (const [id, payload] of parsed.index.activities) {
-      const history = retained.activities.get(id) ?? []
-      for (const prior of history) {
-        if (!activityPayloadsCanBeRevisions(prior, payload)) {
-          throw new CanonicalHistoryShadowStoreIntegrityError(
-            `activity identity ${id} conflicts with retained shadow history`,
-          )
-        }
-      }
-      if (!history.includes(payload)) history.push(payload)
-      retained.activities.set(id, history)
-    }
-    mergeEntityIndex(retained.dailySnapshots, parsed.index.dailySnapshots, 'daily snapshot')
-  }
-  return retained
-}
-
-function assertCompatibleWithRetainedHistory(
-  retained: RetainedProjectionIndex,
-  current: ProjectionIndex,
-): void {
-  for (const [label, previous, next] of [
-    ['observation', retained.observations, current.observations],
-    ['daily snapshot', retained.dailySnapshots, current.dailySnapshots],
-  ] as const) {
-    for (const [id, payload] of next) {
-      const prior = previous.get(id)
-      if (prior !== undefined && prior !== payload) {
-        throw new CanonicalHistoryShadowStoreIntegrityError(
-          `${label} identity ${id} conflicts with retained shadow history`,
-        )
-      }
-    }
-  }
-}
-
-type ActivityPayload = {
-  collector: string
-  timestamp: string
-  observationIds: string[]
-}
-
-function decodeActivityPayload(payload: string): ActivityPayload {
-  let value: unknown
-  try {
-    value = JSON.parse(payload)
-  } catch {
-    throw new CanonicalHistoryShadowStoreIntegrityError('retained activity payload is not valid JSON')
-  }
-  const record = objectRecord(value, 'retained activity')
-  const collector = record.collector
-  const timestamp = record.timestamp
-  const observationIds = record.observationIds
-  if (
-    typeof collector !== 'string'
-    || typeof timestamp !== 'string'
-    || !Array.isArray(observationIds)
-    || observationIds.some(id => typeof id !== 'string')
-  ) {
-    throw new CanonicalHistoryShadowStoreIntegrityError('retained activity payload is malformed')
-  }
-  return { collector, timestamp, observationIds: [...observationIds] as string[] }
-}
-
-function activityPayloadIsOrderedExtension(
-  priorPayload: string,
-  nextPayload: string,
-): boolean {
-  const prior = decodeActivityPayload(priorPayload)
-  const next = decodeActivityPayload(nextPayload)
-  if (prior.collector !== next.collector || prior.timestamp !== next.timestamp) return false
-  return prior.observationIds.length <= next.observationIds.length
-    && prior.observationIds.every((id, index) => next.observationIds[index] === id)
-}
-
-function activityPayloadsCanBeRevisions(leftPayload: string, rightPayload: string): boolean {
-  return activityPayloadIsOrderedExtension(leftPayload, rightPayload)
-    || activityPayloadIsOrderedExtension(rightPayload, leftPayload)
-}
-
-function assertActivitiesCompatibleWithRetainedHistory(
-  retained: Map<string, string[]>,
-  previous: EntityIndex | undefined,
-  current: EntityIndex,
-): void {
-  for (const [id, payload] of current) {
-    const history = retained.get(id) ?? []
-    for (const prior of history) {
-      // A current activity may be unchanged or may append observations to a
-      // retained revision. Regressing to a weaker payload is not a refresh;
-      // it would lose an observation from the current canonical projection.
-      if (prior !== payload && !activityPayloadIsOrderedExtension(prior, payload)) {
-        throw new CanonicalHistoryShadowStoreIntegrityError(
-          `activity identity ${id} conflicts with retained shadow history`,
-        )
-      }
-    }
-    const previousPayload = previous?.get(id)
-    if (
-      previousPayload !== undefined
-      && previousPayload !== payload
-      && !activityPayloadIsOrderedExtension(previousPayload, payload)
-    ) {
-      throw new CanonicalHistoryShadowStoreIntegrityError(
-        `activity identity ${id} resolved to a non-monotonic revision`,
-      )
-    }
   }
 }
 
@@ -375,8 +246,8 @@ function reconcileEntities(
 }
 
 function reconcileProjection(
-  previous: ProjectionIndex | undefined,
-  current: ProjectionIndex,
+  previous: CanonicalHistoryShadowProjectionIndexV1 | undefined,
+  current: CanonicalHistoryShadowProjectionIndexV1,
 ): CanonicalHistoryShadowReconciliationV1 {
   const activities = reconcileActivities(previous?.activities, current.activities)
   return {
@@ -404,7 +275,7 @@ function reconcileActivities(
       unchanged++
       continue
     }
-    if (!activityPayloadIsOrderedExtension(prior, payload)) {
+    if (!canonicalHistoryActivityPayloadIsOrderedExtensionV1(prior, payload)) {
       throw new CanonicalHistoryShadowStoreIntegrityError(
         `activity identity ${id} resolved to a conflicting payload`,
       )
@@ -418,7 +289,14 @@ function reconcileActivities(
   return { added, unchanged, revised, retainedOnly }
 }
 
-export function canonicalHistoryShadowPathsV1(dataDir: string) {
+export type CanonicalHistoryShadowPathsV1 = {
+  root: string
+  snapshots: string
+  headlineIndexes: string
+  head: string
+}
+
+export function canonicalHistoryShadowPathsV1(dataDir: string): CanonicalHistoryShadowPathsV1 {
   const root = join(dataDir, 'history-shadow', 'v1')
   return {
     root,
@@ -442,7 +320,7 @@ async function prepare(paths: ReturnType<typeof canonicalHistoryShadowPathsV1>):
 function parseSnapshot(
   bytes: Uint8Array,
   expectedDigest: string,
-): { record: CanonicalHistoryShadowSnapshotV1; index: ProjectionIndex } {
+): { record: CanonicalHistoryShadowSnapshotV1; index: CanonicalHistoryShadowProjectionIndexV1 } {
   let record: CanonicalHistoryShadowSnapshotV1
   try {
     record = CanonicalHistoryShadowSnapshotV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf-8')))
@@ -467,9 +345,25 @@ function parseHead(bytes: Uint8Array): CanonicalHistoryShadowHeadV1 {
   }
 }
 
+export type { CanonicalHistoryShadowPublicationTrustV1 } from './canonical-history-publication-trust.js'
+export const clearCanonicalHistoryShadowTrustMemoV1 = clearPublicationTrustMemoV1
+
+export async function readCanonicalHistoryShadowPublicationTrustV1(
+  options: Pick<CanonicalHistoryShadowStoreOptions, 'dataDir'> = {},
+): Promise<CanonicalHistoryShadowPublicationTrustV1 | undefined> {
+  const dataDir = options.dataDir ?? defaultMetroraDataDir()
+  const paths = canonicalHistoryShadowPathsV1(dataDir)
+  return readCanonicalHistoryPublicationTrustV1({
+    dataDir,
+    paths,
+    parseHead,
+    parseSnapshot,
+  })
+}
+
 async function readHeadSnapshot(
   paths: ReturnType<typeof canonicalHistoryShadowPathsV1>,
-): Promise<{ head: CanonicalHistoryShadowHeadV1; snapshot: CanonicalHistoryShadowSnapshotV1; index: ProjectionIndex } | undefined> {
+): Promise<CanonicalHistoryShadowLoadedStateV1 | undefined> {
   const headBytes = await readOptionalPrivateFile(paths.head)
   if (!headBytes) return undefined
   const head = parseHead(headBytes)
@@ -479,6 +373,21 @@ async function readHeadSnapshot(
   }
   const parsed = parseSnapshot(snapshotBytes, head.projectionSha256)
   return { head, snapshot: parsed.record, index: parsed.index }
+}
+
+async function usePreviousStateIfCurrent(
+  paths: ReturnType<typeof canonicalHistoryShadowPathsV1>,
+  candidate: CanonicalHistoryShadowLoadedStateV1 | undefined,
+): Promise<CanonicalHistoryShadowLoadedStateV1 | undefined> {
+  if (!candidate) return readHeadSnapshot(paths)
+  const headBytes = await readOptionalPrivateFile(paths.head)
+  if (!headBytes) return readHeadSnapshot(paths)
+  const head = parseHead(headBytes)
+  if (
+    head.projectionSha256 === candidate.head.projectionSha256
+    && head.snapshotSha256 === candidate.head.snapshotSha256
+  ) return candidate
+  return readHeadSnapshot(paths)
 }
 
 export async function persistCanonicalHistoryShadowV1(
@@ -494,11 +403,16 @@ export async function persistCanonicalHistoryShadowV1(
   await prepare(paths)
 
   return withLocalStateLease(paths.root, async () => {
-    const previous = await readHeadSnapshot(paths)
-    const retained = await readRetainedIndex(paths)
-    assertCompatibleWithRetainedHistory(retained, currentIndex)
-    assertActivitiesCompatibleWithRetainedHistory(retained.activities, previous?.index.activities, currentIndex.activities)
+    // A compact retained index is acceleration evidence only. If this is the
+    // first publication in a process with an existing head, establish the
+    // canonical deep-validation trust boundary before reading it.
+    await readCanonicalHistoryShadowPublicationTrustV1({ dataDir })
+    const previous = await usePreviousStateIfCurrent(paths, options.previousState)
+    const retained = await readCanonicalHistoryRetainedIndexV1(paths, parseSnapshot)
+    assertCompatibleWithCanonicalHistoryRetainedV1(retained, currentIndex)
+    assertActivitiesCompatibleWithCanonicalHistoryRetainedV1(retained.activities, previous?.index.activities, currentIndex.activities)
     const previousDigest = previous?.head.projectionSha256
+    const reconciliation = reconcileProjection(previous?.index, currentIndex)
     const targetPath = snapshotPath(paths, projectionSha256)
     const targetBytes = await readOptionalPrivateFile(targetPath)
     const target = targetBytes ? parseSnapshot(targetBytes, projectionSha256) : undefined
@@ -506,8 +420,6 @@ export async function persistCanonicalHistoryShadowV1(
     if (target && canonicalProjectionJson(target.record.projection) !== canonicalProjectionJson(projection)) {
       throw new CanonicalHistoryShadowStoreIntegrityError('canonical history shadow digest collision')
     }
-
-    const reconciliation = reconcileProjection(previous?.index, currentIndex)
 
     let immutableSnapshotBytes = targetBytes
     if (!target) {
@@ -523,6 +435,9 @@ export async function persistCanonicalHistoryShadowV1(
     }
     if (!immutableSnapshotBytes) throw new CanonicalHistoryShadowStoreIntegrityError('canonical history shadow snapshot bytes are unavailable')
     const snapshotSha256 = canonicalHistoryShadowSnapshotSha256V1(immutableSnapshotBytes)
+    const targetInfo = await stat(targetPath)
+    addCurrentProjectionToCanonicalHistoryRetainedV1(retained, currentIndex, projectionSha256, snapshotSha256, targetInfo)
+    await writeCanonicalHistoryRetainedIndexV1(paths, retained)
 
     const headlineIndexStartedAt = performance.now()
     await ensureCanonicalHistoryCliHeadlineIndexV1({
@@ -534,10 +449,54 @@ export async function persistCanonicalHistoryShadowV1(
         ? {
             ...authorityGenerationForSidecarV1(options.authorityGeneration),
             ...(options.analyticsGenerationId ? { analyticsGenerationId: options.analyticsGenerationId } : {}),
+            ...(options.endpointScopeSha256 ? { endpointScopeSha256: options.endpointScopeSha256 } : {}),
+          }
+        : undefined,
+      previous: previous
+        ? {
+            projection: previous.snapshot.projection as CanonicalHistoryReadProjectionV1,
+            projectionSha256: previous.head.projectionSha256,
+            snapshotSha256: previous.head.snapshotSha256 ?? canonicalHistoryShadowSnapshotSha256V1(
+              Buffer.from(JSON.stringify(previous.snapshot), 'utf8'),
+            ),
           }
         : undefined,
     })
     options.onHeadlineIndexPersisted?.(performance.now() - headlineIndexStartedAt)
+
+    if (
+      options.authorityGeneration
+      && options.analyticsGenerationId
+      && options.endpointScopeSha256
+      && options.sourceIndex
+    ) {
+      const state = buildCanonicalHistoryPublicationStateV1({
+        endpointScopeSha256: options.endpointScopeSha256,
+        analyticsGenerationId: options.analyticsGenerationId,
+        sessionPayloadSha256: options.authorityGeneration.session.payloadSha256,
+        dailyPayloadSha256: options.authorityGeneration.daily.payloadSha256,
+        sourceManifestSha256: options.authorityGeneration.session.sourceManifestSha256,
+        projectionSha256,
+        snapshotSha256,
+        sources: options.sourceIndex,
+      })
+      await writeCanonicalHistoryPublicationStateV1(dataDir, state)
+    }
+
+    let head: CanonicalHistoryShadowHeadV1
+    if (previousDigest === projectionSha256 && previous?.head.snapshotSha256 === snapshotSha256) {
+      head = previous.head
+    } else {
+      head = CanonicalHistoryShadowHeadV1Schema.parse({
+        kind: CANONICAL_HISTORY_SHADOW_HEAD_KIND,
+        version: CANONICAL_HISTORY_SHADOW_STORE_VERSION,
+        projectionSha256,
+        snapshotSha256,
+        updatedAt: now().toISOString(),
+      })
+      await atomicWritePrivateFile(paths.head, JSON.stringify(head))
+    }
+    await rememberCanonicalHistoryPublicationTrustV1(dataDir, paths, head, retained)
 
     if (previousDigest === projectionSha256 && previous?.head.snapshotSha256 === snapshotSha256) {
       return {
@@ -546,15 +505,6 @@ export async function persistCanonicalHistoryShadowV1(
         reconciliation,
       }
     }
-
-    const head = CanonicalHistoryShadowHeadV1Schema.parse({
-      kind: CANONICAL_HISTORY_SHADOW_HEAD_KIND,
-      version: CANONICAL_HISTORY_SHADOW_STORE_VERSION,
-      projectionSha256,
-      snapshotSha256,
-      updatedAt: now().toISOString(),
-    })
-    await atomicWritePrivateFile(paths.head, JSON.stringify(head))
 
     return {
       status: previous
@@ -575,6 +525,13 @@ export async function readCanonicalHistoryShadowHeadV1(
   const paths = canonicalHistoryShadowPathsV1(options.dataDir ?? defaultMetroraDataDir())
   const loaded = await readHeadSnapshot(paths)
   return loaded?.head
+}
+
+export async function readCanonicalHistoryShadowStateV1(
+  options: Pick<CanonicalHistoryShadowStoreOptions, 'dataDir'> = {},
+): Promise<CanonicalHistoryShadowLoadedStateV1 | undefined> {
+  const paths = canonicalHistoryShadowPathsV1(options.dataDir ?? defaultMetroraDataDir())
+  return readHeadSnapshot(paths)
 }
 
 export function parseCanonicalHistoryShadowHeadV1(bytes: Uint8Array): CanonicalHistoryShadowHeadV1 {

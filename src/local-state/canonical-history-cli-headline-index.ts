@@ -39,6 +39,7 @@ export type CanonicalHistoryCliHeadlineIndexV1 = {
   dailyAuthorityGenerationSha256?: string
   sessionSourceManifestSha256?: string
   analyticsGenerationId?: string
+  endpointScopeSha256?: string
   indexSha256: string
   timeZone: string
   dailySnapshots: CanonicalHistoryCliHeadlineDayV1[]
@@ -79,6 +80,7 @@ const IndexWithoutDigestSchema = z.strictObject({
   dailyAuthorityGenerationSha256: DigestSchema.optional(),
   sessionSourceManifestSha256: DigestSchema.optional(),
   analyticsGenerationId: DigestSchema.optional(),
+  endpointScopeSha256: DigestSchema.optional(),
   timeZone: z.string().min(1),
   dailySnapshots: z.array(DaySchema),
   activityDays: z.array(DaySchema),
@@ -196,26 +198,20 @@ function activityDay(
   }
 }
 
-export function buildCanonicalHistoryCliHeadlineIndexV1(input: {
-  projection: CanonicalHistoryReadProjectionV1
-  projectionSha256: string
-  snapshotSha256: string
-  authorityGeneration?: {
-    sessionPayloadSha256: string
-    dailyPayloadSha256: string
-    sourceManifestSha256: string
-    analyticsGenerationId?: string
-  }
-}): CanonicalHistoryCliHeadlineIndexV1 {
-  const timeZone = input.projection.dailySnapshots.find(day => day.bucketTimeZone)?.bucketTimeZone ?? localTimeZone()
-  const observations = new Map(input.projection.observations.map(observation => [observation.observationId, observation]))
+function activityDaysForProjection(
+  projection: CanonicalHistoryReadProjectionV1,
+  timeZone: string,
+  onlyDates?: ReadonlySet<string>,
+): CanonicalHistoryCliHeadlineDayV1[] {
+  const observations = new Map(projection.observations.map(observation => [observation.observationId, observation]))
   const activityTotals = new Map<string, CanonicalHistoryCliHeadlineTotalsV1>()
   const activityProviders = new Map<string, Record<string, CanonicalHistoryCliHeadlineTotalsV1>>()
   const unpricedDates = new Set<string>()
   const unpricedProvidersByDate = new Map<string, Set<string>>()
 
-  for (const activity of input.projection.activities) {
+  for (const activity of projection.activities) {
     const date = dateKeyInTimeZone(activity.timestamp, timeZone)
+    if (onlyDates && !onlyDates.has(date)) continue
     const totals = activityTotals.get(date) ?? emptyTotals()
     const providers = activityProviders.get(date) ?? {}
     for (const observationId of activity.observationIds) {
@@ -245,7 +241,7 @@ export function buildCanonicalHistoryCliHeadlineIndexV1(input: {
     activityProviders.set(date, providers)
   }
 
-  const activityDays = [...activityTotals.keys()].sort().map(date => activityDay(
+  return [...activityTotals.keys()].sort().map(date => activityDay(
     date,
     timeZone,
     activityTotals.get(date)!,
@@ -253,6 +249,22 @@ export function buildCanonicalHistoryCliHeadlineIndexV1(input: {
     unpricedDates.has(date),
     [...(unpricedProvidersByDate.get(date) ?? [])].sort(),
   ))
+}
+
+export function buildCanonicalHistoryCliHeadlineIndexV1(input: {
+  projection: CanonicalHistoryReadProjectionV1
+  projectionSha256: string
+  snapshotSha256: string
+  authorityGeneration?: {
+    sessionPayloadSha256: string
+    dailyPayloadSha256: string
+    sourceManifestSha256: string
+    analyticsGenerationId?: string
+    endpointScopeSha256?: string
+  }
+}): CanonicalHistoryCliHeadlineIndexV1 {
+  const timeZone = input.projection.dailySnapshots.find(day => day.bucketTimeZone)?.bucketTimeZone ?? localTimeZone()
+  const activityDays = activityDaysForProjection(input.projection, timeZone)
   const unsigned: Omit<CanonicalHistoryCliHeadlineIndexV1, 'indexSha256'> = {
     kind: CANONICAL_HISTORY_CLI_HEADLINE_INDEX_KIND,
     version: CANONICAL_HISTORY_CLI_HEADLINE_INDEX_VERSION,
@@ -265,6 +277,9 @@ export function buildCanonicalHistoryCliHeadlineIndexV1(input: {
       ...(input.authorityGeneration.analyticsGenerationId
         ? { analyticsGenerationId: input.authorityGeneration.analyticsGenerationId }
         : {}),
+      ...(input.authorityGeneration.endpointScopeSha256
+        ? { endpointScopeSha256: input.authorityGeneration.endpointScopeSha256 }
+        : {}),
     } : {}),
     timeZone,
     dailySnapshots: input.projection.dailySnapshots.map(projectionDay),
@@ -274,6 +289,65 @@ export function buildCanonicalHistoryCliHeadlineIndexV1(input: {
     ...unsigned,
     indexSha256: digest(unsigned),
   }
+}
+
+export function buildCanonicalHistoryCliHeadlineIndexIncrementalV1(input: {
+  previous: CanonicalHistoryCliHeadlineIndexV1
+  previousProjection: CanonicalHistoryReadProjectionV1
+  projection: CanonicalHistoryReadProjectionV1
+  projectionSha256: string
+  snapshotSha256: string
+  authorityGeneration?: {
+    sessionPayloadSha256: string
+    dailyPayloadSha256: string
+    sourceManifestSha256: string
+    analyticsGenerationId?: string
+    endpointScopeSha256?: string
+  }
+}): CanonicalHistoryCliHeadlineIndexV1 | undefined {
+  const timeZone = input.projection.dailySnapshots.find(day => day.bucketTimeZone)?.bucketTimeZone ?? localTimeZone()
+  if (timeZone !== input.previous.timeZone) return undefined
+
+  const previousActivities = new Map(input.previousProjection.activities.map(activity => [activity.activityId, activity]))
+  const currentActivities = new Map(input.projection.activities.map(activity => [activity.activityId, activity]))
+  const affectedDates = new Set<string>()
+  const activityIds = new Set([...previousActivities.keys(), ...currentActivities.keys()])
+  for (const activityId of activityIds) {
+    const prior = previousActivities.get(activityId)
+    const next = currentActivities.get(activityId)
+    if (prior && next && canonicalizeRfc8785(prior) === canonicalizeRfc8785(next)) continue
+    if (prior) affectedDates.add(dateKeyInTimeZone(prior.timestamp, timeZone))
+    if (next) affectedDates.add(dateKeyInTimeZone(next.timestamp, timeZone))
+  }
+
+  const rebuilt = affectedDates.size === 0
+    ? []
+    : activityDaysForProjection(input.projection, timeZone, affectedDates)
+  const activityDays = [
+    ...input.previous.activityDays.filter(day => !affectedDates.has(day.date)),
+    ...rebuilt,
+  ].sort((left, right) => left.date.localeCompare(right.date))
+  const unsigned: Omit<CanonicalHistoryCliHeadlineIndexV1, 'indexSha256'> = {
+    kind: CANONICAL_HISTORY_CLI_HEADLINE_INDEX_KIND,
+    version: CANONICAL_HISTORY_CLI_HEADLINE_INDEX_VERSION,
+    projectionSha256: input.projectionSha256,
+    snapshotSha256: input.snapshotSha256,
+    ...(input.authorityGeneration ? {
+      sessionAuthorityGenerationSha256: input.authorityGeneration.sessionPayloadSha256,
+      dailyAuthorityGenerationSha256: input.authorityGeneration.dailyPayloadSha256,
+      sessionSourceManifestSha256: input.authorityGeneration.sourceManifestSha256,
+      ...(input.authorityGeneration.analyticsGenerationId
+        ? { analyticsGenerationId: input.authorityGeneration.analyticsGenerationId }
+        : {}),
+      ...(input.authorityGeneration.endpointScopeSha256
+        ? { endpointScopeSha256: input.authorityGeneration.endpointScopeSha256 }
+        : {}),
+    } : {}),
+    timeZone,
+    dailySnapshots: input.projection.dailySnapshots.map(projectionDay),
+    activityDays,
+  }
+  return { ...unsigned, indexSha256: digest(unsigned) }
 }
 
 export function parseCanonicalHistoryCliHeadlineIndexV1(bytes: Uint8Array): CanonicalHistoryCliHeadlineIndexV1 {
