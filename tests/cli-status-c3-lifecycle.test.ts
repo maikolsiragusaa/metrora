@@ -73,6 +73,25 @@ function runCli(args: string[], home: string, extraEnv: NodeJS.ProcessEnv = {}) 
   })
 }
 
+async function readC3Artifacts(dataDir: string): Promise<{
+  head: string | undefined
+  publicationState: string | undefined
+  snapshots: Record<string, string>
+  headlineIndexes: Record<string, string>
+}> {
+  const paths = canonicalHistoryShadowPathsV1(dataDir)
+  const readDirectory = async (directory: string): Promise<Record<string, string>> => {
+    const names = (await readdir(directory).catch(() => [])).sort()
+    return Object.fromEntries(await Promise.all(names.map(async name => [name, await readFile(join(directory, name), 'utf8')])))
+  }
+  return {
+    head: await readFile(paths.head, 'utf8').catch(() => undefined),
+    publicationState: await readFile(join(paths.root, 'publication-state.v1.json'), 'utf8').catch(() => undefined),
+    snapshots: await readDirectory(paths.snapshots),
+    headlineIndexes: await readDirectory(paths.headlineIndexes),
+  }
+}
+
 describe('CLI status C3 analytics lifecycle', () => {
   it('keeps canonical C3 publication out of fresh terminal status', async () => {
     const home = await mkdtemp(join(tmpdir(), 'metrora-cli-c3-lifecycle-'))
@@ -182,6 +201,8 @@ describe('CLI status C3 analytics lifecycle', () => {
     const traceLine = consumed.stderr.split(/\r?\n/u).find(value => value.includes('"kind":"metrora-c3-analytics-lifecycle-v1"'))
     expect(traceLine).toBeDefined()
     const trace = JSON.parse(traceLine!) as {
+      legacy: { today: { calls: number }; month: { calls: number } }
+      c3: { today?: { calls: number }; month?: { calls: number } }
       dualRead: Array<{ id: string; code: string }>
       primary: string
     }
@@ -191,7 +212,11 @@ describe('CLI status C3 analytics lifecycle', () => {
     ])
     expect(trace.primary).toBe('PARITY_GATED_C3_RENDER')
 
-    const advancedTimestamp = new Date(Date.now() + 1_000).toISOString()
+    // Keep the event strictly later than the original while retaining the
+    // fixture's already-past, current-period timestamp. The child CLI can no
+    // longer change whether this event is eligible by crossing a wall-clock
+    // boundary between append and launch.
+    const advancedTimestamp = new Date(Date.parse(timestamp) + 1_000).toISOString()
     await appendFile(join(projectDir, `${sessionId}.jsonl`), JSON.stringify({
       type: 'assistant',
       sessionId,
@@ -205,6 +230,7 @@ describe('CLI status C3 analytics lifecycle', () => {
         usage: { input_tokens: 50, output_tokens: 10 },
       },
     }) + '\n', 'utf8')
+    const c3BeforeMismatch = await readC3Artifacts(dataDir)
     const mismatch = runCli(['status', '--format', 'terminal', '--provider', 'claude'], home, {
       METRORA_DATA_DIR: dataDir,
       METRORA_VERBOSE: '1',
@@ -213,6 +239,8 @@ describe('CLI status C3 analytics lifecycle', () => {
     const mismatchLine = mismatch.stderr.split(/\r?\n/u).find(value => value.includes('"kind":"metrora-c3-analytics-lifecycle-v1"'))
     expect(mismatchLine).toBeDefined()
     const mismatchTrace = JSON.parse(mismatchLine!) as {
+      legacy: { today: { calls: number }; month: { calls: number } }
+      c3: { today?: { calls: number }; month?: { calls: number } }
       dualRead: Array<{ id: string; code: string }>
       primary: string
     }
@@ -221,5 +249,28 @@ describe('CLI status C3 analytics lifecycle', () => {
       { id: 'month', code: 'C3_SUPPORTED_MISMATCH' },
     ])
     expect(mismatchTrace.primary).toBe('LEGACY_FALLBACK')
+    expect(mismatchTrace.legacy.today.calls).toBe(trace.legacy.today.calls + 1)
+    expect(mismatchTrace.legacy.month.calls).toBe(trace.legacy.month.calls + 1)
+    expect(mismatchTrace.c3).toEqual(trace.c3)
+    expect(await readC3Artifacts(dataDir)).toEqual(c3BeforeMismatch)
+
+    const republished = await publishFromChildCaches(home, dataDir)
+    expect(republished.status).toBe('published')
+    const recovered = runCli(['status', '--format', 'terminal', '--provider', 'claude'], home, {
+      METRORA_DATA_DIR: dataDir,
+      METRORA_VERBOSE: '1',
+    })
+    expect(recovered.status).toBe(0)
+    const recoveredLine = recovered.stderr.split(/\r?\n/u).find(value => value.includes('"kind":"metrora-c3-analytics-lifecycle-v1"'))
+    expect(recoveredLine).toBeDefined()
+    const recoveredTrace = JSON.parse(recoveredLine!) as {
+      dualRead: Array<{ id: string; code: string }>
+      primary: string
+    }
+    expect(recoveredTrace.dualRead).toEqual([
+      { id: 'today', code: 'C3_SUPPORTED_MATCH' },
+      { id: 'month', code: 'C3_SUPPORTED_MATCH' },
+    ])
+    expect(recoveredTrace.primary).toBe('PARITY_GATED_C3_RENDER')
   }, 120_000)
 })
