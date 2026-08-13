@@ -138,6 +138,28 @@ function identityPaths(dataDir: string): { directory: string; metadata: string; 
   }
 }
 
+/**
+ * Read only the durable public endpoint metadata. Analytics projection uses
+ * this path to reuse the endpoint scope without opening key material,
+ * creating a Workspace, or requiring a signing operation.
+ */
+export async function readLocalEndpointIdentityMetadataV1(
+  options: { dataDir?: string } = {},
+): Promise<LocalEndpointIdentityMetadataV1 | undefined> {
+  const paths = identityPaths(options.dataDir ?? defaultMetroraDataDir())
+  const bytes = await readOptionalPrivateFile(paths.metadata)
+  if (!bytes) return undefined
+  try {
+    const persisted = PersistedLocalEndpointIdentityMetadataV1Schema.parse(JSON.parse(bytes.toString('utf-8')))
+    return LocalEndpointIdentityMetadataV1Schema.parse({
+      ...persisted,
+      kind: LOCAL_ENDPOINT_IDENTITY_KIND,
+    })
+  } catch {
+    throw new EndpointIdentityRecoveryRequiredError('endpoint identity metadata is invalid')
+  }
+}
+
 function defaultGenerateEd25519(): { publicKeySpki: Buffer; privateKeyPkcs8: Buffer } {
   const pair = generateKeyPairSync('ed25519', {
     publicKeyEncoding: { type: 'spki', format: 'der' },

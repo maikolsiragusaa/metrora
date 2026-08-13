@@ -102,12 +102,12 @@ function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1
     sourceExists: existsSync,
     providerDisplayName: async provider => (await getProvider(provider))?.displayName,
     codexModelProvider: readCodexSessionModelProvider,
-    observeCanonicalHistoryParity: async ({ sessionCache }) => {
+    observeCanonicalHistoryParity: async ({ endpointId, sessionCache }) => {
       const dailyCache = await loadDailyCache()
       // Workspace remains only a trigger/consumer. The generic analytics
       // publication boundary owns projection, parity, generation sealing and
       // shadow/index persistence; no Workspace authority is passed into it.
-      const publication = await publishCanonicalHistoryAnalyticsV1({ sessionCache, dailyCache })
+      const publication = await publishCanonicalHistoryAnalyticsV1({ endpointId, sessionCache, dailyCache })
       if (publication.status === 'failed') {
         throw new Error(`canonical analytics publication failed: ${publication.reason ?? 'unknown'}`)
       }

@@ -1,10 +1,8 @@
 import { performance } from 'node:perf_hooks'
 
+import { renderStatusBar } from '../format.js'
 import type { DurablePeriod } from '../usage-aggregator.js'
-import {
-  observeC3CliStatusDualReadV1,
-  readC3TerminalStatusLineV1,
-} from './canonical-history-cli-primary.js'
+import { observeC3CliStatusDualReadV1 } from './canonical-history-cli-primary.js'
 import type { C3CliStatusDualReadResultV1 } from './canonical-history-cli-dual-read.js'
 
 function headline(value: DurablePeriod['data']) {
@@ -43,6 +41,19 @@ function report(
   })}\n`)
 }
 
+function renderC3TerminalStatusLineV1(
+  dualRead: readonly C3CliStatusDualReadResultV1[],
+): string | undefined {
+  if (dualRead.length !== 2 || !dualRead.every(result => result.code === 'C3_SUPPORTED_MATCH' && result.c3 !== undefined)) return undefined
+  const today = dualRead.find(result => result.id === 'today')?.c3
+  const month = dualRead.find(result => result.id === 'month')?.c3
+  if (!today || !month) return undefined
+  return renderStatusBar([], {
+    today: { cost: today.cost, calls: today.calls },
+    month: { cost: month.cost, calls: month.calls },
+  })
+}
+
 export async function readC3TerminalStatusForDurablePeriodsV1(
   provider: string,
   project: readonly string[],
@@ -59,13 +70,14 @@ export async function readC3TerminalStatusForDurablePeriodsV1(
     report(today, month, generationId, [], undefined, 0)
     return undefined
   }
+  const startedAt = performance.now()
   const dualRead = await observeC3CliStatusDualReadV1(provider, project, exclude, today.data, month.data, generationId)
+  const headlineReadMs = performance.now() - startedAt
   if (dualRead.length !== 2 || !dualRead.every(result => result.code === 'C3_SUPPORTED_MATCH')) {
-    report(today, month, generationId, dualRead, undefined, 0)
+    report(today, month, generationId, dualRead, undefined, headlineReadMs)
     return undefined
   }
-  const startedAt = performance.now()
-  const statusLine = await readC3TerminalStatusLineV1(provider, generationId)
-  report(today, month, generationId, dualRead, statusLine, performance.now() - startedAt)
+  const statusLine = renderC3TerminalStatusLineV1(dualRead)
+  report(today, month, generationId, dualRead, statusLine, headlineReadMs)
   return statusLine
 }

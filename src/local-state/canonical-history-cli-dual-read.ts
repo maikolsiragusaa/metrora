@@ -13,6 +13,7 @@ import type {
   CanonicalHistoryCliHeadlineDayV1,
   CanonicalHistoryCliHeadlineIndexV1,
 } from './canonical-history-cli-headline-index.js'
+import { canonicalAnalyticsGenerationIdSha256V1 } from './canonical-history-identity.js'
 import { readCanonicalHistoryShadowHeadlineIndexV1 } from './canonical-history-shadow-headline-index-read.js'
 
 export const C3_CLI_STATUS_MAX_HEAD_AGE_MS = 15 * 60 * 1000
@@ -307,6 +308,29 @@ async function currentAuthorityReason(
   timeZone: string,
   expectedGenerationId?: string,
 ): Promise<C3CliStatusDualReadReason | undefined> {
+  if (expectedGenerationId !== undefined) {
+    if (index.timeZone !== timeZone) return 'daily-authority-untrusted'
+    if (
+      index.sessionAuthorityGenerationSha256 === undefined
+      || index.dailyAuthorityGenerationSha256 === undefined
+      || index.sessionSourceManifestSha256 === undefined
+      || index.analyticsGenerationId === undefined
+    ) return 'missing-authority-generation'
+    if (
+      index.analyticsGenerationId !== expectedGenerationId
+      || canonicalAnalyticsGenerationIdSha256V1({
+        sessionPayloadSha256: index.sessionAuthorityGenerationSha256,
+        dailyPayloadSha256: index.dailyAuthorityGenerationSha256,
+        sourceManifestSha256: index.sessionSourceManifestSha256,
+      }) !== expectedGenerationId
+    ) return 'authority-generation-mismatch'
+    // The shadow/index reader has already verified the head, immutable
+    // snapshot, projection digest, snapshot binding, and index digest. The
+    // generation fields above bind that validated read to the exact
+    // completed publication supplied by this invocation, so newer cache bytes
+    // are intentionally outside this point-in-time read.
+    return undefined
+  }
   try {
     const [session, daily] = await Promise.all([
       readCurrentSessionCacheGenerationV1(sessionCachePath()),
@@ -334,9 +358,6 @@ async function currentAuthorityReason(
       || index.dailyAuthorityGenerationSha256 !== daily.payloadSha256
       || index.sessionSourceManifestSha256 !== session.sourceManifestSha256
     ) return 'authority-generation-mismatch'
-    if (expectedGenerationId !== undefined && index.analyticsGenerationId !== expectedGenerationId) {
-      return 'authority-generation-mismatch'
-    }
     // Close the cache-write race: a writer that published after the authority
     // check must not be authorized by the first read's old stamp. Provider
     // source bytes may advance after this generation; the next ordinary fresh
@@ -361,9 +382,10 @@ async function currentAuthorityReason(
 /**
  * Read the bounded headline subset from C3. This is the primary-read boundary:
  * it accepts no query unless the indexed projection, exact cache generations,
- * and trusted daily authority all pass. Provider writes after the accepted
- * generation are handled by the next fresh lifecycle, not by a second read
- * discovery. Every failure is a normal legacy-fallback result.
+ * and trusted daily authority all pass. A trusted expected generation binds
+ * the read to the completed publication without rereading current cache bytes;
+ * standalone reads retain current-cache validation and its write-race check.
+ * Every failure is a normal legacy-fallback result.
  */
 export async function readC3CliStatusBatchV1(
   inputs: readonly C3CliStatusReadInputV1[],

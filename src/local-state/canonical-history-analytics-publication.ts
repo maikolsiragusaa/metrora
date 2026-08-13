@@ -12,9 +12,10 @@ import { isSnapshotReadMode } from '../read-lifecycle.js'
 import { CACHE_VERSION, sessionCachePath, type SessionCache } from '../session-cache.js'
 import { getLatestCompletedSessionCacheV1 } from '../session-cache-authority.js'
 import {
-  CANONICAL_ANALYTICS_HISTORY_SCOPE_ID_V1,
+  canonicalAnalyticsGenerationIdSha256V1,
   canonicalSourceRecordFingerprintSha256V1,
 } from './canonical-history-identity.js'
+import { readLocalEndpointIdentityMetadataV1 } from './endpoint-identity.js'
 import {
   observeCanonicalHistoryParityV1,
   type CanonicalHistoryParityObservationV1,
@@ -48,6 +49,7 @@ export type CanonicalHistoryAnalyticsPublicationV1 = {
     | 'missing-in-memory-session-authority'
     | 'incomplete-session-authority'
     | 'untrusted-daily-authority'
+    | 'endpoint-identity-unavailable'
     | 'generation-seal-failed'
     | 'parity-failed'
     | 'shadow-persistence-failed'
@@ -64,21 +66,6 @@ export type CanonicalHistoryAnalyticsPublicationOptionsV1 = {
   dataDir?: string
   endpointId?: string
   now?: () => Date
-}
-
-function generationId(
-  sessionPayloadSha256: string,
-  dailyPayloadSha256: string,
-  sourceManifestSha256: string,
-): string {
-  return createHash('sha256')
-    .update('metrora-analytics-refresh-generation-v1\0')
-    .update(sessionPayloadSha256)
-    .update('\0')
-    .update(dailyPayloadSha256)
-    .update('\0')
-    .update(sourceManifestSha256)
-    .digest('hex')
 }
 
 function emptyTimings(): CanonicalHistoryAnalyticsPublicationTimingsV1 {
@@ -160,7 +147,11 @@ export async function publishCanonicalHistoryAnalyticsV1(
     }
     authorityGeneration = { session, daily }
     generation = {
-      id: generationId(session.payloadSha256, daily.payloadSha256, session.sourceManifestSha256),
+      id: canonicalAnalyticsGenerationIdSha256V1({
+        sessionPayloadSha256: session.payloadSha256,
+        dailyPayloadSha256: daily.payloadSha256,
+        sourceManifestSha256: session.sourceManifestSha256,
+      }),
       sessionPayloadSha256: session.payloadSha256,
       dailyPayloadSha256: daily.payloadSha256,
       sourceManifestSha256: session.sourceManifestSha256,
@@ -171,7 +162,17 @@ export async function publishCanonicalHistoryAnalyticsV1(
   }
   timings.generationSealMs = performance.now() - generationStartedAt
 
-  const endpointId = options.endpointId ?? CANONICAL_ANALYTICS_HISTORY_SCOPE_ID_V1
+  let endpointId = options.endpointId
+  if (endpointId === undefined) {
+    try {
+      endpointId = (await readLocalEndpointIdentityMetadataV1({ dataDir: options.dataDir }))?.endpointId
+    } catch {
+      return failed(startedAt, 'endpoint-identity-unavailable', timings, generation)
+    }
+  }
+  if (endpointId === undefined || endpointId.trim() === '') {
+    return failed(startedAt, 'endpoint-identity-unavailable', timings, generation)
+  }
   let projection: ReturnType<typeof projectCanonicalHistoryReadV1>
   const projectionStartedAt = performance.now()
   try {

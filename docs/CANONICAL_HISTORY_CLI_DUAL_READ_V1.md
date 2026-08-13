@@ -72,17 +72,19 @@ authority generation still matches the accepted snapshot.
 
 The canonical projection remains the accounting authority. The compact,
 content-addressed headline index is derived during publication and is bound to
-the exact projection digest and immutable snapshot bytes. The generation check
-hashes current cache bytes without parsing the full session cache; source
-freshness uses the private manifest and the existing discovery/fingerprint
-rules. The index can always be regenerated from the projection and cannot
-replace it.
+the exact projection digest and immutable snapshot bytes. Standalone reads
+without a trusted expected generation hash current cache bytes and preserve the
+existing source-freshness checks. A read carrying the exact generation from the
+same completed lifecycle validates the index/shadow binding to that generation
+without rereading current cache bytes. The index can always be regenerated from
+the projection and cannot replace it.
 
-Measured isolated index reads are approximately 97–138 ms on the current
-corpus. The complete authority/freshness eligibility path measured
-approximately 437–487 ms while correctly rejecting a source-stale head. The
-existing legacy fallback remains the only user-visible path until a stable
-real hit is observed.
+Timings from a small synthetic soak are not representative of a large local
+user corpus. Large-corpus checks must record the session-cache and canonical
+snapshot sizes and separate legacy refresh, C3 publication, and one validated
+headline/index read. These measurements are evidence for the reviewed change,
+not an arbitrary correctness target. The existing legacy fallback remains the
+only user-visible path until a stable real hit is observed.
 
 ## Floating-point contract
 

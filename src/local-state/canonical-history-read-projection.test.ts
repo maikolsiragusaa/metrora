@@ -127,9 +127,9 @@ function dailyCache(days: DailyEntry[], options: { tzKey?: string; complete?: bo
   }
 }
 
-function project(input: { sessions?: SessionCache; days?: DailyCache } = {}) {
+function project(input: { endpointId?: string; sessions?: SessionCache; days?: DailyCache } = {}) {
   return projectCanonicalHistoryReadV1({
-    endpointId: ENDPOINT_ID,
+    endpointId: input.endpointId ?? ENDPOINT_ID,
     sessionCache: input.sessions ?? sessionCache({ '/private/source-a': cachedFile([call()]) }),
     dailyCache: input.days ?? dailyCache([day()]),
   })
@@ -147,6 +147,14 @@ describe('canonical history read projection v1', () => {
     expect(moved.activities.map(value => value.activityId)).toEqual(first.activities.map(value => value.activityId))
     expect(moved.dailySnapshots[0]!.date).not.toBe(first.dailySnapshots[0]!.date)
     expect(moved.dailySnapshots[0]!.snapshotId).not.toBe(first.dailySnapshots[0]!.snapshotId)
+  })
+
+  it('keeps observation and activity identities endpoint-scoped', () => {
+    const first = project({ endpointId: 'ep_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' })
+    const second = project({ endpointId: 'ep_ffffffff-1111-4222-8333-444444444444' })
+
+    expect(second.observations[0]!.observationId).not.toBe(first.observations[0]!.observationId)
+    expect(second.activities[0]!.activityId).not.toBe(first.activities[0]!.activityId)
   })
 
   it('is content-minimal and does not expose path, prompt, session id, or private deduplication material', () => {

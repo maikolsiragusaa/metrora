@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,11 +9,12 @@ import { isSnapshotReadMode } from '../read-lifecycle.js'
 import { CACHE_VERSION, emptyCache as emptySessionCache, saveCache, sessionCachePath, type CachedCall, type SessionCache } from '../session-cache.js'
 import { readC3CliStatusBatchV1 } from './canonical-history-cli-dual-read.js'
 import {
-  CANONICAL_ANALYTICS_HISTORY_SCOPE_ID_V1,
   canonicalSourceRecordFingerprintSha256V1,
 } from './canonical-history-identity.js'
 import { publishCanonicalHistoryAnalyticsV1 } from './canonical-history-analytics-publication.js'
 import { canonicalHistoryShadowPathsV1 } from './canonical-history-shadow-store.js'
+import { loadOrCreateLocalEndpointIdentityV1 } from './endpoint-identity.js'
+import { Aes256GcmSecretProtector } from './secret-protector.js'
 
 const roots: string[] = []
 const NOW = new Date('2026-08-13T12:00:00.000Z')
@@ -90,7 +91,7 @@ function dailyCache(): DailyCache {
   return cache
 }
 
-async function setup(): Promise<{ dataDir: string; session: SessionCache; daily: DailyCache }> {
+async function setup(): Promise<{ dataDir: string; session: SessionCache; daily: DailyCache; endpointId: string }> {
   const root = await mkdtemp(join(tmpdir(), 'metrora-analytics-publication-'))
   roots.push(root)
   process.env['METRORA_CACHE_DIR'] = join(root, 'cache')
@@ -98,12 +99,18 @@ async function setup(): Promise<{ dataDir: string; session: SessionCache; daily:
   const daily = dailyCache()
   await saveCache(session)
   await saveDailyCache(daily)
-  return { dataDir: join(root, 'data'), session, daily }
+  const dataDir = join(root, 'data')
+  const identity = await loadOrCreateLocalEndpointIdentityV1({
+    dataDir,
+    protector: new Aes256GcmSecretProtector(Buffer.alloc(32, 23)),
+    randomUUID: () => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+  })
+  return { dataDir, session, daily, endpointId: identity.metadata.endpointId }
 }
 
 describe('generic canonical analytics publication boundary', () => {
   it('publishes from the exact completed cache objects and makes the bound headline readable', async () => {
-    const { dataDir, session, daily } = await setup()
+    const { dataDir, session, daily, endpointId } = await setup()
     const result = await publishCanonicalHistoryAnalyticsV1({
       sessionCache: session,
       dailyCache: daily,
@@ -141,10 +148,64 @@ describe('generic canonical analytics publication boundary', () => {
       c3: { cost: 2.5, calls: 1, inputTokens: 10, outputTokens: 20, cacheReadTokens: 5, cacheWriteTokens: 1 },
     })
     expect(canonicalSourceRecordFingerprintSha256V1({
-      endpointId: CANONICAL_ANALYTICS_HISTORY_SCOPE_ID_V1,
+      endpointId,
       provider: 'codex',
       privateDeduplicationKey: 'codex:test:1',
     })).toMatch(/^[a-f0-9]{64}$/u)
+  })
+
+  it('keeps an existing endpoint-scoped shadow on the same scope while the generation advances', async () => {
+    const { dataDir, session, daily } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, now: () => NOW })
+    expect(first.status).toBe('published')
+
+    const advancedSession = structuredClone(session)
+    advancedSession.providers.codex!.files['C:\\private\\codex-session.jsonl']!.turns[0]!.calls.push(call({
+      deduplicationKey: 'codex:test:2',
+      timestamp: '2026-08-13T10:01:00.000Z',
+    }))
+    await saveCache(advancedSession)
+    const advanced = await publishCanonicalHistoryAnalyticsV1({
+      sessionCache: advancedSession,
+      dailyCache: daily,
+      dataDir,
+      now: () => NOW,
+    })
+
+    expect(advanced.status).toBe('published')
+    expect(advanced.shadowStatus).toBe('advanced')
+    expect(advanced.parity?.outcome).toBe('matched')
+  })
+
+  it('accepts a completed-generation headline after provider cache bytes advance, while standalone reads remain current-cache bound', async () => {
+    const { dataDir, session, daily } = await setup()
+    const published = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, now: () => NOW })
+    expect(published.generation?.id).toMatch(/^[a-f0-9]{64}$/u)
+
+    await writeFile(sessionCachePath(), JSON.stringify({
+      ...session,
+      providers: {
+        ...session.providers,
+        codex: { ...session.providers.codex!, envFingerprint: 'provider-wrote-after-publication' },
+      },
+    }), 'utf8')
+
+    const query = [{
+      id: 'today',
+      range: { start: NOW, end: new Date('2026-08-13T23:59:59.999Z') },
+      provider: 'all',
+    }] as const
+    await expect(readC3CliStatusBatchV1(query, {
+      dataDir,
+      now: () => NOW,
+      timeZone: 'UTC',
+      expectedGenerationId: published.generation?.id,
+    })).resolves.toMatchObject([{ code: 'C3_SUPPORTED_MATCH' }])
+    await expect(readC3CliStatusBatchV1(query, {
+      dataDir,
+      now: () => NOW,
+      timeZone: 'UTC',
+    })).resolves.toMatchObject([{ code: 'C3_UNAVAILABLE', reason: 'authority-generation-mismatch' }])
   })
 
   it('does not publish in snapshot mode', async () => {
