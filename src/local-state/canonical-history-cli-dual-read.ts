@@ -14,7 +14,10 @@ import type {
   CanonicalHistoryCliHeadlineIndexV1,
 } from './canonical-history-cli-headline-index.js'
 import { canonicalAnalyticsGenerationIdSha256V1 } from './canonical-history-identity.js'
-import { readCanonicalHistoryShadowHeadlineIndexV1 } from './canonical-history-shadow-headline-index-read.js'
+import {
+  readCanonicalHistoryShadowHeadlineIndexFastV1,
+  readCanonicalHistoryShadowHeadlineIndexV1,
+} from './canonical-history-shadow-headline-index-read.js'
 
 export const C3_CLI_STATUS_MAX_HEAD_AGE_MS = 15 * 60 * 1000
 
@@ -47,6 +50,7 @@ export type C3CliStatusDualReadReason =
   | 'missing-authority-generation'
   | 'authority-generation-mismatch'
   | 'daily-authority-untrusted'
+  | 'provider-mismatch'
 
 export type C3CliStatusDualReadInputV1 = {
   id: string
@@ -227,6 +231,14 @@ function evaluateC3Input(
   const invalid = validateInput(input)
   if (invalid) return { code: invalid.code, reason: invalid.reason }
 
+  if (input.provider !== 'all') {
+    const indexedProviders = new Set([
+      ...index.dailySnapshots.flatMap(day => Object.keys(day.providers)),
+      ...index.activityDays.flatMap(day => Object.keys(day.providers)),
+    ])
+    if (!indexedProviders.has(input.provider)) return { code: 'C3_UNSUPPORTED_QUERY', reason: 'provider-mismatch' }
+  }
+
   const { start, end } = queryDates(input.range)
   const currentDate = toDateString(now)
   if (end > currentDate) return { code: 'C3_UNSUPPORTED_QUERY', reason: 'history-out-of-range' }
@@ -268,6 +280,11 @@ function evaluateC3Input(
   return { code: 'C3_SUPPORTED_MATCH', c3 }
 }
 
+/**
+ * Parity-gated terminal comparison. With no trusted expected generation this
+ * deliberately reads only the compact persisted headline artifact; the
+ * current legacy tuple remains the user-visible authority.
+ */
 export async function compareC3CliStatusBatchV1(
   inputs: readonly C3CliStatusDualReadInputV1[],
   options: C3CliStatusDualReadOptionsV1 = {},
@@ -277,9 +294,12 @@ export async function compareC3CliStatusBatchV1(
   const validInputs = inputs.filter((_, index) => early[index] === undefined)
   if (validInputs.length === 0) return early.map(result => result!)
 
-  let loaded: Awaited<ReturnType<typeof readCanonicalHistoryShadowHeadlineIndexV1>>
+  const readHeadlineIndex = options.expectedGenerationId === undefined
+    ? readCanonicalHistoryShadowHeadlineIndexFastV1
+    : readCanonicalHistoryShadowHeadlineIndexV1
+  let loaded: Awaited<ReturnType<typeof readCanonicalHistoryShadowHeadlineIndexFastV1>>
   try {
-    loaded = await readCanonicalHistoryShadowHeadlineIndexV1({ dataDir: options.dataDir })
+    loaded = await readHeadlineIndex({ dataDir: options.dataDir })
   } catch {
     return inputs.map((input, index) => early[index] ?? unavailable(input, 'invalid-shadow'))
   }
@@ -380,11 +400,11 @@ async function currentAuthorityReason(
 }
 
 /**
- * Read the bounded headline subset from C3. This is the primary-read boundary:
- * it accepts no query unless the indexed projection, exact cache generations,
- * and trusted daily authority all pass. A trusted expected generation binds
- * the read to the completed publication without rereading current cache bytes;
- * standalone reads retain current-cache validation and its write-race check.
+ * Full canonical-validation C3 read. This is intentionally separate from the
+ * terminal parity-gated comparison above: it opens and hashes the immutable
+ * snapshot, validates cache authority, and retains the standalone/current-cache
+ * write-race checks. A trusted expected generation binds the read to the exact
+ * completed publication without requiring equality with newer cache bytes.
  * Every failure is a normal legacy-fallback result.
  */
 export async function readC3CliStatusBatchV1(

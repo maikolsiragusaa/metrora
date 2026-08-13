@@ -17,6 +17,7 @@ import {
 import {
   compareC3CliStatusBatchV1,
   compareC3CliStatusV1,
+  readC3CliStatusV1,
   type C3CliStatusHeadlineV1,
 } from './canonical-history-cli-dual-read.js'
 
@@ -237,6 +238,11 @@ describe('C3 CLI status dual-read boundary', () => {
       id: 'timezone', range: dateRange('2026-08-01'), provider: 'all', legacy: expectedHistorical(),
     }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ === 'UTC' ? 'Europe/Rome' : 'UTC' })
     expect(timezone).toMatchObject({ code: 'C3_UNSUPPORTED_QUERY', reason: 'timezone-reprojection' })
+
+    const provider = await compareC3CliStatusV1({
+      id: 'provider', range: dateRange('2026-08-01'), provider: 'claude', legacy: headline(),
+    }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ })
+    expect(provider).toMatchObject({ code: 'C3_UNSUPPORTED_QUERY', reason: 'provider-mismatch' })
   })
 
   it('fails safe for missing, stale, malformed, and integrity-invalid shadow state', async () => {
@@ -262,7 +268,7 @@ describe('C3 CLI status dual-read boundary', () => {
     const corruptPaths = canonicalHistoryShadowPathsV1(corruptDir)
     const head = JSON.parse(await readFile(corruptPaths.head, 'utf8')) as { projectionSha256: string }
     await writeFile(join(corruptPaths.snapshots, `${head.projectionSha256}.json`), '{"broken":true}')
-    await expect(compareC3CliStatusV1(input, { dataDir: corruptDir, now: () => NOW, timeZone: LOCAL_TZ }))
+    await expect(readC3CliStatusV1({ id: input.id, range: input.range, provider: input.provider }, { dataDir: corruptDir, now: () => NOW, timeZone: LOCAL_TZ }))
       .resolves.toMatchObject({ code: 'C3_UNAVAILABLE', reason: 'invalid-shadow' })
 
     const unsupportedDir = await temporaryDataDir()
@@ -334,6 +340,64 @@ describe('C3 CLI status dual-read boundary', () => {
       id: 'missing-snapshot', range: dateRange('2026-08-02'), provider: 'all', legacy: expectedCurrent(),
     }, { dataDir: missingSnapshotDir, now: () => NOW, timeZone: LOCAL_TZ }))
       .resolves.toMatchObject({ code: 'C3_UNAVAILABLE', reason: 'invalid-shadow' })
+  })
+
+  it('keeps terminal parity reads bounded while the full reader still catches snapshot corruption', async () => {
+    const dataDir = await temporaryDataDir()
+    await publish(dataDir)
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    const head = JSON.parse(await readFile(paths.head, 'utf8')) as { projectionSha256: string }
+    await writeFile(join(paths.snapshots, `${head.projectionSha256}.json`), '{"broken":true}')
+
+    await expect(compareC3CliStatusV1({
+      id: 'fast', range: dateRange('2026-08-02'), provider: 'all', legacy: expectedCurrent(),
+    }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ }))
+      .resolves.toMatchObject({ code: 'C3_SUPPORTED_MATCH' })
+    await expect(readC3CliStatusV1({
+      id: 'deep', range: dateRange('2026-08-02'), provider: 'all',
+    }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ }))
+      .resolves.toMatchObject({ code: 'C3_UNAVAILABLE', reason: 'invalid-shadow' })
+  })
+
+  it('fails fast when the compact index seal no longer matches the head', async () => {
+    const dataDir = await temporaryDataDir()
+    await publish(dataDir)
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    const head = JSON.parse(await readFile(paths.head, 'utf8')) as Record<string, unknown>
+    await writeFile(paths.head, JSON.stringify({ ...head, snapshotSha256: 'e'.repeat(64) }))
+
+    await expect(compareC3CliStatusV1({
+      id: 'seal', range: dateRange('2026-08-02'), provider: 'all', legacy: expectedCurrent(),
+    }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ }))
+      .resolves.toMatchObject({ code: 'C3_UNAVAILABLE', reason: 'invalid-shadow' })
+  })
+
+  it('fails closed when the compact index names a different projection', async () => {
+    const dataDir = await temporaryDataDir()
+    await publish(dataDir)
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    const head = JSON.parse(await readFile(paths.head, 'utf8')) as { projectionSha256: string }
+    const indexPath = join(paths.headlineIndexes, `${head.projectionSha256}.json`)
+    const index = JSON.parse(await readFile(indexPath, 'utf8')) as Record<string, unknown>
+    await writeFile(indexPath, JSON.stringify({ ...index, projectionSha256: 'f'.repeat(64) }))
+
+    await expect(compareC3CliStatusV1({
+      id: 'projection-mismatch', range: dateRange('2026-08-02'), provider: 'all', legacy: expectedCurrent(),
+    }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ }))
+      .resolves.toMatchObject({ code: 'C3_UNAVAILABLE', reason: 'invalid-shadow' })
+  })
+
+  it('keeps a previously published head readable when only the index carries the snapshot seal', async () => {
+    const dataDir = await temporaryDataDir()
+    await publish(dataDir)
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    const { snapshotSha256: _snapshotSha256, ...legacyHead } = JSON.parse(await readFile(paths.head, 'utf8')) as Record<string, unknown>
+    await writeFile(paths.head, JSON.stringify(legacyHead))
+
+    await expect(compareC3CliStatusV1({
+      id: 'legacy-head', range: dateRange('2026-08-02'), provider: 'all', legacy: expectedCurrent(),
+    }, { dataDir, now: () => NOW, timeZone: LOCAL_TZ }))
+      .resolves.toMatchObject({ code: 'C3_SUPPORTED_MATCH' })
   })
 
   it('keeps a valid old head readable when an unreferenced newer snapshot is corrupt', async () => {

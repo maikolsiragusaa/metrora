@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks'
 
 import { renderStatusBar } from '../format.js'
+import { isSnapshotReadMode } from '../read-lifecycle.js'
 import type { DurablePeriod } from '../usage-aggregator.js'
 import { observeC3CliStatusDualReadV1 } from './canonical-history-cli-primary.js'
 import type { C3CliStatusDualReadResultV1 } from './canonical-history-cli-dual-read.js'
@@ -19,7 +20,6 @@ function headline(value: DurablePeriod['data']) {
 function report(
   today: DurablePeriod,
   month: DurablePeriod,
-  generationId: string | undefined,
   dualRead: readonly C3CliStatusDualReadResultV1[],
   statusLine: string | undefined,
   headlineReadMs: number,
@@ -29,19 +29,13 @@ function report(
     kind: 'metrora-c3-analytics-lifecycle-v1',
     legacy: { today: headline(today.data), month: headline(month.data) },
     c3: { today: dualRead[0]?.c3, month: dualRead[1]?.c3 },
-    generationId,
-    publication: { today: today.canonicalPublication, month: month.canonicalPublication },
     dualRead: dualRead.map(result => ({ id: result.id, code: result.code, reason: result.reason })),
-    primary: statusLine === undefined ? 'LEGACY_FALLBACK' : 'C3_PRIMARY',
-    performance: {
-      legacyRefreshMs: { today: today.legacyRefreshMs, month: month.legacyRefreshMs },
-      c3PublicationMs: { today: today.canonicalPublication.timingsMs, month: month.canonicalPublication.timingsMs },
-      headlineReadMs,
-    },
+    primary: statusLine === undefined ? 'LEGACY_FALLBACK' : 'PARITY_GATED_C3_RENDER',
+    performance: { headlineReadMs },
   })}\n`)
 }
 
-function renderC3TerminalStatusLineV1(
+function renderParityGatedC3TerminalStatusLineV1(
   dualRead: readonly C3CliStatusDualReadResultV1[],
 ): string | undefined {
   if (dualRead.length !== 2 || !dualRead.every(result => result.code === 'C3_SUPPORTED_MATCH' && result.c3 !== undefined)) return undefined
@@ -61,23 +55,18 @@ export async function readC3TerminalStatusForDurablePeriodsV1(
   today: DurablePeriod,
   month: DurablePeriod,
 ): Promise<string | undefined> {
-  const generationId = today.canonicalPublication.status === 'published'
-    && month.canonicalPublication.status === 'published'
-    && today.canonicalPublication.generation?.id === month.canonicalPublication.generation?.id
-    ? month.canonicalPublication.generation?.id
-    : undefined
-  if (generationId === undefined) {
-    report(today, month, generationId, [], undefined, 0)
+  if (isSnapshotReadMode()) {
+    report(today, month, [], undefined, 0)
     return undefined
   }
   const startedAt = performance.now()
-  const dualRead = await observeC3CliStatusDualReadV1(provider, project, exclude, today.data, month.data, generationId)
+  const dualRead = await observeC3CliStatusDualReadV1(provider, project, exclude, today.data, month.data)
   const headlineReadMs = performance.now() - startedAt
   if (dualRead.length !== 2 || !dualRead.every(result => result.code === 'C3_SUPPORTED_MATCH')) {
-    report(today, month, generationId, dualRead, undefined, headlineReadMs)
+    report(today, month, dualRead, undefined, headlineReadMs)
     return undefined
   }
-  const statusLine = renderC3TerminalStatusLineV1(dualRead)
-  report(today, month, generationId, dualRead, statusLine, headlineReadMs)
+  const statusLine = renderParityGatedC3TerminalStatusLineV1(dualRead)
+  report(today, month, dualRead, statusLine, headlineReadMs)
   return statusLine
 }

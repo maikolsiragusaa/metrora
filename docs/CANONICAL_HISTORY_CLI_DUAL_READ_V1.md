@@ -3,18 +3,20 @@
 ## Problem
 
 Metrora needs a fast, fail-safe read boundary for the compact terminal
-headline while preserving the existing status authority until a persisted C3
-head is proven current against the local cache and live source set.
+headline while preserving the existing legacy status result as the immediate
+authority. C3 rendering is an optional parity-gated projection of that result.
 
 ## Current publication ownership
 
-Canonical analytics history is published by the generic analytics lifecycle at
-the end of `buildDurablePeriod()`, after the ordinary fresh session refresh and
-trusted daily hydration have completed. The publisher consumes the completed
-in-memory SessionCache v8 and DailyCache v18 objects and calls the existing
-projection, parity observer, and shadow-store contracts. It owns no Workspace
-creation, evidence acceptance, disclosure, or reviewed-production candidate
-authority.
+Canonical analytics history is published only by explicit Metrora-owned
+analytics triggers. The generic publisher consumes the completed in-memory
+SessionCache v8 and DailyCache v18 objects and calls the existing projection,
+parity observer, and shadow-store contracts. It owns no Workspace creation,
+evidence acceptance, disclosure, or reviewed-production candidate authority.
+
+`buildDurablePeriod()` is a legacy analytics builder. It does not publish,
+rebuild, reconcile, persist, or deep-validate canonical history. Ordinary
+terminal status therefore does not synchronously publish C3.
 
 The reviewed-production scanner remains a consumer/trigger for Workspace and
 reuses the same generic publisher. It is not the owner of canonical analytics
@@ -56,35 +58,48 @@ are not part of C3 history. These generation identifiers are freshness
 evidence only. They are not observation identity, activity identity, public
 history identity, cross-device identity, or an accounting authority.
 
-The accepted C3 head is a point-in-time authority generation. It is bound to
-the exact SessionCache payload digest, DailyCache payload digest, source
-manifest digest, projection digest, snapshot digest, and headline-index digest
-that completed together. Provider bytes written after that generation do not
-invalidate the already-completed generation. The next normal fresh lifecycle
-decides whether a refresh is required and publishes a new generation; the C3
-read path does not run a second discovery race.
+The generic publication boundary binds a C3 head to the exact SessionCache
+payload digest, DailyCache payload digest, source manifest digest, projection
+digest, snapshot digest, and headline-index digest that completed together.
+That metadata remains useful to deep readers and later publication triggers;
+it is not a freshness claim made by the terminal consumer.
 
-Snapshot mode performs no discovery, provider refresh, or publication. It reads
-only the last accepted analytics generation and uses it only when its cache
-authority generation still matches the accepted snapshot.
+Snapshot mode remains legacy-only for this tranche. It performs no C3
+publication or terminal C3 read and does not mutate shadow state.
 
 ## Read cost
 
 The canonical projection remains the accounting authority. The compact,
 content-addressed headline index is derived during publication and is bound to
-the exact projection digest and immutable snapshot bytes. Standalone reads
-without a trusted expected generation hash current cache bytes and preserve the
-existing source-freshness checks. A read carrying the exact generation from the
-same completed lifecycle validates the index/shadow binding to that generation
-without rereading current cache bytes. The index can always be regenerated from
-the projection and cannot replace it.
+the projection digest, snapshot seal, index kind/version, and its own content
+digest.
+
+The terminal path reads only the small `head.json` seal, the compact headline
+index, and snapshot-file metadata (`stat`). It does not open or hash the
+canonical snapshot, parse the full projection, reconcile retained history,
+discover providers, invoke parsers, hydrate daily state, serialize caches, or
+hash current cache generations. The canonical snapshot is still checked for
+existence; its content hash remains a full-validation concern.
+
+An older persisted C3 index is harmless: if its supported Today/Month tuple
+matches the just-computed legacy tuple, the terminal may render the compact
+result. If source activity advanced and the tuple differs, legacy wins. C3 is
+not an independent accounting authority on this path.
 
 Timings from a small synthetic soak are not representative of a large local
 user corpus. Large-corpus checks must record the session-cache and canonical
-snapshot sizes and separate legacy refresh, C3 publication, and one validated
-headline/index read. These measurements are evidence for the reviewed change,
-not an arbitrary correctness target. The existing legacy fallback remains the
-only user-visible path until a stable real hit is observed.
+snapshot sizes and separate legacy status, no-C3 status, parity-gated C3
+status, mismatch fallback, and one bounded headline/index read. Publication
+performance is a separate follow-up; it must not block ordinary interactive
+status.
+
+The fast reader fails closed on missing or malformed head/index state, missing
+snapshot files, head/index projection or snapshot-seal mismatch, unsupported
+versions, invalid queries, unsupported providers or filters, timezone mismatch,
+and incomplete requested periods. It intentionally does not claim to detect
+in-place corruption of snapshot bytes without opening them; the full canonical
+reader remains the deep integrity path, and the terminal result remains gated
+by parity with the current legacy tuple.
 
 ## Floating-point contract
 
@@ -105,7 +120,7 @@ The boundary returns one of:
 
 Every unavailable, stale, unsupported, or integrity-invalid C3 result selects
 the unchanged legacy status path. For supported terminal queries, C3 becomes
-primary only when the index generation matches the same lifecycle generation
-that produced the legacy tuple and the diagnostic parity result is an exact
-match. The read boundary remains removable: future work can remove the legacy
-aggregation after sufficient soak without changing the C3 authority contract.
+renderable only when the compact artifact is valid and the diagnostic parity
+result is an exact match. The visible result remains the legacy result
+otherwise. The read boundary remains removable: future work can change or
+remove the C3 projection without changing the legacy accounting contract.

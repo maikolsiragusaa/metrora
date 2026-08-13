@@ -15,7 +15,11 @@ import {
   type CanonicalHistoryReadProjectionV1,
 } from './canonical-history-read-projection.js'
 import { authorityGenerationForSidecarV1, type CurrentCacheAuthorityGenerationV1 } from '../cache-generation.js'
-import { ensureCanonicalHistoryCliHeadlineIndexV1, prepareCanonicalHistoryCliHeadlineIndexStoreV1 } from './canonical-history-cli-headline-index-store.js'
+import {
+  canonicalHistoryShadowSnapshotSha256V1,
+  ensureCanonicalHistoryCliHeadlineIndexV1,
+  prepareCanonicalHistoryCliHeadlineIndexStoreV1,
+} from './canonical-history-cli-headline-index-store.js'
 import { defaultMetroraDataDir } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
@@ -35,6 +39,7 @@ const CanonicalHistoryShadowHeadV1Schema = z.strictObject({
   kind: z.literal(CANONICAL_HISTORY_SHADOW_HEAD_KIND),
   version: z.literal(CANONICAL_HISTORY_SHADOW_STORE_VERSION),
   projectionSha256: Sha256DigestSchema,
+  snapshotSha256: Sha256DigestSchema.optional(),
   updatedAt: TimestampSchema,
 })
 
@@ -517,6 +522,7 @@ export async function persistCanonicalHistoryShadowV1(
       await atomicWritePrivateFile(targetPath, immutableSnapshotBytes)
     }
     if (!immutableSnapshotBytes) throw new CanonicalHistoryShadowStoreIntegrityError('canonical history shadow snapshot bytes are unavailable')
+    const snapshotSha256 = canonicalHistoryShadowSnapshotSha256V1(immutableSnapshotBytes)
 
     const headlineIndexStartedAt = performance.now()
     await ensureCanonicalHistoryCliHeadlineIndexV1({
@@ -533,7 +539,7 @@ export async function persistCanonicalHistoryShadowV1(
     })
     options.onHeadlineIndexPersisted?.(performance.now() - headlineIndexStartedAt)
 
-    if (previousDigest === projectionSha256) {
+    if (previousDigest === projectionSha256 && previous?.head.snapshotSha256 === snapshotSha256) {
       return {
         status: 'unchanged' as const,
         projectionSha256,
@@ -545,6 +551,7 @@ export async function persistCanonicalHistoryShadowV1(
       kind: CANONICAL_HISTORY_SHADOW_HEAD_KIND,
       version: CANONICAL_HISTORY_SHADOW_STORE_VERSION,
       projectionSha256,
+      snapshotSha256,
       updatedAt: now().toISOString(),
     })
     await atomicWritePrivateFile(paths.head, JSON.stringify(head))
@@ -568,6 +575,10 @@ export async function readCanonicalHistoryShadowHeadV1(
   const paths = canonicalHistoryShadowPathsV1(options.dataDir ?? defaultMetroraDataDir())
   const loaded = await readHeadSnapshot(paths)
   return loaded?.head
+}
+
+export function parseCanonicalHistoryShadowHeadV1(bytes: Uint8Array): CanonicalHistoryShadowHeadV1 {
+  return parseHead(bytes)
 }
 
 export async function readCanonicalHistoryShadowProjectionV1(

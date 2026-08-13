@@ -81,3 +81,25 @@ export async function readCanonicalHistoryCliHeadlineIndexV1(input: {
   }
   return index
 }
+
+/**
+ * Read the compact headline artifact without opening the canonical snapshot.
+ * The persisted head supplies the snapshot seal; the full reader above still
+ * hashes snapshot bytes when canonical integrity validation is required.
+ */
+export async function readCanonicalHistoryCliHeadlineIndexFastV1(input: {
+  dataDir: string
+  projectionSha256: string
+  snapshotSha256?: string
+}): Promise<CanonicalHistoryCliHeadlineIndexV1> {
+  const bytes = await readOptionalPrivateFile(indexPath(input.dataDir, input.projectionSha256))
+  if (!bytes) throw new Error('canonical history CLI headline index is missing')
+  const index = parseCanonicalHistoryCliHeadlineIndexV1(bytes)
+  if (index.projectionSha256 !== input.projectionSha256) {
+    throw new Error('canonical history CLI headline index names a different projection')
+  }
+  if (input.snapshotSha256 !== undefined && index.snapshotSha256 !== input.snapshotSha256) {
+    throw new Error('canonical history CLI headline index snapshot seal does not match')
+  }
+  return index
+}

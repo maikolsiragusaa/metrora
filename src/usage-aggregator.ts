@@ -1,5 +1,4 @@
 import { homedir } from 'node:os'
-import { performance } from 'node:perf_hooks'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
@@ -26,7 +25,6 @@ export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
-import { publishCanonicalHistoryAnalyticsSafelyV1, type CanonicalHistoryAnalyticsPublicationV1 } from './local-state/canonical-history-analytics-publication.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -230,11 +228,10 @@ export type DurablePeriod = {
   todayAllDays: DailyEntry[]
   /// The scan range the live parse covered (today-only when the period is today).
   scanRange: DateRange
-  canonicalPublication: CanonicalHistoryAnalyticsPublicationV1; legacyRefreshMs: number
 }
 
 export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<DurablePeriod> {
-  const lifecycleStartedAt = performance.now(); const pf = opts.provider ?? 'all'
+  const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
   const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
   const projectFilter = { include: opts.project, exclude: opts.exclude }
@@ -310,8 +307,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   }
 
   const carriedCostUSD = days.reduce((s, d) => s + (d.carried ? d.cost : 0), 0)
-  const legacyRefreshMs = performance.now() - lifecycleStartedAt; const canonicalPublication = await publishCanonicalHistoryAnalyticsSafelyV1({ dailyCache: cache })
-  return { data, days, carriedCostUSD, liveProjects, cache, todayAllDays, scanRange, canonicalPublication, legacyRefreshMs }
+  return { data, days, carriedCostUSD, liveProjects, cache, todayAllDays, scanRange }
 }
 
 /**
