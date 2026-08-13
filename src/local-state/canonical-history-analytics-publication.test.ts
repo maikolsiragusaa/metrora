@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { currentTzKey, emptyCache as emptyDailyCache, saveDailyCache, type DailyCache } from '../daily-cache.js'
+import { currentTzKey, dailyCachePath, emptyCache as emptyDailyCache, loadDailyCache, saveDailyCache, type DailyCache } from '../daily-cache.js'
 import { readCurrentDailyCacheGenerationV1, readCurrentSessionCacheGenerationV1 } from '../cache-generation.js'
 import { isSnapshotReadMode } from '../read-lifecycle.js'
-import { CACHE_VERSION, emptyCache as emptySessionCache, saveCache, sessionCachePath, type CachedCall, type SessionCache } from '../session-cache.js'
+import { CACHE_VERSION, emptyCache as emptySessionCache, loadCache, saveCache, sessionCachePath, type CachedCall, type SessionCache } from '../session-cache.js'
 import { readC3CliStatusBatchV1 } from './canonical-history-cli-dual-read.js'
 import {
   canonicalSourceRecordFingerprintSha256V1,
@@ -114,6 +114,17 @@ async function setup(): Promise<{ dataDir: string; session: SessionCache; daily:
   return { dataDir, session, daily, endpointId: identity.metadata.endpointId }
 }
 
+async function setupWithoutEndpointIdentity(): Promise<{ dataDir: string; session: SessionCache; daily: DailyCache }> {
+  const root = await mkdtemp(join(tmpdir(), 'metrora-analytics-unbound-'))
+  roots.push(root)
+  process.env['METRORA_CACHE_DIR'] = join(root, 'cache')
+  const session = sessionCache()
+  const daily = dailyCache()
+  await saveCache(session)
+  await saveDailyCache(daily)
+  return { dataDir: join(root, 'data'), session, daily }
+}
+
 describe('generic canonical analytics publication boundary', () => {
   it('publishes from the exact completed cache objects and makes the bound headline readable', async () => {
     const { dataDir, session, daily, endpointId } = await setup()
@@ -160,6 +171,52 @@ describe('generic canonical analytics publication boundary', () => {
     })).toMatch(/^[a-f0-9]{64}$/u)
   })
 
+  it('seals the exact persisted objects even when normal daily hydration reordered fields', async () => {
+    const { dataDir, endpointId } = await setup()
+    const persistedSession = JSON.parse(await readFile(sessionCachePath(), 'utf8')) as SessionCache
+    const persistedDaily = JSON.parse(await readFile(dailyCachePath(), 'utf8')) as DailyCache
+
+    await expect(publishCanonicalHistoryAnalyticsV1({
+      sessionCache: persistedSession,
+      dailyCache: persistedDaily,
+      dataDir,
+      endpointId,
+      now: () => NOW,
+    })).resolves.toMatchObject({ status: 'published', parity: { outcome: 'matched' } })
+  })
+
+  it('seals the exact completed objects returned by the normal refresh loaders', async () => {
+    const { dataDir, endpointId } = await setup()
+    const loadedSession = await loadCache()
+    const loadedDaily = await loadDailyCache()
+
+    await expect(publishCanonicalHistoryAnalyticsV1({
+      sessionCache: loadedSession,
+      dailyCache: loadedDaily,
+      dataDir,
+      endpointId,
+      now: () => NOW,
+    })).resolves.toMatchObject({ status: 'published', parity: { outcome: 'matched' } })
+  })
+
+  it('fails closed without a canonical endpoint identity and does not invent one', async () => {
+    const { dataDir, session, daily } = await setupWithoutEndpointIdentity()
+    const result = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, now: () => NOW })
+
+    expect(result).toMatchObject({ status: 'failed', reason: 'endpoint-identity-unavailable' })
+    expect(await readFile(join(dataDir, 'identity', 'endpoint-identity.v1.json')).catch(() => undefined)).toBeUndefined()
+    expect(await readFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'head.json')).catch(() => undefined)).toBeUndefined()
+  })
+
+  it('accepts a trusted host-supplied endpoint scope without Workspace or key-material access', async () => {
+    const { dataDir, session, daily } = await setupWithoutEndpointIdentity()
+    const endpointId = 'host-supplied-endpoint-111111111111111111111111'
+    const result = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+
+    expect(result).toMatchObject({ status: 'published', parity: { outcome: 'matched' } })
+    expect(await readFile(join(dataDir, 'identity', 'endpoint-identity.v1.json')).catch(() => undefined)).toBeUndefined()
+  })
+
   it('skips an exactly unchanged analytics generation without rebuilding the projection', async () => {
     const { dataDir, session, daily, endpointId } = await setup()
     const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
@@ -178,6 +235,21 @@ describe('generic canonical analytics publication boundary', () => {
     expect(second.timingsMs.parityMs).toBe(0)
     expect(second.timingsMs.shadowPersistenceMs).toBe(0)
     expect(await readFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'head.json'))).toEqual(before)
+  })
+
+  it('fails closed when a supplied endpoint scope conflicts with the established C3 scope', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+    expect(first.status).toBe('published')
+
+    const conflicting = await publishCanonicalHistoryAnalyticsV1({
+      sessionCache: session,
+      dailyCache: daily,
+      dataDir,
+      endpointId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+      now: () => NOW,
+    })
+    expect(conflicting).toMatchObject({ status: 'failed', reason: 'endpoint-scope-mismatch' })
   })
 
   it('does not trust a same-stat mutated snapshot after a cold trust lifecycle', async () => {
@@ -329,6 +401,25 @@ describe('generic canonical analytics publication boundary', () => {
     expect(result).toMatchObject({ status: 'skipped', reason: 'snapshot-read' })
     expect(result.projectionSha256).toBeUndefined()
     expect(await readFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'head.json')).catch(() => null)).toBeNull()
+  })
+
+  it('rejects a stale in-memory object against a newer cache generation sidecar', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const stale = structuredClone(session)
+    const newer = structuredClone(session)
+    const file = newer.providers.codex!.files['C:\\private\\codex-session.jsonl']!
+    file.turns[0]!.calls.push(call({ deduplicationKey: 'codex:test:newer-generation' }))
+    file.fingerprint.sizeBytes += 1
+    await saveCache(newer)
+
+    const result = await publishCanonicalHistoryAnalyticsV1({
+      sessionCache: stale,
+      dailyCache: daily,
+      dataDir,
+      endpointId,
+      now: () => NOW,
+    })
+    expect(result).toMatchObject({ status: 'failed', reason: 'generation-seal-failed' })
   })
 
   it('fails closed when the lifecycle stamps do not bind the provided objects', async () => {
