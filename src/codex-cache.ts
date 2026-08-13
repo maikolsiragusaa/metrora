@@ -5,6 +5,7 @@ import { join } from 'path'
 
 import type { ParsedProviderCall } from './providers/types.js'
 import { getMetroraCacheDir } from './product-paths.js'
+import { flattenParsedProviderCalls } from './string-retention.js'
 
 // v4: attribute MCP calls emitted as event_msg/mcp_tool_call_end (issue #478).
 // Recent Codex sessions cached under v3 dropped these, so force a re-parse.
@@ -116,7 +117,7 @@ export async function writeCachedCodexResults(
       mtimeMs: fingerprint.mtimeMs,
       sizeBytes: fingerprint.sizeBytes,
       project,
-      calls,
+      calls: flattenParsedProviderCalls(calls),
     }
   } catch {}
 }

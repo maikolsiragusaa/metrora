@@ -59,7 +59,7 @@ import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, u
 import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
-
+import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
 
 
 
@@ -1264,10 +1264,10 @@ export function collectToolResultMeta(entry: JournalEntry, map: Map<string, Tool
 export function collectSessionMeta(entry: JournalEntry, meta: SessionMeta): void {
   if (entry.type === 'ai-title') {
     const t = (entry as Record<string, unknown>)['aiTitle']
-    if (typeof t === 'string' && t.trim()) meta.title = t.trim().slice(0, 200)
+    if (typeof t === 'string' && t.trim()) meta.title = flattenStringPrefix(t.trim(), 200)
   } else if (entry.type === 'pr-link') {
     const url = (entry as Record<string, unknown>)['prUrl']
-    if (typeof url === 'string' && url && !meta.prLinks.includes(url)) meta.prLinks.push(url)
+    if (typeof url === 'string' && url && !meta.prLinks.includes(url)) meta.prLinks.push(flattenString(url))
   }
   if (entry.isSidechain === true) {
     meta.isSidechain = true
@@ -1275,7 +1275,7 @@ export function collectSessionMeta(entry: JournalEntry, meta: SessionMeta): void
     // it (32/32 on real data; cross-checked against the owning directory at
     // stamp time). First value wins; every entry in the file carries the same id.
     const sid = (entry as Record<string, unknown>)['sessionId']
-    if (!meta.parentSessionId && typeof sid === 'string' && sid) meta.parentSessionId = sid
+    if (!meta.parentSessionId && typeof sid === 'string' && sid) meta.parentSessionId = flattenString(sid)
   }
   // Parent side: the `Agent`/`Task` spawn result records the spawned agent's id in
   // `toolUseResult.agentId`; pair it with the `tool_result` block's `tool_use_id`
@@ -1305,11 +1305,11 @@ export function collectSessionMeta(entry: JournalEntry, meta: SessionMeta): void
           const matches = results.filter(b => JSON.stringify(b['content']) === turContent)
           if (matches.length === 1) spawnId = matches[0]!['tool_use_id'] as string
         }
-        if (spawnId) meta.agentSpawnLinks[agentId] = spawnId
+        if (spawnId) meta.agentSpawnLinks[flattenString(agentId)] = flattenString(spawnId)
         // We know this parent spawned `agentId` (its result named it) but could not
         // pair the exact tool_use: record it as an AMBIGUOUS pairing so a late child
         // can still fold via the grace window. Not the same as an absent spawn.
-        else if (!meta.ambiguousSpawnAgentIds.includes(agentId)) meta.ambiguousSpawnAgentIds.push(agentId)
+        else if (!meta.ambiguousSpawnAgentIds.includes(agentId)) meta.ambiguousSpawnAgentIds.push(flattenString(agentId))
       }
     }
   }
@@ -1646,7 +1646,7 @@ export function extractMcpInventory(entries: JournalEntry[]): string[] {
     for (const name of a.addedNames) {
       if (typeof name !== 'string') continue
       if (!isMcpToolName(name)) continue
-      inventory.add(name)
+      inventory.add(flattenString(name))
     }
   }
   if (inventory.size === 0) return []
@@ -1657,7 +1657,7 @@ function extractCanonicalCwd(entries: JournalEntry[]): string | undefined {
   for (const entry of entries) {
     if (typeof entry.cwd !== 'string') continue
     const cwd = entry.cwd.trim()
-    if (cwd) return cwd
+    if (cwd) return flattenString(cwd)
   }
   return undefined
 }
@@ -1921,7 +1921,7 @@ export async function readAgentType(filePath: string): Promise<string | undefine
   const metaPath = filePath.replace(/\.jsonl$/, '.meta.json')
   try {
     const t = (JSON.parse(await readFile(metaPath, 'utf8')) as { agentType?: unknown }).agentType
-    if (typeof t === 'string' && t.trim()) return t.trim().slice(0, 100)
+    if (typeof t === 'string' && t.trim()) return flattenStringPrefix(t.trim(), 100)
   } catch { /* missing or unreadable meta */ }
   // Workflow agents always live under `subagents/workflows/`, so fall back to that
   // even when the meta sidecar is absent.
@@ -2352,7 +2352,7 @@ function summarizeProject(project: string, projectPath: string, sessions: Sessio
 // ambiguous and must never silently move spend between repositories.
 const PR_URL_IN_TEXT_RE = /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/g
 export function extractPrUrlsFromText(text: string): string[] {
-  return [...new Set(text.match(PR_URL_IN_TEXT_RE) ?? [])].sort()
+  return [...new Set((text.match(PR_URL_IN_TEXT_RE) ?? []).map(flattenString))].sort()
 }
 
 export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
@@ -2437,9 +2437,9 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     existingAssignment: call.costAssignment,
   })
   return {
-    provider: call.provider,
-    model: call.model,
-    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    provider: flattenString(call.provider),
+    model: flattenString(call.model),
+    ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2450,16 +2450,16 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     ...(settlement.storedLegacyCostUSD !== undefined ? { legacyCostUSD: settlement.storedLegacyCostUSD } : {}),
     isEstimated: call.costIsEstimated || undefined,
     speed: call.speed,
-    timestamp: call.timestamp,
-    tools: call.tools,
-    bashCommands: call.bashCommands,
-    skills: call.skills ?? [],
-    subagentTypes: call.subagentTypes ?? [],
-    deduplicationKey: call.deduplicationKey,
-    project: call.project,
-    projectPath: call.projectPath,
-    workingDirectory: call.workingDirectory,
-    toolSequence: call.toolSequence,
+    timestamp: flattenString(call.timestamp),
+    tools: flattenStringArray(call.tools),
+    bashCommands: flattenStringArray(call.bashCommands),
+    skills: flattenStringArray(call.skills ?? []),
+    subagentTypes: flattenStringArray(call.subagentTypes ?? []),
+    deduplicationKey: flattenString(call.deduplicationKey),
+    ...(call.project !== undefined ? { project: flattenString(call.project) } : {}),
+    ...(call.projectPath !== undefined ? { projectPath: flattenString(call.projectPath) } : {}),
+    ...(call.workingDirectory !== undefined ? { workingDirectory: flattenString(call.workingDirectory) } : {}),
+    toolSequence: flattenToolSequence(call.toolSequence),
     ...(call.locAdded ? { locAdded: call.locAdded } : {}),
     ...(call.locRemoved ? { locRemoved: call.locRemoved } : {}),
     ...(call.editFailed ? { editFailed: call.editFailed } : {}),
@@ -2502,9 +2502,9 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     existingAssignment: call.isLocalSavings ? undefined : call.costAssignment,
   })
   return {
-    provider: call.provider,
-    model: call.model,
-    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    provider: flattenString(call.provider),
+    model: flattenString(call.model),
+    ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2515,16 +2515,16 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     ...(settlement.storedLegacyCostUSD !== undefined ? { legacyCostUSD: settlement.storedLegacyCostUSD } : {}),
     isEstimated: call.isEstimated || undefined,
     speed: call.speed,
-    timestamp: call.timestamp,
-    tools: call.tools,
-    bashCommands: call.bashCommands,
-    skills: call.skills,
-    subagentTypes: call.subagentTypes,
-    deduplicationKey: call.deduplicationKey,
-    ...(call.nativeMessageId ? { nativeMessageId: call.nativeMessageId } : {}),
-    ...(call.nativeEmissionTimestamp ? { nativeEmissionTimestamp: call.nativeEmissionTimestamp } : {}),
+    timestamp: flattenString(call.timestamp),
+    tools: flattenStringArray(call.tools),
+    bashCommands: flattenStringArray(call.bashCommands),
+    skills: flattenStringArray(call.skills ?? []),
+    subagentTypes: flattenStringArray(call.subagentTypes ?? []),
+    deduplicationKey: flattenString(call.deduplicationKey),
+    ...(call.nativeMessageId ? { nativeMessageId: flattenString(call.nativeMessageId) } : {}),
+    ...(call.nativeEmissionTimestamp ? { nativeEmissionTimestamp: flattenString(call.nativeEmissionTimestamp) } : {}),
     ...(call.nativeSnapshotTerminal ? { nativeSnapshotTerminal: true } : {}),
-    toolSequence: call.toolSequence,
+    toolSequence: flattenToolSequence(call.toolSequence),
     ...(call.locAdded ? { locAdded: call.locAdded } : {}),
     ...(call.locRemoved ? { locRemoved: call.locRemoved } : {}),
     ...(call.interrupted ? { interrupted: true } : {}),
@@ -2538,14 +2538,14 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
 
 function parsedTurnToCachedTurn(turn: ParsedTurn): CachedTurn {
   return {
-    timestamp: turn.timestamp,
-    sessionId: turn.sessionId,
-    userMessage: turn.userMessage.slice(0, 2000),
+    timestamp: flattenString(turn.timestamp),
+    sessionId: flattenString(turn.sessionId),
+    userMessage: flattenStringPrefix(turn.userMessage, 2000),
     calls: turn.assistantCalls.map(apiCallToCachedCall),
     // Stored per-turn directly (already sorted/deduped in groupIntoTurns), unlike
     // gitBranch's change-detection dedup, so each turn's refs are self-contained.
-    ...(turn.prRefs?.length ? { prRefs: turn.prRefs } : {}),
-    ...(turn.spawnToolUseIds?.length ? { spawnToolUseIds: turn.spawnToolUseIds } : {}),
+    ...(turn.prRefs?.length ? { prRefs: flattenStringArray(turn.prRefs) } : {}),
+    ...(turn.spawnToolUseIds?.length ? { spawnToolUseIds: flattenStringArray(turn.spawnToolUseIds) } : {}),
   }
 }
 
@@ -2559,7 +2559,7 @@ export function parsedTurnsToCachedTurns(turns: ParsedTurn[]): CachedTurn[] {
   let prevBranch: string | undefined
   for (const turn of turns) {
     const cached = parsedTurnToCachedTurn(turn)
-    if (turn.gitBranch && turn.gitBranch !== prevBranch) cached.gitBranch = turn.gitBranch
+    if (turn.gitBranch && turn.gitBranch !== prevBranch) cached.gitBranch = flattenString(turn.gitBranch)
     if (turn.gitBranch) prevBranch = turn.gitBranch
     out.push(cached)
   }
@@ -2569,11 +2569,11 @@ export function parsedTurnsToCachedTurns(turns: ParsedTurn[]): CachedTurn[] {
 function providerCallToCachedTurn(call: ParsedProviderCall): CachedTurn {
   const prRefs = extractPrUrlsFromText(call.userMessage)
   return {
-    timestamp: call.timestamp,
-    sessionId: call.sessionId,
-    userMessage: call.userMessage.slice(0, 2000),
+    timestamp: flattenString(call.timestamp),
+    sessionId: flattenString(call.sessionId),
+    userMessage: flattenStringPrefix(call.userMessage, 2000),
     calls: [providerCallToCachedCall(call)],
-    ...(prRefs.length ? { prRefs } : {}),
+    ...(prRefs.length ? { prRefs: flattenStringArray(prRefs) } : {}),
   }
 }
 
@@ -2592,18 +2592,18 @@ function providerCallsToCachedTurns(calls: ParsedProviderCall[]): CachedTurn[] {
     if (!turn) {
       const prRefs = extractPrUrlsFromText(call.userMessage)
       turn = {
-        timestamp: call.timestamp,
-        sessionId: call.sessionId,
-        userMessage: call.userMessage.slice(0, 2000),
+        timestamp: flattenString(call.timestamp),
+        sessionId: flattenString(call.sessionId),
+        userMessage: flattenStringPrefix(call.userMessage, 2000),
         calls: [],
-        ...(prRefs.length ? { prRefs } : {}),
+        ...(prRefs.length ? { prRefs: flattenStringArray(prRefs) } : {}),
       }
       grouped.set(key, turn)
       turns.push(turn)
     }
     turn.calls.push(providerCallToCachedCall(call))
     const refs = extractPrUrlsFromText(call.userMessage)
-    if (refs.length) turn.prRefs = [...new Set([...(turn.prRefs ?? []), ...refs])].sort()
+    if (refs.length) turn.prRefs = flattenStringArray([...new Set([...(turn.prRefs ?? []), ...refs])].sort())
   }
 
   return turns
