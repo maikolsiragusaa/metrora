@@ -7,6 +7,7 @@ import { getMetroraCacheDir } from './product-paths.js'
 import { sanitizeModels } from './daily-cache-model-detail.js'
 import type { CategoryDayStats, DailyCache, DailyEntry, ModelDayStats, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
 import { mergeDayEntries, setOwn } from './daily-cache-merge.js'
+import { writeDailyCacheGenerationFromPayloadV1 } from './cache-generation.js'
 // v18: Copilot accounting changed; v17 history is adopted untrusted, re-derived where sources survive, and carried otherwise.
 // Bumped to 16: historical per-call cost assignments. Surviving source days
 // re-derive under immutable date-effective settlements; sourceless provider
@@ -370,6 +371,10 @@ export async function saveDailyCache(cache: DailyCache): Promise<void> {
   }
   try {
     await rename(tempPath, finalPath)
+    // Publish the exact payload digest only after the cache rename. A crash or
+    // concurrent writer therefore makes the stamp stale/missing and forces a
+    // safe legacy fallback instead of authorizing a different daily cache.
+    await writeDailyCacheGenerationFromPayloadV1(finalPath, cache, payload).catch(() => {})
   } catch (err) {
     try { await unlink(tempPath) } catch { /* ignore */ }
     throw err

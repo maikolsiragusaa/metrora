@@ -7,6 +7,7 @@ import {
   EndpointIdentityRecoveryRequiredError,
   LocalEndpointIdentityMetadataV1Schema,
   loadOrCreateLocalEndpointIdentityV1,
+  readLocalEndpointIdentityMetadataV1,
   rotateLocalEndpointIdentityV1,
   signWithLocalEndpointIdentityV1,
   verifyLocalEndpointIdentitySignatureV1,
@@ -74,6 +75,17 @@ describe.sequential('local endpoint identity v1', () => {
     expect(metadataText).not.toContain('eventIdentityKeyBase64')
     expect(sealedText).not.toContain('privateKeyPkcs8Base64')
     expect(sealedText).not.toContain('eventIdentityKeyBase64')
+  })
+
+  it('reads the same durable public endpoint scope again after restart', async () => {
+    const dataDir = await root()
+    const first = await loadOrCreateLocalEndpointIdentityV1({ dataDir, protector: protector() })
+
+    const afterRestart = await readLocalEndpointIdentityMetadataV1({ dataDir })
+    expect(afterRestart?.endpointId).toBe(first.metadata.endpointId)
+    expect(await readLocalEndpointIdentityMetadataV1({ dataDir })).toMatchObject({
+      endpointId: first.metadata.endpointId,
+    })
   })
 
   it('serializes concurrent initialization into one endpoint generation', async () => {

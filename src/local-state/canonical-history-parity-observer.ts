@@ -30,6 +30,14 @@ import {
   persistCanonicalHistoryShadowV1,
   type PersistCanonicalHistoryShadowResultV1,
 } from './canonical-history-shadow-store.js'
+import {
+  authorityGenerationForSidecarV1,
+  cachePayloadSha256V1,
+  readCurrentDailyCacheGenerationV1,
+  readCurrentSessionCacheGenerationV1,
+} from '../cache-generation.js'
+import { dailyCachePath } from '../daily-cache.js'
+import { sessionCachePath } from '../session-cache.js'
 
 export const CANONICAL_HISTORY_PARITY_OBSERVER_VERSION = 1 as const
 
@@ -394,6 +402,24 @@ function assertDailyParity(dailyCache: DailyCache, projection: CanonicalHistoryR
   }
 }
 
+async function currentAuthorityGenerationForInput(input: {
+  sessionCache: SessionCache
+  dailyCache: DailyCache
+}): Promise<Parameters<typeof authorityGenerationForSidecarV1>[0] | undefined> {
+  const [session, daily] = await Promise.all([
+    readCurrentSessionCacheGenerationV1(sessionCachePath()),
+    readCurrentDailyCacheGenerationV1(dailyCachePath()),
+  ])
+  if (!session || !daily) return undefined
+  // The observer must not publish a projection under a newer or different
+  // object than the exact cache authorities it parity-checked. JSON.stringify
+  // is the same materialized payload contract used by the atomic save paths;
+  // a mismatch is a safe publication refusal.
+  if (cachePayloadSha256V1(Buffer.from(JSON.stringify(input.sessionCache), 'utf8')) !== session.payloadSha256) return undefined
+  if (cachePayloadSha256V1(Buffer.from(JSON.stringify(input.dailyCache), 'utf8')) !== daily.payloadSha256) return undefined
+  return { session, daily }
+}
+
 export async function observeCanonicalHistoryParityV1(
   input: CanonicalHistoryReadProjectionInputV1,
   dependencies: CanonicalHistoryParityObserverDependenciesV1,
@@ -414,7 +440,17 @@ export async function observeCanonicalHistoryParityV1(
   }
 
   const project = dependencies.project ?? projectCanonicalHistoryReadV1
-  const persist = dependencies.persist ?? (projection => persistCanonicalHistoryShadowV1(projection))
+  const persist = dependencies.persist ?? (async projection => {
+    const authorityGeneration = await currentAuthorityGenerationForInput(input)
+    if (!authorityGeneration) {
+      throw new CanonicalHistoryParityMismatchError(
+        'canonical history parity requires current session and daily cache generations',
+      )
+    }
+    return persistCanonicalHistoryShadowV1(projection, {
+      authorityGeneration,
+    })
+  })
   const projection = project(input)
   const expected = expectedSessionAuthority({
     endpointId: input.endpointId,

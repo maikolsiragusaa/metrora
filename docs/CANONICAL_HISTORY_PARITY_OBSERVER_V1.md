@@ -10,13 +10,17 @@ It does not change what Metrora reports, display a new history surface, or make 
 
 ## Invocation boundary
 
-The observer runs after the trusted reviewed-production scanner has:
+The observer runs after the generic analytics lifecycle has:
 
-1. explicitly refreshed the canonical session cache;
-2. loaded a complete current-version session cache;
-3. received the endpoint identifier from the protected desktop runtime.
+1. completed the ordinary fresh session-cache refresh;
+2. finalized a complete current-version SessionCache v8;
+3. finalized a complete, watermark-trusted DailyCache v18.
 
-The observer then loads the current daily cache. It runs only when that cache is both complete and backed by a trusted watermark.
+The analytics publisher supplies the already-completed in-memory authorities
+and a local analytics-history scope. It performs no Workspace creation,
+evidence acceptance, disclosure, candidate generation, source discovery, or
+second parse. The reviewed-production scanner may trigger the same publisher,
+but does not own this publication boundary.
 
 Renderer code cannot supply:
 
@@ -141,7 +145,10 @@ Current product authority remains unchanged:
 - session cache: source-present normalized call materialization;
 - trusted daily cache: durable daily totals and carried aggregate-only history;
 - canonical history shadow: removable diagnostic snapshots only;
-- CLI, desktop reports, Workspace, Android and APIs: no reads from the shadow store.
+- CLI terminal status reads only the bounded, generation-sealed headline index
+  when same-generation parity passes; all other CLI and desktop/report
+  surfaces remain legacy-owned.
+- Workspace, Android and APIs: no reads from the shadow store.
 
 Deleting the complete `history-shadow/v1` directory must leave current product behavior unchanged.
 

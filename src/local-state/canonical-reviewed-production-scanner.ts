@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import * as z from 'zod/v4'
 
@@ -22,6 +21,12 @@ import type {
   CanonicalReviewedProductionCandidateV1,
   CanonicalReviewedProductionScanV1,
 } from './reviewed-production-orchestrator.js'
+import {
+  canonicalSourceRecordFingerprintSha256V1,
+} from './canonical-history-identity.js'
+import { publishCanonicalHistoryAnalyticsV1 } from './canonical-history-analytics-publication.js'
+
+export { canonicalSourceRecordFingerprintSha256V1 } from './canonical-history-identity.js'
 
 const AdapterVersionSchema = z.string().trim().min(1).max(64)
 
@@ -49,35 +54,6 @@ export class CanonicalReviewedProductionScannerIntegrityError extends Error {
     super(message)
     this.name = 'CanonicalReviewedProductionScannerIntegrityError'
   }
-}
-
-/**
- * Public, path-free fingerprint for one canonical source record.
- *
- * The endpoint id scopes the fingerprint so identical local source records on
- * different endpoints do not become a new cross-device correlation handle.
- * The private deduplication key is hashed and never leaves this trusted scanner
- * boundary. Provider parsers already enforce this identity globally within a
- * provider, so no local path is needed in the public digest.
- */
-export function canonicalSourceRecordFingerprintSha256V1(input: {
-  endpointId: string
-  provider: string
-  privateDeduplicationKey: string
-}): string {
-  if (input.privateDeduplicationKey.length === 0) {
-    throw new CanonicalReviewedProductionScannerIntegrityError(
-      'canonical cached call has an empty private deduplication key',
-    )
-  }
-  return createHash('sha256')
-    .update('metrora-canonical-source-record-v1\0')
-    .update(input.endpointId)
-    .update('\0')
-    .update(input.provider)
-    .update('\0')
-    .update(input.privateDeduplicationKey)
-    .digest('hex')
 }
 
 function inScopeCalls(file: CachedFile, notBeforeMs: number): CachedCall[] {
@@ -128,14 +104,13 @@ function defaultDependencies(): CanonicalReviewedProductionScannerDependenciesV1
     codexModelProvider: readCodexSessionModelProvider,
     observeCanonicalHistoryParity: async ({ endpointId, sessionCache }) => {
       const dailyCache = await loadDailyCache()
-      // The parity observer is diagnostic and must never mint authority from an
-      // incomplete or unstamped daily history. A later trusted refresh will run
-      // it automatically through this same path.
-      if (dailyCache.complete !== true || dailyCache.watermarkTrusted !== true) return
-      const { observeCanonicalHistoryParityV1 } = await import('./canonical-history-parity-observer.js')
-      await observeCanonicalHistoryParityV1({ endpointId, sessionCache, dailyCache }, {
-        sourceFingerprint: canonicalSourceRecordFingerprintSha256V1,
-      })
+      // Workspace remains only a trigger/consumer. The generic analytics
+      // publication boundary owns projection, parity, generation sealing and
+      // shadow/index persistence; no Workspace authority is passed into it.
+      const publication = await publishCanonicalHistoryAnalyticsV1({ endpointId, sessionCache, dailyCache })
+      if (publication.status === 'failed') {
+        throw new Error(`canonical analytics publication failed: ${publication.reason ?? 'unknown'}`)
+      }
     },
     reportCanonicalHistoryParityFailure: reportParityFailure,
   }

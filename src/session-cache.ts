@@ -8,6 +8,7 @@ import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
 import { validateCachedFile, validateSessionCache } from './session-cache-validation.js'
+import { writeSessionCacheGenerationFromPayloadV1 } from './cache-generation.js'
 // ── Types ──────────────────────────────────────────────────────────────
 
 export type CachedUsage = {
@@ -426,12 +427,10 @@ async function adoptLegacyCache(): Promise<SessionCache> {
 export async function saveCache(cache: SessionCache, verifyStillOwner?: () => Promise<boolean>): Promise<boolean> {
   const dir = getCacheDir()
   if (!existsSync(dir)) await mkdir(dir, { recursive: true })
-
   const finalPath = getCachePath()
   const tempPath = `${finalPath}.${randomBytes(8).toString('hex')}.tmp`
   delete (cache as { _dirty?: boolean })._dirty
   const payload = JSON.stringify(cache)
-
   const handle = await open(tempPath, 'w', 0o600)
   try {
     await handle.writeFile(payload, { encoding: 'utf-8' })
@@ -461,6 +460,7 @@ export async function saveCache(cache: SessionCache, verifyStillOwner?: () => Pr
       }
     }
     if (!renamed) throw new Error('session cache rename failed')
+    await writeSessionCacheGenerationFromPayloadV1(finalPath, cache, payload).catch(() => {})
     return true
   } catch (err) {
     await retryCacheFileMutation(() => unlink(tempPath))

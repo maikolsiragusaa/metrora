@@ -19,7 +19,7 @@ import {
   type SessionCache,
 } from '../session-cache.js'
 import { assertCanonicalCollectorIdentity } from '../provider-parse-authorities.js'
-import { canonicalSourceRecordFingerprintSha256V1 } from './canonical-reviewed-production-scanner.js'
+import { canonicalSourceRecordFingerprintSha256V1 } from './canonical-history-identity.js'
 
 export const CANONICAL_HISTORY_READ_PROJECTION_VERSION = 1 as const
 
