@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { randomBytes } from 'crypto'
 
 import type { ParsedProviderCall } from './providers/types.js'
+import { flattenParsedProviderCalls } from './string-retention.js'
 
 // Bumped to 3 for the workspace-aware breakdown change: the cursor parser
 // now derives `sessionId` from the bubble row key (the real composer id)
@@ -93,7 +94,7 @@ export async function writeCachedResults(
     dbMtimeMs: fp.mtimeMs,
     dbSizeBytes: fp.size,
     lookbackFloor,
-    calls,
+    calls: flattenParsedProviderCalls(calls),
   }
 
   // Atomic write: stage to a randomized temp file in the same directory,
