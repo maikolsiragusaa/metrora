@@ -14,10 +14,11 @@ import {
   CANONICAL_HISTORY_READ_PROJECTION_VERSION,
   type CanonicalHistoryReadProjectionV1,
 } from './canonical-history-read-projection.js'
+import { authorityGenerationForSidecarV1, type CurrentCacheAuthorityGenerationV1 } from '../cache-generation.js'
+import { ensureCanonicalHistoryCliHeadlineIndexV1, prepareCanonicalHistoryCliHeadlineIndexStoreV1 } from './canonical-history-cli-headline-index-store.js'
 import { defaultMetroraDataDir } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
-
 export const CANONICAL_HISTORY_SHADOW_SNAPSHOT_KIND = 'metrora.canonical-history-shadow-snapshot' as const
 export const CANONICAL_HISTORY_SHADOW_HEAD_KIND = 'metrora.canonical-history-shadow-head' as const
 export const CANONICAL_HISTORY_SHADOW_STORE_VERSION = 1 as const
@@ -40,9 +41,15 @@ const CanonicalHistoryShadowHeadV1Schema = z.strictObject({
 export type CanonicalHistoryShadowSnapshotV1 = z.infer<typeof CanonicalHistoryShadowSnapshotV1Schema>
 export type CanonicalHistoryShadowHeadV1 = z.infer<typeof CanonicalHistoryShadowHeadV1Schema>
 
+export type ReadCanonicalHistoryShadowProjectionV1 = { head: CanonicalHistoryShadowHeadV1; snapshot: CanonicalHistoryShadowSnapshotV1; projection: CanonicalHistoryReadProjectionV1 }
+
 export type CanonicalHistoryShadowStoreOptions = {
   dataDir?: string
   now?: () => Date
+  authorityGeneration?: CurrentCacheAuthorityGenerationV1
+  analyticsGenerationId?: string
+  /** Optional diagnostic timing hook; it never changes publication semantics. */
+  onHeadlineIndexPersisted?: (elapsedMs: number) => void
 }
 
 export type CanonicalHistoryShadowEntityReconciliationV1 = {
@@ -411,6 +418,7 @@ export function canonicalHistoryShadowPathsV1(dataDir: string) {
   return {
     root,
     snapshots: join(root, 'snapshots'),
+    headlineIndexes: join(root, 'headline-indexes'),
     head: join(root, 'head.json'),
   }
 }
@@ -422,6 +430,7 @@ function snapshotPath(paths: ReturnType<typeof canonicalHistoryShadowPathsV1>, d
 async function prepare(paths: ReturnType<typeof canonicalHistoryShadowPathsV1>): Promise<void> {
   await ensurePrivateDirectory(paths.snapshots)
   await cleanupStaleAtomicTemps(paths.snapshots)
+  await prepareCanonicalHistoryCliHeadlineIndexStoreV1(paths.headlineIndexes)
   await cleanupStaleAtomicTemps(paths.root)
 }
 
@@ -489,23 +498,13 @@ export async function persistCanonicalHistoryShadowV1(
     const targetBytes = await readOptionalPrivateFile(targetPath)
     const target = targetBytes ? parseSnapshot(targetBytes, projectionSha256) : undefined
 
-    if (
-      target &&
-      canonicalProjectionJson(target.record.projection) !== canonicalProjectionJson(projection)
-    ) {
+    if (target && canonicalProjectionJson(target.record.projection) !== canonicalProjectionJson(projection)) {
       throw new CanonicalHistoryShadowStoreIntegrityError('canonical history shadow digest collision')
     }
 
     const reconciliation = reconcileProjection(previous?.index, currentIndex)
 
-    if (previousDigest === projectionSha256) {
-      return {
-        status: 'unchanged' as const,
-        projectionSha256,
-        reconciliation,
-      }
-    }
-
+    let immutableSnapshotBytes = targetBytes
     if (!target) {
       const record = CanonicalHistoryShadowSnapshotV1Schema.parse({
         kind: CANONICAL_HISTORY_SHADOW_SNAPSHOT_KIND,
@@ -514,7 +513,32 @@ export async function persistCanonicalHistoryShadowV1(
         createdAt: now().toISOString(),
         projection,
       })
-      await atomicWritePrivateFile(targetPath, JSON.stringify(record))
+      immutableSnapshotBytes = Buffer.from(JSON.stringify(record), 'utf-8')
+      await atomicWritePrivateFile(targetPath, immutableSnapshotBytes)
+    }
+    if (!immutableSnapshotBytes) throw new CanonicalHistoryShadowStoreIntegrityError('canonical history shadow snapshot bytes are unavailable')
+
+    const headlineIndexStartedAt = performance.now()
+    await ensureCanonicalHistoryCliHeadlineIndexV1({
+      dataDir,
+      projection,
+      projectionSha256,
+      snapshotBytes: immutableSnapshotBytes,
+      authorityGeneration: options.authorityGeneration
+        ? {
+            ...authorityGenerationForSidecarV1(options.authorityGeneration),
+            ...(options.analyticsGenerationId ? { analyticsGenerationId: options.analyticsGenerationId } : {}),
+          }
+        : undefined,
+    })
+    options.onHeadlineIndexPersisted?.(performance.now() - headlineIndexStartedAt)
+
+    if (previousDigest === projectionSha256) {
+      return {
+        status: 'unchanged' as const,
+        projectionSha256,
+        reconciliation,
+      }
     }
 
     const head = CanonicalHistoryShadowHeadV1Schema.parse({
@@ -544,4 +568,17 @@ export async function readCanonicalHistoryShadowHeadV1(
   const paths = canonicalHistoryShadowPathsV1(options.dataDir ?? defaultMetroraDataDir())
   const loaded = await readHeadSnapshot(paths)
   return loaded?.head
+}
+
+export async function readCanonicalHistoryShadowProjectionV1(
+  options: Pick<CanonicalHistoryShadowStoreOptions, 'dataDir'> = {},
+): Promise<ReadCanonicalHistoryShadowProjectionV1 | undefined> {
+  const paths = canonicalHistoryShadowPathsV1(options.dataDir ?? defaultMetroraDataDir())
+  const loaded = await readHeadSnapshot(paths)
+  if (!loaded) return undefined
+  return {
+    head: loaded.head,
+    snapshot: loaded.snapshot,
+    projection: loaded.snapshot.projection as CanonicalHistoryReadProjectionV1,
+  }
 }

@@ -13,6 +13,7 @@ import { dateKey } from './day-aggregator.js'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
 import { buildPeriodData, buildMenubarPayloadForRange, buildDurablePeriod, type DurablePeriod } from './usage-aggregator.js'
+import { readC3TerminalStatusForDurablePeriodsV1 } from './local-state/canonical-history-cli-status-primary.js'
 import { renderDashboard } from './dashboard.js'
 import { renderOverview } from './overview.js'
 import { runWebDashboard } from './web-dashboard.js'
@@ -44,11 +45,9 @@ import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from
 import { getPresetPlan, isPlanId, isPlanProvider, PLAN_IDS, PLAN_PROVIDERS, planDisplayName } from './plans.js'
 import { createRequire } from 'node:module'
 
-const require = createRequire(import.meta.url)
-const { version } = require('../package.json')
+const require = createRequire(import.meta.url); const { version } = require('../package.json')
 import { loadCurrency, getCurrency, isValidCurrencyCode } from './currency.js'
 import { CodexThroughputReader, newestCodexSession, renderCodexThroughput } from './codex-throughput.js'
-
 // A downstream reader that closes the pipe early (`| head`, quitting `less`, or
 // a missing command) makes stdout writes fail with EPIPE. Exit cleanly rather
 // than crashing with an unhandled error event.
@@ -56,7 +55,6 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') process.exit(0)
   throw err
 })
-
 function collect(val: string, acc: string[]): string[] {
   acc.push(val)
   return acc
@@ -1143,7 +1141,6 @@ program
       console.log(JSON.stringify(payload))
       return
     }
-
     if (opts.format === 'json') {
       // Durable totals so the compact status matches the menubar / report.
       const todayDurable = await buildDurablePeriod(getDateRange('today'), { provider: pf, project: opts.project, exclude: opts.exclude })
@@ -1178,15 +1175,18 @@ program
       console.log(JSON.stringify(await attachPlanSummaries(payload)))
       return
     }
-
     const todayDurable = await buildDurablePeriod(getDateRange('today'), { provider: pf, project: opts.project, exclude: opts.exclude })
     const monthDurable = await buildDurablePeriod(getDateRange('month'), { provider: pf, project: opts.project, exclude: opts.exclude })
+    const c3Status = await readC3TerminalStatusForDurablePeriodsV1(pf, opts.project, opts.exclude, todayDurable, monthDurable)
+    if (c3Status !== undefined) {
+      console.log(c3Status)
+      return
+    }
     console.log(renderStatusBar([], {
       today: { cost: todayDurable.data.cost, calls: todayDurable.data.calls },
       month: { cost: monthDurable.data.cost, calls: monthDurable.data.calls },
     }))
   })
-
 program
   .command('today')
   .description('Today\'s usage dashboard')

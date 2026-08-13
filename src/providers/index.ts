@@ -36,6 +36,7 @@ import { zerostack } from './zerostack.js'
 import { grok } from './grok.js'
 import { ensureProviderEnvFingerprintAuthorities } from '../provider-parse-authorities.js'
 import type { Provider, SessionSource } from './types.js'
+import { discoverCodexSessionPathsForFreshness } from './freshness-discovery.js'
 
 // Install deterministic source/profile env inputs before parser code computes a
 // session-cache fingerprint. The installer is idempotent and intentionally does
@@ -289,6 +290,45 @@ export async function discoverAllSessions(
     all.push(...sessions)
   }
   return all
+}
+
+export type FreshnessDiscoveryResult = {
+  sources: SessionSource[]
+  fastProviders: ReadonlySet<string>
+}
+
+/**
+ * Discover the source locators needed by the existing snapshot-completeness
+ * contract. Providers with a path-only implementation avoid opening every
+ * source file; callers must use full discovery when a path is not already
+ * covered by the persisted authority manifest.
+ */
+export async function discoverAllSessionsForFreshness(
+  providerFilter?: string,
+  providerList?: Provider[],
+): Promise<FreshnessDiscoveryResult> {
+  const allProviders = providerList ?? await getAllProviders()
+  const filtered = providerFilter && providerFilter !== 'all'
+    ? allProviders.filter(p => p.name === providerFilter)
+    : allProviders
+  const discovered = await Promise.all(filtered.map(async provider => {
+    if (provider.name !== 'codex' || !provider.probeRoots) {
+      return { provider: provider.name, fast: false, sources: await safeDiscoverSessions(provider) }
+    }
+    try {
+      return {
+        provider: provider.name,
+        fast: true,
+        sources: await discoverCodexSessionPathsForFreshness(await provider.probeRoots()),
+      }
+    } catch {
+      return { provider: provider.name, fast: false, sources: await safeDiscoverSessions(provider) }
+    }
+  }))
+  return {
+    sources: discovered.flatMap(value => value.sources),
+    fastProviders: new Set(discovered.filter(value => value.fast).map(value => value.provider)),
+  }
 }
 
 export async function getProvider(name: string): Promise<Provider | undefined> {

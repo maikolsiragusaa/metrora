@@ -33,6 +33,7 @@ import {
   runtimeHistoricalPricingCacheKeyV1,
   withRuntimeHistoricalPricingV1,
 } from './pricing/runtime-cost-assignment.js'
+import { setLatestCompletedSessionCacheV1 } from './session-cache-authority.js'
 import type { ParsedProviderCall, SessionSource } from './providers/types.js'
 import type {
   ApiUsageIteration,
@@ -60,8 +61,6 @@ import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, re
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
-
-
 
 // Returns true for sessions whose canonical project key must NOT be derived
 // from the cwd. Cowork sessions come in two flavours:
@@ -3844,7 +3843,7 @@ async function runParse(
       if (refreshLock) throw new RefreshPublicationUnavailableError()
     }
   }
-  sessionHydrationComplete = true
+  sessionHydrationComplete = true; if (!readOnly) setLatestCompletedSessionCacheV1(diskCache)
 
   // Merge across providers by normalised project path so the same repository
   // is not double-counted when it was worked on with more than one tool

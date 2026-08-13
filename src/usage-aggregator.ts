@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { performance } from 'node:perf_hooks'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
@@ -25,6 +26,7 @@ export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
+import { publishCanonicalHistoryAnalyticsSafelyV1, type CanonicalHistoryAnalyticsPublicationV1 } from './local-state/canonical-history-analytics-publication.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -228,10 +230,11 @@ export type DurablePeriod = {
   todayAllDays: DailyEntry[]
   /// The scan range the live parse covered (today-only when the period is today).
   scanRange: DateRange
+  canonicalPublication: CanonicalHistoryAnalyticsPublicationV1; legacyRefreshMs: number
 }
 
 export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<DurablePeriod> {
-  const pf = opts.provider ?? 'all'
+  const lifecycleStartedAt = performance.now(); const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
   const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
   const projectFilter = { include: opts.project, exclude: opts.exclude }
@@ -263,15 +266,11 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
       const raw = fp(await parseAllSessions(periodInfo.range, 'all'))
       liveProjects = daysSelection ? filterProjectsByDays(raw, daysSelection.days) : raw
       scanRange = periodInfo.range
-      // A period that reaches today contains today's turns already, so derive the
-      // today slice from the same parse instead of scanning today again.
-      todayAllDays = rangeEndStr >= todayStr
+       todayAllDays = rangeEndStr >= todayStr
         ? aggregateProjectsIntoDays(raw).filter(d => d.date === todayStr)
         : aggregateProjectsIntoDays(fp(await parseAllSessions(todayRange, 'all'))).filter(d => d.date === todayStr)
     }
   } else {
-    // Provider-filtered: today's all-provider parse feeds the union (sliced
-    // below); the provider-scoped parse feeds the detail/enrichment fields.
     todayAllDays = aggregateProjectsIntoDays(fp(await parseAllSessions(todayRange, 'all'))).filter(d => d.date === todayStr)
     const rawProv = fp(await parseAllSessions(isTodayOnly ? todayRange : periodInfo.range, pf))
     liveProjects = daysSelection && !isTodayOnly ? filterProjectsByDays(rawProv, daysSelection.days) : rawProv
@@ -311,7 +310,8 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   }
 
   const carriedCostUSD = days.reduce((s, d) => s + (d.carried ? d.cost : 0), 0)
-  return { data, days, carriedCostUSD, liveProjects, cache, todayAllDays, scanRange }
+  const legacyRefreshMs = performance.now() - lifecycleStartedAt; const canonicalPublication = await publishCanonicalHistoryAnalyticsSafelyV1({ dailyCache: cache })
+  return { data, days, carriedCostUSD, liveProjects, cache, todayAllDays, scanRange, canonicalPublication, legacyRefreshMs }
 }
 
 /**
