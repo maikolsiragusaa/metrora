@@ -6,8 +6,11 @@ import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
 import { DAILY_CACHE_VERSION, dailyCachePath, type DailyCache } from '../daily-cache.js'
 import {
   authorityGenerationForSidecarV1,
+  cachePayloadMatchesValueV1,
+  dailyCachePayloadEvidenceV1,
   readDailyCacheGenerationV1,
   readSessionCacheGenerationV1,
+  sessionCachePayloadEvidenceV1,
   type CurrentCacheAuthorityGenerationV1,
 } from '../cache-generation.js'
 import { isSnapshotReadMode } from '../read-lifecycle.js'
@@ -124,6 +127,7 @@ export type CanonicalHistoryAnalyticsPublicationV1 = {
     | 'incomplete-session-authority'
     | 'untrusted-daily-authority'
     | 'endpoint-identity-unavailable'
+    | 'endpoint-scope-mismatch'
     | 'generation-seal-failed'
     | 'unchanged-generation'
     | 'parity-failed'
@@ -204,8 +208,14 @@ export async function publishCanonicalHistoryAnalyticsV1(
   const dailyForPayload = { ...options.dailyCache } as DailyCache
   if (options.dailyCache.watermarkTrusted === true) dailyForPayload.watermarkTrusted = true
   else delete dailyForPayload.watermarkTrusted
-  const sessionPayload = JSON.stringify(sessionForPayload)
-  const dailyPayload = JSON.stringify(dailyForPayload)
+  const sessionEvidence = sessionCachePayloadEvidenceV1(sessionCache)
+  const dailyEvidence = dailyCachePayloadEvidenceV1(options.dailyCache)
+  const sessionPayload = sessionEvidence
+    ? cachePayloadMatchesValueV1(sessionEvidence.payload, sessionForPayload) ? sessionEvidence.payload : undefined
+    : JSON.stringify(sessionForPayload)
+  const dailyPayload = dailyEvidence
+    ? cachePayloadMatchesValueV1(dailyEvidence.payload, dailyForPayload) ? dailyEvidence.payload : undefined
+    : JSON.stringify(dailyForPayload)
   let authorityGeneration: CurrentCacheAuthorityGenerationV1
   let generation: CanonicalHistoryAnalyticsGenerationV1
   const generationStartedAt = performance.now()
@@ -217,7 +227,7 @@ export async function publishCanonicalHistoryAnalyticsV1(
       readSessionCacheGenerationV1(sessionCachePath()),
       readDailyCacheGenerationV1(dailyCachePath()),
     ])
-    if (!session || !daily || session.payloadSha256 !== sha256(sessionPayload) || daily.payloadSha256 !== sha256(dailyPayload)) {
+    if (!session || !daily || !sessionPayload || !dailyPayload || session.payloadSha256 !== sha256(sessionPayload) || daily.payloadSha256 !== sha256(dailyPayload)) {
       throw new Error('cache generation seal did not match the completed analytics objects')
     }
     authorityGeneration = { session, daily }
@@ -253,6 +263,12 @@ export async function publishCanonicalHistoryAnalyticsV1(
   let compactForIncremental: Awaited<ReturnType<typeof readCanonicalHistoryShadowPublicationTrustV1>> | undefined
   try {
     compactForIncremental = await readCanonicalHistoryShadowPublicationTrustV1({ dataDir: options.dataDir })
+    if (
+      compactForIncremental?.headlineIndex.endpointScopeSha256 !== undefined
+      && compactForIncremental.headlineIndex.endpointScopeSha256 !== endpointScopeSha256
+    ) {
+      return failed(startedAt, 'endpoint-scope-mismatch', timings, generation)
+    }
     if (
       compactForIncremental
       && compactForIncremental.head.snapshotSha256 !== undefined

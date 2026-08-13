@@ -19,6 +19,20 @@ type FingerprintFields = {
   sqliteWal?: { mtimeMs: number; sizeBytes: number }
 }
 
+type CachePayloadEvidenceV1 = {
+  payload: string
+  payloadSha256: string
+}
+
+// The normal refresh lifecycle may hand publication a sanitized in-memory
+// object whose property insertion order is not the same as the immutable
+// bytes that were sealed by the cache save. Keep the exact completed payload
+// process-local and bind it to the object through a WeakMap. This is evidence,
+// not authority: publication still verifies the generation sidecar digest and
+// that the object has not changed since the evidence was attached.
+const sessionCachePayloadEvidence = new WeakMap<object, CachePayloadEvidenceV1>()
+const dailyCachePayloadEvidence = new WeakMap<object, CachePayloadEvidenceV1>()
+
 export type SessionSourceGenerationFileV1 = {
   pathSha256: string
   fingerprint: FingerprintFields
@@ -115,6 +129,42 @@ const DailyGenerationSchema = z.strictObject({
 
 function sha256(value: Uint8Array | string): string {
   return createHash('sha256').update(value).digest('hex')
+}
+
+function payloadText(payload: Uint8Array | string): string {
+  return typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8')
+}
+
+export function rememberSessionCachePayloadEvidenceV1(
+  cache: SessionCache,
+  payload: Uint8Array | string,
+): void {
+  const text = payloadText(payload)
+  sessionCachePayloadEvidence.set(cache, { payload: text, payloadSha256: sha256(text) })
+}
+
+export function rememberDailyCachePayloadEvidenceV1(
+  cache: DailyCache,
+  payload: Uint8Array | string,
+): void {
+  const text = payloadText(payload)
+  dailyCachePayloadEvidence.set(cache, { payload: text, payloadSha256: sha256(text) })
+}
+
+export function sessionCachePayloadEvidenceV1(cache: SessionCache): CachePayloadEvidenceV1 | undefined {
+  return sessionCachePayloadEvidence.get(cache)
+}
+
+export function dailyCachePayloadEvidenceV1(cache: DailyCache): CachePayloadEvidenceV1 | undefined {
+  return dailyCachePayloadEvidence.get(cache)
+}
+
+export function cachePayloadMatchesValueV1(payload: Uint8Array | string, value: unknown): boolean {
+  try {
+    return canonicalizeRfc8785(JSON.parse(payloadText(payload))) === canonicalizeRfc8785(value)
+  } catch {
+    return false
+  }
 }
 
 export function cachePayloadSha256V1(payload: Uint8Array | string): string {

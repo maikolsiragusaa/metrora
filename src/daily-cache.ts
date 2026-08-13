@@ -7,6 +7,7 @@ import type { DateRange, ProjectSummary } from './types.js'
 import { aggregateProjectsIntoDays, dateKeyInTz } from './day-aggregator.js'
 import { mergeTimezoneRebucketedDays } from './daily-cache-tz-reconcile.js'
 import * as core from './daily-cache-core.js'
+import { rememberDailyCachePayloadEvidenceV1 } from './cache-generation.js'
 
 export * from './daily-cache-core.js'
 
@@ -88,6 +89,12 @@ export async function loadDailyCache(): Promise<DailyCache> {
       await core.saveDailyCache(cache).catch(() => {})
     }
   }
+  try {
+    const payload = await readFile(core.dailyCachePath(), 'utf-8')
+    rememberDailyCachePayloadEvidenceV1(cache, payload)
+  } catch {
+    // The generation sidecar check below remains the publication authority.
+  }
   return cache
 }
 
@@ -99,6 +106,7 @@ export async function saveDailyCache(cache: DailyCache): Promise<void> {
     delete persisted.watermarkTrusted
   }
   await core.saveDailyCache(persisted)
+  rememberDailyCachePayloadEvidenceV1(cache, JSON.stringify(persisted))
 }
 
 export function addNewDays(cache: DailyCache, incoming: core.DailyEntry[], newestDate: string): DailyCache {

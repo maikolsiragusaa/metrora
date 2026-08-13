@@ -35,6 +35,10 @@ import {
 } from './canonical-history-retained-index.js'
 import { CanonicalHistoryShadowStoreIntegrityError } from './canonical-history-shadow-errors.js'
 import {
+  migrateCanonicalHistoryShadowLegacyAtPathsV1,
+  type CanonicalHistoryShadowLegacyMigrationResultV1,
+} from './canonical-history-shadow-migration.js'
+import {
   clearCanonicalHistoryShadowTrustMemoV1 as clearPublicationTrustMemoV1,
   readCanonicalHistoryPublicationTrustV1,
   rememberCanonicalHistoryPublicationTrustV1,
@@ -77,6 +81,8 @@ export type CanonicalHistoryShadowStoreOptions = {
   endpointScopeSha256?: string
   sourceIndex?: CanonicalHistoryPublicationSourceV1[]
   previousState?: CanonicalHistoryShadowLoadedStateV1
+  /** Test/diagnostic interruption point before a legacy head is upgraded. */
+  onLegacyHeadMigrationBeforeWrite?: () => void | Promise<void>
   /** Optional diagnostic timing hook; it never changes publication semantics. */
   onHeadlineIndexPersisted?: (elapsedMs: number) => void
 }
@@ -345,6 +351,23 @@ function parseHead(bytes: Uint8Array): CanonicalHistoryShadowHeadV1 {
   }
 }
 
+export async function migrateCanonicalHistoryShadowLegacyV1(
+  options: Pick<CanonicalHistoryShadowStoreOptions, 'dataDir' | 'now' | 'onLegacyHeadMigrationBeforeWrite'> = {},
+): Promise<CanonicalHistoryShadowLegacyMigrationResultV1> {
+  const dataDir = options.dataDir ?? defaultMetroraDataDir()
+  const paths = canonicalHistoryShadowPathsV1(dataDir)
+  return migrateCanonicalHistoryShadowLegacyAtPathsV1({
+    dataDir,
+    paths,
+    now: options.now,
+    parseHead,
+    parseSnapshot,
+    snapshotPath,
+    prepare,
+    onLegacyHeadMigrationBeforeWrite: options.onLegacyHeadMigrationBeforeWrite,
+  })
+}
+
 export type { CanonicalHistoryShadowPublicationTrustV1 } from './canonical-history-publication-trust.js'
 export const clearCanonicalHistoryShadowTrustMemoV1 = clearPublicationTrustMemoV1
 
@@ -353,6 +376,7 @@ export async function readCanonicalHistoryShadowPublicationTrustV1(
 ): Promise<CanonicalHistoryShadowPublicationTrustV1 | undefined> {
   const dataDir = options.dataDir ?? defaultMetroraDataDir()
   const paths = canonicalHistoryShadowPathsV1(dataDir)
+  await migrateCanonicalHistoryShadowLegacyV1({ dataDir })
   return readCanonicalHistoryPublicationTrustV1({
     dataDir,
     paths,
@@ -400,13 +424,21 @@ export async function persistCanonicalHistoryShadowV1(
   const projection = structuredClone(projectionInput)
   const currentIndex = indexProjection(projection)
   const projectionSha256 = canonicalHistoryShadowProjectionSha256V1(projection)
+  await migrateCanonicalHistoryShadowLegacyV1({
+    dataDir,
+    now,
+    onLegacyHeadMigrationBeforeWrite: options.onLegacyHeadMigrationBeforeWrite,
+  })
   await prepare(paths)
 
   return withLocalStateLease(paths.root, async () => {
     // A compact retained index is acceleration evidence only. If this is the
     // first publication in a process with an existing head, establish the
     // canonical deep-validation trust boundary before reading it.
-    await readCanonicalHistoryShadowPublicationTrustV1({ dataDir })
+    // Legacy migration ran before this lease was acquired. Read the generic
+    // trust boundary directly here so a sealed migration is not needlessly
+    // nested under a second lease for the same shadow root.
+    await readCanonicalHistoryPublicationTrustV1({ dataDir, paths, parseHead, parseSnapshot })
     const previous = await usePreviousStateIfCurrent(paths, options.previousState)
     const retained = await readCanonicalHistoryRetainedIndexV1(paths, parseSnapshot)
     assertCompatibleWithCanonicalHistoryRetainedV1(retained, currentIndex)
