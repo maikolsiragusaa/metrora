@@ -12,6 +12,11 @@ import {
   type CostAssignmentV1,
 } from '../pricing/cost-assignment.js'
 import { assertCanonicalCollectorIdentity } from '../provider-parse-authorities.js'
+import {
+  assertClaudeNativeReconciliationSafe,
+  isClaudeNativeReconciliationWinner,
+  reconcileClaudeNativeSessionCache,
+} from '../claude-native-reconciliation.js'
 import { CACHE_VERSION, type CachedCall, type SessionCache } from '../session-cache.js'
 import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
 import {
@@ -255,6 +260,12 @@ function expectedSessionAuthority(input: {
   const observations = new Map<string, ObservationPayload>()
   const activities = new Set<string>()
   const observationActivity = new Map<string, string>()
+  const claudeNativeReconciliation = reconcileClaudeNativeSessionCache(input.sessionCache)
+  try {
+    assertClaudeNativeReconciliationSafe(claudeNativeReconciliation)
+  } catch {
+    throw new CanonicalHistoryParityMismatchError('Claude native evidence cannot establish a canonical authority')
+  }
 
   for (const [storageNamespace, section] of Object.entries(input.sessionCache.providers)
     .sort(([left], [right]) => left.localeCompare(right))) {
@@ -262,14 +273,17 @@ function expectedSessionAuthority(input: {
       .sort(([left], [right]) => left.localeCompare(right))) {
       if (file.failed) continue
       for (const turn of file.turns) {
-        if (turn.calls.length === 0) continue
+        const calls = storageNamespace === 'claude'
+          ? turn.calls.filter(call => isClaudeNativeReconciliationWinner(call, claudeNativeReconciliation))
+          : turn.calls
+        if (calls.length === 0) continue
         const timestamp = TimestampSchema.safeParse(turn.timestamp)
         if (!timestamp.success) {
           throw new CanonicalHistoryParityMismatchError('canonical cached turn has an invalid timestamp')
         }
-        const collector = canonicalCollectorForCall(storageNamespace, turn.calls[0]!.provider)
+        const collector = canonicalCollectorForCall(storageNamespace, calls[0]!.provider)
         const observationIds: string[] = []
-        for (const call of turn.calls) {
+        for (const call of calls) {
           const payload = rawObservationPayload({
             endpointId: input.endpointId,
             storageNamespace,

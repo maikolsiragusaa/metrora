@@ -178,6 +178,74 @@ describe('canonical history read projection v1', () => {
     })).toThrow(CanonicalHistoryReadProjectionIntegrityError)
   })
 
+  it('projects the production Claude winner instead of retaining a weaker native snapshot', () => {
+    const partial = call({
+      provider: 'claude',
+      modelProvider: undefined,
+      nativeMessageId: 'native-clash',
+      nativeEmissionTimestamp: '2026-08-01T21:00:00.000Z',
+      nativeSnapshotTerminal: false,
+      deduplicationKey: 'native-clash',
+      usage: { ...call().usage, outputTokens: 2 },
+    })
+    const final = call({
+      provider: 'claude',
+      modelProvider: undefined,
+      nativeMessageId: 'native-clash',
+      nativeEmissionTimestamp: '2026-08-01T21:00:00.000Z',
+      nativeSnapshotTerminal: true,
+      deduplicationKey: 'native-clash',
+      usage: { ...call().usage, outputTokens: 20 },
+    })
+    const projection = project({
+      sessions: {
+        version: CACHE_VERSION,
+        complete: true,
+        providers: {
+          claude: {
+            envFingerprint: 'claude-test',
+            files: {
+              '/private/parent.jsonl': cachedFile([partial]),
+              '/private/sidechain.jsonl': cachedFile([final]),
+            },
+          },
+        },
+      },
+    })
+
+    expect(projection.observations).toHaveLength(1)
+    expect(projection.activities).toHaveLength(1)
+    expect(projection.observations[0]!.usage.outputTokens).toBe(20)
+  })
+
+  it('fails closed when Claude candidates have equal authority but conflicting accounting', () => {
+    const a = call({
+      provider: 'claude',
+      modelProvider: undefined,
+      nativeMessageId: 'native-ambiguous',
+      nativeEmissionTimestamp: '2026-08-01T21:00:00.000Z',
+      nativeSnapshotTerminal: true,
+      deduplicationKey: 'native-ambiguous',
+      usage: { ...call().usage, outputTokens: 2 },
+    })
+    const b = { ...a, usage: { ...a.usage, outputTokens: 3 } }
+    expect(() => project({
+      sessions: {
+        version: CACHE_VERSION,
+        complete: true,
+        providers: {
+          claude: {
+            envFingerprint: 'claude-test',
+            files: {
+              '/private/a.jsonl': cachedFile([a]),
+              '/private/b.jsonl': cachedFile([b]),
+            },
+          },
+        },
+      },
+    })).toThrow('equally authoritative')
+  })
+
   it('preserves source-less carried history without inventing observations or activities', () => {
     const projection = project({
       sessions: {
