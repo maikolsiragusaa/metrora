@@ -146,6 +146,20 @@ describe('canonical history shadow store v1', () => {
     expect(await readdir(paths.snapshots)).toEqual([`${first.projectionSha256}.json`])
   })
 
+  it('reconstructs the retained seal when the derived index is corrupt', async () => {
+    const dataDir = await temporaryDataDir()
+    const value = projection()
+    const first = await persistCanonicalHistoryShadowV1(value, { dataDir })
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    await writeFile(join(paths.root, 'retained-index.v1.json'), '{broken')
+
+    const second = await persistCanonicalHistoryShadowV1(value, { dataDir })
+
+    expect(second.status).toBe('unchanged')
+    expect((await readFile(join(paths.root, 'retained-index.v1.json'), 'utf8'))).toContain('metrora.canonical-history-retained-index')
+    expect((await readCanonicalHistoryShadowHeadV1({ dataDir }))?.projectionSha256).toBe(first.projectionSha256)
+  })
+
   it('advances the head without deleting earlier snapshots and reports retained-only identities', async () => {
     const dataDir = await temporaryDataDir()
     const first = await persistCanonicalHistoryShadowV1(projection('a'), { dataDir })

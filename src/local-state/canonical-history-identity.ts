@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto'
 
+/**
+ * Compact endpoint-scope seal for derived publication state. The endpoint id
+ * remains private to the identity boundary; only this digest is persisted.
+ */
+export function canonicalEndpointScopeSha256V1(endpointId: string): string {
+  if (endpointId.trim() === '') throw new Error('canonical endpoint scope has an empty endpoint id')
+  return createHash('sha256')
+    .update('metrora-canonical-endpoint-scope-v1\0')
+    .update(endpointId)
+    .digest('hex')
+}
+
 export function canonicalAnalyticsGenerationIdSha256V1(input: {
   sessionPayloadSha256: string
   dailyPayloadSha256: string

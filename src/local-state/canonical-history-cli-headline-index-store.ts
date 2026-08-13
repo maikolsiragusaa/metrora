@@ -9,6 +9,7 @@ import {
 } from './atomic-file.js'
 import {
   buildCanonicalHistoryCliHeadlineIndexV1,
+  buildCanonicalHistoryCliHeadlineIndexIncrementalV1,
   parseCanonicalHistoryCliHeadlineIndexV1,
   type CanonicalHistoryCliHeadlineIndexV1,
 } from './canonical-history-cli-headline-index.js'
@@ -37,13 +38,41 @@ export async function ensureCanonicalHistoryCliHeadlineIndexV1(input: {
     dailyPayloadSha256: string
     sourceManifestSha256: string
     analyticsGenerationId?: string
+    endpointScopeSha256?: string
+  }
+  previous?: {
+    projection: CanonicalHistoryReadProjectionV1
+    projectionSha256: string
+    snapshotSha256: string
   }
 }): Promise<void> {
-  const index = buildCanonicalHistoryCliHeadlineIndexV1({
+  const snapshotSha256 = canonicalHistoryShadowSnapshotSha256V1(input.snapshotBytes)
+  const authorityGeneration = input.authorityGeneration
+  let index: CanonicalHistoryCliHeadlineIndexV1 | undefined
+  if (input.previous && input.previous.projectionSha256 !== input.projectionSha256) {
+    try {
+      const previous = await readCanonicalHistoryCliHeadlineIndexFastV1({
+        dataDir: input.dataDir,
+        projectionSha256: input.previous.projectionSha256,
+        snapshotSha256: input.previous.snapshotSha256,
+      })
+      index = buildCanonicalHistoryCliHeadlineIndexIncrementalV1({
+        previous,
+        previousProjection: input.previous.projection,
+        projection: input.projection,
+        projectionSha256: input.projectionSha256,
+        snapshotSha256,
+        authorityGeneration,
+      })
+    } catch {
+      index = undefined
+    }
+  }
+  index ??= buildCanonicalHistoryCliHeadlineIndexV1({
     projection: input.projection,
     projectionSha256: input.projectionSha256,
-    snapshotSha256: canonicalHistoryShadowSnapshotSha256V1(input.snapshotBytes),
-    authorityGeneration: input.authorityGeneration,
+    snapshotSha256,
+    authorityGeneration,
   })
   const path = indexPath(input.dataDir, input.projectionSha256)
   const existingBytes = await readOptionalPrivateFile(path)
@@ -57,6 +86,7 @@ export async function ensureCanonicalHistoryCliHeadlineIndexV1(input: {
         && existing.dailyAuthorityGenerationSha256 === index.dailyAuthorityGenerationSha256
         && existing.sessionSourceManifestSha256 === index.sessionSourceManifestSha256
         && existing.analyticsGenerationId === index.analyticsGenerationId
+        && existing.endpointScopeSha256 === index.endpointScopeSha256
       ) return
     } catch {
       // Regenerate a derived index from the immutable canonical projection.

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
 
+import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
+
 import { DAILY_CACHE_VERSION, dailyCachePath, type DailyCache } from '../daily-cache.js'
 import {
   authorityGenerationForSidecarV1,
@@ -13,18 +15,90 @@ import { CACHE_VERSION, sessionCachePath, type SessionCache } from '../session-c
 import { getLatestCompletedSessionCacheV1 } from '../session-cache-authority.js'
 import {
   canonicalAnalyticsGenerationIdSha256V1,
+  canonicalEndpointScopeSha256V1,
   canonicalSourceRecordFingerprintSha256V1,
 } from './canonical-history-identity.js'
-import { readLocalEndpointIdentityMetadataV1 } from './endpoint-identity.js'
+import { projectCanonicalHistoryIncrementalV1 } from './canonical-history-incremental.js'
 import {
+  readCanonicalHistoryPublicationStateV1,
+  type CanonicalHistoryPublicationSourceV1,
+} from './canonical-history-publication-state.js'
+import { defaultMetroraDataDir, readLocalEndpointIdentityMetadataV1 } from './endpoint-identity.js'
+import {
+  canonicalHistorySessionAuthorityForProjectionV1,
+  expectedCanonicalHistorySessionAuthorityForSourcesV1,
   observeCanonicalHistoryParityV1,
+  type CanonicalHistorySessionAuthorityV1,
   type CanonicalHistoryParityObservationV1,
 } from './canonical-history-parity-observer.js'
-import { projectCanonicalHistoryReadV1 } from './canonical-history-read-projection.js'
+import {
+  projectCanonicalHistoryReadWithSourcesV1,
+  type CanonicalHistoryReadProjectionV1,
+} from './canonical-history-read-projection.js'
+import { readCanonicalHistoryShadowHeadlineIndexFastV1 } from './canonical-history-shadow-headline-index-read.js'
 import {
   persistCanonicalHistoryShadowV1,
+  readCanonicalHistoryShadowStateV1,
   type PersistCanonicalHistoryShadowResultV1,
+  type CanonicalHistoryShadowLoadedStateV1,
 } from './canonical-history-shadow-store.js'
+
+function publicationSourceIndexV1(
+  sources: Array<{ provider: string; pathSha256: string; observationIds: string[]; activityIds: string[] }>,
+  authorityGeneration: CurrentCacheAuthorityGenerationV1,
+): CanonicalHistoryPublicationSourceV1[] {
+  return sources.map(source => {
+    const provider = authorityGeneration.session.providers.find(value => value.provider === source.provider)
+    const file = provider?.files.find(value => value.pathSha256 === source.pathSha256)
+    if (!provider || !file) throw new Error('canonical history source index is not covered by the session generation')
+    return {
+      ...source,
+      envFingerprint: provider.envFingerprint,
+      fingerprint: structuredClone(file.fingerprint),
+    }
+  })
+}
+
+function incrementalParityAuthorityV1(input: {
+  endpointId: string
+  sessionCache: SessionCache
+  previousProjection: CanonicalHistoryReadProjectionV1
+  previousState: NonNullable<Awaited<ReturnType<typeof readCanonicalHistoryPublicationStateV1>>>
+  changedSourceKeys: ReadonlySet<string>
+}): CanonicalHistorySessionAuthorityV1 {
+  const previous = canonicalHistorySessionAuthorityForProjectionV1(input.previousProjection)
+  const observations = new Map(previous.observations)
+  const affectedActivityIds = new Set<string>()
+  for (const source of input.previousState.sources) {
+    const key = `${source.provider}\0${source.pathSha256}`
+    if (!input.changedSourceKeys.has(key)) continue
+    source.observationIds.forEach(id => observations.delete(id))
+    source.activityIds.forEach(id => affectedActivityIds.add(id))
+  }
+  const previousActivities = new Map(input.previousProjection.activities.map(activity => [activity.activityId, activity]))
+  const activities = new Set(previous.activities)
+  for (const activityId of affectedActivityIds) {
+    const activity = previousActivities.get(activityId)
+    if (!activity) throw new Error('incremental parity state names a missing prior activity')
+    const { activityId: _activityId, ...payload } = activity
+    activities.delete(canonicalizeRfc8785(payload))
+  }
+  const changed = expectedCanonicalHistorySessionAuthorityForSourcesV1({
+    endpointId: input.endpointId,
+    sessionCache: input.sessionCache,
+    sourceFingerprint: canonicalSourceRecordFingerprintSha256V1,
+    sourceKeys: input.changedSourceKeys,
+  })
+  for (const [id, payload] of changed.observations) {
+    const prior = observations.get(id)
+    if (prior && canonicalizeRfc8785(prior) !== canonicalizeRfc8785(payload)) {
+      throw new Error('incremental parity source identity resolved to a conflicting observation')
+    }
+    observations.set(id, prior ?? payload)
+  }
+  for (const activity of changed.activities) activities.add(activity)
+  return { observations, activities }
+}
 
 export type CanonicalHistoryAnalyticsPublicationTimingsV1 = {
   generationSealMs: number
@@ -51,6 +125,7 @@ export type CanonicalHistoryAnalyticsPublicationV1 = {
     | 'untrusted-daily-authority'
     | 'endpoint-identity-unavailable'
     | 'generation-seal-failed'
+    | 'unchanged-generation'
     | 'parity-failed'
     | 'shadow-persistence-failed'
   generation?: CanonicalHistoryAnalyticsGenerationV1
@@ -173,10 +248,100 @@ export async function publishCanonicalHistoryAnalyticsV1(
   if (endpointId === undefined || endpointId.trim() === '') {
     return failed(startedAt, 'endpoint-identity-unavailable', timings, generation)
   }
-  let projection: ReturnType<typeof projectCanonicalHistoryReadV1>
+  const endpointScopeSha256 = canonicalEndpointScopeSha256V1(endpointId)
+
+  let compactForIncremental: Awaited<ReturnType<typeof readCanonicalHistoryShadowHeadlineIndexFastV1>> | undefined
+  try {
+    compactForIncremental = await readCanonicalHistoryShadowHeadlineIndexFastV1({ dataDir: options.dataDir })
+    if (
+      compactForIncremental
+      && compactForIncremental.head.snapshotSha256 !== undefined
+      && compactForIncremental.index.endpointScopeSha256 === endpointScopeSha256
+      && compactForIncremental.index.projectionSha256 === compactForIncremental.head.projectionSha256
+      && compactForIncremental.index.sessionAuthorityGenerationSha256 === generation.sessionPayloadSha256
+      && compactForIncremental.index.dailyAuthorityGenerationSha256 === generation.dailyPayloadSha256
+      && compactForIncremental.index.sessionSourceManifestSha256 === generation.sourceManifestSha256
+      && compactForIncremental.index.analyticsGenerationId === generation.id
+      && canonicalAnalyticsGenerationIdSha256V1({
+        sessionPayloadSha256: compactForIncremental.index.sessionAuthorityGenerationSha256,
+        dailyPayloadSha256: compactForIncremental.index.dailyAuthorityGenerationSha256,
+        sourceManifestSha256: compactForIncremental.index.sessionSourceManifestSha256,
+      }) === generation.id
+    ) {
+      timings.totalMs = performance.now() - startedAt
+      return {
+        status: 'skipped',
+        reason: 'unchanged-generation',
+        generation,
+        projectionSha256: compactForIncremental.head.projectionSha256,
+        shadowStatus: 'unchanged',
+        timingsMs: timings,
+      }
+    }
+  } catch {
+    // A missing/corrupt derived fast artifact falls through to the canonical
+    // projection and retained-history validation path.
+  }
+
+  let projection: CanonicalHistoryReadProjectionV1
+  let sourceIndex: CanonicalHistoryPublicationSourceV1[] | undefined
+  let previousState: CanonicalHistoryShadowLoadedStateV1 | undefined
+  let incrementalParityAuthority: CanonicalHistorySessionAuthorityV1 | undefined
   const projectionStartedAt = performance.now()
   try {
-    projection = projectCanonicalHistoryReadV1({ endpointId, sessionCache, dailyCache: options.dailyCache })
+    let incrementalUsed = false
+    let derived: Awaited<ReturnType<typeof readCanonicalHistoryPublicationStateV1>>
+    const sourceManifestChanged = compactForIncremental?.index.sessionSourceManifestSha256 !== generation.sourceManifestSha256
+    if (sourceManifestChanged) {
+      try {
+        derived = await readCanonicalHistoryPublicationStateV1(options.dataDir ?? defaultMetroraDataDir())
+      } catch {
+        derived = undefined
+      }
+    }
+    if (sourceManifestChanged && derived && derived.endpointScopeSha256 === endpointScopeSha256) {
+      try {
+        const loaded = await readCanonicalHistoryShadowStateV1({ dataDir: options.dataDir })
+        if (
+          loaded
+          && derived.projectionSha256 === loaded.head.projectionSha256
+          && derived.snapshotSha256 === loaded.head.snapshotSha256
+          && canonicalAnalyticsGenerationIdSha256V1({
+            sessionPayloadSha256: derived.sessionPayloadSha256,
+            dailyPayloadSha256: derived.dailyPayloadSha256,
+            sourceManifestSha256: derived.sourceManifestSha256,
+          }) === derived.analyticsGenerationId
+        ) {
+          const incremental = projectCanonicalHistoryIncrementalV1({
+            endpointId,
+            sessionCache,
+            dailyCache: options.dailyCache,
+            sessionGeneration: authorityGeneration.session,
+            previousProjection: loaded.snapshot.projection as CanonicalHistoryReadProjectionV1,
+            previousState: derived,
+          })
+          projection = incremental.projection
+          sourceIndex = incremental.sources
+          previousState = loaded
+          incrementalParityAuthority = incrementalParityAuthorityV1({
+            endpointId,
+            sessionCache,
+            previousProjection: loaded.snapshot.projection as CanonicalHistoryReadProjectionV1,
+            previousState: derived,
+            changedSourceKeys: new Set(incremental.changedSourceKeys),
+          })
+          incrementalUsed = true
+        }
+      } catch {
+        // Derived state is an acceleration artifact. Rebuild from the
+        // canonical session/daily authorities when it is absent or invalid.
+      }
+    }
+    if (!incrementalUsed) {
+      const projected = projectCanonicalHistoryReadWithSourcesV1({ endpointId, sessionCache, dailyCache: options.dailyCache })
+      projection = projected.projection
+      sourceIndex = publicationSourceIndexV1(projected.sources, authorityGeneration)
+    }
   } catch {
     timings.projectionBuildMs = performance.now() - projectionStartedAt
     return failed(startedAt, 'parity-failed', timings, generation)
@@ -195,6 +360,9 @@ export async function publishCanonicalHistoryAnalyticsV1(
         // observer still owns all parity assertions; this avoids a second
         // projection walk while preserving the established contract.
         project: () => projection,
+        ...(incrementalParityAuthority
+          ? { expectedSessionAuthority: () => incrementalParityAuthority! }
+          : {}),
         persist: async value => {
           timings.parityMs = performance.now() - parityStartedAt
           const shadowStartedAt = performance.now()
@@ -203,6 +371,9 @@ export async function publishCanonicalHistoryAnalyticsV1(
             now: options.now,
             authorityGeneration,
             analyticsGenerationId: generation.id,
+            endpointScopeSha256,
+            sourceIndex,
+            previousState,
             onHeadlineIndexPersisted: elapsedMs => { headlineIndexPersistenceMs = elapsedMs },
           })
           timings.shadowPersistenceMs = performance.now() - shadowStartedAt

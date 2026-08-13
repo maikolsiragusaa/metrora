@@ -18,6 +18,7 @@ import {
   type CachedUsage,
   type SessionCache,
 } from '../session-cache.js'
+import { sessionGenerationSourcePathSha256V1 } from '../cache-generation.js'
 import { assertCanonicalCollectorIdentity } from '../provider-parse-authorities.js'
 import { canonicalSourceRecordFingerprintSha256V1 } from './canonical-history-identity.js'
 
@@ -70,6 +71,18 @@ export type CanonicalHistoryReadProjectionV1 = {
   observations: CanonicalObservationReadV1[]
   activities: CanonicalActivityReadV1[]
   dailySnapshots: CanonicalHistoryDaySnapshotV1[]
+}
+
+export type CanonicalHistoryReadProjectionSourceV1 = {
+  provider: string
+  pathSha256: string
+  observationIds: string[]
+  activityIds: string[]
+}
+
+export type CanonicalHistoryReadProjectionWithSourcesV1 = {
+  projection: CanonicalHistoryReadProjectionV1
+  sources: CanonicalHistoryReadProjectionSourceV1[]
 }
 
 export type CanonicalHistoryReadProjectionInputV1 = {
@@ -248,9 +261,10 @@ function sameValue(left: unknown, right: unknown): boolean {
   return stableJson(left) === stableJson(right)
 }
 
-export function projectCanonicalHistoryReadV1(
+export function projectCanonicalHistoryReadWithSourcesV1(
   inputValue: CanonicalHistoryReadProjectionInputV1,
-): CanonicalHistoryReadProjectionV1 {
+  options: { sourceKeys?: ReadonlySet<string> } = {},
+): CanonicalHistoryReadProjectionWithSourcesV1 {
   const endpointId = OpaqueIdSchema.parse(inputValue.endpointId)
   const { sessionCache, dailyCache } = inputValue
 
@@ -270,9 +284,15 @@ export function projectCanonicalHistoryReadV1(
   const activityByObservation = new Map<string, string>()
   const claudeNativeReconciliation = reconcileClaudeNativeSessionCache(sessionCache)
   assertClaudeNativeReconciliationSafe(claudeNativeReconciliation)
+  const sources = new Map<string, CanonicalHistoryReadProjectionSourceV1>()
 
   for (const [storageNamespace, section] of Object.entries(sessionCache.providers).sort(([a], [b]) => a.localeCompare(b))) {
-    for (const [, file] of Object.entries(section.files).sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [path, file] of Object.entries(section.files).sort(([a], [b]) => a.localeCompare(b))) {
+      const pathSha256 = sessionGenerationSourcePathSha256V1(storageNamespace, path)
+      const sourceKey = `${storageNamespace}\0${pathSha256}`
+      const source: CanonicalHistoryReadProjectionSourceV1 = { provider: storageNamespace, pathSha256, observationIds: [], activityIds: [] }
+      sources.set(sourceKey, source)
+      if (options.sourceKeys && !options.sourceKeys.has(sourceKey)) continue
       if (file.failed) continue
       for (const turn of file.turns) {
         if (!turn.sessionId) throw new CanonicalHistoryReadProjectionIntegrityError('canonical cached turn has an empty private session id')
@@ -323,6 +343,7 @@ export function projectCanonicalHistoryReadV1(
           observationsById.set(observation.observationId, prior ?? observation)
           activityByObservation.set(observation.observationId, activityId)
           if (!observationIds.includes(observation.observationId)) observationIds.push(observation.observationId)
+          if (!source.observationIds.includes(observation.observationId)) source.observationIds.push(observation.observationId)
         }
 
         const activity: CanonicalActivityReadV1 = {
@@ -336,6 +357,7 @@ export function projectCanonicalHistoryReadV1(
           throw new CanonicalHistoryReadProjectionIntegrityError('one canonical activity identity resolved to conflicting observations')
         }
         activitiesById.set(activityId, priorActivity ?? activity)
+        if (!source.activityIds.includes(activityId)) source.activityIds.push(activityId)
       }
     }
   }
@@ -354,5 +376,20 @@ export function projectCanonicalHistoryReadV1(
       .map(day => projectDailySnapshot(day, dailyCache.tzKey ?? null))
       .sort((a, b) => a.date.localeCompare(b.date) || a.snapshotId.localeCompare(b.snapshotId)),
   }
-  return deepFreeze(projection)
+  return {
+    projection: deepFreeze(projection),
+    sources: [...sources.values()]
+      .map(source => ({
+        ...source,
+        observationIds: [...source.observationIds].sort(),
+        activityIds: [...source.activityIds].sort(),
+      }))
+      .sort((left, right) => left.provider.localeCompare(right.provider) || left.pathSha256.localeCompare(right.pathSha256)),
+  }
+}
+
+export function projectCanonicalHistoryReadV1(
+  inputValue: CanonicalHistoryReadProjectionInputV1,
+): CanonicalHistoryReadProjectionV1 {
+  return projectCanonicalHistoryReadWithSourcesV1(inputValue).projection
 }
