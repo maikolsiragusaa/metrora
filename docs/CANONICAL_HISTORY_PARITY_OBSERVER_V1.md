@@ -83,6 +83,11 @@ This comparison includes:
 
 The observation collection and daily snapshots remain separate authorities and are never added together.
 
+When a live turn extends an existing activity, the shadow reconciliation marks
+the activity as `revised`. This is a projection revision only: observations
+remain source-identity stable, daily totals remain a separate non-additive
+authority, and the observer does not add a second accounting record.
+
 ## Publication rule
 
 The order is strict:

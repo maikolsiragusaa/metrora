@@ -50,13 +50,23 @@ When a distinct projection becomes current:
 - the head advances to the new digest;
 - reconciliation reports identities that were added, unchanged or retained only in the previous head.
 
+Activities are the one identity whose payload may revise across snapshots. A
+current activity may extend a retained activity only by appending observations
+to its existing ordered list; the reconciliation reports that as `revised`.
+Shortening, reordering, changing the collector or timestamp, or introducing a
+non-prefix payload for the same activity identity fails closed. Observations
+and daily snapshots remain immutable across all retained snapshots.
+
 Retained-only observations or activities are not silently copied into the new projection. Their earlier immutable snapshot remains available for later C3 reconciliation work.
 
 ## Historical conflict detection
 
 Before accepting a new projection, the store scans all retained snapshots.
 
-One observation, activity or daily-snapshot identity may not resolve to different canonical payloads anywhere in retained shadow history.
+One observation or daily-snapshot identity may not resolve to different
+canonical payloads anywhere in retained shadow history. Activity revisions are
+accepted only as one ordered prefix chain, with the current head selecting the
+current payload; the historical activity payloads are never rewritten.
 
 A conflicting reuse fails closed and does not advance the head.
 
