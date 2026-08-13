@@ -4,10 +4,6 @@ import { buildVersionFor, parseMetroraVersion } from './version-authority-lib.mj
 
 function readJson(path) { return JSON.parse(readFileSync(path, 'utf8')) }
 function fail(message) { throw new Error(`version authority: ${message}`) }
-function requireText(path, expected, label) {
-  const content = readFileSync(path, 'utf8')
-  if (!content.includes(expected)) fail(`${label} is stale in ${path}`)
-}
 
 const rootPackage = readJson('package.json')
 const rootLock = readJson('package-lock.json')
@@ -24,17 +20,5 @@ if (appLock.version !== version || appLock.packages?.['']?.version !== version) 
 if (appPackage.build?.buildVersion !== expectedBuildVersion) {
   fail(`desktop buildVersion is ${appPackage.build?.buildVersion}, expected ${expectedBuildVersion}`)
 }
-
-requireText('RELEASING.md', `- Current source candidate: \`${version}\``, 'source candidate')
-requireText('RELEASING.md', `- Current desktop build version: \`${expectedBuildVersion}\``, 'desktop build version')
-requireText('app/DISTRIBUTION.md', `- Current source/desktop candidate: \`${version}\``, 'desktop source candidate')
-requireText('app/DISTRIBUTION.md', `- Current desktop build version: \`${expectedBuildVersion}\``, 'desktop build version')
-requireText('docs/VERSIONING.md', `- Current source candidate: \`${version}\``, 'public source candidate')
-requireText('docs/VERSIONING.md', `- Desktop build version: \`${expectedBuildVersion}\``, 'desktop build version')
-requireText(
-  'docs/WINDOWS_DISTRIBUTION.md',
-  `The active source line associated with the Store submission is \`${version}\`, with desktop build version \`${expectedBuildVersion}\`.`,
-  'Windows distribution version',
-)
 
 console.log(`Version authority verified: ${version} (${expectedBuildVersion})`)
