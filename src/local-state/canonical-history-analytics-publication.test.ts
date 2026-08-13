@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,6 +15,7 @@ import { publishCanonicalHistoryAnalyticsV1 } from './canonical-history-analytic
 import {
   canonicalHistoryShadowPathsV1,
   canonicalHistoryShadowProjectionSha256V1,
+  clearCanonicalHistoryShadowTrustMemoV1,
   readCanonicalHistoryShadowProjectionV1,
 } from './canonical-history-shadow-store.js'
 import { projectCanonicalHistoryReadV1 } from './canonical-history-read-projection.js'
@@ -177,6 +178,37 @@ describe('generic canonical analytics publication boundary', () => {
     expect(second.timingsMs.parityMs).toBe(0)
     expect(second.timingsMs.shadowPersistenceMs).toBe(0)
     expect(await readFile(join(canonicalHistoryShadowPathsV1(dataDir).root, 'head.json'))).toEqual(before)
+  })
+
+  it('does not trust a same-stat mutated snapshot after a cold trust lifecycle', async () => {
+    const { dataDir, session, daily, endpointId } = await setup()
+    const first = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+    expect(first.status).toBe('published')
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+    const beforeHead = await readFile(paths.head)
+    const snapshotPath = join(paths.snapshots, `${first.projectionSha256}.json`)
+    const beforeBytes = await readFile(snapshotPath)
+    const beforeStat = await stat(snapshotPath)
+    const marker = Buffer.from('2026-08-13T12:00:00.000Z', 'utf8')
+    const replacement = Buffer.from('2026-08-13T13:00:00.000Z', 'utf8')
+    const offset = beforeBytes.indexOf(marker)
+    expect(offset).toBeGreaterThanOrEqual(0)
+    const mutated = Buffer.from(beforeBytes)
+    replacement.copy(mutated, offset)
+    await writeFile(snapshotPath, mutated)
+    await utimes(snapshotPath, beforeStat.atime, beforeStat.mtime)
+    const afterStat = await stat(snapshotPath)
+    expect(afterStat.size).toBe(beforeStat.size)
+    expect(afterStat.mtimeMs).toBeCloseTo(beforeStat.mtimeMs, 0)
+    if (beforeStat.ino !== 0 && afterStat.ino !== 0) expect(afterStat.ino).toBe(beforeStat.ino)
+
+    // A fresh publisher process has no prior content-validation memo.
+    clearCanonicalHistoryShadowTrustMemoV1(dataDir)
+    const restarted = await publishCanonicalHistoryAnalyticsV1({ sessionCache: session, dailyCache: daily, dataDir, endpointId, now: () => NOW })
+
+    expect(restarted.status).toBe('failed')
+    expect(restarted.reason).not.toBe('unchanged-generation')
+    expect(await readFile(paths.head)).toEqual(beforeHead)
   })
 
   it('keeps an existing endpoint-scoped shadow on the same scope while the generation advances', async () => {

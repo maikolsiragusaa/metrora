@@ -35,9 +35,9 @@ import {
   projectCanonicalHistoryReadWithSourcesV1,
   type CanonicalHistoryReadProjectionV1,
 } from './canonical-history-read-projection.js'
-import { readCanonicalHistoryShadowHeadlineIndexFastV1 } from './canonical-history-shadow-headline-index-read.js'
 import {
   persistCanonicalHistoryShadowV1,
+  readCanonicalHistoryShadowPublicationTrustV1,
   readCanonicalHistoryShadowStateV1,
   type PersistCanonicalHistoryShadowResultV1,
   type CanonicalHistoryShadowLoadedStateV1,
@@ -250,22 +250,22 @@ export async function publishCanonicalHistoryAnalyticsV1(
   }
   const endpointScopeSha256 = canonicalEndpointScopeSha256V1(endpointId)
 
-  let compactForIncremental: Awaited<ReturnType<typeof readCanonicalHistoryShadowHeadlineIndexFastV1>> | undefined
+  let compactForIncremental: Awaited<ReturnType<typeof readCanonicalHistoryShadowPublicationTrustV1>> | undefined
   try {
-    compactForIncremental = await readCanonicalHistoryShadowHeadlineIndexFastV1({ dataDir: options.dataDir })
+    compactForIncremental = await readCanonicalHistoryShadowPublicationTrustV1({ dataDir: options.dataDir })
     if (
       compactForIncremental
       && compactForIncremental.head.snapshotSha256 !== undefined
-      && compactForIncremental.index.endpointScopeSha256 === endpointScopeSha256
-      && compactForIncremental.index.projectionSha256 === compactForIncremental.head.projectionSha256
-      && compactForIncremental.index.sessionAuthorityGenerationSha256 === generation.sessionPayloadSha256
-      && compactForIncremental.index.dailyAuthorityGenerationSha256 === generation.dailyPayloadSha256
-      && compactForIncremental.index.sessionSourceManifestSha256 === generation.sourceManifestSha256
-      && compactForIncremental.index.analyticsGenerationId === generation.id
+      && compactForIncremental.headlineIndex.endpointScopeSha256 === endpointScopeSha256
+      && compactForIncremental.headlineIndex.projectionSha256 === compactForIncremental.head.projectionSha256
+      && compactForIncremental.headlineIndex.sessionAuthorityGenerationSha256 === generation.sessionPayloadSha256
+      && compactForIncremental.headlineIndex.dailyAuthorityGenerationSha256 === generation.dailyPayloadSha256
+      && compactForIncremental.headlineIndex.sessionSourceManifestSha256 === generation.sourceManifestSha256
+      && compactForIncremental.headlineIndex.analyticsGenerationId === generation.id
       && canonicalAnalyticsGenerationIdSha256V1({
-        sessionPayloadSha256: compactForIncremental.index.sessionAuthorityGenerationSha256,
-        dailyPayloadSha256: compactForIncremental.index.dailyAuthorityGenerationSha256,
-        sourceManifestSha256: compactForIncremental.index.sessionSourceManifestSha256,
+        sessionPayloadSha256: compactForIncremental.headlineIndex.sessionAuthorityGenerationSha256,
+        dailyPayloadSha256: compactForIncremental.headlineIndex.dailyAuthorityGenerationSha256,
+        sourceManifestSha256: compactForIncremental.headlineIndex.sessionSourceManifestSha256,
       }) === generation.id
     ) {
       timings.totalMs = performance.now() - startedAt
@@ -291,7 +291,7 @@ export async function publishCanonicalHistoryAnalyticsV1(
   try {
     let incrementalUsed = false
     let derived: Awaited<ReturnType<typeof readCanonicalHistoryPublicationStateV1>>
-    const sourceManifestChanged = compactForIncremental?.index.sessionSourceManifestSha256 !== generation.sourceManifestSha256
+    const sourceManifestChanged = compactForIncremental?.headlineIndex.sessionSourceManifestSha256 !== generation.sourceManifestSha256
     if (sourceManifestChanged) {
       try {
         derived = await readCanonicalHistoryPublicationStateV1(options.dataDir ?? defaultMetroraDataDir())

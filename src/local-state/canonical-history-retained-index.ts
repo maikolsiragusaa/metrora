@@ -45,6 +45,10 @@ export type CanonicalHistoryRetainedProjectionIndexV1 = {
 type RetainedHistoryPathsV1 = { root: string; snapshots: string }
 type RetainedHistoryIndexV1 = z.infer<typeof RetainedHistoryIndexV1Schema>
 
+export type CanonicalHistoryRetainedIndexReadOptionsV1 = {
+  deepValidate?: boolean
+}
+
 function snapshotPath(paths: RetainedHistoryPathsV1, digest: string): string {
   return join(paths.snapshots, `${digest}.json`)
 }
@@ -101,16 +105,8 @@ function snapshotNamesFromSeals(seals: readonly z.infer<typeof RetainedSnapshotS
 }
 
 async function readCompactRetainedIndex(paths: RetainedHistoryPathsV1): Promise<CanonicalHistoryRetainedProjectionIndexV1 | undefined> {
-  const bytes = await readOptionalPrivateFile(retainedIndexPath(paths))
-  if (!bytes) return undefined
-  let parsed: RetainedHistoryIndexV1
-  try {
-    parsed = RetainedHistoryIndexV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf8')))
-    const { indexSha256: _indexSha256, ...unsigned } = parsed
-    if (retainedIndexDigest(unsigned) !== parsed.indexSha256) return undefined
-  } catch {
-    return undefined
-  }
+  const parsed = await readStoredRetainedIndex(paths)
+  if (!parsed) return undefined
   const entries = await readdir(paths.snapshots, { withFileTypes: true })
   const actualNames = entries.filter(entry => entry.isFile() && !entry.name.includes('.metrora-tmp-')).map(entry => entry.name).sort()
   if (actualNames.length !== parsed.snapshots.length || actualNames.some((name, index) => name !== snapshotNamesFromSeals(parsed.snapshots)[index])) return undefined
@@ -122,20 +118,97 @@ async function readCompactRetainedIndex(paths: RetainedHistoryPathsV1): Promise<
     const info = await stat(snapshotPath(paths, seal.projectionSha256)).catch(() => undefined)
     if (!info || !info.isFile() || info.dev !== seal.dev || info.ino !== seal.ino || info.mtimeMs !== seal.mtimeMs || info.size !== seal.sizeBytes) return undefined
   }
-  const retained: CanonicalHistoryRetainedProjectionIndexV1 = {
+  const retained = retainedProjectionFromStoredIndex(parsed)
+  for (const history of retained.activities.values()) for (const payload of history) decodeActivityPayload(payload)
+  return retained
+}
+
+async function readStoredRetainedIndex(paths: RetainedHistoryPathsV1): Promise<RetainedHistoryIndexV1 | undefined> {
+  const bytes = await readOptionalPrivateFile(retainedIndexPath(paths))
+  if (!bytes) return undefined
+  try {
+    const parsed = RetainedHistoryIndexV1Schema.parse(JSON.parse(Buffer.from(bytes).toString('utf8')))
+    const { indexSha256: _indexSha256, ...unsigned } = parsed
+    if (retainedIndexDigest(unsigned) !== parsed.indexSha256) return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
+function retainedProjectionFromStoredIndex(parsed: RetainedHistoryIndexV1): CanonicalHistoryRetainedProjectionIndexV1 {
+  return {
     observations: new Map(Object.entries(parsed.observations)),
     activities: new Map(Object.entries(parsed.activities)),
     dailySnapshots: new Map(Object.entries(parsed.dailySnapshots)),
     snapshots: parsed.snapshots,
   }
-  for (const history of retained.activities.values()) for (const payload of history) decodeActivityPayload(payload)
+}
+
+async function readDeepRetainedIndex(
+  paths: RetainedHistoryPathsV1,
+  parseSnapshot: (bytes: Uint8Array, expectedDigest: string) => { index: CanonicalHistoryShadowProjectionIndexV1 },
+): Promise<CanonicalHistoryRetainedProjectionIndexV1> {
+  const stored = await readStoredRetainedIndex(paths)
+  const expectedSnapshots = new Map(stored?.snapshots.map(snapshot => [snapshot.projectionSha256, snapshot]) ?? [])
+  const retained: CanonicalHistoryRetainedProjectionIndexV1 = {
+    observations: new Map(),
+    activities: new Map(),
+    dailySnapshots: new Map(),
+    snapshots: [],
+  }
+  const entries = await readdir(paths.snapshots, { withFileTypes: true })
+  const actualProjectionDigests = new Set<string>()
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isFile() || entry.name.includes('.metrora-tmp-')) continue
+    const match = /^([a-f0-9]{64})\.json$/u.exec(entry.name)
+    if (!match) {
+      throw new CanonicalHistoryShadowStoreIntegrityError(`canonical history shadow contains unexpected snapshot file ${entry.name}`)
+    }
+    const digest = match[1]!
+    actualProjectionDigests.add(digest)
+    const path = join(paths.snapshots, entry.name)
+    const bytes = await readOptionalPrivateFile(path)
+    if (!bytes) throw new CanonicalHistoryShadowStoreIntegrityError(`canonical history shadow snapshot ${entry.name} disappeared during validation`)
+    const parsed = parseSnapshot(bytes, digest)
+    const info = await stat(path)
+    const snapshotSha256 = canonicalHistoryShadowSnapshotSha256V1(bytes)
+    const expected = expectedSnapshots.get(digest)
+    if (expected && expected.snapshotSha256 !== snapshotSha256) {
+      throw new CanonicalHistoryShadowStoreIntegrityError(`canonical history shadow snapshot ${entry.name} changed since its retained seal`)
+    }
+    retained.snapshots.push({
+      projectionSha256: digest,
+      snapshotSha256,
+      dev: info.dev,
+      ino: info.ino,
+      mtimeMs: info.mtimeMs,
+      sizeBytes: info.size,
+    })
+    mergeRetainedEntityIndex(retained.observations, parsed.index.observations, 'observation')
+    for (const [id, payload] of parsed.index.activities) {
+      const history = retained.activities.get(id) ?? []
+      for (const prior of history) if (!activityPayloadsCanBeRevisions(prior, payload)) throw new CanonicalHistoryShadowStoreIntegrityError(`activity identity ${id} conflicts with retained shadow history`)
+      if (!history.includes(payload)) history.push(payload)
+      retained.activities.set(id, history)
+    }
+    mergeRetainedEntityIndex(retained.dailySnapshots, parsed.index.dailySnapshots, 'daily snapshot')
+  }
+  for (const expected of expectedSnapshots.values()) {
+    if (!actualProjectionDigests.has(expected.projectionSha256)) {
+      throw new CanonicalHistoryShadowStoreIntegrityError(`canonical history shadow snapshot ${expected.projectionSha256}.json is missing during validation`)
+    }
+  }
+  await writeCanonicalHistoryRetainedIndexV1(paths, retained)
   return retained
 }
 
 export async function readCanonicalHistoryRetainedIndexV1(
   paths: RetainedHistoryPathsV1,
   parseSnapshot: (bytes: Uint8Array, expectedDigest: string) => { index: CanonicalHistoryShadowProjectionIndexV1 },
+  options: CanonicalHistoryRetainedIndexReadOptionsV1 = {},
 ): Promise<CanonicalHistoryRetainedProjectionIndexV1> {
+  if (options.deepValidate) return readDeepRetainedIndex(paths, parseSnapshot)
   const compact = await readCompactRetainedIndex(paths)
   if (compact) return compact
   const retained: CanonicalHistoryRetainedProjectionIndexV1 = { observations: new Map(), activities: new Map(), dailySnapshots: new Map(), snapshots: [] }

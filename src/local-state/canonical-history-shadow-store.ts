@@ -34,6 +34,12 @@ import {
   writeCanonicalHistoryRetainedIndexV1,
 } from './canonical-history-retained-index.js'
 import { CanonicalHistoryShadowStoreIntegrityError } from './canonical-history-shadow-errors.js'
+import {
+  clearCanonicalHistoryShadowTrustMemoV1 as clearPublicationTrustMemoV1,
+  readCanonicalHistoryPublicationTrustV1,
+  rememberCanonicalHistoryPublicationTrustV1,
+  type CanonicalHistoryShadowPublicationTrustV1,
+} from './canonical-history-publication-trust.js'
 import { defaultMetroraDataDir } from './endpoint-identity.js'
 import { withLocalStateLease } from './local-state-lease.js'
 import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
@@ -283,7 +289,14 @@ function reconcileActivities(
   return { added, unchanged, revised, retainedOnly }
 }
 
-export function canonicalHistoryShadowPathsV1(dataDir: string) {
+export type CanonicalHistoryShadowPathsV1 = {
+  root: string
+  snapshots: string
+  headlineIndexes: string
+  head: string
+}
+
+export function canonicalHistoryShadowPathsV1(dataDir: string): CanonicalHistoryShadowPathsV1 {
   const root = join(dataDir, 'history-shadow', 'v1')
   return {
     root,
@@ -332,6 +345,22 @@ function parseHead(bytes: Uint8Array): CanonicalHistoryShadowHeadV1 {
   }
 }
 
+export type { CanonicalHistoryShadowPublicationTrustV1 } from './canonical-history-publication-trust.js'
+export const clearCanonicalHistoryShadowTrustMemoV1 = clearPublicationTrustMemoV1
+
+export async function readCanonicalHistoryShadowPublicationTrustV1(
+  options: Pick<CanonicalHistoryShadowStoreOptions, 'dataDir'> = {},
+): Promise<CanonicalHistoryShadowPublicationTrustV1 | undefined> {
+  const dataDir = options.dataDir ?? defaultMetroraDataDir()
+  const paths = canonicalHistoryShadowPathsV1(dataDir)
+  return readCanonicalHistoryPublicationTrustV1({
+    dataDir,
+    paths,
+    parseHead,
+    parseSnapshot,
+  })
+}
+
 async function readHeadSnapshot(
   paths: ReturnType<typeof canonicalHistoryShadowPathsV1>,
 ): Promise<CanonicalHistoryShadowLoadedStateV1 | undefined> {
@@ -374,6 +403,10 @@ export async function persistCanonicalHistoryShadowV1(
   await prepare(paths)
 
   return withLocalStateLease(paths.root, async () => {
+    // A compact retained index is acceleration evidence only. If this is the
+    // first publication in a process with an existing head, establish the
+    // canonical deep-validation trust boundary before reading it.
+    await readCanonicalHistoryShadowPublicationTrustV1({ dataDir })
     const previous = await usePreviousStateIfCurrent(paths, options.previousState)
     const retained = await readCanonicalHistoryRetainedIndexV1(paths, parseSnapshot)
     assertCompatibleWithCanonicalHistoryRetainedV1(retained, currentIndex)
@@ -450,6 +483,21 @@ export async function persistCanonicalHistoryShadowV1(
       await writeCanonicalHistoryPublicationStateV1(dataDir, state)
     }
 
+    let head: CanonicalHistoryShadowHeadV1
+    if (previousDigest === projectionSha256 && previous?.head.snapshotSha256 === snapshotSha256) {
+      head = previous.head
+    } else {
+      head = CanonicalHistoryShadowHeadV1Schema.parse({
+        kind: CANONICAL_HISTORY_SHADOW_HEAD_KIND,
+        version: CANONICAL_HISTORY_SHADOW_STORE_VERSION,
+        projectionSha256,
+        snapshotSha256,
+        updatedAt: now().toISOString(),
+      })
+      await atomicWritePrivateFile(paths.head, JSON.stringify(head))
+    }
+    await rememberCanonicalHistoryPublicationTrustV1(dataDir, paths, head, retained)
+
     if (previousDigest === projectionSha256 && previous?.head.snapshotSha256 === snapshotSha256) {
       return {
         status: 'unchanged' as const,
@@ -457,15 +505,6 @@ export async function persistCanonicalHistoryShadowV1(
         reconciliation,
       }
     }
-
-    const head = CanonicalHistoryShadowHeadV1Schema.parse({
-      kind: CANONICAL_HISTORY_SHADOW_HEAD_KIND,
-      version: CANONICAL_HISTORY_SHADOW_STORE_VERSION,
-      projectionSha256,
-      snapshotSha256,
-      updatedAt: now().toISOString(),
-    })
-    await atomicWritePrivateFile(paths.head, JSON.stringify(head))
 
     return {
       status: previous
