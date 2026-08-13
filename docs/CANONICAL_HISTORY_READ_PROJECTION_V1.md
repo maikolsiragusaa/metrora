@@ -55,6 +55,15 @@ Private session identity is hashed and never emitted. Local day, timezone, cache
 
 A timezone change may therefore move a daily snapshot boundary without changing observation or activity identity.
 
+The activity identity is a stable logical source identity, not an immutable
+payload digest. A live turn may receive more source observations between two
+projection snapshots. Such a revision is valid only when the new ordered
+observation list preserves the previous list as an exact prefix. The current
+head represents the current activity projection; earlier content-addressed
+snapshots remain immutable audit evidence. A reordered, shortened or otherwise
+conflicting activity payload fails closed, as does a conflicting observation
+payload under an existing observation identity.
+
 ## Accounting evidence
 
 Each observation preserves:

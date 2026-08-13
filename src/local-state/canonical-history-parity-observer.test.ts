@@ -143,7 +143,7 @@ function persisted() {
     projectionSha256: 'a'.repeat(64),
     reconciliation: {
       observations: { added: 1, unchanged: 0, retainedOnly: 0 },
-      activities: { added: 1, unchanged: 0, retainedOnly: 0 },
+      activities: { added: 1, unchanged: 0, revised: 0, retainedOnly: 0 },
       dailySnapshots: { added: 1, unchanged: 0, retainedOnly: 0 },
     },
   }

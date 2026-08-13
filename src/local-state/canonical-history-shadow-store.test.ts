@@ -99,6 +99,26 @@ function projection(character = 'a'): CanonicalHistoryReadProjectionV1 {
   }
 }
 
+function liveTurnProjection(observationCharacters: string[]): CanonicalHistoryReadProjectionV1 {
+  const value = projection('a')
+  const activityId = `activity-v1:${hex('z')}`
+  const observationIds = observationCharacters.map(character => `observation-v1:${hex(character)}`)
+  value.observations = observationCharacters.map((character, index) => ({
+    ...structuredClone(value.observations[0]!),
+    observationId: `observation-v1:${hex(character)}`,
+    activityId,
+    sourceFingerprintSha256: hex(character),
+    model: `live-model-${index}`,
+  }))
+  value.activities = [{
+    activityId,
+    collector: 'codex',
+    timestamp: '2026-08-01T21:00:00.000Z',
+    observationIds,
+  }]
+  return value
+}
+
 describe('canonical history shadow store v1', () => {
   it('publishes one immutable content-addressed snapshot and remains idempotent', async () => {
     const dataDir = await temporaryDataDir()
@@ -136,7 +156,7 @@ describe('canonical history shadow store v1', () => {
     expect(second.previousProjectionSha256).toBe(first.projectionSha256)
     expect(second.reconciliation).toEqual({
       observations: { added: 1, unchanged: 0, retainedOnly: 1 },
-      activities: { added: 1, unchanged: 0, retainedOnly: 1 },
+      activities: { added: 1, unchanged: 0, revised: 0, retainedOnly: 1 },
       dailySnapshots: { added: 1, unchanged: 0, retainedOnly: 1 },
     })
     expect((await readdir(paths.snapshots)).sort()).toEqual([
@@ -144,6 +164,53 @@ describe('canonical history shadow store v1', () => {
       `${second.projectionSha256}.json`,
     ].sort())
     expect((await readCanonicalHistoryShadowHeadV1({ dataDir }))?.projectionSha256).toBe(second.projectionSha256)
+  })
+
+  it('publishes ordered live-turn activity revisions without duplicating observations', async () => {
+    const dataDir = await temporaryDataDir()
+    const firstProjection = liveTurnProjection(['a'])
+    const secondProjection = liveTurnProjection(['a', 'b'])
+    const thirdProjection = liveTurnProjection(['a', 'b', 'c'])
+
+    const first = await persistCanonicalHistoryShadowV1(firstProjection, { dataDir })
+    const second = await persistCanonicalHistoryShadowV1(secondProjection, { dataDir })
+    const third = await persistCanonicalHistoryShadowV1(thirdProjection, { dataDir })
+    const paths = canonicalHistoryShadowPathsV1(dataDir)
+
+    expect(first.status).toBe('initialized')
+    expect(second.status).toBe('advanced')
+    expect(third.status).toBe('advanced')
+    expect(second.reconciliation.activities).toEqual({ added: 0, unchanged: 0, revised: 1, retainedOnly: 0 })
+    expect(third.reconciliation.activities).toEqual({ added: 0, unchanged: 0, revised: 1, retainedOnly: 0 })
+    expect(new Set([first.projectionSha256, second.projectionSha256, third.projectionSha256]).size).toBe(3)
+    expect(await readdir(paths.snapshots)).toHaveLength(3)
+    expect((await readCanonicalHistoryShadowHeadV1({ dataDir }))?.projectionSha256).toBe(third.projectionSha256)
+
+    const oldSnapshot = JSON.parse(await readFile(join(paths.snapshots, `${first.projectionSha256}.json`), 'utf8')) as {
+      projection: CanonicalHistoryReadProjectionV1
+    }
+    expect(oldSnapshot.projection.activities[0]!.observationIds).toEqual(firstProjection.activities[0]!.observationIds)
+    expect(new Set(thirdProjection.observations.map(observation => observation.observationId)).size).toBe(3)
+
+    const unchanged = await persistCanonicalHistoryShadowV1(thirdProjection, { dataDir })
+    expect(unchanged.status).toBe('unchanged')
+    expect(await readdir(paths.snapshots)).toHaveLength(3)
+
+    const conflictingObservation = liveTurnProjection(['a', 'b', 'c'])
+    conflictingObservation.observations[0]!.model = 'conflicting-immutable-payload'
+    await expect(persistCanonicalHistoryShadowV1(conflictingObservation, { dataDir }))
+      .rejects.toThrow(CanonicalHistoryShadowStoreIntegrityError)
+
+    const reorderedActivity = liveTurnProjection(['b', 'a', 'c'])
+    await expect(persistCanonicalHistoryShadowV1(reorderedActivity, { dataDir }))
+      .rejects.toThrow(CanonicalHistoryShadowStoreIntegrityError)
+
+    const unrelatedActivityCollision = liveTurnProjection(['x'])
+    await expect(persistCanonicalHistoryShadowV1(unrelatedActivityCollision, { dataDir }))
+      .rejects.toThrow(CanonicalHistoryShadowStoreIntegrityError)
+
+    expect((await readCanonicalHistoryShadowHeadV1({ dataDir }))?.projectionSha256).toBe(third.projectionSha256)
+    expect(await readdir(paths.snapshots)).toHaveLength(3)
   })
 
   it('rejects conflicting reuse of an observation identity and leaves the previous head unchanged', async () => {

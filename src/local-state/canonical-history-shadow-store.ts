@@ -51,9 +51,13 @@ export type CanonicalHistoryShadowEntityReconciliationV1 = {
   retainedOnly: number
 }
 
+export type CanonicalHistoryShadowActivityReconciliationV1 = CanonicalHistoryShadowEntityReconciliationV1 & {
+  revised: number
+}
+
 export type CanonicalHistoryShadowReconciliationV1 = {
   observations: CanonicalHistoryShadowEntityReconciliationV1
-  activities: CanonicalHistoryShadowEntityReconciliationV1
+  activities: CanonicalHistoryShadowActivityReconciliationV1
   dailySnapshots: CanonicalHistoryShadowEntityReconciliationV1
 }
 
@@ -76,6 +80,12 @@ type EntityIndex = Map<string, string>
 type ProjectionIndex = {
   observations: EntityIndex
   activities: EntityIndex
+  dailySnapshots: EntityIndex
+}
+
+type RetainedProjectionIndex = {
+  observations: EntityIndex
+  activities: Map<string, string[]>
   dailySnapshots: EntityIndex
 }
 
@@ -192,8 +202,8 @@ function mergeEntityIndex(target: EntityIndex, incoming: EntityIndex, label: str
 
 async function readRetainedIndex(
   paths: ReturnType<typeof canonicalHistoryShadowPathsV1>,
-): Promise<ProjectionIndex> {
-  const retained: ProjectionIndex = {
+): Promise<RetainedProjectionIndex> {
+  const retained: RetainedProjectionIndex = {
     observations: new Map(),
     activities: new Map(),
     dailySnapshots: new Map(),
@@ -216,19 +226,29 @@ async function readRetainedIndex(
     }
     const parsed = parseSnapshot(bytes, digest)
     mergeEntityIndex(retained.observations, parsed.index.observations, 'observation')
-    mergeEntityIndex(retained.activities, parsed.index.activities, 'activity')
+    for (const [id, payload] of parsed.index.activities) {
+      const history = retained.activities.get(id) ?? []
+      for (const prior of history) {
+        if (!activityPayloadsCanBeRevisions(prior, payload)) {
+          throw new CanonicalHistoryShadowStoreIntegrityError(
+            `activity identity ${id} conflicts with retained shadow history`,
+          )
+        }
+      }
+      if (!history.includes(payload)) history.push(payload)
+      retained.activities.set(id, history)
+    }
     mergeEntityIndex(retained.dailySnapshots, parsed.index.dailySnapshots, 'daily snapshot')
   }
   return retained
 }
 
 function assertCompatibleWithRetainedHistory(
-  retained: ProjectionIndex,
+  retained: RetainedProjectionIndex,
   current: ProjectionIndex,
 ): void {
   for (const [label, previous, next] of [
     ['observation', retained.observations, current.observations],
-    ['activity', retained.activities, current.activities],
     ['daily snapshot', retained.dailySnapshots, current.dailySnapshots],
   ] as const) {
     for (const [id, payload] of next) {
@@ -238,6 +258,80 @@ function assertCompatibleWithRetainedHistory(
           `${label} identity ${id} conflicts with retained shadow history`,
         )
       }
+    }
+  }
+}
+
+type ActivityPayload = {
+  collector: string
+  timestamp: string
+  observationIds: string[]
+}
+
+function decodeActivityPayload(payload: string): ActivityPayload {
+  let value: unknown
+  try {
+    value = JSON.parse(payload)
+  } catch {
+    throw new CanonicalHistoryShadowStoreIntegrityError('retained activity payload is not valid JSON')
+  }
+  const record = objectRecord(value, 'retained activity')
+  const collector = record.collector
+  const timestamp = record.timestamp
+  const observationIds = record.observationIds
+  if (
+    typeof collector !== 'string'
+    || typeof timestamp !== 'string'
+    || !Array.isArray(observationIds)
+    || observationIds.some(id => typeof id !== 'string')
+  ) {
+    throw new CanonicalHistoryShadowStoreIntegrityError('retained activity payload is malformed')
+  }
+  return { collector, timestamp, observationIds: [...observationIds] as string[] }
+}
+
+function activityPayloadIsOrderedExtension(
+  priorPayload: string,
+  nextPayload: string,
+): boolean {
+  const prior = decodeActivityPayload(priorPayload)
+  const next = decodeActivityPayload(nextPayload)
+  if (prior.collector !== next.collector || prior.timestamp !== next.timestamp) return false
+  return prior.observationIds.length <= next.observationIds.length
+    && prior.observationIds.every((id, index) => next.observationIds[index] === id)
+}
+
+function activityPayloadsCanBeRevisions(leftPayload: string, rightPayload: string): boolean {
+  return activityPayloadIsOrderedExtension(leftPayload, rightPayload)
+    || activityPayloadIsOrderedExtension(rightPayload, leftPayload)
+}
+
+function assertActivitiesCompatibleWithRetainedHistory(
+  retained: Map<string, string[]>,
+  previous: EntityIndex | undefined,
+  current: EntityIndex,
+): void {
+  for (const [id, payload] of current) {
+    const history = retained.get(id) ?? []
+    for (const prior of history) {
+      // A current activity may be unchanged or may append observations to a
+      // retained revision. Regressing to a weaker payload is not a refresh;
+      // it would lose an observation from the current canonical projection.
+      if (prior !== payload && !activityPayloadIsOrderedExtension(prior, payload)) {
+        throw new CanonicalHistoryShadowStoreIntegrityError(
+          `activity identity ${id} conflicts with retained shadow history`,
+        )
+      }
+    }
+    const previousPayload = previous?.get(id)
+    if (
+      previousPayload !== undefined
+      && previousPayload !== payload
+      && !activityPayloadIsOrderedExtension(previousPayload, payload)
+    ) {
+      throw new CanonicalHistoryShadowStoreIntegrityError(
+        `activity identity ${id} resolved to a non-monotonic revision`,
+      )
     }
   }
 }
@@ -272,11 +366,44 @@ function reconcileProjection(
   previous: ProjectionIndex | undefined,
   current: ProjectionIndex,
 ): CanonicalHistoryShadowReconciliationV1 {
+  const activities = reconcileActivities(previous?.activities, current.activities)
   return {
     observations: reconcileEntities(previous?.observations, current.observations, 'observation'),
-    activities: reconcileEntities(previous?.activities, current.activities, 'activity'),
+    activities,
     dailySnapshots: reconcileEntities(previous?.dailySnapshots, current.dailySnapshots, 'daily snapshot'),
   }
+}
+
+function reconcileActivities(
+  previous: EntityIndex | undefined,
+  current: EntityIndex,
+): CanonicalHistoryShadowActivityReconciliationV1 {
+  if (!previous) return { added: current.size, unchanged: 0, revised: 0, retainedOnly: 0 }
+  let added = 0
+  let unchanged = 0
+  let revised = 0
+  for (const [id, payload] of current) {
+    const prior = previous.get(id)
+    if (prior === undefined) {
+      added++
+      continue
+    }
+    if (prior === payload) {
+      unchanged++
+      continue
+    }
+    if (!activityPayloadIsOrderedExtension(prior, payload)) {
+      throw new CanonicalHistoryShadowStoreIntegrityError(
+        `activity identity ${id} resolved to a conflicting payload`,
+      )
+    }
+    revised++
+  }
+  let retainedOnly = 0
+  for (const id of previous.keys()) {
+    if (!current.has(id)) retainedOnly++
+  }
+  return { added, unchanged, revised, retainedOnly }
 }
 
 export function canonicalHistoryShadowPathsV1(dataDir: string) {
@@ -356,6 +483,7 @@ export async function persistCanonicalHistoryShadowV1(
     const previous = await readHeadSnapshot(paths)
     const retained = await readRetainedIndex(paths)
     assertCompatibleWithRetainedHistory(retained, currentIndex)
+    assertActivitiesCompatibleWithRetainedHistory(retained.activities, previous?.index.activities, currentIndex.activities)
     const previousDigest = previous?.head.projectionSha256
     const targetPath = snapshotPath(paths, projectionSha256)
     const targetBytes = await readOptionalPrivateFile(targetPath)
