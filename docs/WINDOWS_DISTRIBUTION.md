@@ -2,31 +2,27 @@
 
 ## Status
 
-Metrora does not yet have an official stable Windows release.
+Metrora for Windows is available on the **Microsoft Store**, published by Vensent.
 
-The latest public Windows technical preview is the **unsigned** GitHub pre-release `v1.0.0-rc.7`. It remains bound to its accepted source, manifests, checksums and publication evidence. It is not a signed stable package, a Microsoft Store package or an automatic update channel.
+[Open Metrora on Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
 
-The active source line associated with the Store submission is `1.0.0-rc.10`, with desktop build version `1.0.0.10`. RC10 advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and sealed Store CLI runtime.
+The Microsoft Store package is the supported public Windows distribution. Repository builds and historical GitHub pre-releases remain separate development or archival artifacts and are not the recommended install path.
 
-Metrora has an assigned Microsoft Store identity and a reviewed non-publishing AppX workflow/local-test path. Post-RC10 development is separate from the source line associated with the submission. Submission, certification, publication and Store availability are distinct gates; this document makes no certification or publication claim.
+The currently published Store line is traceable to source candidate `1.0.0-rc.10`, desktop build version `1.0.0.10`, and Store AppX identity version `1.0.0.0`. Development on `main` may advance independently after that published line.
 
-Historical 0.9.19 acceptance material remains immutable engineering evidence for its own source line only.
+Historical 0.9.19 and RC7 acceptance material remains immutable evidence for those source lines only.
 
 ## Identity
 
-An official distribution must use the exact product and publisher identity issued for Metrora by the selected channel.
-
-Identity values must never be guessed, copied from another project or patched into an artifact after the reviewed product build.
-
-Protected credentials and verification material remain outside untrusted public pull-request workflows.
+An official distribution uses the exact Metrora product and publisher identity assigned to that channel. Identity values must not be guessed, copied from another product or changed after the reviewed package has been derived.
 
 ## Version boundary
 
 Windows uses multiple version authorities deliberately:
 
-- product/source candidate: `1.0.0-rc.10`;
-- desktop build version: `1.0.0.10`;
-- current non-publishing Microsoft Store AppX identity version: `1.0.0.0`.
+- published Store source line: `1.0.0-rc.10`;
+- published desktop build version: `1.0.0.10`;
+- published Microsoft Store AppX identity version: `1.0.0.0`.
 
 The Store AppX four-part identity is not the desktop build counter. See [Versioning authority](VERSIONING.md).
 
@@ -36,24 +32,24 @@ An official Windows package must:
 
 - derive from reviewed public Metrora source and the canonical bundled runtime;
 - retain the local filesystem access required for supported usage sources;
-- preserve endpoint identity, Workspace state, secure-storage material and user-owned data;
+- preserve endpoint identity, Workspace state and user-owned data;
 - contain only declared product bytes and metadata;
 - expose truthful product, publisher, version and channel information;
-- remain independently traceable through checksums, manifests and provenance;
+- remain traceable through checksums, manifests and provenance;
 - pass clean installation, first launch, update, removal and rollback acceptance;
-- keep private user data out of package metadata, reports and provenance.
+- keep private user data out of package metadata and reports.
 
-## GitHub technical preview
+## Historical GitHub previews
 
-An unsigned GitHub pre-release follows the separate source, candidate, physical and publication gates in [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md).
+Unsigned GitHub pre-releases follow the separate source and acceptance rules in [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md).
 
-The existing RC7 release remains immutable. Later Store-readiness changes do not retroactively modify or re-label those artifacts.
+The existing RC7 release remains immutable as a historical technical preview. Later Store and source changes do not retroactively modify or re-label those artifacts, and the public Windows install path points to Microsoft Store instead.
 
-## Microsoft Store candidate boundary
+## Microsoft Store distribution
 
-The Store workflow builds an unsigned AppX candidate and inspects its identity, architecture, capabilities and payload boundary without publishing it. The packaged CLI production closure is sealed inside `cli.asar`; only a tiny stable launcher remains loose. The workflow must execute that packaged CLI from the extracted AppX payload using packaged `Metrora.exe`, and a loose CLI `node_modules` tree is not an accepted Store runtime boundary. A separate copy may be signed with a temporary local certificate only for physical acceptance.
+The Store workflow derives an x64 AppX from reviewed source and validates its identity, architecture, capabilities and bundled runtime boundary. The Store manifest's four-part package identity remains separate from the desktop build counter.
 
-The source line associated with the Store submission passed the exact source-bound local Store test and cleanup. A local PASS is evidence for candidate acceptance; it is not Microsoft certification and does not establish publication or availability. Later source work remains separate from that submitted artifact.
+The published Store line passed its source-bound package and physical-runtime acceptance before publication. Later source work remains separate until a future Store update is explicitly prepared and accepted.
 
 ## Accounting presentation boundary
 
@@ -61,22 +57,21 @@ Lifetime and historical model totals use durable local accounting so usage does 
 
 Presentation-sized top-N history must never silently become an accounting authority. Where old payloads retain only a top-N model list, any unrepresented remainder is shown as an explicit unattributed model-history gap rather than assigned to a named model or dropped from the total.
 
-## Acceptance gates
+## Update acceptance gates
 
-Before official publication, verify on supported physical Windows systems:
+For each future official Windows Store update, verify:
 
 1. product and publisher identity are exact;
 2. first launch works without an external Node.js installation;
-3. the CLI bundled in the Store payload starts and resolves its runtime dependencies from the packaged layout;
+3. the bundled CLI starts from the packaged layout;
 4. supported local usage sources remain discoverable;
-5. intended migration reuses existing endpoint and Workspace state safely;
+5. existing endpoint and Workspace state are preserved safely;
 6. installation channels do not collide or silently migrate one another;
 7. update and rollback preserve user-owned local state;
-8. removal clears application authority while preserving local state by default;
-9. public version and channel information are truthful;
-10. no private data enters package metadata, reports or provenance;
-11. published artifacts remain bound to reviewed public source.
+8. public version and channel information are truthful;
+9. no private data enters package metadata, reports or provenance;
+10. published artifacts remain bound to reviewed public source.
 
 ## Responsibility boundary
 
-Product build, package derivation, independent verification, channel submission, publication and rollback remain separate responsibilities. No single workflow receives unnecessary authority over all of them.
+Product build, package derivation, independent verification, channel publication and rollback remain separate responsibilities.

@@ -72,8 +72,8 @@ const requiredFiles = {
     'Vensent',
   ],
   'README.md': [
-    'Metrora `1.0.0-rc.7` is available as an **unsigned Windows x64 technical preview**',
-    'https://github.com/maikolsiragusaa/metrora/releases/tag/v1.0.0-rc.7',
+    'Metrora for Windows is available on the **Microsoft Store**',
+    'https://apps.microsoft.com/detail/9NXSZFQSBBDX',
     'Metrora is independently maintained',
   ],
   'app/renderer/components/AboutModal.tsx': [

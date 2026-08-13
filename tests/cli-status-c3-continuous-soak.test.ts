@@ -45,7 +45,7 @@ function runFreshStatus(home: string) {
     METRORA_VERBOSE: '1',
   }
   delete env.METRORA_READ_MODE
-  return spawnSync(process.execPath, ['dist/cli.js', 'status', '--format', 'terminal', '--provider', 'codex'], {
+  return spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'status', '--format', 'terminal', '--provider', 'codex'], {
     cwd: process.cwd(),
     env,
     encoding: 'utf8',
