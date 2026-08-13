@@ -1,8 +1,10 @@
 # Getting started
 
-Metrora does not yet have an official stable desktop distribution. You can evaluate it from source, or use the published **unsigned Windows x64 technical preview `v1.0.0-rc.7`** from GitHub Releases. RC7 is not signed, Microsoft Store certified, automatically updated or the stable `1.0.0` release.
+Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The Store package is the supported public Windows distribution. You can also build Metrora from source for development, inspection and contribution.
 
-The repository's active source line may be newer than the latest published technical preview. Source builds must therefore be identified by their exact commit/version rather than treated as RC7 release assets or Store packages.
+[Get Metrora from Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
+
+Repository source may be newer than the currently published Store package. Source builds must therefore be identified by their exact commit/version and must not be treated as Store-signed packages.
 
 ## Requirements
 
@@ -142,7 +144,7 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Development builds are not official signed releases. Windows is the first official desktop distribution target. Metrora has an assigned Microsoft Store identity and a non-publishing AppX local-acceptance path. Source builds are not Store submissions; submission, certification and publication are separate gates.
+Development builds are not official Store-signed releases. Windows is the first supported public desktop distribution, and the Microsoft Store package is the recommended Windows install path. Repository packaging commands remain development and verification tools rather than alternate public distribution channels.
 
 See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
 

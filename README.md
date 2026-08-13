@@ -6,7 +6,7 @@
 
 Understand where AI time, tokens and money go across tools, models, projects and sessions — without routing your work through another service.
 
-[Website](https://metrora.eu) · [Windows preview](https://github.com/maikolsiragusaa/metrora/releases/tag/v1.0.0-rc.7) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
+[Website](https://metrora.eu) · [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
@@ -14,17 +14,13 @@ Understand where AI time, tokens and money go across tools, models, projects and
 </div>
 
 > [!IMPORTANT]
-> Metrora `1.0.0-rc.7` is available as an **unsigned Windows x64 technical preview**. It is not the stable `1.0.0` release, a signed package, a Microsoft Store package or an automatic update channel. Windows SmartScreen may show a warning. Verify `SHA256SUMS.txt` before running downloaded binaries.
+> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The Store package is the supported public Windows distribution. Repository builds and historical GitHub pre-releases remain separate development or archival artifacts and are not the recommended install path.
 
-## Download the Windows technical preview
+## Install Metrora on Windows
 
-Download the accepted installer or portable bundle from the [Metrora 1.0.0-rc.7 GitHub pre-release](https://github.com/maikolsiragusaa/metrora/releases/tag/v1.0.0-rc.7):
+Get Metrora from the [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX).
 
-- `Metrora-Setup-1.0.0-rc.7.exe` — unsigned Windows installer;
-- `Metrora-1.0.0-rc.7-Windows-x64-portable.zip` — portable Windows bundle;
-- `SHA256SUMS.txt` — checksums for the published payload assets.
-
-The published binaries were derived from one accepted candidate at commit `e158ee34e570161c778162be77629b3a4dbb74fe`, passed the documented automated and physical Windows acceptance, and remain subject to the limitations above. See the [version-scoped publication record](release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md).
+The Store package installs the bundled Metrora desktop and CLI runtime without requiring a separate Node.js installation. Source builds remain available for development, inspection and contribution; see [Getting started](docs/GETTING_STARTED.md).
 
 ## What Metrora helps you understand
 
@@ -150,14 +146,14 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 
 | Surface | Role | Current status |
 | --- | --- | --- |
-| Desktop | Primary local analysis and configuration | Unsigned Windows x64 technical preview available; stable and Microsoft Store distributions are not yet available |
-| CLI | Automation, inspection, export and keyboard-first analysis | Available from source |
-| Local web dashboard | Browser view served from the local machine | Available from source |
+| Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows** |
+| CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
+| Local web dashboard | Browser view served from the local machine | Available locally |
 | Android companion | Read-only local-network companion foundation | Experimental |
 | macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
 | GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
 
-Windows is the first official desktop distribution target. Source support for other platforms does not imply that an accepted signed package exists for those platforms.
+Windows is the first supported public desktop distribution. Source support for other platforms does not imply that an accepted public package exists for those platforms.
 
 ## Privacy model
 

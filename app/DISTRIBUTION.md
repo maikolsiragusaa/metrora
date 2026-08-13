@@ -7,12 +7,13 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Product: `Metrora`
 - Desktop app ID: `eu.metrora.desktop`
 - Website: `https://metrora.eu`
-- Current source/desktop candidate: `1.0.0-rc.10`
-- Current desktop build version: `1.0.0.10`
-- Latest published GitHub technical preview: `1.0.0-rc.7`
-- Current non-publishing Store AppX identity version: `1.0.0.0`
+- Microsoft Store: `https://apps.microsoft.com/detail/9NXSZFQSBBDX`
+- Published Store source line: `1.0.0-rc.10`
+- Published desktop build version: `1.0.0.10`
+- Published Store AppX identity version: `1.0.0.0`
+- Historical GitHub technical preview: `1.0.0-rc.7`
 
-Inherited names may remain only where required for compatibility or upstream provenance. They are not Metrora distribution names.
+Inherited names may remain only where required for compatibility or provenance. They are not Metrora distribution names.
 
 ## Bundled runtime
 
@@ -32,11 +33,11 @@ npm --prefix app run package          # macOS
 npm --prefix app run package:arm64    # macOS arm64
 npm --prefix app run package:x64      # macOS x64
 npm --prefix app run package:win      # Windows NSIS x64
-npm --prefix app run package:store    # Windows AppX x64, non-publishing
+npm --prefix app run package:store    # Windows AppX x64, development packaging
 npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
 ```
 
-These commands create development or engineering artifacts. They do not by themselves create an official release or a Store submission.
+These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution.
 
 ## Official distribution requirements
 
@@ -55,11 +56,11 @@ An official desktop package must:
 
 ### Windows
 
-The development Windows installer is x64, per-user, assisted rather than one-click, non-destructive to application data on uninstall and named `Metrora-Setup-<version>.exe`.
+The supported public Windows distribution is the Microsoft Store package published by Vensent.
 
-The Microsoft Store path builds an x64 AppX with the assigned Store identity and `runFullTrust`, without publishing it. The Store manifest's four-part package identity is separate from the desktop build counter; see [`../docs/VERSIONING.md`](../docs/VERSIONING.md).
+Development Windows installers may still be produced for engineering validation. They are not the recommended public install path and must not be represented as Store-distributed packages.
 
-Unsigned engineering artifacts may trigger platform reputation warnings. Their signature status must remain explicit and they must not be represented as channel-certified packages.
+The Microsoft Store path uses an x64 AppX with the assigned Store identity and `runFullTrust`. The Store manifest's four-part package identity is separate from the desktop build counter; see [`../docs/VERSIONING.md`](../docs/VERSIONING.md).
 
 ### macOS
 
@@ -83,8 +84,7 @@ Keep these responsibilities separate:
 - format packaging;
 - independent verification;
 - physical acceptance;
-- channel submission;
-- publication;
+- channel publication;
 - update and rollback handling.
 
 No all-purpose workflow should receive unnecessary authority over every stage.
