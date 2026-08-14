@@ -206,6 +206,7 @@ skipUnlessSqlite('quickdesk provider', () => {
       outputTokens: 30,
       costUSD: 0.0042,
       costIsEstimated: false,
+      costAssignment: { kind: 'metered', source: 'client' },
       tools: ['Read'],
       timestamp: '2026-07-14T00:00:00.123Z',
       sessionId: 'session-alpha',

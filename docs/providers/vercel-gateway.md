@@ -27,6 +27,14 @@ Set one of:
 
 None. Each parse issues one API request for the requested date range.
 
+## Pricing evidence
+
+The report source is preserved as the explicit
+`pricingContext.gateway = vercel-ai-gateway`. A non-negative `total_cost`
+is bound as exact billing-export evidence. Rows without `total_cost` remain
+estimated/unavailable and do not receive a synthetic metered zero; no
+downstream model provider is inferred as the billing authority.
+
 ## Deduplication
 
 Per `vercel-gateway:<day>:<model>`.

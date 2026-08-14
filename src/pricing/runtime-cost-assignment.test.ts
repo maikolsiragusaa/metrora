@@ -56,6 +56,7 @@ describe('runtime historical cost assignment', () => {
     const result = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
       provider: 'vercel-gateway',
       legacyCostUSD: 9.876543,
+      meteredCost: { amountUSD: 9.876543, source: 'billing-export' as const },
     }))
     expect(result.storedCostUSD).toBe(9.876543)
     expect(result.storedAssignment).toMatchObject({ kind: 'metered', source: 'billing-export' })
@@ -95,6 +96,42 @@ describe('runtime historical cost assignment', () => {
     expect(routed.storedAssignment.kind).toBe('legacy-frozen')
   })
 
+  it('does not let gateway evidence borrow the original model-provider price', () => {
+    const routed = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
+      modelProvider: 'openai',
+      pricingContext: { gateway: 'openrouter' },
+    }))
+    expect(routed.storedAssignment.kind).toBe('legacy-frozen')
+  })
+
+  it('does not treat explicit inference-provider evidence as pricing authority', () => {
+    const observed = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
+      modelProvider: 'openai',
+      pricingContext: { inferenceProvider: 'openai' },
+    }))
+    expect(observed.storedAssignment.kind).toBe('legacy-frozen')
+
+    const modelOnly = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
+      modelProvider: undefined,
+      pricingContext: undefined,
+    }))
+    expect(modelOnly.storedAssignment.kind).toBe('legacy-frozen')
+  })
+
+  it('does not promote model owner or collector branding to pricing authority', () => {
+    const ownerOnly = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
+      modelProvider: 'openai',
+      pricingContext: { modelOwner: 'openai' },
+    }))
+    expect(ownerOnly.storedAssignment.kind).toBe('legacy-frozen')
+
+    const brandOnly = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
+      provider: 'copilot',
+      modelProvider: undefined,
+      pricingContext: undefined,
+    }))
+    expect(brandOnly.storedAssignment.kind).toBe('legacy-frozen')
+  })
   it('supports compare and rollback views without mutating the stored historical settlement', () => {
     process.env['METRORA_HISTORICAL_PRICING'] = 'compare'
     const compared = assignRuntimeCostV1(input('2026-07-31T00:00:00Z'))

@@ -165,6 +165,7 @@ describe('codewhale provider', () => {
       provider: 'codewhale',
       model: 'anthropic/claude-sonnet-4-6',
       modelProvider: 'deepseek',
+      pricingContext: { inferenceProvider: 'deepseek' },
       inputTokens: 12_345,
       outputTokens: 0,
       cacheCreationInputTokens: 0,
@@ -173,6 +174,7 @@ describe('codewhale provider', () => {
       webSearchRequests: 1,
       costUSD: 0.95,
       costIsEstimated: false,
+      costAssignment: { kind: 'metered', source: 'client' },
       timestamp: '2026-07-15T12:34:56.000Z',
       userMessage: 'Implement the parser',
       sessionId: 'session-full',
@@ -209,14 +211,22 @@ describe('codewhale provider', () => {
       model: 'gpt-4o-mini',
       cost: { session_cost_usd: 0, subagent_cost_usd: 0 },
     })
+    const malformedPath = await writeSession(join(tmpDir, 'sessions'), 'malformed.json', {
+      totalTokens: 1_000_000,
+      model: 'gpt-4o-mini',
+      cost: { session_cost_usd: 'not-a-number' },
+    })
 
     const [estimated] = await parseOne(estimatedPath)
     const [exactZero] = await parseOne(exactZeroPath)
+    const [malformed] = await parseOne(malformedPath)
 
     expect(estimated!.costUSD).toBeGreaterThan(0)
     expect(estimated!.costIsEstimated).toBe(true)
     expect(exactZero!.costUSD).toBe(0)
     expect(exactZero!.costIsEstimated).toBe(false)
+    expect(malformed!.costIsEstimated).toBe(true)
+    expect(malformed!.costAssignment).toBeUndefined()
   })
 
   it('retains an explicit zero-cost record when aggregate tokens are absent', async () => {

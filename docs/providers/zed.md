@@ -4,7 +4,7 @@ Zed's built-in AI agent.
 
 - **Source:** `src/providers/zed.ts`
 - **Loading:** lazy via `src/providers/index.ts`
-- **Parser version:** `sqlite-zstd-ledger-v1-model-provider-v1`
+- **Parser version:** `sqlite-zstd-ledger-v1-model-provider-v1-pricing-context-v1`
 - **Blocking tests:** Zed SQLite/zstd tests on Node 22.15 on Ubuntu and Windows
 - **Signed sharing:** approved only for the two reviewed paths described below
 

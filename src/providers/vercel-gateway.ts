@@ -1,5 +1,6 @@
 import type { DateRange } from '../types.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import { sourceMeteredCostAssignment } from './cost-evidence.js'
 import { fetchWithTimeout } from '../fetch-utils.js'
 
 const REPORT_URL = 'https://ai-gateway.vercel.sh/v1/report'
@@ -83,7 +84,7 @@ function createParser(
       for (const row of rows) {
         const day = row.day ?? ''
         const model = row.model ?? 'unknown'
-        const sourceCost = typeof row.total_cost === 'number' && Number.isFinite(row.total_cost) ? row.total_cost : undefined
+        const sourceCost = typeof row.total_cost === 'number' && Number.isFinite(row.total_cost) && row.total_cost >= 0 ? row.total_cost : undefined
         const costUSD = sourceCost ?? 0
         const inputTokens = row.input_tokens ?? 0
         const outputTokens = row.output_tokens ?? 0
@@ -102,6 +103,9 @@ function createParser(
         yield {
           provider: 'vercel-gateway',
           model,
+          pricingContext: { gateway: 'vercel-ai-gateway' },
+          costIsEstimated: sourceCost === undefined,
+          ...(sourceCost !== undefined ? { costAssignment: sourceMeteredCostAssignment(sourceCost, 'billing-export') } : {}),
           inputTokens,
           outputTokens,
           cacheCreationInputTokens: cacheWriteTokens,

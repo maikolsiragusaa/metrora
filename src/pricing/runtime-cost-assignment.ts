@@ -195,16 +195,6 @@ function explicitZeroAssignment(reason: 'free-route' | 'local-inference' | 'manu
   })
 }
 
-function meteredSource(
-  provider: string,
-  isEstimated: boolean | undefined,
-): 'provider' | 'client' | 'billing-export' | undefined {
-  if (provider === 'vercel-gateway') return 'billing-export'
-  if (isEstimated === true) return undefined
-  if (provider === 'hermes' || provider === 'codewhale' || provider === 'quickdesk') return 'client'
-  return undefined
-}
-
 function meteredAssignment(costUSD: number, source: 'provider' | 'client' | 'billing-export'): CostAssignmentV1 {
   return CostAssignmentV1Schema.parse({
     version: 1,
@@ -270,7 +260,15 @@ function resolveHistoricalRecord(
 ): ReturnType<typeof resolveHistoricalPriceAcrossBooksV1> {
   const pricingModel = getHistoricalPricingModelKey(input.model)
   const pricingContext = contextForInput(input)
-  const pricingAuthority = normalizeAuthority(pricingContext?.pricingAuthority ?? input.modelProvider)
+  // Once a collector supplies structured pricing context, modelProvider stays
+  // descriptive. It must not become a pricing authority by fallback, because
+  // a route/gateway or inference-provider identity can be hosted by another
+  // billing authority. The legacy fallback remains only for older callers
+  // that have no pricing context at all.
+  const pricingAuthority = normalizeAuthority(
+    pricingContext?.pricingAuthority
+      ?? (input.pricingContext === undefined ? input.modelProvider : undefined),
+  )
 
   // An observed authority is required. In particular, a gateway/router name
   // must not silently fall back to the model owner's direct API price.
@@ -405,16 +403,6 @@ export function assignRuntimeCostV1(inputValue: RuntimeCostAssignmentInputV1): R
     }
   }
 
-  const inferredMetered = meteredSource(inputValue.provider, inputValue.isEstimated)
-  if (!existing && inferredMetered !== undefined) {
-    const assignment = meteredAssignment(legacyCostUSD, inferredMetered)
-    return {
-      storedCostUSD: legacyCostUSD,
-      storedAssignment: assignment,
-      runtimeCostUSD: legacyCostUSD,
-      runtimeAssignment: assignment,
-    }
-  }
 
   const zeroReason = explicitZeroReasonForModel(inputValue.model)
   if (zeroReason) {

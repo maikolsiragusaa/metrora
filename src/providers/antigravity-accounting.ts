@@ -141,6 +141,7 @@ export function buildCallsFromGeneratorMetadata(
 
       results.push({
         provider: 'antigravity', model, ...(modelProvider ? { modelProvider } : {}),
+        ...(modelProvider ? { pricingContext: { inferenceProvider: modelProvider } } : {}),
         inputTokens, outputTokens: responseTokens,
         cacheCreationInputTokens: cacheCreationTokens, cacheReadInputTokens: cacheReadTokens,
         cachedInputTokens: 0, reasoningTokens: thinkingTokens, webSearchRequests: 0, costUSD,

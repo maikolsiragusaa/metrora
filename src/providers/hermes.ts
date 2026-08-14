@@ -6,6 +6,7 @@ import { calculateCost, getShortModelName } from '../models.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { isSqliteAvailable, getSqliteLoadError, openDatabase, isSqliteBusyError, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import { sourceMeteredCostAssignment } from './cost-evidence.js'
 import type { ToolCall } from '../types.js'
 
 type HermesSessionRow = {
@@ -377,8 +378,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         const cacheWriteTokens = row.cache_write_tokens ?? 0
         const reasoningTokens = row.reasoning_tokens ?? 0
         const hasRecordedCost =
-          (typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd)) ||
-          (typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd))
+          (typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd) && row.actual_cost_usd >= 0) ||
+          (typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd) && row.estimated_cost_usd >= 0)
         if (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens + reasoningTokens === 0 && !hasRecordedCost) return
 
         const model = row.model ?? 'unknown'
@@ -407,8 +408,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
           cacheReadTokens,
           0,
         )
-        const hasActualCost = typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd)
-        const hasEstimatedCost = typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd)
+        const hasActualCost = typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd) && row.actual_cost_usd >= 0
+        const hasEstimatedCost = typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd) && row.estimated_cost_usd >= 0
         const recordedCost = hasActualCost
           ? row.actual_cost_usd
           : hasEstimatedCost ? row.estimated_cost_usd : null
@@ -421,6 +422,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
           provider: 'hermes',
           model,
           ...(modelProvider ? { modelProvider } : {}),
+          ...(modelProvider ? { pricingContext: { inferenceProvider: modelProvider } } : {}),
           inputTokens,
           outputTokens,
           cacheCreationInputTokens: cacheWriteTokens,
@@ -430,6 +432,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
           webSearchRequests: 0,
           costUSD,
           costIsEstimated,
+          ...(hasActualCost ? { costAssignment: sourceMeteredCostAssignment(costUSD, 'client') } : {}),
           tools,
           bashCommands,
           timestamp,

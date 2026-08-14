@@ -157,6 +157,7 @@ export function buildAssistantCall(opts: {
     provider: opts.providerName,
     model,
     ...(modelProvider ? { modelProvider } : {}),
+    ...(modelProvider ? { pricingContext: { route: modelProvider } } : {}),
     inputTokens: tokens.input,
     outputTokens: tokens.output,
     cacheCreationInputTokens: tokens.cacheWrite,

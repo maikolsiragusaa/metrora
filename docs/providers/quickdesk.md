@@ -31,6 +31,12 @@ The on-disk schema is reverse-engineered. AWS officially documents the `.quickwo
 
 Quick Desktop is an eager provider using the shared session cache. Each metrics file and profile database is a separate cache source. The `QUICKWORK_HOME` value and the Quick Desktop parser version participate in the provider cache fingerprint. Sources are durable because Quick Desktop may prune its managed store; cached records are retained when a previously discovered source disappears.
 
+## Pricing evidence
+
+A numeric `CostUSD` is source-reported client-metered evidence. Rows without
+that field remain token-estimated; the Quick Desktop product name and model
+label do not establish a pricing authority.
+
 ## Deduplication
 
 Metrics calls with a session use `quickdesk:<session_id>:<timestamp>:<model>:<input>:<output>`. Session-less calls use `quickdesk:<profile>:<file>:<timestamp>:<model>:<input>:<output>`. Estimated database-only sessions use `quickdesk-est:<session_id>`. All keys are stable across runs.

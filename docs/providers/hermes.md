@@ -53,6 +53,12 @@ Terminal command arguments are exposed as `bashCommands` for Metrora's command b
 
 The shared session cache fingerprints Hermes state DB files. `HERMES_HOME` is included in the provider environment fingerprint so changing the runtime home invalidates stale cached results.
 
+## Pricing evidence
+
+`actual_cost_usd` is bound as client-metered evidence when present, including
+an explicit zero. `estimated_cost_usd` and token-table reconstruction remain
+estimated; `billing_provider` is preserved as source provider evidence only.
+
 ## Quirks
 
 - The provider is aggregate-first because Hermes' stable accounting lives in `sessions`. Do not infer per-turn usage from message text.
