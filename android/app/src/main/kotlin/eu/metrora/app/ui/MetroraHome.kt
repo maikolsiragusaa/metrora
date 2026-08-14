@@ -253,31 +253,21 @@ private fun SnapshotCard(snapshot: UsageSnapshot, state: MetroraUiState) {
 
 @Composable
 private fun FreshnessBadge(state: MetroraUiState) {
-    val (label, icon, containerColor, contentColor) = when {
-        state.status == MetroraConnectionState.REFRESHING -> FreshnessBadgeCopy(
-            R.string.data_refreshing,
-            Icons.Outlined.Refresh,
-            MaterialTheme.colorScheme.primaryContainer,
-            MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-        state.status == MetroraConnectionState.CONNECTED -> FreshnessBadgeCopy(
-            R.string.data_fresh,
-            Icons.Outlined.CheckCircle,
-            MaterialTheme.colorScheme.primaryContainer,
-            MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-        state.failure != null -> FreshnessBadgeCopy(
-            R.string.data_saved_after_failed_refresh,
-            Icons.Outlined.CloudOff,
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        else -> FreshnessBadgeCopy(
-            R.string.data_saved_on_phone,
-            Icons.Outlined.Refresh,
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    val freshness = freshnessPresentation(state)
+    val icon = when (freshness.kind) {
+        FreshnessKind.FRESH -> Icons.Outlined.CheckCircle
+        FreshnessKind.CHECKING,
+        FreshnessKind.SAVED,
+        -> Icons.Outlined.Refresh
+        FreshnessKind.REFRESH_FAILED -> Icons.Outlined.CloudOff
+    }
+    val (containerColor, contentColor) = when (freshness.kind) {
+        FreshnessKind.FRESH,
+        FreshnessKind.CHECKING,
+        -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        FreshnessKind.SAVED,
+        FreshnessKind.REFRESH_FAILED,
+        -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Surface(
@@ -296,7 +286,7 @@ private fun FreshnessBadge(state: MetroraUiState) {
                 modifier = Modifier.size(16.dp),
             )
             Text(
-                text = androidx.compose.ui.res.stringResource(label),
+                text = androidx.compose.ui.res.stringResource(freshness.label),
                 color = contentColor,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
@@ -304,13 +294,6 @@ private fun FreshnessBadge(state: MetroraUiState) {
         }
     }
 }
-
-private data class FreshnessBadgeCopy(
-    val label: Int,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val containerColor: androidx.compose.ui.graphics.Color,
-    val contentColor: androidx.compose.ui.graphics.Color,
-)
 
 @Composable
 private fun MetricTile(label: String, value: String, modifier: Modifier = Modifier) {

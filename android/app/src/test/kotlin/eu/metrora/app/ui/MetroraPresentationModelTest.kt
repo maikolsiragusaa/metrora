@@ -75,4 +75,62 @@ class MetroraPresentationModelTest {
             ).showingCachedData,
         )
     }
+
+    @Test
+    fun snapshot_with_refresh_failure_shows_refresh_failed_freshness() {
+        val state = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.OFFLINE_WITH_SNAPSHOT,
+            snapshot = testSnapshot(),
+            failure = MetroraFailure(
+                operation = MetroraOperation.REFRESH,
+                category = MetroraFailureCategory.CONNECTIVITY,
+                reason = MetroraFailureReason.TIMEOUT,
+            ),
+        )
+
+        assertEquals(FreshnessKind.REFRESH_FAILED, freshnessPresentation(state).kind)
+        assertEquals(R.string.data_saved_after_failed_refresh, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun snapshot_with_revoke_failure_stays_neutral_saved() {
+        val state = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.ERROR,
+            snapshot = testSnapshot(),
+            failure = MetroraFailure(
+                operation = MetroraOperation.REVOKE,
+                category = MetroraFailureCategory.CONNECTIVITY,
+                reason = MetroraFailureReason.DESKTOP_UNREACHABLE,
+            ),
+        )
+
+        assertEquals(FreshnessKind.SAVED, freshnessPresentation(state).kind)
+        assertEquals(R.string.data_saved_on_phone, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun restored_snapshot_without_failure_stays_neutral_saved() {
+        val state = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.RESTORED,
+            snapshot = testSnapshot(),
+        )
+
+        assertEquals(FreshnessKind.SAVED, freshnessPresentation(state).kind)
+        assertEquals(R.string.data_saved_on_phone, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun connected_snapshot_is_fresh() {
+        val state = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.CONNECTED,
+            snapshot = testSnapshot(),
+        )
+
+        assertEquals(FreshnessKind.FRESH, freshnessPresentation(state).kind)
+        assertEquals(R.string.data_fresh, freshnessPresentation(state).label)
+    }
 }

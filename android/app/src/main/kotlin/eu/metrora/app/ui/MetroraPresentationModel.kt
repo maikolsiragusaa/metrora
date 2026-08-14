@@ -16,6 +16,7 @@ import eu.metrora.app.MetroraFailureReason
 import eu.metrora.app.MetroraNotice
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.R
+import eu.metrora.app.MetroraUiState
 import java.math.BigDecimal
 import java.text.DateFormat
 import java.text.NumberFormat
@@ -38,6 +39,37 @@ internal data class StatusCopy(
     val iconDescription: Int,
     val tone: StatusTone,
 )
+
+internal enum class FreshnessKind {
+    FRESH,
+    CHECKING,
+    SAVED,
+    REFRESH_FAILED,
+}
+
+internal data class FreshnessPresentation(
+    val label: Int,
+    val kind: FreshnessKind,
+)
+
+internal fun freshnessPresentation(state: MetroraUiState): FreshnessPresentation = when {
+    state.status == MetroraConnectionState.REFRESHING -> FreshnessPresentation(
+        R.string.data_refreshing,
+        FreshnessKind.CHECKING,
+    )
+    state.status == MetroraConnectionState.CONNECTED -> FreshnessPresentation(
+        R.string.data_fresh,
+        FreshnessKind.FRESH,
+    )
+    state.failure?.operation == MetroraOperation.REFRESH -> FreshnessPresentation(
+        R.string.data_saved_after_failed_refresh,
+        FreshnessKind.REFRESH_FAILED,
+    )
+    else -> FreshnessPresentation(
+        R.string.data_saved_on_phone,
+        FreshnessKind.SAVED,
+    )
+}
 
 internal fun statusCopy(status: MetroraConnectionState): StatusCopy = when (status) {
     MetroraConnectionState.UNPAIRED -> StatusCopy(
