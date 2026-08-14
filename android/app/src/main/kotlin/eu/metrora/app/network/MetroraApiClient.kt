@@ -1,28 +1,22 @@
 package eu.metrora.app.network
 
-import android.annotation.SuppressLint
+import eu.metrora.app.MetroraException
+import eu.metrora.app.MetroraFailure
+import eu.metrora.app.MetroraFailureCategory
+import eu.metrora.app.MetroraFailureReason
+import eu.metrora.app.MetroraOperation
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.DeviceIdentity
-import eu.metrora.app.security.IdentityMaterial
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
-import java.net.Socket
-import java.net.URL
-import java.security.MessageDigest
-import java.security.Principal
-import java.security.PrivateKey
-import java.security.SecureRandom
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.security.InvalidKeyException
+import java.security.UnrecoverableKeyException
 import java.security.cert.CertificateException
-import java.security.cert.X509Certificate
-import javax.net.ssl.HostnameVerifier
-import javax.net.ssl.HttpsURLConnection
-import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLEngine
-import javax.net.ssl.X509ExtendedKeyManager
-import javax.net.ssl.X509TrustManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import javax.net.ssl.SSLException
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
 data class DiscoveredDesktop(
@@ -32,107 +26,252 @@ data class DiscoveredDesktop(
     val fingerprint: String,
 )
 
+interface MetroraApi {
+    suspend fun discover(host: String, port: Int): DiscoveredDesktop
+
+    fun pairingCode(desktop: DiscoveredDesktop): String
+
+    suspend fun pair(
+        desktop: DiscoveredDesktop,
+        expectedCode: String,
+        deviceName: String,
+    ): PairingCredentials
+
+    suspend fun fetchUsage(credentials: PairingCredentials, period: String = "month"): UsageSnapshot
+
+    suspend fun revoke(credentials: PairingCredentials)
+
+    fun localIdentityMatches(credentials: PairingCredentials): Boolean
+}
+
 class MetroraApiClient(
-    private val deviceIdentity: DeviceIdentity = DeviceIdentity(),
-) {
-    suspend fun discover(host: String, port: Int): DiscoveredDesktop = withContext(Dispatchers.IO) {
-        val normalizedHost = MetroraProtocol.normalizeHost(host)
-        val normalizedPort = MetroraProtocol.validatePort(port)
-        val response = call(
+    private val identity: ClientIdentity = DeviceIdentity(),
+    private val transport: MetroraTransport = TlsMetroraTransport(identity),
+) : MetroraApi {
+    override suspend fun discover(host: String, port: Int): DiscoveredDesktop = mapped(MetroraOperation.DISCOVER) {
+        val normalizedHost = try {
+            MetroraProtocol.normalizeHost(host)
+        } catch (error: IllegalArgumentException) {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.INVALID_HOST,
+                "Desktop address validation failed",
+                error,
+            )
+        }
+        val normalizedPort = try {
+            MetroraProtocol.validatePort(port)
+        } catch (error: IllegalArgumentException) {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.INVALID_PORT,
+                "Desktop port validation failed",
+                error,
+            )
+        }
+        val response = transport.request(
             host = normalizedHost,
             port = normalizedPort,
             method = "GET",
             path = MetroraProtocol.HELLO_PATH,
             expectedFingerprint = null,
         )
-        require(response.status == 200) { "The desktop did not expose the Metrora companion API." }
-        val json = JSONObject(response.body)
-        require(json.optString("product") == "metrora") { "The target is not a Metrora desktop." }
-        val apiVersion = json.optInt("apiVersion", -1)
-        val supportsV1 = apiVersion == MetroraProtocol.API_VERSION ||
-            (json.optJSONArray("apiVersions")?.let { versions ->
-                (0 until versions.length()).any { index -> versions.optInt(index, -1) == MetroraProtocol.API_VERSION }
-            } == true)
-        require(supportsV1) { "The desktop does not support Metrora companion API v1." }
+        ensureSuccess(MetroraOperation.DISCOVER, response)
+        val json = parseJson(MetroraOperation.DISCOVER, response.body)
+        if (json.optString("product") != "metrora") {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.DESKTOP_NOT_METRORA,
+                "The endpoint identified a different product",
+            )
+        }
+        if (!supportsApiV1(json)) {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.PROTOCOL_VERSION_UNSUPPORTED,
+                "The endpoint does not advertise companion API v1",
+            )
+        }
         val supportsApprovedPairing = json.optJSONArray("pairingMethods")?.let { methods ->
             (0 until methods.length()).any { index -> methods.optString(index) == "approve-sas" }
         } == true
-        require(supportsApprovedPairing) { "Update Metrora Desktop before pairing this phone." }
-        val advertisedFingerprint = MetroraProtocol.normalizeFingerprint(json.getString("fingerprint"))
-        require(advertisedFingerprint == response.serverFingerprint) { "Desktop certificate identity mismatch." }
+        if (!supportsApprovedPairing) {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.PAIRING_NOT_AVAILABLE,
+                "The endpoint does not advertise approved pairing",
+            )
+        }
+        val advertisedFingerprint = try {
+            MetroraProtocol.normalizeFingerprint(json.getString("fingerprint"))
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint returned an invalid identity",
+                error,
+            )
+        }
+        if (advertisedFingerprint != response.serverFingerprint) {
+            throw failure(
+                MetroraOperation.DISCOVER,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.CERTIFICATE_MISMATCH,
+                "Advertised and presented desktop identities differ",
+            )
+        }
         DiscoveredDesktop(
             host = normalizedHost,
             port = normalizedPort,
-            name = json.optString("name").ifBlank { normalizedHost },
+            name = json.optString("name").trim().ifBlank { normalizedHost }.take(120),
             fingerprint = advertisedFingerprint,
         )
     }
 
-    fun pairingCode(desktop: DiscoveredDesktop): String = MetroraProtocol.pairingCode(
-        desktop.fingerprint,
-        deviceIdentity.material().fingerprint,
-    )
+    override fun pairingCode(desktop: DiscoveredDesktop): String = try {
+        MetroraProtocol.pairingCode(desktop.fingerprint, identity.fingerprint())
+    } catch (error: Exception) {
+        throw failure(
+            MetroraOperation.PAIR,
+            MetroraFailureCategory.IDENTITY_SECURITY,
+            MetroraFailureReason.LOCAL_IDENTITY_CHANGED,
+            "The phone identity is unavailable",
+            error,
+        )
+    }
 
-    suspend fun pair(
+    override suspend fun pair(
         desktop: DiscoveredDesktop,
         expectedCode: String,
         deviceName: String,
-    ): PairingCredentials = withContext(Dispatchers.IO) {
-        val identity = deviceIdentity.material()
-        val localCode = MetroraProtocol.pairingCode(desktop.fingerprint, identity.fingerprint)
-        require(localCode == expectedCode) { "The local pairing identity changed. Start again." }
-        val body = JSONObject()
-            .put("name", deviceName.trim().ifBlank { "Android" })
-            .toString()
-        val response = call(
+    ): PairingCredentials = mapped(MetroraOperation.PAIR) {
+        val clientFingerprint = try {
+            identity.fingerprint()
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.LOCAL_IDENTITY_CHANGED,
+                "The phone identity is unavailable",
+                error,
+            )
+        }
+        val localCode = try {
+            MetroraProtocol.pairingCode(desktop.fingerprint, clientFingerprint)
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.LOCAL_IDENTITY_CHANGED,
+                "The phone identity changed while pairing",
+                error,
+            )
+        }
+        if (localCode != expectedCode) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.LOCAL_IDENTITY_CHANGED,
+                "The phone identity changed while pairing",
+            )
+        }
+        val response = transport.request(
             host = desktop.host,
             port = desktop.port,
             method = "POST",
             path = MetroraProtocol.PAIR_REQUEST_PATH,
             expectedFingerprint = desktop.fingerprint,
-            body = body,
+            body = JSONObject()
+                .put("name", deviceName.trim().ifBlank { "Android" }.take(80))
+                .toString(),
             readTimeoutMs = PAIRING_TIMEOUT_MS,
         )
-        if (response.status != 200) {
-            val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
-            error(error.ifBlank { "Pairing failed with HTTP ${response.status}." })
+        ensureSuccess(MetroraOperation.PAIR, response)
+        val json = parseJson(MetroraOperation.PAIR, response.body)
+        val returnedFingerprint = try {
+            MetroraProtocol.normalizeFingerprint(json.getString("fingerprint"))
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint returned an invalid identity",
+                error,
+            )
         }
-        val json = JSONObject(response.body)
-        val returnedFingerprint = MetroraProtocol.normalizeFingerprint(json.getString("fingerprint"))
-        require(returnedFingerprint == desktop.fingerprint) { "Desktop identity changed during pairing." }
-        require(json.getString("code") == expectedCode) { "The pairing confirmation code changed." }
+        if (returnedFingerprint != desktop.fingerprint) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.DESKTOP_IDENTITY_CHANGED,
+                "The desktop identity changed during pairing",
+            )
+        }
+        if (json.optString("code") != expectedCode) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.CONFIRMATION_CODE_MISMATCH,
+                "The desktop returned a different confirmation code",
+            )
+        }
+        val token = json.optString("token").trim()
+        if (token.isBlank()) {
+            throw failure(
+                MetroraOperation.PAIR,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint did not return a pairing credential",
+            )
+        }
         PairingCredentials(
             host = desktop.host,
             port = desktop.port,
-            desktopName = json.optString("name").ifBlank { desktop.name },
+            desktopName = json.optString("name").trim().ifBlank { desktop.name }.take(120),
             serverFingerprint = desktop.fingerprint,
-            clientFingerprint = identity.fingerprint,
-            token = json.getString("token"),
+            clientFingerprint = clientFingerprint,
+            token = token,
             pairedAtEpochMs = System.currentTimeMillis(),
         )
     }
 
-    suspend fun fetchUsage(credentials: PairingCredentials, period: String = "month"): UsageSnapshot =
-        withContext(Dispatchers.IO) {
-            requireCurrentIdentity(credentials)
-            val response = call(
+    override suspend fun fetchUsage(credentials: PairingCredentials, period: String): UsageSnapshot =
+        mapped(MetroraOperation.REFRESH) {
+            requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+            val response = transport.request(
                 host = credentials.host,
                 port = credentials.port,
                 method = "GET",
                 path = MetroraProtocol.usagePath(period),
                 expectedFingerprint = credentials.serverFingerprint,
                 headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+                readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
             )
-            if (response.status != 200) {
-                val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
-                error(error.ifBlank { "Usage refresh failed with HTTP ${response.status}." })
+            ensureSuccess(MetroraOperation.REFRESH, response)
+            try {
+                CompanionUsageV1Parser.parse(response.body, credentials)
+            } catch (error: MetroraException) {
+                throw error
+            } catch (error: Exception) {
+                throw failure(
+                    MetroraOperation.REFRESH,
+                    MetroraFailureCategory.MALFORMED_RESPONSE,
+                    MetroraFailureReason.MALFORMED_RESPONSE,
+                    "The endpoint returned an invalid usage snapshot",
+                    error,
+                )
             }
-            CompanionUsageV1Parser.parse(response.body, credentials)
         }
 
-    suspend fun revoke(credentials: PairingCredentials) = withContext(Dispatchers.IO) {
-        requireCurrentIdentity(credentials)
-        val response = call(
+    override suspend fun revoke(credentials: PairingCredentials) = mapped(MetroraOperation.REVOKE) {
+        requireCurrentIdentity(credentials, MetroraOperation.REVOKE)
+        val response = transport.request(
             host = credentials.host,
             port = credentials.port,
             method = "POST",
@@ -140,126 +279,167 @@ class MetroraApiClient(
             expectedFingerprint = credentials.serverFingerprint,
             headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
         )
-        if (response.status != 200) {
-            val error = runCatching { JSONObject(response.body).optString("error") }.getOrNull().orEmpty()
-            error(error.ifBlank { "Access revocation failed with HTTP ${response.status}." })
-        }
-        require(JSONObject(response.body).optBoolean("revoked", false)) {
-            "The desktop did not confirm access revocation."
-        }
-    }
-
-    private fun requireCurrentIdentity(credentials: PairingCredentials) {
-        require(deviceIdentity.material().fingerprint == credentials.clientFingerprint) {
-            "This phone's client identity changed. Pair the desktop again."
+        ensureSuccess(MetroraOperation.REVOKE, response)
+        val json = parseJson(MetroraOperation.REVOKE, response.body)
+        if (!json.optBoolean("revoked", false)) {
+            throw failure(
+                MetroraOperation.REVOKE,
+                MetroraFailureCategory.UNEXPECTED,
+                MetroraFailureReason.REMOTE_REVOCATION_NOT_CONFIRMED,
+                "The desktop did not confirm revocation",
+            )
         }
     }
 
-    @SuppressLint("BadHostnameVerifier", "CustomX509TrustManager", "TrustAllX509TrustManager")
-    private fun call(
-        host: String,
-        port: Int,
-        method: String,
-        path: String,
-        expectedFingerprint: String?,
-        headers: Map<String, String> = emptyMap(),
-        body: String? = null,
-        readTimeoutMs: Int = READ_TIMEOUT_MS,
-    ): ApiResponse {
-        val identity = deviceIdentity.material()
-        val trustManager = FingerprintTrustManager(expectedFingerprint)
-        val context = SSLContext.getInstance("TLS")
-        context.init(arrayOf(SingleIdentityKeyManager(identity)), arrayOf(trustManager), SecureRandom())
-        val connection = (URL("https", host, port, path).openConnection() as HttpsURLConnection).apply {
-            requestMethod = method
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = readTimeoutMs
-            sslSocketFactory = context.socketFactory
-            hostnameVerifier = HostnameVerifier { _, _ -> true }
-            useCaches = false
-            doInput = true
-            headers.forEach { (name, value) -> setRequestProperty(name, value) }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setFixedLengthStreamingMode(body.toByteArray(Charsets.UTF_8).size)
-            }
-        }
-        return try {
-            if (body != null) connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val responseBody = stream?.use { input -> readBounded(input, MAX_RESPONSE_BYTES) }.orEmpty()
-            val fingerprint = trustManager.observedFingerprint
-                ?: error("The desktop did not present a certificate.")
-            ApiResponse(status, responseBody, fingerprint)
-        } finally {
-            connection.disconnect()
+    override fun localIdentityMatches(credentials: PairingCredentials): Boolean =
+        runCatching { identity.fingerprint() == credentials.clientFingerprint }.getOrDefault(false)
+
+    private fun requireCurrentIdentity(credentials: PairingCredentials, operation: MetroraOperation) {
+        if (!localIdentityMatches(credentials)) {
+            throw failure(
+                operation = operation,
+                category = MetroraFailureCategory.IDENTITY_SECURITY,
+                reason = MetroraFailureReason.LOCAL_IDENTITY_CHANGED,
+                detail = "The phone identity no longer matches the saved pairing",
+            )
         }
     }
 
-    private fun readBounded(input: InputStream, limit: Int): String {
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(8 * 1024)
-        var total = 0
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            total += read
-            require(total <= limit) { "The desktop response was too large." }
-            output.write(buffer, 0, read)
-        }
-        return output.toString(Charsets.UTF_8.name())
+    private fun supportsApiV1(json: JSONObject): Boolean {
+        val apiVersion = json.optInt("apiVersion", -1)
+        return apiVersion == MetroraProtocol.API_VERSION ||
+            (json.optJSONArray("apiVersions")?.let { versions ->
+                (0 until versions.length()).any { index -> versions.optInt(index, -1) == MetroraProtocol.API_VERSION }
+            } == true)
     }
+
+    private fun parseJson(operation: MetroraOperation, body: String): JSONObject = try {
+        JSONObject(body)
+    } catch (error: Exception) {
+        throw failure(
+            operation,
+            MetroraFailureCategory.MALFORMED_RESPONSE,
+            MetroraFailureReason.MALFORMED_RESPONSE,
+            "The endpoint returned malformed JSON",
+            error,
+        )
+    }
+
+    private fun ensureSuccess(operation: MetroraOperation, response: MetroraResponse) {
+        if (response.status == 200) return
+        val marker = runCatching { JSONObject(response.body).optString("error").lowercase() }.getOrDefault("")
+        val mapped = when {
+            response.status == 401 && operation == MetroraOperation.REVOKE ->
+                MetroraFailure(
+                    operation,
+                    MetroraFailureCategory.IDENTITY_SECURITY,
+                    MetroraFailureReason.REMOTE_REVOCATION_NOT_CONFIRMED,
+                    "HTTP 401",
+                )
+            response.status == 401 -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.IDENTITY_SECURITY,
+                MetroraFailureReason.UNAUTHORIZED,
+                "HTTP 401",
+            )
+            response.status == 403 && operation == MetroraOperation.PAIR &&
+                marker.contains("not accepting") -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.PAIRING_NOT_AVAILABLE,
+                "HTTP 403",
+            )
+            response.status == 403 && operation == MetroraOperation.PAIR -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.PAIRING_DECLINED_OR_EXPIRED,
+                "HTTP 403",
+            )
+            response.status == 404 || response.status == 405 -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+                "HTTP ${response.status}",
+            )
+            response.status == 409 -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.ALREADY_PAIRED,
+                "HTTP 409",
+            )
+            response.status >= 500 -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.UNEXPECTED,
+                MetroraFailureReason.UNEXPECTED_SERVER_BEHAVIOR,
+                "HTTP ${response.status}",
+            )
+            else -> MetroraFailure(
+                operation,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+                "HTTP ${response.status}",
+            )
+        }
+        throw MetroraException(mapped)
+    }
+
+    private suspend fun <T> mapped(operation: MetroraOperation, block: suspend () -> T): T = try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: MetroraException) {
+        throw error
+    } catch (error: Exception) {
+        throw MetroraException(classify(operation, error), error)
+    }
+
+    private fun classify(operation: MetroraOperation, error: Exception): MetroraFailure {
+        val reason = when {
+            isLocalKeyFailure(error) -> MetroraFailureReason.KEY_UNAVAILABLE
+            error is SocketTimeoutException -> MetroraFailureReason.TIMEOUT
+            error is UnknownHostException || error is ConnectException -> MetroraFailureReason.DESKTOP_UNREACHABLE
+            error is SSLException || error is CertificateException -> MetroraFailureReason.CERTIFICATE_MISMATCH
+            else -> MetroraFailureReason.UNKNOWN
+        }
+        val category = when (reason) {
+            MetroraFailureReason.TIMEOUT,
+            MetroraFailureReason.DESKTOP_UNREACHABLE,
+            -> MetroraFailureCategory.CONNECTIVITY
+            MetroraFailureReason.CERTIFICATE_MISMATCH -> MetroraFailureCategory.IDENTITY_SECURITY
+            MetroraFailureReason.KEY_UNAVAILABLE -> MetroraFailureCategory.LOCAL_STATE
+            else -> MetroraFailureCategory.UNEXPECTED
+        }
+        return MetroraFailure(operation, category, reason, safeCauseChain(error))
+    }
+
+    private fun isLocalKeyFailure(error: Throwable): Boolean = causeChain(error).any { cause ->
+        cause is InvalidKeyException ||
+            cause is UnrecoverableKeyException ||
+            cause.javaClass.name == "android.security.KeyStoreException"
+    }
+
+    private fun safeCauseChain(error: Throwable): String = causeChain(error)
+        .map { cause -> cause.javaClass.simpleName.ifBlank { cause.javaClass.name.substringAfterLast('.') } }
+        .distinct()
+        .take(MAX_DIAGNOSTIC_CAUSES)
+        .joinToString(" -> ")
+
+    private fun causeChain(error: Throwable): Sequence<Throwable> =
+        generateSequence(error) { cause -> cause.cause }
+
+    private fun failure(
+        operation: MetroraOperation,
+        category: MetroraFailureCategory,
+        reason: MetroraFailureReason,
+        detail: String,
+        cause: Throwable? = null,
+    ): MetroraException = MetroraException(
+        MetroraFailure(operation, category, reason, detail),
+        cause,
+    )
 
     private companion object {
-        const val CONNECT_TIMEOUT_MS = 4_000
-        const val READ_TIMEOUT_MS = 20_000
         const val PAIRING_TIMEOUT_MS = 70_000
-        const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+        const val MAX_DIAGNOSTIC_CAUSES = 4
     }
-}
-
-private data class ApiResponse(
-    val status: Int,
-    val body: String,
-    val serverFingerprint: String,
-)
-
-private class FingerprintTrustManager(expected: String?) : X509TrustManager {
-    private val expectedFingerprint = expected?.let(MetroraProtocol::normalizeFingerprint)
-    var observedFingerprint: String? = null
-        private set
-
-    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-        val certificate = chain?.firstOrNull() ?: throw CertificateException("Missing server certificate.")
-        certificate.checkValidity()
-        val fingerprint = DeviceIdentity.certificateFingerprint(certificate)
-        observedFingerprint = fingerprint
-        expectedFingerprint?.let { expected ->
-            if (!MessageDigest.isEqual(expected.toByteArray(), fingerprint.toByteArray())) {
-                throw CertificateException("Server fingerprint mismatch.")
-            }
-        }
-    }
-
-    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-        throw CertificateException("Client trust validation is not supported here.")
-    }
-
-    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-}
-
-private class SingleIdentityKeyManager(
-    private val identity: IdentityMaterial,
-) : X509ExtendedKeyManager() {
-    override fun getClientAliases(keyType: String?, issuers: Array<out Principal>?): Array<String> = arrayOf(identity.alias)
-    override fun chooseClientAlias(keyType: Array<out String>?, issuers: Array<out Principal>?, socket: Socket?): String = identity.alias
-    override fun chooseEngineClientAlias(keyType: Array<out String>?, issuers: Array<out Principal>?, engine: SSLEngine?): String = identity.alias
-    override fun getCertificateChain(alias: String?): Array<X509Certificate>? =
-        if (alias == identity.alias) arrayOf(identity.certificate) else null
-    override fun getPrivateKey(alias: String?): PrivateKey? = if (alias == identity.alias) identity.privateKey else null
-    override fun getServerAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = null
-    override fun chooseServerAlias(keyType: String?, issuers: Array<out Principal>?, socket: Socket?): String? = null
-    override fun chooseEngineServerAlias(keyType: String?, issuers: Array<out Principal>?, engine: SSLEngine?): String? = null
 }

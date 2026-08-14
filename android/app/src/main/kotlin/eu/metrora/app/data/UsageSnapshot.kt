@@ -7,7 +7,13 @@ data class ModelUsage(
     val name: String,
     val calls: Long,
     val costMicrosUsd: Long,
-)
+) {
+    init {
+        require(name.isNotBlank()) { "Model name is missing." }
+        require(calls >= 0L) { "Model calls cannot be negative." }
+        require(costMicrosUsd >= 0L) { "Model cost cannot be negative." }
+    }
+}
 
 data class UsageSnapshot(
     val desktopId: String,
@@ -23,9 +29,31 @@ data class UsageSnapshot(
     val cacheWriteTokens: Long,
     val cacheHitPercent: Double,
     val topModels: List<ModelUsage>,
+    /** Local retrieval time; generatedAtEpochMs remains Desktop authority. */
+    val retrievedAtEpochMs: Long = generatedAtEpochMs,
 ) {
+    init {
+        require(desktopId.isNotBlank()) { "Desktop identity is missing." }
+        require(desktopName.isNotBlank()) { "Desktop name is missing." }
+        require(generatedAtEpochMs >= 0L) { "Generated timestamp is invalid." }
+        require(retrievedAtEpochMs >= 0L) { "Retrieval timestamp is invalid." }
+        require(periodLabel.isNotBlank()) { "Usage period is missing." }
+        require(costMicrosUsd >= 0L) { "Cost cannot be negative." }
+        require(calls >= 0L) { "Calls cannot be negative." }
+        require(sessions >= 0L) { "Sessions cannot be negative." }
+        require(inputTokens >= 0L) { "Input tokens cannot be negative." }
+        require(outputTokens >= 0L) { "Output tokens cannot be negative." }
+        require(cacheReadTokens >= 0L) { "Cache-read tokens cannot be negative." }
+        require(cacheWriteTokens >= 0L) { "Cache-write tokens cannot be negative." }
+        require(cacheHitPercent.isFinite() && cacheHitPercent in 0.0..100.0) {
+            "Cache-hit percentage is invalid."
+        }
+        require(topModels.size <= MAX_TOP_MODELS) { "Too many models in local snapshot." }
+    }
+
     val totalTokens: Long
-        get() = inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
+        get() = listOf(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens)
+            .fold(0L) { total, value -> saturatingAdd(total, value) }
 
     fun toJson(): String {
         val models = JSONArray()
@@ -50,6 +78,7 @@ data class UsageSnapshot(
             .put("cacheReadTokens", cacheReadTokens)
             .put("cacheWriteTokens", cacheWriteTokens)
             .put("cacheHitPercent", cacheHitPercent)
+            .put("retrievedAtEpochMs", retrievedAtEpochMs)
             .put("topModels", models)
             .toString()
     }
@@ -84,7 +113,14 @@ data class UsageSnapshot(
                 cacheWriteTokens = json.getLong("cacheWriteTokens"),
                 cacheHitPercent = json.getDouble("cacheHitPercent"),
                 topModels = models,
+                // Older foundation snapshots did not carry a local retrieval time.
+                retrievedAtEpochMs = json.optLong("retrievedAtEpochMs", json.getLong("generatedAtEpochMs")),
             )
         }
+
+        private const val MAX_TOP_MODELS = 5
+
+        private fun saturatingAdd(left: Long, right: Long): Long =
+            if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
     }
 }

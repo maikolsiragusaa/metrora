@@ -41,7 +41,7 @@ jobs:
       - name: Install Android API 36
         shell: bash
         run: sdkmanager "platforms;android-36"
-      - name: Validate every distribution channel
+      - name: Validate tests and release channels
         shell: bash
         run: >-
           gradle -p android --no-daemon --stacktrace
@@ -50,6 +50,38 @@ jobs:
           :app:assembleGithubRelease
           :app:assembleFdroidRelease
           :app:bundlePlayRelease
+      - name: Materialize QA signing identity
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          METRORA_ANDROID_QA_KEYSTORE_B64: ${{ secrets.METRORA_ANDROID_QA_KEYSTORE_B64 }}
+          METRORA_ANDROID_QA_STORE_PASSWORD: ${{ secrets.METRORA_ANDROID_QA_STORE_PASSWORD }}
+          METRORA_ANDROID_QA_KEY_PASSWORD: ${{ secrets.METRORA_ANDROID_QA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$METRORA_ANDROID_QA_KEYSTORE_B64"
+          test -n "$METRORA_ANDROID_QA_STORE_PASSWORD"
+          test -n "$METRORA_ANDROID_QA_KEY_PASSWORD"
+          qa_keystore="$RUNNER_TEMP/metrora-android-physical-acceptance-qa.jks"
+          printf '%s' "$METRORA_ANDROID_QA_KEYSTORE_B64" | base64 --decode > "$qa_keystore"
+          chmod 600 "$qa_keystore"
+          keytool -list -storetype JKS -keystore "$qa_keystore" \
+            -storepass "$METRORA_ANDROID_QA_STORE_PASSWORD" >/dev/null
+          echo "METRORA_QA_KEYSTORE_PATH=$qa_keystore" >> "$GITHUB_ENV"
+          echo "METRORA_QA_SIGNING_ENABLED=true" >> "$GITHUB_ENV"
+          echo "METRORA_QA_STORE_PASSWORD=$METRORA_ANDROID_QA_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "METRORA_QA_KEY_PASSWORD=$METRORA_ANDROID_QA_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "METRORA_QA_KEY_ALIAS=MetroraAndroidPhysicalAcceptanceQA" >> "$GITHUB_ENV"
+      - name: Assemble QA physical-acceptance APK
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: >-
+          gradle -p android --no-daemon --stacktrace
+          :app:assembleGithubDebug
+      - name: Assemble unsigned GitHub debug APK for fork validation
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        shell: bash
+        run: gradle -p android --no-daemon --stacktrace :app:assembleGithubDebug
       - name: Upload Android reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,7 +91,7 @@ jobs:
             android/app/build/reports/**
             android/app/build/test-results/**
           if-no-files-found: warn
-      - name: Upload unsigned packages
+      - name: Upload unsigned release packages
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -69,3 +101,20 @@ jobs:
             android/app/build/outputs/apk/fdroid/release/*.apk
             android/app/build/outputs/bundle/playRelease/*.aab
           if-no-files-found: error
+      - name: Upload GitHub QA debug APK for physical acceptance
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrora-android-physical-acceptance
+          path: android/app/build/outputs/apk/github/debug/*.apk
+          if-no-files-found: error
+      - name: Remove QA signing material
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        shell: bash
+        run: |
+          set +e
+          rm -f -- "$RUNNER_TEMP/metrora-android-physical-acceptance-qa.jks"
+          if [ -n "${GITHUB_ENV:-}" ] && [ -f "$GITHUB_ENV" ]; then
+            sed -i '/^METRORA_QA_/d' "$GITHUB_ENV"
+          fi
+          unset METRORA_QA_KEYSTORE_PATH METRORA_QA_SIGNING_ENABLED METRORA_QA_STORE_PASSWORD METRORA_QA_KEY_PASSWORD METRORA_QA_KEY_ALIAS

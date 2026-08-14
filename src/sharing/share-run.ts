@@ -8,8 +8,9 @@ import { promptYesNo } from './prompt.js'
 import { sanitizeForSharing } from './sanitize.js'
 import { getSharingDir, loadPeers, savePeers } from './store.js'
 import { loadPricing } from '../models.js'
-import { buildMenubarPayloadForRange } from '../usage-aggregator.js'
+import { buildMenubarPayloadForRange, type AggregateOpts, type PeriodInfo } from '../usage-aggregator.js'
 import { periodInfoFromQuery } from '../cli-date.js'
+import type { MenubarPayload } from '../menubar-json.js'
 
 function lanAddress(): string | null {
   for (const list of Object.values(networkInterfaces())) {
@@ -22,6 +23,28 @@ function lanAddress(): string | null {
 
 const IDLE_TIMEOUT_MS = 10 * 60_000
 
+export type CompanionUsageAggregator = (
+  periodInfo: PeriodInfo,
+  opts: AggregateOpts,
+) => Promise<MenubarPayload>
+
+/**
+ * Build only the data the companion DTO can expose. The companion contract does
+ * not use the granular timeline, so keeping that pass enabled would make a
+ * cold first request pay for work that is discarded before serialization.
+ */
+export async function buildCompanionUsage(
+  query: UsageQuery,
+  aggregate: CompanionUsageAggregator = buildMenubarPayloadForRange,
+): Promise<MenubarPayload> {
+  const periodInfo = periodInfoFromQuery(query, 'month')
+  return sanitizeForSharing(await aggregate(periodInfo, {
+    provider: 'all',
+    optimize: false,
+    timeline: false,
+  }))
+}
+
 // Run the secure share server. On-demand by default: it stops after 10 minutes
 // of no requests. `--always` keeps it up until Ctrl+C (the opt-in persistent
 // mode). `--pair` opens the inherited one-time PIN fallback for legacy clients.
@@ -31,15 +54,10 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
   const identity = await loadOrCreateIdentity(dir)
   const peers = new PeerStore(await loadPeers(dir))
 
-  const getUsage = async (q: UsageQuery): Promise<unknown> => {
-    const periodInfo = periodInfoFromQuery(q, 'month')
-    return sanitizeForSharing(await buildMenubarPayloadForRange(periodInfo, { provider: 'all', optimize: false }))
-  }
-
   const server = new ShareServer({
     identity,
     peers,
-    getUsage,
+    getUsage: (q) => buildCompanionUsage(q),
     onPeersChanged: () => savePeers(peers.list(), dir),
     approve: async (req) => {
       process.stdout.write(`\n  "${req.name}" wants access to your shared usage.\n`)
