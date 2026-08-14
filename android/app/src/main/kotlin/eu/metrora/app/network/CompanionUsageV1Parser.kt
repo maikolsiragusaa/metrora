@@ -9,7 +9,11 @@ import org.json.JSONObject
 internal object CompanionUsageV1Parser {
     private const val MAX_TOP_MODELS = 5
 
-    fun parse(raw: String, credentials: PairingCredentials): UsageSnapshot {
+    fun parse(
+        raw: String,
+        credentials: PairingCredentials,
+        retrievedAtEpochMs: Long = System.currentTimeMillis(),
+    ): UsageSnapshot {
         val root = JSONObject(raw)
         require(root.getString("kind") == MetroraProtocol.USAGE_KIND) {
             "The desktop returned an unsupported companion payload."
@@ -56,6 +60,7 @@ internal object CompanionUsageV1Parser {
             cacheWriteTokens = tokens.nonNegativeLong("cacheWrite"),
             cacheHitPercent = cacheHitPercent,
             topModels = topModels,
+            retrievedAtEpochMs = retrievedAtEpochMs,
         )
     }
 

@@ -3,190 +3,351 @@ package eu.metrora.app
 import android.content.Context
 import android.os.Build
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.StorageIssue
+import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.network.MetroraApi
 import eu.metrora.app.network.MetroraApiClient
 import eu.metrora.app.network.MetroraProtocol
+import eu.metrora.app.security.MetroraStore
 import eu.metrora.app.security.SecureStore
 import java.io.Closeable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class MetroraUiState(
-    val initializing: Boolean = true,
-    val busy: Boolean = false,
-    val credentials: PairingCredentials? = null,
-    val snapshot: UsageSnapshot? = null,
-    val showingCachedData: Boolean = false,
-    val pairingCode: String? = null,
-    val pairingDesktopName: String? = null,
-    val message: String? = null,
-    val error: String? = null,
-) {
-    val paired: Boolean
-        get() = credentials != null
-}
+class MetroraCoordinator internal constructor(
+    private val store: MetroraStore,
+    private val api: MetroraApi,
+    private val scope: CoroutineScope,
+    private val deviceName: String,
+) : Closeable {
+    constructor(context: Context) : this(
+        store = SecureStore(context.applicationContext),
+        api = MetroraApiClient(),
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        deviceName = androidDeviceName(),
+    )
 
-class MetroraCoordinator(context: Context) : Closeable {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val store = SecureStore(context.applicationContext)
-    private val api = MetroraApiClient()
     private val mutableState = MutableStateFlow(MetroraUiState())
+    private var operationJob: Job? = null
 
     val state: StateFlow<MetroraUiState> = mutableState.asStateFlow()
 
     init {
-        scope.launch {
-            try {
-                val credentials = store.loadCredentials()
-                val snapshot = store.loadSnapshot()?.takeIf { cached ->
-                    credentials != null && cached.desktopId == credentials.serverFingerprint
-                }
-                mutableState.value = MetroraUiState(
-                    initializing = false,
-                    credentials = credentials,
-                    snapshot = snapshot,
-                    showingCachedData = snapshot != null,
-                )
-            } catch (error: Exception) {
-                runCatching { store.clearPairing() }
-                mutableState.value = MetroraUiState(
-                    initializing = false,
-                    error = error.safeMessage("Encrypted local state could not be read and was removed."),
-                )
-            }
-        }
+        scope.launch { restoreState() }
     }
 
     fun pair(host: String, portText: String) {
-        if (mutableState.value.busy || mutableState.value.paired) return
-        val port = try {
-            MetroraProtocol.validatePort(portText.trim().toInt())
-        } catch (error: Exception) {
-            mutableState.update { it.copy(error = error.safeMessage("Enter a valid port."), message = null) }
+        val current = mutableState.value
+        if (current.initializing || current.busy || current.paired) return
+
+        val normalizedHost = try {
+            MetroraProtocol.normalizeHost(host)
+        } catch (error: IllegalArgumentException) {
+            showFailure(
+                MetroraFailure(
+                    MetroraOperation.DISCOVER,
+                    MetroraFailureCategory.COMPATIBILITY,
+                    MetroraFailureReason.INVALID_HOST,
+                    "Desktop address validation failed",
+                ),
+            )
             return
         }
+        val port = portText.trim().toIntOrNull()?.let { candidate ->
+            runCatching { MetroraProtocol.validatePort(candidate) }.getOrNull()
+        }
+        if (port == null) {
+            showFailure(
+                MetroraFailure(
+                    MetroraOperation.DISCOVER,
+                    MetroraFailureCategory.COMPATIBILITY,
+                    MetroraFailureReason.INVALID_PORT,
+                    "Desktop port validation failed",
+                ),
+            )
+            return
+        }
+
         mutableState.update {
-            it.copy(
-                busy = true,
-                pairingCode = null,
-                pairingDesktopName = null,
-                error = null,
-                message = "Connecting to the desktop…",
+            MetroraUiState(
+                initializing = false,
+                status = MetroraConnectionState.PAIRING,
             )
         }
-        scope.launch {
+        operationJob = scope.launch {
             try {
-                val desktop = api.discover(host, port)
+                val desktop = api.discover(normalizedHost, port)
+                currentCoroutineContext().ensureActive()
                 val code = api.pairingCode(desktop)
                 mutableState.update {
                     it.copy(
+                        status = MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL,
                         pairingCode = code,
                         pairingDesktopName = desktop.name,
-                        message = "Compare the complete code with Metrora Desktop, then approve there.",
+                        notice = null,
+                        failure = null,
                     )
                 }
-                val credentials = api.pair(desktop, code, androidDeviceName())
+                val credentials = api.pair(desktop, code, deviceName)
+                currentCoroutineContext().ensureActive()
                 store.saveCredentials(credentials)
                 mutableState.update {
                     it.copy(
-                        busy = true,
+                        status = MetroraConnectionState.REFRESHING,
                         credentials = credentials,
                         pairingCode = null,
                         pairingDesktopName = null,
-                        message = "Desktop paired. Loading the first usage snapshot…",
+                        notice = null,
+                        failure = null,
                     )
                 }
-                try {
-                    val snapshot = api.fetchUsage(credentials)
-                    store.saveSnapshot(snapshot)
-                    mutableState.update {
-                        it.copy(
-                            busy = false,
-                            snapshot = snapshot,
-                            showingCachedData = false,
-                            message = "Pairing complete.",
-                            error = null,
-                        )
-                    }
-                } catch (error: Exception) {
-                    mutableState.update {
-                        it.copy(
-                            busy = false,
-                            showingCachedData = it.snapshot != null,
-                            message = "The desktop is paired. Usage will appear after the first successful refresh.",
-                            error = error.safeMessage("The initial usage refresh failed."),
-                        )
-                    }
-                }
+                refreshAndApply(credentials, MetroraNotice.PAIRING_COMPLETE, allowOfflineFallback = true)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: MetroraException) {
+                applyFailure(error.failure, allowOfflineFallback = false)
             } catch (error: Exception) {
-                mutableState.update {
-                    it.copy(
-                        busy = false,
-                        credentials = null,
-                        pairingCode = null,
-                        pairingDesktopName = null,
-                        message = null,
-                        error = error.safeMessage("Pairing failed."),
-                    )
-                }
+                applyFailure(
+                    MetroraFailure(
+                        MetroraOperation.PAIR,
+                        MetroraFailureCategory.UNEXPECTED,
+                        MetroraFailureReason.UNKNOWN,
+                        error.javaClass.simpleName,
+                    ),
+                    allowOfflineFallback = false,
+                )
+            } finally {
+                operationJob = null
             }
         }
+    }
+
+    fun cancelPairing() {
+        val current = mutableState.value
+        if (current.status != MetroraConnectionState.PAIRING &&
+            current.status != MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL
+        ) return
+        operationJob?.cancel()
+        operationJob = null
+        mutableState.value = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.UNPAIRED,
+            notice = MetroraNotice.PAIRING_CANCELLED,
+        )
     }
 
     fun refresh() {
-        val credentials = mutableState.value.credentials ?: return
-        if (mutableState.value.busy) return
-        mutableState.update { it.copy(busy = true, error = null, message = null) }
-        scope.launch {
+        val current = mutableState.value
+        val credentials = current.credentials ?: return
+        if (current.initializing || current.busy ||
+            current.status == MetroraConnectionState.REVOKED_OR_UNAUTHORIZED ||
+            current.status == MetroraConnectionState.RECOVERY_REQUIRED
+        ) return
+
+        mutableState.update {
+            it.copy(
+                status = MetroraConnectionState.REFRESHING,
+                notice = null,
+                failure = null,
+            )
+        }
+        operationJob = scope.launch {
             try {
-                val snapshot = api.fetchUsage(credentials)
-                store.saveSnapshot(snapshot)
-                mutableState.update {
-                    it.copy(
-                        busy = false,
-                        snapshot = snapshot,
-                        showingCachedData = false,
-                        message = "Usage refreshed from the desktop.",
-                    )
-                }
-            } catch (error: Exception) {
-                mutableState.update {
-                    it.copy(
-                        busy = false,
-                        showingCachedData = it.snapshot != null,
-                        error = error.safeMessage("Desktop unreachable. The last encrypted snapshot remains available."),
-                    )
-                }
+                refreshAndApply(credentials, MetroraNotice.USAGE_REFRESHED, allowOfflineFallback = true)
+            } catch (error: CancellationException) {
+                throw error
+            } finally {
+                operationJob = null
             }
         }
     }
 
-    fun disconnect() {
-        val credentials = mutableState.value.credentials ?: return
-        if (mutableState.value.busy) return
-        mutableState.update { it.copy(busy = true, error = null, message = "Revoking this phone on the desktop…") }
-        scope.launch {
+    fun revoke() {
+        val current = mutableState.value
+        val credentials = current.credentials ?: return
+        if (current.initializing || current.busy) return
+        mutableState.update {
+            it.copy(
+                status = MetroraConnectionState.REVOKING,
+                notice = null,
+                failure = null,
+            )
+        }
+        operationJob = scope.launch {
             try {
                 api.revoke(credentials)
+                currentCoroutineContext().ensureActive()
+                try {
+                    store.clearPairing()
+                } catch (error: Exception) {
+                    mutableState.update {
+                        it.copy(
+                            status = MetroraConnectionState.RECOVERY_REQUIRED,
+                            notice = MetroraNotice.REMOTE_REVOCATION_CONFIRMED_LOCAL_CLEANUP_NEEDED,
+                            failure = localFailure(
+                                MetroraFailureReason.STORAGE_CORRUPTED,
+                                "Desktop access was revoked, but local cleanup needs attention",
+                            ),
+                        )
+                    }
+                    return@launch
+                }
+                mutableState.value = MetroraUiState(
+                    initializing = false,
+                    status = MetroraConnectionState.UNPAIRED,
+                    notice = MetroraNotice.REMOTE_REVOCATION_COMPLETE,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: MetroraException) {
+                applyFailure(error.failure, allowOfflineFallback = false)
+            } catch (error: Exception) {
+                applyFailure(
+                    localFailure(MetroraFailureReason.UNKNOWN, error.javaClass.simpleName),
+                    allowOfflineFallback = false,
+                )
+            } finally {
+                operationJob = null
+            }
+        }
+    }
+
+    /** Local cleanup is intentionally separate from remote revoke. */
+    fun forgetLocal() {
+        val current = mutableState.value
+        if (current.initializing || current.busy || !current.hasLocalState) return
+        mutableState.update {
+            it.copy(
+                status = MetroraConnectionState.FORGETTING,
+                notice = null,
+                failure = null,
+            )
+        }
+        operationJob = scope.launch {
+            try {
                 store.clearPairing()
                 mutableState.value = MetroraUiState(
                     initializing = false,
-                    message = "Desktop access revoked and local pairing data removed.",
+                    status = MetroraConnectionState.UNPAIRED,
+                    notice = MetroraNotice.LOCAL_PAIRING_FORGOTTEN,
                 )
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 mutableState.update {
                     it.copy(
-                        busy = false,
-                        message = null,
-                        error = error.safeMessage(
-                            "The desktop could not confirm revocation. Access remains paired; retry or forget only this phone.",
+                        status = MetroraConnectionState.RECOVERY_REQUIRED,
+                        failure = localFailure(
+                            MetroraFailureReason.STORAGE_CORRUPTED,
+                            "Local pairing data could not be removed",
+                        ),
+                    )
+                }
+            } finally {
+                operationJob = null
+            }
+        }
+    }
+
+    /** Kept as a source-compatible name for the foundation UI/tests. */
+    fun disconnect() = revoke()
+
+    override fun close() {
+        operationJob?.cancel()
+        operationJob = null
+        scope.cancel()
+    }
+
+    private suspend fun restoreState() {
+        try {
+            val credentials = store.loadCredentials()
+            val snapshot = store.loadSnapshot()
+            when (credentials) {
+                StorageRead.Missing -> restoreWithoutCredentials(snapshot)
+                is StorageRead.Corrupted -> {
+                    mutableState.value = recoveryState(
+                        credentials = null,
+                        snapshot = null,
+                        reason = when (credentials.issue) {
+                            StorageIssue.KEY_UNAVAILABLE -> MetroraFailureReason.KEY_UNAVAILABLE
+                            else -> MetroraFailureReason.STORAGE_CORRUPTED
+                        },
+                        detail = "Saved pairing credentials need recovery",
+                    )
+                }
+                is StorageRead.Present -> restorePaired(credentials.value, snapshot)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            mutableState.value = recoveryState(
+                credentials = null,
+                snapshot = null,
+                reason = MetroraFailureReason.STORAGE_CORRUPTED,
+                detail = "Encrypted local state could not be read",
+            )
+        }
+    }
+
+    private fun restoreWithoutCredentials(snapshot: StorageRead<UsageSnapshot>) {
+        mutableState.value = when (snapshot) {
+            StorageRead.Missing -> MetroraUiState(initializing = false)
+            is StorageRead.Present -> recoveryState(
+                credentials = null,
+                snapshot = null,
+                reason = MetroraFailureReason.INCONSISTENT_LOCAL_STATE,
+                detail = "A saved snapshot exists without a saved pairing",
+            )
+            is StorageRead.Corrupted -> recoveryState(
+                credentials = null,
+                snapshot = null,
+                reason = MetroraFailureReason.STORAGE_CORRUPTED,
+                detail = "Saved local data needs recovery",
+            )
+        }
+    }
+
+    private suspend fun restorePaired(
+        credentials: PairingCredentials,
+        snapshot: StorageRead<UsageSnapshot>,
+    ) {
+        if (!api.localIdentityMatches(credentials)) {
+            mutableState.value = recoveryState(
+                credentials = credentials,
+                snapshot = null,
+                reason = MetroraFailureReason.LOCAL_IDENTITY_CHANGED,
+                detail = "This phone no longer has the identity used for this pairing",
+            )
+            return
+        }
+        when (snapshot) {
+            StorageRead.Missing -> mutableState.value = restoredState(credentials, null)
+            is StorageRead.Present -> {
+                val usable = snapshot.value.takeIf { it.desktopId == credentials.serverFingerprint }
+                mutableState.value = restoredState(credentials, usable)
+            }
+            is StorageRead.Corrupted -> {
+                val cleanupFailure = runCatching { store.clearSnapshot() }.exceptionOrNull()
+                mutableState.value = if (cleanupFailure == null) {
+                    restoredState(credentials, null).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
+                } else {
+                    restoredState(credentials, null).copy(
+                        status = MetroraConnectionState.ERROR,
+                        failure = localFailure(
+                            MetroraFailureReason.STORAGE_CORRUPTED,
+                            "The saved usage snapshot is unreadable",
                         ),
                     )
                 }
@@ -194,45 +355,118 @@ class MetroraCoordinator(context: Context) : Closeable {
         }
     }
 
-    fun forgetLocal() {
-        if (mutableState.value.busy || !mutableState.value.paired) return
-        mutableState.update { it.copy(busy = true, error = null, message = null) }
-        scope.launch {
-            try {
-                store.clearPairing()
-                mutableState.value = MetroraUiState(
+    private fun restoredState(credentials: PairingCredentials, snapshot: UsageSnapshot?): MetroraUiState =
+        MetroraUiState(
+            initializing = false,
+            status = if (snapshot == null) {
+                MetroraConnectionState.OFFLINE_NO_SNAPSHOT
+            } else {
+                MetroraConnectionState.OFFLINE_WITH_SNAPSHOT
+            },
+            credentials = credentials,
+            snapshot = snapshot,
+        )
+
+    private suspend fun refreshAndApply(
+        credentials: PairingCredentials,
+        successNotice: MetroraNotice,
+        allowOfflineFallback: Boolean,
+    ) {
+        try {
+            val snapshot = api.fetchUsage(credentials)
+            currentCoroutineContext().ensureActive()
+            store.saveSnapshot(snapshot)
+            mutableState.update {
+                it.copy(
                     initializing = false,
-                    message = "Pairing data removed only from this phone. Revoke the old device from the desktop when available.",
+                    status = MetroraConnectionState.CONNECTED,
+                    snapshot = snapshot,
+                    notice = successNotice,
+                    failure = null,
                 )
-            } catch (error: Exception) {
-                mutableState.update {
-                    it.copy(
-                        busy = false,
-                        error = error.safeMessage("Local pairing data could not be removed."),
-                    )
-                }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: MetroraException) {
+            applyFailure(error.failure, allowOfflineFallback)
+        } catch (error: Exception) {
+            applyFailure(
+                localFailure(MetroraFailureReason.STORAGE_CORRUPTED, error.javaClass.simpleName),
+                allowOfflineFallback,
+            )
         }
     }
 
-    override fun close() {
-        scope.cancel()
+    private fun applyFailure(failure: MetroraFailure, allowOfflineFallback: Boolean) {
+        val current = mutableState.value
+        val nextStatus = when {
+            failure.reason == MetroraFailureReason.UNAUTHORIZED ||
+                failure.reason == MetroraFailureReason.REMOTE_REVOCATION_NOT_CONFIRMED ->
+                MetroraConnectionState.REVOKED_OR_UNAUTHORIZED
+            failure.reason == MetroraFailureReason.LOCAL_IDENTITY_CHANGED ||
+                failure.reason == MetroraFailureReason.KEY_UNAVAILABLE ||
+                failure.reason == MetroraFailureReason.INCONSISTENT_LOCAL_STATE ->
+                MetroraConnectionState.RECOVERY_REQUIRED
+            allowOfflineFallback && failure.category == MetroraFailureCategory.CONNECTIVITY && current.paired ->
+                if (current.snapshot == null) {
+                    MetroraConnectionState.OFFLINE_NO_SNAPSHOT
+                } else {
+                    MetroraConnectionState.OFFLINE_WITH_SNAPSHOT
+                }
+            else -> MetroraConnectionState.ERROR
+        }
+        mutableState.update {
+            it.copy(
+                initializing = false,
+                status = nextStatus,
+                failure = failure,
+                notice = if (nextStatus == MetroraConnectionState.OFFLINE_NO_SNAPSHOT) {
+                    MetroraNotice.PAIRED_WITHOUT_USAGE
+                } else {
+                    null
+                },
+            )
+        }
     }
 
-    private fun androidDeviceName(): String = listOf(Build.MANUFACTURER, Build.MODEL)
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .distinct()
-        .joinToString(" ")
-        .ifBlank { "Android" }
-        .take(80)
-
-    private fun Throwable.safeMessage(fallback: String): String {
-        val sanitized = message
-            ?.replace(Regex("[\\u0000-\\u001f\\u007f]"), " ")
-            ?.trim()
-            ?.take(180)
-            .orEmpty()
-        return sanitized.ifBlank { fallback }
+    private fun showFailure(failure: MetroraFailure) {
+        mutableState.update {
+            it.copy(
+                initializing = false,
+                status = MetroraConnectionState.ERROR,
+                pairingCode = null,
+                pairingDesktopName = null,
+                failure = failure,
+                notice = null,
+            )
+        }
     }
+
+    private fun recoveryState(
+        credentials: PairingCredentials?,
+        snapshot: UsageSnapshot?,
+        reason: MetroraFailureReason,
+        detail: String,
+    ): MetroraUiState = MetroraUiState(
+        initializing = false,
+        status = MetroraConnectionState.RECOVERY_REQUIRED,
+        credentials = credentials,
+        snapshot = snapshot,
+        failure = localFailure(reason, detail),
+    )
+
+    private fun localFailure(reason: MetroraFailureReason, detail: String): MetroraFailure = MetroraFailure(
+        operation = MetroraOperation.LOCAL_ACTION,
+        category = MetroraFailureCategory.LOCAL_STATE,
+        reason = reason,
+        technicalDetail = detail,
+    )
 }
+
+private fun androidDeviceName(): String = listOf(Build.MANUFACTURER, Build.MODEL)
+    .map(String::trim)
+    .filter(String::isNotBlank)
+    .distinct()
+    .joinToString(" ")
+    .ifBlank { "Android" }
+    .take(80)

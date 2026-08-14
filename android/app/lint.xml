@@ -5,11 +5,15 @@
         <ignore path="build.gradle.kts" />
     </issue>
     <issue id="GradleDependency">
+        <ignore path="../gradle/libs.versions.toml" />
         <ignore path="build.gradle.kts" />
+    </issue>
+    <issue id="NewerVersionAvailable">
+        <ignore path="../gradle/libs.versions.toml" />
     </issue>
 
     <!-- Metrora's LAN desktop uses a self-signed identity. This one trust manager validates certificate dates, captures SHA-256, verifies the advertised identity, and pins it for every authenticated request. -->
     <issue id="CustomX509TrustManager">
-        <ignore path="src/main/kotlin/eu/metrora/app/network/MetroraApiClient.kt" />
+        <ignore path="src/main/kotlin/eu/metrora/app/network/TlsMetroraTransport.kt" />
     </issue>
 </lint>

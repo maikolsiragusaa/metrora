@@ -14,8 +14,14 @@ import java.util.Date
 import java.util.Locale
 import javax.security.auth.x500.X500Principal
 
-class DeviceIdentity {
-    fun material(): IdentityMaterial {
+interface ClientIdentity {
+    fun material(): IdentityMaterial
+
+    fun fingerprint(): String = material().fingerprint
+}
+
+class DeviceIdentity : ClientIdentity {
+    override fun material(): IdentityMaterial {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         if (!keyStore.containsAlias(KEY_ALIAS)) generateKeyPair()
         val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
@@ -29,6 +35,8 @@ class DeviceIdentity {
             fingerprint = certificateFingerprint(certificate),
         )
     }
+
+    override fun fingerprint(): String = material().fingerprint
 
     private fun generateKeyPair() {
         val now = System.currentTimeMillis()
