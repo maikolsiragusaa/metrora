@@ -47,6 +47,7 @@ jobs:
           gradle -p android --no-daemon --stacktrace
           :app:testGithubDebugUnitTest
           :app:lint
+          :app:assembleGithubDebug
           :app:assembleGithubRelease
           :app:assembleFdroidRelease
           :app:bundlePlayRelease
@@ -59,7 +60,7 @@ jobs:
             android/app/build/reports/**
             android/app/build/test-results/**
           if-no-files-found: warn
-      - name: Upload unsigned packages
+      - name: Upload unsigned release packages
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -68,4 +69,11 @@ jobs:
             android/app/build/outputs/apk/github/release/*.apk
             android/app/build/outputs/apk/fdroid/release/*.apk
             android/app/build/outputs/bundle/playRelease/*.aab
+          if-no-files-found: error
+      - name: Upload GitHub debug APK for physical acceptance
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrora-android-physical-acceptance
+          path: android/app/build/outputs/apk/github/debug/*.apk
           if-no-files-found: error
