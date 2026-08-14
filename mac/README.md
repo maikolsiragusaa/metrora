@@ -58,11 +58,12 @@ mac/
 
 Metrora Menubar uses the Signal Grid icon generated from `assets/brand` and the canonical palette:
 
-- Signal Orange `#F2701C`
-- Signal Orange Deep `#E8590C`
+- Signal Cyan `#00D4FF`
+- Signal Cyan Deep `#007A99`
+- Signal Cyan Soft `#E6F9FD`
 - Graphite `#0F1115`
 - Slate `#47505A`
 - Panel Gray `#E6E9EE`
 - Warm Off-White `#FAF7F2`
 
-Semantic success, warning and danger colors remain separate from the brand accent.
+The default macOS accent uses the accessible deep cyan on light surfaces and the brighter Signal Cyan family for highlights and glow. Semantic success, warning and danger colors remain separate from the brand accent.
