@@ -6,9 +6,11 @@
 
 Understand where AI time, tokens and money go across tools, models, projects and sessions — without routing your work through another service.
 
-[Website](https://metrora.eu) · [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md) · [Community](https://metrora.eu/community)
+[Website](https://metrora.eu) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Download-0078D4?logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
+[![Fluxer Community](https://img.shields.io/badge/Fluxer-Community-4641D9?logo=fluxer&logoColor=white)](https://metrora.eu/community)
 [![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
 
 </div>
@@ -212,7 +214,7 @@ Security issues must be reported privately according to [SECURITY.md](SECURITY.m
 
 ## Community
 
-<img src="https://fluxerstatic.com/marketing/branding/logo-color.svg" alt="Fluxer" width="150" />
+<img src="./assets/brand/third-party/fluxer-symbol-color.svg" alt="Fluxer" width="48" />
 
 The Metrora community is opening soon on **Fluxer** for product discussion, questions, feedback and contributor conversation. Use [metrora.eu/community](https://metrora.eu/community) as the stable entry point; the public join link will be published there when the channel opens.
 
