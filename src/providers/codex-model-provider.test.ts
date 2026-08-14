@@ -98,6 +98,7 @@ describe('Codex source-recorded model provider', () => {
     for await (const value of parsed) values.push(value)
     expect(values).toHaveLength(1)
     expect(values[0]?.modelProvider).toBe('openai')
+    expect(values[0]?.pricingContext).toEqual({ inferenceProvider: 'openai' })
   })
 
   it('never overwrites or hides a contradictory parser provider', async () => {

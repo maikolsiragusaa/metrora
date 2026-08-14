@@ -79,7 +79,17 @@ export function withCodexModelProvider(
             if (call.modelProvider && call.modelProvider !== sourceProvider) {
               throw new CodexModelProviderContradictionError()
             }
-            yield call.modelProvider ? call : { ...call, modelProvider: sourceProvider }
+            if (call.pricingContext?.inferenceProvider && call.pricingContext.inferenceProvider !== sourceProvider) {
+              throw new CodexModelProviderContradictionError()
+            }
+            yield {
+              ...call,
+              ...(call.modelProvider ? {} : { modelProvider: sourceProvider }),
+              pricingContext: {
+                ...(call.pricingContext ?? {}),
+                inferenceProvider: sourceProvider,
+              },
+            }
           }
         },
       }

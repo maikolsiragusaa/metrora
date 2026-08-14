@@ -264,6 +264,7 @@ skipUnlessSqlite('hermes provider', () => {
       provider: 'hermes',
       model: 'gpt-5.5',
       modelProvider: 'openai-codex',
+      pricingContext: { inferenceProvider: 'openai-codex' },
       inputTokens: 1000,
       outputTokens: 200,
       cacheReadInputTokens: 300,
@@ -566,6 +567,7 @@ skipUnlessSqlite('hermes provider', () => {
 
     const actual = await collectCalls(tmpDir, `${dbPath}#hermes-session=actual-wins`)
     expect(actual[0]).toMatchObject({ costUSD: 1.23, costIsEstimated: false })
+    expect(actual[0]!.costAssignment).toMatchObject({ kind: 'metered', source: 'client' })
 
     const estimated = await collectCalls(tmpDir, `${dbPath}#hermes-session=estimated-cost`)
     expect(estimated[0]).toMatchObject({ costUSD: 0.75, costIsEstimated: true })

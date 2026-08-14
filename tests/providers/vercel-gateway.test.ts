@@ -64,6 +64,8 @@ describe('vercel-gateway provider', () => {
     }
     expect(calls).toHaveLength(1)
     expect(calls[0]?.costUSD).toBe(1.25)
+    expect(calls[0]?.pricingContext).toEqual({ gateway: 'vercel-ai-gateway' })
+    expect(calls[0]?.costAssignment).toMatchObject({ kind: 'metered', source: 'billing-export' })
     expect(calls[0]?.inputTokens).toBe(1000)
     expect(calls[0]?.outputTokens).toBe(200)
     expect(calls[0]?.deduplicationKey).toBe('vercel-gateway:2026-06-01:anthropic/claude-sonnet-4.6')
@@ -101,6 +103,8 @@ describe('vercel-gateway provider', () => {
     expect(calls[0]?.cacheReadInputTokens).toBe(120)
     expect(calls[0]?.cacheCreationInputTokens).toBe(8)
     expect(calls[0]?.reasoningTokens).toBe(4)
+    expect(calls[0]?.costIsEstimated).toBe(false)
+    expect(calls[0]?.costAssignment).toMatchObject({ kind: 'metered', amountMicrosUsd: 0 })
   })
 
   it('retains one bounded aggregate row for explicit free usage', async () => {
@@ -127,6 +131,30 @@ describe('vercel-gateway provider', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.costUSD).toBe(0)
+  })
+
+  it('does not invent metered cost when the report omits or rejects total_cost', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        results: [
+          { day: '2026-06-04', model: 'openai/gpt-4o', input_tokens: 10, output_tokens: 5 },
+          { day: '2026-06-04', model: 'openai/gpt-4o-mini', total_cost: -1, input_tokens: 10, output_tokens: 5 },
+        ],
+      }),
+    })) as typeof fetch
+
+    const range = {
+      start: new Date('2026-06-04T00:00:00.000Z'),
+      end: new Date('2026-06-04T23:59:59.999Z'),
+    }
+    const calls = []
+    for await (const call of vercelGateway.createSessionParser({
+      path: 'vercel-ai-gateway:report', project: 'Vercel AI Gateway', provider: 'vercel-gateway',
+    }, new Set(), range).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(2)
+    expect(calls.every(call => call.costUSD === 0 && call.costIsEstimated === true && call.costAssignment === undefined)).toBe(true)
   })
 })
 

@@ -56,6 +56,7 @@ sqliteDescribe('Zed model provider provenance', () => {
     expect(calls[0]!.provider).toBe('zed')
     expect(calls[0]!.model).toBe('claude-sonnet-4-6')
     expect(calls[0]!.modelProvider).toBe('anthropic')
+    expect(calls[0]!.pricingContext).toEqual({ inferenceProvider: 'anthropic' })
   })
 
   it('omits malformed provider claims instead of inferring one from the model', async () => {

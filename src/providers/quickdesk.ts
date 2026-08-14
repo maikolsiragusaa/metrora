@@ -7,6 +7,7 @@ import { estimateTokensFromChars } from '../token-estimate.js'
 import { blobToText, isSqliteAvailable, openDatabase } from '../sqlite.js'
 import type { SqliteDatabase } from '../sqlite.js'
 import type { ParsedProviderCall, ProbeRoot, Provider, SessionParser, SessionSource } from './types.js'
+import { sourceMeteredCostAssignment } from './cost-evidence.js'
 
 const METRICS_FILE_RE = /^metrics-(\d{4})-(\d{2})-(\d{2})\.jsonl$/
 
@@ -470,6 +471,7 @@ function createMetricsParser(source: SessionSource, seenKeys: Set<string>): Sess
           outputTokens,
           costUSD: recordedCost ?? calculateCost(model, inputTokens, outputTokens, 0, 0, 0),
           costIsEstimated,
+          ...(recordedCost !== undefined ? { costAssignment: sourceMeteredCostAssignment(recordedCost, 'client') } : {}),
           tools,
           timestamp,
           deduplicationKey,

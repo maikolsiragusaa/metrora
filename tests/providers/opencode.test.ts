@@ -323,6 +323,7 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     const call = calls[0]!
     expect(call.provider).toBe('opencode')
     expect(call.modelProvider).toBe('opencode-go')
+    expect(call.pricingContext).toEqual({ route: 'opencode-go' })
     expect(call.model).toBe('claude-opus-4-6')
     expect(call.inputTokens).toBe(100)
     expect(call.outputTokens).toBe(200)
@@ -583,6 +584,7 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'sess-1')
     expect(calls).toHaveLength(1)
     expect(calls[0]!.modelProvider).toBe('opencode-go')
+    expect(calls[0]!.pricingContext).toEqual({ route: 'opencode-go' })
     expect(calls[0]!.costUSD).toBe(63.281744016)
   })
 

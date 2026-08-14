@@ -8,6 +8,7 @@ import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { calculateCost, getShortModelName } from '../models.js'
 import type { ToolCall } from '../types.js'
 import type { ParsedProviderCall, Provider, SessionParser, SessionSource } from './types.js'
+import { sourceMeteredCostAssignment } from './cost-evidence.js'
 
 const METADATA_PREFIX_BYTES = 64 * 1024
 
@@ -361,8 +362,16 @@ function reportedCost(cost: CodeWhaleCost | undefined): { value: number; exact: 
   const hasSessionCost = Object.prototype.hasOwnProperty.call(cost, 'session_cost_usd')
   const hasSubagentCost = Object.prototype.hasOwnProperty.call(cost, 'subagent_cost_usd')
   if (!hasSessionCost && !hasSubagentCost) return { value: 0, exact: false }
+  const sessionCost = cost.session_cost_usd
+  const subagentCost = cost.subagent_cost_usd
+  if (hasSessionCost && (typeof sessionCost !== 'number' || !Number.isFinite(sessionCost) || sessionCost < 0)) {
+    return { value: 0, exact: false }
+  }
+  if (hasSubagentCost && (typeof subagentCost !== 'number' || !Number.isFinite(subagentCost) || subagentCost < 0)) {
+    return { value: 0, exact: false }
+  }
   return {
-    value: safeNonNegativeNumber(cost.session_cost_usd) + safeNonNegativeNumber(cost.subagent_cost_usd),
+    value: (sessionCost ?? 0) + (subagentCost ?? 0),
     exact: true,
   }
 }
@@ -412,6 +421,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       yield {
         provider: 'codewhale',
         model, ...(modelProvider ? { modelProvider } : {}),
+        ...(modelProvider ? { pricingContext: { inferenceProvider: modelProvider } } : {}),
         // CodeWhale persists only one aggregate token counter. Preserve it
         // losslessly in the input column instead of inventing a split.
         inputTokens: totalTokens,
@@ -423,6 +433,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         webSearchRequests,
         costUSD,
         costIsEstimated: !localCost.exact,
+        ...(localCost.exact ? { costAssignment: sourceMeteredCostAssignment(localCost.value, 'client') } : {}),
         tools,
         bashCommands,
         skills,

@@ -88,6 +88,12 @@ Shell commands, edited/read file paths, skill names, and subagent types are
 retained when present. `metadata.workspace` supplies both project grouping and
 worktree canonicalization.
 
+## Pricing evidence
+
+The persisted aggregate cost snapshot is bound as client-metered evidence when
+present, including an explicit zero. `model_provider` is retained as source
+inference-provider evidence and is not promoted to a billing authority.
+
 ## Caching and deduplication
 
 The shared session cache fingerprints each JSON file and includes

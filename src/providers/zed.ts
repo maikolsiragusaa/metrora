@@ -87,6 +87,7 @@ function buildCall(opts: {
     provider: 'zed',
     model: opts.model,
     ...(opts.modelProvider ? { modelProvider: opts.modelProvider } : {}),
+    ...(opts.modelProvider ? { pricingContext: { inferenceProvider: opts.modelProvider } } : {}),
     inputTokens: input,
     outputTokens: output,
     cacheCreationInputTokens: cacheWrite,

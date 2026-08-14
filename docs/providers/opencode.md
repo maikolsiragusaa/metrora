@@ -33,6 +33,12 @@ SQLite (older builds) or file-based JSON (OpenCode 1.1+, under `storage/`).
 
 None.
 
+## Pricing evidence
+
+When present, the raw `providerID` is preserved as `pricingContext.route` (and
+the legacy `modelProvider` field). It identifies the recorded route, not a
+pricing authority; the source `cost` remains route-specific source valuation.
+
 ## Deduplication
 
 Per `<sessionId>:<messageId>`.

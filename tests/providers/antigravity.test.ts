@@ -251,6 +251,7 @@ describe('antigravity provider helpers', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.modelProvider).toBe('google')
+    expect(calls[0]!.pricingContext).toEqual({ inferenceProvider: 'google' })
   })
 
   it('preserves cache reads and total output for legacy direct generator usage', () => {

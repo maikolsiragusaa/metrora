@@ -227,7 +227,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // the new optional fields.
   claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1-native-id-reconciliation-v1',
   cline: 'worktree-project-grouping-v1-vscode-variants-v2-provider-zero-cost',
-  codewhale: 'aggregate-session-v2-provider-provenance',
+  codewhale: 'aggregate-session-v2-provider-provenance-pricing-evidence-v1',
   // Bump when the Codex parser changes attribution so unchanged, already-cached
   // session files re-parse (session-cache.json serves them without invoking the
   // provider parser otherwise). Covers native mcp_tool_call_end (#513) and
@@ -235,29 +235,29 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // rich-session-capture-v1: per-call LOC deltas + editFailed from
   // patch_apply_end. (The codex-results.json CODEX_CACHE_VERSION is bumped in
   // lockstep so the pre-session-cache layer re-parses too.)
-  codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1',
+  codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
   copilot: 'cli-shutdown-cost-v3-source-provenance',
   goose: 'sqlite-session-v1-provider-provenance',
   grok: 'estimated-cost-v1',
-  hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2',
+  hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2-pricing-evidence-v1',
   'lingtai-tui': 'token-ledger-registry-activity-v3',
   'ibm-bob': 'worktree-project-grouping-v1',
   kiro: 'ide-parsing-v3-provider-provenance',
   'mistral-vibe': 'session-cost-only-v1-provider-provenance-estimated-cost-v2',
-  quickdesk: 'emf-sqlite-v2-est-cost',
+  quickdesk: 'emf-sqlite-v2-est-cost-pricing-evidence-v1',
   kimicode: 'wire-usage-v1-est-cost',
   'kilo-code': 'worktree-project-grouping-v1',
   'roo-code': 'worktree-project-grouping-v1',
   zerostack: 'cumulative-session-v1-provider-provenance-estimated-cost-v2',
   warp: 'worktree-project-grouping-v1-est-cost',
-  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1-output-reasoning-map-v2',
+  antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1-output-reasoning-map-v2-pricing-evidence-v1',
   // OpenCode keeps valid usage in archived root/child sessions. The parser
   // must scan the complete SQLite session tree, not only active sessions.
-  opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1',
+  opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1-pricing-context-v1',
   // Preserve the source-recorded thread.model.provider through the shared cache.
-  zed: 'sqlite-zstd-ledger-v1-model-provider-v1',
+  zed: 'sqlite-zstd-ledger-v1-model-provider-v1-pricing-context-v1',
 }
 // ── Cache Dir ──────────────────────────────────────────────────────────
 
