@@ -2369,6 +2369,7 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     provider: call.provider,
     model: call.model,
     modelProvider: call.modelProvider,
+    pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
@@ -2381,6 +2382,7 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     provider: call.provider,
     model: call.model,
     ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2428,6 +2430,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     provider: call.provider,
     model: call.model,
     modelProvider: call.modelProvider,
+    pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
@@ -2439,6 +2442,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     provider: flattenString(call.provider),
     model: flattenString(call.model),
     ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
+    ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2493,6 +2497,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     provider: call.provider,
     model: call.model,
     modelProvider: call.modelProvider,
+    pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
@@ -2504,6 +2509,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     provider: flattenString(call.provider),
     model: flattenString(call.model),
     ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
+    ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2625,6 +2631,7 @@ function settledCachedCall(call: CachedCall) {
     provider: call.provider,
     model: call.model,
     modelProvider: call.modelProvider,
+    pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage: call.usage,
@@ -2675,6 +2682,7 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
     provider: call.provider,
     model: call.model,
     ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,

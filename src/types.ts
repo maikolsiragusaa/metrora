@@ -1,5 +1,6 @@
 import type { ReasoningLevel, ReasoningLevelSource, ReasoningMix } from './reasoning-level.js'
 import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
+import type { HistoricalPricingContextV1 } from './pricing/pricing-context.js'
 
 export type TokenUsage = {
   inputTokens: number
@@ -115,6 +116,7 @@ export type ParsedApiCall = {
   model: string
   /** Explicit source-recorded model/API provider; never inferred. */
   modelProvider?: string
+  pricingContext?: HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage

@@ -13,6 +13,7 @@ function input(timestamp: string, overrides: Record<string, unknown> = {}) {
   return {
     provider: 'codex',
     model: 'openai/gpt-5.6-luna',
+    modelProvider: 'openai',
     timestamp,
     speed: 'standard' as const,
     usage: {
@@ -87,11 +88,11 @@ describe('runtime historical cost assignment', () => {
     expect(free.storedAssignment).toMatchObject({ kind: 'explicit-zero', reason: 'free-route' })
   })
 
-  it('does not let an adapter route hide an otherwise unambiguous price authority', () => {
+  it('does not let an adapter route borrow an otherwise unqualified price authority', () => {
     const routed = assignRuntimeCostV1(input('2026-07-31T00:00:00Z', {
       modelProvider: 'opencode-go',
     }))
-    expect(routed.storedAssignment.kind).toBe('token-price')
+    expect(routed.storedAssignment.kind).toBe('legacy-frozen')
   })
 
   it('supports compare and rollback views without mutating the stored historical settlement', () => {

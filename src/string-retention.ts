@@ -43,6 +43,7 @@ export function flattenParsedProviderCall(call: ParsedProviderCall): ParsedProvi
     provider: flattenString(call.provider),
     model: flattenString(call.model),
     ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
+    ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     timestamp: flattenString(call.timestamp),
     deduplicationKey: flattenString(call.deduplicationKey),
     sessionId: flattenString(call.sessionId),

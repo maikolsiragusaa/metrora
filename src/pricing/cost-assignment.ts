@@ -2,6 +2,8 @@ import { z } from 'zod'
 
 const NonNegativeSafeMicrosSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const NonEmptyIdentifierSchema = z.string().trim().min(1).max(240)
+const OptionalIdentifierSchema = NonEmptyIdentifierSchema.optional()
+const IsoInstantSchema = z.string().datetime({ offset: true })
 
 export const CostAssignmentOriginV1Schema = z.enum([
   'reviewed-book',
@@ -14,7 +16,42 @@ export const CostAssignmentRateSelectionV1Schema = z.discriminatedUnion('kind', 
     kind: z.literal('prompt-input-tokens-above'),
     tokens: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   }),
+  z.strictObject({
+    kind: z.literal('pricing-policy'),
+    policyId: NonEmptyIdentifierSchema,
+    conditionKinds: z.array(NonEmptyIdentifierSchema).min(1).max(8),
+  }),
+  z.strictObject({
+    kind: z.literal('pricing-evidence'),
+    evidenceKind: z.enum(['provider-reported-tier', 'provider-reported-multiplier', 'quoted-rates']),
+  }),
 ])
+
+/** Compact, non-secret explanation for a reconstructed price assignment. */
+export const CostAssignmentPricingProvenanceV1Schema = z.strictObject({
+  pricingAuthority: OptionalIdentifierSchema,
+  pricingModel: OptionalIdentifierSchema,
+  modelIdentity: OptionalIdentifierSchema,
+  modelOwner: OptionalIdentifierSchema,
+  inferenceProvider: OptionalIdentifierSchema,
+  gateway: OptionalIdentifierSchema,
+  route: OptionalIdentifierSchema,
+  billingTier: OptionalIdentifierSchema,
+  region: OptionalIdentifierSchema,
+  validFrom: z.strictObject({
+    basis: z.enum(['official-effective', 'reviewed-effective', 'first-observed']),
+    at: IsoInstantSchema,
+  }).optional(),
+  validUntil: IsoInstantSchema.optional(),
+  sourceKind: z.enum([
+    'official-provider',
+    'official-route',
+    'litellm',
+    'models-dev',
+    'openrouter',
+    'manual-reviewed',
+  ]).optional(),
+})
 
 const MeteredCostAssignmentV1Schema = z.strictObject({
   version: z.literal(1),
@@ -30,6 +67,7 @@ const TokenPriceCostAssignmentV1Schema = z.strictObject({
   priceRecordId: NonEmptyIdentifierSchema,
   priceOrigin: CostAssignmentOriginV1Schema,
   rateSelection: CostAssignmentRateSelectionV1Schema,
+  pricingProvenance: CostAssignmentPricingProvenanceV1Schema.optional(),
 })
 
 const ExplicitZeroCostAssignmentV1Schema = z.strictObject({
@@ -39,6 +77,7 @@ const ExplicitZeroCostAssignmentV1Schema = z.strictObject({
   reason: z.enum(['free-route', 'free-model', 'local-inference', 'manual-reviewed']),
   priceRecordId: NonEmptyIdentifierSchema.optional(),
   priceOrigin: CostAssignmentOriginV1Schema.optional(),
+  pricingProvenance: CostAssignmentPricingProvenanceV1Schema.optional(),
 })
 
 const LegacyFrozenCostAssignmentV1Schema = z.strictObject({
@@ -82,6 +121,7 @@ export const CostAssignmentV1Schema = CostAssignmentUnionV1Schema.superRefine((a
 
 export type CostAssignmentOriginV1 = z.infer<typeof CostAssignmentOriginV1Schema>
 export type CostAssignmentRateSelectionV1 = z.infer<typeof CostAssignmentRateSelectionV1Schema>
+export type CostAssignmentPricingProvenanceV1 = z.infer<typeof CostAssignmentPricingProvenanceV1Schema>
 export type CostAssignmentV1 = z.infer<typeof CostAssignmentV1Schema>
 export type SettledCostAssignmentV1 = Exclude<CostAssignmentV1, { kind: 'unavailable' }>
 

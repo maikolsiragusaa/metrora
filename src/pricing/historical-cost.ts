@@ -6,6 +6,11 @@ import {
   type HistoricalPriceRatesV1,
   type HistoricalPriceRecordV1,
 } from './history.js'
+import { HistoricalPricingEvidenceV1Schema, type HistoricalPricingEvidenceV1 } from './pricing-context.js'
+import {
+  selectHistoricalPricePolicyV1,
+  type HistoricalPricePolicyRequestV1,
+} from './pricing-policy.js'
 
 const NonNegativeSafeIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 
@@ -15,8 +20,15 @@ export const HistoricalPriceUsageV1Schema = z.strictObject({
   cacheReadTokens: NonNegativeSafeIntegerSchema,
   cacheWriteTokens: NonNegativeSafeIntegerSchema,
   webSearchRequests: NonNegativeSafeIntegerSchema,
+  gatewayRequests: NonNegativeSafeIntegerSchema.optional(),
+  toolRequests: NonNegativeSafeIntegerSchema.optional(),
   promptInputTokens: NonNegativeSafeIntegerSchema.optional(),
   oneHourCacheWriteTokens: NonNegativeSafeIntegerSchema.optional(),
+  timestamp: z.string().datetime({ offset: true }).optional(),
+  route: z.string().trim().min(1).max(240).optional(),
+  billingTier: z.string().trim().min(1).max(240).optional(),
+  cacheTier: z.enum(['none', 'read', 'write-5m', 'write-1h']).optional(),
+  pricingEvidence: z.array(HistoricalPricingEvidenceV1Schema).max(8).optional(),
   speed: z.enum(['standard', 'fast']).default('standard'),
 }).superRefine((usage, context) => {
   if ((usage.oneHourCacheWriteTokens ?? 0) > usage.cacheWriteTokens) {
@@ -32,6 +44,8 @@ export type HistoricalPriceUsageV1 = z.infer<typeof HistoricalPriceUsageV1Schema
 export type HistoricalRateSelectionV1 =
   | { kind: 'base' }
   | { kind: 'prompt-input-tokens-above'; tokens: number }
+  | { kind: 'pricing-policy'; policyId: string; conditionKinds: string[] }
+  | { kind: 'pricing-evidence'; evidenceKind: HistoricalPricingEvidenceV1['kind'] }
 
 export type HistoricalCostCalculationV1 =
   | {
@@ -48,6 +62,9 @@ export type HistoricalCostCalculationV1 =
         | 'missing-prompt-input-token-count'
         | 'missing-web-search-rate'
         | 'missing-fast-rate'
+        | 'missing-request-charge-rate'
+        | 'missing-pricing-evidence'
+        | 'ambiguous-pricing-policy'
         | 'non-finite-result'
     }
 
@@ -67,18 +84,26 @@ function validatedStandaloneRecord(input: HistoricalPriceRecordV1 | unknown): Hi
 
 function selectRates(
   record: HistoricalPriceRecordV1,
-  promptInputTokens: number | undefined,
-): { rates: HistoricalPriceRatesV1; selection: HistoricalRateSelectionV1 } | undefined {
+  usage: HistoricalPriceUsageV1,
+): { rates: HistoricalPriceRatesV1; selection: HistoricalRateSelectionV1 }
+  | { unavailable: Extract<HistoricalCostCalculationV1, { kind: 'unavailable' }>['reason'] }
+  | undefined {
   const bands = record.rateBands ?? []
-  if (bands.length === 0) return { rates: record.rates, selection: { kind: 'base' } }
-  if (promptInputTokens === undefined) return undefined
+  if (bands.length > 0 && usage.promptInputTokens === undefined) return undefined
 
   let rates = record.rates
   let selection: HistoricalRateSelectionV1 = { kind: 'base' }
   for (const band of bands) {
-    if (promptInputTokens <= band.when.tokens) break
+    if (usage.promptInputTokens! <= band.when.tokens) break
     rates = band.rates
     selection = { kind: 'prompt-input-tokens-above', tokens: band.when.tokens }
+  }
+
+  const policy = selectHistoricalPricePolicyV1(record, usage as HistoricalPricePolicyRequestV1)
+  if (policy.kind === 'unavailable') return { unavailable: policy.reason }
+  if (policy.selection.kind !== 'base' || record.pricingPolicies?.length) {
+    rates = policy.rates
+    selection = policy.selection
   }
   return { rates, selection }
 }
@@ -107,8 +132,9 @@ export function calculateHistoricalCostV1(
     }
   }
 
-  const selected = selectRates(record, usage.promptInputTokens)
+  const selected = selectRates(record, usage)
   if (!selected) return unavailable(record, 'missing-prompt-input-token-count')
+  if ('unavailable' in selected) return unavailable(record, selected.unavailable)
 
   const rates = selected.rates
   if (usage.webSearchRequests > 0 && rates.webSearchPerRequest === undefined) {
@@ -116,6 +142,13 @@ export function calculateHistoricalCostV1(
   }
   if (usage.speed === 'fast' && rates.fastMultiplier === undefined) {
     return unavailable(record, 'missing-fast-rate')
+  }
+
+  if (rates.requestCharges?.gatewayServicePerRequest !== undefined && usage.gatewayRequests === undefined) {
+    return unavailable(record, 'missing-request-charge-rate')
+  }
+  if (rates.requestCharges?.toolRequestPerRequest !== undefined && usage.toolRequests === undefined) {
+    return unavailable(record, 'missing-request-charge-rate')
   }
 
   const oneHourCacheWriteTokens = usage.oneHourCacheWriteTokens ?? 0
@@ -130,6 +163,8 @@ export function calculateHistoricalCostV1(
       * rates.cacheWritePerToken
       * ONE_HOUR_CACHE_WRITE_MULTIPLIER_FROM_FIVE_MINUTE_RATE
     + usage.webSearchRequests * (rates.webSearchPerRequest ?? 0)
+    + (usage.gatewayRequests ?? 0) * (rates.requestCharges?.gatewayServicePerRequest ?? 0)
+    + (usage.toolRequests ?? 0) * (rates.requestCharges?.toolRequestPerRequest ?? 0)
   )
 
   if (!Number.isFinite(costUSD) || costUSD < 0) {

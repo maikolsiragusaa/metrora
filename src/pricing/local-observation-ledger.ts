@@ -5,9 +5,11 @@ import { z } from 'zod'
 
 import {
   HistoricalPriceBookV1Schema,
+  HistoricalPricePolicyV1Schema,
   HistoricalPriceRateBandV1Schema,
   HistoricalPriceRatesV1Schema,
   HistoricalPriceRecordV1Schema,
+  HistoricalPricePricingModeV1Schema,
   HistoricalPriceSourceKindV1Schema,
   HistoricalPriceValuationV1Schema,
   HistoricalPriceBookValidationError,
@@ -34,10 +36,17 @@ const OptionalIdentityPartSchema = z.string().trim().min(1).max(240).optional()
 export const LocalPriceObservationInputV1Schema = z.strictObject({
   pricingAuthority: z.string().trim().min(1).max(240),
   pricingModel: z.string().trim().min(1).max(240),
+  modelIdentity: OptionalIdentityPartSchema,
+  modelOwner: OptionalIdentityPartSchema,
+  inferenceProvider: OptionalIdentityPartSchema,
+  gateway: OptionalIdentityPartSchema,
   route: OptionalIdentityPartSchema,
   billingTier: OptionalIdentityPartSchema,
+  region: OptionalIdentityPartSchema,
   rates: HistoricalPriceRatesV1Schema,
   rateBands: z.array(HistoricalPriceRateBandV1Schema).max(20).optional(),
+  pricingPolicies: z.array(HistoricalPricePolicyV1Schema).max(20).optional(),
+  pricingMode: HistoricalPricePricingModeV1Schema.optional(),
   valuation: HistoricalPriceValuationV1Schema,
   source: z.strictObject({
     kind: HistoricalPriceSourceKindV1Schema,
@@ -128,21 +137,28 @@ async function prepare(paths: ReturnType<typeof ledgerPaths>): Promise<void> {
   await cleanupStaleAtomicTemps(paths.observations)
 }
 
-function identityKey(record: Pick<HistoricalPriceRecordV1, 'pricingAuthority' | 'pricingModel' | 'route' | 'billingTier'>): string {
+function identityKey(record: Pick<HistoricalPriceRecordV1, 'pricingAuthority' | 'pricingModel' | 'modelIdentity' | 'modelOwner' | 'inferenceProvider' | 'gateway' | 'route' | 'billingTier' | 'region'>): string {
   return stableJson([
     record.pricingAuthority,
     record.pricingModel,
+    record.modelIdentity ?? null,
+    record.modelOwner ?? null,
+    record.inferenceProvider ?? null,
+    record.gateway ?? null,
     record.route ?? null,
     record.billingTier ?? null,
+    record.region ?? null,
   ])
 }
 
 function pricingSemantics(
-  record: Pick<HistoricalPriceRecordV1, 'rates' | 'rateBands' | 'valuation'>,
+  record: Pick<HistoricalPriceRecordV1, 'rates' | 'rateBands' | 'pricingPolicies' | 'pricingMode' | 'valuation'>,
 ): string {
   return stableJson({
     rates: record.rates,
     rateBands: record.rateBands ?? [],
+    pricingPolicies: record.pricingPolicies ?? [],
+    pricingMode: record.pricingMode ?? { kind: 'deterministic' },
     valuation: record.valuation,
   })
 }
@@ -229,10 +245,17 @@ function observationRecordId(input: LocalPriceObservationInputV1, observedAt: st
   const digest = sha256(stableJson({
     pricingAuthority: input.pricingAuthority,
     pricingModel: input.pricingModel,
+    modelIdentity: input.modelIdentity ?? null,
+    modelOwner: input.modelOwner ?? null,
+    inferenceProvider: input.inferenceProvider ?? null,
+    gateway: input.gateway ?? null,
     route: input.route ?? null,
     billingTier: input.billingTier ?? null,
+    region: input.region ?? null,
     rates: input.rates,
     rateBands: input.rateBands ?? [],
+    pricingPolicies: input.pricingPolicies ?? [],
+    pricingMode: input.pricingMode ?? { kind: 'deterministic' },
     valuation: input.valuation,
     source: input.source,
     observedAt,
@@ -270,11 +293,18 @@ export async function observeCurrentPriceV1(
       priceRecordId: observationRecordId(input, observedAt),
       pricingAuthority: input.pricingAuthority,
       pricingModel: input.pricingModel,
+      ...(input.modelIdentity !== undefined ? { modelIdentity: input.modelIdentity } : {}),
+      ...(input.modelOwner !== undefined ? { modelOwner: input.modelOwner } : {}),
+      ...(input.inferenceProvider !== undefined ? { inferenceProvider: input.inferenceProvider } : {}),
+      ...(input.gateway !== undefined ? { gateway: input.gateway } : {}),
       ...(input.route !== undefined ? { route: input.route } : {}),
       ...(input.billingTier !== undefined ? { billingTier: input.billingTier } : {}),
+      ...(input.region !== undefined ? { region: input.region } : {}),
       validFrom: { basis: 'first-observed', at: observedAt },
       rates: input.rates,
       ...(input.rateBands !== undefined ? { rateBands: input.rateBands } : {}),
+      ...(input.pricingPolicies !== undefined ? { pricingPolicies: input.pricingPolicies } : {}),
+      ...(input.pricingMode !== undefined ? { pricingMode: input.pricingMode } : {}),
       valuation: input.valuation,
       source: {
         ...input.source,
