@@ -5,7 +5,6 @@ import { join } from 'path'
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
 import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
-import type { HistoricalPricingContextV1 } from './pricing/pricing-context.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
 import { validateCachedFile, validateSessionCache } from './session-cache-validation.js'
@@ -27,8 +26,7 @@ export type CachedCall = {
   provider: string
   model: string
   /** Explicit model/API provider preserved from the source when available. */
-  modelProvider?: string
-  pricingContext?: HistoricalPricingContextV1
+  modelProvider?: string; pricingContext?: import('./pricing/pricing-context.js').HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   usage: CachedUsage
