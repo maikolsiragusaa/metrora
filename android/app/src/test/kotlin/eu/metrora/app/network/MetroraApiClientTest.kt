@@ -7,6 +7,7 @@ import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.IdentityMaterial
 import java.net.SocketTimeoutException
+import java.security.InvalidKeyException
 import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -88,6 +89,19 @@ class MetroraApiClientTest {
         val certificate = expectFailure { api.discover("desktop.local", 7777) }
         assertEquals(MetroraFailureCategory.IDENTITY_SECURITY, certificate.failure.category)
         assertEquals(MetroraFailureReason.CERTIFICATE_MISMATCH, certificate.failure.reason)
+    }
+
+    @Test
+    fun tls_client_key_failure_is_local_state_not_desktop_identity_failure() = runTest {
+        transport.error = SSLHandshakeException("client signing failed").apply {
+            initCause(InvalidKeyException("Keystore operation failed"))
+        }
+
+        val error = expectFailure { api.discover("desktop.local", 7777) }
+
+        assertEquals(MetroraFailureCategory.LOCAL_STATE, error.failure.category)
+        assertEquals(MetroraFailureReason.KEY_UNAVAILABLE, error.failure.reason)
+        assertEquals("SSLHandshakeException -> InvalidKeyException", error.failure.technicalDetail)
     }
 
     @Test

@@ -12,6 +12,8 @@ import eu.metrora.app.security.DeviceIdentity
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.security.InvalidKeyException
+import java.security.UnrecoverableKeyException
 import java.security.cert.CertificateException
 import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
@@ -391,14 +393,11 @@ class MetroraApiClient(
     }
 
     private fun classify(operation: MetroraOperation, error: Exception): MetroraFailure {
-        val reason = when (error) {
-            is SocketTimeoutException -> MetroraFailureReason.TIMEOUT
-            is UnknownHostException,
-            is ConnectException,
-            -> MetroraFailureReason.DESKTOP_UNREACHABLE
-            is SSLException,
-            is CertificateException,
-            -> MetroraFailureReason.CERTIFICATE_MISMATCH
+        val reason = when {
+            isLocalKeyFailure(error) -> MetroraFailureReason.KEY_UNAVAILABLE
+            error is SocketTimeoutException -> MetroraFailureReason.TIMEOUT
+            error is UnknownHostException || error is ConnectException -> MetroraFailureReason.DESKTOP_UNREACHABLE
+            error is SSLException || error is CertificateException -> MetroraFailureReason.CERTIFICATE_MISMATCH
             else -> MetroraFailureReason.UNKNOWN
         }
         val category = when (reason) {
@@ -406,10 +405,26 @@ class MetroraApiClient(
             MetroraFailureReason.DESKTOP_UNREACHABLE,
             -> MetroraFailureCategory.CONNECTIVITY
             MetroraFailureReason.CERTIFICATE_MISMATCH -> MetroraFailureCategory.IDENTITY_SECURITY
+            MetroraFailureReason.KEY_UNAVAILABLE -> MetroraFailureCategory.LOCAL_STATE
             else -> MetroraFailureCategory.UNEXPECTED
         }
-        return MetroraFailure(operation, category, reason, error.javaClass.simpleName)
+        return MetroraFailure(operation, category, reason, safeCauseChain(error))
     }
+
+    private fun isLocalKeyFailure(error: Throwable): Boolean = causeChain(error).any { cause ->
+        cause is InvalidKeyException ||
+            cause is UnrecoverableKeyException ||
+            cause.javaClass.name == "android.security.KeyStoreException"
+    }
+
+    private fun safeCauseChain(error: Throwable): String = causeChain(error)
+        .map { cause -> cause.javaClass.simpleName.ifBlank { cause.javaClass.name.substringAfterLast('.') } }
+        .distinct()
+        .take(MAX_DIAGNOSTIC_CAUSES)
+        .joinToString(" -> ")
+
+    private fun causeChain(error: Throwable): Sequence<Throwable> =
+        generateSequence(error) { cause -> cause.cause }
 
     private fun failure(
         operation: MetroraOperation,
@@ -424,5 +439,6 @@ class MetroraApiClient(
 
     private companion object {
         const val PAIRING_TIMEOUT_MS = 70_000
+        const val MAX_DIAGNOSTIC_CAUSES = 4
     }
 }
