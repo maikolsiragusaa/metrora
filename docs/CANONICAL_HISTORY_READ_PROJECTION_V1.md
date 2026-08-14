@@ -1,6 +1,6 @@
 # Canonical history read projection v1
 
-**Status:** C3-P0.A shadow read contract; implemented without consumer cutover.
+**Status:** C3-P0.A implemented shadow read contract within progressive migration. The separately derived, parity-gated terminal headline is the first bounded production consumer; this projection remains non-authoritative for other consumers.
 
 This contract makes source-observation and activity identity explicit while the existing trusted daily cache remains authoritative for user-visible historical totals.
 
@@ -126,9 +126,9 @@ C3-P0.A does not provide:
 - persistent canonical-history storage;
 - cache-schema changes;
 - migration or backfill;
-- report, CLI, desktop, Workspace or Android cutover;
+- report, desktop, Workspace or Android cutover beyond the bounded terminal headline;
 - server ingestion or synchronization;
 - account, team, billing or managed infrastructure;
 - a second collector, parser, pricing or evidence implementation.
 
-A later shadow-persistence tranche must prove parity and rollback independently before any consumer can change authority.
+A later migration tranche must prove consumer-specific parity and rollback independently before any additional consumer can change authority.

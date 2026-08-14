@@ -4,7 +4,7 @@ Metrora uses semantic versioning for public product identity and separate numeri
 
 ## Current line
 
-- Current source candidate: `1.0.0-rc.10`
+- Published Store source line: `1.0.0-rc.10`
 - Desktop build version: `1.0.0.10`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - First intended stable release: `1.0.0`
@@ -37,9 +37,12 @@ For the current `1.0.0` Store-associated source line:
 
 - source/product candidate: `1.0.0-rc.10`;
 - desktop build version: `1.0.0.10`;
-- non-publishing Store AppX identity version: `1.0.0.0`.
+- published Store AppX identity version: `1.0.0.0`.
 
-A locally validated `1.0.0.0` AppX does not by itself mean that version was submitted, certified or published. Submission, certification and publication are separate gates. Later Store updates must advance according to the Store's package-version rules rather than reusing an already submitted identity.
+The published Store authority is the frozen RC10 line under Vensent. A local
+build with the same identity version is not, by itself, evidence of the live
+listing; later Store updates must advance according to the Store's
+package-version rules and pass their own acceptance and publication gates.
 
 ## Ordering
 

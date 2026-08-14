@@ -4,8 +4,8 @@ import SwiftUI
 @MainActor
 enum Theme {
     // The property name is retained for source compatibility; the canonical
-    // brand color is Metrora Signal Blue.
-    static let brandEmber        = Color(red: 0x25/255.0, green: 0x63/255.0, blue: 0xEB/255.0)
+    // brand signal is Metrora Signal Cyan.
+    static let brandEmber        = Color(red: 0x00/255.0, green: 0xD4/255.0, blue: 0xFF/255.0)
 
     static var brandAccent: Color { ThemeState.shared.preset.base }
     static var brandAccentLight: Color { ThemeState.shared.preset.light }

@@ -11,7 +11,7 @@ Understand where AI time, tokens and money go across tools, models, projects and
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Download-0078D4?logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
 [![Fluxer Community](https://img.shields.io/badge/Fluxer-Community-4641D9?logo=fluxer&logoColor=white)](https://metrora.eu/community)
-[![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-0F1115.svg)](LICENSE)
 
 </div>
 
@@ -151,11 +151,13 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 | Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
-| Android companion | Read-only local-network companion foundation | Experimental |
+| Android companion | Read-only local-network companion for a paired Desktop | **Implemented and physically accepted for the local companion scope; public Android distribution not released** |
 | macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
 | GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
 
 Windows is the first supported public desktop distribution. Source support for other platforms does not imply that an accepted public package exists for those platforms.
+
+The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and has passed the bounded Windows↔Samsung physical-acceptance scope. It is not yet a public Android release or store distribution.
 
 ## Privacy model
 
@@ -187,6 +189,8 @@ Start from the [documentation index](docs/README.md):
 - [Pricing history](docs/PRICING_HISTORY.md)
 - [Workspace v1](docs/WORKSPACE_V1.md)
 - [Public contracts v1](docs/PUBLIC_CONTRACTS_V1.md)
+- [Android companion foundation](docs/ANDROID_COMPANION_FOUNDATION.md)
+- [Local companion API v1](docs/LOCAL_COMPANION_API.md)
 - [Windows distribution boundary](docs/WINDOWS_DISTRIBUTION.md)
 
 ## Repository map
@@ -195,7 +199,7 @@ Start from the [documentation index](docs/README.md):
 src/       collection, parsing, canonical records, CLI, analytics and sharing
 app/       Electron desktop application
 dash/      local React web dashboard
-android/   experimental Android companion
+android/   implemented local Android companion; no public Android distribution yet
 mac/       macOS menubar application
 gnome/     GNOME extension
 tests/     core test suite
@@ -216,7 +220,7 @@ Security issues must be reported privately according to [SECURITY.md](SECURITY.m
 
 <img src="./assets/brand/third-party/fluxer-symbol-color.svg" alt="Fluxer" width="48" />
 
-The Metrora community is opening soon on **Fluxer** for product discussion, questions, feedback and contributor conversation. Use [metrora.eu/community](https://metrora.eu/community) as the stable entry point; the public join link will be published there when the channel opens.
+The public Metrora community is open on **Fluxer** for product discussion, questions, feedback and contributor conversation. Join through [metrora.eu/community](https://metrora.eu/community), the stable Metrora community entry point.
 
 Technical issues and pull requests stay on GitHub. Security reports must continue to follow the private process in [SECURITY.md](SECURITY.md).
 
@@ -224,7 +228,7 @@ Technical issues and pull requests stay on GitHub. Security reports must continu
 
 Metrora™ is the product and user-facing brand. Signal Grid™ is its canonical visual identity. Vensent™ is the publisher identity used for official Metrora distribution.
 
-Metrora is independently maintained and distributed under the MIT License. Product and repository surfaces use the assets and Graphite + Signal Orange palette documented in [`assets/brand`](assets/brand/README.md).
+Metrora is independently maintained and distributed under the MIT License. Product and repository surfaces use the assets and Graphite + Signal Cyan palette documented in [`assets/brand`](assets/brand/README.md).
 
 See the [project notices](NOTICE.md), [brand policy](BRAND_POLICY.md) and [licence](LICENSE).
 

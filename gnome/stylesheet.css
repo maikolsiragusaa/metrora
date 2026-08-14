@@ -52,7 +52,7 @@
 .metrora-brand-accent {
   font-weight: 700;
   font-size: 18px;
-  color: #e8590c;
+  color: #00d4ff;
 }
 .metrora-brand-subhead {
   font-size: 10.5px;
@@ -81,13 +81,13 @@
 }
 .metrora-tab:hover,
 .metrora-period:hover {
-  background: rgba(232, 89, 12, 0.08);
+  background: rgba(0, 212, 255, 0.08);
   opacity: 1;
 }
 .metrora-tab-active,
 .metrora-period-active {
-  background: rgba(232, 89, 12, 0.18);
-  color: #e8590c;
+  background: rgba(0, 212, 255, 0.18);
+  color: #00d4ff;
   opacity: 1;
   font-weight: 600;
 }
@@ -97,8 +97,8 @@
 .metrora-agent-badge {
   padding: 3px 10px;
   border-radius: 10px;
-  background: rgba(232, 89, 12, 0.12);
-  color: #e8590c;
+  background: rgba(0, 212, 255, 0.12);
+  color: #00d4ff;
   font-size: 10.5px;
   font-weight: 500;
 }
@@ -115,7 +115,7 @@
   width: 6px;
   height: 6px;
   border-radius: 3px;
-  background-color: #e8590c;
+  background-color: #00d4ff;
   margin-top: 7px;
 }
 .metrora-hero-label {
@@ -126,7 +126,7 @@
 .metrora-hero-amount {
   font-size: 28px;
   font-weight: 700;
-  color: #f2701c;
+  color: #00d4ff;
 }
 .metrora-hero-meta {
   font-size: 11px;
@@ -179,7 +179,7 @@
   font-size: 11.5px;
   font-family: monospace;
   font-weight: 600;
-  color: #f2701c;
+  color: #00d4ff;
   min-width: 64px;
 }
 .metrora-activity-turns {
@@ -203,7 +203,7 @@
 .metrora-bar-fill {
   height: 4px;
   border-radius: 2px;
-  background-color: #e8590c;
+  background-color: #00d4ff;
 }
 .metrora-empty {
   font-style: italic;
@@ -217,11 +217,11 @@
   spacing: 10px;
 }
 .metrora-skeleton-bar {
-  background-color: rgba(232, 89, 12, 0.15);
+  background-color: rgba(0, 212, 255, 0.15);
   border-radius: 4px;
 }
 .metrora-light .metrora-skeleton-bar {
-  background-color: rgba(232, 89, 12, 0.12);
+  background-color: rgba(0, 122, 153, 0.12);
 }
 
 /* ---- findings CTA ---- */
@@ -229,12 +229,12 @@
   margin: 2px 16px 10px 16px;
   padding: 9px 11px;
   border-radius: 8px;
-  background: rgba(232, 89, 12, 0.12);
+  background: rgba(0, 212, 255, 0.12);
   border: none;
   transition-duration: 120ms;
 }
 .metrora-findings:hover {
-  background: rgba(232, 89, 12, 0.2);
+  background: rgba(0, 212, 255, 0.2);
 }
 .metrora-findings-inner {
   spacing: 8px;
@@ -242,12 +242,12 @@
 .metrora-findings-count {
   font-size: 11.5px;
   font-weight: 600;
-  color: #e8590c;
+  color: #00d4ff;
 }
 .metrora-findings-savings {
   font-size: 11.5px;
   font-weight: 500;
-  color: #e8590c;
+  color: #00d4ff;
   opacity: 0.8;
 }
 
@@ -293,19 +293,19 @@
   border: none;
 }
 .metrora-currency-item:hover {
-  background: rgba(232, 89, 12, 0.12);
+  background: rgba(0, 212, 255, 0.12);
 }
 .metrora-currency-item-active {
-  background: rgba(232, 89, 12, 0.2);
-  color: #e8590c;
+  background: rgba(0, 212, 255, 0.2);
+  color: #00d4ff;
   font-weight: 600;
 }
 .metrora-footer-cta {
-  background: #bf4808;
+  background: #007a99;
   color: #ffffff;
 }
 .metrora-footer-cta:hover {
-  background: #e8590c;
+  background: #00657d;
 }
 .metrora-updated {
   font-size: 10px;
@@ -329,12 +329,12 @@
   transition-duration: 80ms;
 }
 .metrora-insight-pill:hover {
-  background: rgba(232, 89, 12, 0.08);
+  background: rgba(0, 212, 255, 0.08);
   opacity: 1;
 }
 .metrora-insight-pill-active {
-  background: rgba(232, 89, 12, 0.18);
-  color: #e8590c;
+  background: rgba(0, 212, 255, 0.18);
+  color: #00d4ff;
   opacity: 1;
   font-weight: 600;
 }
@@ -356,7 +356,7 @@
   font-family: monospace;
   font-size: 11px;
   opacity: 0.7;
-  color: #e8590c;
+  color: #00d4ff;
 }
 .metrora-chart-bars {
   spacing: 2px;
@@ -369,11 +369,11 @@
   background: transparent;
 }
 .metrora-chart-bar {
-  background-color: #e8590c;
+  background-color: #00d4ff;
   border-radius: 2px 2px 0 0;
 }
 .metrora-chart-bar-hover {
-  background-color: #f2701c;
+  background-color: #66e6ff;
 }
 .metrora-chart-total-hover {
   font-weight: 600;
@@ -404,7 +404,7 @@
   font-family: monospace;
   font-size: 11.5px;
   font-weight: 600;
-  color: #f2701c;
+  color: #00d4ff;
 }
 .metrora-trend-calls {
   font-size: 10.5px;
@@ -420,13 +420,13 @@
 .metrora-pulse-tile {
   padding: 10px 8px;
   border-radius: 8px;
-  background: rgba(232, 89, 12, 0.08);
+  background: rgba(0, 212, 255, 0.08);
   spacing: 2px;
 }
 .metrora-pulse-value {
   font-size: 16px;
   font-weight: 700;
-  color: #e8590c;
+  color: #00d4ff;
   font-family: monospace;
 }
 .metrora-pulse-label {
@@ -450,7 +450,7 @@
 .metrora-model-cost {
   font-family: monospace;
   font-size: 11.5px;
-  color: #f2701c;
+  color: #00d4ff;
   min-width: 64px;
 }
 .metrora-model-calls {
@@ -544,8 +544,9 @@
 .metrora-light .metrora-hero-meta {
   color: rgba(0, 0, 0, 0.6);
 }
+.metrora-light .metrora-brand-accent,
 .metrora-light .metrora-hero-amount {
-  color: #bf4808;
+  color: #007a99;
 }
 .metrora-light .metrora-section-title,
 .metrora-light .metrora-th,
@@ -561,8 +562,12 @@
 .metrora-light .metrora-activity-cost,
 .metrora-light .metrora-model-cost,
 .metrora-light .metrora-trend-cost,
-.metrora-light .metrora-kv-value {
-  color: #bf4808;
+.metrora-light .metrora-kv-value,
+.metrora-light .metrora-findings-count,
+.metrora-light .metrora-findings-savings,
+.metrora-light .metrora-chart-total,
+.metrora-light .metrora-pulse-value {
+  color: #007a99;
 }
 .metrora-light .metrora-activity-turns,
 .metrora-light .metrora-model-calls,
@@ -575,11 +580,30 @@
 .metrora-light .metrora-bar-track {
   background-color: rgba(0, 0, 0, 0.08);
 }
-.metrora-light .metrora-bar-fill {
-  background-color: #bf4808;
-}
+.metrora-light .metrora-bar-fill,
 .metrora-light .metrora-chart-bar {
-  background-color: #bf4808;
+  background-color: #007a99;
+}
+.metrora-light .metrora-tab:hover,
+.metrora-light .metrora-period:hover,
+.metrora-light .metrora-insight-pill:hover {
+  background: rgba(0, 122, 153, 0.08);
+}
+.metrora-light .metrora-tab-active,
+.metrora-light .metrora-period-active,
+.metrora-light .metrora-insight-pill-active {
+  background: rgba(0, 122, 153, 0.14);
+  color: #007a99;
+}
+.metrora-light .metrora-agent-badge,
+.metrora-light .metrora-findings,
+.metrora-light .metrora-currency-item:hover {
+  background: rgba(0, 122, 153, 0.10);
+  color: #007a99;
+}
+.metrora-light .metrora-currency-item-active {
+  background: rgba(0, 122, 153, 0.16);
+  color: #007a99;
 }
 .metrora-light .metrora-footer-btn {
   background: rgba(0, 0, 0, 0.06);
@@ -600,7 +624,7 @@
   color: rgba(0, 0, 0, 0.65);
 }
 .metrora-light .metrora-pulse-tile {
-  background: rgba(232, 89, 12, 0.1);
+  background: rgba(0, 122, 153, 0.10);
 }
 .metrora-light .metrora-updated {
   color: rgba(0, 0, 0, 0.4);

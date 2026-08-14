@@ -72,7 +72,7 @@ The dashboard renders canonical local analytical payloads in a browser surface s
 ### Native companions — `mac/`, `gnome/`, `android/`
 
 - macOS and GNOME surfaces are lightweight local companions over the canonical CLI/runtime;
-- Android is a companion foundation and does not own collection, pricing or evidence authority;
+- Android is an implemented and physically accepted local companion for the current LAN scope; it does not own collection, pricing or evidence authority;
 - inherited module names, UUIDs and storage paths may remain where migration would otherwise break installed state.
 
 Compatibility identifiers are governed by [`TECHNICAL_IDENTITY_COMPATIBILITY.md`](TECHNICAL_IDENTITY_COMPATIBILITY.md), not treated as product branding.
@@ -136,7 +136,7 @@ Contract evolution requires:
 
 ## Distribution integrity
 
-Official desktop distribution is in preparation. Technical candidates remain engineering artifacts until an accepted official channel publishes them.
+Official Windows distribution is live through Microsoft Store under publisher Vensent, with RC10 as the frozen published authority. Technical candidates and non-Windows source surfaces remain engineering artifacts until their own accepted public channel publishes them.
 
 Distribution work preserves these boundaries:
 
@@ -166,7 +166,7 @@ See [`WINDOWS_DISTRIBUTION.md`](WINDOWS_DISTRIBUTION.md), [`WINDOWS_FORMAT_DERIV
 src/       canonical collection, parsing, pricing, analytics, evidence and CLI
 app/       Electron desktop application
 dash/      local browser dashboard
-android/   companion application foundation
+android/   implemented local companion; public Android distribution not released
 mac/       native macOS menubar companion
 gnome/     GNOME Shell companion
 tests/     canonical core and integration tests

@@ -2,9 +2,12 @@
 
 This file records Metrora-originated public changes. Required third-party notices and licence texts are maintained separately in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
-## `1.0.0-rc.10` — Microsoft Store submission source line
+## `1.0.0-rc.10` — Microsoft Store published line (frozen)
 
-RC10 is the exact source line associated with the Microsoft Store submission. Submission, certification and publication are separate gates. Post-RC10 development is separate from the submitted package.
+RC10 is the exact frozen source line for the live Microsoft Store
+distribution published by Vensent. Post-RC10 development is separate from
+the published package; any future Store update requires its own acceptance,
+submission and publication decision.
 
 ### Source completeness and durable history
 

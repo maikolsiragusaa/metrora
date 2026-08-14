@@ -148,6 +148,32 @@ Development builds are not official Store-signed releases. Windows is the first 
 
 See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
 
+## Build and validate the Android companion
+
+The Android companion is a source/build surface for the implemented local LAN contract. Its current scope is physically accepted, but it is not a public Android release. Ordinary contributors do not need private QA signing material.
+
+Use:
+
+- Java 17;
+- Gradle 9.6.1, or the project-supported equivalent;
+- Android SDK Platform 36.
+
+The canonical contributor checks are:
+
+```bash
+gradle -p android --no-daemon :app:testGithubDebugUnitTest :app:lint :app:assembleGithubDebug
+```
+
+To validate the unsigned distribution channels used by the repository workflow:
+
+```bash
+gradle -p android --no-daemon :app:assembleGithubRelease :app:assembleFdroidRelease :app:bundlePlayRelease
+```
+
+The dedicated non-production QA identity is used only for trusted same-repository physical-acceptance CI and is not required for these commands. Fork pull requests do not receive QA secrets. Release, F-Droid and Play signing remain separate; no private signing material belongs in Git.
+
+See [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) for the accepted Windows↔Samsung matrix and [Local companion API v1](LOCAL_COMPANION_API.md) for the protocol boundary.
+
 ## Local files and compatibility
 
 The current package publishes only the `metrora` command. Fresh installations

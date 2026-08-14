@@ -44,6 +44,10 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
+### Android companion contributions
+
+The Android companion is implemented and physically accepted for the bounded local LAN scope, but it is not a public Android distribution. Follow [Getting started](docs/GETTING_STARTED.md#build-and-validate-the-android-companion) for the Java 17, Gradle 9.6.1/API 36 build path and [the Android foundation](docs/ANDROID_COMPANION_FOUNDATION.md) plus [local API contract](docs/LOCAL_COMPANION_API.md) for boundaries. Ordinary contributors do not need QA signing secrets; physical-acceptance signing is a trusted same-repository CI concern, and release/F-Droid/Play signing is separate.
+
 ## Contribution principles
 
 - Keep each pull request bounded to one primary concern.
