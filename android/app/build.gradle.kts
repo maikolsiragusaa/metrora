@@ -81,4 +81,6 @@ dependencies {
     implementation(libs.coroutines.android)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.org.json)
 }
