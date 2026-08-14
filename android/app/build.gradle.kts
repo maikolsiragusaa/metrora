@@ -1,9 +1,16 @@
+import com.android.build.api.dsl.ApplicationExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val qaSigningEnabled = providers.gradleProperty("metroraQaSigningEnabled")
+    .orElse(providers.environmentVariable("METRORA_QA_SIGNING_ENABLED"))
+    .map(String::toBoolean)
+    .orElse(false)
+    .get()
 
 android {
     namespace = "eu.metrora.app"
@@ -16,6 +23,35 @@ android {
         versionCode = 1
         versionName = "0.1.0-alpha.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    if (qaSigningEnabled) {
+        val qaKeystorePath = providers.gradleProperty("metroraQaKeystorePath")
+            .orElse(providers.environmentVariable("METRORA_QA_KEYSTORE_PATH"))
+            .orNull
+            ?: error("QA signing is enabled but METRORA_QA_KEYSTORE_PATH is missing")
+        val qaStorePassword = providers.gradleProperty("metroraQaStorePassword")
+            .orElse(providers.environmentVariable("METRORA_QA_STORE_PASSWORD"))
+            .orNull
+            ?: error("QA signing is enabled but METRORA_QA_STORE_PASSWORD is missing")
+        val qaKeyPassword = providers.gradleProperty("metroraQaKeyPassword")
+            .orElse(providers.environmentVariable("METRORA_QA_KEY_PASSWORD"))
+            .orNull
+            ?: error("QA signing is enabled but METRORA_QA_KEY_PASSWORD is missing")
+        val qaKeyAlias = providers.gradleProperty("metroraQaKeyAlias")
+            .orElse(providers.environmentVariable("METRORA_QA_KEY_ALIAS"))
+            .orElse("MetroraAndroidPhysicalAcceptanceQA")
+            .get()
+
+        signingConfigs {
+            create("githubQa") {
+                storeFile = file(qaKeystorePath)
+                storeType = "JKS"
+                storePassword = qaStorePassword
+                keyAlias = qaKeyAlias
+                keyPassword = qaKeyPassword
+            }
+        }
     }
 
     flavorDimensions += "distribution"
@@ -61,6 +97,16 @@ android {
         checkReleaseBuilds = true
         lintConfig = file("lint.xml")
         warningsAsErrors = true
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        if (qaSigningEnabled && variant.name == "githubDebug") {
+            variant.signingConfig.setConfig(
+                extensions.getByType<ApplicationExtension>().signingConfigs.getByName("githubQa"),
+            )
+        }
     }
 }
 
