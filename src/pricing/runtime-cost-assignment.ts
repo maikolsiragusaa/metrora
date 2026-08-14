@@ -14,6 +14,10 @@ import {
   type HistoricalPriceRecordV1,
 } from './history.js'
 import {
+  HistoricalPricingContextV1Schema,
+  type HistoricalPricingContextV1,
+} from './pricing-context.js'
+import {
   loadLocalPriceObservationBookV1,
   resolveHistoricalPriceAcrossBooksV1,
 } from './local-observation-ledger.js'
@@ -29,12 +33,24 @@ export type RuntimePricingUsageV1 = {
   reasoningTokens: number
   webSearchRequests: number
   cacheCreationOneHourTokens?: number
+  gatewayRequests?: number
+  toolRequests?: number
+}
+
+export type RuntimeMeteredCostV1 = {
+  amountUSD: number
+  source: 'provider' | 'client' | 'billing-export'
 }
 
 export type RuntimeCostAssignmentInputV1 = {
   provider: string
   model: string
   modelProvider?: string
+  pricingContext?: HistoricalPricingContextV1
+  meteredCost?: RuntimeMeteredCostV1
+  /** Flat aliases make adapter integration possible without constructing an object. */
+  meteredCostUSD?: number
+  meteredCostSource?: RuntimeMeteredCostV1['source']
   timestamp: string
   speed: 'standard' | 'fast'
   usage: RuntimePricingUsageV1
@@ -198,26 +214,54 @@ function meteredAssignment(costUSD: number, source: 'provider' | 'client' | 'bil
   })
 }
 
-function recordsAt(
-  books: readonly HistoricalPriceBookV1[],
-  pricingModel: string,
-  route: string,
-  timestamp: string,
-): HistoricalPriceRecordV1[] {
-  const at = Date.parse(timestamp)
-  if (!Number.isFinite(at)) return []
-  return books.flatMap(book => book.records.filter((record: HistoricalPriceRecordV1) => {
-    if (record.pricingModel !== pricingModel) return false
-    if ((record.route ?? 'standard') !== route) return false
-    const start = Date.parse(record.validFrom.at)
-    const end = record.validUntil === undefined ? Number.POSITIVE_INFINITY : Date.parse(record.validUntil)
-    return start <= at && at < end
-  }))
-}
-
 function normalizeAuthority(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase()
   return normalized || undefined
+}
+
+function contextForInput(input: RuntimeCostAssignmentInputV1): HistoricalPricingContextV1 | undefined {
+  if (input.pricingContext === undefined) return undefined
+  const parsed = HistoricalPricingContextV1Schema.safeParse(input.pricingContext)
+  return parsed.success ? parsed.data : undefined
+}
+
+function sameOptionalIdentity(
+  record: HistoricalPriceRecordV1,
+  lookup: HistoricalPricingContextV1,
+): boolean {
+  const strictDimensions = [
+    'modelIdentity',
+    'modelOwner',
+    'inferenceProvider',
+    'gateway',
+    'region',
+  ] as const
+  if (!strictDimensions.every(dimension => record[dimension] === lookup[dimension])) return false
+  if (lookup.route !== undefined && (record.route ?? 'standard') !== lookup.route) return false
+  if (lookup.billingTier !== undefined && record.billingTier !== lookup.billingTier) return false
+  return true
+}
+
+function activeAt(record: HistoricalPriceRecordV1, timestamp: string): boolean {
+  const at = Date.parse(timestamp)
+  if (!Number.isFinite(at)) return false
+  const start = Date.parse(record.validFrom.at)
+  const end = record.validUntil === undefined ? Number.POSITIVE_INFINITY : Date.parse(record.validUntil)
+  return start <= at && at < end
+}
+
+function partialIdentityKey(record: HistoricalPriceRecordV1): string {
+  return JSON.stringify([
+    record.pricingAuthority,
+    record.pricingModel,
+    record.modelIdentity ?? null,
+    record.modelOwner ?? null,
+    record.inferenceProvider ?? null,
+    record.gateway ?? null,
+    record.route ?? null,
+    record.billingTier ?? null,
+    record.region ?? null,
+  ])
 }
 
 function resolveHistoricalRecord(
@@ -225,41 +269,71 @@ function resolveHistoricalRecord(
   input: RuntimeCostAssignmentInputV1,
 ): ReturnType<typeof resolveHistoricalPriceAcrossBooksV1> {
   const pricingModel = getHistoricalPricingModelKey(input.model)
-  const route = 'standard'
-  let pricingAuthority = normalizeAuthority(input.modelProvider)
+  const pricingContext = contextForInput(input)
+  const pricingAuthority = normalizeAuthority(pricingContext?.pricingAuthority ?? input.modelProvider)
 
-  // Some collectors record a routing adapter (for example `opencode-go`) in
-  // modelProvider. Preserve that source evidence, but do not mistake a route
-  // name for a catalog authority. If it has no matching historical record,
-  // fall back to the same unambiguous price-book authority discovery used when
-  // the source omitted modelProvider.
-  if (pricingAuthority && !recordsAt([context.reviewedBook, context.localBook], pricingModel, route, input.timestamp)
-    .some(record => record.pricingAuthority === pricingAuthority)) {
-    pricingAuthority = undefined
-  }
-  if (!pricingAuthority) {
-    const authorities = new Set(
-      recordsAt([context.reviewedBook, context.localBook], pricingModel, route, input.timestamp)
-        .map(record => record.pricingAuthority),
-    )
-    // Internal price-book disambiguation only: this never populates or changes
-    // the source-recorded modelProvider field presented to the user.
-    if (authorities.size === 1) pricingAuthority = [...authorities][0]
-  }
+  // An observed authority is required. In particular, a gateway/router name
+  // must not silently fall back to the model owner's direct API price.
   if (!pricingAuthority) return undefined
+
+  const partialLookup: HistoricalPricingContextV1 = {
+    ...(pricingContext ?? {}),
+    pricingAuthority,
+  }
+  const candidates = [context.reviewedBook, context.localBook]
+    .flatMap(book => book.records)
+    .filter(record => record.pricingAuthority === pricingAuthority)
+    .filter(record => record.pricingModel === pricingModel)
+    .filter(record => activeAt(record, input.timestamp))
+    .filter(record => sameOptionalIdentity(record, partialLookup))
+
+  const identities = new Set(candidates.map(partialIdentityKey))
+  if (identities.size === 0 || identities.size > 1) return undefined
+  const candidate = candidates[0]!
+
+  // Legacy callers did not carry route metadata. Keep the existing standard
+  // price behavior only when the matched identity has exactly one effective
+  // standard route. Non-standard routes and billing tiers require explicit
+  // evidence; if the catalog contains alternatives, missing route evidence
+  // fails closed instead of depending on record order.
+  if (partialLookup.route === undefined && candidate.route !== undefined && candidate.route !== 'standard') {
+    return undefined
+  }
+  if (partialLookup.billingTier === undefined && candidate.billingTier !== undefined) return undefined
+  const lookup: HistoricalPricingContextV1 = {
+    ...partialLookup,
+    ...(partialLookup.route === undefined && candidate.route !== undefined ? { route: candidate.route } : {}),
+  }
 
   return resolveHistoricalPriceAcrossBooksV1(context.reviewedBook, context.localBook, {
     pricingAuthority,
     pricingModel,
-    route,
+    ...(lookup.modelIdentity === undefined ? {} : { modelIdentity: lookup.modelIdentity }),
+    ...(lookup.modelOwner === undefined ? {} : { modelOwner: lookup.modelOwner }),
+    ...(lookup.inferenceProvider === undefined ? {} : { inferenceProvider: lookup.inferenceProvider }),
+    ...(lookup.gateway === undefined ? {} : { gateway: lookup.gateway }),
+    ...(lookup.route === undefined ? {} : { route: lookup.route }),
+    ...(lookup.billingTier === undefined ? {} : { billingTier: lookup.billingTier }),
+    ...(lookup.region === undefined ? {} : { region: lookup.region }),
     timestamp: input.timestamp,
   })
+}
+
+function explicitMeteredEvidence(input: RuntimeCostAssignmentInputV1): CostAssignmentV1 | undefined {
+  const evidence = input.meteredCost
+    ?? (input.meteredCostUSD !== undefined && input.meteredCostSource !== undefined
+      ? { amountUSD: input.meteredCostUSD, source: input.meteredCostSource }
+      : undefined)
+  if (!evidence || !Number.isFinite(evidence.amountUSD) || evidence.amountUSD < 0) return undefined
+  if (evidence.source !== 'provider' && evidence.source !== 'client' && evidence.source !== 'billing-export') return undefined
+  return meteredAssignment(evidence.amountUSD, evidence.source)
 }
 
 function usageForSettlement(input: RuntimeCostAssignmentInputV1) {
   const outputTokens = input.provider === 'claude'
     ? input.usage.outputTokens
     : input.usage.outputTokens + input.usage.reasoningTokens
+  const pricingContext = contextForInput(input)
   return {
     inputTokens: input.usage.inputTokens,
     billableOutputTokens: outputTokens,
@@ -270,6 +344,14 @@ function usageForSettlement(input: RuntimeCostAssignmentInputV1) {
       + input.usage.cacheReadInputTokens
       + input.usage.cacheCreationInputTokens,
     oneHourCacheWriteTokens: input.usage.cacheCreationOneHourTokens ?? 0,
+    ...(input.usage.gatewayRequests !== undefined
+      ? { gatewayRequests: input.usage.gatewayRequests }
+      : pricingContext?.gateway !== undefined ? { gatewayRequests: 1 } : {}),
+    ...(input.usage.toolRequests !== undefined ? { toolRequests: input.usage.toolRequests } : {}),
+    ...(pricingContext?.route === undefined ? {} : { route: pricingContext.route }),
+    ...(pricingContext?.billingTier === undefined ? {} : { billingTier: pricingContext.billingTier }),
+    ...(pricingContext?.pricingEvidence === undefined ? {} : { pricingEvidence: pricingContext.pricingEvidence }),
+    timestamp: input.timestamp,
     speed: input.speed,
   } as const
 }
@@ -309,6 +391,17 @@ export function assignRuntimeCostV1(inputValue: RuntimeCostAssignmentInputV1): R
       storedAssignment: existing,
       runtimeCostUSD: storedCostUSD,
       runtimeAssignment: existing,
+    }
+  }
+
+  const explicitMetered = !existing ? explicitMeteredEvidence(inputValue) : undefined
+  if (explicitMetered) {
+    const storedCostUSD = settledCostUsdV1(explicitMetered)!
+    return {
+      storedCostUSD,
+      storedAssignment: explicitMetered,
+      runtimeCostUSD: storedCostUSD,
+      runtimeAssignment: explicitMetered,
     }
   }
 

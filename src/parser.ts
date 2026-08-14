@@ -2368,7 +2368,7 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
   const settlement = assignRuntimeCostV1({
     provider: call.provider,
     model: call.model,
-    modelProvider: call.modelProvider,
+    modelProvider: call.modelProvider, pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
@@ -2380,7 +2380,7 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
   const apiCall: ParsedApiCall = applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
-    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}), ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2427,7 +2427,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
   const settlement = assignRuntimeCostV1({
     provider: call.provider,
     model: call.model,
-    modelProvider: call.modelProvider,
+    modelProvider: call.modelProvider, pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
@@ -2438,7 +2438,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
   return {
     provider: flattenString(call.provider),
     model: flattenString(call.model),
-    ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
+    ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}), ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2492,7 +2492,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
   const settlement = assignRuntimeCostV1({
     provider: call.provider,
     model: call.model,
-    modelProvider: call.modelProvider,
+    modelProvider: call.modelProvider, pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
@@ -2503,7 +2503,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
   return {
     provider: flattenString(call.provider),
     model: flattenString(call.model),
-    ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}),
+    ...(call.modelProvider ? { modelProvider: flattenString(call.modelProvider) } : {}), ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
@@ -2624,7 +2624,7 @@ function settledCachedCall(call: CachedCall) {
   return assignRuntimeCostV1({
     provider: call.provider,
     model: call.model,
-    modelProvider: call.modelProvider,
+    modelProvider: call.modelProvider, pricingContext: call.pricingContext,
     timestamp: call.timestamp,
     speed: call.speed,
     usage: call.usage,
@@ -2674,7 +2674,7 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
   return applyLocalModelSavings({
     provider: call.provider,
     model: call.model,
-    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}), ...(call.pricingContext ? { pricingContext: structuredClone(call.pricingContext) } : {}),
     ...(call.reasoningLevel ? {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,

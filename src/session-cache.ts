@@ -26,7 +26,7 @@ export type CachedCall = {
   provider: string
   model: string
   /** Explicit model/API provider preserved from the source when available. */
-  modelProvider?: string
+  modelProvider?: string; pricingContext?: import('./pricing/pricing-context.js').HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   usage: CachedUsage

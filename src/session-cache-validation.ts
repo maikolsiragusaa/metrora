@@ -1,4 +1,5 @@
 import { CostAssignmentV1Schema, validatedCostAssignmentMatchesUsdV1 } from './pricing/cost-assignment.js'
+import { HistoricalPricingContextV1Schema } from './pricing/pricing-context.js'
 import type {
   CachedCall,
   CachedFile,
@@ -89,6 +90,8 @@ function validateCall(value: unknown): value is CachedCall {
   const call = value as Record<string, unknown>
   return typeof call['provider'] === 'string'
     && typeof call['model'] === 'string'
+    && isOptionalString(call['modelProvider'])
+    && (call['pricingContext'] === undefined || HistoricalPricingContextV1Schema.safeParse(call['pricingContext']).success)
     && typeof call['deduplicationKey'] === 'string'
     && typeof call['timestamp'] === 'string'
     && (call['speed'] === 'standard' || call['speed'] === 'fast')

@@ -22,7 +22,9 @@ This index separates user guidance, current product guarantees, public contracts
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
 - [Canonical history parity observer v1](CANONICAL_HISTORY_PARITY_OBSERVER_V1.md) — non-authoritative cache-to-shadow parity validation before snapshot publication.
 - [CLI status C3 dual-read v1](CANONICAL_HISTORY_CLI_DUAL_READ_V1.md) — the bounded terminal consumer, exact parity gate and legacy fallback boundary.
-- [Accounting and pricing](ACCOUNTING_AND_PRICING.md) — user-facing semantics for historical rates, cache and context tiers, durable totals and evidence-aware cost valuation.
+- [Accounting and pricing](ACCOUNTING_AND_PRICING.md) — user-facing semantics for multidimensional pricing identity, evidence precedence, request conditions, durable totals and evidence-aware cost valuation.
+- [Cost assignment v1](COST_ASSIGNMENT_V1.md) — immutable per-call assignments, provenance, bounded charges and settled-history compatibility.
+- [Local pricing observations](LOCAL_PRICING_OBSERVATIONS.md) — private first-observed pricing evidence, deterministic/dynamic resolution and its history boundary.
 - [Pricing history](PRICING_HISTORY.md) — generated reviewed rate history and date-effective records used by the accounting path.
 - [Collector inventory v1](COLLECTOR_INVENTORY_V1.md) — generated technical inventory of registered collectors and signed-measurement eligibility.
 - [Public contracts v1](PUBLIC_CONTRACTS_V1.md) — public schemas, signed-data behavior and compatibility commitments.
@@ -60,6 +62,7 @@ Historical and guided acceptance documents preserve reproducible public evidence
 ## Contribute safely
 
 - [Contributing](../CONTRIBUTING.md) — contribution workflow and validation requirements.
+- [Contributing pricing data](CONTRIBUTING_PRICING.md) — evidence, identity, interval, policy and fail-closed rules for reviewed pricing changes.
 - [Security policy](../SECURITY.md) — private vulnerability reporting.
 - [Third-party notices](../THIRD_PARTY_NOTICES.md) — required licences and component notices.
 - [Brand policy](../BRAND_POLICY.md) — product identity and permitted brand use.

@@ -1,6 +1,7 @@
 import type { DateRange, ToolCall } from '../types.js'
 import type { ReasoningLevel, ReasoningLevelSource } from '../reasoning-level.js'
 import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
+import type { HistoricalPricingContextV1 } from '../pricing/pricing-context.js'
 
 export type SessionSourceLocator = {
   path: string
@@ -31,6 +32,8 @@ export type ParsedProviderCall = {
    * name or model label. Omitted when the source does not expose it.
    */
   modelProvider?: string
+  /** Optional bounded delivery/pricing evidence preserved separately from model labels. */
+  pricingContext?: HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
   reasoningLevelSource?: ReasoningLevelSource
   inputTokens: number
