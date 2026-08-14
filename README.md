@@ -151,11 +151,13 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 | Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
-| Android companion | Read-only local-network companion foundation | Experimental |
+| Android companion | Read-only local-network companion for a paired Desktop | **Implemented and physically accepted for the local companion scope; public Android distribution not released** |
 | macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
 | GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
 
 Windows is the first supported public desktop distribution. Source support for other platforms does not imply that an accepted public package exists for those platforms.
+
+The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and has passed the bounded Windows↔Samsung physical-acceptance scope. It is not yet a public Android release or store distribution.
 
 ## Privacy model
 
@@ -187,6 +189,8 @@ Start from the [documentation index](docs/README.md):
 - [Pricing history](docs/PRICING_HISTORY.md)
 - [Workspace v1](docs/WORKSPACE_V1.md)
 - [Public contracts v1](docs/PUBLIC_CONTRACTS_V1.md)
+- [Android companion foundation](docs/ANDROID_COMPANION_FOUNDATION.md)
+- [Local companion API v1](docs/LOCAL_COMPANION_API.md)
 - [Windows distribution boundary](docs/WINDOWS_DISTRIBUTION.md)
 
 ## Repository map
@@ -195,7 +199,7 @@ Start from the [documentation index](docs/README.md):
 src/       collection, parsing, canonical records, CLI, analytics and sharing
 app/       Electron desktop application
 dash/      local React web dashboard
-android/   experimental Android companion
+android/   implemented local Android companion; no public Android distribution yet
 mac/       macOS menubar application
 gnome/     GNOME extension
 tests/     core test suite

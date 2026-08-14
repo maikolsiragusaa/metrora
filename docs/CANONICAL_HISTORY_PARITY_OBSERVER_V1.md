@@ -157,7 +157,7 @@ Deleting the complete `history-shadow/v1` directory must leave current product b
 This observer does not authorize:
 
 - consumer parity claims based on real-world observation duration;
-- CLI or desktop cutover;
+- additional CLI or desktop consumer cutover beyond the bounded terminal headline;
 - replacement of session or daily caches;
 - migration or historical backfill;
 - database introduction;

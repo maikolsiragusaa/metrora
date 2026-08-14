@@ -9,6 +9,11 @@ This index separates user guidance, current product guarantees, public contracts
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
 - [Provider documentation](providers/) — source locations, formats, limitations and parser notes for individual integrations.
 
+## Connect devices locally
+
+- [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) — implemented and physically accepted Windows↔Samsung local companion scope, its boundaries and validation status; public Android distribution remains separate.
+- [Local companion API v1](LOCAL_COMPANION_API.md) — stable local HTTPS endpoints and the content-minimal usage contract used by first-party companions.
+
 ## Understand the product
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
@@ -16,6 +21,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
 - [Canonical history parity observer v1](CANONICAL_HISTORY_PARITY_OBSERVER_V1.md) — non-authoritative cache-to-shadow parity validation before snapshot publication.
+- [CLI status C3 dual-read v1](CANONICAL_HISTORY_CLI_DUAL_READ_V1.md) — the bounded terminal consumer, exact parity gate and legacy fallback boundary.
 - [Accounting and pricing](ACCOUNTING_AND_PRICING.md) — user-facing semantics for historical rates, cache and context tiers, durable totals and evidence-aware cost valuation.
 - [Pricing history](PRICING_HISTORY.md) — generated reviewed rate history and date-effective records used by the accounting path.
 - [Collector inventory v1](COLLECTOR_INVENTORY_V1.md) — generated technical inventory of registered collectors and signed-measurement eligibility.

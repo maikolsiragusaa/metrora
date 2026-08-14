@@ -1,5 +1,7 @@
 # Metrora local companion API v1
 
+**Status:** Implemented local contract used by the accepted Android companion scope. It does not define public Android distribution or remote/managed access.
+
 Metrora exposes a local HTTPS protocol for first-party companion applications and trusted devices. The desktop remains the authority for collection and analysis; companions read a content-minimal versioned summary over the local network.
 
 ## Compatibility
