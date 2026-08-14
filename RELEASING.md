@@ -1,6 +1,9 @@
 # Releasing Metrora
 
-Metrora does not yet have an official stable desktop release. This document defines the current public release boundary.
+Metrora does not yet have an official stable desktop release. Windows is
+currently distributed publicly through the Microsoft Store, published by
+Vensent, with RC10 as the frozen Store authority. This document defines the
+current public release boundary.
 
 ## Canonical identity
 
@@ -8,7 +11,7 @@ Metrora does not yet have an official stable desktop release. This document defi
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Current source candidate: `1.0.0-rc.10`
+- Published Store source line: `1.0.0-rc.10`
 - Current desktop build version: `1.0.0.10`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 
@@ -20,11 +23,22 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-`1.0.0-rc.10` is the **Microsoft Store submission source line**. It advances RC9 because audited source-completeness and durable-history reconciliation materially changed user-visible accounting after the RC9 candidate was established. RC9 had already introduced the explicit durable-vs-surviving-detail accounting boundary and the sealed packaged Store CLI runtime. Post-RC10 development is separate from the submitted package. Submission, certification and publication are distinct gates.
+`1.0.0-rc.10` is the **frozen Microsoft Store source line** for the live
+Windows distribution published by Vensent. It advances RC9 because audited
+source-completeness and durable-history reconciliation materially changed
+user-visible accounting after the RC9 candidate was established. RC9 had
+already introduced the explicit durable-vs-surviving-detail accounting
+boundary and the sealed packaged Store CLI runtime. Post-RC10 development is
+separate from the published package; any future Store update requires its own
+candidate, acceptance, submission and publication decision.
 
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
-The Microsoft Store path is separate. Metrora has an assigned Store identity and a non-publishing AppX build/local-acceptance workflow. The RC10 candidate passed its local and physical acceptance boundary and is the source line associated with the submission. This guidance makes no certification, publication or Store-availability claim.
+The Microsoft Store path is separate from source builds and GitHub technical
+pre-releases. Metrora has an assigned Store identity, and RC10 passed its
+source-bound package and physical acceptance boundary before publication.
+The live Store listing is the supported public Windows install path; later
+source work does not retroactively change the frozen RC10 authority.
 
 Exact source commits and artifact digests belong in the applicable workflow/release acceptance evidence rather than being copied into general release guidance.
 

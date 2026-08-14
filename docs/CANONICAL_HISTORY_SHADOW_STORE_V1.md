@@ -95,6 +95,8 @@ C3-P0.B is mechanically non-authoritative for product consumers:
 - CLI, desktop, Workspace and Android do not read the shadow store;
 - removing `history-shadow/v1` does not change existing product behavior.
 
+The bounded terminal consumer reads a separately generated, generation-sealed headline index after exact parity; it does not read shadow-store snapshots. The shadow store therefore remains a removable migration/evidence boundary, not a terminal or global consumer authority.
+
 The store is evidence for future parity and migration decisions, not a migration itself.
 
 ## Failure and recovery
@@ -123,7 +125,7 @@ This tranche does not provide:
 - session-cache or daily-cache migration;
 - automatic backfill;
 - unioned canonical consumer reads;
-- CLI, desktop, Workspace or Android cutover;
+- direct shadow-store reads or cutover for CLI, desktop, Workspace or Android;
 - server ingestion or synchronization;
 - account, billing or managed infrastructure;
 - a second parser, pricing or evidence engine.

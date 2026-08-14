@@ -1,5 +1,7 @@
 # Metrora Android companion foundation
 
+**Current status:** Implemented in public `main` and physically accepted for the bounded Windows↔Samsung local companion scope. This is a source/build surface, not a public Android release or distribution channel.
+
 The Android application is a private local companion to Metrora Desktop. It does not collect AI usage itself and does not introduce a second gateway, parser, provider registry or analytics engine.
 
 ## Authority and data flow
@@ -47,13 +49,32 @@ Pairing credentials and the last successful usage snapshot are encrypted with an
 
 When the desktop is unreachable, the app continues to show the most recent encrypted snapshot and marks it as cached. The retrieval timestamp remains visible.
 
+## Accepted physical scope
+
+The merged implementation has passed the bounded Windows↔Samsung physical-acceptance matrix for:
+
+- secure LAN transport, mutual TLS and certificate pinning;
+- pairing approval and SAS confirmation;
+- encrypted snapshot display, offline behavior and reconnect refresh;
+- revoke, local forget and re-pair recovery;
+- force-stop and reboot persistence;
+- first post-pair usage and restored-state remediation, including neutral cached-state semantics.
+
+This acceptance covers the current local companion contract. It does not claim a public Android release, Google Play/F-Droid distribution or mainstream Android product experience.
+
+## QA signing boundary
+
+Physical acceptance uses one dedicated non-production QA identity for the update-compatible `githubDebug` artifact. The identity is available only to trusted same-repository CI runs through protected secrets; fork pull requests do not receive those secrets and can run ordinary tests and builds without publishing the signed acceptance artifact. Private key material is never stored in Git.
+
+Release, F-Droid and Play signing are separate identities and release processes. Ordinary contributors do not need QA signing secrets to build, test, lint or inspect the Android companion.
+
 ## Data minimization
 
 The companion does not request prompts, assistant messages, source code, patches, tool arguments, secrets or unrestricted filesystem paths.
 
 ## Validation boundary
 
-The repository includes contract tests, a real Node mutual-TLS lifecycle test and blocking Android build, unit-test and lint jobs. A physical-device Windows-to-Android pairing run is still required before calling the companion a release-ready alpha.
+The repository includes contract tests, a real Node mutual-TLS lifecycle test and blocking Android build, unit-test and lint jobs. The current physical-device Windows-to-Samsung pairing and persistence matrix has passed for the local companion scope. Public Android distribution and release-readiness work remain separate product gates.
 
 ## Deliberate exclusions
 

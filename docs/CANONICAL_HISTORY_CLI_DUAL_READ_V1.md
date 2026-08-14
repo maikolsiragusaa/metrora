@@ -1,5 +1,7 @@
 # Metrora CLI status C3 dual-read v1
 
+**Status:** Implemented C3 foundation / progressive migration. The compact terminal headline is the first bounded production consumer; exact parity gates use of the derived result and every unsupported or mismatched case falls back to the legacy path.
+
 ## Problem
 
 Metrora needs a fast, fail-safe read boundary for the compact terminal
