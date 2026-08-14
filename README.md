@@ -6,7 +6,7 @@
 
 Understand where AI time, tokens and money go across tools, models, projects and sessions — without routing your work through another service.
 
-[Website](https://metrora.eu) · [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
+[Website](https://metrora.eu) · [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md) · [Community](https://metrora.eu/community)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-E8590C.svg)](LICENSE)
@@ -209,6 +209,14 @@ facing names for new releases.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Provider and parser changes require fixtures, focused tests, provenance, privacy review and real-session validation where possible.
 
 Security issues must be reported privately according to [SECURITY.md](SECURITY.md).
+
+## Community
+
+<img src="https://fluxerstatic.com/marketing/branding/logo-color.svg" alt="Fluxer" width="150" />
+
+The Metrora community is opening soon on **Fluxer** for product discussion, questions, feedback and contributor conversation. Use [metrora.eu/community](https://metrora.eu/community) as the stable entry point; the public join link will be published there when the channel opens.
+
+Technical issues and pull requests stay on GitHub. Security reports must continue to follow the private process in [SECURITY.md](SECURITY.md).
 
 ## Product identity and licence
 
