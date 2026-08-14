@@ -2,13 +2,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Metrora visual identity v1 — Signal Grid.
- * Warm editorial surfaces, Graphite text and Signal Orange interactions.
+/* Metrora visual identity v1.1 — Signal Grid.
+ * Warm editorial surfaces, Graphite text and Signal Cyan interactions.
  * Semantic success/warning colors remain distinct from the brand accent.
  */
 :root {
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --radius: 0.5rem;
+
+  --signal-cyan: #00d4ff;
+  --signal-cyan-deep: #007a99;
+  --signal-cyan-soft: #e6f9fd;
 
   --background: #faf7f2;
   --outer-background: #e6e9ee;
@@ -26,16 +30,16 @@
   --interactive-secondary: rgba(15, 17, 21, 0.045);
   --interactive-secondary-hover: rgba(15, 17, 21, 0.085);
   --active-primary: #ffffff;
-  --accent: #fff1e8;
+  --accent: var(--signal-cyan-soft);
   --accent-foreground: #0f1115;
   --subtle: #7b828d;
-  --primary: #e8590c;
-  --primary-foreground: #0f1115;
-  --ring: #e8590c;
+  --primary: var(--signal-cyan-deep);
+  --primary-foreground: #ffffff;
+  --ring: var(--signal-cyan);
   --positive: #16805c;
 
-  --chart-1: #e8590c;
-  --chart-2: #f28c45;
+  --chart-1: #007a99;
+  --chart-2: #00d4ff;
   --chart-3: #47505a;
   --chart-4: #2aa198;
   --chart-5: #8a68d6;
@@ -111,8 +115,11 @@
     margin: 0;
   }
   ::selection {
-    background: var(--primary);
-    color: var(--primary-foreground);
+    background: var(--signal-cyan);
+    color: #0f1115;
+  }
+  input[type='checkbox'] {
+    accent-color: var(--primary) !important;
   }
   * {
     scrollbar-width: thin;
