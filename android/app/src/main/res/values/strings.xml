@@ -1,39 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Metrora</string>
+    <string name="app_companion_label">LOCAL COMPANION</string>
     <string name="app_subtitle">Your private AI usage companion.</string>
 
+    <string name="initializing_title">Getting Metrora ready</string>
+    <string name="initializing_body">Loading the pairing saved on this phone.</string>
+
     <string name="pair_title">Add your computer</string>
-    <string name="pair_body">Connect this phone to Metrora Desktop on the same local network. Keep Desktop sharing on while you connect.</string>
-    <string name="pair_step_address">Enter the address shown by Metrora Desktop.</string>
+    <string name="pair_body">See your latest usage overview on this phone while Metrora Desktop stays in charge of collecting and calculating it. Both devices need to be on the same local network.</string>
+    <string name="pair_step_address">Start with the address shown by Metrora Desktop.</string>
     <string name="desktop_address">Computer address</string>
-    <string name="desktop_address_hint">Local IP or hostname, without https://</string>
+    <string name="desktop_address_hint">Use the local IP or hostname shown by Desktop, without https://.</string>
     <string name="port">Port</string>
-    <string name="port_hint">Usually 7777</string>
-    <string name="pair_action">Continue</string>
+    <string name="port_hint">Usually 7777.</string>
+    <string name="pair_action">Connect to Desktop</string>
     <string name="pairing_discovering">Checking this computer…</string>
-    <string name="pairing_waiting_title">Check the confirmation code</string>
-    <string name="pairing_waiting_body">Compare this six-digit code with the one shown in Metrora Desktop. Approve on Desktop only when every digit matches.</string>
+    <string name="pairing_discovering_body">This usually takes a few seconds.</string>
+    <string name="pairing_continue_on_desktop">Next, compare the code below with the one on your computer.</string>
+    <string name="pairing_waiting_title">Check the code on both devices</string>
+    <string name="pairing_waiting_body">Check that these codes match on your computer and phone. Then approve this phone on Desktop.</string>
     <string name="confirmation_code_a11y">Six-digit confirmation code: %1$s</string>
     <string name="pairing_waiting_device">Waiting for approval from %1$s.</string>
     <string name="pairing_cancel">Cancel</string>
-    <string name="pairing_safety_title">Keep control of the connection</string>
-    <string name="pairing_safety_body">The code helps you confirm that the computer you approve is the one you intended to connect. Usage stays on your local network.</string>
-    <string name="pairing_advanced">How the connection is verified</string>
+    <string name="pairing_safety_title">Your connection stays under your control</string>
+    <string name="pairing_safety_body">Metrora asks Desktop to approve this phone. Usage stays on your local network, and the code confirms the computer you intended to connect.</string>
+    <string name="pairing_advanced">How Metrora verifies this connection</string>
+    <string name="hide_connection_verification">Hide verification details</string>
     <string name="pairing_advanced_body">Behind the scenes, Metrora uses mutual TLS, compares device identities, pins the Desktop certificate after pairing, and encrypts local credentials and cached usage. These details are available for diagnosis; you do not need to manage certificates.</string>
 
+    <string name="status_not_connected">Not connected</string>
+    <string name="status_not_connected_body">Add your Metrora Desktop computer to see a usage overview on this phone.</string>
+    <string name="status_connecting">Connecting to Desktop</string>
+    <string name="status_connecting_body">Checking the computer address you entered.</string>
+    <string name="status_waiting_approval">Waiting for approval</string>
+    <string name="status_waiting_approval_body">Compare the code on both devices, then approve on Desktop.</string>
     <string name="status_up_to_date">Up to date</string>
-    <string name="status_online_body">The Desktop is reachable and this overview is current.</string>
+    <string name="status_online_body">Desktop is reachable and this overview is current.</string>
     <string name="status_updating">Updating from Desktop…</string>
     <string name="status_updating_body">Keep Metrora Desktop available on the local network.</string>
     <string name="status_saved_on_phone">Saved on this phone</string>
     <string name="status_saved_on_phone_body">Showing the last saved overview. Refresh to check Desktop for newer data.</string>
     <string name="status_paired_no_snapshot">Paired — usage not loaded</string>
     <string name="status_paired_no_snapshot_body">Pairing succeeded, but the first usage overview is not available yet. Refresh to try again.</string>
-    <string name="status_desktop_unavailable">Desktop unavailable</string>
-    <string name="status_cached_body">Showing the last saved snapshot. Your data is still available on this phone.</string>
-    <string name="status_no_snapshot">No saved snapshot yet</string>
-    <string name="status_no_snapshot_body">Connect to Metrora Desktop and refresh to download your first overview.</string>
+    <string name="status_desktop_unavailable">Desktop could not be reached</string>
+    <string name="status_cached_body">Your saved overview is still available. Try again when Desktop is on the same network.</string>
+    <string name="status_no_snapshot">No saved overview yet</string>
+    <string name="status_no_snapshot_body">No overview is saved yet. Try Refresh when Desktop is available.</string>
     <string name="status_access_attention">Desktop access needs attention</string>
     <string name="status_access_attention_body">This phone is no longer authorized by Desktop. Pair it again when Desktop is available.</string>
     <string name="status_recovery_required">Recovery required</string>
@@ -46,25 +59,35 @@
     <string name="usage_overview">Usage overview</string>
     <string name="desktop_data_generated">Desktop data generated %1$s</string>
     <string name="last_checked">Last checked %1$s</string>
-    <string name="cached_data_not_checked">Saved on this phone — refresh to check Desktop</string>
-    <string name="cached_data">Saved on this phone — Desktop was not reached</string>
+    <string name="data_fresh">Fresh from Desktop</string>
+    <string name="data_refreshing">Checking Desktop…</string>
+    <string name="data_saved_on_phone">Saved on this phone</string>
+    <string name="data_saved_after_failed_refresh">Saved on this phone · refresh failed</string>
     <string name="cost">Cost</string>
     <string name="total_tokens">Total tokens</string>
     <string name="calls">Calls</string>
     <string name="sessions">Sessions</string>
     <string name="cache_hit">Cache hit</string>
     <string name="top_models">Main models</string>
-    <string name="no_snapshot">No usage snapshot is saved yet.</string>
+    <string name="no_snapshot_title">No usage overview saved yet</string>
+    <string name="empty_snapshot_paired">Your computer is paired. Refresh to load the first overview from Desktop.</string>
+    <string name="empty_snapshot_offline">There is no saved overview to show yet. Try Refresh when Desktop is available.</string>
     <string name="refresh">Refresh from Desktop</string>
     <string name="refreshing">Updating…</string>
 
-    <string name="connection_details">Connection details</string>
-    <string name="hide_connection_details">Hide connection details</string>
-    <string name="desktop_endpoint">Desktop address: %1$s:%2$d</string>
-    <string name="desktop_identity">Desktop identity: %1$s</string>
-    <string name="phone_identity">Phone identity: %1$s</string>
-    <string name="paired_on">Paired %1$s</string>
-    <string name="technical_detail">Technical detail: %1$s</string>
+    <string name="device_section_title">Your computer</string>
+    <string name="device_local_only_body">This phone connects directly to Metrora Desktop on your local network. No cloud account is used.</string>
+    <string name="connection_details">Connection and security details</string>
+    <string name="hide_connection_details">Hide connection and security details</string>
+    <string name="desktop_endpoint_label">Desktop address</string>
+    <string name="desktop_endpoint">%1$s:%2$d</string>
+    <string name="desktop_identity_label">Desktop identity</string>
+    <string name="phone_identity_label">Phone identity</string>
+    <string name="paired_on_label">Paired</string>
+    <string name="technical_detail_label">Technical detail</string>
+    <string name="technical_detail">%1$s</string>
+    <string name="show_technical_details">Show technical details</string>
+    <string name="hide_technical_details">Hide technical details</string>
 
     <string name="revoke_desktop">Revoke access on Desktop</string>
     <string name="revoke_desktop_hint">This asks Desktop to remove this phone, then clears the local pairing after Desktop confirms.</string>
@@ -89,6 +112,10 @@
     <string name="notice_remote_revocation_cleanup">Desktop confirmed revocation, but local cleanup still needs attention.</string>
     <string name="notice_snapshot_recovered">The unreadable cached snapshot was removed. The pairing is still valid.</string>
 
+    <string name="failure_connection_title">Could not connect to this computer</string>
+    <string name="failure_refresh_title">Refresh could not complete</string>
+    <string name="failure_revoke_title">Could not revoke access</string>
+    <string name="failure_action_title">Could not complete that action</string>
     <string name="error_invalid_host">Enter a computer address such as 192.168.1.24 or metrora-pc.local.</string>
     <string name="error_invalid_port">Enter a port between 1 and 65535. Metrora Desktop usually uses 7777.</string>
     <string name="error_unreachable">Metrora Desktop could not be reached. Check that sharing is on and both devices are on the same network.</string>
@@ -111,7 +138,6 @@
     <string name="error_unexpected">Metrora could not complete that action. Try again.</string>
     <string name="advanced_security_failure">Security detail is available below. Do not approve a pairing when the code or computer identity is unexpected.</string>
 
-    <string name="confirmation_code_description">Six-digit confirmation code %1$s</string>
     <string name="desktop_unavailable_icon">Desktop unavailable</string>
     <string name="desktop_check_icon">Desktop check pending</string>
     <string name="security_icon">Security check</string>
