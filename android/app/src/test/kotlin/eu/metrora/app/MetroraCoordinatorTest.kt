@@ -84,7 +84,9 @@ class MetroraCoordinatorTest {
         api.fetchResult = refresh
         val coordinator = coordinator(store, api)
         advanceUntilIdle()
-        assertEquals(MetroraConnectionState.OFFLINE_WITH_SNAPSHOT, coordinator.state.value.status)
+        assertEquals(MetroraConnectionState.RESTORED, coordinator.state.value.status)
+        assertNull(coordinator.state.value.failure)
+        assertEquals(0, api.fetchCount.get())
 
         coordinator.refresh()
         coordinator.refresh()
@@ -141,12 +143,12 @@ class MetroraCoordinatorTest {
     }
 
     @Test
-    fun process_restart_with_credentials_but_no_snapshot_is_explicitly_offline() = runTest {
+    fun process_restart_with_credentials_but_no_snapshot_is_restored_without_a_network_check() = runTest {
         val store = FakeStore(credentials = testCredentials())
         val coordinator = coordinator(store, FakeApi())
         advanceUntilIdle()
 
-        assertEquals(MetroraConnectionState.OFFLINE_NO_SNAPSHOT, coordinator.state.value.status)
+        assertEquals(MetroraConnectionState.RESTORED, coordinator.state.value.status)
         assertTrue(coordinator.state.value.paired)
         assertNull(coordinator.state.value.snapshot)
         coordinator.close()
@@ -160,10 +162,35 @@ class MetroraCoordinatorTest {
         val coordinator = coordinator(store, FakeApi())
         advanceUntilIdle()
 
-        assertEquals(MetroraConnectionState.OFFLINE_NO_SNAPSHOT, coordinator.state.value.status)
+        assertEquals(MetroraConnectionState.RESTORED, coordinator.state.value.status)
         assertEquals(MetroraNotice.SNAPSHOT_RECOVERED, coordinator.state.value.notice)
         assertEquals(testCredentials(), store.credentials)
         assertNull(store.snapshot)
+        coordinator.close()
+    }
+
+    @Test
+    fun successful_pairing_is_kept_distinct_when_first_usage_refresh_times_out() = runTest {
+        val store = FakeStore()
+        val api = FakeApi().apply {
+            fetchFailure = testFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.CONNECTIVITY,
+                MetroraFailureReason.TIMEOUT,
+            )
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.pair("desktop.local", "7777")
+        advanceUntilIdle()
+
+        assertEquals(MetroraConnectionState.PAIRED_NO_SNAPSHOT, coordinator.state.value.status)
+        assertTrue(coordinator.state.value.paired)
+        assertEquals(testCredentials(), store.credentials)
+        assertNull(coordinator.state.value.snapshot)
+        assertEquals(MetroraNotice.PAIRED_WITHOUT_USAGE, coordinator.state.value.notice)
+        assertEquals(MetroraFailureReason.TIMEOUT, coordinator.state.value.failure?.reason)
         coordinator.close()
     }
 

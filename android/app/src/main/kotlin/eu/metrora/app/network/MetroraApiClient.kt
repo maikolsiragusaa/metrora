@@ -251,6 +251,7 @@ class MetroraApiClient(
                 path = MetroraProtocol.usagePath(period),
                 expectedFingerprint = credentials.serverFingerprint,
                 headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+                readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
             )
             ensureSuccess(MetroraOperation.REFRESH, response)
             try {

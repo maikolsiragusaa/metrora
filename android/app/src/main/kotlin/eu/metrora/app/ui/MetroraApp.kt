@@ -384,7 +384,13 @@ private fun OverviewState(
     val credentials = state.credentials ?: return
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         StatusCard(state)
-        state.snapshot?.let { SnapshotCard(it, state.showingCachedData) } ?: EmptySnapshotCard()
+        state.snapshot?.let {
+            SnapshotCard(
+                snapshot = it,
+                cached = state.showingCachedData,
+                restored = state.status == MetroraConnectionState.RESTORED,
+            )
+        } ?: EmptySnapshotCard()
 
         Button(
             onClick = onRefresh,
@@ -506,7 +512,7 @@ private data class StatusCopy(
 )
 
 @Composable
-private fun SnapshotCard(snapshot: UsageSnapshot, cached: Boolean) {
+private fun SnapshotCard(snapshot: UsageSnapshot, cached: Boolean, restored: Boolean) {
     Card {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -526,8 +532,16 @@ private fun SnapshotCard(snapshot: UsageSnapshot, cached: Boolean) {
             )
             if (cached) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.CloudOff, contentDescription = stringResource(R.string.desktop_unavailable_icon))
-                    Text(stringResource(R.string.cached_data), style = MaterialTheme.typography.bodySmall)
+                    Icon(
+                        if (restored) Icons.Outlined.Refresh else Icons.Outlined.CloudOff,
+                        contentDescription = stringResource(
+                            if (restored) R.string.desktop_check_icon else R.string.desktop_unavailable_icon,
+                        ),
+                    )
+                    Text(
+                        stringResource(if (restored) R.string.cached_data_not_checked else R.string.cached_data),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
             HorizontalDivider()
@@ -628,6 +642,18 @@ private fun ConfirmationDialog(
 }
 
 private fun statusCopy(status: MetroraConnectionState): StatusCopy = when (status) {
+    MetroraConnectionState.RESTORED -> StatusCopy(
+        R.string.status_saved_on_phone,
+        R.string.status_saved_on_phone_body,
+        Icons.Outlined.Refresh,
+        R.string.desktop_check_icon,
+    )
+    MetroraConnectionState.PAIRED_NO_SNAPSHOT -> StatusCopy(
+        R.string.status_paired_no_snapshot,
+        R.string.status_paired_no_snapshot_body,
+        Icons.Outlined.Refresh,
+        R.string.desktop_check_icon,
+    )
     MetroraConnectionState.CONNECTED -> StatusCopy(
         R.string.status_up_to_date,
         R.string.status_online_body,

@@ -26,6 +26,10 @@
     <string name="status_online_body">The Desktop is reachable and this overview is current.</string>
     <string name="status_updating">Updating from Desktop…</string>
     <string name="status_updating_body">Keep Metrora Desktop available on the local network.</string>
+    <string name="status_saved_on_phone">Saved on this phone</string>
+    <string name="status_saved_on_phone_body">Showing the last saved overview. Refresh to check Desktop for newer data.</string>
+    <string name="status_paired_no_snapshot">Paired — usage not loaded</string>
+    <string name="status_paired_no_snapshot_body">Pairing succeeded, but the first usage overview is not available yet. Refresh to try again.</string>
     <string name="status_desktop_unavailable">Desktop unavailable</string>
     <string name="status_cached_body">Showing the last saved snapshot. Your data is still available on this phone.</string>
     <string name="status_no_snapshot">No saved snapshot yet</string>
@@ -42,6 +46,7 @@
     <string name="usage_overview">Usage overview</string>
     <string name="desktop_data_generated">Desktop data generated %1$s</string>
     <string name="last_checked">Last checked %1$s</string>
+    <string name="cached_data_not_checked">Saved on this phone — refresh to check Desktop</string>
     <string name="cached_data">Saved on this phone — Desktop was not reached</string>
     <string name="cost">Cost</string>
     <string name="total_tokens">Total tokens</string>
@@ -108,6 +113,7 @@
 
     <string name="confirmation_code_description">Six-digit confirmation code %1$s</string>
     <string name="desktop_unavailable_icon">Desktop unavailable</string>
+    <string name="desktop_check_icon">Desktop check pending</string>
     <string name="security_icon">Security check</string>
     <string name="online_icon">Desktop online</string>
     <string name="recovery_icon">Recovery required</string>

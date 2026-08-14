@@ -113,7 +113,12 @@ class MetroraCoordinator internal constructor(
                         failure = null,
                     )
                 }
-                refreshAndApply(credentials, MetroraNotice.PAIRING_COMPLETE, allowOfflineFallback = true)
+                refreshAndApply(
+                    credentials,
+                    MetroraNotice.PAIRING_COMPLETE,
+                    allowOfflineFallback = true,
+                    preservePairingSuccess = true,
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: MetroraException) {
@@ -358,11 +363,7 @@ class MetroraCoordinator internal constructor(
     private fun restoredState(credentials: PairingCredentials, snapshot: UsageSnapshot?): MetroraUiState =
         MetroraUiState(
             initializing = false,
-            status = if (snapshot == null) {
-                MetroraConnectionState.OFFLINE_NO_SNAPSHOT
-            } else {
-                MetroraConnectionState.OFFLINE_WITH_SNAPSHOT
-            },
+            status = MetroraConnectionState.RESTORED,
             credentials = credentials,
             snapshot = snapshot,
         )
@@ -371,6 +372,7 @@ class MetroraCoordinator internal constructor(
         credentials: PairingCredentials,
         successNotice: MetroraNotice,
         allowOfflineFallback: Boolean,
+        preservePairingSuccess: Boolean = false,
     ) {
         try {
             val snapshot = api.fetchUsage(credentials)
@@ -388,16 +390,21 @@ class MetroraCoordinator internal constructor(
         } catch (error: CancellationException) {
             throw error
         } catch (error: MetroraException) {
-            applyFailure(error.failure, allowOfflineFallback)
+            applyFailure(error.failure, allowOfflineFallback, preservePairingSuccess)
         } catch (error: Exception) {
             applyFailure(
                 localFailure(MetroraFailureReason.STORAGE_CORRUPTED, error.javaClass.simpleName),
                 allowOfflineFallback,
+                preservePairingSuccess,
             )
         }
     }
 
-    private fun applyFailure(failure: MetroraFailure, allowOfflineFallback: Boolean) {
+    private fun applyFailure(
+        failure: MetroraFailure,
+        allowOfflineFallback: Boolean,
+        preservePairingSuccess: Boolean = false,
+    ) {
         val current = mutableState.value
         val nextStatus = when {
             failure.reason == MetroraFailureReason.UNAUTHORIZED ||
@@ -407,6 +414,10 @@ class MetroraCoordinator internal constructor(
                 failure.reason == MetroraFailureReason.KEY_UNAVAILABLE ||
                 failure.reason == MetroraFailureReason.INCONSISTENT_LOCAL_STATE ->
                 MetroraConnectionState.RECOVERY_REQUIRED
+            preservePairingSuccess && allowOfflineFallback &&
+                failure.category == MetroraFailureCategory.CONNECTIVITY &&
+                current.paired && current.snapshot == null ->
+                MetroraConnectionState.PAIRED_NO_SNAPSHOT
             allowOfflineFallback && failure.category == MetroraFailureCategory.CONNECTIVITY && current.paired ->
                 if (current.snapshot == null) {
                     MetroraConnectionState.OFFLINE_NO_SNAPSHOT
@@ -420,7 +431,9 @@ class MetroraCoordinator internal constructor(
                 initializing = false,
                 status = nextStatus,
                 failure = failure,
-                notice = if (nextStatus == MetroraConnectionState.OFFLINE_NO_SNAPSHOT) {
+                notice = if (nextStatus == MetroraConnectionState.OFFLINE_NO_SNAPSHOT ||
+                    nextStatus == MetroraConnectionState.PAIRED_NO_SNAPSHOT
+                ) {
                     MetroraNotice.PAIRED_WITHOUT_USAGE
                 } else {
                     null

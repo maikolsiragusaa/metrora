@@ -60,6 +60,35 @@ class MetroraApiClientTest {
     }
 
     @Test
+    fun usage_fetch_uses_a_bounded_usage_timeout_not_the_global_default() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """
+                {
+                  "kind":"metrora.companion.usage",
+                  "version":1,
+                  "generatedAt":"2026-08-14T10:00:00Z",
+                  "period":{"label":"This month"},
+                  "totals":{
+                    "costMicrosUsd":0,
+                    "calls":0,
+                    "sessions":0,
+                    "tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},
+                    "cacheHitPercent":0
+                  },
+                  "topModels":[]
+                }
+            """.trimIndent(),
+            desktopFingerprint,
+        )
+
+        api.fetchUsage(credentials())
+
+        assertEquals(MetroraTransport.USAGE_READ_TIMEOUT_MS, transport.lastReadTimeoutMs)
+        assertEquals(20_000, MetroraTransport.DEFAULT_READ_TIMEOUT_MS)
+    }
+
+    @Test
     fun unauthorized_usage_is_security_failure() = runTest {
         transport.response = MetroraResponse(401, "{\"error\":\"unauthorized\"}", desktopFingerprint)
 
@@ -176,6 +205,7 @@ class MetroraApiClientTest {
 private class FakeTransport : MetroraTransport {
     var response = MetroraResponse(200, "{}", "ab".repeat(32))
     var error: Exception? = null
+    var lastReadTimeoutMs: Int? = null
 
     override suspend fun request(
         host: String,
@@ -187,6 +217,7 @@ private class FakeTransport : MetroraTransport {
         body: String?,
         readTimeoutMs: Int,
     ): MetroraResponse {
+        lastReadTimeoutMs = readTimeoutMs
         error?.let { throw it }
         return response
     }
