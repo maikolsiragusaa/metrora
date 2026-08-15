@@ -1,4 +1,5 @@
-import type { CliError, MetroraBridge } from './types'
+import type { CliError } from './types'
+import type { MetroraBridge } from './metrora-bridge-types'
 import type { WorkspaceBridge } from './workspace'
 
 declare global {
