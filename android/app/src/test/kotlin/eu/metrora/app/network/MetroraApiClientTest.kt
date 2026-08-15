@@ -8,7 +8,9 @@ import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.IdentityMaterial
 import java.net.SocketTimeoutException
 import java.security.InvalidKeyException
+import java.security.cert.CertificateException
 import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -89,6 +91,29 @@ class MetroraApiClientTest {
     }
 
     @Test
+    fun usage_fetch_can_request_a_real_trend_granularity() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """
+                {
+                  "kind":"metrora.companion.usage",
+                  "version":1,
+                  "generatedAt":"2026-08-14T10:00:00Z",
+                  "period":{"label":"Last 6 months"},
+                  "totals":{"costMicrosUsd":0,"calls":0,"sessions":0,"tokens":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"cacheHitPercent":0},
+                  "topModels":[],
+                  "trend":{"granularity":"week","periodLabel":"Last 6 months","buckets":[]}
+                }
+            """.trimIndent(),
+            desktopFingerprint,
+        )
+
+        api.fetchUsage(credentials(), "all", "week")
+
+        assertEquals("/api/v1/usage?period=all&granularity=week", transport.lastPath)
+    }
+
+    @Test
     fun unauthorized_usage_is_security_failure() = runTest {
         transport.response = MetroraResponse(401, "{\"error\":\"unauthorized\"}", desktopFingerprint)
 
@@ -114,10 +139,17 @@ class MetroraApiClientTest {
         assertEquals(MetroraFailureCategory.CONNECTIVITY, timeout.failure.category)
         assertEquals(MetroraFailureReason.TIMEOUT, timeout.failure.reason)
 
-        transport.error = SSLHandshakeException("certificate mismatch")
+        transport.error = SSLHandshakeException("TLS handshake failed").apply {
+            initCause(CertificateException("peer certificate mismatch"))
+        }
         val certificate = expectFailure { api.discover("desktop.local", 7777) }
         assertEquals(MetroraFailureCategory.IDENTITY_SECURITY, certificate.failure.category)
         assertEquals(MetroraFailureReason.CERTIFICATE_MISMATCH, certificate.failure.reason)
+
+        transport.error = SSLException("TLS protocol failure")
+        val genericSsl = expectFailure { api.discover("desktop.local", 7777) }
+        assertEquals(MetroraFailureCategory.UNEXPECTED, genericSsl.failure.category)
+        assertEquals(MetroraFailureReason.UNKNOWN, genericSsl.failure.reason)
     }
 
     @Test
@@ -206,6 +238,7 @@ private class FakeTransport : MetroraTransport {
     var response = MetroraResponse(200, "{}", "ab".repeat(32))
     var error: Exception? = null
     var lastReadTimeoutMs: Int? = null
+    var lastPath: String? = null
 
     override suspend fun request(
         host: String,
@@ -218,6 +251,7 @@ private class FakeTransport : MetroraTransport {
         readTimeoutMs: Int,
     ): MetroraResponse {
         lastReadTimeoutMs = readTimeoutMs
+        lastPath = path
         error?.let { throw it }
         return response
     }

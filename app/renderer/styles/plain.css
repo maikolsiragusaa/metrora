@@ -365,6 +365,24 @@ body { overflow: hidden; background: var(--bg); color: var(--ink); }
 .set-export-destination .set-mono { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-device-caption { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line2); }
 .set-device-caption code { color: var(--ink); font-family: var(--mono); }
+.set-share-surface { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line2); }
+.set-share-head { display: flex; align-items: flex-start; gap: 12px; }
+.set-share-head > div { min-width: 0; flex: 1 1 auto; }
+.set-share-title { display: block; font-size: 12.5px; font-weight: 600; }
+.set-share-head .btnp { flex: 0 0 auto; }
+.set-share-qr-wrap { display: flex; justify-content: center; margin-top: 12px; }
+.set-share-qr { width: 180px; height: 180px; padding: 8px; border-radius: 8px; background: #fff; color: #111214; }
+.set-share-qr svg { display: block; width: 100%; height: 100%; }
+.set-share-qr-loading { display: flex; align-items: center; justify-content: center; color: #555; font-size: 11px; }
+.set-share-address { margin: 8px 0 0; color: var(--mut); font-family: var(--mono); font-size: 10.5px; overflow-wrap: anywhere; }
+.set-share-warning { margin: 8px 0 0; color: var(--warn); font-size: 10.5px; line-height: 1.5; }
+.set-share-copy { width: 100%; margin-top: 8px; }
+.set-share-pending { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line2); }
+.set-share-pending > b { display: block; margin-bottom: 7px; font-size: 11.5px; }
+.set-share-pending-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line2); }
+.set-share-pending-row .lx { min-width: 0; flex: 1 1 auto; }
+.set-share-pending-row code { color: var(--ink); font-family: var(--mono); }
+.set-share-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .tgl { width: 30px; height: 18px; border-radius: 9px; background: var(--line); position: relative; flex: 0 0 auto; }
 .tgl.on { background: var(--accent); }
 .tgl::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }

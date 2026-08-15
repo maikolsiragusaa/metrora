@@ -11,7 +11,19 @@ class ProtocolTest {
         assertEquals("/api/v1/peer/pair-request", MetroraProtocol.PAIR_REQUEST_PATH)
         assertEquals("/api/v1/peer/revoke", MetroraProtocol.REVOKE_PATH)
         assertEquals("/api/v1/usage?period=month", MetroraProtocol.usagePath("month"))
+        assertEquals(
+            "/api/v1/usage?period=all&granularity=week",
+            MetroraProtocol.usagePath("all", "week"),
+        )
         assertEquals("metrora.companion.usage", MetroraProtocol.USAGE_KIND)
+    }
+
+    @Test
+    fun maps_every_supported_period_without_aliasing_lifetime() {
+        val periods = listOf("today", "week", "30days", "month", "all", "lifetime")
+        periods.forEach { period ->
+            assertEquals("/api/v1/usage?period=$period", MetroraProtocol.usagePath(period))
+        }
     }
 
     @Test
@@ -26,6 +38,7 @@ class ProtocolTest {
         assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.normalizeHost("https://desktop") }
         assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.validatePort(0) }
         assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.usagePath("year") }
+        assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.usagePath("month", "quarter") }
     }
 
     @Test

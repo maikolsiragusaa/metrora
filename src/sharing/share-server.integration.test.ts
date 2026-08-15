@@ -17,6 +17,50 @@ describe('secure companion lifecycle', () => {
     expect(pairingCode('ff'.repeat(32), '00'.repeat(32))).toBe('404542')
   })
 
+  it('exposes the matching SAS before Desktop approval resolves or a peer is saved', async () => {
+    const desktop = await generateIdentity('Metrora desktop')
+    const phone = await generateIdentity('Android phone')
+    const peers = new PeerStore()
+    let request: PairRequest | null = null
+    let resolveApproval: ((approved: boolean) => void) | undefined
+    const approval = new Promise<boolean>((resolve) => { resolveApproval = resolve })
+    const server = new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async () => ({ generated: new Date().toISOString(), current: {} }),
+      approve: async (candidate) => {
+        request = candidate
+        return approval
+      },
+    })
+
+    const port = await server.listen(0, '127.0.0.1')
+    try {
+      const pairing = companionPairRequest(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'Android phone',
+      )
+      for (let attempt = 0; attempt < 100 && request === null; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+
+      expect(request).toMatchObject({
+        name: 'Android phone',
+        fingerprint: phone.fingerprint,
+        code: pairingCode(desktop.fingerprint, phone.fingerprint),
+      })
+      expect(peers.list()).toHaveLength(0)
+
+      resolveApproval?.(true)
+      const paired = await pairing
+      expect(paired.status).toBe(200)
+      expect(peers.list()).toHaveLength(1)
+    } finally {
+      resolveApproval?.(false)
+      await server.close()
+    }
+  }, 30_000)
+
   it('compares identities, binds the token to mTLS, serves v1 DTOs and revokes access', async () => {
     const desktop = await generateIdentity('Metrora desktop')
     const phone = await generateIdentity('Android phone')

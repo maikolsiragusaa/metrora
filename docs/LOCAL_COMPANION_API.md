@@ -99,7 +99,9 @@ The response is `CompanionUsageV1`:
       "name": "Model A",
       "calls": 8,
       "costMicrosUsd": 1100000,
-      "estimatedCostMicrosUsd": null
+      "estimatedCostMicrosUsd": null,
+      "providerId": "openai",
+      "brandId": "openai"
     }
   ],
   "quality": {
@@ -107,6 +109,17 @@ The response is `CompanionUsageV1`:
   }
 }
 ```
+
+`providerId` is the factual delivery route or provenance (for example
+`amazon-bedrock` or `api_provider_anthropic`). `brandId` is optional and is
+Desktop-derived from canonical model/owner evidence for presentation branding
+only; it is never inferred by the companion from a display name or collector
+name. The current bounded canonical registry covers `openai`, `anthropic`,
+`google`, `zai`, `deepseek`, `qwen`, and `moonshot`; it is extensible rather
+than an exhaustive vendor catalog. An absent or ambiguous `brandId` uses the
+neutral Metrora mark. The two
+fields are intentionally independent: Claude through Amazon Bedrock can carry
+`providerId: "amazon-bedrock"` with `brandId: "anthropic"`.
 
 The DTO deliberately excludes projects, session titles, local paths, findings, prompts, responses, source code, patches, tool arguments and secrets. New fields may be added compatibly within v1; removal or semantic changes require a new version.
 

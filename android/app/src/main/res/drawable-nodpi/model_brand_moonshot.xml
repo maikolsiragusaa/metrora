@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Kimi / Moonshot model-vendor mark from the project's canonical Kimi asset. -->
+    <path
+        android:fillColor="#101820"
+        android:pathData="M14,0h36c7.732,0 14,6.268 14,14v36c0,7.732 -6.268,14 -14,14H14C6.268,64 0,57.732 0,50V14C0,6.268 6.268,0 14,0z" />
+    <path
+        android:fillColor="#C8F35A"
+        android:pathData="M18,46V18h7v11.2L36,18h9L33,30.3 46.5,46h-9.2L25,31.4V46z" />
+    <path
+        android:fillColor="#7EE787"
+        android:pathData="M48,11a5,5 0,1 0,0 10a5,5 0,1 0,0 -10z" />
+</vector>

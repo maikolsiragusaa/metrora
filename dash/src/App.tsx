@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-
 import {
   approvePairing,
   fetchDevices,
@@ -21,7 +20,7 @@ import { DataTable } from '@/components/DataTable'
 import { GranularUsageChart, DeviceUsageChart, type Unit } from '@/components/UsageChart'
 import { DeviceSearchModal } from '@/components/DeviceSearchModal'
 import { ContextExplorer } from '@/components/ContextExplorer'
-
+import { ShareConnectCard } from '@/components/ShareConnectCard'
 const n = (v: number | undefined): number => v ?? 0
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
@@ -631,6 +630,7 @@ export function App() {
                   <p className="text-[11px] leading-relaxed text-tertiary-foreground">
                     Discoverable as &ldquo;{shareInfo.name}&rdquo; · {shareInfo.peers} paired
                   </p>
+                  <ShareConnectCard shareInfo={shareInfo} />
                   <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                     <input
                       type="checkbox"

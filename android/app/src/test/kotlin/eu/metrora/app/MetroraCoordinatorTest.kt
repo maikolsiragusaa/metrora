@@ -23,7 +23,7 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MetroraCoordinatorTest {
     @Test
-    fun pairing_exposes_waiting_state_then_connected() = runTest {
+    fun pairing_exposes_sas_verification_then_desktop_approval_then_connected() = runTest {
         val store = FakeStore()
         val api = FakeApi()
         val pairing = CompletableDeferred<PairingCredentials>()
@@ -33,8 +33,15 @@ class MetroraCoordinatorTest {
 
         coordinator.pair("desktop.local", "7777")
         advanceUntilIdle()
-        assertEquals(MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL, coordinator.state.value.status)
+        assertEquals(MetroraConnectionState.VERIFYING_SAS, coordinator.state.value.status)
         assertEquals("123456", coordinator.state.value.pairingCode)
+        // The request is already visible to Desktop while the phone asks the
+        // user to compare the code; confirmation is not the request trigger.
+        assertEquals(1, api.pairCount.get())
+
+        coordinator.confirmPairingCode()
+        advanceUntilIdle()
+        assertEquals(MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL, coordinator.state.value.status)
 
         pairing.complete(testCredentials())
         advanceUntilIdle()
@@ -97,6 +104,20 @@ class MetroraCoordinatorTest {
         refresh.complete(testSnapshot(retrievedAtEpochMs = 1_700_000_002_000L))
         advanceUntilIdle()
         assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
+        coordinator.close()
+    }
+
+    @Test
+    fun selecting_trend_granularity_requests_the_desktop_aggregate() = runTest {
+        val api = FakeApi()
+        val coordinator = coordinator(FakeStore(testCredentials(), testSnapshot()), api)
+        advanceUntilIdle()
+
+        coordinator.selectTrendGranularity("week")
+        advanceUntilIdle()
+
+        assertEquals("month", api.lastPeriod)
+        assertEquals("week", api.lastTrendGranularity)
         coordinator.close()
     }
 
@@ -183,6 +204,8 @@ class MetroraCoordinatorTest {
         advanceUntilIdle()
 
         coordinator.pair("desktop.local", "7777")
+        advanceUntilIdle()
+        coordinator.confirmPairingCode()
         advanceUntilIdle()
 
         assertEquals(MetroraConnectionState.PAIRED_NO_SNAPSHOT, coordinator.state.value.status)
@@ -297,7 +320,10 @@ private class FakeApi : MetroraApi {
     var fetchFailure: MetroraException? = null
     var revokeFailure: MetroraException? = null
     var identityMatches = true
+    val pairCount = AtomicInteger()
     val fetchCount = AtomicInteger()
+    var lastPeriod: String? = null
+    var lastTrendGranularity: String? = null
 
     override suspend fun discover(host: String, port: Int): DiscoveredDesktop = desktop
 
@@ -307,10 +333,19 @@ private class FakeApi : MetroraApi {
         desktop: DiscoveredDesktop,
         expectedCode: String,
         deviceName: String,
-    ): PairingCredentials = pairingResult?.await() ?: testCredentials()
+    ): PairingCredentials {
+        pairCount.incrementAndGet()
+        return pairingResult?.await() ?: testCredentials()
+    }
 
-    override suspend fun fetchUsage(credentials: PairingCredentials, period: String): UsageSnapshot {
+    override suspend fun fetchUsage(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+    ): UsageSnapshot {
         fetchCount.incrementAndGet()
+        lastPeriod = period
+        lastTrendGranularity = trendGranularity
         fetchFailure?.let { throw it }
         return fetchResult?.await() ?: testSnapshot()
     }

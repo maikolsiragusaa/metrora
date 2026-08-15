@@ -11,6 +11,8 @@ export type ModelAccountingRow = {
   tokenDetail: boolean
   /// Source-recorded route/provider. Kept separate from the collector name.
   provider?: string
+  /// Canonical model-vendor identity used only for presentation branding.
+  brandId?: import('./model-brand.js').ModelBrandId
   /// Collector/tool names contributing to the row.
   sourceProviders?: string[]
   /// Raw IDs that canonicalized into this row; emitted when useful for audit.

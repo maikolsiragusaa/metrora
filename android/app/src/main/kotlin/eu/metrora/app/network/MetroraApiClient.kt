@@ -15,7 +15,8 @@ import java.net.UnknownHostException
 import java.security.InvalidKeyException
 import java.security.UnrecoverableKeyException
 import java.security.cert.CertificateException
-import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
@@ -37,7 +38,11 @@ interface MetroraApi {
         deviceName: String,
     ): PairingCredentials
 
-    suspend fun fetchUsage(credentials: PairingCredentials, period: String = "month"): UsageSnapshot
+    suspend fun fetchUsage(
+        credentials: PairingCredentials,
+        period: String = "month",
+        trendGranularity: String? = null,
+    ): UsageSnapshot
 
     suspend fun revoke(credentials: PairingCredentials)
 
@@ -241,14 +246,18 @@ class MetroraApiClient(
         )
     }
 
-    override suspend fun fetchUsage(credentials: PairingCredentials, period: String): UsageSnapshot =
+    override suspend fun fetchUsage(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+    ): UsageSnapshot =
         mapped(MetroraOperation.REFRESH) {
             requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
             val response = transport.request(
                 host = credentials.host,
                 port = credentials.port,
                 method = "GET",
-                path = MetroraProtocol.usagePath(period),
+                path = MetroraProtocol.usagePath(period, trendGranularity),
                 expectedFingerprint = credentials.serverFingerprint,
                 headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
                 readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
@@ -398,7 +407,7 @@ class MetroraApiClient(
             isLocalKeyFailure(error) -> MetroraFailureReason.KEY_UNAVAILABLE
             error is SocketTimeoutException -> MetroraFailureReason.TIMEOUT
             error is UnknownHostException || error is ConnectException -> MetroraFailureReason.DESKTOP_UNREACHABLE
-            error is SSLException || error is CertificateException -> MetroraFailureReason.CERTIFICATE_MISMATCH
+            isCertificateFailure(error) -> MetroraFailureReason.CERTIFICATE_MISMATCH
             else -> MetroraFailureReason.UNKNOWN
         }
         val category = when (reason) {
@@ -416,6 +425,12 @@ class MetroraApiClient(
         cause is InvalidKeyException ||
             cause is UnrecoverableKeyException ||
             cause.javaClass.name == "android.security.KeyStoreException"
+    }
+
+    private fun isCertificateFailure(error: Throwable): Boolean = causeChain(error).any { cause ->
+        cause is CertificateException ||
+            cause is SSLPeerUnverifiedException ||
+            (cause is SSLHandshakeException && cause.cause is CertificateException)
     }
 
     private fun safeCauseChain(error: Throwable): String = causeChain(error)

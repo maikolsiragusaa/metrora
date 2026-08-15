@@ -1,10 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import path from 'node:path'
 
 import { CliError, killAll, resolveMetroraPath, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
+import { createApplicationMenuTemplate } from './menu'
 import { getQuota, sanitizeError } from './quota'
+import { createShareBridgeHandlers } from './share-bridge'
+import { initializeDesktopShareRuntime, stopDesktopShareRuntime, type DesktopShareRuntime } from './share-runtime'
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
+
+export { createApplicationMenuTemplate } from './menu'
 
 // Initialized in bootstrap() once Electron paths exist; stays null under tests.
 let telemetryInstance: Telemetry | null = null
@@ -19,6 +24,7 @@ type BeforeQuitEvent = { preventDefault: () => void }
 type BeforeQuitDeps = {
   getTelemetry: () => QuitTelemetry | null
   killAll: () => void
+  stopShare?: () => Promise<unknown>
   quit: () => void
   timeoutMs?: number
 }
@@ -42,6 +48,8 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
       try {
         try { deps.killAll() } catch { /* child cleanup must not wedge quit */ }
 
+        const stopShare = deps.stopShare ? Promise.resolve().then(deps.stopShare).catch(() => false) : Promise.resolve(false)
+
         let telemetry: QuitTelemetry | null = null
         try { telemetry = deps.getTelemetry() } catch { /* telemetry lookup is best-effort */ }
 
@@ -57,7 +65,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         const timeout = new Promise<void>(resolve => {
           timer = setTimeout(resolve, deps.timeoutMs ?? QUIT_FLUSH_TIMEOUT_MS)
         })
-        await Promise.race([flush.catch(() => false), timeout])
+        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false)]), timeout])
       } finally {
         if (timer !== undefined) clearTimeout(timer)
         allowQuit = true
@@ -226,6 +234,7 @@ type Deps = {
   telemetry?: TelemetryBridge | null
   /** Cached update-availability status; absent under tests unless injected. */
   getUpdateStatus?: () => Promise<UpdateStatus>
+  share?: DesktopShareRuntime | null
 }
 
 type Handler = (...args: any[]) => Promise<Envelope>
@@ -339,7 +348,13 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     ]),
     'metrora:getDevices': run((period: string) => ['devices', '--format', 'json', '--period', vPeriod(period)]),
     'metrora:getDevicesScan': run(() => ['devices', 'scan', '--format', 'json']),
-    'metrora:getShareStatus': run(() => ['share', 'status', '--format', 'json']),
+    'metrora:getShareStatus': deps.share
+      ? async () => {
+          try { return { ok: true, value: await deps.share!.status() } }
+          catch (err) { return { ok: false, error: toEnvelopeError(err) } }
+        }
+      : run(() => ['share', 'status', '--format', 'json']),
+    ...createShareBridgeHandlers(deps.share),
     'metrora:getIdentity': run(() => ['identity', '--format', 'json']),
     'metrora:getAliases': run(() => ['model-alias', '--list', '--format', 'json']),
     'metrora:getProxyPaths': run(() => ['proxy-path', '--list', '--format', 'json']),
@@ -383,7 +398,21 @@ export function ipcChannelAliases(channel: string): string[] {
 }
 
 function registerHandlers(): void {
-  const handlers = createBridgeHandlers()
+  const share = initializeDesktopShareRuntime({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  })
+  const handlers = createBridgeHandlers({
+    spawnCli,
+    spawnCliAction,
+    resolveMetroraPath,
+    getQuota,
+    emitProgress: broadcastProgress,
+    telemetry: telemetryInstance,
+    getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS),
+    share,
+  })
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (_event, ...args) => handler(...args))
@@ -401,77 +430,6 @@ function registerHandlers(): void {
     } catch { /* malformed URL — refuse to open */ }
     return
   })
-}
-
-export function createApplicationMenuTemplate(isDev = Boolean(process.env.VITE_DEV_SERVER_URL)): MenuItemConstructorOptions[] {
-  const template: MenuItemConstructorOptions[] = []
-
-  if (process.platform === 'darwin') {
-    template.push({
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    })
-  } else {
-    template.push({
-      label: 'File',
-      submenu: [{ role: 'quit' }],
-    })
-  }
-
-  template.push(
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'pasteAndMatchStyle' },
-        { role: 'delete' },
-        { role: 'selectAll' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-        ...(isDev ? [{ type: 'separator' as const }, { role: 'toggleDevTools' as const }] : []),
-      ],
-    },
-    {
-      label: 'Window',
-      submenu: [
-        { role: 'minimize' },
-        { role: 'close' },
-        ...(process.platform === 'darwin'
-          ? [
-              { type: 'separator' as const },
-              { role: 'front' as const },
-              { type: 'separator' as const },
-              { role: 'window' as const },
-            ]
-          : []),
-      ],
-    },
-  )
-
-  return template
 }
 
 function installApplicationMenu(): void {
@@ -554,6 +512,7 @@ function bootstrap(): void {
   app.on('before-quit', createBeforeQuitHandler({
     getTelemetry: () => telemetryInstance,
     killAll,
+    stopShare: stopDesktopShareRuntime,
     quit: () => app.quit(),
   }))
 

@@ -36,6 +36,8 @@ npm-debug.log*
 
 # Build artifacts
 *.tsbuildinfo
+/android/.gradle/
+/android/app/build/
 
 # Untracked local assets and experiments
 assets/discord-*.png

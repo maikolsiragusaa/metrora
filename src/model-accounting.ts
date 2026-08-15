@@ -1,5 +1,6 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
+import { resolveModelBrandId, type ModelBrandId } from './model-brand.js'
 import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const TOP_MODELS_LIMIT = 20
@@ -20,6 +21,7 @@ type MergedModelRow = {
   activeGeneratedTokens: number
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
   provider?: string
+  brandId?: ModelBrandId
   sourceProviders?: string[]
   rawModels?: string[]
   canonicalIdentity?: string
@@ -191,9 +193,13 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       const model = models.find(value => value.name !== SYNTHETIC_MODEL_NAME && rowIdentity(value, providerSources) === identity)
       const variant = data.semanticVariant
       const name = model ? displayName(model.name, variant) : data.rawModels?.[0] ?? identity
+      const brandId = resolveModelBrandId({
+        canonicalIdentity: data.canonicalIdentity,
+      })
       return {
         name,
         ...data,
+        ...(brandId ? { brandId } : {}),
         // Avoid changing the compatibility payload for legacy fixtures that
         // have no provenance metadata at all.
         ...(data.rawModels && data.rawModels.length > 0 ? { rawModels: data.rawModels } : {}),
@@ -209,6 +215,8 @@ export function buildTopModels(models: PeriodData['models']): MenubarPayload['cu
       cost: row.cost,
       calls: row.calls,
       savingsUSD: row.savingsUSD,
+      ...(row.provider ? { providerId: row.provider } : {}),
+      ...(row.brandId ? { brandId: row.brandId } : {}),
       estimatedCostUSD: row.estimatedCostUSD,
       savingsBaselineModel: '',
     }))
@@ -226,6 +234,7 @@ export function buildModelAccounting(models: PeriodData['models'], totalCost: nu
     cacheWriteTokens: row.cacheWriteTokens,
     tokenDetail: row.tokenDetail,
     ...(row.provider ? { provider: row.provider } : {}),
+    ...(row.brandId ? { brandId: row.brandId } : {}),
     ...(row.sourceProviders && row.sourceProviders.length > 0 ? { sourceProviders: row.sourceProviders } : {}),
     ...(row.rawModels && row.rawModels.length > 0 ? { rawModels: row.rawModels } : {}),
     ...(row.canonicalIdentity ? { canonicalIdentity: row.canonicalIdentity } : {}),

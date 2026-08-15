@@ -112,14 +112,15 @@ import { getCurrency } from './currency.js'
 import type { GranularHistory } from './granular-history.js'
 import { buildModelAccounting, buildTopModels } from './model-accounting.js'
 import { buildModelPresentation } from './model-presentation.js'
+import { buildMenubarHistory } from './menubar-history.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
+import type { ModelBrandId } from './model-brand.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
 import type { ModelAccountingRow } from './model-accounting-types.js'
 
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
-const HISTORY_DAYS_LIMIT = 365
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
@@ -253,13 +254,18 @@ export type MenubarPayload = {
       turns: number
       oneShotRate: number | null
     }>
-    topModels: Array<{
-      name: string
-      cost: number
-      savingsUSD: number
-      savingsBaselineModel: string
-      calls: number
-      /// Estimated portion of this model's `cost`; > 0 marks the row as priced
+  topModels: Array<{
+    name: string
+    cost: number
+    savingsUSD: number
+    savingsBaselineModel: string
+    calls: number
+    /// Source-recorded provider id, when the model row carries factual
+    /// provider identity. Never inferred from the display name.
+    providerId?: string
+    /// Canonical model-vendor identity used only for presentation branding.
+    brandId?: ModelBrandId
+    /// Estimated portion of this model's `cost`; > 0 marks the row as priced
       /// from estimated tokens. Optional for payload back-compat.
       estimatedCostUSD?: number
     }>
@@ -378,6 +384,9 @@ export type MenubarPayload = {
   }
   history: {
     daily: DailyHistoryEntry[]
+    /// Exact selected-period daily authority for first-party companion trend
+    /// aggregation. Optional so older producers and consumers remain valid.
+    periodDaily?: DailyHistoryEntry[]
     /// Selected-period timeline for the local browser dashboard. Optional for
     /// compatibility with older peers and non-dashboard payload producers.
     timeline?: GranularHistory
@@ -453,13 +462,6 @@ function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['curren
   return providers
     .filter(p => p.cost >= 0)
     .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
-}
-
-function buildHistory(daily: DailyHistoryEntry[] | undefined, timeline?: GranularHistory): MenubarPayload['history'] {
-  if (!daily || daily.length === 0) return { daily: [], ...(timeline ? { timeline } : {}) }
-  const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
-  const trimmed = sorted.slice(-HISTORY_DAYS_LIMIT)
-  return { daily: trimmed, ...(timeline ? { timeline } : {}) }
 }
 
 function buildTopProjects(projects: PeriodData['projects']): MenubarPayload['current']['topProjects'] {
@@ -539,6 +541,7 @@ export function buildMenubarPayload(
   breakdowns?: BreakdownArrays,
   claudeConfigs?: ClaudeConfigSelector,
   granularHistory?: GranularHistory,
+  periodDailyHistory?: DailyHistoryEntry[],
 ): MenubarPayload {
   const modelAccounting = buildModelAccounting(current.models, current.cost, current.calls)
   const payload: MenubarPayload = {
@@ -583,7 +586,7 @@ export function buildMenubarPayload(
       ...(current.byBranch ? { byBranch: current.byBranch } : {}),
     },
     optimize: buildOptimize(optimize),
-    history: buildHistory(dailyHistory, granularHistory),
+    history: buildMenubarHistory(dailyHistory, granularHistory, periodDailyHistory),
     currency: (() => {
       const c = getCurrency()
       return { code: c.code, symbol: c.symbol, rate: c.rate }

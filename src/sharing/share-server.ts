@@ -8,7 +8,12 @@ import { toCompanionUsageV1 } from './companion-contract.js'
 import { certFingerprint, pairingCode, PeerStore, PairingWindow, type PairedPeer } from './pairing.js'
 import type { Identity } from './identity.js'
 
-export type UsageQuery = { period?: string; from?: string; to?: string }
+export type UsageQuery = {
+  period?: string
+  from?: string
+  to?: string
+  granularity?: 'day' | 'week' | 'month' | string
+}
 
 // An approve-style pairing request, surfaced to the user on the sharing device.
 export type PairRequest = { name: string; fingerprint: string; code: string }
@@ -262,7 +267,14 @@ export class ShareServer {
       })
       // The versioned companion surface is an explicit DTO. The inherited
       // unversioned route keeps its legacy payload for compatible desktop peers.
-      json(200, requestedPath === '/api/v1/usage' ? toCompanionUsageV1(payload) : payload)
+      json(200, requestedPath === '/api/v1/usage'
+        ? toCompanionUsageV1(payload, {
+            period: url.searchParams.get('period') ?? undefined,
+            from: url.searchParams.get('from') ?? undefined,
+            to: url.searchParams.get('to') ?? undefined,
+            granularity: url.searchParams.get('granularity') ?? undefined,
+          })
+        : payload)
       return
     }
 

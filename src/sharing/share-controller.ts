@@ -5,12 +5,18 @@ import { PeerStore } from './pairing.js'
 import { ShareServer, type PairRequest, type UsageQuery } from './share-server.js'
 import { advertise } from './discovery.js'
 import { getSharingDir, loadPeers, savePeers } from './store.js'
+import { buildPairingBootstrap } from './pairing-bootstrap.js'
+import { getLanAddresses } from './network-address.js'
 
 export type PendingPairing = { id: string; name: string; code: string }
 export type ShareStatus = {
   sharing: boolean
   name: string
   port: number
+  host: string | null
+  addresses: string[]
+  connectPayload: string | null
+  networkWarning?: string
   always: boolean
   peers: number
   pending: PendingPairing[]
@@ -27,6 +33,9 @@ export class ShareController {
   private peers: PeerStore | null = null
   private identity: Identity | null = null
   private always = false
+  private boundPort = 0
+  private lanAddresses: string[] = []
+  private connectHost: string | null = null
   private idleTimer: ReturnType<typeof setInterval> | null = null
   private lastActivity = 0
   private readonly dir = getSharingDir()
@@ -66,10 +75,13 @@ export class ShareController {
     })
     // listen() can reject (e.g. EADDRINUSE); only commit state after it binds,
     // so a failed start never leaves us reporting always/sharing incorrectly.
-    await server.listen(this.port, '0.0.0.0')
+    const boundPort = await server.listen(this.port, '0.0.0.0')
     this.always = always
     this.server = server
-    this.ad = advertise({ name: identity.name, port: this.port, fingerprint: identity.fingerprint })
+    this.boundPort = boundPort
+    this.lanAddresses = getLanAddresses()
+    this.connectHost = this.lanAddresses[0] ?? '127.0.0.1'
+    this.ad = advertise({ name: identity.name, port: boundPort, fingerprint: identity.fingerprint })
     this.lastActivity = Date.now()
     server.server.on('request', () => {
       this.lastActivity = Date.now()
@@ -103,6 +115,9 @@ export class ShareController {
     await this.server?.close().catch(() => {})
     this.ad = null
     this.server = null
+    this.boundPort = 0
+    this.lanAddresses = []
+    this.connectHost = null
   }
 
   private enqueueApproval(req: PairRequest): Promise<boolean> {
@@ -140,7 +155,15 @@ export class ShareController {
     return {
       sharing: this.isSharing(),
       name: identity.name,
-      port: this.port,
+      port: this.isSharing() ? this.boundPort : this.port,
+      host: this.connectHost,
+      addresses: [...this.lanAddresses],
+      connectPayload: this.connectHost && this.isSharing()
+        ? buildPairingBootstrap(this.connectHost, this.boundPort)
+        : null,
+      ...(this.isSharing() && this.connectHost === '127.0.0.1'
+        ? { networkWarning: 'No non-loopback LAN address was detected; choose a local network address manually.' }
+        : {}),
       always: this.always,
       peers,
       pending: this.listPending(),
