@@ -112,6 +112,7 @@ import { getCurrency } from './currency.js'
 import type { GranularHistory } from './granular-history.js'
 import { buildModelAccounting, buildTopModels } from './model-accounting.js'
 import { buildModelPresentation } from './model-presentation.js'
+import { buildMenubarHistory } from './menubar-history.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
@@ -119,7 +120,6 @@ import type { ModelAccountingRow } from './model-accounting-types.js'
 
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
-const HISTORY_DAYS_LIMIT = 365
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
@@ -461,30 +461,6 @@ function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['curren
     .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
 }
 
-function buildHistory(
-  daily: DailyHistoryEntry[] | undefined,
-  timeline?: GranularHistory,
-  periodDaily?: DailyHistoryEntry[],
-): MenubarPayload['history'] {
-  const exactPeriod = periodDaily && periodDaily.length > 0
-    ? [...periodDaily].sort((a, b) => a.date.localeCompare(b.date))
-    : undefined
-  if (!daily || daily.length === 0) {
-    return {
-      daily: [],
-      ...(exactPeriod ? { periodDaily: exactPeriod } : {}),
-      ...(timeline ? { timeline } : {}),
-    }
-  }
-  const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
-  const trimmed = sorted.slice(-HISTORY_DAYS_LIMIT)
-  return {
-    daily: trimmed,
-    ...(exactPeriod ? { periodDaily: exactPeriod } : {}),
-    ...(timeline ? { timeline } : {}),
-  }
-}
-
 function buildTopProjects(projects: PeriodData['projects']): MenubarPayload['current']['topProjects'] {
   return (projects ?? [])
     .filter(p => p.cost > 0 || p.savingsUSD > 0)
@@ -607,7 +583,7 @@ export function buildMenubarPayload(
       ...(current.byBranch ? { byBranch: current.byBranch } : {}),
     },
     optimize: buildOptimize(optimize),
-    history: buildHistory(dailyHistory, granularHistory, periodDailyHistory),
+    history: buildMenubarHistory(dailyHistory, granularHistory, periodDailyHistory),
     currency: (() => {
       const c = getCurrency()
       return { code: c.code, symbol: c.symbol, rate: c.rate }
