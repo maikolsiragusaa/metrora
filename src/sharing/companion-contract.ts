@@ -2,6 +2,7 @@ import { normalizeExplicitModelProvider } from '../model-provider.js'
 
 export const COMPANION_USAGE_KIND = 'metrora.companion.usage' as const
 export const COMPANION_USAGE_VERSION = 1 as const
+export type CompanionTrendGranularity = 'day' | 'week' | 'month'
 
 export type CompanionModelUsageV1 = {
   name: string
@@ -18,7 +19,7 @@ export type CompanionTrendPointV1 = {
 }
 
 export type CompanionTrendV1 = {
-  granularity: 'day' | 'week' | 'month'
+  granularity: CompanionTrendGranularity
   periodLabel: string
   buckets: CompanionTrendPointV1[]
 }
@@ -125,9 +126,12 @@ function dateSpanDays(from: string, to: string): number {
 }
 
 function trendGranularity(
-  query: { period?: string; from?: string; to?: string },
+  query: { period?: string; from?: string; to?: string; granularity?: string },
   bounds: { from: string; to: string },
 ): CompanionTrendV1['granularity'] {
+  if (query.granularity === 'day' || query.granularity === 'week' || query.granularity === 'month') {
+    return query.granularity
+  }
   if (query.period === 'lifetime') return 'month'
   if (query.period === 'all') return 'week'
   const span = dateSpanDays(bounds.from, bounds.to)
@@ -181,7 +185,7 @@ function companionTrend(
   root: JsonRecord,
   generatedAt: string,
   periodLabel: string,
-  query: { period?: string; from?: string; to?: string },
+  query: { period?: string; from?: string; to?: string; granularity?: string },
 ): CompanionTrendV1 | undefined {
   if (typeof root.history !== 'object' || root.history === null || Array.isArray(root.history)) return undefined
   const history = root.history as JsonRecord
@@ -225,7 +229,7 @@ function companionTrend(
  */
 export function toCompanionUsageV1(
   payload: unknown,
-  query: { period?: string; from?: string; to?: string } = {},
+  query: { period?: string; from?: string; to?: string; granularity?: string } = {},
 ): CompanionUsageV1 {
   const root = record(payload, 'usage payload')
   const current = record(root.current, 'usage payload current period')

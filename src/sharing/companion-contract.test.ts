@@ -180,6 +180,28 @@ describe('CompanionUsageV1', () => {
     expect(lifetime.trend?.buckets.at(-1)).toEqual({ date: '2026-08-01', costMicrosUsd: 80_000 })
   })
 
+  it('honors an explicitly requested supported trend granularity', () => {
+    const payload = toCompanionUsageV1(
+      {
+        generated: '2026-08-15T10:30:00.000Z',
+        current: { label: 'This month', cost: 1, topModels: [] },
+        history: {
+          periodDaily: [
+            { date: '2026-08-01', cost: 0.25, topModels: [] },
+            { date: '2026-08-02', cost: 0.75, topModels: [] },
+          ],
+        },
+      },
+      { period: 'month', granularity: 'week' },
+    )
+
+    expect(payload.trend).toEqual({
+      granularity: 'week',
+      periodLabel: 'This month',
+      buckets: [{ date: '2026-07-27', costMicrosUsd: 1_000_000 }],
+    })
+  })
+
   it('carries factual provider identity and a bounded full model breakdown', () => {
     const payload = toCompanionUsageV1({
       generated: '2026-08-15T10:30:00.000Z',

@@ -92,6 +92,7 @@
     <string name="period_lifetime">Lifetime</string>
     <string name="period_selector_a11y">Change usage period</string>
     <string name="cost_trend_a11y">Cost trend</string>
+    <string name="trend_selector_a11y">Change cost trend granularity</string>
     <string name="pricing_coverage">Pricing coverage %1$s</string>
     <string name="pricing_coverage_unknown">Pricing coverage unavailable</string>
     <string name="estimated_cost_evidence">Estimated portion %1$s</string>

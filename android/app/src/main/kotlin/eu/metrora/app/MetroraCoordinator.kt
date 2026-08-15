@@ -235,7 +235,10 @@ class MetroraCoordinator internal constructor(
         )
     }
 
-    fun refresh(period: String = mutableState.value.selectedPeriod) {
+    fun refresh(
+        period: String = mutableState.value.selectedPeriod,
+        trendGranularity: String? = null,
+    ) {
         val current = mutableState.value
         val credentials = current.credentials ?: return
         if (current.initializing || current.busy ||
@@ -258,6 +261,7 @@ class MetroraCoordinator internal constructor(
                     MetroraNotice.USAGE_REFRESHED,
                     allowOfflineFallback = true,
                     period = period,
+                    trendGranularity = trendGranularity,
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -270,6 +274,13 @@ class MetroraCoordinator internal constructor(
     fun selectPeriod(period: String) {
         if (period !in SUPPORTED_PERIODS) return
         refresh(period)
+    }
+
+    fun selectTrendGranularity(granularity: String) {
+        if (granularity !in SUPPORTED_TREND_GRANULARITIES) return
+        val current = mutableState.value
+        if (current.credentials == null || current.snapshot?.costTrendGranularity == granularity) return
+        refresh(current.selectedPeriod, granularity)
     }
 
     fun revoke() {
@@ -470,9 +481,10 @@ class MetroraCoordinator internal constructor(
         allowOfflineFallback: Boolean,
         preservePairingSuccess: Boolean = false,
         period: String = mutableState.value.selectedPeriod,
+        trendGranularity: String? = null,
     ) {
         try {
-            val snapshot = api.fetchUsage(credentials, period)
+            val snapshot = api.fetchUsage(credentials, period, trendGranularity)
             currentCoroutineContext().ensureActive()
             store.saveSnapshot(snapshot)
             mutableState.update {
@@ -574,6 +586,7 @@ class MetroraCoordinator internal constructor(
 
     private companion object {
         val SUPPORTED_PERIODS = setOf("today", "week", "30days", "month", "all", "lifetime")
+        val SUPPORTED_TREND_GRANULARITIES = setOf("day", "week", "month")
     }
 }
 

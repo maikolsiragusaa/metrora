@@ -11,6 +11,10 @@ class ProtocolTest {
         assertEquals("/api/v1/peer/pair-request", MetroraProtocol.PAIR_REQUEST_PATH)
         assertEquals("/api/v1/peer/revoke", MetroraProtocol.REVOKE_PATH)
         assertEquals("/api/v1/usage?period=month", MetroraProtocol.usagePath("month"))
+        assertEquals(
+            "/api/v1/usage?period=all&granularity=week",
+            MetroraProtocol.usagePath("all", "week"),
+        )
         assertEquals("metrora.companion.usage", MetroraProtocol.USAGE_KIND)
     }
 
@@ -34,6 +38,7 @@ class ProtocolTest {
         assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.normalizeHost("https://desktop") }
         assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.validatePort(0) }
         assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.usagePath("year") }
+        assertThrows(IllegalArgumentException::class.java) { MetroraProtocol.usagePath("month", "quarter") }
     }
 
     @Test

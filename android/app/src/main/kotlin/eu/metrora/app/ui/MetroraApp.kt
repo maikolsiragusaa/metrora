@@ -82,6 +82,7 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
                 state = state,
                 onRefresh = coordinator::refresh,
                 onSelectPeriod = coordinator::selectPeriod,
+                onSelectTrendGranularity = coordinator::selectTrendGranularity,
                 onRevoke = { confirmation = ConfirmAction.REVOKE },
                 onForget = { confirmation = ConfirmAction.FORGET },
             )

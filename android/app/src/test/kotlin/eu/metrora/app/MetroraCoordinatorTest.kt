@@ -108,6 +108,20 @@ class MetroraCoordinatorTest {
     }
 
     @Test
+    fun selecting_trend_granularity_requests_the_desktop_aggregate() = runTest {
+        val api = FakeApi()
+        val coordinator = coordinator(FakeStore(testCredentials(), testSnapshot()), api)
+        advanceUntilIdle()
+
+        coordinator.selectTrendGranularity("week")
+        advanceUntilIdle()
+
+        assertEquals("month", api.lastPeriod)
+        assertEquals("week", api.lastTrendGranularity)
+        coordinator.close()
+    }
+
+    @Test
     fun connectivity_failure_keeps_cached_snapshot_but_unauthorized_enters_recovery_path() = runTest {
         val store = FakeStore(testCredentials(), testSnapshot())
         val api = FakeApi()
@@ -308,6 +322,8 @@ private class FakeApi : MetroraApi {
     var identityMatches = true
     val pairCount = AtomicInteger()
     val fetchCount = AtomicInteger()
+    var lastPeriod: String? = null
+    var lastTrendGranularity: String? = null
 
     override suspend fun discover(host: String, port: Int): DiscoveredDesktop = desktop
 
@@ -322,8 +338,14 @@ private class FakeApi : MetroraApi {
         return pairingResult?.await() ?: testCredentials()
     }
 
-    override suspend fun fetchUsage(credentials: PairingCredentials, period: String): UsageSnapshot {
+    override suspend fun fetchUsage(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+    ): UsageSnapshot {
         fetchCount.incrementAndGet()
+        lastPeriod = period
+        lastTrendGranularity = trendGranularity
         fetchFailure?.let { throw it }
         return fetchResult?.await() ?: testSnapshot()
     }

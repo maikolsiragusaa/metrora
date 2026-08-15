@@ -89,6 +89,7 @@ internal fun HomeState(
     state: MetroraUiState,
     onRefresh: () -> Unit,
     onSelectPeriod: (String) -> Unit,
+    onSelectTrendGranularity: (String) -> Unit,
     onRevoke: () -> Unit,
     onForget: () -> Unit,
 ) {
@@ -123,6 +124,7 @@ internal fun HomeState(
                     state = state,
                     onRefresh = onRefresh,
                     onSelectPeriod = onSelectPeriod,
+                    onSelectTrendGranularity = onSelectTrendGranularity,
                     onViewAllModels = { destination = HomeDestination.MODELS.name },
                 )
                 HomeDestination.SETTINGS -> SettingsSurface(
@@ -142,6 +144,7 @@ private fun OverviewSurface(
     state: MetroraUiState,
     onRefresh: () -> Unit,
     onSelectPeriod: (String) -> Unit,
+    onSelectTrendGranularity: (String) -> Unit,
     onViewAllModels: () -> Unit,
 ) {
     HomeHeader(state = state, onRefresh = onRefresh)
@@ -153,7 +156,7 @@ private fun OverviewSurface(
     state.snapshot?.let { snapshot ->
         CostHero(snapshot)
         MetricsStrip(snapshot)
-        CostOverTime(snapshot.costTrend, snapshot.costTrendGranularity)
+        CostOverTime(snapshot.costTrend, snapshot.costTrendGranularity, onSelectTrendGranularity)
         TopModels(snapshot.topModels, onViewAll = onViewAllModels)
         FreshnessFooter(state)
     } ?: EmptyHomeSnapshot(state.status, onRefresh)
@@ -494,7 +497,19 @@ private fun MetricDivider() {
 }
 
 @Composable
-private fun CostOverTime(points: List<CostTrendPoint>, granularity: String) {
+private fun CostOverTime(
+    points: List<CostTrendPoint>,
+    granularity: String,
+    onSelectGranularity: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val granularities = listOf("day", "week", "month")
+    val selectedLabel = when (granularity) {
+        "week" -> R.string.weekly
+        "month" -> R.string.monthly
+        else -> R.string.daily
+    }
+    val selectorAccessibility = androidx.compose.ui.res.stringResource(R.string.trend_selector_a11y)
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -511,14 +526,45 @@ private fun CostOverTime(points: List<CostTrendPoint>, granularity: String) {
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    text = when (granularity) {
-                        "week" -> androidx.compose.ui.res.stringResource(R.string.weekly)
-                        "month" -> androidx.compose.ui.res.stringResource(R.string.monthly)
-                        else -> androidx.compose.ui.res.stringResource(R.string.daily)
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box {
+                    Row(
+                        modifier = Modifier
+                            .clickable(role = Role.Button, onClick = { expanded = true })
+                            .semantics { contentDescription = selectorAccessibility }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = androidx.compose.ui.res.stringResource(selectedLabel),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Icon(
+                            imageVector = Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                    ) {
+                        granularities.forEach { option ->
+                            val resource = when (option) {
+                                "week" -> R.string.weekly
+                                "month" -> R.string.monthly
+                                else -> R.string.daily
+                            }
+                            DropdownMenuItem(
+                                text = { Text(androidx.compose.ui.res.stringResource(resource)) },
+                                onClick = {
+                                    expanded = false
+                                    if (option != granularity) onSelectGranularity(option)
+                                },
+                            )
+                        }
+                    }
+                }
             }
             if (points.isEmpty()) {
                 Text(

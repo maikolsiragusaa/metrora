@@ -12,6 +12,7 @@ object MetroraProtocol {
     const val USAGE_KIND = "metrora.companion.usage"
 
     private val allowedPeriods = setOf("today", "week", "30days", "month", "all", "lifetime")
+    private val allowedTrendGranularities = setOf("day", "week", "month")
 
     fun normalizeHost(raw: String): String {
         val value = raw.trim().removePrefix("[").removeSuffix("]")
@@ -44,8 +45,10 @@ object MetroraProtocol {
         return (value % 1_000_000L).toString().padStart(6, '0')
     }
 
-    fun usagePath(period: String): String {
+    fun usagePath(period: String, granularity: String? = null): String {
         require(period in allowedPeriods) { "Unsupported usage period." }
-        return "$USAGE_PATH?period=$period"
+        if (granularity == null) return "$USAGE_PATH?period=$period"
+        require(granularity in allowedTrendGranularities) { "Unsupported trend granularity." }
+        return "$USAGE_PATH?period=$period&granularity=$granularity"
     }
 }
