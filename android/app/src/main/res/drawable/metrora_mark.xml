@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Six-bar mark reconstructed from references/00_METRORA_LOGO_SOURCE.png. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+    <path
+        android:fillColor="#F7F8FA"
+        android:pathData="M28,34h7v46h-7z" />
+    <path
+        android:fillColor="#F7F8FA"
+        android:pathData="M43,47h7v39h-7z" />
+    <path
+        android:fillColor="#F7F8FA"
+        android:pathData="M58,59h7v35h-7z" />
+    <path
+        android:fillColor="#F7F8FA"
+        android:pathData="M70,59h7v35h-7z" />
+    <path
+        android:fillColor="#F7F8FA"
+        android:pathData="M85,47h7v39h-7z" />
+    <path
+        android:fillColor="#F7F8FA"
+        android:pathData="M100,34h7v46h-7z" />
+</vector>

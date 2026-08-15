@@ -262,7 +262,13 @@ export class ShareServer {
       })
       // The versioned companion surface is an explicit DTO. The inherited
       // unversioned route keeps its legacy payload for compatible desktop peers.
-      json(200, requestedPath === '/api/v1/usage' ? toCompanionUsageV1(payload) : payload)
+      json(200, requestedPath === '/api/v1/usage'
+        ? toCompanionUsageV1(payload, {
+            period: url.searchParams.get('period') ?? undefined,
+            from: url.searchParams.get('from') ?? undefined,
+            to: url.searchParams.get('to') ?? undefined,
+          })
+        : payload)
       return
     }
 

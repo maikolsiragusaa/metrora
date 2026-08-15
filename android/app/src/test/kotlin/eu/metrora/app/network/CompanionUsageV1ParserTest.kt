@@ -16,12 +16,18 @@ class CompanionUsageV1ParserTest {
               "period":{"label":"This month"},
               "totals":{
                 "costMicrosUsd":750000,
+                "estimatedCostMicrosUsd":120000,
                 "calls":5,
                 "sessions":2,
                 "tokens":{"input":100,"output":50,"cacheRead":20,"cacheWrite":10},
                 "cacheHitPercent":16.7
               },
-              "topModels":[{"name":"Model A","calls":5,"costMicrosUsd":750000}]
+              "topModels":[{"name":"Model A","calls":5,"costMicrosUsd":750000,"estimatedCostMicrosUsd":120000}],
+              "quality":{"pricingCoverage":0.875},
+              "trend":{"granularity":"day","periodLabel":"This month","buckets":[
+                {"date":"2026-08-01","costMicrosUsd":300000},
+                {"date":"2026-08-02","costMicrosUsd":450000}
+              ]}
             }
         """.trimIndent()
 
@@ -30,12 +36,36 @@ class CompanionUsageV1ParserTest {
         assertEquals(180L, snapshot.totalTokens)
         assertEquals(1234L, snapshot.retrievedAtEpochMs)
         assertEquals("Model A", snapshot.topModels.single().name)
+        assertEquals(120000L, snapshot.estimatedCostMicrosUsd)
+        assertEquals(0.875, snapshot.pricingCoverage)
+        assertEquals(2, snapshot.costTrend.size)
+        assertEquals(120000L, snapshot.topModels.single().estimatedCostMicrosUsd)
     }
 
     @Test
     fun rejects_unsupported_kind_and_version() {
         val raw = """
             {"kind":"other","version":1,"period":{},"totals":{},"topModels":[]}
+        """.trimIndent()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            CompanionUsageV1Parser.parse(raw, testCredentials())
+        }
+    }
+
+    @Test
+    fun rejects_malformed_new_quality_and_trend_fields() {
+        val raw = """
+            {
+              "kind":"metrora.companion.usage",
+              "version":1,
+              "generatedAt":"2026-08-14T10:00:00Z",
+              "period":{"label":"This month"},
+              "totals":{"costMicrosUsd":1,"calls":1,"sessions":1,"tokens":{"input":1,"output":0,"cacheRead":0,"cacheWrite":0},"cacheHitPercent":0},
+              "quality":{"pricingCoverage":2},
+              "trend":{"granularity":"day","buckets":[{"date":"not-a-date","costMicrosUsd":1}]},
+              "topModels":[]
+            }
         """.trimIndent()
 
         assertThrows(IllegalArgumentException::class.java) {

@@ -6,6 +6,7 @@ import eu.metrora.app.data.UsageSnapshot
 data class MetroraUiState(
     val initializing: Boolean = true,
     val status: MetroraConnectionState = MetroraConnectionState.UNPAIRED,
+    val selectedPeriod: String = "month",
     val credentials: PairingCredentials? = null,
     val snapshot: UsageSnapshot? = null,
     val pairingCode: String? = null,

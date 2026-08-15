@@ -26,9 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import eu.metrora.app.MetroraConnectionState
 import eu.metrora.app.MetroraCoordinator
 import eu.metrora.app.MetroraUiState
@@ -43,40 +41,50 @@ private enum class ConfirmAction {
 fun MetroraApp(coordinator: MetroraCoordinator) {
     val state by coordinator.state.collectAsState()
     var confirmation by rememberSaveable { mutableStateOf<ConfirmAction?>(null) }
+    var scannerVisible by rememberSaveable { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Header()
-            if (state.initializing) {
-                InitializingState()
-            } else {
+        when {
+            scannerVisible -> QrScannerScreen(
+                onBack = { scannerVisible = false },
+                onPayload = { payload ->
+                    val endpoint = runCatching {
+                        eu.metrora.app.network.PairingBootstrap.parse(payload)
+                    }.getOrNull()
+                    if (endpoint != null) {
+                        scannerVisible = false
+                        coordinator.pair(endpoint.host, endpoint.port.toString())
+                    }
+                    endpoint != null
+                },
+            )
+            state.initializing -> AppScrollShell { InitializingState() }
+            state.status == MetroraConnectionState.VERIFYING_SAS ||
+                state.status == MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL -> VerifySasScreen(
+                state = state,
+                onConfirm = coordinator::confirmPairingCode,
+                onCancel = coordinator::cancelPairing,
+            )
+            state.status == MetroraConnectionState.RECOVERY_REQUIRED -> AppScrollShell {
                 Feedback(state)
-                when {
-                    state.status == MetroraConnectionState.RECOVERY_REQUIRED -> RecoveryState(
-                        onForget = { confirmation = ConfirmAction.FORGET },
-                    )
-                    state.credentials == null -> PairingState(state, coordinator)
-                    else -> OverviewState(
-                        state = state,
-                        onRefresh = coordinator::refresh,
-                        onRevoke = { confirmation = ConfirmAction.REVOKE },
-                        onForget = { confirmation = ConfirmAction.FORGET },
-                    )
-                }
+                RecoveryState(onForget = { confirmation = ConfirmAction.FORGET })
             }
+            state.credentials == null -> ConnectScreen(
+                state = state,
+                coordinator = coordinator,
+                onOpenScanner = { scannerVisible = true },
+            )
+            else -> HomeState(
+                state = state,
+                onRefresh = coordinator::refresh,
+                onSelectPeriod = coordinator::selectPeriod,
+                onRevoke = { confirmation = ConfirmAction.REVOKE },
+                onForget = { confirmation = ConfirmAction.FORGET },
+            )
         }
     }
 
@@ -87,37 +95,25 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
             onDismiss = { confirmation = null },
             onConfirm = {
                 confirmation = null
-                if (action == ConfirmAction.REVOKE) {
-                    coordinator.revoke()
-                } else {
-                    coordinator.forgetLocal()
-                }
+                if (action == ConfirmAction.REVOKE) coordinator.revoke() else coordinator.forgetLocal()
             },
         )
     }
 }
 
 @Composable
-private fun Header() {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.app_companion_label),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.8.sp,
-        )
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.app_name),
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.app_subtitle),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+private fun AppScrollShell(content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        content = { content() },
+    )
 }
 
 @Composable
@@ -157,9 +153,7 @@ private fun ConfirmationDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
                 Text(androidx.compose.ui.res.stringResource(R.string.confirm_action))
             }

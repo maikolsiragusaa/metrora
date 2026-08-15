@@ -63,6 +63,7 @@ class MetroraException(
 enum class MetroraConnectionState {
     UNPAIRED,
     PAIRING,
+    VERIFYING_SAS,
     WAITING_FOR_DESKTOP_APPROVAL,
     RESTORED,
     PAIRED_NO_SNAPSHOT,

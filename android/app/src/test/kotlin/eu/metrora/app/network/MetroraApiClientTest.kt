@@ -8,7 +8,9 @@ import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.IdentityMaterial
 import java.net.SocketTimeoutException
 import java.security.InvalidKeyException
+import java.security.cert.CertificateException
 import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -114,10 +116,17 @@ class MetroraApiClientTest {
         assertEquals(MetroraFailureCategory.CONNECTIVITY, timeout.failure.category)
         assertEquals(MetroraFailureReason.TIMEOUT, timeout.failure.reason)
 
-        transport.error = SSLHandshakeException("certificate mismatch")
+        transport.error = SSLHandshakeException("TLS handshake failed").apply {
+            initCause(CertificateException("peer certificate mismatch"))
+        }
         val certificate = expectFailure { api.discover("desktop.local", 7777) }
         assertEquals(MetroraFailureCategory.IDENTITY_SECURITY, certificate.failure.category)
         assertEquals(MetroraFailureReason.CERTIFICATE_MISMATCH, certificate.failure.reason)
+
+        transport.error = SSLException("TLS protocol failure")
+        val genericSsl = expectFailure { api.discover("desktop.local", 7777) }
+        assertEquals(MetroraFailureCategory.UNEXPECTED, genericSsl.failure.category)
+        assertEquals(MetroraFailureReason.UNKNOWN, genericSsl.failure.reason)
     }
 
     @Test

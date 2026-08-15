@@ -93,4 +93,51 @@ describe('CompanionUsageV1', () => {
   it('rejects a payload without a current-period object', () => {
     expect(() => toCompanionUsageV1({ generated: new Date().toISOString() })).toThrow('invalid usage payload current period')
   })
+
+  it('exposes a bounded period-aware daily trend only when Desktop history is available', () => {
+    const start = new Date('2026-06-25T00:00:00.000Z')
+    const daily = Array.from({ length: 40 }, (_, index) => {
+      const date = new Date(start)
+      date.setUTCDate(date.getUTCDate() + index)
+      return {
+        date: date.toISOString().slice(0, 10),
+        cost: index / 100,
+        savingsUSD: 0,
+        calls: index,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        topModels: [],
+      }
+    })
+
+    const payload = toCompanionUsageV1(
+      {
+        generated: '2026-07-31T10:30:00.000Z',
+        current: { label: '30 days', cost: 2, topModels: [] },
+        history: { daily },
+      },
+      { period: '30days' },
+    )
+
+    expect(payload.trend).toEqual({
+      granularity: 'day',
+      periodLabel: '30 days',
+      buckets: expect.arrayContaining([
+        { date: '2026-07-02', costMicrosUsd: 70000 },
+        { date: '2026-07-31', costMicrosUsd: 360000 },
+      ]),
+    })
+    expect(payload.trend?.buckets).toHaveLength(30)
+    expect(payload.trend?.buckets.map(bucket => bucket.date)).toEqual(
+      [...(payload.trend?.buckets ?? [])].map(bucket => bucket.date).sort(),
+    )
+
+    const legacyPayload = toCompanionUsageV1({
+      generated: '2026-07-31T10:30:00.000Z',
+      current: { label: 'This month', cost: 2, topModels: [] },
+    })
+    expect(legacyPayload.trend).toBeUndefined()
+  })
 })

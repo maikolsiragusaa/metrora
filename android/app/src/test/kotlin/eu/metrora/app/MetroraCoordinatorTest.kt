@@ -23,7 +23,7 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MetroraCoordinatorTest {
     @Test
-    fun pairing_exposes_waiting_state_then_connected() = runTest {
+    fun pairing_exposes_sas_verification_then_desktop_approval_then_connected() = runTest {
         val store = FakeStore()
         val api = FakeApi()
         val pairing = CompletableDeferred<PairingCredentials>()
@@ -33,8 +33,12 @@ class MetroraCoordinatorTest {
 
         coordinator.pair("desktop.local", "7777")
         advanceUntilIdle()
-        assertEquals(MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL, coordinator.state.value.status)
+        assertEquals(MetroraConnectionState.VERIFYING_SAS, coordinator.state.value.status)
         assertEquals("123456", coordinator.state.value.pairingCode)
+
+        coordinator.confirmPairingCode()
+        advanceUntilIdle()
+        assertEquals(MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL, coordinator.state.value.status)
 
         pairing.complete(testCredentials())
         advanceUntilIdle()
@@ -183,6 +187,8 @@ class MetroraCoordinatorTest {
         advanceUntilIdle()
 
         coordinator.pair("desktop.local", "7777")
+        advanceUntilIdle()
+        coordinator.confirmPairingCode()
         advanceUntilIdle()
 
         assertEquals(MetroraConnectionState.PAIRED_NO_SNAPSHOT, coordinator.state.value.status)

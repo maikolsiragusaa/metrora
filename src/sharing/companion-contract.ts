@@ -8,6 +8,17 @@ export type CompanionModelUsageV1 = {
   estimatedCostMicrosUsd: number | null
 }
 
+export type CompanionTrendPointV1 = {
+  date: string
+  costMicrosUsd: number
+}
+
+export type CompanionTrendV1 = {
+  granularity: 'day'
+  periodLabel: string
+  buckets: CompanionTrendPointV1[]
+}
+
 export type CompanionUsageV1 = {
   kind: typeof COMPANION_USAGE_KIND
   version: typeof COMPANION_USAGE_VERSION
@@ -33,6 +44,8 @@ export type CompanionUsageV1 = {
   quality: {
     pricingCoverage: number | null
   }
+  /** Optional so older Desktop payloads remain valid for companions. */
+  trend?: CompanionTrendV1
 }
 
 type JsonRecord = Record<string, unknown>
@@ -83,12 +96,90 @@ function safeGeneratedAt(value: unknown): string {
   return new Date().toISOString()
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const MAX_TREND_BUCKETS = 31
+
+function safeDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !ISO_DATE_RE.test(value)) return null
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null
+}
+
+function shiftDate(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function trendBounds(
+  generatedAt: string,
+  query: { period?: string; from?: string; to?: string },
+): { from: string; to: string } {
+  const generatedDate = safeDate(generatedAt.slice(0, 10)) ?? new Date().toISOString().slice(0, 10)
+  const explicitFrom = safeDate(query.from)
+  const explicitTo = safeDate(query.to)
+  if (explicitFrom || explicitTo) {
+    return {
+      from: explicitFrom ?? shiftDate(explicitTo ?? generatedDate, -180),
+      to: explicitTo ?? generatedDate,
+    }
+  }
+
+  switch (query.period ?? 'month') {
+    case 'today':
+      return { from: generatedDate, to: generatedDate }
+    case 'week':
+      return { from: shiftDate(generatedDate, -6), to: generatedDate }
+    case '30days':
+      return { from: shiftDate(generatedDate, -29), to: generatedDate }
+    case 'month':
+      return { from: `${generatedDate.slice(0, 7)}-01`, to: generatedDate }
+    case 'all':
+      return { from: shiftDate(generatedDate, -179), to: generatedDate }
+    case 'lifetime':
+      return { from: '1970-01-01', to: generatedDate }
+    default:
+      return { from: `${generatedDate.slice(0, 7)}-01`, to: generatedDate }
+  }
+}
+
+function companionTrend(
+  root: JsonRecord,
+  generatedAt: string,
+  periodLabel: string,
+  query: { period?: string; from?: string; to?: string },
+): CompanionTrendV1 | undefined {
+  if (typeof root.history !== 'object' || root.history === null || Array.isArray(root.history)) return undefined
+  const history = root.history as JsonRecord
+  if (!Array.isArray(history.daily)) return undefined
+  const bounds = trendBounds(generatedAt, query)
+  const buckets = history.daily
+    .map((value): CompanionTrendPointV1 | null => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+      const day = value as JsonRecord
+      const date = safeDate(day.date)
+      if (!date || date < bounds.from || date > bounds.to) return null
+      return {
+        date,
+        costMicrosUsd: usdToMicros(day.cost),
+      }
+    })
+    .filter((value): value is CompanionTrendPointV1 => value !== null)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-MAX_TREND_BUCKETS)
+
+  return { granularity: 'day', periodLabel, buckets }
+}
+
 /**
  * Convert the internal desktop payload into the stable, content-minimal
  * contract consumed by first-party companions. Internal report structures must
  * never leak through `/api/v1/usage` directly.
  */
-export function toCompanionUsageV1(payload: unknown): CompanionUsageV1 {
+export function toCompanionUsageV1(
+  payload: unknown,
+  query: { period?: string; from?: string; to?: string } = {},
+): CompanionUsageV1 {
   const root = record(payload, 'usage payload')
   const current = record(root.current, 'usage payload current period')
 
@@ -118,10 +209,16 @@ export function toCompanionUsageV1(payload: unknown): CompanionUsageV1 {
     ? current.label.trim().slice(0, 120)
     : 'Selected period'
 
+  const generatedAt = safeGeneratedAt(root.generated)
+  const periodLabel = typeof current.label === 'string' && current.label.trim()
+    ? current.label.trim().slice(0, 120)
+    : 'Selected period'
+  const trend = companionTrend(root, generatedAt, periodLabel, query)
+
   return {
     kind: COMPANION_USAGE_KIND,
     version: COMPANION_USAGE_VERSION,
-    generatedAt: safeGeneratedAt(root.generated),
+    generatedAt,
     period: { label },
     totals: {
       costMicrosUsd: usdToMicros(current.cost),
@@ -141,5 +238,6 @@ export function toCompanionUsageV1(payload: unknown): CompanionUsageV1 {
     quality: {
       pricingCoverage: nullableFraction(current.pricingCoverage),
     },
+    ...(trend ? { trend } : {}),
   }
 }

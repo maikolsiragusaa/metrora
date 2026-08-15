@@ -86,6 +86,13 @@ internal fun statusCopy(status: MetroraConnectionState): StatusCopy = when (stat
         R.string.desktop_check_icon,
         StatusTone.PROGRESS,
     )
+    MetroraConnectionState.VERIFYING_SAS -> StatusCopy(
+        R.string.status_verify_connection,
+        R.string.status_verify_connection_body,
+        Icons.Outlined.Security,
+        R.string.security_icon,
+        StatusTone.PROGRESS,
+    )
     MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL -> StatusCopy(
         R.string.status_waiting_approval,
         R.string.status_waiting_approval_body,
@@ -225,6 +232,11 @@ internal fun failureResource(failure: MetroraFailure): Int = when (failure.reaso
 
 internal fun formatUsd(micros: Long): String = NumberFormat.getCurrencyInstance(Locale.US)
     .format(BigDecimal.valueOf(micros).movePointLeft(6))
+
+internal fun formatEvidenceUsd(micros: Long): String = when {
+    micros in 1 until 10_000 -> "<$0.01"
+    else -> formatUsd(micros)
+}
 
 internal fun formatCompact(value: Long): String = when {
     value >= 1_000_000_000 -> String.format(Locale.US, "%.1fB", value / 1_000_000_000.0)
