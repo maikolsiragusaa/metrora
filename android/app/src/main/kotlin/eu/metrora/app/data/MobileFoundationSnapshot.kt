@@ -31,6 +31,22 @@ enum class CapabilityFreshness {
     UNKNOWN,
 }
 
+enum class DetailCoverage {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE;
+
+    companion object {
+        fun fromWire(value: String?): DetailCoverage = when (value?.trim()?.lowercase()) {
+            "complete" -> COMPLETE
+            "partial" -> PARTIAL
+            else -> UNAVAILABLE
+        }
+
+        fun toWire(value: DetailCoverage): String = value.name.lowercase()
+    }
+}
+
 data class CapabilityDescriptor(
     val id: String,
     val versions: List<Int>,
@@ -107,6 +123,8 @@ data class SourceProjectSummary(
     val name: String,
     val contributors: List<SourceProjectContributor>,
     val assignedProjectId: String?,
+    /** True when this identity comes only from durable historical rollups. */
+    val historicalOnly: Boolean = false,
 ) {
     init {
         require(id.startsWith("sp_") && id.length <= 80) { "Source Project id is invalid." }
@@ -204,6 +222,19 @@ data class MobileSpendSummary(
     }
 }
 
+data class AnalyzeAccountingCoverage(
+    val cost: Double?,
+    val calls: Double?,
+    val tokenCost: Double?,
+    val tokenCalls: Double?,
+) {
+    init {
+        require(listOf(cost, calls, tokenCost, tokenCalls).all { it == null || it.isFinite() && it in 0.0..1.0 }) {
+            "Analyze accounting coverage is invalid."
+        }
+    }
+}
+
 data class MobileFoundationSnapshot(
     val desktopId: String,
     val generatedAt: String,
@@ -214,8 +245,14 @@ data class MobileFoundationSnapshot(
     val capabilities: CapabilityDiscovery,
     val activitySessions: List<MobileActivitySession>,
     val analyzeModels: List<AnalyzeModelUsage>,
+    val analyzeModelsCoverage: DetailCoverage = DetailCoverage.COMPLETE,
+    val analyzeTokensCoverage: DetailCoverage = DetailCoverage.COMPLETE,
+    val analyzeHistoricalDetail: Boolean = false,
+    val analyzeAccountingCoverage: AnalyzeAccountingCoverage? = null,
     val spend: MobileSpendSummary?,
     val workspaceAvailable: Boolean,
+    val periodLabel: String = "unknown",
+    val trendGranularity: String? = null,
     val available: Boolean = true,
 ) {
     init {
@@ -229,23 +266,28 @@ data class MobileFoundationSnapshot(
         require(sourceProjects.size <= FOUNDATION_MAX_SOURCE_PROJECTS) { "Too many Source Projects." }
         require(activitySessions.size <= FOUNDATION_MAX_ACTIVITY_SESSIONS) { "Too many Activity sessions." }
         require(analyzeModels.size <= FOUNDATION_MAX_MODELS) { "Too many Analyze models." }
+        require(periodLabel.isNotBlank() && periodLabel.length <= FOUNDATION_MAX_DISPLAY_LENGTH) { "Foundation period is invalid." }
+        require(trendGranularity == null || trendGranularity in setOf("day", "week", "month")) { "Foundation trend granularity is invalid." }
     }
 
     fun projectOption(id: String): ProjectScopeOption? = projectOptions.firstOrNull { it.id == id }
 
     companion object {
-        fun unavailable(desktopId: String = ""): MobileFoundationSnapshot = MobileFoundationSnapshot(
+        fun unavailable(desktopId: String = "", projectScopeId: String = "all"): MobileFoundationSnapshot = MobileFoundationSnapshot(
             desktopId = desktopId,
             generatedAt = "unknown",
             retrievedAtEpochMs = 0L,
-            projectScopeId = "all",
+            projectScopeId = projectScopeId,
             projectOptions = emptyList(),
             sourceProjects = emptyList(),
             capabilities = CapabilityDiscovery.unavailable(),
             activitySessions = emptyList(),
             analyzeModels = emptyList(),
+            analyzeModelsCoverage = DetailCoverage.UNAVAILABLE,
+            analyzeTokensCoverage = DetailCoverage.UNAVAILABLE,
             spend = null,
             workspaceAvailable = false,
+            periodLabel = "unknown",
             available = false,
         )
 
@@ -269,20 +311,46 @@ data class MobileFoundationSnapshot(
             val capabilities = parseCapabilities(root.optJSONObject("capabilities") ?: JSONObject())
             val activity = root.optJSONObject("activity")
             val analyze = root.optJSONObject("analyze")
-            val models = analyze?.optJSONObject("models")?.optJSONArray("rows")?.let(::parseModels) ?: emptyList()
+            val modelsObject = analyze?.optJSONObject("models")
+            val models = modelsObject?.optJSONArray("rows")?.let(::parseModels) ?: emptyList()
+            val selectedScopeId = projects.optString("selectedId", "all").trim().ifBlank { "all" }
+            val legacyModelCoverage = if (modelsObject?.has("coverage") == true) {
+                DetailCoverage.fromWire(modelsObject.optString("coverage"))
+            } else {
+                if (selectedScopeId == "all" && models.isNotEmpty()) DetailCoverage.COMPLETE else DetailCoverage.UNAVAILABLE
+            }
+            val legacyTokenCoverage = if (modelsObject?.has("tokenCoverage") == true) {
+                DetailCoverage.fromWire(modelsObject.optString("tokenCoverage"))
+            } else {
+                if (selectedScopeId == "all" && models.isNotEmpty()) DetailCoverage.COMPLETE else DetailCoverage.UNAVAILABLE
+            }
+            val accountingCoverage = modelsObject?.optJSONObject("accountingCoverage")?.let { value ->
+                AnalyzeAccountingCoverage(
+                    cost = value.optNullableFraction("cost"),
+                    calls = value.optNullableFraction("calls"),
+                    tokenCost = value.optNullableFraction("tokenCost"),
+                    tokenCalls = value.optNullableFraction("tokenCalls"),
+                )
+            }
             val spend = analyze?.optJSONObject("spend")?.optJSONObject("data")?.let(::parseSpend)
             return MobileFoundationSnapshot(
                 desktopId = root.optString("desktopId", fallbackDesktopId).trim(),
                 generatedAt = root.getString("generatedAt").trim(),
                 retrievedAtEpochMs = root.optLong("retrievedAtEpochMs", retrievedAtEpochMs).coerceAtLeast(0L),
-                projectScopeId = projects.optString("selectedId", "all").trim().ifBlank { "all" },
+                projectScopeId = selectedScopeId,
                 projectOptions = projectOptions,
                 sourceProjects = sourceProjects,
                 capabilities = capabilities,
                 activitySessions = activity?.optJSONArray("sessions")?.let(::parseActivity) ?: emptyList(),
                 analyzeModels = models,
+                analyzeModelsCoverage = legacyModelCoverage,
+                analyzeTokensCoverage = legacyTokenCoverage,
+                analyzeHistoricalDetail = modelsObject?.optBoolean("historical", false) == true,
+                analyzeAccountingCoverage = accountingCoverage,
                 spend = spend,
                 workspaceAvailable = root.optJSONObject("workspace")?.optBoolean("available", false) == true,
+                periodLabel = root.optString("periodLabel", "unknown").trim().ifBlank { "unknown" },
+                trendGranularity = root.optNullableString("trendGranularity"),
                 available = root.optBoolean("available", true),
             )
         }
@@ -324,6 +392,7 @@ data class MobileFoundationSnapshot(
                         name = value.getString("name").trim(),
                         contributors = contributors,
                         assignedProjectId = value.optNullableString("assignedProjectId"),
+                        historicalOnly = value.optBoolean("historicalOnly", false),
                     ),
                 )
             }
@@ -447,6 +516,11 @@ data class MobileFoundationSnapshot(
         private fun JSONObject.optNullableString(name: String): String? =
             if (!has(name) || isNull(name)) null else optString(name).trim().takeIf { it.isNotBlank() }
 
+        private fun JSONObject.optNullableFraction(name: String): Double? =
+            if (!has(name) || isNull(name)) null else getDouble(name).also {
+                require(it.isFinite() && it in 0.0..1.0) { "$name is invalid." }
+            }
+
     }
 
     fun toJson(): String {
@@ -463,7 +537,8 @@ data class MobileFoundationSnapshot(
                         put(JSONObject().put("sourceId", contributor.sourceId).put("routeIds", strings(contributor.routeIds)))
                     }
                 }
-                put(JSONObject().put("id", value.id).put("name", value.name).put("contributors", contributors).putOpt("assignedProjectId", value.assignedProjectId))
+                put(JSONObject().put("id", value.id).put("name", value.name).put("contributors", contributors)
+                    .putOpt("assignedProjectId", value.assignedProjectId).put("historicalOnly", value.historicalOnly))
             }
         }
         val capabilityJson = JSONObject().put("kind", "metrora.companion.capabilities").put("version", 1).put("generatedAt", capabilities.generatedAt)
@@ -511,10 +586,21 @@ data class MobileFoundationSnapshot(
             .put("desktopId", desktopId)
             .put("generatedAt", generatedAt)
             .put("retrievedAtEpochMs", retrievedAtEpochMs)
+            .put("periodLabel", periodLabel)
+            .putOpt("trendGranularity", trendGranularity)
             .put("projectScope", JSONObject().put("selectedId", projectScopeId).put("options", optionJson).put("sourceProjects", sourceJson))
             .put("capabilities", capabilityJson)
             .put("activity", JSONObject().put("available", activitySessions.isNotEmpty() || available).put("sessions", activityJson))
-            .put("analyze", JSONObject().put("models", JSONObject().put("available", analyzeModels.isNotEmpty() || available).put("rows", modelJson)).put("spend", JSONObject().put("available", spend != null).putOpt("data", spendJson)))
+            .put("analyze", JSONObject().put("models", JSONObject()
+                .put("available", analyzeModels.isNotEmpty() || available)
+                .put("coverage", DetailCoverage.toWire(analyzeModelsCoverage))
+                .put("tokenCoverage", DetailCoverage.toWire(analyzeTokensCoverage))
+                .put("historical", analyzeHistoricalDetail)
+                .putOpt("accountingCoverage", analyzeAccountingCoverage?.let { value ->
+                    JSONObject().putOpt("cost", value.cost).putOpt("calls", value.calls).putOpt("tokenCost", value.tokenCost).putOpt("tokenCalls", value.tokenCalls)
+                })
+                .put("rows", modelJson))
+                .put("spend", JSONObject().put("available", spend != null).putOpt("data", spendJson)))
             .put("workspace", JSONObject().put("available", workspaceAvailable).putOpt("reason", if (workspaceAvailable) null else "no-authority"))
             .put("available", available)
             .toString()

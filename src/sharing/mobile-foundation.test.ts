@@ -37,6 +37,41 @@ function payload(): MenubarPayload {
       categories: [],
       models: [],
       topModels: [],
+      modelAccounting: {
+        rows: [
+          {
+            name: 'claude-opus-4-6',
+            cost: 3,
+            savingsUSD: 0,
+            calls: 1,
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            tokenDetail: true,
+            provider: 'anthropic-api',
+            sourceProviders: ['claude-cli'],
+            brandId: 'anthropic',
+          },
+          {
+            name: 'claude-opus-4-6',
+            cost: 1,
+            savingsUSD: 0,
+            calls: 1,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            tokenDetail: false,
+            sourceProviders: ['codex'],
+            brandId: 'anthropic',
+          },
+        ],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 0.75, calls: 0.5 },
+      },
+      projectDetailCoverage: { models: 'complete', tokens: 'partial', categories: 'complete', historical: false },
     },
     history: { daily: [{ date: '2026-08-14', cost: 4, savingsUSD: 0, calls: 2, inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0, topModels: [] }] },
     projectScope: {
@@ -80,5 +115,25 @@ describe('Mobile Foundation V1 projection', () => {
     expect(result.activity.sessions[0]?.sourceProjectName).toBe('metrora')
     expect(result.activity.sessions[0]).not.toHaveProperty('prompt')
     expect(result.workspace).toEqual({ available: false, reason: 'no-authority' })
+  })
+
+  it('keeps same-name accounting rows separate when route or source provenance differs', () => {
+    const result = buildMobileFoundationPayload(payload(), [project()], registry('sp_source'))
+    const rows = result.analyze.models.rows.filter(row => row.name === 'claude-opus-4-6')
+
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ brandId: 'anthropic', routeId: 'anthropic-api', sourceIds: ['claude-cli'] })
+    expect(rows[1]).toMatchObject({ brandId: 'anthropic', sourceIds: ['codex'] })
+    expect(rows[1]).not.toHaveProperty('routeId')
+    expect(rows.map(row => row.costMicrosUsd)).toEqual([3_000_000, 1_000_000])
+  })
+
+  it('propagates partial historical detail without turning missing rows into zero coverage', () => {
+    const result = buildMobileFoundationPayload(payload(), [project()], registry('sp_source'))
+
+    expect(result.analyze.models.coverage).toBe('complete')
+    expect(result.analyze.models.tokenCoverage).toBe('partial')
+    expect(result.analyze.models.historical).toBe(false)
+    expect(result.analyze.models.accountingCoverage).toEqual({ cost: 1, calls: 1, tokenCost: 0.75, tokenCalls: 0.5 })
   })
 })

@@ -14,6 +14,7 @@ describe('Companion capability discovery', () => {
     expect(negotiateCapabilityVersion(discovery, 'projects')).toBe(1)
     expect(negotiateCapabilityVersion(discovery, 'workspace')).toBeNull()
     expect(discovery.capabilities).toHaveLength(7)
+    expect(new Set(discovery.capabilities.map(capability => capability.freshness))).toEqual(new Set(['unknown']))
   })
 
   it('negotiates only versions the client actually supports', () => {

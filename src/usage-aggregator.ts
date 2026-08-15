@@ -21,6 +21,7 @@ import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 import { buildUsageBreakdowns } from './usage-breakdowns.js'
 import { friendlyProject, populateProjectRollups } from './project-report.js'
+import { withProjectDetailCoverage } from './project-coverage.js'
 import { buildMobileFoundationPayload } from './sharing/mobile-foundation.js'
 import { readProjectRegistry } from './project-registry.js'
 import {
@@ -108,6 +109,8 @@ export type AggregateOpts = {
   exclude?: string[]
   /** Stable user-created Metrora Project scope; distinct from CLI name filters. */
   metroraProjectId?: ProjectScopeId | null
+  /** Requested bounded trend bucket used by the mobile Foundation envelope. */
+  trendGranularity?: string
   daysSelection?: { range: DateRange; label: string; days: Set<string> } | null
   optimize?: boolean
   claudeConfigSourceId?: string | null
@@ -292,12 +295,12 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
   const days = allDays.map(day => {
     const providerDay = pf === 'all' ? day : sliceDayToProvider(day, pf)
-    const scopedDay = filterDailyEntryByMetroraScope(providerDay, registry, scopeId)
+    const scopedDay = filterDailyEntryByMetroraScope(providerDay, registry, scopeId, { preserveDetailedBreakdown: scopeId !== ALL_PROJECTS_SCOPE_ID && day.date === todayStr })
     return reconcileDurableProjectDay(scopedDay, projectFilter, {
       preserveDetailedBreakdown: (projectFilterActive || scopeId !== ALL_PROJECTS_SCOPE_ID) && day.date === todayStr,
     })
   })
-  const data = buildPeriodDataFromDays(days, periodInfo.label)
+  const data = withProjectDetailCoverage(buildPeriodDataFromDays(days, periodInfo.label), days, scopeId !== ALL_PROJECTS_SCOPE_ID, todayStr)
 
   // Enrich the cache-authoritative headline with fields DailyEntry cannot carry.
   // These are all derivable only from surviving sessions (estimated-cost markers,
@@ -671,7 +674,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     cache,
     effectivelyScoped,
   )
-  payload.projectScope = buildProjectScopePayload(registry, registryResult.status, scanProjects, scopeId)
-  payload.mobileFoundation = buildMobileFoundationPayload(payload, scanProjects, registry)
+  payload.projectScope = buildProjectScopePayload(registry, registryResult.status, scanProjects, scopeId, cache.days)
+  payload.mobileFoundation = buildMobileFoundationPayload(payload, scanProjects, registry, opts.trendGranularity)
   return payload
 }

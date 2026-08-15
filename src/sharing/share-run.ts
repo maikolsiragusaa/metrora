@@ -35,6 +35,7 @@ export async function buildCompanionUsage(
     optimize: false,
     timeline: false,
     metroraProjectId: query.projectScopeId,
+    trendGranularity: query.granularity,
   }))
 }
 
@@ -52,16 +53,29 @@ export async function buildCompanionFoundation(
     optimize: false,
     timeline: false,
     metroraProjectId: query.projectScopeId,
+    trendGranularity: query.granularity,
   })
   return payload.mobileFoundation ?? {
     kind: 'metrora.companion.foundation',
     version: 1,
     generatedAt: payload.generated,
+    periodLabel: payload.current.label,
+    ...(query.granularity === 'day' || query.granularity === 'week' || query.granularity === 'month'
+      ? { trendGranularity: query.granularity }
+      : {}),
     capabilities: buildCompanionCapabilitiesV1(payload.generated),
     projectScope: payload.projectScope,
     activity: { available: true, freshness: 'unknown', sessions: [] },
     analyze: {
-      models: { available: true, freshness: 'unknown', rows: [] },
+      models: {
+        available: false,
+        freshness: 'unknown',
+        coverage: 'unavailable',
+        tokenCoverage: 'unavailable',
+        historical: false,
+        accountingCoverage: { cost: null, calls: null, tokenCost: null, tokenCalls: null },
+        rows: [],
+      },
       spend: { available: true, freshness: 'unknown', data: { costMicrosUsd: 0, calls: 0, sessions: 0, trend: [] } },
     },
     workspace: { available: false, reason: 'no-authority' },

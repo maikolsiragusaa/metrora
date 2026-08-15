@@ -31,6 +31,8 @@ export type CompanionUsageV1 = {
   kind: typeof COMPANION_USAGE_KIND
   version: typeof COMPANION_USAGE_VERSION
   generatedAt: string
+  /** Additive scope identity; absent on older Desktop payloads. */
+  scope?: { projectId: string }
   period: {
     label: string
   }
@@ -53,6 +55,13 @@ export type CompanionUsageV1 = {
   models?: CompanionModelUsageV1[]
   quality: {
     pricingCoverage: number | null
+    /** Additive Project-scoped detail coverage; zero is never used as a proxy. */
+    projectDetailCoverage?: {
+      models: 'complete' | 'partial' | 'unavailable'
+      tokens: 'complete' | 'partial' | 'unavailable'
+      categories: 'complete' | 'partial' | 'unavailable'
+      historical: boolean
+    }
   }
   /** Optional so older Desktop payloads remain valid for companions. */
   trend?: CompanionTrendV1
@@ -87,6 +96,18 @@ function nullableNonNegativeNumber(value: unknown): number | null {
 function nullableFraction(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return null
   return value
+}
+
+function projectDetailCoverage(value: unknown): CompanionUsageV1['quality']['projectDetailCoverage'] | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const coverage = value as JsonRecord
+  const state = (candidate: unknown): 'complete' | 'partial' | 'unavailable' | undefined =>
+    candidate === 'complete' || candidate === 'partial' || candidate === 'unavailable' ? candidate : undefined
+  const models = state(coverage.models)
+  const tokens = state(coverage.tokens)
+  const categories = state(coverage.categories)
+  if (!models || !tokens || !categories || typeof coverage.historical !== 'boolean') return undefined
+  return { models, tokens, categories, historical: coverage.historical }
 }
 
 function usdToMicros(value: unknown): number {
@@ -282,6 +303,13 @@ export function toCompanionUsageV1(
     : 'Selected period'
 
   const generatedAt = safeGeneratedAt(root.generated)
+  const projectScope = root.projectScope && typeof root.projectScope === 'object' && !Array.isArray(root.projectScope)
+    ? root.projectScope as JsonRecord
+    : null
+  const projectId = typeof projectScope?.selectedId === 'string' && projectScope.selectedId.trim()
+    ? projectScope.selectedId.trim().slice(0, 120)
+    : 'all'
+  const coverage = projectDetailCoverage(current.projectDetailCoverage)
   const periodLabel = typeof current.label === 'string' && current.label.trim()
     ? current.label.trim().slice(0, 120)
     : 'Selected period'
@@ -291,6 +319,7 @@ export function toCompanionUsageV1(
     kind: COMPANION_USAGE_KIND,
     version: COMPANION_USAGE_VERSION,
     generatedAt,
+    scope: { projectId },
     period: { label },
     totals: {
       costMicrosUsd: usdToMicros(current.cost),
@@ -310,6 +339,7 @@ export function toCompanionUsageV1(
     ...(models ? { models } : {}),
     quality: {
       pricingCoverage: nullableFraction(current.pricingCoverage),
+      ...(coverage ? { projectDetailCoverage: coverage } : {}),
     },
     ...(trend ? { trend } : {}),
   }

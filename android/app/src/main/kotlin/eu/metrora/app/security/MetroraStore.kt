@@ -14,6 +14,14 @@ interface MetroraStore {
 
     suspend fun saveSnapshot(snapshot: UsageSnapshot)
 
+    /** Commit the usage snapshot and its same-scope foundation as one cache transaction. */
+    suspend fun saveSnapshotAndFoundation(snapshot: UsageSnapshot, foundation: MobileFoundationSnapshot?) {
+        // Legacy/custom stores remain source-compatible; SecureStore overrides
+        // this with one DataStore edit so production persistence is atomic.
+        saveSnapshot(snapshot)
+        if (foundation == null) clearFoundation() else saveFoundation(foundation)
+    }
+
     /** Additive encrypted cache; old stores remain source-compatible. */
     suspend fun loadFoundation(): StorageRead<MobileFoundationSnapshot> = StorageRead.Missing
 

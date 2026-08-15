@@ -37,6 +37,7 @@ describe('CompanionUsageV1', () => {
       kind: COMPANION_USAGE_KIND,
       version: COMPANION_USAGE_VERSION,
       generatedAt: '2026-07-31T10:30:00.000Z',
+      scope: { projectId: 'all' },
       period: { label: 'This month' },
       totals: {
         costMicrosUsd: 1_234_567,
@@ -251,5 +252,32 @@ describe('CompanionUsageV1', () => {
     })
     expect(invalidBrand.topModels[0]).toMatchObject({ providerId: 'openai' })
     expect(invalidBrand.topModels[0]).not.toHaveProperty('brandId')
+  })
+
+  it('carries Project detail coverage as additive metadata', () => {
+    const payload = toCompanionUsageV1({
+      generated: '2026-08-14T10:00:00.000Z',
+      projectScope: { selectedId: 'mp_project' },
+      current: {
+        label: 'This month',
+        cost: 10,
+        calls: 4,
+        sessions: 2,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        topModels: [{ name: 'Live model', calls: 1, cost: 1 }],
+        projectDetailCoverage: { models: 'partial', tokens: 'unavailable', categories: 'unavailable', historical: true },
+      },
+    })
+
+    expect(payload.scope).toEqual({ projectId: 'mp_project' })
+    expect(payload.quality.projectDetailCoverage).toEqual({
+      models: 'partial',
+      tokens: 'unavailable',
+      categories: 'unavailable',
+      historical: true,
+    })
   })
 })

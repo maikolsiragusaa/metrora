@@ -97,6 +97,8 @@
     <string name="pricing_coverage_unknown">Pricing coverage unavailable</string>
     <string name="estimated_cost_evidence">Estimated portion %1$s</string>
     <string name="total_tokens">Total tokens</string>
+    <string name="detail_partial_short">Partial</string>
+    <string name="detail_unavailable_short">Unavailable</string>
     <string name="calls">Calls</string>
     <string name="sessions">Sessions</string>
     <string name="top_models">Main models</string>
@@ -134,6 +136,8 @@
     <string name="analyze_models_title">Models</string>
     <string name="analyze_unavailable_title">Models are unavailable</string>
     <string name="analyze_unavailable_body">This Desktop does not advertise a compatible Models projection for the selected Project scope.</string>
+    <string name="models_partial_project_detail">Partial historical model detail. Rows shown are available evidence, not a total for the full period.</string>
+    <string name="models_unavailable_project_detail">Model detail is unavailable for this Project and period. Cost, calls and sessions remain separate accounting facts.</string>
     <string name="provenance_unavailable">Provenance unavailable</string>
     <string name="spend_trend_title">Spend trend</string>
     <string name="spend_unavailable_title">Spend analysis is unavailable</string>

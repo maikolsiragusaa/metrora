@@ -66,6 +66,7 @@ import eu.metrora.app.MetroraConnectionState
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 import eu.metrora.app.data.CostTrendPoint
+import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.data.ModelUsage
 import eu.metrora.app.data.UsageSnapshot
 import java.time.LocalDate
@@ -165,7 +166,7 @@ private fun OverviewSurface(
         CostHero(snapshot)
         MetricsStrip(snapshot)
         CostOverTime(snapshot.costTrend, snapshot.costTrendGranularity, onSelectTrendGranularity)
-        TopModels(snapshot.topModels, onViewAll = onViewAllModels)
+        TopModels(snapshot.topModels, snapshot.modelCoverage, onViewAll = onViewAllModels)
         FreshnessFooter(state)
     } ?: EmptyHomeSnapshot(state.status, onRefresh)
 }
@@ -447,6 +448,11 @@ private fun PricingEvidence(snapshot: UsageSnapshot) {
 
 @Composable
 private fun MetricsStrip(snapshot: UsageSnapshot) {
+    val tokenValue = when (snapshot.tokenCoverage) {
+        DetailCoverage.COMPLETE -> formatCompact(snapshot.totalTokens)
+        DetailCoverage.PARTIAL -> androidx.compose.ui.res.stringResource(R.string.detail_partial_short)
+        DetailCoverage.UNAVAILABLE -> androidx.compose.ui.res.stringResource(R.string.detail_unavailable_short)
+    }
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -472,7 +478,7 @@ private fun MetricsStrip(snapshot: UsageSnapshot) {
             MetricDivider()
             HomeMetric(
                 icon = Icons.Outlined.Layers,
-                value = formatCompact(snapshot.totalTokens),
+                value = tokenValue,
                 label = R.string.total_tokens,
                 modifier = Modifier.weight(1f),
             )
@@ -685,7 +691,7 @@ private fun TrendLabels(points: List<CostTrendPoint>) {
 }
 
 @Composable
-private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
+private fun TopModels(models: List<ModelUsage>, coverage: DetailCoverage, onViewAll: () -> Unit) {
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -708,17 +714,28 @@ private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(8.dp))
-            if (models.isEmpty()) {
+            if (coverage == DetailCoverage.PARTIAL) {
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.models_unavailable),
+                    text = androidx.compose.ui.res.stringResource(R.string.models_partial_project_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            val visibleModels = models.takeIf { coverage != DetailCoverage.UNAVAILABLE }.orEmpty()
+            if (visibleModels.isEmpty()) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        if (coverage == DetailCoverage.UNAVAILABLE) R.string.models_unavailable_project_detail else R.string.models_unavailable,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp),
                 )
             } else {
-                models.forEachIndexed { index, model ->
+                visibleModels.forEachIndexed { index, model ->
                     ModelRow(model, index)
-                    if (index != models.lastIndex) {
+                    if (index != visibleModels.lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                     }
                 }

@@ -49,7 +49,7 @@ The response remains `CompanionUsageV1`, including integer micro-USD totals, cal
       "id": "activity.sessions",
       "versions": [1],
       "availability": "available",
-      "freshness": "cached",
+      "freshness": "unknown",
       "scopes": {"period": true, "project": true, "workspace": false}
     },
     {
@@ -68,23 +68,25 @@ The bounded capability IDs are `home.usage`, `projects`, `activity.sessions`, `a
 
 ## Mobile Foundation V1
 
-`GET /api/v1/foundation` accepts the same period, trend and `projectScopeId` query dimensions and returns:
+`GET /api/v1/foundation` accepts the same period, trend and `projectScopeId` query dimensions and returns a bounded foundation envelope. Capability discovery reports support, versions and scope only; its `freshness` is `unknown` because discovery is not an instance data fetch. The Foundation domain response carries factual instance freshness (`live` or `cached`) and the requested period/scope identity:
 
 ```json
 {
   "kind": "metrora.companion.foundation",
   "version": 1,
+  "periodLabel": "This month",
+  "trendGranularity": "day",
   "generatedAt": "2026-08-14T10:00:00.000Z",
   "capabilities": {"kind": "metrora.companion.capabilities", "version": 1, "capabilities": []},
   "projectScope": {
     "selectedId": "mp_<stable-project-id>",
     "options": [{"id": "all", "name": "All projects", "icon": "grid", "color": "cyan", "sourceProjectCount": 1}],
-    "sourceProjects": [{"id": "sp_<derived-source-id>", "name": "metrora", "contributors": [], "assignedProjectId": "mp_<stable-project-id>"}],
+    "sourceProjects": [{"id": "sp_<derived-source-id>", "name": "metrora", "contributors": [], "assignedProjectId": "mp_<stable-project-id>", "historicalOnly": false}],
     "registry": {"status": "valid", "writable": true}
   },
   "activity": {"available": true, "freshness": "cached", "sessions": []},
   "analyze": {
-    "models": {"available": true, "freshness": "cached", "rows": []},
+    "models": {"available": true, "freshness": "live", "coverage": "complete", "tokenCoverage": "complete", "historical": false, "accountingCoverage": {"cost": 1, "calls": 1, "tokenCost": 1, "tokenCalls": 1}, "rows": []},
     "spend": {"available": true, "freshness": "cached", "data": {"costMicrosUsd": 0, "calls": 0, "sessions": 0, "trend": []}}
   },
   "workspace": {"available": false, "reason": "no-authority"}
@@ -95,8 +97,10 @@ The DTO is deliberately bounded and content-minimal. Activity rows contain only 
 
 Project `id`, `name`, `icon` and `color` are presentation-compatible with Desktop. The name/icon/color fields are never membership keys and are not accounting semantics. A Project deletion therefore cannot delete or rewrite the underlying Source Project or historical evidence.
 
+Project-scoped durable history can retain exact cost, calls and sessions after raw session files expire while lacking a complete Project × model/token/category breakdown. In that case `quality.projectDetailCoverage` and Foundation `analyze.models.coverage` are `partial` or `unavailable`; clients must not render the available subtotal as the total for the full period or replace missing detail with zero. `historicalOnly: true` identifies a Source Project seen only in durable rollups, including legacy rollups without a path.
+
 ## Offline behavior and evolution
 
-A companion may retain the latest successful usage and Foundation projections in encrypted local storage. It must preserve Desktop-generated timestamps, show freshness/cache state and treat missing or corrupted projections as unavailable. It must not fill unavailable fields with zero or infer provenance.
+A companion may retain the latest successful usage and Foundation projections in encrypted local storage. The two scoped projections are committed as one local cache transaction after compatibility checks for Desktop identity, Project scope and period. It must preserve Desktop-generated timestamps, show freshness/cache state and treat missing or corrupted projections as unavailable. It must not fill unavailable fields with zero or infer provenance.
 
 `CompanionUsageV1` remains a compatibility contract. Capability discovery and each Foundation domain are separate bounded versioned surfaces so future transports can serve the same Android domain layer without coupling presentation to HTTP. New fields may be added compatibly inside a version; incompatible shape or meaning requires a new version. No database, server, account, cloud relay, billing backend or remote execution is part of this API.

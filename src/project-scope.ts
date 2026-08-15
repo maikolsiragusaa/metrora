@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
+import { durableProjectDisplayName } from './durable-project-reconciliation.js'
 import { normalizeProjectPathKey, projectNameFromPath } from './project-path-utils.js'
 import type { ProjectRegistry, MetroraProject } from './project-registry.js'
 import type { ProjectSummary, SessionSummary } from './types.js'
@@ -20,6 +21,7 @@ export type SourceProjectDescriptor = {
   name: string
   contributors: SourceProjectContributor[]
   assignedProjectId: string | null
+  historicalOnly?: boolean
 }
 
 export type ProjectScopeOption = {
@@ -57,6 +59,13 @@ export function sourceProjectId(projectPath: string, fallback = ''): string {
 
 export function sourceProjectIdForSummary(project: Pick<ProjectSummary, 'projectPath' | 'project'>): string {
   return sourceProjectId(project.projectPath, project.project)
+}
+
+/** Durable keys without a path never silently equal a live name-only identity. */
+export function sourceProjectIdForDurableProject(projectKey: string, projectPath?: string): string {
+  return projectPath?.trim()
+    ? sourceProjectId(projectPath, projectKey)
+    : sourceProjectId('', `historical:${projectKey}`)
 }
 
 export function sourceProjectIdForSession(project: Pick<ProjectSummary, 'projectPath' | 'project'>, _session: SessionSummary): string {
@@ -101,6 +110,7 @@ export function sourceProjectsFromSummaries(projects: ProjectSummary[], registry
         name: sourceName(project.projectPath, project.project),
         contributors: [],
         assignedProjectId: assignedProjectId(registry, id),
+        historicalOnly: false,
       })
     }
     const target = byId.get(id)!
@@ -110,6 +120,45 @@ export function sourceProjectsFromSummaries(projects: ProjectSummary[], registry
       else target.contributors.push({ sourceId: contributor.sourceId, routeIds: [...contributor.routeIds] })
     }
     target.contributors.sort((a, b) => a.sourceId.localeCompare(b.sourceId))
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function sourceProjectsFromDurableDays(days: DailyEntry[], registry: ProjectRegistry): SourceProjectDescriptor[] {
+  const byId = new Map<string, SourceProjectDescriptor>()
+  for (const day of days) {
+    for (const [projectKey, stats] of Object.entries(day.projects ?? {})) {
+      const id = sourceProjectIdForDurableProject(projectKey, stats.path)
+      if (byId.has(id)) continue
+      byId.set(id, {
+        id,
+        name: sourceName(stats.path ?? '', stats.path ? projectKey : durableProjectDisplayName(projectKey)),
+        contributors: [],
+        assignedProjectId: assignedProjectId(registry, id),
+        historicalOnly: true,
+      })
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function mergeSourceProjects(
+  live: SourceProjectDescriptor[],
+  historical: SourceProjectDescriptor[],
+): SourceProjectDescriptor[] {
+  const byId = new Map<string, SourceProjectDescriptor>()
+  for (const source of [...historical, ...live]) {
+    const existing = byId.get(source.id)
+    if (!existing) {
+      byId.set(source.id, { ...source, contributors: source.contributors.map(value => ({ ...value, routeIds: [...value.routeIds] })) })
+      continue
+    }
+    existing.historicalOnly = Boolean(existing.historicalOnly && source.historicalOnly)
+    for (const contributor of source.contributors) {
+      const current = existing.contributors.find(value => value.sourceId === contributor.sourceId)
+      if (current) current.routeIds = [...new Set([...current.routeIds, ...contributor.routeIds])].sort()
+      else existing.contributors.push({ sourceId: contributor.sourceId, routeIds: [...contributor.routeIds] })
+    }
   }
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -139,8 +188,12 @@ export function buildProjectScopePayload(
   registryStatus: ProjectScopePayload['registry']['status'],
   projects: ProjectSummary[],
   selectedId?: string | null,
+  historicalDays: DailyEntry[] = [],
 ): ProjectScopePayload {
-  const sourceProjects = sourceProjectsFromSummaries(projects, registry)
+  const sourceProjects = mergeSourceProjects(
+    sourceProjectsFromSummaries(projects, registry),
+    sourceProjectsFromDurableDays(historicalDays, registry),
+  )
   const options = projectScopeOptions(registry, sourceProjects)
   const requested = selectedId && options.some(option => option.id === selectedId) ? selectedId : ALL_PROJECTS_SCOPE_ID
   return {
@@ -182,7 +235,7 @@ function scopedProjectStats(
 ): Record<string, ProjectDayStats> {
   const result: Record<string, ProjectDayStats> = {}
   for (const [name, value] of Object.entries(stats ?? {})) {
-    const id = sourceProjectId(value.path ?? name, name)
+    const id = sourceProjectIdForDurableProject(name, value.path)
     if (includeSource(scopeId, assignedProjectId(registry, id))) result[name] = cloneStats(value)
   }
   return result
@@ -200,25 +253,41 @@ function sumStats(stats: Record<string, ProjectDayStats>): { cost: number; savin
   )
 }
 
-function scopedProviderSlice(slice: ProviderDaySlice, registry: ProjectRegistry, scopeId: ProjectScopeId): ProviderDaySlice {
+function scopedProviderSlice(
+  slice: ProviderDaySlice,
+  registry: ProjectRegistry,
+  scopeId: ProjectScopeId,
+  preserveDetailedBreakdown = false,
+): ProviderDaySlice {
   const projects = scopedProjectStats(slice.projects, registry, scopeId)
   const totals = sumStats(projects)
   return {
     ...slice,
     ...totals,
     projects,
-    // Daily caches do not retain model/category detail per Source Project. An
-    // empty detail is explicit unavailable data; it avoids assigning a whole
-    // day to every selected Project.
-    inputTokens: 0,
-    outputTokens: 0,
-    reasoningTokens: undefined,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    editTurns: 0,
-    oneShotTurns: 0,
-    models: {},
-    categories: {},
+    ...(preserveDetailedBreakdown ? {
+      inputTokens: slice.inputTokens,
+      outputTokens: slice.outputTokens,
+      reasoningTokens: slice.reasoningTokens,
+      cacheReadTokens: slice.cacheReadTokens,
+      cacheWriteTokens: slice.cacheWriteTokens,
+      editTurns: slice.editTurns,
+      oneShotTurns: slice.oneShotTurns,
+      models: slice.models ?? {},
+      categories: slice.categories ?? {},
+    } : {
+      // Daily caches do not retain model/category detail per Source Project.
+      // Empty detail is explicit unavailable data; it is never a factual zero.
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: undefined,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      editTurns: 0,
+      oneShotTurns: 0,
+      models: {},
+      categories: {},
+    }),
   }
 }
 
@@ -227,13 +296,14 @@ export function filterDailyEntryByMetroraScope(
   day: DailyEntry,
   registry: ProjectRegistry,
   scopeId?: ProjectScopeId | null,
+  options: { preserveDetailedBreakdown?: boolean } = {},
 ): DailyEntry {
   if (!scopeId || scopeId === ALL_PROJECTS_SCOPE_ID) return day
   const projects = scopedProjectStats(day.projects, registry, scopeId)
   const totals = sumStats(projects)
   const providers: Record<string, ProviderDaySlice> = {}
   for (const [provider, slice] of Object.entries(day.providers)) {
-    const scoped = scopedProviderSlice(slice, registry, scopeId)
+    const scoped = scopedProviderSlice(slice, registry, scopeId, options.preserveDetailedBreakdown === true)
     if (scoped.calls > 0 || (scoped.sessions ?? 0) > 0 || scoped.cost !== 0 || Object.keys(scoped.projects ?? {}).length > 0) providers[provider] = scoped
   }
   return {
@@ -241,15 +311,27 @@ export function filterDailyEntryByMetroraScope(
     ...totals,
     projects,
     providers,
-    inputTokens: 0,
-    outputTokens: 0,
-    reasoningTokens: undefined,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    editTurns: 0,
-    oneShotTurns: 0,
-    models: {},
-    categories: {},
+    ...(options.preserveDetailedBreakdown ? {
+      inputTokens: day.inputTokens,
+      outputTokens: day.outputTokens,
+      reasoningTokens: day.reasoningTokens,
+      cacheReadTokens: day.cacheReadTokens,
+      cacheWriteTokens: day.cacheWriteTokens,
+      editTurns: day.editTurns,
+      oneShotTurns: day.oneShotTurns,
+      models: day.models,
+      categories: day.categories,
+    } : {
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: undefined,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      editTurns: 0,
+      oneShotTurns: 0,
+      models: {},
+      categories: {},
+    }),
   }
 }
 

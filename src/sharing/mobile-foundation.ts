@@ -4,6 +4,7 @@ import type { MenubarPayload } from '../menubar-json.js'
 import type { ProjectSummary } from '../types.js'
 import { assignedProjectId, sourceProjectIdForSummary, type ProjectScopePayload } from '../project-scope.js'
 import type { ProjectRegistry } from '../project-registry.js'
+import type { DetailCoverageState, ProjectDetailCoverage } from '../project-coverage.js'
 import { buildCompanionCapabilitiesV1, type CompanionCapabilitiesV1, type CapabilityFreshness } from './capability-contract.js'
 
 export const MOBILE_FOUNDATION_KIND = 'metrora.companion.foundation' as const
@@ -37,6 +38,9 @@ export type MobileModelUsageV1 = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  canonicalIdentity?: string
+  rawModels?: string[]
+  semanticVariant?: string
 }
 
 export type MobileSpendV1 = {
@@ -50,6 +54,8 @@ export type MobileFoundationPayload = {
   kind: typeof MOBILE_FOUNDATION_KIND
   version: typeof MOBILE_FOUNDATION_VERSION
   generatedAt: string
+  periodLabel: string
+  trendGranularity?: string
   capabilities: CompanionCapabilitiesV1
   projectScope: ProjectScopePayload
   activity: {
@@ -58,7 +64,15 @@ export type MobileFoundationPayload = {
     sessions: MobileActivitySessionV1[]
   }
   analyze: {
-    models: { available: true; freshness: CapabilityFreshness; rows: MobileModelUsageV1[] }
+    models: {
+      available: boolean
+      freshness: CapabilityFreshness
+      coverage: DetailCoverageState
+      tokenCoverage: DetailCoverageState
+      historical: boolean
+      accountingCoverage: { cost: number | null; calls: number | null; tokenCost: number | null; tokenCalls: number | null }
+      rows: MobileModelUsageV1[]
+    }
     spend: { available: true; freshness: CapabilityFreshness; data: MobileSpendV1 }
   }
   workspace: { available: false; reason: 'no-authority' }
@@ -82,31 +96,32 @@ function sessionProjectName(project: ProjectSummary, scope: ProjectScopePayload)
   return source?.name ?? project.project.slice(0, 120)
 }
 
-function modelMetadata(payload: MenubarPayload): Map<string, { routeId?: string; sourceIds: string[]; brandId?: string }> {
-  const byName = new Map<string, { routeId?: string; sourceIds: string[]; brandId?: string }>()
-  for (const row of payload.current.modelAccounting?.rows ?? []) {
-    byName.set(row.name, {
-      ...(row.provider ? { routeId: row.provider } : {}),
-      sourceIds: [...(row.sourceProviders ?? [])].slice(0, 8),
-      ...(row.brandId ? { brandId: row.brandId } : {}),
-    })
-  }
-  for (const row of payload.current.topModels) {
-    if (!byName.has(row.name)) {
-      byName.set(row.name, {
-        ...(row.providerId ? { routeId: row.providerId } : {}),
-        sourceIds: [],
-        ...(row.brandId ? { brandId: row.brandId } : {}),
-      })
-    }
-  }
-  return byName
+function ratioCoverage(value: number | undefined, hasData: boolean): DetailCoverageState {
+  if (!hasData) return 'complete'
+  if (value === undefined || !Number.isFinite(value)) return 'unavailable'
+  if (value >= 0.999999) return 'complete'
+  return value > 0 ? 'partial' : 'unavailable'
+}
+
+function detailCoverage(payload: MenubarPayload): ProjectDetailCoverage {
+  const explicit = payload.current.projectDetailCoverage
+  if (explicit) return explicit
+  const accounting = payload.current.modelAccounting
+  const hasData = payload.current.cost > 0 || payload.current.calls > 0 || payload.current.sessions > 0
+  const models = accounting
+    ? ratioCoverage(Math.min(accounting.coverage.cost, accounting.coverage.calls), hasData)
+    : (hasData ? 'unavailable' : 'complete')
+  const tokens = accounting && accounting.rows.length > 0
+    ? ratioCoverage(Math.min(accounting.tokenCoverage.cost, accounting.tokenCoverage.calls), hasData)
+    : (hasData ? 'unavailable' : 'complete')
+  return { models, tokens, categories: hasData ? 'unavailable' : 'complete', historical: false }
 }
 
 export function buildMobileFoundationPayload(
   payload: MenubarPayload,
   projects: ProjectSummary[],
   registry: ProjectRegistry,
+  trendGranularity?: string,
 ): MobileFoundationPayload {
   const generatedAt = payload.generated
   const scope = payload.projectScope ?? {
@@ -154,13 +169,13 @@ export function buildMobileFoundationPayload(
   }
   activity.sort((a, b) => (b.costMicrosUsd - a.costMicrosUsd) || b.startedAt.localeCompare(a.startedAt))
 
-  const metadata = modelMetadata(payload)
+  const coverage = detailCoverage(payload)
+  const accounting = payload.current.modelAccounting
   const rows: MobileModelUsageV1[] = (payload.current.modelAccounting?.rows ?? []).slice(0, 32).map(row => {
-    const facts = metadata.get(row.name)
     return {
       name: row.name.slice(0, 160),
-      ...(facts?.routeId ? { routeId: facts.routeId } : {}),
-      sourceIds: [...(facts?.sourceIds ?? [])].slice(0, 8),
+      ...(row.provider ? { routeId: row.provider } : {}),
+      sourceIds: [...(row.sourceProviders ?? [])].slice(0, 8),
       ...(row.brandId ? { brandId: row.brandId } : {}),
       calls: safeNonNegative(row.calls),
       costMicrosUsd: micros(row.cost),
@@ -168,6 +183,9 @@ export function buildMobileFoundationPayload(
       outputTokens: safeNonNegative(row.outputTokens),
       cacheReadTokens: safeNonNegative(row.cacheReadTokens),
       cacheWriteTokens: safeNonNegative(row.cacheWriteTokens),
+      ...(row.canonicalIdentity ? { canonicalIdentity: row.canonicalIdentity.slice(0, 160) } : {}),
+      ...(row.rawModels && row.rawModels.length > 0 ? { rawModels: row.rawModels.slice(0, 8).map(value => value.slice(0, 160)) } : {}),
+      ...(row.semanticVariant ? { semanticVariant: row.semanticVariant.slice(0, 80) } : {}),
     }
   })
   const daily = payload.history.periodDaily ?? payload.history.daily
@@ -182,11 +200,26 @@ export function buildMobileFoundationPayload(
     kind: MOBILE_FOUNDATION_KIND,
     version: MOBILE_FOUNDATION_VERSION,
     generatedAt,
+    periodLabel: payload.current.label,
+    ...(trendGranularity === 'day' || trendGranularity === 'week' || trendGranularity === 'month' ? { trendGranularity } : {}),
     capabilities: buildCompanionCapabilitiesV1(generatedAt),
     projectScope: scope,
     activity: { available: true, freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached', sessions: activity },
     analyze: {
-      models: { available: true, freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached', rows },
+      models: {
+        available: coverage.models !== 'unavailable' || rows.length > 0,
+        freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached',
+        coverage: coverage.models,
+        tokenCoverage: coverage.tokens,
+        historical: coverage.historical,
+        accountingCoverage: {
+          cost: accounting?.coverage.cost ?? null,
+          calls: accounting?.coverage.calls ?? null,
+          tokenCost: accounting?.tokenCoverage.cost ?? null,
+          tokenCalls: accounting?.tokenCoverage.calls ?? null,
+        },
+        rows,
+      },
       spend: { available: true, freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached', data: spend },
     },
     workspace: { available: false, reason: 'no-authority' },

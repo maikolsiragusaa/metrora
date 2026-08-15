@@ -41,6 +41,7 @@ import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 import eu.metrora.app.data.AnalyzeModelUsage
 import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.data.MobileActivitySession
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectScopeOption
@@ -264,17 +265,32 @@ private fun AnalyzeModels(foundation: MobileFoundationSnapshot) {
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(6.dp))
-            if (foundation.analyzeModels.isEmpty()) {
+            if (foundation.analyzeModelsCoverage == DetailCoverage.PARTIAL) {
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.models_unavailable),
+                    text = androidx.compose.ui.res.stringResource(R.string.models_partial_project_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            val visibleModels = foundation.analyzeModels.takeIf { foundation.analyzeModelsCoverage != DetailCoverage.UNAVAILABLE }.orEmpty()
+            if (visibleModels.isEmpty()) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        if (foundation.analyzeModelsCoverage == DetailCoverage.UNAVAILABLE) {
+                            R.string.models_unavailable_project_detail
+                        } else {
+                            R.string.models_unavailable
+                        },
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 18.dp),
                 )
             } else {
-                foundation.analyzeModels.take(32).forEachIndexed { index, model ->
+                visibleModels.take(32).forEachIndexed { index, model ->
                     AnalyzeModelRow(model)
-                    if (index != foundation.analyzeModels.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                    if (index != visibleModels.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                 }
             }
         }

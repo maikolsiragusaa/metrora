@@ -141,7 +141,7 @@ export function ProjectManagement() {
           <div className="project-source-list">
             {[...assignedSources, ...unassignedSources].map(source => (
               <div className="project-source-row" key={source.id}>
-                <span className="tx">{source.name}<small>{source.contributors.map(contributor => contributor.sourceId).join(', ') || 'Unknown source'}</small></span>
+                <span className="tx">{source.name}<small>{source.historicalOnly ? 'Historical rollup · ' : ''}{source.contributors.map(contributor => contributor.sourceId).join(', ') || 'Unknown source'}</small></span>
                 <select className="set-input" aria-label={`Assign ${source.name}`} value={source.assignedProjectId ?? ''} disabled={busy || data?.registry.writable === false} onChange={event => assignmentChanged(source.id, event.target.value)}>
                   <option value="">Unassigned</option>
                   {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}

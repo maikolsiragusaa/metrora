@@ -4,6 +4,7 @@ import eu.metrora.app.data.ModelUsage
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.CostTrendPoint
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.data.DetailCoverage
 import java.time.Instant
 import java.time.LocalDate
 import org.json.JSONArray
@@ -59,6 +60,9 @@ internal object CompanionUsageV1Parser {
         }
 
         val quality = root.optJSONObject("quality")
+        val projectScope = root.optJSONObject("scope")
+        val projectDetailCoverage = quality?.optJSONObject("projectDetailCoverage")
+        val projectScopeId = projectScope?.optString("projectId", "all")?.trim()?.ifBlank { "all" } ?: "all"
         val trend = root.optJSONObject("trend")?.let { trendJson ->
             val granularity = trendJson.getString("granularity")
             require(granularity in SUPPORTED_TREND_GRANULARITIES) {
@@ -72,6 +76,7 @@ internal object CompanionUsageV1Parser {
         return UsageSnapshot(
             desktopId = credentials.serverFingerprint,
             desktopName = credentials.desktopName,
+            projectScopeId = projectScopeId,
             generatedAtEpochMs = Instant.parse(root.getString("generatedAt")).toEpochMilli(),
             periodLabel = period.getString("label").trim().ifBlank { "Selected period" }.take(120),
             costMicrosUsd = totals.nonNegativeLong("costMicrosUsd"),
@@ -85,6 +90,16 @@ internal object CompanionUsageV1Parser {
             topModels = topModels,
             models = models,
             pricingCoverage = quality?.nullableFraction("pricingCoverage"),
+            tokenCoverage = if (projectDetailCoverage == null && projectScopeId != "all") {
+                DetailCoverage.UNAVAILABLE
+            } else {
+                DetailCoverage.fromWire(projectDetailCoverage?.optString("tokens") ?: "complete")
+            },
+            modelCoverage = if (projectDetailCoverage == null && projectScopeId != "all") {
+                DetailCoverage.UNAVAILABLE
+            } else {
+                DetailCoverage.fromWire(projectDetailCoverage?.optString("models") ?: "complete")
+            },
             estimatedCostMicrosUsd = totals.nullableNonNegativeLong("estimatedCostMicrosUsd"),
             costTrend = trend?.buckets ?: emptyList(),
             costTrendGranularity = trend?.granularity ?: "day",

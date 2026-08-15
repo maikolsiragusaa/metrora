@@ -252,7 +252,6 @@ class MetroraCoordinator internal constructor(
 
         mutableState.update {
             it.copy(
-                selectedPeriod = period,
                 status = MetroraConnectionState.REFRESHING,
                 notice = null,
                 failure = null,
@@ -264,10 +263,10 @@ class MetroraCoordinator internal constructor(
                     credentials,
                     MetroraNotice.USAGE_REFRESHED,
                     allowOfflineFallback = true,
-                period = period,
-                trendGranularity = trendGranularity,
-                projectScopeId = projectScopeId,
-            )
+                    period = period,
+                    trendGranularity = trendGranularity,
+                    projectScopeId = projectScopeId,
+                )
             } catch (error: CancellationException) {
                 throw error
             } finally {
@@ -481,9 +480,19 @@ class MetroraCoordinator internal constructor(
             )
             return
         }
+        val persistedSnapshot = (snapshot as? StorageRead.Present<UsageSnapshot>)?.value
+            ?.takeIf { it.desktopId == credentials.serverFingerprint }
         val usableFoundation = when (foundation) {
             StorageRead.Missing -> null
-            is StorageRead.Present -> foundation.value.takeIf { it.desktopId == credentials.serverFingerprint }
+            is StorageRead.Present -> foundation.value.takeIf {
+                persistedSnapshot == null || foundationMatches(
+                    it,
+                    credentials,
+                    persistedSnapshot.projectScopeId,
+                    persistedSnapshot,
+                    requestedTrendGranularity = null,
+                )
+            }
             is StorageRead.Corrupted -> {
                 runCatching { store.clearFoundation() }
                 null
@@ -537,27 +546,42 @@ class MetroraCoordinator internal constructor(
         projectScopeId: String? = mutableState.value.selectedProjectId,
     ) {
         try {
-            val snapshot = api.fetchUsageForScope(credentials, period, trendGranularity, projectScopeId)
+            val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+            val snapshot = api.fetchUsageForScope(credentials, period, trendGranularity, requestedScopeId)
             currentCoroutineContext().ensureActive()
-            store.saveSnapshot(snapshot)
+            if (snapshot.desktopId != credentials.serverFingerprint || snapshot.projectScopeId != requestedScopeId) {
+                throw MetroraException(
+                    MetroraFailure(
+                        MetroraOperation.REFRESH,
+                        MetroraFailureCategory.MALFORMED_RESPONSE,
+                        MetroraFailureReason.MALFORMED_RESPONSE,
+                        "Desktop returned a usage scope that does not match the request",
+                    ),
+                )
+            }
             val current = mutableState.value
             val capabilities = optionalCapabilities(credentials, current.capabilities)
-            val foundation = optionalFoundation(
+            val foundation = resolveFoundation(
                 credentials = credentials,
                 period = period,
                 trendGranularity = trendGranularity,
-                projectScopeId = projectScopeId,
+                projectScopeId = requestedScopeId,
+                snapshot = snapshot,
                 fallback = current.foundation,
+                requestedTrendGranularity = trendGranularity,
             )
-            foundation?.takeIf { it.available }?.let { store.saveFoundation(it) }
+            currentCoroutineContext().ensureActive()
+            // Usage and foundation are committed together only after both have
+            // been proven to describe the same Desktop, period and Project.
+            store.saveSnapshotAndFoundation(snapshot, foundation)
             val selected = foundation?.projectScopeId
                 ?.takeIf { id -> id == "all" || foundation.projectOption(id) != null }
-                ?: projectScopeId
-                ?: "all"
+                ?: requestedScopeId
             mutableState.update {
                 it.copy(
                     initializing = false,
                     status = MetroraConnectionState.CONNECTED,
+                    selectedPeriod = period,
                     snapshot = snapshot,
                     foundation = foundation,
                     capabilities = capabilities,
@@ -590,19 +614,84 @@ class MetroraCoordinator internal constructor(
         fallback
     }
 
-    private suspend fun optionalFoundation(
+    private suspend fun resolveFoundation(
         credentials: PairingCredentials,
         period: String,
         trendGranularity: String?,
         projectScopeId: String?,
+        snapshot: UsageSnapshot,
         fallback: MobileFoundationSnapshot?,
+        requestedTrendGranularity: String?,
     ): MobileFoundationSnapshot? = try {
-        api.fetchFoundation(credentials, period, trendGranularity, projectScopeId).takeIf { it.available } ?: fallback
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        val compatibleFallback = fallback?.takeIf {
+            foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+        }
+        val candidate = api.fetchFoundation(credentials, period, trendGranularity, requestedScopeId)
+        when {
+            candidate.available && foundationMatches(candidate, credentials, requestedScopeId, snapshot, requestedTrendGranularity) -> candidate
+            compatibleFallback != null -> compatibleFallback
+            requestedScopeId == "all" -> null
+            else -> throw foundationScopeFailure()
+        }
     } catch (error: CancellationException) {
         throw error
-    } catch (_: Exception) {
-        fallback
+    } catch (error: MetroraException) {
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        if (fallback?.let {
+                foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+            } == true) {
+            fallback
+        } else if (requestedScopeId == "all") {
+            null
+        } else {
+            throw error
+        }
+    } catch (error: Exception) {
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        if (fallback?.let {
+                foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+            } == true) {
+            fallback
+        } else if (requestedScopeId == "all") {
+            null
+        } else {
+            throw MetroraException(
+                MetroraFailure(
+                    MetroraOperation.REFRESH,
+                    MetroraFailureCategory.CONNECTIVITY,
+                    MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+                    "Project-scoped foundation could not be refreshed",
+                ),
+                error,
+            )
+        }
     }
+
+    private fun foundationMatches(
+        foundation: MobileFoundationSnapshot,
+        credentials: PairingCredentials,
+        projectScopeId: String,
+        snapshot: UsageSnapshot,
+        requestedTrendGranularity: String?,
+    ): Boolean {
+        if (!foundation.available || foundation.desktopId != credentials.serverFingerprint) return false
+        if (foundation.projectScopeId != projectScopeId || snapshot.projectScopeId != projectScopeId) return false
+        if (foundation.periodLabel == "unknown" || foundation.periodLabel != snapshot.periodLabel) return false
+        return foundation.trendGranularity == snapshot.costTrendGranularity ||
+            (foundation.trendGranularity == null && requestedTrendGranularity == null && snapshot.costTrendGranularity == "day")
+    }
+
+    private fun foundationScopeFailure(): MetroraException = MetroraException(
+        MetroraFailure(
+            MetroraOperation.REFRESH,
+            MetroraFailureCategory.COMPATIBILITY,
+            MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+            "Project-scoped foundation is unavailable for this Desktop",
+        ),
+    )
+
+    private fun normalizedProjectScopeId(value: String?): String = value?.trim()?.takeIf { it.isNotEmpty() } ?: "all"
 
     private fun applyFailure(
         failure: MetroraFailure,

@@ -35,6 +35,17 @@ class SecureStore(context: Context) : MetroraStore {
         dataStore.edit { preferences -> preferences[SNAPSHOT_KEY] = encrypt(snapshot.toJson()) }
     }
 
+    override suspend fun saveSnapshotAndFoundation(snapshot: UsageSnapshot, foundation: MobileFoundationSnapshot?) {
+        dataStore.edit { preferences ->
+            preferences[SNAPSHOT_KEY] = encrypt(snapshot.toJson())
+            if (foundation == null) {
+                preferences.remove(FOUNDATION_KEY)
+            } else {
+                preferences[FOUNDATION_KEY] = encrypt(foundation.toJson())
+            }
+        }
+    }
+
     override suspend fun loadFoundation(): StorageRead<MobileFoundationSnapshot> =
         read(FOUNDATION_KEY) { raw -> MobileFoundationSnapshot.fromJson(raw) }
 

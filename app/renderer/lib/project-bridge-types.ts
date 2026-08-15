@@ -1,7 +1,7 @@
 export type ProjectScopePayload = {
   selectedId: string
   options: Array<{ id: string; name: string; icon: string; color: string; sourceProjectCount: number }>
-  sourceProjects: Array<{ id: string; name: string; contributors: Array<{ sourceId: string; routeIds: string[] }>; assignedProjectId: string | null }>
+  sourceProjects: Array<{ id: string; name: string; contributors: Array<{ sourceId: string; routeIds: string[] }>; assignedProjectId: string | null; historicalOnly?: boolean }>
   registry: { status: 'missing' | 'valid' | 'migrated' | 'corrupt'; writable: boolean }
 }
 

@@ -65,7 +65,10 @@ export function buildCompanionCapabilitiesV1(generatedAt = new Date().toISOStrin
       id,
       versions: [1],
       availability: available.has(id) ? 'available' : 'unavailable',
-      freshness: id === 'device.settings' ? 'live' : 'cached',
+      // Discovery reports support and scope. Instance freshness belongs to the
+      // domain envelope/foundation response, so discovery cannot claim cached
+      // or live data for a capability it has not fetched.
+      freshness: 'unknown',
       scopes: {
         period: id !== 'projects' && id !== 'device.settings',
         project: id !== 'device.settings',
