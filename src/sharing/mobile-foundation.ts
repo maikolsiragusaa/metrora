@@ -61,6 +61,7 @@ export type MobileFoundationPayload = {
   activity: {
     available: true
     freshness: CapabilityFreshness
+    coverage: DetailCoverageState
     sessions: MobileActivitySessionV1[]
   }
   analyze: {
@@ -117,6 +118,25 @@ function detailCoverage(payload: MenubarPayload): ProjectDetailCoverage {
   return { models, tokens, categories: hasData ? 'unavailable' : 'complete', historical: false }
 }
 
+function foundationFreshness(payload: MenubarPayload): CapabilityFreshness {
+  if (payload.freshness?.readMode === 'fresh') return 'live'
+  if (payload.freshness?.readMode === 'snapshot') return 'cached'
+  return 'unknown'
+}
+
+function activityTimestamp(value: string): number {
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+}
+
+function compareActivityNewestFirst(a: MobileActivitySessionV1, b: MobileActivitySessionV1): number {
+  const byTime = activityTimestamp(b.startedAt) - activityTimestamp(a.startedAt)
+  if (byTime !== 0) return byTime
+  const byTimestamp = b.startedAt.localeCompare(a.startedAt)
+  if (byTimestamp !== 0) return byTimestamp
+  return a.id.localeCompare(b.id)
+}
+
 export function buildMobileFoundationPayload(
   payload: MenubarPayload,
   projects: ProjectSummary[],
@@ -133,6 +153,7 @@ export function buildMobileFoundationPayload(
   const selectedScopeId = scope.selectedId
   const sourceName = new Map(scope.sourceProjects.map(source => [source.id, source.name]))
   const activity: MobileActivitySessionV1[] = []
+  const activitySessionCount = projects.reduce((total, project) => total + project.sessions.length, 0)
   for (const project of projects) {
     const sourceProjectId = sourceProjectIdForSummary(project)
     const projectId = assignedProjectId(registry, sourceProjectId) ?? 'unassigned'
@@ -145,7 +166,7 @@ export function buildMobileFoundationPayload(
         .filter(row => Object.keys(session.modelBreakdown).includes(row.name) && row.brandId)
         .map(row => row.brandId!))].sort().slice(0, 8)
       const date = session.firstTimestamp?.slice(0, 10) || 'unknown date'
-      activity.push({
+      const sessionProjection: MobileActivitySessionV1 = {
         id: stableSessionId(projectId, session.sessionId, session.firstTimestamp),
         projectId,
         sourceProjectId,
@@ -162,12 +183,21 @@ export function buildMobileFoundationPayload(
         turns: safeNonNegative(session.turns.length),
         startedAt: session.firstTimestamp,
         endedAt: session.lastTimestamp,
-      })
-      if (activity.length >= 128) break
+      }
+      let insertionIndex = 0
+      while (insertionIndex < activity.length && compareActivityNewestFirst(activity[insertionIndex], sessionProjection) <= 0) {
+        insertionIndex += 1
+      }
+      if (insertionIndex < 128) {
+        activity.splice(insertionIndex, 0, sessionProjection)
+        if (activity.length > 128) activity.pop()
+      }
     }
-    if (activity.length >= 128) break
   }
-  activity.sort((a, b) => (b.costMicrosUsd - a.costMicrosUsd) || b.startedAt.localeCompare(a.startedAt))
+  const accountedSessionCount = safeNonNegative(payload.current.sessions)
+  const activityCoverage: DetailCoverageState = activitySessionCount === 0
+    ? (accountedSessionCount > 0 ? 'unavailable' : 'complete')
+    : (activitySessionCount > 128 || activitySessionCount !== accountedSessionCount ? 'partial' : 'complete')
 
   const coverage = detailCoverage(payload)
   const accounting = payload.current.modelAccounting
@@ -204,11 +234,11 @@ export function buildMobileFoundationPayload(
     ...(trendGranularity === 'day' || trendGranularity === 'week' || trendGranularity === 'month' ? { trendGranularity } : {}),
     capabilities: buildCompanionCapabilitiesV1(generatedAt),
     projectScope: scope,
-    activity: { available: true, freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached', sessions: activity },
+    activity: { available: true, freshness: foundationFreshness(payload), coverage: activityCoverage, sessions: activity },
     analyze: {
       models: {
         available: coverage.models !== 'unavailable' || rows.length > 0,
-        freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached',
+        freshness: foundationFreshness(payload),
         coverage: coverage.models,
         tokenCoverage: coverage.tokens,
         historical: coverage.historical,
@@ -220,7 +250,7 @@ export function buildMobileFoundationPayload(
         },
         rows,
       },
-      spend: { available: true, freshness: payload.freshness?.readMode === 'fresh' ? 'live' : 'cached', data: spend },
+      spend: { available: true, freshness: foundationFreshness(payload), data: spend },
     },
     workspace: { available: false, reason: 'no-authority' },
   }

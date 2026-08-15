@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 import eu.metrora.app.data.AnalyzeModelUsage
+import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.data.MobileActivitySession
@@ -144,13 +145,17 @@ internal fun ActivitySurface(state: MetroraUiState) {
         if (foundation == null || !capabilities.isAvailable("activity.sessions")) {
             UnavailableSurface(R.string.activity_unavailable_title, R.string.activity_unavailable_body)
         } else {
-            ActivityList(foundation.activitySessions)
+            ActivityList(foundation.activitySessions, foundation.activityCoverage, foundation.activityFreshness)
         }
     }
 }
 
 @Composable
-private fun ActivityList(sessions: List<MobileActivitySession>) {
+private fun ActivityList(
+    sessions: List<MobileActivitySession>,
+    coverage: DetailCoverage,
+    freshness: CapabilityFreshness,
+) {
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -168,9 +173,20 @@ private fun ActivityList(sessions: List<MobileActivitySession>) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            DomainFreshnessNote(freshness)
+            if (coverage == DetailCoverage.PARTIAL) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(R.string.activity_partial_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 5.dp),
+                )
+            }
             if (sessions.isEmpty()) {
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.activity_empty),
+                    text = androidx.compose.ui.res.stringResource(
+                        if (coverage == DetailCoverage.UNAVAILABLE) R.string.activity_unavailable_detail else R.string.activity_empty,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 20.dp),
@@ -246,7 +262,7 @@ internal fun AnalyzeSurface(state: MetroraUiState) {
         if (foundation == null || !capabilities.isAvailable("analyze.spend") || foundation.spend == null) {
             UnavailableSurface(R.string.spend_unavailable_title, R.string.spend_unavailable_body)
         } else {
-            SpendSurface(foundation.spend)
+            SpendSurface(foundation.spend, foundation.analyzeSpendFreshness)
         }
     }
 }
@@ -264,6 +280,7 @@ private fun AnalyzeModels(foundation: MobileFoundationSnapshot) {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            DomainFreshnessNote(foundation.analyzeModelsFreshness)
             Spacer(Modifier.height(6.dp))
             if (foundation.analyzeModelsCoverage == DetailCoverage.PARTIAL) {
                 Text(
@@ -336,7 +353,10 @@ private fun AnalyzeModelRow(model: AnalyzeModelUsage) {
 }
 
 @Composable
-private fun SpendSurface(spend: eu.metrora.app.data.MobileSpendSummary) {
+private fun SpendSurface(
+    spend: eu.metrora.app.data.MobileSpendSummary,
+    freshness: CapabilityFreshness,
+) {
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -348,6 +368,7 @@ private fun SpendSurface(spend: eu.metrora.app.data.MobileSpendSummary) {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            DomainFreshnessNote(freshness)
             Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                 MetricValue(androidx.compose.ui.res.stringResource(R.string.cost), formatFoundationUsd(spend.costMicrosUsd))
                 MetricValue(androidx.compose.ui.res.stringResource(R.string.calls), spend.calls.toString())
@@ -368,6 +389,22 @@ private fun SpendSurface(spend: eu.metrora.app.data.MobileSpendSummary) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DomainFreshnessNote(freshness: CapabilityFreshness) {
+    val resource = when (freshness) {
+        CapabilityFreshness.LIVE -> null
+        CapabilityFreshness.CACHED -> R.string.domain_cached_detail
+        CapabilityFreshness.UNKNOWN -> R.string.domain_freshness_unknown
+    }
+    if (resource != null) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(resource),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

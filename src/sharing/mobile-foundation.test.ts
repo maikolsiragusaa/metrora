@@ -105,6 +105,32 @@ function project(): ProjectSummary {
   } as unknown as ProjectSummary
 }
 
+function bulkProject(name: string, path: string, count: number, start: string): ProjectSummary {
+  const startMs = Date.parse(start)
+  return {
+    project: name,
+    projectPath: path,
+    totalCostUSD: count,
+    totalSavingsUSD: 0,
+    totalApiCalls: count,
+    totalProxiedCostUSD: 0,
+    sessions: Array.from({ length: count }, (_, index) => {
+      const timestamp = new Date(startMs + index * 60_000).toISOString()
+      return {
+        sessionId: `${name}-session-${index}`,
+        project: name,
+        firstTimestamp: timestamp,
+        lastTimestamp: new Date(Date.parse(timestamp) + 30_000).toISOString(),
+        totalCostUSD: 1,
+        totalSavingsUSD: 0,
+        apiCalls: 1,
+        turns: [],
+        modelBreakdown: {},
+      }
+    }),
+  } as unknown as ProjectSummary
+}
+
 describe('Mobile Foundation V1 projection', () => {
   it('stays content-minimal and carries Project scope/provenance identities', () => {
     const result = buildMobileFoundationPayload(payload(), [project()], registry('sp_source'))
@@ -113,6 +139,8 @@ describe('Mobile Foundation V1 projection', () => {
     expect(result.projectScope.selectedId).toBe('mp_metrora')
     expect(result.activity.sessions[0]?.title).toMatch(/^Session · /)
     expect(result.activity.sessions[0]?.sourceProjectName).toBe('metrora')
+    expect(result.activity.coverage).toBe('complete')
+    expect(result.activity.freshness).toBe('unknown')
     expect(result.activity.sessions[0]).not.toHaveProperty('prompt')
     expect(result.workspace).toEqual({ available: false, reason: 'no-authority' })
   })
@@ -135,5 +163,23 @@ describe('Mobile Foundation V1 projection', () => {
     expect(result.analyze.models.tokenCoverage).toBe('partial')
     expect(result.analyze.models.historical).toBe(false)
     expect(result.analyze.models.accountingCoverage).toEqual({ cost: 1, calls: 1, tokenCost: 0.75, tokenCalls: 0.5 })
+  })
+
+  it('selects a globally newest-first bounded Activity projection across Projects', () => {
+    const older = bulkProject('older', '/work/older', 80, '2026-08-01T00:00:00.000Z')
+    const newer = bulkProject('newer', '/work/newer', 80, '2026-08-03T00:00:00.000Z')
+    const scopedPayload = payload()
+    scopedPayload.current.sessions = 160
+
+    const result = buildMobileFoundationPayload(scopedPayload, [older, newer], registry('sp_source'))
+
+    expect(result.activity.sessions).toHaveLength(128)
+    expect(result.activity.coverage).toBe('partial')
+    expect(result.activity.sessions.slice(0, 80).every(session => session.sourceProjectName === 'newer')).toBe(true)
+    expect(result.activity.sessions.slice(80).every(session => session.sourceProjectName === 'older')).toBe(true)
+    expect(result.activity.sessions).toEqual([...result.activity.sessions].sort((a, b) => {
+      const byTime = Date.parse(b.startedAt) - Date.parse(a.startedAt)
+      return byTime || b.startedAt.localeCompare(a.startedAt) || a.id.localeCompare(b.id)
+    }))
   })
 })

@@ -65,7 +65,7 @@ export async function buildCompanionFoundation(
       : {}),
     capabilities: buildCompanionCapabilitiesV1(payload.generated),
     projectScope: payload.projectScope,
-    activity: { available: true, freshness: 'unknown', sessions: [] },
+    activity: { available: true, freshness: 'unknown', coverage: 'unavailable', sessions: [] },
     analyze: {
       models: {
         available: false,

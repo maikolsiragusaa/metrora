@@ -1,6 +1,7 @@
 package eu.metrora.app.network
 
 import eu.metrora.app.data.CapabilityAvailability
+import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.PairingCredentials
@@ -23,9 +24,13 @@ class CompanionFoundationV1ParserTest {
         assertEquals("metrora", snapshot.sourceProjects.single().name)
         assertTrue(snapshot.sourceProjects.single().historicalOnly)
         assertEquals("Session · 2026-08-14", snapshot.activitySessions.single().title)
+        assertEquals(CapabilityFreshness.CACHED, snapshot.activityFreshness)
+        assertEquals(DetailCoverage.PARTIAL, snapshot.activityCoverage)
         assertEquals("openai", snapshot.analyzeModels.single().brandId)
+        assertEquals(CapabilityFreshness.CACHED, snapshot.analyzeModelsFreshness)
         assertEquals(DetailCoverage.PARTIAL, snapshot.analyzeModelsCoverage)
         assertEquals(DetailCoverage.UNAVAILABLE, snapshot.analyzeTokensCoverage)
+        assertEquals(CapabilityFreshness.CACHED, snapshot.analyzeSpendFreshness)
         assertEquals("This month", snapshot.periodLabel)
         assertEquals(1, snapshot.spend?.trend?.size)
         assertTrue(snapshot.capabilities.isAvailable("activity.sessions"))
@@ -41,11 +46,30 @@ class CompanionFoundationV1ParserTest {
         assertEquals(original.desktopId, restored.desktopId)
         assertEquals(original.projectOptions, restored.projectOptions)
         assertEquals(original.activitySessions, restored.activitySessions)
+        assertEquals(original.activityFreshness, restored.activityFreshness)
+        assertEquals(original.activityCoverage, restored.activityCoverage)
         assertEquals(original.analyzeModels, restored.analyzeModels)
+        assertEquals(original.analyzeModelsFreshness, restored.analyzeModelsFreshness)
         assertEquals(original.analyzeModelsCoverage, restored.analyzeModelsCoverage)
         assertEquals(original.analyzeTokensCoverage, restored.analyzeTokensCoverage)
         assertEquals(original.sourceProjects, restored.sourceProjects)
         assertEquals(original.spend, restored.spend)
+        assertEquals(original.analyzeSpendFreshness, restored.analyzeSpendFreshness)
+    }
+
+    @Test
+    fun legacyFoundationWithoutDomainFreshnessFailsSafeToUnknown() {
+        val legacy = foundationJson()
+            .replace("\"freshness\":\"cached\",", "")
+            .replace("\"coverage\":\"partial\",", "")
+        val snapshot = CompanionFoundationV1Parser.parse(legacy, credentials())
+
+        assertEquals(CapabilityFreshness.UNKNOWN, snapshot.activityFreshness)
+        assertEquals(CapabilityFreshness.UNKNOWN, snapshot.analyzeModelsFreshness)
+        assertEquals(CapabilityFreshness.UNKNOWN, snapshot.analyzeSpendFreshness)
+        assertEquals(DetailCoverage.PARTIAL, snapshot.analyzeModelsCoverage)
+        assertFalse(MobileFoundationSnapshot.unavailable(credentials().serverFingerprint, "mp_project").available)
+        assertEquals(CapabilityFreshness.UNKNOWN, MobileFoundationSnapshot.unavailable().activityFreshness)
     }
 
     @Test
@@ -93,7 +117,7 @@ class CompanionFoundationV1ParserTest {
               {"id":"workspace","versions":[1],"availability":"unavailable","freshness":"unknown","scopes":{"period":false,"project":false,"workspace":false},"reason":"no-authority"}
             ]
           },
-          "activity":{"available":true,"freshness":"cached","sessions":[
+          "activity":{"available":true,"freshness":"cached","coverage":"partial","sessions":[
             {"id":"sessionhash","projectId":"mp_project","sourceProjectId":"sp_source","sourceProjectName":"metrora","title":"Session · 2026-08-14","sourceIds":["codex"],"routeIds":["openai"],"brandIds":["openai"],"models":["gpt-test"],"costMicrosUsd":1250000,"calls":2,"turns":1,"startedAt":"2026-08-14T09:00:00.000Z","endedAt":"2026-08-14T09:01:00.000Z"}
           ]},
           "analyze":{"models":{"available":true,"freshness":"cached","coverage":"partial","tokenCoverage":"unavailable","historical":true,"rows":[

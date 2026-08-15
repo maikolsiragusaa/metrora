@@ -31,6 +31,11 @@ enum class CapabilityFreshness {
     UNKNOWN,
 }
 
+private fun CapabilityFreshness.asLocallyCached(): CapabilityFreshness = when (this) {
+    CapabilityFreshness.LIVE, CapabilityFreshness.CACHED -> CapabilityFreshness.CACHED
+    CapabilityFreshness.UNKNOWN -> CapabilityFreshness.UNKNOWN
+}
+
 enum class DetailCoverage {
     COMPLETE,
     PARTIAL,
@@ -244,12 +249,16 @@ data class MobileFoundationSnapshot(
     val sourceProjects: List<SourceProjectSummary>,
     val capabilities: CapabilityDiscovery,
     val activitySessions: List<MobileActivitySession>,
+    val activityFreshness: CapabilityFreshness = CapabilityFreshness.UNKNOWN,
+    val activityCoverage: DetailCoverage = DetailCoverage.UNAVAILABLE,
     val analyzeModels: List<AnalyzeModelUsage>,
+    val analyzeModelsFreshness: CapabilityFreshness = CapabilityFreshness.UNKNOWN,
     val analyzeModelsCoverage: DetailCoverage = DetailCoverage.COMPLETE,
     val analyzeTokensCoverage: DetailCoverage = DetailCoverage.COMPLETE,
     val analyzeHistoricalDetail: Boolean = false,
     val analyzeAccountingCoverage: AnalyzeAccountingCoverage? = null,
     val spend: MobileSpendSummary?,
+    val analyzeSpendFreshness: CapabilityFreshness = CapabilityFreshness.UNKNOWN,
     val workspaceAvailable: Boolean,
     val periodLabel: String = "unknown",
     val trendGranularity: String? = null,
@@ -272,6 +281,16 @@ data class MobileFoundationSnapshot(
 
     fun projectOption(id: String): ProjectScopeOption? = projectOptions.firstOrNull { it.id == id }
 
+    /** Marks a same-scope local fallback as cached without inventing freshness for unknown data. */
+    fun asLocallyCached(): MobileFoundationSnapshot = copy(
+        capabilities = capabilities.copy(
+            capabilities = capabilities.capabilities.map { it.copy(freshness = it.freshness.asLocallyCached()) },
+        ),
+        activityFreshness = activityFreshness.asLocallyCached(),
+        analyzeModelsFreshness = analyzeModelsFreshness.asLocallyCached(),
+        analyzeSpendFreshness = analyzeSpendFreshness.asLocallyCached(),
+    )
+
     companion object {
         fun unavailable(desktopId: String = "", projectScopeId: String = "all"): MobileFoundationSnapshot = MobileFoundationSnapshot(
             desktopId = desktopId,
@@ -282,7 +301,10 @@ data class MobileFoundationSnapshot(
             sourceProjects = emptyList(),
             capabilities = CapabilityDiscovery.unavailable(),
             activitySessions = emptyList(),
+            activityFreshness = CapabilityFreshness.UNKNOWN,
+            activityCoverage = DetailCoverage.UNAVAILABLE,
             analyzeModels = emptyList(),
+            analyzeModelsFreshness = CapabilityFreshness.UNKNOWN,
             analyzeModelsCoverage = DetailCoverage.UNAVAILABLE,
             analyzeTokensCoverage = DetailCoverage.UNAVAILABLE,
             spend = null,
@@ -313,16 +335,25 @@ data class MobileFoundationSnapshot(
             val analyze = root.optJSONObject("analyze")
             val modelsObject = analyze?.optJSONObject("models")
             val models = modelsObject?.optJSONArray("rows")?.let(::parseModels) ?: emptyList()
+            val activitySessions = activity?.optJSONArray("sessions")?.let(::parseActivity) ?: emptyList()
             val selectedScopeId = projects.optString("selectedId", "all").trim().ifBlank { "all" }
+            val activityCoverage = if (activity?.has("coverage") == true) {
+                DetailCoverage.fromWire(activity.optString("coverage"))
+            } else if (activitySessions.isNotEmpty()) {
+                // Older payloads had bounded rows but no completeness signal.
+                DetailCoverage.PARTIAL
+            } else {
+                DetailCoverage.UNAVAILABLE
+            }
             val legacyModelCoverage = if (modelsObject?.has("coverage") == true) {
                 DetailCoverage.fromWire(modelsObject.optString("coverage"))
             } else {
-                if (selectedScopeId == "all" && models.isNotEmpty()) DetailCoverage.COMPLETE else DetailCoverage.UNAVAILABLE
+                if (models.isNotEmpty()) DetailCoverage.PARTIAL else DetailCoverage.UNAVAILABLE
             }
             val legacyTokenCoverage = if (modelsObject?.has("tokenCoverage") == true) {
                 DetailCoverage.fromWire(modelsObject.optString("tokenCoverage"))
             } else {
-                if (selectedScopeId == "all" && models.isNotEmpty()) DetailCoverage.COMPLETE else DetailCoverage.UNAVAILABLE
+                if (models.isNotEmpty()) DetailCoverage.PARTIAL else DetailCoverage.UNAVAILABLE
             }
             val accountingCoverage = modelsObject?.optJSONObject("accountingCoverage")?.let { value ->
                 AnalyzeAccountingCoverage(
@@ -341,13 +372,17 @@ data class MobileFoundationSnapshot(
                 projectOptions = projectOptions,
                 sourceProjects = sourceProjects,
                 capabilities = capabilities,
-                activitySessions = activity?.optJSONArray("sessions")?.let(::parseActivity) ?: emptyList(),
+                activitySessions = activitySessions,
+                activityFreshness = parseFreshness(activity),
+                activityCoverage = activityCoverage,
                 analyzeModels = models,
+                analyzeModelsFreshness = parseFreshness(modelsObject),
                 analyzeModelsCoverage = legacyModelCoverage,
                 analyzeTokensCoverage = legacyTokenCoverage,
                 analyzeHistoricalDetail = modelsObject?.optBoolean("historical", false) == true,
                 analyzeAccountingCoverage = accountingCoverage,
                 spend = spend,
+                analyzeSpendFreshness = parseFreshness(analyze?.optJSONObject("spend")),
                 workspaceAvailable = root.optJSONObject("workspace")?.optBoolean("available", false) == true,
                 periodLabel = root.optString("periodLabel", "unknown").trim().ifBlank { "unknown" },
                 trendGranularity = root.optNullableString("trendGranularity"),
@@ -433,6 +468,14 @@ data class MobileFoundationSnapshot(
                 generatedAt = root.optString("generatedAt", "unknown"),
                 capabilities = capabilities,
             )
+        }
+
+        private fun parseFreshness(value: JSONObject?): CapabilityFreshness = when (
+            value?.optString("freshness")?.trim()?.lowercase()
+        ) {
+            "live" -> CapabilityFreshness.LIVE
+            "cached" -> CapabilityFreshness.CACHED
+            else -> CapabilityFreshness.UNKNOWN
         }
 
         private fun parseActivity(array: JSONArray): List<MobileActivitySession> = buildList {
@@ -590,9 +633,14 @@ data class MobileFoundationSnapshot(
             .putOpt("trendGranularity", trendGranularity)
             .put("projectScope", JSONObject().put("selectedId", projectScopeId).put("options", optionJson).put("sourceProjects", sourceJson))
             .put("capabilities", capabilityJson)
-            .put("activity", JSONObject().put("available", activitySessions.isNotEmpty() || available).put("sessions", activityJson))
+            .put("activity", JSONObject()
+                .put("available", activitySessions.isNotEmpty() || available)
+                .put("freshness", activityFreshness.name.lowercase())
+                .put("coverage", DetailCoverage.toWire(activityCoverage))
+                .put("sessions", activityJson))
             .put("analyze", JSONObject().put("models", JSONObject()
                 .put("available", analyzeModels.isNotEmpty() || available)
+                .put("freshness", analyzeModelsFreshness.name.lowercase())
                 .put("coverage", DetailCoverage.toWire(analyzeModelsCoverage))
                 .put("tokenCoverage", DetailCoverage.toWire(analyzeTokensCoverage))
                 .put("historical", analyzeHistoricalDetail)
@@ -600,7 +648,10 @@ data class MobileFoundationSnapshot(
                     JSONObject().putOpt("cost", value.cost).putOpt("calls", value.calls).putOpt("tokenCost", value.tokenCost).putOpt("tokenCalls", value.tokenCalls)
                 })
                 .put("rows", modelJson))
-                .put("spend", JSONObject().put("available", spend != null).putOpt("data", spendJson)))
+                .put("spend", JSONObject()
+                    .put("available", spend != null)
+                    .put("freshness", analyzeSpendFreshness.name.lowercase())
+                    .putOpt("data", spendJson)))
             .put("workspace", JSONObject().put("available", workspaceAvailable).putOpt("reason", if (workspaceAvailable) null else "no-authority"))
             .put("available", available)
             .toString()

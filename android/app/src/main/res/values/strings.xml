@@ -133,12 +133,16 @@
     <string name="activity_empty">No bounded session rows are available for this Project and period.</string>
     <string name="activity_unavailable_title">Activity is unavailable</string>
     <string name="activity_unavailable_body">This Desktop does not advertise a compatible Sessions projection. Home and Usage remain available when supported.</string>
+    <string name="activity_partial_detail">Available session evidence · partial historical session detail.</string>
+    <string name="activity_unavailable_detail">Session detail is unavailable for this Project and period.</string>
     <string name="analyze_models_title">Models</string>
     <string name="analyze_unavailable_title">Models are unavailable</string>
     <string name="analyze_unavailable_body">This Desktop does not advertise a compatible Models projection for the selected Project scope.</string>
     <string name="models_partial_project_detail">Partial historical model detail. Rows shown are available evidence, not a total for the full period.</string>
     <string name="models_unavailable_project_detail">Model detail is unavailable for this Project and period. Cost, calls and sessions remain separate accounting facts.</string>
     <string name="provenance_unavailable">Provenance unavailable</string>
+    <string name="domain_cached_detail">Saved domain detail · not refreshed in this session.</string>
+    <string name="domain_freshness_unknown">Domain freshness unavailable.</string>
     <string name="spend_trend_title">Spend trend</string>
     <string name="spend_unavailable_title">Spend analysis is unavailable</string>
     <string name="spend_unavailable_body">This Desktop did not provide a bounded Spend projection for the selected Project scope.</string>

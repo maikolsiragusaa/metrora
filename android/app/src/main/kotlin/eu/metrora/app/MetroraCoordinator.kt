@@ -630,7 +630,7 @@ class MetroraCoordinator internal constructor(
         val candidate = api.fetchFoundation(credentials, period, trendGranularity, requestedScopeId)
         when {
             candidate.available && foundationMatches(candidate, credentials, requestedScopeId, snapshot, requestedTrendGranularity) -> candidate
-            compatibleFallback != null -> compatibleFallback
+            compatibleFallback != null -> compatibleFallback.asLocallyCached()
             requestedScopeId == "all" -> null
             else -> throw foundationScopeFailure()
         }
@@ -639,9 +639,9 @@ class MetroraCoordinator internal constructor(
     } catch (error: MetroraException) {
         val requestedScopeId = normalizedProjectScopeId(projectScopeId)
         if (fallback?.let {
-                foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+            foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
             } == true) {
-            fallback
+            fallback.asLocallyCached()
         } else if (requestedScopeId == "all") {
             null
         } else {
@@ -650,9 +650,9 @@ class MetroraCoordinator internal constructor(
     } catch (error: Exception) {
         val requestedScopeId = normalizedProjectScopeId(projectScopeId)
         if (fallback?.let {
-                foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+            foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
             } == true) {
-            fallback
+            fallback.asLocallyCached()
         } else if (requestedScopeId == "all") {
             null
         } else {

@@ -2,6 +2,7 @@ package eu.metrora.app
 
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.MobileSpendSummary
 import eu.metrora.app.data.ProjectScopeOption
@@ -160,8 +161,36 @@ class MetroraCoordinatorTest {
 
         assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
         assertEquals("mp_a", coordinator.state.value.snapshot?.projectScopeId)
-        assertEquals(foundationA, coordinator.state.value.foundation)
-        assertEquals(foundationA, store.foundation)
+        assertEquals(foundationA.asLocallyCached(), coordinator.state.value.foundation)
+        assertEquals(foundationA.asLocallyCached(), store.foundation)
+        assertEquals(CapabilityFreshness.CACHED, coordinator.state.value.foundation?.activityFreshness)
+        assertEquals(CapabilityFreshness.CACHED, coordinator.state.value.foundation?.analyzeModelsFreshness)
+        assertEquals(CapabilityFreshness.CACHED, coordinator.state.value.foundation?.analyzeSpendFreshness)
+        coordinator.close()
+    }
+
+    @Test
+    fun fresh_foundation_success_preserves_server_domain_freshness() = runTest {
+        val snapshot = testSnapshot(projectScopeId = "mp_a")
+        val foundation = testFoundation("mp_a").copy(
+            activityFreshness = CapabilityFreshness.CACHED,
+            analyzeModelsFreshness = CapabilityFreshness.LIVE,
+            analyzeSpendFreshness = CapabilityFreshness.UNKNOWN,
+        )
+        val store = FakeStore(testCredentials(), snapshot)
+        val api = FakeApi().apply {
+            scopedResults["mp_a"] = snapshot.copy(retrievedAtEpochMs = 1_700_000_005_000L)
+            foundationResult = foundation
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(projectScopeId = "mp_a")
+        advanceUntilIdle()
+
+        assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
+        assertEquals(foundation, coordinator.state.value.foundation)
+        assertEquals(foundation, store.foundation)
         coordinator.close()
     }
 
@@ -348,8 +377,12 @@ private fun testFoundation(projectScopeId: String): MobileFoundationSnapshot = M
     sourceProjects = emptyList(),
     capabilities = CapabilityDiscovery.unavailable(),
     activitySessions = emptyList(),
+    activityFreshness = CapabilityFreshness.LIVE,
+    activityCoverage = eu.metrora.app.data.DetailCoverage.COMPLETE,
     analyzeModels = emptyList(),
+    analyzeModelsFreshness = CapabilityFreshness.LIVE,
     spend = MobileSpendSummary(0L, 0L, 0L, emptyList()),
+    analyzeSpendFreshness = CapabilityFreshness.LIVE,
     workspaceAvailable = false,
     periodLabel = "This month",
 )
