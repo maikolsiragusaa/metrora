@@ -35,6 +35,9 @@ class MetroraCoordinatorTest {
         advanceUntilIdle()
         assertEquals(MetroraConnectionState.VERIFYING_SAS, coordinator.state.value.status)
         assertEquals("123456", coordinator.state.value.pairingCode)
+        // The request is already visible to Desktop while the phone asks the
+        // user to compare the code; confirmation is not the request trigger.
+        assertEquals(1, api.pairCount.get())
 
         coordinator.confirmPairingCode()
         advanceUntilIdle()
@@ -303,6 +306,7 @@ private class FakeApi : MetroraApi {
     var fetchFailure: MetroraException? = null
     var revokeFailure: MetroraException? = null
     var identityMatches = true
+    val pairCount = AtomicInteger()
     val fetchCount = AtomicInteger()
 
     override suspend fun discover(host: String, port: Int): DiscoveredDesktop = desktop
@@ -313,7 +317,10 @@ private class FakeApi : MetroraApi {
         desktop: DiscoveredDesktop,
         expectedCode: String,
         deviceName: String,
-    ): PairingCredentials = pairingResult?.await() ?: testCredentials()
+    ): PairingCredentials {
+        pairCount.incrementAndGet()
+        return pairingResult?.await() ?: testCredentials()
+    }
 
     override suspend fun fetchUsage(credentials: PairingCredentials, period: String): UsageSnapshot {
         fetchCount.incrementAndGet()

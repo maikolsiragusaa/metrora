@@ -140,4 +140,62 @@ describe('CompanionUsageV1', () => {
     })
     expect(legacyPayload.trend).toBeUndefined()
   })
+
+  it('aggregates the complete selected range at a bounded period-appropriate granularity', () => {
+    const allDaily = Array.from({ length: 179 }, (_, index) => {
+      const date = new Date('2026-02-18T00:00:00.000Z')
+      date.setUTCDate(date.getUTCDate() + index)
+      return { date: date.toISOString().slice(0, 10), cost: 0.01, topModels: [] }
+    })
+    const all = toCompanionUsageV1(
+      {
+        generated: '2026-08-15T10:30:00.000Z',
+        current: { label: 'Last 6 months', cost: 2.2, topModels: [] },
+        history: { periodDaily: allDaily, daily: allDaily.slice(-31) },
+      },
+      { period: 'all' },
+    )
+
+    expect(all.trend?.granularity).toBe('week')
+    expect(all.trend?.buckets[0]?.date).toBe('2026-02-16')
+    expect(all.trend?.buckets.at(-1)?.date).toBe('2026-08-10')
+    expect(all.trend?.buckets.reduce((sum, bucket) => sum + bucket.costMicrosUsd, 0)).toBe(1_790_000)
+
+    const lifetimeDaily = Array.from({ length: 220 }, (_, index) => {
+      const date = new Date('2026-01-01T00:00:00.000Z')
+      date.setUTCDate(date.getUTCDate() + index)
+      return { date: date.toISOString().slice(0, 10), cost: 0.01, topModels: [] }
+    })
+
+    const lifetime = toCompanionUsageV1(
+      {
+        generated: '2026-08-15T10:30:00.000Z',
+        current: { label: 'Lifetime', cost: 4, topModels: [] },
+        history: { periodDaily: lifetimeDaily },
+      },
+      { period: 'lifetime' },
+    )
+    expect(lifetime.trend?.granularity).toBe('month')
+    expect(lifetime.trend?.buckets[0]).toEqual({ date: '2026-01-01', costMicrosUsd: 310_000 })
+    expect(lifetime.trend?.buckets.at(-1)).toEqual({ date: '2026-08-01', costMicrosUsd: 80_000 })
+  })
+
+  it('carries factual provider identity and a bounded full model breakdown', () => {
+    const payload = toCompanionUsageV1({
+      generated: '2026-08-15T10:30:00.000Z',
+      current: {
+        label: 'This month',
+        topModels: [{ name: 'GPT-5.6 Sol', providerId: 'provider-a', calls: 2, cost: 1 }],
+        modelAccounting: {
+          rows: [
+            { name: 'GPT-5.6 Sol', provider: 'provider-a', calls: 2, cost: 1 },
+            { name: 'GPT-5.6 Sol', provider: 'provider-b', calls: 1, cost: 0.5 },
+          ],
+        },
+      },
+    })
+
+    expect(payload.topModels[0]?.providerId).toBe('provider-a')
+    expect(payload.models?.map(model => model.providerId)).toEqual(['provider-a', 'provider-b'])
+  })
 })

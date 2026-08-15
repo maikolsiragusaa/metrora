@@ -7,10 +7,10 @@ import org.junit.Test
 class PairingBootstrapTest {
     @Test
     fun parses_bounded_metrora_connection_payload() {
-        val endpoint = PairingBootstrap.parse("metrora://connect?host=desktop.local&port=7788")
+        val endpoint = PairingBootstrap.parse("metrora://connect?host=desktop.local&port=7777")
 
         assertEquals("desktop.local", endpoint.host)
-        assertEquals(7788, endpoint.port)
+        assertEquals(7777, endpoint.port)
     }
 
     @Test

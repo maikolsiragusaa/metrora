@@ -26,13 +26,13 @@
     <string name="how_it_works_step_three_body">Compare the code and approve the connection on Desktop.</string>
 
     <string name="verify_title">Verify connection</string>
-    <string name="verify_body">Compare the code below with the one shown on your computer.</string>
+    <string name="verify_body">The pairing request is now visible on Desktop. Compare the code below with the one shown there.</string>
     <string name="verify_check_title">Check carefully</string>
     <string name="verify_check_body">Make sure the codes match.</string>
     <string name="verify_security_title">Secure connection</string>
-    <string name="verify_security_body">The code confirms the Desktop identity before access is requested.</string>
+    <string name="verify_security_body">The code confirms the Desktop identity before the connection is approved.</string>
     <string name="verify_approval_title">Approve on Desktop</string>
-    <string name="verify_approval_body">After the codes match, approve this phone on your computer.</string>
+    <string name="verify_approval_body">After the codes match, tap Codes match here and approve this phone on your computer.</string>
     <string name="codes_match">Codes match</string>
     <string name="waiting_for_desktop">Waiting for approval on Desktop…</string>
 
@@ -52,9 +52,9 @@
     <string name="status_connecting">Connecting to Desktop</string>
     <string name="status_connecting_body">Checking the computer address you entered.</string>
     <string name="status_verify_connection">Verify the connection</string>
-    <string name="status_verify_connection_body">Compare the six-digit code before requesting Desktop approval.</string>
+    <string name="status_verify_connection_body">A pairing request is ready on Desktop. Compare the six-digit code before approval.</string>
     <string name="status_waiting_approval">Waiting for approval</string>
-    <string name="status_waiting_approval_body">Compare the code on both devices, then approve on Desktop.</string>
+    <string name="status_waiting_approval_body">The codes matched on both devices. Approve this phone on Desktop.</string>
     <string name="status_up_to_date">Up to date</string>
     <string name="status_online_body">Desktop is reachable and this overview is current.</string>
     <string name="status_updating">Updating from Desktop…</string>
@@ -89,20 +89,24 @@
     <string name="period_30_days">Last 30 days</string>
     <string name="period_month">This month</string>
     <string name="period_all">Last 6 months</string>
+    <string name="period_lifetime">Lifetime</string>
     <string name="period_selector_a11y">Change usage period</string>
     <string name="cost_trend_a11y">Cost trend</string>
     <string name="pricing_coverage">Pricing coverage %1$s</string>
     <string name="pricing_coverage_unknown">Pricing coverage unavailable</string>
-    <string name="estimated_cost_evidence">Estimated pricing evidence %1$s</string>
+    <string name="estimated_cost_evidence">Estimated portion %1$s</string>
     <string name="total_tokens">Total tokens</string>
     <string name="calls">Calls</string>
     <string name="sessions">Sessions</string>
     <string name="top_models">Main models</string>
     <string name="cost_over_time">Cost over time</string>
     <string name="daily">Daily</string>
+    <string name="weekly">Weekly</string>
+    <string name="monthly">Monthly</string>
     <string name="view_all">View all</string>
-    <string name="trend_unavailable">Desktop did not provide daily cost aggregates for this period.</string>
+    <string name="trend_unavailable">Desktop did not provide cost aggregates for this period.</string>
     <string name="models_unavailable">Desktop did not provide model rows for this period.</string>
+    <string name="provider_unknown">Provider identity unavailable</string>
     <string name="estimated_pricing">Includes estimated pricing evidence</string>
     <string name="no_snapshot_title">No usage overview saved yet</string>
     <string name="empty_snapshot_paired">Your computer is paired. Refresh to load the first overview from Desktop.</string>
@@ -115,10 +119,11 @@
     <string name="nav_alerts">Alerts</string>
     <string name="nav_settings">Settings</string>
     <string name="destination_not_available">This companion surface is not available yet. No placeholder data is shown.</string>
+    <string name="destination_unavailable_a11y">%1$s is not available yet</string>
 
     <string name="scan_qr_body">Point your camera at the QR code shown in Metrora on your computer.</string>
     <string name="qr_invalid_payload">That QR code is not a Metrora Desktop connection.</string>
-    <string name="qr_scanner_local_only">The QR code only bootstraps a local connection. SAS and Desktop approval still apply.</string>
+    <string name="qr_scanner_local_only">Metrora will verify the computer and show a six-digit code before Desktop access is approved.</string>
     <string name="qr_same_network_title">Keep both devices on the same network.</string>
     <string name="qr_same_network_body">Metrora connects directly to Desktop. No account or cloud relay is used.</string>
     <string name="camera_permission_title">Camera access is needed to scan</string>

@@ -24,7 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,13 +41,22 @@ import eu.metrora.app.MetroraFailureCategory
 import eu.metrora.app.MetroraNotice
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun Feedback(state: MetroraUiState) {
     if (state.notice == null && state.failure == null) return
+    var showNotice by remember { mutableStateOf(state.notice != null) }
+    LaunchedEffect(state.notice) {
+        showNotice = state.notice != null
+        if (state.notice != null) {
+            delay(3_500)
+            showNotice = false
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        state.notice?.let { NoticeBanner(it) }
+        if (showNotice) state.notice?.let { NoticeBanner(it) }
         state.failure?.let { FailureBanner(it) }
     }
 }
@@ -61,7 +72,7 @@ private fun NoticeBanner(notice: MetroraNotice) {
         ),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -69,12 +80,12 @@ private fun NoticeBanner(notice: MetroraNotice) {
                 imageVector = Icons.Outlined.CheckCircle,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(20.dp),
             )
             Text(
                 text = androidx.compose.ui.res.stringResource(noticeResource(notice)),
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

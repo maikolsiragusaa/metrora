@@ -36,6 +36,9 @@ class CompanionUsageV1ParserTest {
         assertEquals(180L, snapshot.totalTokens)
         assertEquals(1234L, snapshot.retrievedAtEpochMs)
         assertEquals("Model A", snapshot.topModels.single().name)
+        assertEquals(null, snapshot.topModels.single().providerId)
+        assertEquals(1, snapshot.models.size)
+        assertEquals("day", snapshot.costTrendGranularity)
         assertEquals(120000L, snapshot.estimatedCostMicrosUsd)
         assertEquals(0.875, snapshot.pricingCoverage)
         assertEquals(2, snapshot.costTrend.size)
@@ -71,5 +74,30 @@ class CompanionUsageV1ParserTest {
         assertThrows(IllegalArgumentException::class.java) {
             CompanionUsageV1Parser.parse(raw, testCredentials())
         }
+    }
+
+    @Test
+    fun preserves_provider_identity_full_models_and_weekly_trend() {
+        val raw = """
+            {
+              "kind":"metrora.companion.usage",
+              "version":1,
+              "generatedAt":"2026-08-14T10:00:00Z",
+              "period":{"label":"Last 6 months"},
+              "totals":{"costMicrosUsd":2,"calls":3,"sessions":1,"tokens":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0},"cacheHitPercent":0},
+              "topModels":[{"name":"GPT-5.6 Sol","providerId":"provider-a","calls":2,"costMicrosUsd":1000000}],
+              "models":[
+                {"name":"GPT-5.6 Sol","providerId":"provider-a","calls":2,"costMicrosUsd":1000000},
+                {"name":"GPT-5.6 Sol","providerId":"provider-b","calls":1,"costMicrosUsd":1000000}
+              ],
+              "trend":{"granularity":"week","periodLabel":"Last 6 months","buckets":[{"date":"2026-08-10","costMicrosUsd":2000000}]}
+            }
+        """.trimIndent()
+
+        val snapshot = CompanionUsageV1Parser.parse(raw, testCredentials())
+
+        assertEquals(2, snapshot.models.size)
+        assertEquals(listOf("provider-a", "provider-b"), snapshot.models.map { it.providerId })
+        assertEquals("week", snapshot.costTrendGranularity)
     }
 }

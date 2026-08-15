@@ -8,6 +8,8 @@ data class ModelUsage(
     val calls: Long,
     val costMicrosUsd: Long,
     val estimatedCostMicrosUsd: Long? = null,
+    /** Factual provider id from Desktop; null means the source did not know it. */
+    val providerId: String? = null,
 ) {
     init {
         require(name.isNotBlank()) { "Model name is missing." }
@@ -15,6 +17,9 @@ data class ModelUsage(
         require(costMicrosUsd >= 0L) { "Model cost cannot be negative." }
         require(estimatedCostMicrosUsd == null || estimatedCostMicrosUsd >= 0L) {
             "Estimated model cost cannot be negative."
+        }
+        require(providerId == null || providerId.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))) {
+            "Model provider id is invalid."
         }
     }
 }
@@ -43,12 +48,17 @@ data class UsageSnapshot(
     val cacheWriteTokens: Long,
     val cacheHitPercent: Double,
     val topModels: List<ModelUsage>,
+    /** Full bounded model breakdown; older payloads use topModels as fallback. */
+    val models: List<ModelUsage> = topModels,
     /** Portion of Desktop cost backed by a resolved price, or null when unknown. */
     val pricingCoverage: Double? = null,
     /** Desktop-reported portion of cost that came from estimated token pricing. */
     val estimatedCostMicrosUsd: Long? = null,
     /** Bounded, Desktop-derived daily aggregates. Empty means unavailable, not zero. */
     val costTrend: List<CostTrendPoint> = emptyList(),
+    /** The factual bucket size used by Desktop for costTrend. */
+    val costTrendGranularity: String = "day",
+    val costTrendPeriodLabel: String = periodLabel,
     /** Local retrieval time; generatedAtEpochMs remains Desktop authority. */
     val retrievedAtEpochMs: Long = generatedAtEpochMs,
 ) {
@@ -75,7 +85,10 @@ data class UsageSnapshot(
             "Estimated cost cannot be negative."
         }
         require(topModels.size <= MAX_TOP_MODELS) { "Too many models in local snapshot." }
+        require(models.size <= MAX_MODELS) { "Too many model rows in local snapshot." }
         require(costTrend.size <= MAX_TREND_POINTS) { "Too many trend points in local snapshot." }
+        require(costTrendGranularity in SUPPORTED_TREND_GRANULARITIES) { "Trend granularity is invalid." }
+        require(costTrendPeriodLabel.isNotBlank()) { "Trend period is missing." }
     }
 
     val totalTokens: Long
@@ -83,14 +96,25 @@ data class UsageSnapshot(
             .fold(0L) { total, value -> saturatingAdd(total, value) }
 
     fun toJson(): String {
-        val models = JSONArray()
+        val topModelsJson = JSONArray()
         topModels.forEach { model ->
             val modelJson = JSONObject()
                 .put("name", model.name)
                 .put("calls", model.calls)
                 .put("costMicrosUsd", model.costMicrosUsd)
             model.estimatedCostMicrosUsd?.let { modelJson.put("estimatedCostMicrosUsd", it) }
-            models.put(modelJson)
+            model.providerId?.let { modelJson.put("providerId", it) }
+            topModelsJson.put(modelJson)
+        }
+        val modelsJson = JSONArray()
+        models.forEach { model ->
+            val modelJson = JSONObject()
+                .put("name", model.name)
+                .put("calls", model.calls)
+                .put("costMicrosUsd", model.costMicrosUsd)
+            model.estimatedCostMicrosUsd?.let { modelJson.put("estimatedCostMicrosUsd", it) }
+            model.providerId?.let { modelJson.put("providerId", it) }
+            modelsJson.put(modelJson)
         }
         val trend = JSONArray()
         costTrend.forEach { point ->
@@ -116,7 +140,10 @@ data class UsageSnapshot(
             .putOpt("pricingCoverage", pricingCoverage)
             .putOpt("estimatedCostMicrosUsd", estimatedCostMicrosUsd)
             .put("retrievedAtEpochMs", retrievedAtEpochMs)
-            .put("topModels", models)
+            .put("topModels", topModelsJson)
+            .put("models", modelsJson)
+            .put("costTrendGranularity", costTrendGranularity)
+            .put("costTrendPeriodLabel", costTrendPeriodLabel)
             .put("costTrend", trend)
             .toString()
     }
@@ -124,9 +151,8 @@ data class UsageSnapshot(
     companion object {
         fun fromJson(raw: String): UsageSnapshot {
             val json = JSONObject(raw)
-            val modelsJson = json.optJSONArray("topModels") ?: JSONArray()
-            val models = buildList {
-                for (index in 0 until modelsJson.length()) {
+            fun parseModels(modelsJson: JSONArray, max: Int): List<ModelUsage> = buildList {
+                for (index in 0 until minOf(modelsJson.length(), max)) {
                     val model = modelsJson.getJSONObject(index)
                     add(
                         ModelUsage(
@@ -134,15 +160,23 @@ data class UsageSnapshot(
                             calls = model.getLong("calls"),
                             costMicrosUsd = model.getLong("costMicrosUsd"),
                             estimatedCostMicrosUsd = model.optNullableNonNegativeLong("estimatedCostMicrosUsd"),
+                            providerId = model.optProviderId("providerId"),
                         ),
                     )
                 }
             }
+            val topModels = parseModels(json.optJSONArray("topModels") ?: JSONArray(), MAX_TOP_MODELS)
+            val models = if (json.has("models")) {
+                parseModels(json.optJSONArray("models") ?: JSONArray(), MAX_MODELS)
+            } else {
+                topModels
+            }
+            val periodLabel = json.getString("periodLabel")
             return UsageSnapshot(
                 desktopId = json.getString("desktopId"),
                 desktopName = json.getString("desktopName"),
                 generatedAtEpochMs = json.getLong("generatedAtEpochMs"),
-                periodLabel = json.getString("periodLabel"),
+                periodLabel = periodLabel,
                 costMicrosUsd = json.getLong("costMicrosUsd"),
                 calls = json.getLong("calls"),
                 sessions = json.getLong("sessions"),
@@ -151,7 +185,8 @@ data class UsageSnapshot(
                 cacheReadTokens = json.getLong("cacheReadTokens"),
                 cacheWriteTokens = json.getLong("cacheWriteTokens"),
                 cacheHitPercent = json.getDouble("cacheHitPercent"),
-                topModels = models,
+                topModels = topModels,
+                models = models,
                 pricingCoverage = json.optNullableFraction("pricingCoverage"),
                 estimatedCostMicrosUsd = json.optNullableNonNegativeLong("estimatedCostMicrosUsd"),
                 costTrend = json.optJSONArray("costTrend")?.let { trendJson ->
@@ -167,13 +202,17 @@ data class UsageSnapshot(
                         }
                     }
                 } ?: emptyList(),
+                costTrendGranularity = json.optString("costTrendGranularity", "day"),
+                costTrendPeriodLabel = json.optString("costTrendPeriodLabel", periodLabel).trim().ifBlank { periodLabel },
                 // Older foundation snapshots did not carry a local retrieval time.
                 retrievedAtEpochMs = json.optLong("retrievedAtEpochMs", json.getLong("generatedAtEpochMs")),
             )
         }
 
         private const val MAX_TOP_MODELS = 5
-        private const val MAX_TREND_POINTS = 31
+        private const val MAX_MODELS = 20
+        private const val MAX_TREND_POINTS = 128
+        private val SUPPORTED_TREND_GRANULARITIES = setOf("day", "week", "month")
 
         private fun JSONObject.optNullableNonNegativeLong(name: String): Long? {
             if (!has(name) || isNull(name)) return null
@@ -184,6 +223,13 @@ data class UsageSnapshot(
             if (!has(name) || isNull(name)) return null
             return getDouble(name).also {
                 require(it.isFinite() && it in 0.0..1.0) { "$name is invalid." }
+            }
+        }
+
+        private fun JSONObject.optProviderId(name: String): String? {
+            if (!has(name) || isNull(name)) return null
+            return optString(name).trim().lowercase().takeIf {
+                it.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))
             }
         }
 

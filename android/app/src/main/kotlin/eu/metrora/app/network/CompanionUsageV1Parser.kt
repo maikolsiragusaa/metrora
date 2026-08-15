@@ -11,6 +11,7 @@ import org.json.JSONObject
 
 internal object CompanionUsageV1Parser {
     private const val MAX_TOP_MODELS = 5
+    private const val MAX_MODELS = 20
 
     fun parse(
         raw: String,
@@ -28,9 +29,8 @@ internal object CompanionUsageV1Parser {
         val period = root.getJSONObject("period")
         val totals = root.getJSONObject("totals")
         val tokens = totals.getJSONObject("tokens")
-        val modelsJson = root.getJSONArray("topModels")
-        val topModels = buildList {
-            for (index in 0 until minOf(modelsJson.length(), MAX_TOP_MODELS)) {
+        fun parseModels(modelsJson: JSONArray, max: Int): List<ModelUsage> = buildList {
+            for (index in 0 until minOf(modelsJson.length(), max)) {
                 val model = modelsJson.getJSONObject(index)
                 val name = model.getString("name").trim()
                 require(name.isNotEmpty()) { "The desktop returned an unnamed model." }
@@ -40,9 +40,16 @@ internal object CompanionUsageV1Parser {
                         calls = model.nonNegativeLong("calls"),
                         costMicrosUsd = model.nonNegativeLong("costMicrosUsd"),
                         estimatedCostMicrosUsd = model.nullableNonNegativeLong("estimatedCostMicrosUsd"),
+                        providerId = model.nullableProviderId("providerId"),
                     ),
                 )
             }
+        }
+        val topModels = parseModels(root.getJSONArray("topModels"), MAX_TOP_MODELS)
+        val models = if (root.has("models")) {
+            parseModels(root.optJSONArray("models") ?: JSONArray(), MAX_MODELS)
+        } else {
+            topModels
         }
 
         val cacheHitPercent = totals.getDouble("cacheHitPercent")
@@ -52,13 +59,14 @@ internal object CompanionUsageV1Parser {
 
         val quality = root.optJSONObject("quality")
         val trend = root.optJSONObject("trend")?.let { trendJson ->
-            require(trendJson.getString("granularity") == "day") {
+            val granularity = trendJson.getString("granularity")
+            require(granularity in SUPPORTED_TREND_GRANULARITIES) {
                 "The desktop returned an unsupported usage trend granularity."
             }
             val buckets = trendJson.optJSONArray("buckets")
                 ?: throw IllegalArgumentException("The desktop returned an invalid usage trend.")
-            parseTrend(buckets)
-        } ?: emptyList()
+            TrendData(granularity, trendJson.optString("periodLabel", period.getString("label")), parseTrend(buckets))
+        }
 
         return UsageSnapshot(
             desktopId = credentials.serverFingerprint,
@@ -74,9 +82,12 @@ internal object CompanionUsageV1Parser {
             cacheWriteTokens = tokens.nonNegativeLong("cacheWrite"),
             cacheHitPercent = cacheHitPercent,
             topModels = topModels,
+            models = models,
             pricingCoverage = quality?.nullableFraction("pricingCoverage"),
             estimatedCostMicrosUsd = totals.nullableNonNegativeLong("estimatedCostMicrosUsd"),
-            costTrend = trend,
+            costTrend = trend?.buckets ?: emptyList(),
+            costTrendGranularity = trend?.granularity ?: "day",
+            costTrendPeriodLabel = trend?.periodLabel?.trim()?.ifBlank { period.getString("label") } ?: period.getString("label"),
             retrievedAtEpochMs = retrievedAtEpochMs,
         )
     }
@@ -117,6 +128,20 @@ internal object CompanionUsageV1Parser {
         }
     }
 
-    private const val MAX_TREND_POINTS = 31
+    private fun JSONObject.nullableProviderId(name: String): String? {
+        if (!has(name) || isNull(name)) return null
+        return optString(name).trim().lowercase().takeIf {
+            it.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))
+        }
+    }
+
+    private data class TrendData(
+        val granularity: String,
+        val periodLabel: String,
+        val buckets: List<CostTrendPoint>,
+    )
+
+    private const val MAX_TREND_POINTS = 128
+    private val SUPPORTED_TREND_GRANULARITIES = setOf("day", "week", "month")
     private val DATE_PATTERN = Regex("\\d{4}-\\d{2}-\\d{2}")
 }

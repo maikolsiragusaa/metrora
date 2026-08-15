@@ -15,6 +15,14 @@ class ProtocolTest {
     }
 
     @Test
+    fun maps_every_supported_period_without_aliasing_lifetime() {
+        val periods = listOf("today", "week", "30days", "month", "all", "lifetime")
+        periods.forEach { period ->
+            assertEquals("/api/v1/usage?period=$period", MetroraProtocol.usagePath(period))
+        }
+    }
+
+    @Test
     fun validatesConnectionInput() {
         assertEquals("192.168.1.24", MetroraProtocol.normalizeHost(" 192.168.1.24 "))
         assertEquals("fe80::1", MetroraProtocol.normalizeHost("[fe80::1]"))

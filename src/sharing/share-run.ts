@@ -1,5 +1,3 @@
-import { networkInterfaces } from 'os'
-
 import { loadOrCreateIdentity } from './identity.js'
 import { PeerStore } from './pairing.js'
 import { ShareServer, type UsageQuery } from './share-server.js'
@@ -11,15 +9,8 @@ import { loadPricing } from '../models.js'
 import { buildMenubarPayloadForRange, type AggregateOpts, type PeriodInfo } from '../usage-aggregator.js'
 import { periodInfoFromQuery } from '../cli-date.js'
 import type { MenubarPayload } from '../menubar-json.js'
-
-function lanAddress(): string | null {
-  for (const list of Object.values(networkInterfaces())) {
-    for (const ni of list ?? []) {
-      if (ni.family === 'IPv4' && !ni.internal) return ni.address
-    }
-  }
-  return null
-}
+import { buildPairingBootstrap } from './pairing-bootstrap.js'
+import { getLanAddresses } from './network-address.js'
 
 const IDLE_TIMEOUT_MS = 10 * 60_000
 
@@ -69,7 +60,8 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
   })
 
   const port = await server.listen(opts.port, '0.0.0.0')
-  const ip = lanAddress() ?? '127.0.0.1'
+  const ip = getLanAddresses()[0] ?? '127.0.0.1'
+  const connectPayload = buildPairingBootstrap(ip, port)
   const ad = advertise({ name: identity.name, port, fingerprint: identity.fingerprint })
 
   const shutdown = async (): Promise<void> => {
@@ -80,8 +72,9 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
   process.on('SIGINT', () => void shutdown())
 
   process.stdout.write(`\n  Sharing "${identity.name}" - discoverable on your local network.\n`)
-  process.stdout.write('  In Metrora Mobile, enter this computer address and compare the six-digit code.\n')
+  process.stdout.write('  In Metrora Mobile, scan the connection QR in the Desktop dashboard and compare the six-digit code.\n')
   process.stdout.write(`  Address: ${ip}:${port}\n`)
+  process.stdout.write(`  Connection payload: ${connectPayload}\n`)
   if (opts.pair) {
     const pin = server.openPairing(120_000)
     process.stdout.write(`\n  Legacy manual fallback:\n`)

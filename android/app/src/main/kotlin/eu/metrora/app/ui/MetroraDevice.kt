@@ -70,6 +70,16 @@ internal fun DeviceCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        R.string.desktop_endpoint,
+                        credentials.host,
+                        credentials.port,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             TextButton(

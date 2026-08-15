@@ -3,6 +3,7 @@ package eu.metrora.app.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,11 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Group
@@ -31,6 +30,8 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,7 +78,7 @@ private enum class HomeDestination(
     val available: Boolean,
 ) {
     OVERVIEW(R.string.nav_overview, Icons.Outlined.Home, true),
-    MODELS(R.string.nav_models, Icons.Outlined.Layers, false),
+    MODELS(R.string.nav_models, Icons.Outlined.Layers, true),
     SESSIONS(R.string.nav_sessions, Icons.Outlined.Group, false),
     ALERTS(R.string.nav_alerts, Icons.Outlined.NotificationsNone, false),
     SETTINGS(R.string.nav_settings, Icons.Outlined.Settings, true),
@@ -92,6 +94,9 @@ internal fun HomeState(
 ) {
     var destination by rememberSaveable { mutableStateOf(HomeDestination.OVERVIEW.name) }
     val selected = HomeDestination.valueOf(destination)
+    // Each destination owns an independent scroll position. Settings no
+    // longer opens halfway down after a long Overview scroll on a small phone.
+    val scrollState = remember(selected) { androidx.compose.foundation.ScrollState(0) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -109,7 +114,7 @@ internal fun HomeState(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -118,12 +123,14 @@ internal fun HomeState(
                     state = state,
                     onRefresh = onRefresh,
                     onSelectPeriod = onSelectPeriod,
+                    onViewAllModels = { destination = HomeDestination.MODELS.name },
                 )
                 HomeDestination.SETTINGS -> SettingsSurface(
                     state = state,
                     onRevoke = onRevoke,
                     onForget = onForget,
                 )
+                HomeDestination.MODELS -> ModelsSurface(state = state)
                 else -> UnsupportedDestination(destination = selected)
             }
         }
@@ -135,6 +142,7 @@ private fun OverviewSurface(
     state: MetroraUiState,
     onRefresh: () -> Unit,
     onSelectPeriod: (String) -> Unit,
+    onViewAllModels: () -> Unit,
 ) {
     HomeHeader(state = state, onRefresh = onRefresh)
     Feedback(state)
@@ -145,8 +153,8 @@ private fun OverviewSurface(
     state.snapshot?.let { snapshot ->
         CostHero(snapshot)
         MetricsStrip(snapshot)
-        CostOverTime(snapshot.costTrend)
-        TopModels(snapshot.topModels)
+        CostOverTime(snapshot.costTrend, snapshot.costTrendGranularity)
+        TopModels(snapshot.topModels, onViewAll = onViewAllModels)
         FreshnessFooter(state)
     } ?: EmptyHomeSnapshot(state.status, onRefresh)
 }
@@ -251,50 +259,76 @@ private fun PeriodSelector(
     selected: String,
     onSelect: (String) -> Unit,
 ) {
-    val periods = listOf("today", "week", "30days", "month", "all")
-    val index = periods.indexOf(selected).coerceAtLeast(0)
-    val label = when (periods[index]) {
+    var expanded by remember { mutableStateOf(false) }
+    val periods = listOf("today", "week", "30days", "month", "all", "lifetime")
+    val chosen = selected.takeIf { it in periods } ?: "month"
+    val label = when (chosen) {
         "today" -> R.string.period_today
         "week" -> R.string.period_week
         "30days" -> R.string.period_30_days
         "all" -> R.string.period_all
+        "lifetime" -> R.string.period_lifetime
         else -> R.string.period_month
     }
     val periodAccessibility = androidx.compose.ui.res.stringResource(R.string.period_selector_a11y)
-    MetroraPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(
-                role = Role.Button,
-                onClick = { onSelect(periods[(index + 1) % periods.size]) },
-            )
-            .semantics {
-                contentDescription = periodAccessibility
-            },
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-        radius = 17,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Box(modifier = Modifier.fillMaxWidth()) {
+        MetroraPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    role = Role.Button,
+                    onClick = { expanded = true },
+                )
+                .semantics {
+                    contentDescription = periodAccessibility
+                },
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+            radius = 17,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.CalendarMonth,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp),
-            )
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = androidx.compose.ui.res.stringResource(label),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = Icons.Outlined.ExpandMore,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.CalendarMonth,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = androidx.compose.ui.res.stringResource(label),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            periods.forEach { period ->
+                val resource = when (period) {
+                    "today" -> R.string.period_today
+                    "week" -> R.string.period_week
+                    "30days" -> R.string.period_30_days
+                    "month" -> R.string.period_month
+                    "all" -> R.string.period_all
+                    else -> R.string.period_lifetime
+                }
+                DropdownMenuItem(
+                    text = { Text(androidx.compose.ui.res.stringResource(resource)) },
+                    onClick = {
+                        expanded = false
+                        if (period != chosen) onSelect(period)
+                    },
+                )
+            }
         }
     }
 }
@@ -460,7 +494,7 @@ private fun MetricDivider() {
 }
 
 @Composable
-private fun CostOverTime(points: List<CostTrendPoint>) {
+private fun CostOverTime(points: List<CostTrendPoint>, granularity: String) {
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -478,10 +512,13 @@ private fun CostOverTime(points: List<CostTrendPoint>) {
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.daily),
+                    text = when (granularity) {
+                        "week" -> androidx.compose.ui.res.stringResource(R.string.weekly)
+                        "month" -> androidx.compose.ui.res.stringResource(R.string.monthly)
+                        else -> androidx.compose.ui.res.stringResource(R.string.daily)
+                    },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (points.isEmpty()) {
                 Text(
@@ -579,7 +616,7 @@ private fun TrendLabels(points: List<CostTrendPoint>) {
 }
 
 @Composable
-private fun TopModels(models: List<ModelUsage>) {
+private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -596,6 +633,9 @@ private fun TopModels(models: List<ModelUsage>) {
                 Text(
                     text = androidx.compose.ui.res.stringResource(R.string.view_all),
                     color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable(role = Role.Button, onClick = onViewAll)
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -619,7 +659,48 @@ private fun TopModels(models: List<ModelUsage>) {
 }
 
 @Composable
-private fun ModelRow(model: ModelUsage, index: Int) {
+private fun ModelsSurface(state: MetroraUiState) {
+    val models = state.snapshot?.models ?: emptyList()
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.nav_models),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        MetroraPanel(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
+            radius = 20,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
+                Text(
+                    text = state.snapshot?.periodLabel ?: androidx.compose.ui.res.stringResource(R.string.models_unavailable),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (models.isEmpty()) {
+                    Text(
+                        text = androidx.compose.ui.res.stringResource(R.string.models_unavailable),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                } else {
+                    models.forEachIndexed { index, model ->
+                        ModelRow(model, index, showProvider = models.count { it.name == model.name } > 1)
+                        if (index != models.lastIndex) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = false) {
     val cost = if (model.costMicrosUsd > 0L) {
         formatUsd(model.costMicrosUsd)
     } else {
@@ -639,11 +720,10 @@ private fun ModelRow(model: ModelUsage, index: Int) {
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
             ),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.AutoAwesome,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(10.dp),
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(R.drawable.metrora_mark),
+                contentDescription = model.providerId?.let { "Provider $it" } ?: "Metrora model",
+                modifier = Modifier.padding(9.dp),
             )
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -653,6 +733,15 @@ private fun ModelRow(model: ModelUsage, index: Int) {
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
             )
+            if (showProvider || model.providerId != null) {
+                Text(
+                    text = model.providerId?.let { "Provider · $it" } ?: androidx.compose.ui.res.stringResource(R.string.provider_unknown),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             model.estimatedCostMicrosUsd?.takeIf { it > 0L }?.let {
                 Text(
                     text = androidx.compose.ui.res.stringResource(R.string.estimated_pricing),
@@ -795,6 +884,11 @@ private fun MetroraBottomNavigation(
             HomeDestination.entries.forEach { destination ->
                 val active = destination == selected
                 val destinationLabel = androidx.compose.ui.res.stringResource(destination.label)
+                val a11yLabel = if (destination.available) {
+                    destinationLabel
+                } else {
+                    androidx.compose.ui.res.stringResource(R.string.destination_unavailable_a11y, destinationLabel)
+                }
                 val contentColor = when {
                     active -> MaterialTheme.colorScheme.primary
                     destination.available -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -811,7 +905,7 @@ private fun MetroraBottomNavigation(
                         )
                         .semantics {
                             role = Role.Tab
-                            contentDescription = destinationLabel
+                            contentDescription = a11yLabel
                         }
                         .padding(horizontal = 2.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

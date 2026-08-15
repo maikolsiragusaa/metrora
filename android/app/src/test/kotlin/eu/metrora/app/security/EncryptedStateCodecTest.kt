@@ -54,4 +54,32 @@ class EncryptedStateCodecTest {
             UsageSnapshot.fromJson("{\"desktopId\":\"x\",\"desktopName\":\"D\",\"generatedAtEpochMs\":1,\"periodLabel\":\"Today\",\"costMicrosUsd\":-1,\"calls\":0,\"sessions\":0,\"inputTokens\":0,\"outputTokens\":0,\"cacheReadTokens\":0,\"cacheWriteTokens\":0,\"cacheHitPercent\":0}")
         }
     }
+
+    @Test
+    fun legacy_snapshot_json_defaults_new_model_and_trend_fields() {
+        val snapshot = UsageSnapshot.fromJson(
+            """
+            {
+              "desktopId":"ab${"ab".repeat(31)}",
+              "desktopName":"Desktop",
+              "generatedAtEpochMs":1,
+              "periodLabel":"Today",
+              "costMicrosUsd":12,
+              "calls":1,
+              "sessions":1,
+              "inputTokens":2,
+              "outputTokens":3,
+              "cacheReadTokens":4,
+              "cacheWriteTokens":5,
+              "cacheHitPercent":50.0,
+              "topModels":[{"name":"Model A","calls":1,"costMicrosUsd":12}]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(snapshot.topModels, snapshot.models)
+        assertEquals("day", snapshot.costTrendGranularity)
+        assertEquals("Today", snapshot.costTrendPeriodLabel)
+        assertEquals(emptyList<Any>(), snapshot.costTrend)
+    }
 }

@@ -275,6 +275,10 @@ export type ShareStatus = {
   sharing: boolean
   name: string
   port: number
+  host: string | null
+  addresses: string[]
+  connectPayload: string | null
+  networkWarning?: string
   always: boolean
   peers: number
   pending: PendingPairing[]

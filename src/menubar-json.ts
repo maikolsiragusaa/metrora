@@ -253,13 +253,16 @@ export type MenubarPayload = {
       turns: number
       oneShotRate: number | null
     }>
-    topModels: Array<{
-      name: string
-      cost: number
-      savingsUSD: number
-      savingsBaselineModel: string
-      calls: number
-      /// Estimated portion of this model's `cost`; > 0 marks the row as priced
+  topModels: Array<{
+    name: string
+    cost: number
+    savingsUSD: number
+    savingsBaselineModel: string
+    calls: number
+    /// Source-recorded provider id, when the model row carries factual
+    /// provider identity. Never inferred from the display name.
+    providerId?: string
+    /// Estimated portion of this model's `cost`; > 0 marks the row as priced
       /// from estimated tokens. Optional for payload back-compat.
       estimatedCostUSD?: number
     }>
@@ -378,6 +381,9 @@ export type MenubarPayload = {
   }
   history: {
     daily: DailyHistoryEntry[]
+    /// Exact selected-period daily authority for first-party companion trend
+    /// aggregation. Optional so older producers and consumers remain valid.
+    periodDaily?: DailyHistoryEntry[]
     /// Selected-period timeline for the local browser dashboard. Optional for
     /// compatibility with older peers and non-dashboard payload producers.
     timeline?: GranularHistory
@@ -455,11 +461,28 @@ function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['curren
     .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
 }
 
-function buildHistory(daily: DailyHistoryEntry[] | undefined, timeline?: GranularHistory): MenubarPayload['history'] {
-  if (!daily || daily.length === 0) return { daily: [], ...(timeline ? { timeline } : {}) }
+function buildHistory(
+  daily: DailyHistoryEntry[] | undefined,
+  timeline?: GranularHistory,
+  periodDaily?: DailyHistoryEntry[],
+): MenubarPayload['history'] {
+  const exactPeriod = periodDaily && periodDaily.length > 0
+    ? [...periodDaily].sort((a, b) => a.date.localeCompare(b.date))
+    : undefined
+  if (!daily || daily.length === 0) {
+    return {
+      daily: [],
+      ...(exactPeriod ? { periodDaily: exactPeriod } : {}),
+      ...(timeline ? { timeline } : {}),
+    }
+  }
   const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
   const trimmed = sorted.slice(-HISTORY_DAYS_LIMIT)
-  return { daily: trimmed, ...(timeline ? { timeline } : {}) }
+  return {
+    daily: trimmed,
+    ...(exactPeriod ? { periodDaily: exactPeriod } : {}),
+    ...(timeline ? { timeline } : {}),
+  }
 }
 
 function buildTopProjects(projects: PeriodData['projects']): MenubarPayload['current']['topProjects'] {
@@ -539,6 +562,7 @@ export function buildMenubarPayload(
   breakdowns?: BreakdownArrays,
   claudeConfigs?: ClaudeConfigSelector,
   granularHistory?: GranularHistory,
+  periodDailyHistory?: DailyHistoryEntry[],
 ): MenubarPayload {
   const modelAccounting = buildModelAccounting(current.models, current.cost, current.calls)
   const payload: MenubarPayload = {
@@ -583,7 +607,7 @@ export function buildMenubarPayload(
       ...(current.byBranch ? { byBranch: current.byBranch } : {}),
     },
     optimize: buildOptimize(optimize),
-    history: buildHistory(dailyHistory, granularHistory),
+    history: buildHistory(dailyHistory, granularHistory, periodDailyHistory),
     currency: (() => {
       const c = getCurrency()
       return { code: c.code, symbol: c.symbol, rate: c.rate }

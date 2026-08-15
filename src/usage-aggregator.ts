@@ -742,5 +742,21 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
-  return withReadFreshness(buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs, granularHistory), cache, effectivelyScoped)
+  const periodDailyHistory = cacheDaysForPeriod ? dailyEntriesToHistory(cacheDaysForPeriod) : undefined
+  return withReadFreshness(
+    buildMenubarPayload(
+      currentData,
+      providers,
+      optimize,
+      dailyHistory,
+      retryTax,
+      routingWaste,
+      breakdowns,
+      claudeConfigs,
+      granularHistory,
+      periodDailyHistory,
+    ),
+    cache,
+    effectivelyScoped,
+  )
 }

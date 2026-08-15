@@ -209,6 +209,7 @@ export function buildTopModels(models: PeriodData['models']): MenubarPayload['cu
       cost: row.cost,
       calls: row.calls,
       savingsUSD: row.savingsUSD,
+      ...(row.provider ? { providerId: row.provider } : {}),
       estimatedCostUSD: row.estimatedCostUSD,
       savingsBaselineModel: '',
     }))

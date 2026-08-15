@@ -15,9 +15,11 @@ import eu.metrora.app.security.SecureStore
 import java.io.Closeable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -42,6 +44,7 @@ class MetroraCoordinator internal constructor(
 
     private val mutableState = MutableStateFlow(MetroraUiState())
     private var operationJob: Job? = null
+    private var pendingPairResult: Deferred<PairingCredentials>? = null
     private var pendingDesktop: DiscoveredDesktop? = null
 
     val state: StateFlow<MetroraUiState> = mutableState.asStateFlow()
@@ -103,6 +106,35 @@ class MetroraCoordinator internal constructor(
                         failure = null,
                     )
                 }
+                // Start the approved pairing request as soon as the phone has
+                // verified the pinned Desktop identity. Desktop can now show
+                // the same SAS while this screen is visible, but no
+                // credential is saved until Desktop approves and the phone
+                // user confirms the code.
+                val pairingResult = scope.async {
+                    api.pair(desktop, code, deviceName)
+                }
+                pendingPairResult = pairingResult
+                pairingResult.invokeOnCompletion { error ->
+                    if (error == null || error is CancellationException) return@invokeOnCompletion
+                    scope.launch {
+                        val stillPairing = mutableState.value.status == MetroraConnectionState.VERIFYING_SAS ||
+                            mutableState.value.status == MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL
+                        if (!stillPairing) return@launch
+                        when (error) {
+                            is MetroraException -> applyFailure(error.failure, allowOfflineFallback = false)
+                            else -> applyFailure(
+                                MetroraFailure(
+                                    MetroraOperation.PAIR,
+                                    MetroraFailureCategory.UNEXPECTED,
+                                    MetroraFailureReason.UNKNOWN,
+                                    error.javaClass.simpleName,
+                                ),
+                                allowOfflineFallback = false,
+                            )
+                        }
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: MetroraException) {
@@ -126,8 +158,8 @@ class MetroraCoordinator internal constructor(
     /** Continue only after the user has compared the SAS with Desktop. */
     fun confirmPairingCode() {
         val current = mutableState.value
-        val desktop = pendingDesktop ?: return
-        val code = current.pairingCode ?: return
+        if (pendingDesktop == null || current.pairingCode == null) return
+        val pairingResult = pendingPairResult ?: return
         if (current.status != MetroraConnectionState.VERIFYING_SAS || current.busy) return
 
         mutableState.update {
@@ -139,9 +171,10 @@ class MetroraCoordinator internal constructor(
         }
         operationJob = scope.launch {
             try {
-                val credentials = api.pair(desktop, code, deviceName)
+                val credentials = pairingResult.await()
                 currentCoroutineContext().ensureActive()
                 store.saveCredentials(credentials)
+                pendingPairResult = null
                 pendingDesktop = null
                 mutableState.update {
                     it.copy(
@@ -163,8 +196,12 @@ class MetroraCoordinator internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: MetroraException) {
+                pendingPairResult = null
+                pendingDesktop = null
                 applyFailure(error.failure, allowOfflineFallback = false)
             } catch (error: Exception) {
+                pendingPairResult = null
+                pendingDesktop = null
                 applyFailure(
                     MetroraFailure(
                         MetroraOperation.PAIR,
@@ -187,6 +224,8 @@ class MetroraCoordinator internal constructor(
             current.status != MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL
         ) return
         operationJob?.cancel()
+        pendingPairResult?.cancel()
+        pendingPairResult = null
         operationJob = null
         pendingDesktop = null
         mutableState.value = MetroraUiState(
@@ -325,6 +364,8 @@ class MetroraCoordinator internal constructor(
 
     override fun close() {
         operationJob?.cancel()
+        pendingPairResult?.cancel()
+        pendingPairResult = null
         operationJob = null
         pendingDesktop = null
         scope.cancel()
