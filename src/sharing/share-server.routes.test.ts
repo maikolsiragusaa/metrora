@@ -15,6 +15,8 @@ describe('Metrora sharing API version compatibility', () => {
     expect(canonicalSharePath('/api/v1/peer/pair-request')).toBe('/api/peer/pair-request')
     expect(canonicalSharePath('/api/v1/peer/revoke')).toBe('/api/peer/revoke')
     expect(canonicalSharePath('/api/v1/usage')).toBe('/api/usage')
+    expect(canonicalSharePath('/api/v1/capabilities')).toBe('/api/capabilities')
+    expect(canonicalSharePath('/api/v1/foundation')).toBe('/api/foundation')
   })
 
   it('does not rewrite unrelated or future-version paths', () => {

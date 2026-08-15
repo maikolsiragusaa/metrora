@@ -151,13 +151,13 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 | Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
-| Android companion | Read-only local-network companion for a paired Desktop | **Implemented and physically accepted for the local companion scope; public Android distribution not released** |
+| Android companion | Read-only local-network companion for a paired Desktop | **Mobile Product Foundation V1 implemented over the accepted local companion security foundation; public Android distribution not released** |
 | macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
 | GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
 
 Windows is the first supported public desktop distribution. Source support for other platforms does not imply that an accepted public package exists for those platforms.
 
-The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and has passed the bounded Windows↔Samsung physical-acceptance scope. It is not yet a public Android release or store distribution.
+The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and now consumes bounded Project-aware Home, Activity, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. The QR/SAS/mTLS security foundation remains the physically accepted Windows↔Samsung scope; the new product surfaces are not described as physically accepted until their dedicated matrix is run. It is not yet a public Android release or store distribution.
 
 ## Privacy model
 

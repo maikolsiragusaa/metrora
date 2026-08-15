@@ -118,14 +118,12 @@ import type { PrRow, BranchRow } from './sessions-report.js'
 import type { ModelBrandId } from './model-brand.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
 import type { ModelAccountingRow } from './model-accounting-types.js'
-
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
 const TOP_REWORKED_FILES_LIMIT = 8
-
 export type DailyModelBreakdown = {
   name: string
   cost: number
@@ -397,6 +395,8 @@ export type MenubarPayload = {
   currency: { code: string; symbol: string; rate: number }
   combined?: CombinedUsage
   claudeConfigs?: ClaudeConfigSelector
+  projectScope?: import('./project-scope.js').ProjectScopePayload
+  mobileFoundation?: import('./sharing/mobile-foundation.js').MobileFoundationPayload
 }
 
 function oneShotRateFor(editTurns: number, oneShotTurns: number): number | null {

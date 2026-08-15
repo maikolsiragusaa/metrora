@@ -2,6 +2,8 @@ package eu.metrora.app
 
 import android.content.Context
 import android.os.Build
+import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.StorageIssue
 import eu.metrora.app.data.StorageRead
@@ -192,6 +194,7 @@ class MetroraCoordinator internal constructor(
                     allowOfflineFallback = true,
                     preservePairingSuccess = true,
                     period = current.selectedPeriod,
+                    projectScopeId = current.selectedProjectId,
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -238,6 +241,7 @@ class MetroraCoordinator internal constructor(
     fun refresh(
         period: String = mutableState.value.selectedPeriod,
         trendGranularity: String? = null,
+        projectScopeId: String? = mutableState.value.selectedProjectId,
     ) {
         val current = mutableState.value
         val credentials = current.credentials ?: return
@@ -260,9 +264,10 @@ class MetroraCoordinator internal constructor(
                     credentials,
                     MetroraNotice.USAGE_REFRESHED,
                     allowOfflineFallback = true,
-                    period = period,
-                    trendGranularity = trendGranularity,
-                )
+                period = period,
+                trendGranularity = trendGranularity,
+                projectScopeId = projectScopeId,
+            )
             } catch (error: CancellationException) {
                 throw error
             } finally {
@@ -274,6 +279,19 @@ class MetroraCoordinator internal constructor(
     fun selectPeriod(period: String) {
         if (period !in SUPPORTED_PERIODS) return
         refresh(period)
+    }
+
+    /** Project scope is a canonical Desktop selection, not a local filter. */
+    fun selectProject(projectId: String) {
+        val current = mutableState.value
+        if (current.initializing || current.busy || current.credentials == null) return
+        if (projectId != "all" && current.foundation?.projectOption(projectId) == null) return
+        if (projectId == current.selectedProjectId) return
+        refresh(
+            period = current.selectedPeriod,
+            trendGranularity = current.snapshot?.costTrendGranularity,
+            projectScopeId = projectId,
+        )
     }
 
     fun selectTrendGranularity(granularity: String) {
@@ -386,8 +404,9 @@ class MetroraCoordinator internal constructor(
         try {
             val credentials = store.loadCredentials()
             val snapshot = store.loadSnapshot()
+            val foundation = store.loadFoundation()
             when (credentials) {
-                StorageRead.Missing -> restoreWithoutCredentials(snapshot)
+                StorageRead.Missing -> restoreWithoutCredentials(snapshot, foundation)
                 is StorageRead.Corrupted -> {
                     mutableState.value = recoveryState(
                         credentials = null,
@@ -399,7 +418,7 @@ class MetroraCoordinator internal constructor(
                         detail = "Saved pairing credentials need recovery",
                     )
                 }
-                is StorageRead.Present -> restorePaired(credentials.value, snapshot)
+                is StorageRead.Present -> restorePaired(credentials.value, snapshot, foundation)
             }
         } catch (error: CancellationException) {
             throw error
@@ -413,9 +432,26 @@ class MetroraCoordinator internal constructor(
         }
     }
 
-    private fun restoreWithoutCredentials(snapshot: StorageRead<UsageSnapshot>) {
+    private fun restoreWithoutCredentials(
+        snapshot: StorageRead<UsageSnapshot>,
+        foundation: StorageRead<MobileFoundationSnapshot>,
+    ) {
         mutableState.value = when (snapshot) {
-            StorageRead.Missing -> MetroraUiState(initializing = false)
+            StorageRead.Missing -> when (foundation) {
+                StorageRead.Missing -> MetroraUiState(initializing = false)
+                is StorageRead.Present -> recoveryState(
+                    credentials = null,
+                    snapshot = null,
+                    reason = MetroraFailureReason.INCONSISTENT_LOCAL_STATE,
+                    detail = "A saved mobile foundation exists without a saved pairing",
+                )
+                is StorageRead.Corrupted -> recoveryState(
+                    credentials = null,
+                    snapshot = null,
+                    reason = MetroraFailureReason.STORAGE_CORRUPTED,
+                    detail = "Saved mobile data needs recovery",
+                )
+            }
             is StorageRead.Present -> recoveryState(
                 credentials = null,
                 snapshot = null,
@@ -434,6 +470,7 @@ class MetroraCoordinator internal constructor(
     private suspend fun restorePaired(
         credentials: PairingCredentials,
         snapshot: StorageRead<UsageSnapshot>,
+        foundation: StorageRead<MobileFoundationSnapshot>,
     ) {
         if (!api.localIdentityMatches(credentials)) {
             mutableState.value = recoveryState(
@@ -444,18 +481,26 @@ class MetroraCoordinator internal constructor(
             )
             return
         }
+        val usableFoundation = when (foundation) {
+            StorageRead.Missing -> null
+            is StorageRead.Present -> foundation.value.takeIf { it.desktopId == credentials.serverFingerprint }
+            is StorageRead.Corrupted -> {
+                runCatching { store.clearFoundation() }
+                null
+            }
+        }
         when (snapshot) {
-            StorageRead.Missing -> mutableState.value = restoredState(credentials, null)
+            StorageRead.Missing -> mutableState.value = restoredState(credentials, null, usableFoundation)
             is StorageRead.Present -> {
                 val usable = snapshot.value.takeIf { it.desktopId == credentials.serverFingerprint }
-                mutableState.value = restoredState(credentials, usable)
+                mutableState.value = restoredState(credentials, usable, usableFoundation)
             }
             is StorageRead.Corrupted -> {
                 val cleanupFailure = runCatching { store.clearSnapshot() }.exceptionOrNull()
                 mutableState.value = if (cleanupFailure == null) {
-                    restoredState(credentials, null).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
+                    restoredState(credentials, null, usableFoundation).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
                 } else {
-                    restoredState(credentials, null).copy(
+                    restoredState(credentials, null, usableFoundation).copy(
                         status = MetroraConnectionState.ERROR,
                         failure = localFailure(
                             MetroraFailureReason.STORAGE_CORRUPTED,
@@ -467,12 +512,19 @@ class MetroraCoordinator internal constructor(
         }
     }
 
-    private fun restoredState(credentials: PairingCredentials, snapshot: UsageSnapshot?): MetroraUiState =
+    private fun restoredState(
+        credentials: PairingCredentials,
+        snapshot: UsageSnapshot?,
+        foundation: MobileFoundationSnapshot? = null,
+    ): MetroraUiState =
         MetroraUiState(
             initializing = false,
             status = MetroraConnectionState.RESTORED,
             credentials = credentials,
             snapshot = snapshot,
+            foundation = foundation,
+            capabilities = foundation?.capabilities ?: CapabilityDiscovery.unavailable(),
+            selectedProjectId = foundation?.projectScopeId?.takeIf { foundation.projectOption(it) != null } ?: "all",
         )
 
     private suspend fun refreshAndApply(
@@ -482,16 +534,34 @@ class MetroraCoordinator internal constructor(
         preservePairingSuccess: Boolean = false,
         period: String = mutableState.value.selectedPeriod,
         trendGranularity: String? = null,
+        projectScopeId: String? = mutableState.value.selectedProjectId,
     ) {
         try {
-            val snapshot = api.fetchUsage(credentials, period, trendGranularity)
+            val snapshot = api.fetchUsageForScope(credentials, period, trendGranularity, projectScopeId)
             currentCoroutineContext().ensureActive()
             store.saveSnapshot(snapshot)
+            val current = mutableState.value
+            val capabilities = optionalCapabilities(credentials, current.capabilities)
+            val foundation = optionalFoundation(
+                credentials = credentials,
+                period = period,
+                trendGranularity = trendGranularity,
+                projectScopeId = projectScopeId,
+                fallback = current.foundation,
+            )
+            foundation?.takeIf { it.available }?.let { store.saveFoundation(it) }
+            val selected = foundation?.projectScopeId
+                ?.takeIf { id -> id == "all" || foundation.projectOption(id) != null }
+                ?: projectScopeId
+                ?: "all"
             mutableState.update {
                 it.copy(
                     initializing = false,
                     status = MetroraConnectionState.CONNECTED,
                     snapshot = snapshot,
+                    foundation = foundation,
+                    capabilities = capabilities,
+                    selectedProjectId = selected,
                     notice = successNotice,
                     failure = null,
                 )
@@ -507,6 +577,31 @@ class MetroraCoordinator internal constructor(
                 preservePairingSuccess,
             )
         }
+    }
+
+    private suspend fun optionalCapabilities(
+        credentials: PairingCredentials,
+        fallback: CapabilityDiscovery,
+    ): CapabilityDiscovery = try {
+        api.fetchCapabilities(credentials)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        fallback
+    }
+
+    private suspend fun optionalFoundation(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+        fallback: MobileFoundationSnapshot?,
+    ): MobileFoundationSnapshot? = try {
+        api.fetchFoundation(credentials, period, trendGranularity, projectScopeId).takeIf { it.available } ?: fallback
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        fallback
     }
 
     private fun applyFailure(

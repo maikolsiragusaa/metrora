@@ -6,6 +6,8 @@ import eu.metrora.app.MetroraFailureCategory
 import eu.metrora.app.MetroraFailureReason
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.DeviceIdentity
@@ -43,6 +45,24 @@ interface MetroraApi {
         period: String = "month",
         trendGranularity: String? = null,
     ): UsageSnapshot
+
+    /** Additive V1 scope method; old test/transport implementations remain valid. */
+    suspend fun fetchUsageForScope(
+        credentials: PairingCredentials,
+        period: String = "month",
+        trendGranularity: String? = null,
+        projectScopeId: String? = null,
+    ): UsageSnapshot = fetchUsage(credentials, period, trendGranularity)
+
+    suspend fun fetchCapabilities(credentials: PairingCredentials): CapabilityDiscovery =
+        CapabilityDiscovery.unavailable()
+
+    suspend fun fetchFoundation(
+        credentials: PairingCredentials,
+        period: String = "month",
+        trendGranularity: String? = null,
+        projectScopeId: String? = null,
+    ): MobileFoundationSnapshot = MobileFoundationSnapshot.unavailable(credentials.serverFingerprint)
 
     suspend fun revoke(credentials: PairingCredentials)
 
@@ -250,6 +270,13 @@ class MetroraApiClient(
         credentials: PairingCredentials,
         period: String,
         trendGranularity: String?,
+    ): UsageSnapshot = fetchUsageForScope(credentials, period, trendGranularity, null)
+
+    override suspend fun fetchUsageForScope(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
     ): UsageSnapshot =
         mapped(MetroraOperation.REFRESH) {
             requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
@@ -257,7 +284,7 @@ class MetroraApiClient(
                 host = credentials.host,
                 port = credentials.port,
                 method = "GET",
-                path = MetroraProtocol.usagePath(period, trendGranularity),
+                path = MetroraProtocol.usagePath(period, trendGranularity, projectScopeId),
                 expectedFingerprint = credentials.serverFingerprint,
                 headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
                 readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
@@ -277,6 +304,68 @@ class MetroraApiClient(
                 )
             }
         }
+
+    override suspend fun fetchCapabilities(credentials: PairingCredentials): CapabilityDiscovery =
+        mapped(MetroraOperation.REFRESH) {
+            requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+            val response = transport.request(
+                host = credentials.host,
+                port = credentials.port,
+                method = "GET",
+                path = MetroraProtocol.capabilitiesPath(),
+                expectedFingerprint = credentials.serverFingerprint,
+                headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+                readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+            )
+            if (response.status == 404 || response.status == 405) return@mapped CapabilityDiscovery.unavailable()
+            ensureSuccess(MetroraOperation.REFRESH, response)
+            try {
+                CompanionCapabilitiesV1Parser.parse(response.body)
+            } catch (error: MetroraException) {
+                throw error
+            } catch (error: Exception) {
+                throw failure(
+                    MetroraOperation.REFRESH,
+                    MetroraFailureCategory.MALFORMED_RESPONSE,
+                    MetroraFailureReason.MALFORMED_RESPONSE,
+                    "The endpoint returned invalid capability discovery",
+                    error,
+                )
+            }
+        }
+
+    override suspend fun fetchFoundation(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+    ): MobileFoundationSnapshot = mapped(MetroraOperation.REFRESH) {
+        requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+        val response = transport.request(
+            host = credentials.host,
+            port = credentials.port,
+            method = "GET",
+            path = MetroraProtocol.foundationPath(period, trendGranularity, projectScopeId),
+            expectedFingerprint = credentials.serverFingerprint,
+            headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+            readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+        )
+        if (response.status == 404 || response.status == 405) return@mapped MobileFoundationSnapshot.unavailable(credentials.serverFingerprint)
+        ensureSuccess(MetroraOperation.REFRESH, response)
+        try {
+            CompanionFoundationV1Parser.parse(response.body, credentials)
+        } catch (error: MetroraException) {
+            throw error
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint returned an invalid mobile foundation",
+                error,
+            )
+        }
+    }
 
     override suspend fun revoke(credentials: PairingCredentials) = mapped(MetroraOperation.REVOKE) {
         requireCurrentIdentity(credentials, MetroraOperation.REVOKE)

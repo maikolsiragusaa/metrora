@@ -45,17 +45,21 @@ function providerLabel(provider: string): string {
     .join(' ')
 }
 
-export function Spend({ period, provider, range = null }: { period: Period; provider: string; range?: DateRange | null }) {
+export function Spend({ period, provider, projectScopeId, range = null }: { period: Period; provider: string; projectScopeId?: string; range?: DateRange | null }) {
+  const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
   const overview = usePolled<MenubarPayload>(
-    () => range ? metrora.getOverview(period, provider, range) : metrora.getOverview(period, provider),
-    [period, provider, range?.from, range?.to],
+    () => range
+      ? scopedProject ? metrora.getOverview(period, provider, range, undefined, false, false, scopedProject) : metrora.getOverview(period, provider, range)
+      : scopedProject ? metrora.getOverview(period, provider, undefined, undefined, false, false, scopedProject) : metrora.getOverview(period, provider),
+    [period, provider, projectScopeId, range?.from, range?.to],
   )
-  return <SpendContent period={period} provider={provider} range={range} overview={overview} />
+  return <SpendContent period={period} provider={provider} projectScopeId={projectScopeId} range={range} overview={overview} />
 }
 
 export function SpendContent({
   period,
   provider,
+  projectScopeId,
   range = null,
   overview,
   refreshToken = 0,
@@ -63,6 +67,7 @@ export function SpendContent({
 }: {
   period: Period
   provider: string
+  projectScopeId?: string
   range?: DateRange | null
   overview: Polled<MenubarPayload>
   refreshToken?: number
@@ -71,10 +76,13 @@ export function SpendContent({
   // Spend's main surfaces paint from the already-loaded Overview. The expensive
   // model→project relationship graph is deliberately progressive: it fills its
   // reserved panel when ready instead of holding the rest of the page hostage.
+  const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
   const flow = usePolled<SpendFlow>(
-    () => range ? metrora.getSpendFlow(period, provider, range) : metrora.getSpendFlow(period, provider),
-    [period, provider, range?.from, range?.to, refreshToken],
-    { enabled: ready, memoKey: `spendflow|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
+    () => range
+      ? scopedProject ? metrora.getSpendFlow(period, provider, range, scopedProject) : metrora.getSpendFlow(period, provider, range)
+      : scopedProject ? metrora.getSpendFlow(period, provider, undefined, scopedProject) : metrora.getSpendFlow(period, provider),
+    [period, provider, projectScopeId, range?.from, range?.to, refreshToken],
+    { enabled: ready, memoKey: `spendflow|${period}|${provider}|${projectScopeId ?? 'all'}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
   if (!overview.data) {

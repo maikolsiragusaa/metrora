@@ -43,6 +43,9 @@ export function TopBar({
   claudeConfigs,
   configSource,
   onConfigSelect,
+  projectOptions,
+  projectScopeId,
+  onProjectScopeSelect,
   capabilities = DEFAULT_CAPABILITIES,
 }: {
   title: ReactNode
@@ -58,6 +61,9 @@ export function TopBar({
   claudeConfigs?: ClaudeConfigSelector
   configSource: string | null
   onConfigSelect: (id: string) => void
+  projectOptions?: Array<{ id: string; name: string }>
+  projectScopeId?: string
+  onProjectScopeSelect?: (id: string) => void
   capabilities?: DesktopSectionCapabilities
 }) {
   return (
@@ -71,6 +77,16 @@ export function TopBar({
       {capabilities.customRange && <CalendarPop value={customRange} onSelect={onRangeSelect} />}
       {capabilities.provider && (
         <ProviderPop value={provider} label={providerLabel} options={providerOptions} onSelect={onProviderSelect} />
+      )}
+      {projectOptions && projectOptions.length > 0 && projectScopeId && onProjectScopeSelect && (
+        <Dropdown
+          id="project-scope-select"
+          ariaLabel="Metrora Projects"
+          value={projectScopeId}
+          options={projectOptions.map(option => ({ value: option.id, label: option.name }))}
+          onChange={onProjectScopeSelect}
+          renderIcon={() => <span className="project-scope-dot" aria-hidden="true" />}
+        />
       )}
       {capabilities.claudeConfig && claudeConfigs && (
         <ConfigPicker configs={claudeConfigs} value={configSource} onSelect={onConfigSelect} />

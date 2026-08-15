@@ -11,6 +11,7 @@ import { periodInfoFromQuery } from '../cli-date.js'
 import type { MenubarPayload } from '../menubar-json.js'
 import { buildPairingBootstrap } from './pairing-bootstrap.js'
 import { getLanAddresses } from './network-address.js'
+import { buildCompanionCapabilitiesV1 } from './capability-contract.js'
 
 const IDLE_TIMEOUT_MS = 10 * 60_000
 
@@ -33,7 +34,38 @@ export async function buildCompanionUsage(
     provider: 'all',
     optimize: false,
     timeline: false,
+    metroraProjectId: query.projectScopeId,
   }))
+}
+
+export async function buildCompanionCapabilities(): Promise<ReturnType<typeof buildCompanionCapabilitiesV1>> {
+  return buildCompanionCapabilitiesV1()
+}
+
+export async function buildCompanionFoundation(
+  query: UsageQuery,
+  aggregate: CompanionUsageAggregator = buildMenubarPayloadForRange,
+): Promise<unknown> {
+  const periodInfo = periodInfoFromQuery(query, 'month')
+  const payload = await aggregate(periodInfo, {
+    provider: 'all',
+    optimize: false,
+    timeline: false,
+    metroraProjectId: query.projectScopeId,
+  })
+  return payload.mobileFoundation ?? {
+    kind: 'metrora.companion.foundation',
+    version: 1,
+    generatedAt: payload.generated,
+    capabilities: buildCompanionCapabilitiesV1(payload.generated),
+    projectScope: payload.projectScope,
+    activity: { available: true, freshness: 'unknown', sessions: [] },
+    analyze: {
+      models: { available: true, freshness: 'unknown', rows: [] },
+      spend: { available: true, freshness: 'unknown', data: { costMicrosUsd: 0, calls: 0, sessions: 0, trend: [] } },
+    },
+    workspace: { available: false, reason: 'no-authority' },
+  }
 }
 
 // Run the secure share server. On-demand by default: it stops after 10 minutes
@@ -49,6 +81,8 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     identity,
     peers,
     getUsage: (q) => buildCompanionUsage(q),
+    getCapabilities: () => buildCompanionCapabilities(),
+    getFoundation: (q) => buildCompanionFoundation(q),
     onPeersChanged: () => savePeers(peers.list(), dir),
     approve: async (req) => {
       process.stdout.write(`\n  "${req.name}" wants access to your shared usage.\n`)

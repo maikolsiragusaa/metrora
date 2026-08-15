@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.StorageIssue
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
@@ -34,6 +35,13 @@ class SecureStore(context: Context) : MetroraStore {
         dataStore.edit { preferences -> preferences[SNAPSHOT_KEY] = encrypt(snapshot.toJson()) }
     }
 
+    override suspend fun loadFoundation(): StorageRead<MobileFoundationSnapshot> =
+        read(FOUNDATION_KEY) { raw -> MobileFoundationSnapshot.fromJson(raw) }
+
+    override suspend fun saveFoundation(foundation: MobileFoundationSnapshot) {
+        dataStore.edit { preferences -> preferences[FOUNDATION_KEY] = encrypt(foundation.toJson()) }
+    }
+
     override suspend fun clearCredentials() {
         dataStore.edit { preferences -> preferences.remove(CREDENTIALS_KEY) }
     }
@@ -42,10 +50,15 @@ class SecureStore(context: Context) : MetroraStore {
         dataStore.edit { preferences -> preferences.remove(SNAPSHOT_KEY) }
     }
 
+    override suspend fun clearFoundation() {
+        dataStore.edit { preferences -> preferences.remove(FOUNDATION_KEY) }
+    }
+
     override suspend fun clearPairing() {
         dataStore.edit { preferences ->
             preferences.remove(CREDENTIALS_KEY)
             preferences.remove(SNAPSHOT_KEY)
+            preferences.remove(FOUNDATION_KEY)
         }
     }
 
@@ -99,6 +112,7 @@ class SecureStore(context: Context) : MetroraStore {
         const val ENCRYPTION_KEY_ALIAS = "metrora-mobile-state-v1"
         val CREDENTIALS_KEY = stringPreferencesKey("encrypted_pairing_credentials_v1")
         val SNAPSHOT_KEY = stringPreferencesKey("encrypted_usage_snapshot_v1")
+        val FOUNDATION_KEY = stringPreferencesKey("encrypted_mobile_foundation_v1")
     }
 
     private object KeyUnavailableException : Exception()

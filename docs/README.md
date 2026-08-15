@@ -11,8 +11,8 @@ This index separates user guidance, current product guarantees, public contracts
 
 ## Connect devices locally
 
-- [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) — implemented and physically accepted Windows↔Samsung local companion scope, its boundaries and validation status; public Android distribution remains separate.
-- [Local companion API v1](LOCAL_COMPANION_API.md) — stable local HTTPS endpoints and the content-minimal usage contract used by first-party companions.
+- [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) — the accepted secure pairing foundation plus the implemented Mobile Product Foundation V1 surfaces, Project scope and bounded Android limits; public Android distribution remains separate.
+- [Local companion API v1](LOCAL_COMPANION_API.md) — stable local HTTPS endpoints, capability discovery, Project scope and the content-minimal domain contracts used by first-party companions.
 
 ## Understand the product
 

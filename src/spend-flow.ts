@@ -1,6 +1,8 @@
 import { parseAllSessions } from './parser.js'
 import { toDateString } from './daily-cache.js'
 import type { DateRange } from './types.js'
+import { readProjectRegistry } from './project-registry.js'
+import { filterProjectsByMetroraScope } from './project-scope.js'
 
 export type SpendFlowNode = { id: string; label: string; cost: number }
 export type SpendFlowLink = { model: string; project: string; cost: number }
@@ -40,8 +42,9 @@ function buildNodes(totals: Map<string, number>): { nodes: SpendFlowNode[]; keep
   return { nodes, keep }
 }
 
-export async function computeSpendFlow(range: DateRange, provider: string): Promise<SpendFlow> {
-  const projects = await parseAllSessions(range, provider)
+export async function computeSpendFlow(range: DateRange, provider: string, metroraProjectId?: string | null): Promise<SpendFlow> {
+  const registry = await readProjectRegistry()
+  const projects = filterProjectsByMetroraScope(await parseAllSessions(range, provider), registry.registry, metroraProjectId)
   const matrix = new Map<string, Map<string, number>>()
   const projectTotals = new Map<string, number>()
   const modelTotals = new Map<string, number>()

@@ -1,90 +1,62 @@
 # Metrora Android companion foundation
 
-**Current status:** Implemented in public `main` and physically accepted for the bounded Windows↔Samsung local companion scope. This is a source/build surface, not a public Android release or distribution channel.
+**Current status:** the local Android companion is implemented in the public source tree. The QR pairing, SAS approval, mutual TLS, certificate pinning, Android Keystore storage, offline cache, revoke, forget and re-pair behavior are the accepted `#181` foundation. Foundation V1 adds the bounded mobile product surfaces described below; it is not a public Android store release.
 
-The Android application is a private local companion to Metrora Desktop. It does not collect AI usage itself and does not introduce a second gateway, parser, provider registry or analytics engine.
+Metrora Mobile is the smartphone expression of the same Metrora product. Desktop/core remains authoritative for collection, parsing, provider normalization, canonical history, pricing/accounting, evidence and Workspace identity. Android consumes projections and does not become a second collector, parser, pricing engine, history engine or evidence engine.
 
-## Authority and data flow
+## Product and Project scope
 
-The desktop remains authoritative for collection, normalization, pricing and intelligence. Android consumes only the stable local companion API v1:
+The user-created **Metrora Project** is an overlay above one or more observed **Source Projects**:
 
-- `GET /api/v1/peer/hello`
-- `POST /api/v1/peer/pair-request`
-- `POST /api/v1/peer/revoke`
-- `GET /api/v1/usage`
+- a Source Project is the repository/working-directory identity observed by the existing collectors;
+- a Metrora Project is a stable user-owned grouping that can contain many Source Projects;
+- an unassigned Source Project remains explicitly **Unassigned**;
+- deleting a Metrora Project deletes only the overlay membership, never sessions, evidence or Source Projects.
 
-The user enters a LAN address and port. Discovery and QR conveniences can be layered on later without changing the authority or security model.
+Desktop owns create, rename, delete, assign, unassign and presentation editing. Android V1 reads the same Project `id`, `name`, `icon` and `color` and lets the user select `All projects`, `Unassigned` or a named Project. Android editing is intentionally not duplicated in this foundation.
 
-## Verified first pairing
+The registry is a versioned JSON file named `projects.v1.json` beside the normal Metrora config. Writes use a temporary file followed by an atomic rename. The reader validates kind, version, stable IDs, timestamps, curated icon/color tokens and one-membership-per-Source-Project. An unrecognizable current file is reported as corrupt, used as an empty read-only overlay, and never overwritten automatically; observed Source Projects remain available. The only migration accepted in V1 is an unversioned legacy `projects` envelope with deterministic IDs.
 
-The app creates an EC client identity in Android Keystore and presents its certificate during mutual TLS. It observes the desktop certificate fingerprint, verifies that it matches the fingerprint advertised by Metrora and computes a six-digit confirmation code from both device fingerprints.
+Source identity is a SHA-256-derived ID over the normalized canonical observed project path. If no path was observed, the collector project label is the bounded fallback. Session `workingDirectory` remains provenance and is not silently converted into membership. A path move, provider record with no path, or two genuinely different roots can therefore create separate Source IDs; the user can explicitly assign them to the same Metrora Project. Display name, icon and color are never identity or membership keys.
 
-The same code is shown on Android and Metrora Desktop. The desktop owner approves only when every digit matches. This comparison authenticates the first contact and detects an active local-network intermediary whose certificate would produce a different code.
+## Pairing and secure local transport
 
-After approval, the desktop fingerprint is pinned for all subsequent operations. The bearer token is useful only together with the same client certificate because the desktop authorizes the token and certificate fingerprint as one peer identity.
+The app creates an EC client identity in Android Keystore and presents its certificate during mutual TLS. Discovery verifies that the certificate fingerprint advertised by Desktop equals the fingerprint observed during the TLS connection. Android and Desktop derive and display the same six-digit SAS; the Desktop owner must approve the request after comparing the complete code.
 
-## Revocation and local deletion
+After approval, the Desktop fingerprint is pinned for subsequent operations. The bearer token is accepted only with the same client certificate fingerprint. The QR payload contains connection information only; it does not grant access and is followed by discovery, SAS comparison and Desktop approval.
 
-“Revoke this phone on desktop” performs an authenticated remote revocation first. Local credentials and cached data are deleted only after the desktop confirms that the peer was removed.
+Remote revoke is confirmed by Desktop before local credentials and cache are cleared. **Forget on this phone** is separate and does not claim to revoke the Desktop credential. Existing offline/reconnect, force-stop/reboot persistence, local recovery and re-pair behavior from `#181` remain in place.
 
-“Forget only on this phone” is a separate recovery action for an unavailable desktop. It does not claim to revoke the credential remotely and tells the user to remove the stale device from the desktop later.
+## Foundation V1 capabilities
 
-## Stable data contract
+Android performs authenticated capability discovery before exposing domain surfaces. The current Desktop advertises:
 
-Android parses `CompanionUsageV1`, not the desktop’s internal menubar/report payload. The contract contains only:
+- Home / Usage;
+- Projects;
+- Activity / Sessions;
+- Analyze / Models;
+- Analyze / Spend;
+- Device / Settings;
+- Workspace as **unavailable** because no bounded public Workspace mobile projection exists yet.
 
-- generated time and period label;
-- cost in integer micro-USD;
-- calls and sessions;
-- input, output, cache-read and cache-write tokens;
-- cache-hit percentage;
-- up to five top-model summaries;
-- pricing coverage metadata.
+`CompanionUsageV1` remains the bounded compatibility contract for Home totals and trend data. The separate Foundation V1 contract carries only the domain projections needed by the current mobile IA. Its Activity rows are metadata-only: safe date identity, bounded totals, Project/Source Project references and factual brand/route/source identifiers. Prompts, assistant responses, source code, patches, tool arguments, secrets, session titles derived from content and unrestricted filesystem paths are not sent to Android.
 
-Project names, session details, findings and other internal desktop report structures are outside this contract.
+Models and Spend use the same Desktop accounting/history authorities and selected Project/period scope. Model brand, route/provider and collector/source are separate facts. Android uses Desktop-provided IDs and reviewed labels; it never infers a source or provider from a model display name and never renders an unknown raw internal ID in ordinary consumer UI.
+
+The active Android IA is:
+
+`Home · Activity · Analyze · Workspace · Settings`
+
+Home preserves the accepted period selector, trend granularity, freshness, connection/cache state and factual accounting. Activity is a real bounded Sessions projection. Analyze contains Models and Spend/trend. Workspace is shown as explicitly unavailable from capability discovery. Settings preserves pairing, security, cache, revoke, forget and device behavior.
 
 ## Local storage and offline behavior
 
-Pairing credentials and the last successful usage snapshot are encrypted with an AES-GCM key held in Android Keystore. Android backup and device-transfer export are disabled for application state.
+Pairing credentials, the canonical `CompanionUsageV1` snapshot and the bounded Foundation cache are encrypted with AES-GCM using a key held in Android Keystore. The Foundation cache is additive and independently parse-validated. A corrupted Foundation cache is discarded without discarding valid pairing credentials or the usage snapshot. A cache from a different Desktop identity is ignored. Android backup and device-transfer export remain disabled for application state.
 
-When the desktop is unreachable, the app continues to show the most recent encrypted snapshot and marks it as cached. The retrieval timestamp remains visible.
+When Desktop is unreachable, Android keeps showing the last valid encrypted usage snapshot and marks it cached. Foundation surfaces use the last valid bounded projection or explicitly show unavailable data; they do not synthesize totals from presentation metadata.
 
-## Accepted physical scope
+## Validation and accepted scope
 
-The merged implementation has passed the bounded Windows↔Samsung physical-acceptance matrix for:
+The repository contains Android unit coverage for protocol paths, capability negotiation, Foundation parsing/round-trip, privacy bounds, Project scope selection, pairing, cache recovery, revoke and local forget. The existing physical acceptance is the bounded Windows↔Samsung local pairing/security/persistence scope from `#181`; the new Activity, Analyze and Project-scope surfaces require the corresponding physical matrix proposed in the implementation handoff before being described as physically accepted.
 
-- secure LAN transport, mutual TLS and certificate pinning;
-- pairing approval and SAS confirmation;
-- encrypted snapshot display, offline behavior and reconnect refresh;
-- revoke, local forget and re-pair recovery;
-- force-stop and reboot persistence;
-- first post-pair usage and restored-state remediation, including neutral cached-state semantics.
-
-This acceptance covers the current local companion contract. It does not claim a public Android release, Google Play/F-Droid distribution or mainstream Android product experience.
-
-## QA signing boundary
-
-Physical acceptance uses one dedicated non-production QA identity for the update-compatible `githubDebug` artifact. The identity is available only to trusted same-repository CI runs through protected secrets; fork pull requests do not receive those secrets and can run ordinary tests and builds without publishing the signed acceptance artifact. Private key material is never stored in Git.
-
-Release, F-Droid and Play signing are separate identities and release processes. Ordinary contributors do not need QA signing secrets to build, test, lint or inspect the Android companion.
-
-## Data minimization
-
-The companion does not request prompts, assistant messages, source code, patches, tool arguments, secrets or unrestricted filesystem paths.
-
-## Validation boundary
-
-The repository includes contract tests, a real Node mutual-TLS lifecycle test and blocking Android build, unit-test and lint jobs. The current physical-device Windows-to-Samsung pairing and persistence matrix has passed for the local companion scope. Public Android distribution and release-readiness work remain separate product gates.
-
-## Deliberate exclusions
-
-This foundation does not add:
-
-- cloud relay or account synchronization;
-- background polling or push notifications;
-- a second mobile gateway;
-- mobile-side provider parsing or pricing;
-- remote execution or control of coding tools;
-- store signing, publishing or production release automation.
-
-Those features require separate product and security decisions rather than being smuggled into the companion foundation.
+The foundation does not add cloud relay, accounts, remote access, managed service behavior, billing, background push, a mobile gateway, mobile-side provider parsing/pricing, remote execution or Workspace authority.

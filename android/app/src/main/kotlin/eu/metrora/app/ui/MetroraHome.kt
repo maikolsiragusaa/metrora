@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ShowChart
@@ -78,10 +77,10 @@ private enum class HomeDestination(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val available: Boolean,
 ) {
-    OVERVIEW(R.string.nav_overview, Icons.Outlined.Home, true),
-    MODELS(R.string.nav_models, Icons.Outlined.Layers, true),
-    SESSIONS(R.string.nav_sessions, Icons.Outlined.Group, false),
-    ALERTS(R.string.nav_alerts, Icons.Outlined.NotificationsNone, false),
+    HOME(R.string.nav_home, Icons.Outlined.Home, true),
+    ACTIVITY(R.string.nav_activity, Icons.Outlined.Group, true),
+    ANALYZE(R.string.nav_analyze, Icons.Outlined.ShowChart, true),
+    WORKSPACE(R.string.nav_workspace, Icons.Outlined.Layers, true),
     SETTINGS(R.string.nav_settings, Icons.Outlined.Settings, true),
 }
 
@@ -91,11 +90,12 @@ internal fun HomeState(
     onRefresh: () -> Unit,
     onSelectPeriod: (String) -> Unit,
     onSelectTrendGranularity: (String) -> Unit,
+    onSelectProject: (String) -> Unit,
     onRevoke: () -> Unit,
     onForget: () -> Unit,
 ) {
-    var destination by rememberSaveable { mutableStateOf(HomeDestination.OVERVIEW.name) }
-    val selected = HomeDestination.valueOf(destination)
+    var destination by rememberSaveable { mutableStateOf(HomeDestination.HOME.name) }
+    val selected = HomeDestination.entries.firstOrNull { it.name == destination } ?: HomeDestination.HOME
     // Each destination owns an independent scroll position. Settings no
     // longer opens halfway down after a long Overview scroll on a small phone.
     val scrollState = remember(selected) { androidx.compose.foundation.ScrollState(0) }
@@ -120,21 +120,28 @@ internal fun HomeState(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (selected != HomeDestination.SETTINGS) {
+                ProjectScopePicker(
+                    state = state,
+                    onSelect = onSelectProject,
+                )
+            }
             when (selected) {
-                HomeDestination.OVERVIEW -> OverviewSurface(
+                HomeDestination.HOME -> OverviewSurface(
                     state = state,
                     onRefresh = onRefresh,
                     onSelectPeriod = onSelectPeriod,
                     onSelectTrendGranularity = onSelectTrendGranularity,
-                    onViewAllModels = { destination = HomeDestination.MODELS.name },
+                    onViewAllModels = { destination = HomeDestination.ANALYZE.name },
                 )
                 HomeDestination.SETTINGS -> SettingsSurface(
                     state = state,
                     onRevoke = onRevoke,
                     onForget = onForget,
                 )
-                HomeDestination.MODELS -> ModelsSurface(state = state)
-                else -> UnsupportedDestination(destination = selected)
+                HomeDestination.ACTIVITY -> ActivitySurface(state = state)
+                HomeDestination.ANALYZE -> AnalyzeSurface(state = state)
+                HomeDestination.WORKSPACE -> WorkspaceSurface(state = state)
             }
         }
     }

@@ -9,7 +9,11 @@ object MetroraProtocol {
     const val PAIR_REQUEST_PATH = "/api/v1/peer/pair-request"
     const val REVOKE_PATH = "/api/v1/peer/revoke"
     const val USAGE_PATH = "/api/v1/usage"
+    const val CAPABILITIES_PATH = "/api/v1/capabilities"
+    const val FOUNDATION_PATH = "/api/v1/foundation"
     const val USAGE_KIND = "metrora.companion.usage"
+    const val CAPABILITIES_KIND = "metrora.companion.capabilities"
+    const val FOUNDATION_KIND = "metrora.companion.foundation"
 
     private val allowedPeriods = setOf("today", "week", "30days", "month", "all", "lifetime")
     private val allowedTrendGranularities = setOf("day", "week", "month")
@@ -45,10 +49,24 @@ object MetroraProtocol {
         return (value % 1_000_000L).toString().padStart(6, '0')
     }
 
-    fun usagePath(period: String, granularity: String? = null): String {
+    fun usagePath(period: String, granularity: String? = null, projectScopeId: String? = null): String {
         require(period in allowedPeriods) { "Unsupported usage period." }
-        if (granularity == null) return "$USAGE_PATH?period=$period"
-        require(granularity in allowedTrendGranularities) { "Unsupported trend granularity." }
-        return "$USAGE_PATH?period=$period&granularity=$granularity"
+        if (granularity != null) require(granularity in allowedTrendGranularities) { "Unsupported trend granularity." }
+        val params = buildList {
+            add("period=$period")
+            granularity?.let { add("granularity=$it") }
+            projectScopeId?.let {
+                require(it == "all" || it == "unassigned" || it.matches(Regex("[a-zA-Z0-9_.:-]{1,120}"))) {
+                    "Invalid Project scope."
+                }
+                if (it != "all") add("projectScopeId=$it")
+            }
+        }
+        return "$USAGE_PATH?${params.joinToString("&")}"
     }
+
+    fun capabilitiesPath(): String = CAPABILITIES_PATH
+
+    fun foundationPath(period: String, granularity: String? = null, projectScopeId: String? = null): String =
+        usagePath(period, granularity, projectScopeId).replace(USAGE_PATH, FOUNDATION_PATH)
 }

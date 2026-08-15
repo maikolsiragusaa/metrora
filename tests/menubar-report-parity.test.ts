@@ -111,8 +111,15 @@ async function seedFixture(): Promise<void> {
 
 /** Everything but the per-call wall-clock `generated` stamp. */
 function stableShape(payload: unknown): unknown {
-  const clone = structuredClone(payload) as { generated?: string }
+  const clone = structuredClone(payload) as {
+    generated?: string
+    mobileFoundation?: { generatedAt?: string; capabilities?: { generatedAt?: string } }
+  }
   clone.generated = ''
+  if (clone.mobileFoundation) {
+    clone.mobileFoundation.generatedAt = ''
+    if (clone.mobileFoundation.capabilities) clone.mobileFoundation.capabilities.generatedAt = ''
+  }
   return clone
 }
 

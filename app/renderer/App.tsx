@@ -80,15 +80,18 @@ function AppMain() {
     scopedClaudeConfigSource,
     providerOptions,
     providerLabel,
+    metroraProjectId,
     onPeriodChange,
     onRangeSelect,
     onProviderSelect,
     onConfigSelect,
+    onProjectScopeSelect,
   } = useDesktopScope({ section, detectedProviders })
   const { overview, ready, refreshToken, refreshVisible, onConfigMutated } = useOverviewRuntime({
     period,
     provider,
     customRange,
+    projectScopeId: metroraProjectId,
     scopedClaudeConfigSource,
     detectedProviders,
     setDetectedProviders,
@@ -126,6 +129,11 @@ function AppMain() {
     ? claudeConfigs?.options.find(option => option.id === scopedClaudeConfigSource)?.label ?? null
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
+  const projectScope = overview.data?.projectScope
+  useEffect(() => {
+    if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
+    onProjectScopeSelect('all')
+  }, [metroraProjectId, onProjectScopeSelect, projectScope])
 
   return (
     <Window>
@@ -158,6 +166,9 @@ function AppMain() {
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}
               onConfigSelect={onConfigSelect}
+              projectOptions={projectScope?.options.map(option => ({ id: option.id, name: option.name }))}
+              projectScopeId={metroraProjectId}
+              onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
             />
             <div className={motionClass('body', 'section-fade')}>
@@ -167,6 +178,7 @@ function AppMain() {
                 <Sessions
                   period={period}
                   provider={provider}
+                  projectScopeId={metroraProjectId}
                   range={customRange}
                   refreshToken={refreshToken}
                   detectedProviders={detectedProviders}
@@ -177,11 +189,11 @@ function AppMain() {
               ) : section === 'pullRequests' ? (
                 <PullRequestsContent overview={overview} />
               ) : section === 'spend' ? (
-                <SpendContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} ready={ready} />
+                <SpendContent period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} refreshToken={refreshToken} ready={ready} />
               ) : section === 'optimize' ? (
                 <OptimizeContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} ready={ready} />
               ) : section === 'models' ? (
-                <Models period={period} provider={provider} range={customRange} refreshToken={refreshToken} onNavigate={navigate} overview={overview} ready={ready} />
+                <Models period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} refreshToken={refreshToken} onNavigate={navigate} overview={overview} ready={ready} />
               ) : section === 'compare' ? (
                 <Compare period={period} provider={provider} range={customRange} refreshToken={refreshToken} ready={ready} />
               ) : section === 'workspace' ? (

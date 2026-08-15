@@ -13,6 +13,7 @@ export type UsageQuery = {
   from?: string
   to?: string
   granularity?: 'day' | 'week' | 'month' | string
+  projectScopeId?: string
 }
 
 // An approve-style pairing request, surfaced to the user on the sharing device.
@@ -22,6 +23,10 @@ export type ShareServerOptions = {
   identity: Identity
   peers: PeerStore
   getUsage: (query: UsageQuery) => Promise<unknown>
+  /** Optional bounded capability discovery; absent means unavailable. */
+  getCapabilities?: () => Promise<unknown>
+  /** Optional bounded mobile foundation projection. */
+  getFoundation?: (query: UsageQuery) => Promise<unknown>
   // Legacy callback kept for compatibility with existing embedders.
   onPaired?: () => void | Promise<void>
   // Called after pairing or revocation so the caller can durably persist peers.
@@ -255,6 +260,38 @@ export class ShareServer {
       return
     }
 
+    if (pathname === '/api/capabilities' && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getCapabilities) {
+        json(404, { error: 'capability unavailable' })
+        return
+      }
+      json(200, await this.opts.getCapabilities())
+      return
+    }
+
+    if (pathname === '/api/foundation' && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getFoundation) {
+        json(404, { error: 'capability unavailable' })
+        return
+      }
+      json(200, await this.opts.getFoundation({
+        period: url.searchParams.get('period') ?? undefined,
+        from: url.searchParams.get('from') ?? undefined,
+        to: url.searchParams.get('to') ?? undefined,
+        granularity: url.searchParams.get('granularity') ?? undefined,
+        projectScopeId: url.searchParams.get('projectScopeId') ?? undefined,
+      }))
+      return
+    }
+
     if (pathname === '/api/usage' && req.method === 'GET') {
       if (!this.authorizedPeer(req)) {
         json(401, { error: 'unauthorized' })
@@ -264,6 +301,7 @@ export class ShareServer {
         period: url.searchParams.get('period') ?? undefined,
         from: url.searchParams.get('from') ?? undefined,
         to: url.searchParams.get('to') ?? undefined,
+        projectScopeId: url.searchParams.get('projectScopeId') ?? undefined,
       })
       // The versioned companion surface is an explicit DTO. The inherited
       // unversioned route keeps its legacy payload for compatible desktop peers.

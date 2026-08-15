@@ -26,6 +26,15 @@ import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 import { buildUsageBreakdowns } from './usage-breakdowns.js'
+import { buildMobileFoundationPayload } from './sharing/mobile-foundation.js'
+import { readProjectRegistry } from './project-registry.js'
+import {
+  ALL_PROJECTS_SCOPE_ID,
+  buildProjectScopePayload,
+  filterDailyEntryByMetroraScope,
+  filterProjectsByMetroraScope,
+  type ProjectScopeId,
+} from './project-scope.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -102,6 +111,8 @@ export type AggregateOpts = {
   provider?: string
   project?: string[]
   exclude?: string[]
+  /** Stable user-created Metrora Project scope; distinct from CLI name filters. */
+  metroraProjectId?: ProjectScopeId | null
   daysSelection?: { range: DateRange; label: string; days: Set<string> } | null
   optimize?: boolean
   claudeConfigSourceId?: string | null
@@ -234,7 +245,14 @@ export type DurablePeriod = {
 export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<DurablePeriod> {
   const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
-  const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
+  const registryResult = await readProjectRegistry()
+  const registry = registryResult.registry
+  const scopeId = opts.metroraProjectId ?? ALL_PROJECTS_SCOPE_ID
+  const fp = (p: ProjectSummary[]) => filterProjectsByMetroraScope(
+    filterProjectsByName(p, opts.project ?? [], opts.exclude ?? []),
+    registry,
+    scopeId,
+  )
   const projectFilter = { include: opts.project, exclude: opts.exclude }
 
   const now = new Date()
@@ -279,8 +297,9 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
   const days = allDays.map(day => {
     const providerDay = pf === 'all' ? day : sliceDayToProvider(day, pf)
-    return reconcileDurableProjectDay(providerDay, projectFilter, {
-      preserveDetailedBreakdown: projectFilterActive && day.date === todayStr,
+    const scopedDay = filterDailyEntryByMetroraScope(providerDay, registry, scopeId)
+    return reconcileDurableProjectDay(scopedDay, projectFilter, {
+      preserveDetailedBreakdown: (projectFilterActive || scopeId !== ALL_PROJECTS_SCOPE_ID) && day.date === todayStr,
     })
   })
   const data = buildPeriodDataFromDays(days, periodInfo.label)
@@ -319,9 +338,17 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
 export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<MenubarPayload> {
   const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
-  const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
+  const registryResult = await readProjectRegistry()
+  const registry = registryResult.registry
+  const scopeId = opts.metroraProjectId ?? ALL_PROJECTS_SCOPE_ID
+  const fp = (p: ProjectSummary[]) => filterProjectsByMetroraScope(
+    filterProjectsByName(p, opts.project ?? [], opts.exclude ?? []),
+    registry,
+    scopeId,
+  )
   const projectFilter = { include: opts.project, exclude: opts.exclude }
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
+  const projectScopeActive = scopeId !== ALL_PROJECTS_SCOPE_ID
 
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -395,6 +422,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       provider: pf,
       project: opts.project,
       exclude: opts.exclude,
+      metroraProjectId: opts.metroraProjectId,
       daysSelection,
     })
     currentData = durable.data
@@ -463,6 +491,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   // in the cache, so the filtered view shows zero tokens (heatmap/trend still works on cost).
   const historyStartStr = toDateString(new Date(now.getFullYear(), now.getMonth(), now.getDate() - BACKFILL_DAYS))
   const allCacheDays = getDaysInRange(cache, historyStartStr, yesterdayStr)
+  const scopedCacheDays = allCacheDays.map(day => filterDailyEntryByMetroraScope(day, registry, scopeId))
 
   let dailyHistory
   if (isClaudeConfigScoped && claudeConfigs?.selectedId) {
@@ -475,12 +504,12 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       claudeConfigs.selectedId,
     )
     dailyHistory = dailyEntriesToHistory(aggregateProjectsIntoDays(historyProjects))
-  } else if (projectFilterActive) {
+  } else if (projectFilterActive || projectScopeActive) {
     // Historical project rollups own cost/calls/savings/session splits,
     // but not token/model/category splits. Keep those unavailable details empty
     // instead of assigning the whole day to every selected project. Today's
     // project-filtered live parse can preserve its detailed breakdown safely.
-    const historyFromCache = allCacheDays.map(day => reconcileDurableProjectDay(
+    const historyFromCache = scopedCacheDays.map(day => reconcileDurableProjectDay(
       isAllProviders ? day : sliceDayToProvider(day, pf),
       projectFilter,
     ))
@@ -695,7 +724,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
   const periodDailyHistory = cacheDaysForPeriod ? dailyEntriesToHistory(cacheDaysForPeriod) : undefined
-  return withReadFreshness(
+  const payload = withReadFreshness(
     buildMenubarPayload(
       currentData,
       providers,
@@ -711,4 +740,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     cache,
     effectivelyScoped,
   )
+  payload.projectScope = buildProjectScopePayload(registry, registryResult.status, scanProjects, scopeId)
+  payload.mobileFoundation = buildMobileFoundationPayload(payload, scanProjects, registry)
+  return payload
 }

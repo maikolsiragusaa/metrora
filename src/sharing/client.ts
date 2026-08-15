@@ -120,6 +120,17 @@ export function fetchCompanionUsage(ep: PeerEndpoint, token: string, query: Usag
   return call(ep, 'GET', `/api/v1/usage${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
 }
 
+export function fetchCompanionCapabilities(ep: PeerEndpoint, token: string): Promise<Response> {
+  return call(ep, 'GET', '/api/v1/capabilities', { authorization: `Bearer ${token}` })
+}
+
+export function fetchCompanionFoundation(ep: PeerEndpoint, token: string, query: UsageQuery = {}): Promise<Response> {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(query)) if (v) params.set(k, v)
+  const qs = params.toString()
+  return call(ep, 'GET', `/api/v1/foundation${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
+}
+
 export function revokeCompanion(ep: PeerEndpoint, token: string): Promise<Response> {
   return call(ep, 'POST', '/api/v1/peer/revoke', { authorization: `Bearer ${token}` })
 }

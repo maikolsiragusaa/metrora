@@ -6,6 +6,8 @@ import { findUnpricedModels, loadPricing, setModelAliases, setPriceOverrides, se
 import { parseAllSessions, filterProjectsByName, filterProjectsByDateRange, clearSessionCache, setInteractiveScanUI } from './parser.js'
 import { allProviderNames, getAllProviders } from './providers/index.js'
 import { getProvider } from './providers/index.js'
+import { parseProjectsForMetroraScope } from './project-scope-cli.js'
+import { registerProjectCommands } from './project-cli-commands.js'
 import { convertCost, formatCost } from './currency.js'
 import { renderStatusBar } from './format.js'
 import { toDateString } from './daily-cache.js'
@@ -433,14 +435,12 @@ async function runJsonReport(period: Period, provider: string, project: string[]
   const report: ReturnType<typeof buildJsonReport> & { plan?: JsonPlanSummary; plans?: JsonPlanSummaryMap } = await attachPlanSummaries(buildJsonReport(durable.liveProjects, label, period, durable))
   console.log(JSON.stringify(report, null, 2))
 }
-
-const program = new Command()
+const program = new Command(); program.addOption(new Option('--metrora-project <id>').hideHelp())
   .name('metrora')
   .description('See where your AI coding tokens go - by task, tool, model, and project')
   .version(version)
   .option('--verbose', 'print warnings to stderr on read failures and skipped files')
   .option('--timezone <zone>', 'IANA timezone for date grouping (e.g. Asia/Tokyo, America/New_York)')
-
 program.hook('preAction', async (thisCommand) => {
   const tz = thisCommand.opts<{ timezone?: string }>().timezone ?? process.env['METRORA_TZ']
   if (tz) {
@@ -797,7 +797,6 @@ program
     const customRangeLabel = customRange ? formatDateRangeLabel(opts.from, opts.to) : undefined
     await renderDashboard(period, opts.provider, opts.refresh, opts.project, opts.exclude, customRange, customRangeLabel, daySelection?.day)
   })
-
 program
   .command('share [action]')
   .description("Securely share this device's usage with your other devices. Actions: status. Supports --format json for status.")
@@ -1116,6 +1115,7 @@ program
         optimize: opts.optimize !== false,
         timeline: opts.timeline !== false,
         claudeConfigSourceId: opts.claudeConfigSource,
+        metroraProjectId: program.opts().metroraProject,
       })
       if (opts.scope === 'combined') {
         // Combined multi-device usage is best-effort enrichment on the menubar's
@@ -1143,10 +1143,10 @@ program
     }
     if (opts.format === 'json') {
       // Durable totals so the compact status matches the menubar / report.
-      const todayDurable = await buildDurablePeriod(getDateRange('today'), { provider: pf, project: opts.project, exclude: opts.exclude })
+      const todayDurable = await buildDurablePeriod(getDateRange('today'), { provider: pf, project: opts.project, exclude: opts.exclude, metroraProjectId: program.opts().metroraProject })
       const todayData = todayDurable.data
       const todayProjects = todayDurable.liveProjects
-      const monthDurable = await buildDurablePeriod(getDateRange('month'), { provider: pf, project: opts.project, exclude: opts.exclude })
+      const monthDurable = await buildDurablePeriod(getDateRange('month'), { provider: pf, project: opts.project, exclude: opts.exclude, metroraProjectId: program.opts().metroraProject })
       const monthData = monthDurable.data
       const monthProjects = monthDurable.liveProjects
       const { code, rate } = getCurrency()
@@ -2077,7 +2077,7 @@ program
       range = getDateRange(opts.period).range
     }
 
-    const projects = await parseAllSessions(range, opts.provider)
+    const projects = await parseProjectsForMetroraScope(range, opts.provider, program.opts().metroraProject)
     const rows = await aggregateModels(projects, {
       byTask: !!opts.byTask,
       byAgent: !!opts.byAgent,
@@ -2135,7 +2135,7 @@ program
       range = getDateRange(opts.period).range
     }
 
-    const projects = await parseAllSessions(range, opts.provider)
+    const projects = await parseProjectsForMetroraScope(range, opts.provider, program.opts().metroraProject)
     if (opts.byPr) {
       const { rows: prRows, totals } = buildPrAttribution(projects)
       if (opts.format === 'json') {
@@ -2248,7 +2248,7 @@ program
       range = getDateRange(opts.period).range
     }
 
-    console.log(JSON.stringify(await computeSpendFlow(range, opts.provider)))
+    console.log(JSON.stringify(await computeSpendFlow(range, opts.provider, program.opts().metroraProject)))
   })
 
 program
@@ -2322,6 +2322,6 @@ program
 
 registerActCommands(program)
 registerGuardCommands(program)
-registerSyncCommands(program)
+registerSyncCommands(program); registerProjectCommands(program)
 
 program.parse()

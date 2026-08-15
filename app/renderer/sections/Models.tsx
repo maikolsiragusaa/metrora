@@ -103,6 +103,7 @@ function hasAccountingValue(accounting: DurableModelAccounting): boolean {
 export function Models({
   period,
   provider,
+  projectScopeId,
   range = null,
   refreshToken = 0,
   onNavigate,
@@ -111,6 +112,7 @@ export function Models({
 }: {
   period: Period
   provider: string
+  projectScopeId?: string
   range?: DateRange | null
   refreshToken?: number
   onNavigate?: (section: Section, pane?: SettingsPane) => void
@@ -136,6 +138,7 @@ export function Models({
         <ModelsUsage
           period={period}
           provider={provider}
+          projectScopeId={projectScopeId}
           range={range}
           byTask={lens === 'task'}
           refreshToken={refreshToken}
@@ -151,6 +154,7 @@ export function Models({
 function ModelsUsage({
   period,
   provider,
+  projectScopeId,
   range,
   byTask,
   refreshToken,
@@ -160,6 +164,7 @@ function ModelsUsage({
 }: {
   period: Period
   provider: string
+  projectScopeId?: string
   range: DateRange | null
   byTask: boolean
   refreshToken: number
@@ -170,10 +175,13 @@ function ModelsUsage({
   // Task attribution genuinely requires surviving source sessions. The primary
   // model table does not: it reads the already-loaded durable Overview payload,
   // avoiding both a second authority and another CLI spawn on first navigation.
+  const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
   const report = usePolled<ModelReportRow[]>(
-    () => range ? metrora.getModels(period, provider, true, range) : metrora.getModels(period, provider, true),
-    [period, provider, range?.from, range?.to, refreshToken],
-    { enabled: ready && byTask, memoKey: `models|${period}|${provider}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
+    () => range
+      ? scopedProject ? metrora.getModels(period, provider, true, range, scopedProject) : metrora.getModels(period, provider, true, range)
+      : scopedProject ? metrora.getModels(period, provider, true, undefined, scopedProject) : metrora.getModels(period, provider, true),
+    [period, provider, projectScopeId, range?.from, range?.to, refreshToken],
+    { enabled: ready && byTask, memoKey: `models|${period}|${provider}|${projectScopeId ?? 'all'}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
   if (byTask) {

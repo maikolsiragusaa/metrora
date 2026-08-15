@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   companionHello,
+  fetchCompanionCapabilities,
+  fetchCompanionFoundation,
   companionPairRequest,
   fetchCompanionUsage,
   fetchUsage,
@@ -89,6 +91,8 @@ describe('secure companion lifecycle', () => {
       identity: desktop,
       peers,
       getUsage: async () => internalPayload,
+      getCapabilities: async () => ({ kind: 'metrora.companion.capabilities', version: 1, capabilities: [] }),
+      getFoundation: async (query) => ({ kind: 'metrora.companion.foundation', version: 1, projectScopeId: query.projectScopeId ?? 'all' }),
       onPeersChanged: () => {
         peerChanges += 1
       },
@@ -131,6 +135,14 @@ describe('secure companion lifecycle', () => {
         totals: { costMicrosUsd: 750_000, calls: 5, sessions: 2 },
       })
       expect(JSON.stringify(usage.json)).not.toContain('must-not-leak')
+
+      const capabilities = await fetchCompanionCapabilities(endpoint, token)
+      expect(capabilities.status).toBe(200)
+      expect(capabilities.json).toMatchObject({ kind: 'metrora.companion.capabilities', version: 1 })
+
+      const foundation = await fetchCompanionFoundation(endpoint, token, { period: 'month', projectScopeId: 'mp_demo' })
+      expect(foundation.status).toBe(200)
+      expect(foundation.json).toMatchObject({ kind: 'metrora.companion.foundation', version: 1, projectScopeId: 'mp_demo' })
 
       // The inherited desktop route remains compatible and intentionally keeps
       // the legacy payload until desktop-to-desktop migration is explicit.
