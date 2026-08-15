@@ -104,11 +104,11 @@
     <string name="daily">Daily</string>
     <string name="weekly">Weekly</string>
     <string name="monthly">Monthly</string>
-    <string name="view_all">View all</string>
+    <string name="see_models">See models</string>
     <string name="trend_unavailable">Desktop did not provide cost aggregates for this period.</string>
     <string name="models_unavailable">Desktop did not provide model rows for this period.</string>
-    <string name="provider_unknown">Provider identity unavailable</string>
-    <string name="provider_logo_description">%1$s provider mark</string>
+    <string name="via_provider">via %1$s</string>
+    <string name="model_brand_logo_description">%1$s model brand mark</string>
     <string name="metrora_model_logo_description">Neutral Metrora model mark</string>
     <string name="estimated_pricing">Includes estimated pricing evidence</string>
     <string name="no_snapshot_title">No usage overview saved yet</string>

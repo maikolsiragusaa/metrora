@@ -41,6 +41,7 @@ internal object CompanionUsageV1Parser {
                         costMicrosUsd = model.nonNegativeLong("costMicrosUsd"),
                         estimatedCostMicrosUsd = model.nullableNonNegativeLong("estimatedCostMicrosUsd"),
                         providerId = model.nullableProviderId("providerId"),
+                        brandId = model.nullableBrandId("brandId"),
                     ),
                 )
             }
@@ -134,6 +135,8 @@ internal object CompanionUsageV1Parser {
             it.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))
         }
     }
+
+    private fun JSONObject.nullableBrandId(name: String): String? = nullableProviderId(name)
 
     private data class TrendData(
         val granularity: String,

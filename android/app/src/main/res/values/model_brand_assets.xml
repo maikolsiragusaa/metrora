@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- These aliases expose model-vendor semantics without reusing the
+         coding-tool ids/assets as model brands. -->
+    <item name="model_brand_anthropic" type="drawable">@drawable/provider_claude</item>
+    <item name="model_brand_google" type="drawable">@drawable/provider_gemini</item>
+</resources>

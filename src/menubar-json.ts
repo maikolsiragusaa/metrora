@@ -115,6 +115,7 @@ import { buildModelPresentation } from './model-presentation.js'
 import { buildMenubarHistory } from './menubar-history.js'
 import type { ReworkedFile } from './workflow-insights.js'
 import type { PrRow, BranchRow } from './sessions-report.js'
+import type { ModelBrandId } from './model-brand.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
 import type { ModelAccountingRow } from './model-accounting-types.js'
 
@@ -262,6 +263,8 @@ export type MenubarPayload = {
     /// Source-recorded provider id, when the model row carries factual
     /// provider identity. Never inferred from the display name.
     providerId?: string
+    /// Canonical model-vendor identity used only for presentation branding.
+    brandId?: ModelBrandId
     /// Estimated portion of this model's `cost`; > 0 marks the row as priced
       /// from estimated tokens. Optional for payload back-compat.
       estimatedCostUSD?: number

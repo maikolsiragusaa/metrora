@@ -244,6 +244,61 @@ describe('model accounting payload', () => {
     expect(payload.current.modelAccounting?.coverage).toEqual({ cost: 1, calls: 1 })
   })
 
+  it('emits canonical model brands separately from factual delivery routes', () => {
+    const payload = buildMenubarPayload(period([
+      {
+        name: 'gpt-5.4',
+        modelProvider: 'openai',
+        sourceProviders: ['codex'],
+        cost: 4,
+        savingsUSD: 0,
+        calls: 4,
+      },
+      {
+        name: 'claude-sonnet-4-6',
+        modelProvider: 'amazon-bedrock',
+        sourceProviders: ['opencode'],
+        cost: 3,
+        savingsUSD: 0,
+        calls: 3,
+      },
+      {
+        name: 'claude-sonnet-4-6',
+        modelProvider: 'api_provider_anthropic',
+        sourceProviders: ['claude'],
+        cost: 2,
+        savingsUSD: 0,
+        calls: 2,
+      },
+      {
+        name: 'ambiguous-model',
+        modelProvider: 'openai',
+        sourceProviders: ['codex'],
+        cost: 1,
+        savingsUSD: 0,
+        calls: 1,
+      },
+    ], 10, 10), [], null)
+
+    const rows = payload.current.modelAccounting?.rows ?? []
+    expect(rows.find(row => row.provider === 'openai' && row.name === 'GPT-5.4')).toMatchObject({
+      provider: 'openai',
+      brandId: 'openai',
+    })
+    expect(rows.find(row => row.provider === 'amazon-bedrock')).toMatchObject({
+      provider: 'amazon-bedrock',
+      brandId: 'anthropic',
+    })
+    expect(rows.find(row => row.provider === 'api_provider_anthropic')).toMatchObject({
+      provider: 'api_provider_anthropic',
+      brandId: 'anthropic',
+    })
+    expect(rows.find(row => row.provider === 'openai' && row.calls === 1)).not.toHaveProperty('brandId')
+
+    expect(payload.current.topModels.find(model => model.providerId === 'openai')).toMatchObject({ brandId: 'openai' })
+    expect(payload.current.topModels.find(model => model.providerId === 'amazon-bedrock')).toMatchObject({ brandId: 'anthropic' })
+  })
+
   it('does not treat an unclassified reasoning field as separately reported', () => {
     const payload = buildMenubarPayload(period([{
       name: 'gpt-5.4',

@@ -220,4 +220,25 @@ describe('CompanionUsageV1', () => {
     expect(payload.topModels[0]?.providerId).toBe('provider-a')
     expect(payload.models?.map(model => model.providerId)).toEqual(['provider-a', 'provider-b'])
   })
+
+  it('keeps route provenance separate from canonical model branding', () => {
+    const payload = toCompanionUsageV1({
+      generated: '2026-08-15T10:30:00.000Z',
+      current: {
+        label: 'This month',
+        topModels: [
+          { name: 'GPT-5.4', providerId: 'openai', brandId: 'openai', calls: 1, cost: 1 },
+          { name: 'Claude Sonnet 4.6', providerId: 'amazon-bedrock', brandId: 'anthropic', calls: 1, cost: 1 },
+          { name: 'Unknown', providerId: 'openai', brandId: 'codex', calls: 1, cost: 1 },
+        ],
+      },
+    })
+
+    expect(payload.topModels).toMatchObject([
+      { providerId: 'openai', brandId: 'openai' },
+      { providerId: 'amazon-bedrock', brandId: 'anthropic' },
+      { providerId: 'openai' },
+    ])
+    expect(payload.topModels[2]).not.toHaveProperty('brandId')
+  })
 })

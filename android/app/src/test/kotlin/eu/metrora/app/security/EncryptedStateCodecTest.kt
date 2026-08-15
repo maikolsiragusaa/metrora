@@ -26,7 +26,15 @@ class EncryptedStateCodecTest {
             cacheReadTokens = 4L,
             cacheWriteTokens = 5L,
             cacheHitPercent = 50.0,
-            topModels = emptyList(),
+            topModels = listOf(
+                eu.metrora.app.data.ModelUsage(
+                    name = "GPT-5.4",
+                    calls = 1L,
+                    costMicrosUsd = 12L,
+                    providerId = "openai",
+                    brandId = "openai",
+                ),
+            ),
             retrievedAtEpochMs = 11L,
         )
         val encoded = EncryptedStateCodec.encrypt(snapshot.toJson(), key)

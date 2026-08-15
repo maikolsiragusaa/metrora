@@ -1,4 +1,5 @@
 import { normalizeExplicitModelProvider } from '../model-provider.js'
+import { normalizeModelBrandId, resolveModelBrandId, type ModelBrandId } from '../model-brand.js'
 
 export const COMPANION_USAGE_KIND = 'metrora.companion.usage' as const
 export const COMPANION_USAGE_VERSION = 1 as const
@@ -11,6 +12,8 @@ export type CompanionModelUsageV1 = {
   estimatedCostMicrosUsd: number | null
   /** Source-recorded provider identity; absent means unknown, not inferred. */
   providerId?: string
+  /** Canonical model-vendor identity for presentation branding only. */
+  brandId?: ModelBrandId
 }
 
 export type CompanionTrendPointV1 = {
@@ -246,12 +249,17 @@ export function toCompanionUsageV1(
     const name = typeof model.name === 'string' ? model.name.trim() : ''
     if (!name) return null
     const providerId = normalizeExplicitModelProvider(model.providerId ?? model.provider)
+    const brandId = normalizeModelBrandId(model.brandId) ?? resolveModelBrandId({
+      canonicalIdentity: typeof model.canonicalIdentity === 'string' ? model.canonicalIdentity : undefined,
+      modelOwner: typeof model.modelOwner === 'string' ? model.modelOwner : undefined,
+    })
     return {
       name: name.slice(0, 160),
       calls: nonNegativeInteger(model.calls),
       costMicrosUsd: usdToMicros(model.cost),
       estimatedCostMicrosUsd: nullableUsdToMicros(model.estimatedCostUSD),
       ...(providerId ? { providerId } : {}),
+      ...(brandId ? { brandId } : {}),
     }
   }
 

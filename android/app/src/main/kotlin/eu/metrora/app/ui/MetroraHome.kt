@@ -232,15 +232,6 @@ private fun HomeHeader(state: MetroraUiState, onRefresh: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
             )
-            Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                text = connectionLabel(state),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
         }
         ConnectionPill(state)
     }
@@ -254,7 +245,7 @@ private fun ConnectionPill(state: MetroraUiState) {
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.33f),
         modifier = Modifier
-            .widthIn(min = 104.dp, max = 132.dp)
+            .widthIn(min = 104.dp)
             .heightIn(min = 42.dp),
     ) {
         Row(
@@ -277,7 +268,6 @@ private fun ConnectionPill(state: MetroraUiState) {
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -703,7 +693,7 @@ private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.view_all),
+                    text = androidx.compose.ui.res.stringResource(R.string.see_models),
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .clickable(role = Role.Button, onClick = onViewAll)
@@ -774,7 +764,10 @@ private fun ModelsSurface(state: MetroraUiState) {
 @Composable
 private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = false) {
     val providerId = model.providerId
-    val hasCanonicalProviderLogo = MetroraProviderBranding.hasCanonicalLogo(providerId)
+    val brandId = model.brandId
+    val hasCanonicalBrandLogo = MetroraModelBranding.hasCanonicalLogo(brandId)
+    val routeLabel = MetroraModelBranding.routeLabel(providerId)
+    val showRoute = MetroraModelBranding.shouldShowRoute(providerId, brandId, showProvider)
     val cost = if (model.costMicrosUsd > 0L) {
         formatUsd(model.costMicrosUsd)
     } else {
@@ -795,9 +788,11 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
             ),
         ) {
             androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(MetroraProviderBranding.logoResource(providerId)),
-                contentDescription = if (hasCanonicalProviderLogo) {
-                    providerId?.let { androidx.compose.ui.res.stringResource(R.string.provider_logo_description, it) }
+                painter = androidx.compose.ui.res.painterResource(MetroraModelBranding.logoResource(brandId)),
+                contentDescription = if (hasCanonicalBrandLogo) {
+                    MetroraModelBranding.brandLabel(brandId)?.let {
+                        androidx.compose.ui.res.stringResource(R.string.model_brand_logo_description, it)
+                    }
                 } else {
                     androidx.compose.ui.res.stringResource(R.string.metrora_model_logo_description)
                 },
@@ -811,9 +806,9 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
             )
-            if (showProvider || providerId != null) {
+            if (showRoute && routeLabel != null) {
                 Text(
-                    text = providerId?.let { "Provider · $it" } ?: androidx.compose.ui.res.stringResource(R.string.provider_unknown),
+                    text = androidx.compose.ui.res.stringResource(R.string.via_provider, routeLabel),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1005,17 +1000,6 @@ private fun MetroraBottomNavigation(
             }
         }
     }
-}
-
-private fun connectionLabel(state: MetroraUiState): String = when (state.status) {
-    MetroraConnectionState.CONNECTED,
-    MetroraConnectionState.REFRESHING,
-    -> "Connected"
-    MetroraConnectionState.OFFLINE_WITH_SNAPSHOT,
-    MetroraConnectionState.OFFLINE_NO_SNAPSHOT,
-    MetroraConnectionState.RESTORED,
-    -> "Saved"
-    else -> "Needs attention"
 }
 
 private fun formatTrendDate(raw: String): String = runCatching {

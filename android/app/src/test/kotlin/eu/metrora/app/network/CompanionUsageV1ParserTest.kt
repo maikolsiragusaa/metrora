@@ -100,4 +100,29 @@ class CompanionUsageV1ParserTest {
         assertEquals(listOf("provider-a", "provider-b"), snapshot.models.map { it.providerId })
         assertEquals("week", snapshot.costTrendGranularity)
     }
+
+    @Test
+    fun preserves_route_and_desktop_derived_model_brand_separately() {
+        val raw = """
+            {
+              "kind":"metrora.companion.usage",
+              "version":1,
+              "generatedAt":"2026-08-14T10:00:00Z",
+              "period":{"label":"This month"},
+              "totals":{"costMicrosUsd":3,"calls":3,"sessions":1,"tokens":{"input":1,"output":2,"cacheRead":0,"cacheWrite":0},"cacheHitPercent":0},
+              "topModels":[{"name":"GPT-5.4","providerId":"openai","brandId":"openai","calls":1,"costMicrosUsd":1000000}],
+              "models":[
+                {"name":"Claude Sonnet 4.6","providerId":"amazon-bedrock","brandId":"anthropic","calls":1,"costMicrosUsd":1000000},
+                {"name":"Claude Sonnet 4.6","providerId":"api_provider_anthropic","brandId":"anthropic","calls":1,"costMicrosUsd":1000000},
+                {"name":"Unresolved model","providerId":"unknown-route","calls":1,"costMicrosUsd":1000000}
+              ]
+            }
+        """.trimIndent()
+
+        val snapshot = CompanionUsageV1Parser.parse(raw, testCredentials())
+
+        assertEquals("openai", snapshot.topModels.single().brandId)
+        assertEquals(listOf("amazon-bedrock", "api_provider_anthropic", "unknown-route"), snapshot.models.map { it.providerId })
+        assertEquals(listOf("anthropic", "anthropic", null), snapshot.models.map { it.brandId })
+    }
 }

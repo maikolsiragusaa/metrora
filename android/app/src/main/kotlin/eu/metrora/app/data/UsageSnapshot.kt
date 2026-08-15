@@ -10,6 +10,8 @@ data class ModelUsage(
     val estimatedCostMicrosUsd: Long? = null,
     /** Factual provider id from Desktop; null means the source did not know it. */
     val providerId: String? = null,
+    /** Desktop-derived canonical model-vendor id used only for presentation branding. */
+    val brandId: String? = null,
 ) {
     init {
         require(name.isNotBlank()) { "Model name is missing." }
@@ -20,6 +22,9 @@ data class ModelUsage(
         }
         require(providerId == null || providerId.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))) {
             "Model provider id is invalid."
+        }
+        require(brandId == null || brandId.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))) {
+            "Model brand id is invalid."
         }
     }
 }
@@ -104,6 +109,7 @@ data class UsageSnapshot(
                 .put("costMicrosUsd", model.costMicrosUsd)
             model.estimatedCostMicrosUsd?.let { modelJson.put("estimatedCostMicrosUsd", it) }
             model.providerId?.let { modelJson.put("providerId", it) }
+            model.brandId?.let { modelJson.put("brandId", it) }
             topModelsJson.put(modelJson)
         }
         val modelsJson = JSONArray()
@@ -114,6 +120,7 @@ data class UsageSnapshot(
                 .put("costMicrosUsd", model.costMicrosUsd)
             model.estimatedCostMicrosUsd?.let { modelJson.put("estimatedCostMicrosUsd", it) }
             model.providerId?.let { modelJson.put("providerId", it) }
+            model.brandId?.let { modelJson.put("brandId", it) }
             modelsJson.put(modelJson)
         }
         val trend = JSONArray()
@@ -161,6 +168,7 @@ data class UsageSnapshot(
                             costMicrosUsd = model.getLong("costMicrosUsd"),
                             estimatedCostMicrosUsd = model.optNullableNonNegativeLong("estimatedCostMicrosUsd"),
                             providerId = model.optProviderId("providerId"),
+                            brandId = model.optBrandId("brandId"),
                         ),
                     )
                 }
@@ -232,6 +240,8 @@ data class UsageSnapshot(
                 it.matches(Regex("[a-z0-9]+(?:[._-][a-z0-9]+)*"))
             }
         }
+
+        private fun JSONObject.optBrandId(name: String): String? = optProviderId(name)
 
         private fun saturatingAdd(left: Long, right: Long): Long =
             if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
