@@ -16,6 +16,9 @@ internal object MetroraModelBranding {
         "anthropic" to R.drawable.model_brand_anthropic,
         "google" to R.drawable.model_brand_google,
         "zai" to R.drawable.model_brand_zai,
+        "deepseek" to R.drawable.model_brand_deepseek,
+        "qwen" to R.drawable.model_brand_qwen,
+        "moonshot" to R.drawable.model_brand_moonshot,
     )
 
     private val brandLabels = mapOf(
@@ -23,7 +26,15 @@ internal object MetroraModelBranding {
         "anthropic" to "Anthropic / Claude",
         "google" to "Google / Gemini",
         "zai" to "Z.AI / GLM",
+        "deepseek" to "DeepSeek",
+        "qwen" to "Qwen",
+        "moonshot" to "Moonshot / Kimi",
     )
+
+    internal enum class RouteSubtitleKind {
+        KNOWN,
+        UNAVAILABLE,
+    }
 
     private data class RoutePresentation(
         val label: String,
@@ -44,6 +55,15 @@ internal object MetroraModelBranding {
         "google-vertex" to RoutePresentation("Google Vertex AI", "google"),
         "zai" to RoutePresentation("Z.AI", "zai"),
         "api_provider_zai" to RoutePresentation("Z.AI API", "zai"),
+        "deepseek" to RoutePresentation("DeepSeek", "deepseek"),
+        "api_provider_deepseek" to RoutePresentation("DeepSeek API", "deepseek"),
+        "deepseek-ai" to RoutePresentation("DeepSeek API", "deepseek"),
+        "qwen" to RoutePresentation("Qwen", "qwen"),
+        "api_provider_qwen" to RoutePresentation("Qwen API", "qwen"),
+        "moonshot" to RoutePresentation("Moonshot", "moonshot"),
+        "moonshotai" to RoutePresentation("Moonshot AI", "moonshot"),
+        "api_provider_moonshot" to RoutePresentation("Moonshot API", "moonshot"),
+        "kimi" to RoutePresentation("Kimi", "moonshot"),
         "openrouter" to RoutePresentation("OpenRouter"),
         "vercel-ai-gateway" to RoutePresentation("Vercel AI Gateway"),
     )
@@ -66,5 +86,21 @@ internal object MetroraModelBranding {
         val route = normalize(providerId)?.let(routePresentations::get) ?: return false
         if (duplicatedModelName) return true
         return route.brandId == null || normalize(brandId) != route.brandId
+    }
+
+    /**
+     * A duplicate with no reviewed route label still needs an honest,
+     * non-internal differentiator. This does not claim which route was used.
+     */
+    fun routeSubtitleKind(
+        providerId: String?,
+        brandId: String?,
+        duplicatedModelName: Boolean,
+    ): RouteSubtitleKind? {
+        val route = normalize(providerId)?.let(routePresentations::get)
+        if (route != null && shouldShowRoute(providerId, brandId, duplicatedModelName)) {
+            return RouteSubtitleKind.KNOWN
+        }
+        return if (duplicatedModelName && route == null) RouteSubtitleKind.UNAVAILABLE else null
     }
 }

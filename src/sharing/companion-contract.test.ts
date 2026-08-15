@@ -229,16 +229,27 @@ describe('CompanionUsageV1', () => {
         topModels: [
           { name: 'GPT-5.4', providerId: 'openai', brandId: 'openai', calls: 1, cost: 1 },
           { name: 'Claude Sonnet 4.6', providerId: 'amazon-bedrock', brandId: 'anthropic', calls: 1, cost: 1 },
-          { name: 'Unknown', providerId: 'openai', brandId: 'codex', calls: 1, cost: 1 },
+          { name: 'DeepSeek V4 Flash', providerId: 'deepseek', brandId: 'deepseek', calls: 1, cost: 1 },
+          { name: 'Qwen 3.7 Plus', providerId: 'qwen', brandId: 'qwen', calls: 1, cost: 1 },
+          { name: 'Kimi K2.6', providerId: 'moonshotai', brandId: 'moonshot', calls: 1, cost: 1 },
         ],
       },
     })
 
-    expect(payload.topModels).toMatchObject([
-      { providerId: 'openai', brandId: 'openai' },
-      { providerId: 'amazon-bedrock', brandId: 'anthropic' },
-      { providerId: 'openai' },
-    ])
-    expect(payload.topModels[2]).not.toHaveProperty('brandId')
+    expect(payload.topModels[0]).toMatchObject({ providerId: 'openai', brandId: 'openai' })
+    expect(payload.topModels[1]).toMatchObject({ providerId: 'amazon-bedrock', brandId: 'anthropic' })
+    expect(payload.topModels[2]).toMatchObject({ providerId: 'deepseek', brandId: 'deepseek' })
+    expect(payload.topModels[3]).toMatchObject({ providerId: 'qwen', brandId: 'qwen' })
+    expect(payload.topModels[4]).toMatchObject({ providerId: 'moonshotai', brandId: 'moonshot' })
+
+    const invalidBrand = toCompanionUsageV1({
+      generated: '2026-08-15T10:30:00.000Z',
+      current: {
+        label: 'This month',
+        topModels: [{ name: 'Unknown', providerId: 'openai', brandId: 'codex', calls: 1, cost: 1 }],
+      },
+    })
+    expect(invalidBrand.topModels[0]).toMatchObject({ providerId: 'openai' })
+    expect(invalidBrand.topModels[0]).not.toHaveProperty('brandId')
   })
 })

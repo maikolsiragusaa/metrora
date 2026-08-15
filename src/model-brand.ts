@@ -6,15 +6,30 @@
  * amazon-bedrock can deliver an Anthropic model, while a collector such as
  * codex is not itself a model vendor.
  */
-export const MODEL_BRAND_IDS = ['openai', 'anthropic', 'google', 'zai'] as const
+export const MODEL_BRAND_IDS = [
+  'openai',
+  'anthropic',
+  'google',
+  'zai',
+  'deepseek',
+  'qwen',
+  'moonshot',
+] as const
 export type ModelBrandId = typeof MODEL_BRAND_IDS[number]
 
 const MODEL_BRAND_ID_SET = new Set<string>(MODEL_BRAND_IDS)
 
 const OWNER_TO_BRAND: Record<string, ModelBrandId> = {
   anthropic: 'anthropic',
+  'deepseek-ai': 'deepseek',
+  deepseek: 'deepseek',
   google: 'google',
+  kimi: 'moonshot',
+  moonshot: 'moonshot',
+  'moonshot-ai': 'moonshot',
+  moonshotai: 'moonshot',
   openai: 'openai',
+  qwen: 'qwen',
   zai: 'zai',
   'z.ai': 'zai',
   'zai-org': 'zai',
@@ -38,6 +53,9 @@ function brandFromCanonicalIdentity(value: string): ModelBrandId | undefined {
   if (/^(?:anthropic[.-])?claude(?:-|$)/.test(canonical)) return 'anthropic'
   if (/^(?:google[.-])?gemini(?:-|$)/.test(canonical)) return 'google'
   if (/^(?:zai(?:-org)?[.-])?glm(?:-|$)/.test(canonical)) return 'zai'
+  if (/^(?:(?:deepseek-ai|deepseek)[./])?deepseek(?:-|$)/.test(canonical)) return 'deepseek'
+  if (/^(?:qwen[./])?qwen(?:[-.]|\d|$)/.test(canonical)) return 'qwen'
+  if (/^(?:(?:moonshot(?:-ai)?|moonshotai|kimi)[./])?(?:kimi|moonshot)(?:[-.]|\d|$)/.test(canonical)) return 'moonshot'
   return undefined
 }
 

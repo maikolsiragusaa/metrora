@@ -108,6 +108,7 @@
     <string name="trend_unavailable">Desktop did not provide cost aggregates for this period.</string>
     <string name="models_unavailable">Desktop did not provide model rows for this period.</string>
     <string name="via_provider">via %1$s</string>
+    <string name="provider_unavailable">Provider unavailable</string>
     <string name="model_brand_logo_description">%1$s model brand mark</string>
     <string name="metrora_model_logo_description">Neutral Metrora model mark</string>
     <string name="estimated_pricing">Includes estimated pricing evidence</string>

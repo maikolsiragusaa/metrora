@@ -299,6 +299,67 @@ describe('model accounting payload', () => {
     expect(payload.current.topModels.find(model => model.providerId === 'amazon-bedrock')).toMatchObject({ brandId: 'anthropic' })
   })
 
+  it('emits observed DeepSeek, Qwen and Moonshot brands from canonical identities', () => {
+    const payload = buildMenubarPayload(period([
+      {
+        name: 'deepseek-v4-flash',
+        modelProvider: 'deepseek',
+        sourceProviders: ['opencode'],
+        cost: 3,
+        savingsUSD: 0,
+        calls: 3,
+      },
+      {
+        name: 'qwen3.7-plus',
+        modelProvider: 'qwen',
+        sourceProviders: ['qwen'],
+        cost: 2,
+        savingsUSD: 0,
+        calls: 2,
+      },
+      {
+        name: 'moonshotai/kimi-k2.6',
+        modelProvider: 'moonshotai',
+        sourceProviders: ['kimi'],
+        cost: 1,
+        savingsUSD: 0,
+        calls: 1,
+      },
+    ], 6, 6), [], null)
+
+    expect(payload.current.modelAccounting?.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'DeepSeek v4 Flash', provider: 'deepseek', brandId: 'deepseek' }),
+      expect.objectContaining({ name: 'qwen3.7-plus', provider: 'qwen', brandId: 'qwen' }),
+      expect.objectContaining({ name: 'Kimi K2.6', provider: 'moonshotai', brandId: 'moonshot' }),
+    ]))
+  })
+
+  it('preserves duplicate display rows when one route is unavailable', () => {
+    const payload = buildMenubarPayload(period([
+      {
+        name: 'claude-opus-4-6',
+        modelProvider: 'anthropic',
+        sourceProviders: ['claude'],
+        cost: 3,
+        savingsUSD: 0,
+        calls: 3,
+      },
+      {
+        name: 'claude-opus-4-6',
+        sourceProviders: ['other-collector'],
+        cost: 2,
+        savingsUSD: 0,
+        calls: 2,
+      },
+    ], 5, 5), [], null)
+
+    const rows = payload.current.modelAccounting?.rows ?? []
+    expect(rows).toHaveLength(2)
+    expect(rows.map(row => row.name)).toEqual(['Opus 4.6', 'Opus 4.6'])
+    expect(rows.map(row => row.provider)).toEqual(['anthropic', undefined])
+    expect(rows.map(row => row.brandId)).toEqual(['anthropic', 'anthropic'])
+  })
+
   it('does not treat an unclassified reasoning field as separately reported', () => {
     const payload = buildMenubarPayload(period([{
       name: 'gpt-5.4',

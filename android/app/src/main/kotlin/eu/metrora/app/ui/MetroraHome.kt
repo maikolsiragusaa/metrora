@@ -767,7 +767,7 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
     val brandId = model.brandId
     val hasCanonicalBrandLogo = MetroraModelBranding.hasCanonicalLogo(brandId)
     val routeLabel = MetroraModelBranding.routeLabel(providerId)
-    val showRoute = MetroraModelBranding.shouldShowRoute(providerId, brandId, showProvider)
+    val routeSubtitleKind = MetroraModelBranding.routeSubtitleKind(providerId, brandId, showProvider)
     val cost = if (model.costMicrosUsd > 0L) {
         formatUsd(model.costMicrosUsd)
     } else {
@@ -806,14 +806,25 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
             )
-            if (showRoute && routeLabel != null) {
-                Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.via_provider, routeLabel),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            when (routeSubtitleKind) {
+                MetroraModelBranding.RouteSubtitleKind.KNOWN -> if (routeLabel != null) {
+                    Text(
+                        text = androidx.compose.ui.res.stringResource(R.string.via_provider, routeLabel),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                MetroraModelBranding.RouteSubtitleKind.UNAVAILABLE -> {
+                    Text(
+                        text = androidx.compose.ui.res.stringResource(R.string.provider_unavailable),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                null -> Unit
             }
             model.estimatedCostMicrosUsd?.takeIf { it > 0L }?.let {
                 Text(

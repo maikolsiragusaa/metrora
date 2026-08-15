@@ -114,7 +114,10 @@ The response is `CompanionUsageV1`:
 `amazon-bedrock` or `api_provider_anthropic`). `brandId` is optional and is
 Desktop-derived from canonical model/owner evidence for presentation branding
 only; it is never inferred by the companion from a display name or collector
-name. An absent or ambiguous `brandId` uses the neutral Metrora mark. The two
+name. The current bounded canonical registry covers `openai`, `anthropic`,
+`google`, `zai`, `deepseek`, `qwen`, and `moonshot`; it is extensible rather
+than an exhaustive vendor catalog. An absent or ambiguous `brandId` uses the
+neutral Metrora mark. The two
 fields are intentionally independent: Claude through Amazon Bedrock can carry
 `providerId: "amazon-bedrock"` with `brandId: "anthropic"`.
 

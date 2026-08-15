@@ -13,9 +13,15 @@ describe('model brand identity', () => {
     expect(resolveModelBrandId({ modelOwner: 'anthropic', canonicalIdentity: 'claude-sonnet-4-6' })).toBe('anthropic')
   })
 
-  it('resolves reviewed Gemini and GLM canonical identities', () => {
+  it('resolves reviewed Gemini, GLM and observed vendor canonical identities', () => {
     expect(resolveModelBrandId({ canonicalIdentity: 'gemini-2.5-pro' })).toBe('google')
     expect(resolveModelBrandId({ canonicalIdentity: 'glm-5p1' })).toBe('zai')
+    expect(resolveModelBrandId({ canonicalIdentity: 'deepseek-v4-flash' })).toBe('deepseek')
+    expect(resolveModelBrandId({ modelOwner: 'deepseek-ai' })).toBe('deepseek')
+    expect(resolveModelBrandId({ canonicalIdentity: 'qwen3.7-plus' })).toBe('qwen')
+    expect(resolveModelBrandId({ modelOwner: 'qwen' })).toBe('qwen')
+    expect(resolveModelBrandId({ canonicalIdentity: 'moonshotai/kimi-k2.6' })).toBe('moonshot')
+    expect(resolveModelBrandId({ modelOwner: 'moonshot' })).toBe('moonshot')
   })
 
   it('does not infer a brand from a route or an unknown/ambiguous identity', () => {

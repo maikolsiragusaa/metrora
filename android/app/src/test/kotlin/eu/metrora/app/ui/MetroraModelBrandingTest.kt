@@ -13,6 +13,9 @@ class MetroraModelBrandingTest {
         assertEquals(R.drawable.model_brand_anthropic, MetroraModelBranding.logoResource("anthropic"))
         assertEquals(R.drawable.model_brand_google, MetroraModelBranding.logoResource("google"))
         assertEquals(R.drawable.model_brand_zai, MetroraModelBranding.logoResource("zai"))
+        assertEquals(R.drawable.model_brand_deepseek, MetroraModelBranding.logoResource("deepseek"))
+        assertEquals(R.drawable.model_brand_qwen, MetroraModelBranding.logoResource("qwen"))
+        assertEquals(R.drawable.model_brand_moonshot, MetroraModelBranding.logoResource("moonshot"))
         assertTrue(MetroraModelBranding.hasCanonicalLogo("anthropic"))
     }
 
@@ -34,5 +37,26 @@ class MetroraModelBrandingTest {
         assertTrue(MetroraModelBranding.shouldShowRoute("api_provider_anthropic", "anthropic", true))
         assertEquals(null, MetroraModelBranding.routeLabel("unknown-internal-route"))
         assertFalse(MetroraModelBranding.shouldShowRoute("unknown-internal-route", null, true))
+    }
+
+    @Test
+    fun duplicateRowsUseKnownRouteOrHonestUnavailableDifferentiator() {
+        assertEquals(
+            MetroraModelBranding.RouteSubtitleKind.KNOWN,
+            MetroraModelBranding.routeSubtitleKind("anthropic", "anthropic", true),
+        )
+        assertEquals(
+            MetroraModelBranding.RouteSubtitleKind.KNOWN,
+            MetroraModelBranding.routeSubtitleKind("amazon-bedrock", "anthropic", true),
+        )
+        assertEquals(
+            MetroraModelBranding.RouteSubtitleKind.UNAVAILABLE,
+            MetroraModelBranding.routeSubtitleKind(null, "anthropic", true),
+        )
+        assertEquals(
+            MetroraModelBranding.RouteSubtitleKind.UNAVAILABLE,
+            MetroraModelBranding.routeSubtitleKind("unknown-internal-route", "anthropic", true),
+        )
+        assertEquals(null, MetroraModelBranding.routeSubtitleKind(null, "anthropic", false))
     }
 }
