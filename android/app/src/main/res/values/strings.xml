@@ -108,6 +108,8 @@
     <string name="trend_unavailable">Desktop did not provide cost aggregates for this period.</string>
     <string name="models_unavailable">Desktop did not provide model rows for this period.</string>
     <string name="provider_unknown">Provider identity unavailable</string>
+    <string name="provider_logo_description">%1$s provider mark</string>
+    <string name="metrora_model_logo_description">Neutral Metrora model mark</string>
     <string name="estimated_pricing">Includes estimated pricing evidence</string>
     <string name="no_snapshot_title">No usage overview saved yet</string>
     <string name="empty_snapshot_paired">Your computer is paired. Refresh to load the first overview from Desktop.</string>

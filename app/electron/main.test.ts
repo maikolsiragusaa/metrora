@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 
 import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers } from './main'
 import { CliError } from './cli'
+import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
 
 function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
@@ -48,6 +49,9 @@ const CHANNELS = [
   'metrora:getDevices',
   'metrora:getDevicesScan',
   'metrora:getShareStatus',
+  'metrora:startShare',
+  'metrora:stopShare',
+  'metrora:approvePairing',
   'metrora:getIdentity',
   'metrora:getAliases',
   'metrora:getProxyPaths',
@@ -143,6 +147,37 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
     const res = await handlers['metrora:cliStatus']!()
     expect(spawnCli).not.toHaveBeenCalled()
     expect(res).toEqual({ ok: true, value: { found: true, path: '/opt/homebrew/bin/metrora' } })
+  })
+
+  it('routes the desktop share actions to the persistent runtime when injected', async () => {
+    const status: DesktopShareStatus = {
+      sharing: false,
+      name: 'Metrora Desktop',
+      port: 7777,
+      host: null,
+      addresses: [],
+      connectPayload: null,
+      always: false,
+      peers: 0,
+      pending: [],
+    }
+    const sharingStatus = { ...status, sharing: true }
+    const share: DesktopShareRuntime = {
+      status: vi.fn(async () => status),
+      start: vi.fn(async () => sharingStatus),
+      stop: vi.fn(async () => status),
+      approve: vi.fn(async () => sharingStatus),
+    }
+    const { spawnCli } = fakeSpawn()
+    const handlers = createBridgeHandlers(deps({ spawnCli, share }))
+
+    expect(await handlers['metrora:getShareStatus']!()).toEqual({ ok: true, value: status })
+    expect(await handlers['metrora:startShare']!(true)).toEqual({ ok: true, value: sharingStatus })
+    expect(await handlers['metrora:stopShare']!()).toEqual({ ok: true, value: status })
+    expect(await handlers['metrora:approvePairing']!('pair-1', true)).toEqual({ ok: true, value: sharingStatus })
+    expect(share.start).toHaveBeenCalledWith(true)
+    expect(share.approve).toHaveBeenCalledWith('pair-1', true)
+    expect(spawnCli).not.toHaveBeenCalled()
   })
 })
 

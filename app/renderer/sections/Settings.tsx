@@ -6,6 +6,7 @@ import { ConnectAffordance } from '../components/ConnectAffordance'
 import { Dropdown } from '../components/Dropdown'
 import { Panel } from '../components/Panel'
 import { ProviderLogo } from '../components/ProviderLogo'
+import { ShareConnectSurface } from '../components/ShareConnectSurface'
 import type { Section } from '../components/Sidebar'
 import { usePolled } from '../hooks/usePolled'
 import { version as appVersion } from '../../package.json'
@@ -433,7 +434,7 @@ function ExportPane({ period, refreshToken }: { period: Period; refreshToken: nu
 function DevicesPane({ period, refreshToken }: { period: Period; refreshToken: number }) {
   const [nonce, setNonce] = useState(0)
   const identity = usePolled<Identity>(() => metrora.getIdentity(), [refreshToken])
-  const shareStatus = usePolled<ShareStatus>(() => metrora.getShareStatus(), [refreshToken])
+  const shareStatus = usePolled<ShareStatus>(() => metrora.getShareStatus(), [refreshToken], { intervalMs: 2500 })
   const scan = usePolled<DeviceScanResult>(() => metrora.getDevicesScan(), [refreshToken, nonce])
   const devices = usePolled<CombinedUsage>(() => metrora.getDevices(period), [period, refreshToken, nonce])
   const refresh = () => setNonce(value => value + 1)
@@ -454,7 +455,7 @@ function PrivacyClaim({ title, detail, icon }: { title: string; detail: string; 
 
 function ThisDevicePanel({ identity, shareStatus }: { identity: ReturnType<typeof usePolled<Identity>>; shareStatus: ReturnType<typeof usePolled<ShareStatus>> }) {
   const status = shareStatus.data ? <span className="set-status"><span className={shareStatus.data.sharing ? 'set-dot ok' : 'set-dot'} />{shareStatus.data.sharing ? 'Visible' : 'Not sharing'}</span> : null
-  return <Panel title="This device" right={status}>{identity.data ? <div className="li"><div className="lx"><b>{identity.data.name}</b><span>Local device name: {identity.data.name}</span><span>{identity.data.fingerprint}</span></div></div> : identity.error ? <SettingsErrorText error={identity.error} /> : <p className="set-cap">Reading this device identity…</p>}{shareStatus.error && <SettingsErrorText error={shareStatus.error} />}</Panel>
+  return <Panel title="This device" right={status}>{identity.data ? <div className="li"><div className="lx"><b>{identity.data.name}</b><span>Local device name: {identity.data.name}</span><span>{identity.data.fingerprint}</span></div></div> : identity.error ? <SettingsErrorText error={identity.error} /> : <p className="set-cap">Reading this device identity…</p>}<ShareConnectSurface shareStatus={shareStatus} />{shareStatus.error && <SettingsErrorText error={shareStatus.error} />}</Panel>
 }
 
 function DiscoveredPanel({ scan }: { scan: ReturnType<typeof usePolled<DeviceScanResult>> }) {

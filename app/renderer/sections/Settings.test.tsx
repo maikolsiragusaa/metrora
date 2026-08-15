@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   getDevices: vi.fn<(period: string) => Promise<CombinedUsage>>(),
   getDevicesScan: vi.fn<() => Promise<DeviceScanResult>>(),
   getShareStatus: vi.fn<() => Promise<ShareStatus>>(),
+  startShare: vi.fn<(always?: boolean) => Promise<ShareStatus>>(),
+  stopShare: vi.fn<() => Promise<ShareStatus>>(),
+  approvePairing: vi.fn<(id: string, approve: boolean) => Promise<ShareStatus>>(),
   getQuota: vi.fn<(force?: boolean) => Promise<QuotaProvider[]>>(),
   getPlans: vi.fn<(period: string) => Promise<StatusJson>>(),
   getOverview: vi.fn<(period: string, provider: string) => Promise<MenubarPayload>>(),
@@ -61,7 +64,10 @@ describe('Settings', () => {
     mocks.getIdentity.mockResolvedValue(identity)
     mocks.getDevices.mockResolvedValue(devices)
     mocks.getDevicesScan.mockResolvedValue(scan)
-    mocks.getShareStatus.mockResolvedValue({ sharing: true, name: 'Toruk MacBook Pro', port: 9732, always: false, peers: 1, pending: [] })
+    mocks.getShareStatus.mockResolvedValue({ sharing: true, name: 'Toruk MacBook Pro', port: 9732, host: '192.168.1.24', addresses: ['192.168.1.24'], connectPayload: 'metrora://v1/test', always: false, peers: 1, pending: [] })
+    mocks.startShare.mockResolvedValue({ sharing: true, name: 'Toruk MacBook Pro', port: 9732, host: '192.168.1.24', addresses: ['192.168.1.24'], connectPayload: 'metrora://v1/test', always: false, peers: 1, pending: [] })
+    mocks.stopShare.mockResolvedValue({ sharing: false, name: 'Toruk MacBook Pro', port: 9732, host: null, addresses: [], connectPayload: null, always: false, peers: 1, pending: [] })
+    mocks.approvePairing.mockResolvedValue({ sharing: true, name: 'Toruk MacBook Pro', port: 9732, host: '192.168.1.24', addresses: ['192.168.1.24'], connectPayload: 'metrora://v1/test', always: false, peers: 1, pending: [] })
     mocks.getQuota.mockResolvedValue(quotaProviders)
     mocks.getPlans.mockResolvedValue({ currency: 'EUR', today: { cost: 0, savings: 0, calls: 0 }, month: { cost: 0, savings: 0, calls: 0 }, plans: { claude: { id: 'claude-max', provider: 'claude', budget: 200, spent: 48, percentUsed: 24, status: 'under', projectedMonthEnd: 120, daysUntilReset: 19, periodStart: '2026-07-01', periodEnd: '2026-08-01' } } })
     mocks.getOverview.mockResolvedValue(overview)
@@ -101,6 +107,16 @@ describe('Settings', () => {
     await user.click(screen.getByRole('option', { name: 'CNY' }))
     expect(mocks.setCurrency).toHaveBeenCalledWith('CNY')
     expect(await screen.findByText('Updated')).toBeInTheDocument()
+  })
+
+  it('exposes the primary Connect phone surface in the desktop Devices pane', async () => {
+    const user = userEvent.setup()
+    mocks.getShareStatus.mockResolvedValue({ sharing: false, name: identity.name, port: 7777, host: null, addresses: [], connectPayload: null, always: false, peers: 0, pending: [] })
+    render(<Settings period="month" />)
+    await user.click(screen.getByRole('button', { name: 'Devices' }))
+    expect(await screen.findByText('Connect phone')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Start sharing' }))
+    expect(mocks.startShare).toHaveBeenCalledWith(false)
   })
 
   it('persists theme choices and applies forced themes to the root', async () => {

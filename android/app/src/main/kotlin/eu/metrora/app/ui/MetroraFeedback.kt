@@ -20,6 +20,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,25 +57,25 @@ internal fun Feedback(state: MetroraUiState) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (showNotice) state.notice?.let { NoticeBanner(it) }
+        if (showNotice) state.notice?.let { NoticeSnackbar(it) }
         state.failure?.let { FailureBanner(it) }
     }
 }
 
 @Composable
-private fun NoticeBanner(notice: MetroraNotice) {
-    Card(
+private fun NoticeSnackbar(notice: MetroraNotice) {
+    Snackbar(
         modifier = Modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier.padding(vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Outlined.CheckCircle,
@@ -86,6 +87,7 @@ private fun NoticeBanner(notice: MetroraNotice) {
                 text = androidx.compose.ui.res.stringResource(noticeResource(notice)),
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
             )
         }
     }

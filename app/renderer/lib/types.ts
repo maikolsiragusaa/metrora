@@ -424,14 +424,7 @@ export type OptimizeJsonReport = {
 // ————— T1b: src/sharing/* (defined by the shared contract) —————
 
 export type PendingPairing = { id: string; name: string; code: string }
-export type ShareStatus = {
-  sharing: boolean
-  name: string
-  port: number
-  always: boolean
-  peers: number
-  pending: PendingPairing[]
-}
+export type ShareStatus = { sharing: boolean; name: string; port: number; host: string | null; addresses: string[]; connectPayload: string | null; networkWarning?: string; always: boolean; peers: number; pending: PendingPairing[] }
 
 /** Public identity subset served by /api/identity (src/web-dashboard.ts:229). */
 export type Identity = {
@@ -674,6 +667,7 @@ export interface MetroraBridge {
   getDevices(period: Period): Promise<CombinedUsage>
   getDevicesScan(): Promise<DeviceScanResult>
   getShareStatus(): Promise<ShareStatus>
+  startShare(always?: boolean): Promise<ShareStatus>; stopShare(): Promise<ShareStatus>; approvePairing(id: string, approve: boolean): Promise<ShareStatus>
   getIdentity(): Promise<Identity>
   getAliases(): Promise<AliasRow[]>
   getProxyPaths(): Promise<string[]>

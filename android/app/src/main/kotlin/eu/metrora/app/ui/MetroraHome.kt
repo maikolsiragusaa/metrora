@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -168,19 +169,26 @@ private fun HomeHeader(state: MetroraUiState, onRefresh: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(R.drawable.metrora_mark),
-            contentDescription = androidx.compose.ui.res.stringResource(R.string.metrora_logo_description),
-            modifier = Modifier.size(48.dp),
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.app_name).uppercase(),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 3.8.sp,
-        )
-        Spacer(Modifier.weight(1f))
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(R.drawable.metrora_mark),
+                contentDescription = androidx.compose.ui.res.stringResource(R.string.metrora_logo_description),
+                modifier = Modifier.size(48.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = androidx.compose.ui.res.stringResource(R.string.app_name).uppercase(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 3.8.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
         IconButton(
             onClick = onRefresh,
             enabled = !state.busy &&
@@ -198,30 +206,43 @@ private fun HomeHeader(state: MetroraUiState, onRefresh: () -> Unit) {
                 )
             }
         }
-        ConnectionPill(state)
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.ShowChart,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp),
-        )
-        Text(
-            text = androidx.compose.ui.res.stringResource(R.string.desktop_label),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(
-            text = connectionLabel(state),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ShowChart,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = androidx.compose.ui.res.stringResource(R.string.desktop_label),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+            )
+            Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = connectionLabel(state),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        ConnectionPill(state)
     }
 }
 
@@ -232,7 +253,9 @@ private fun ConnectionPill(state: MetroraUiState) {
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.33f),
-        modifier = Modifier.heightIn(min = 42.dp),
+        modifier = Modifier
+            .widthIn(min = 104.dp, max = 132.dp)
+            .heightIn(min = 42.dp),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -252,6 +275,9 @@ private fun ConnectionPill(state: MetroraUiState) {
                 },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -747,6 +773,8 @@ private fun ModelsSurface(state: MetroraUiState) {
 
 @Composable
 private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = false) {
+    val providerId = model.providerId
+    val hasCanonicalProviderLogo = MetroraProviderBranding.hasCanonicalLogo(providerId)
     val cost = if (model.costMicrosUsd > 0L) {
         formatUsd(model.costMicrosUsd)
     } else {
@@ -767,8 +795,12 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
             ),
         ) {
             androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(R.drawable.metrora_mark),
-                contentDescription = model.providerId?.let { "Provider $it" } ?: "Metrora model",
+                painter = androidx.compose.ui.res.painterResource(MetroraProviderBranding.logoResource(providerId)),
+                contentDescription = if (hasCanonicalProviderLogo) {
+                    providerId?.let { androidx.compose.ui.res.stringResource(R.string.provider_logo_description, it) }
+                } else {
+                    androidx.compose.ui.res.stringResource(R.string.metrora_model_logo_description)
+                },
                 modifier = Modifier.padding(9.dp),
             )
         }
@@ -779,9 +811,9 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
             )
-            if (showProvider || model.providerId != null) {
+            if (showProvider || providerId != null) {
                 Text(
-                    text = model.providerId?.let { "Provider · $it" } ?: androidx.compose.ui.res.stringResource(R.string.provider_unknown),
+                    text = providerId?.let { "Provider · $it" } ?: androidx.compose.ui.res.stringResource(R.string.provider_unknown),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
