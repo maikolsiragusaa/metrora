@@ -408,7 +408,13 @@ private fun ActivityPullRequestPage(activity: ActivitySnapshot, onOpen: (String)
                 )
             }
             if (activity.pullRequests.isEmpty()) {
-                Text(androidx.compose.ui.res.stringResource(R.string.activity_pull_requests_empty), modifier = Modifier.padding(vertical = 20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    androidx.compose.ui.res.stringResource(
+                        if (activity.pullRequestCoverage == DetailCoverage.UNAVAILABLE) R.string.activity_unavailable_detail else R.string.activity_pull_requests_empty,
+                    ),
+                    modifier = Modifier.padding(vertical = 20.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             } else {
                 activity.pullRequests.forEachIndexed { index, row ->
                     ActivityPullRequestCard(row, onOpen)
@@ -466,7 +472,15 @@ private fun ActivitySessionDetailCard(detail: ActivitySessionDetail, freshness: 
             }
             Text(session.title, fontWeight = FontWeight.Medium)
             Text(listOf(session.startedAt, session.endedAt).joinToString(" → "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(listOf(session.sourceProjectName, session.models.joinToString(", "), session.sourceIds.joinToString(", ")).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+            Text(
+                listOfNotNull(
+                    session.sourceProjectName,
+                    session.models.joinToString(", ").takeIf { it.isNotBlank() },
+                    session.sourceIds.firstNotNullOfOrNull(::sourceLabel),
+                    session.routeIds.firstNotNullOfOrNull { MetroraModelBranding.routeLabel(it) },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+            )
             ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.cost), formatFoundationUsd(session.costMicrosUsd))
             session.estimatedCostMicrosUsd?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_estimated_pricing), formatFoundationUsd(it)) }
             ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.calls), session.calls.toString())
