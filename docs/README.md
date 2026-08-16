@@ -12,6 +12,7 @@ This index separates user guidance, current product guarantees, public contracts
 ## Connect devices locally
 
 - [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) — the accepted secure pairing foundation plus the implemented Mobile Product Foundation V1 surfaces, Project scope and bounded Android limits; public Android distribution remains separate.
+- [Mobile Product Parity V1 inventory](MOBILE_PRODUCT_PARITY_V1.md) — the current Desktop/core and Android inventory, parity matrix, authority gaps and sequential implementation plan audited from `main`.
 - [Local companion API v1](LOCAL_COMPANION_API.md) — stable local HTTPS endpoints, capability discovery, Project scope and the content-minimal domain contracts used by first-party companions.
 
 ## Understand the product
