@@ -33,13 +33,14 @@ Android performs authenticated capability discovery before exposing domain surfa
 
 - Home / Usage;
 - Projects;
-- Activity / Sessions;
+- Activity / Sessions (additive paged Activity contract);
+- Activity / Pull Requests (same Activity destination);
 - Analyze / Models;
 - Analyze / Spend;
 - Device / Settings;
 - Workspace as **unavailable** because no bounded public Workspace mobile projection exists yet.
 
-`CompanionUsageV1` remains the bounded compatibility contract for Home totals and trend data. Its additive `scope` and `quality.projectDetailCoverage` fields identify the selected Project and distinguish complete, partial and unavailable historical model/token/category detail. The separate Foundation V1 contract carries only the domain projections needed by the current mobile IA and repeats the bounded coverage metadata for Analyze. Its Activity rows are metadata-only: safe date identity, bounded totals, Project/Source Project references and factual brand/route/source identifiers. Prompts, assistant responses, source code, patches, tool arguments, secrets, session titles derived from content and unrestricted filesystem paths are not sent to Android.
+`CompanionUsageV1` remains the bounded compatibility contract for Home totals and trend data. Its additive `scope` and `quality.projectDetailCoverage` fields identify the selected Project and distinguish complete, partial and unavailable historical model/token/category detail. The separate Foundation V1 contract remains backward-compatible for older companions. Current Android Activity uses additive `activity.sessions` and `activity.pullRequests` projections: cursor-paged metadata-only session cards, bounded session detail, Pull Request summaries/detail and canonical provider/route/model filters plus a Source Project ID filter. Provider (`call.provider`), route (`modelProvider`), model and Source Project identity are independent; Android displays a safe Source Project label while sending the stable `sp_...` ID. Prompts, assistant responses, source code, patches, tool arguments, secrets, session titles derived from content and unrestricted filesystem paths are not sent to Android.
 
 Models and Spend use the same Desktop accounting/history authorities and selected Project/period scope. Model brand, route/provider and collector/source are separate facts. Android uses Desktop-provided IDs and reviewed labels; it never infers a source or provider from a model display name and never renders an unknown raw internal ID in ordinary consumer UI.
 
@@ -47,17 +48,17 @@ The active Android IA is:
 
 `Home · Activity · Analyze · Workspace · Settings`
 
-Home preserves the accepted period selector, trend granularity, freshness, connection/cache state and factual accounting. Activity is a real bounded Sessions projection. Analyze contains Models and Spend/trend. Workspace is shown as explicitly unavailable from capability discovery. Settings preserves pairing, security, cache, revoke, forget and device behavior.
+Home preserves the accepted period selector, trend granularity, freshness, connection/cache state and factual accounting. Activity is a native Sessions/Pull Requests destination with progressive disclosure, opaque cursor continuation, safe filters and metadata-only detail. Analyze contains Models and Spend/trend. Workspace is shown as explicitly unavailable from capability discovery. Settings preserves pairing, security, cache, revoke, forget and device behavior.
 
 ## Local storage and offline behavior
 
-Pairing credentials, the canonical `CompanionUsageV1` snapshot and the bounded Foundation cache are encrypted with AES-GCM using a key held in Android Keystore. The Foundation cache is additive and independently parse-validated. A corrupted Foundation cache is discarded without discarding valid pairing credentials or the usage snapshot. A cache from a different Desktop identity is ignored. Android backup and device-transfer export remain disabled for application state.
+Pairing credentials, the canonical `CompanionUsageV1` snapshot, the bounded Foundation cache and the Activity page/detail cache are encrypted with AES-GCM using a key held in Android Keystore. Activity cache keys bind Desktop identity, canonical Project scope, period/effective bounds, filters, ordering and cursor/page identity. The caches are additive and independently parse-validated. A corrupted Activity or Foundation cache is discarded without discarding valid pairing credentials or the usage snapshot. A cache from a different Desktop identity or incompatible query is ignored. Android backup and device-transfer export remain disabled for application state.
 
-When Desktop is unreachable, Android keeps showing the last valid encrypted usage snapshot and marks it cached. A Foundation fallback is used only when its Desktop identity, Project scope and period are compatible with the usage snapshot being shown; otherwise the prior coherent state is kept or the Foundation surface is explicitly unavailable. Android does not synthesize totals from presentation metadata, and historical Project detail is never represented as factual zero.
+When Desktop is unreachable, Android keeps showing the last valid encrypted usage snapshot and marks it cached. It also retains already fetched Activity pages and bounded detail, never synthesizes missing pages and never presents cached rows under a different scope or filter query. A Foundation fallback is used only when the paired Desktop explicitly lacks the Activity V1 capability; an advertised-but-failing Activity V1 request remains an explicit bounded Activity error/degraded state with retry, rather than masquerading as a legacy Desktop. Android does not synthesize totals from presentation metadata, and historical Project/session detail is never represented as factual zero.
 
 ## Validation and accepted scope
 
-The repository contains Android unit coverage for protocol paths, capability negotiation, Foundation parsing/round-trip, privacy bounds, Project scope selection, pairing, cache recovery, revoke and local forget. The existing physical acceptance is the bounded Windows↔Samsung local pairing/security/persistence scope from `#181`; the new Activity, Analyze and Project-scope surfaces require the corresponding physical matrix proposed in the implementation handoff before being described as physically accepted.
+The repository contains Android unit coverage for protocol paths, capability negotiation, Foundation and Activity parsing/round-trip, opaque cursor/query binding, privacy bounds, Project scope selection, pairing, cache recovery, revoke and local forget. The existing physical acceptance is the bounded Windows↔Samsung local pairing/security/persistence scope from `#181`; Activity parity still requires the physical smoke matrix in the implementation handoff before being described as physically accepted.
 
 The foundation does not add cloud relay, accounts, remote access, managed service behavior, billing, background push, a mobile gateway, mobile-side provider parsing/pricing, remote execution or Workspace authority.
 

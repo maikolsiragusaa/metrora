@@ -1,5 +1,6 @@
 package eu.metrora.app.network
 
+import eu.metrora.app.data.ActivityQuery
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -44,6 +45,34 @@ class ProtocolTest {
         assertThrows(IllegalArgumentException::class.java) {
             MetroraProtocol.usagePath("month", projectScopeId = "C:\\private")
         }
+    }
+
+    @Test
+    fun activityPathsBindEveryQueryDimensionAndKeepCursorOpaque() {
+        val sourceProjectId = "sp_" + "a".repeat(64)
+        val query = ActivityQuery(
+            period = "month",
+            projectScopeId = "mp_project",
+            provider = "claude",
+            route = "anthropic-api",
+            model = "claude opus/4",
+            source = sourceProjectId,
+            order = "cost",
+            limit = 25,
+        )
+        val page = MetroraProtocol.activitySessionsPath(query, "opaque.cursor/value")
+        assertEquals(
+            "/api/v1/activity/sessions?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=$sourceProjectId&cursor=opaque.cursor%2Fvalue",
+            page,
+        )
+        assertEquals(
+            "/api/v1/activity/sessions/session_1?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=$sourceProjectId",
+            MetroraProtocol.activitySessionDetailPath(query, "session_1"),
+        )
+        assertEquals(
+            "/api/v1/activity/pull-requests?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=$sourceProjectId",
+            MetroraProtocol.activityPullRequestsPath(query),
+        )
     }
 
     @Test

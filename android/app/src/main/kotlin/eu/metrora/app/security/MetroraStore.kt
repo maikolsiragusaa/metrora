@@ -5,6 +5,7 @@ import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.data.ActivitySnapshot
 
 interface MetroraStore {
     suspend fun loadCredentials(): StorageRead<PairingCredentials>
@@ -53,6 +54,13 @@ interface MetroraStore {
     suspend fun saveProjectCatalog(catalog: ProjectCatalogSnapshot) = Unit
 
     suspend fun clearProjectCatalog() = Unit
+
+    /** Additive encrypted Activity page/detail cache; older stores remain compatible. */
+    suspend fun loadActivity(): StorageRead<ActivitySnapshot> = StorageRead.Missing
+
+    suspend fun saveActivity(snapshot: ActivitySnapshot) = Unit
+
+    suspend fun clearActivity() = Unit
 
     suspend fun clearPairing()
 }

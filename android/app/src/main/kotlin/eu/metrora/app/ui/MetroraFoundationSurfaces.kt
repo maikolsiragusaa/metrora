@@ -2,12 +2,14 @@ package eu.metrora.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,17 +19,23 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.ShowChart
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +48,13 @@ import androidx.compose.ui.unit.dp
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 import eu.metrora.app.data.AnalyzeModelUsage
+import eu.metrora.app.data.ActivityPullRequest
+import eu.metrora.app.data.ActivityQuery
+import eu.metrora.app.data.ActivitySession
+import eu.metrora.app.data.ActivityTab
+import eu.metrora.app.data.ActivitySnapshot
+import eu.metrora.app.data.ActivitySessionDetail
+import eu.metrora.app.data.ActivityFilterOption
 import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.DetailCoverage
@@ -47,6 +62,7 @@ import eu.metrora.app.data.MobileActivitySession
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectScopeOption
 import eu.metrora.app.data.SpendTrendPoint
+import eu.metrora.app.data.sourceProjectFilterOptions
 import java.util.Locale
 
 @Composable
@@ -157,15 +173,421 @@ private fun ProjectToken(option: ProjectScopeOption, modifier: Modifier) {
 }
 
 @Composable
-internal fun ActivitySurface(state: MetroraUiState) {
+internal fun ActivitySurface(
+    state: MetroraUiState,
+    onRetry: () -> Unit,
+    onSetQuery: (ActivityQuery) -> Unit,
+    onLoadMore: (ActivityTab) -> Unit,
+    onOpenSession: (String) -> Unit,
+    onOpenPullRequest: (String) -> Unit,
+    onCloseDetail: () -> Unit,
+) {
     val foundation = state.foundation
-    val capabilities = effectiveCapabilities(state)
+    // Only live capability discovery can authorize the Activity V1 surface.
+    // Foundation capability data is not an Activity endpoint health signal.
+    val activityV1Available = state.capabilities.isAvailable("activity.sessions")
+    val legacyFoundationActivityAvailable = foundation?.capabilities?.isAvailable("activity.sessions") == true
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SurfaceHeading(R.string.nav_activity, Icons.Outlined.Group)
-        if (foundation == null || !capabilities.isAvailable("activity.sessions")) {
+        if (state.activityFailure != null) {
+            ActivityFailureSurface(onRetry = onRetry, showingCached = state.activity != null)
+        }
+        if (state.activity != null) {
+            ActivityNativeSurface(
+                state = state,
+                onSetQuery = onSetQuery,
+                onLoadMore = onLoadMore,
+                onOpenSession = onOpenSession,
+                onOpenPullRequest = onOpenPullRequest,
+                onCloseDetail = onCloseDetail,
+            )
+        } else if (state.activityFailure != null) {
+            // The bounded failure surface above is the complete state when no
+            // safe Activity snapshot is available. Never show Foundation rows
+            // for a Desktop that advertised Activity V1 and then failed it.
+        } else if (foundation == null || (!activityV1Available && !legacyFoundationActivityAvailable)) {
             UnavailableSurface(R.string.activity_unavailable_title, R.string.activity_unavailable_body)
-        } else {
+        } else if (!activityV1Available) {
             ActivityList(foundation.activitySessions, foundation.activityCoverage, foundation.activityFreshness)
+        } else {
+            ActivityLoadingSurface()
+        }
+    }
+}
+
+@Composable
+private fun ActivityFailureSurface(onRetry: () -> Unit, showingCached: Boolean) {
+    MetroraPanel(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.32f),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = androidx.compose.ui.res.stringResource(R.string.activity_load_failed_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = androidx.compose.ui.res.stringResource(
+                    if (showingCached) R.string.activity_load_failed_cached_body else R.string.activity_load_failed_body,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(androidx.compose.ui.res.stringResource(R.string.activity_retry))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityLoadingSurface() {
+    MetroraPanel(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+    ) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.activity_loading),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun ActivityNativeSurface(
+    state: MetroraUiState,
+    onSetQuery: (ActivityQuery) -> Unit,
+    onLoadMore: (ActivityTab) -> Unit,
+    onOpenSession: (String) -> Unit,
+    onOpenPullRequest: (String) -> Unit,
+    onCloseDetail: () -> Unit,
+) {
+    val activity = state.activity ?: return
+    var tabName by rememberSaveable { mutableStateOf(ActivityTab.SESSIONS.name) }
+    val tab = ActivityTab.entries.firstOrNull { it.name == tabName } ?: ActivityTab.SESSIONS
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            ActivityTabButton(Modifier.weight(1f), R.string.activity_sessions_title, tab == ActivityTab.SESSIONS) { tabName = ActivityTab.SESSIONS.name }
+            ActivityTabButton(Modifier.weight(1f), R.string.activity_pull_requests_title, tab == ActivityTab.PULL_REQUESTS) { tabName = ActivityTab.PULL_REQUESTS.name }
+        }
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.activity_privacy_note),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ActivityFilterBar(activity.query, activity, onSetQuery)
+        activity.selectedSession?.let { detail ->
+            ActivitySessionDetailCard(detail, activity.freshness, onCloseDetail)
+        }
+        activity.selectedPullRequest?.let { pullRequest ->
+            ActivityPullRequestDetailCard(pullRequest, onCloseDetail)
+        }
+        if (tab == ActivityTab.SESSIONS) {
+            ActivitySessionPage(activity, onOpenSession, onLoadMore)
+        } else {
+            ActivityPullRequestPage(activity, onOpenPullRequest, onLoadMore)
+        }
+    }
+}
+
+@Composable
+private fun ActivityTabButton(modifier: Modifier, label: Int, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+    ) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(label),
+            modifier = Modifier.padding(vertical = 12.dp),
+            textAlign = TextAlign.Center,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        )
+    }
+}
+
+@Composable
+private fun ActivityFilterBar(query: ActivityQuery, activity: ActivitySnapshot, onSetQuery: (ActivityQuery) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.FilterList, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            ActivityFilterMenu(
+                modifier = Modifier.weight(1f),
+                label = androidx.compose.ui.res.stringResource(R.string.activity_filter_provider),
+                selected = query.provider,
+                values = rawActivityFilterOptions(activity.sessions.flatMap { it.sourceIds }),
+                onSelect = { onSetQuery(query.copy(provider = it)) },
+            )
+            ActivityFilterMenu(
+                modifier = Modifier.weight(1f),
+                label = androidx.compose.ui.res.stringResource(R.string.activity_filter_model),
+                selected = query.model,
+                values = rawActivityFilterOptions(activity.sessions.flatMap { it.models }),
+                onSelect = { onSetQuery(query.copy(model = it)) },
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 30.dp)) {
+            ActivityFilterMenu(
+                modifier = Modifier.weight(1f),
+                label = androidx.compose.ui.res.stringResource(R.string.activity_filter_route),
+                selected = query.route,
+                values = rawActivityFilterOptions(activity.sessions.flatMap { it.routeIds }),
+                onSelect = { onSetQuery(query.copy(route = it)) },
+            )
+            ActivityFilterMenu(
+                modifier = Modifier.weight(1f),
+                label = androidx.compose.ui.res.stringResource(R.string.activity_filter_source),
+                selected = query.source,
+                selectedLabel = sourceProjectFilterOptions(activity.sessions)
+                    .firstOrNull { it.id == query.source }?.label
+                    ?: androidx.compose.ui.res.stringResource(R.string.activity_filter_source),
+                values = sourceProjectFilterOptions(activity.sessions),
+                onSelect = { onSetQuery(query.copy(source = it)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActivityFilterMenu(
+    modifier: Modifier,
+    label: String,
+    selected: String?,
+    selectedLabel: String? = null,
+    values: List<ActivityFilterOption>,
+    onSelect: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+            shape = RoundedCornerShape(12.dp),
+            color = if (selected == null) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+        ) {
+            Text(
+                text = selectedLabel ?: values.firstOrNull { it.id == selected }?.label ?: selected ?: label,
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (selected != null) {
+                DropdownMenuItem(text = { Text(androidx.compose.ui.res.stringResource(R.string.activity_filter_clear)) }, onClick = {
+                    expanded = false
+                    onSelect(null)
+                })
+            }
+            values.take(16).forEach { value ->
+                DropdownMenuItem(text = { Text(value.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick = {
+                    expanded = false
+                    onSelect(value.id)
+                })
+            }
+            if (values.isEmpty()) {
+                DropdownMenuItem(text = { Text(androidx.compose.ui.res.stringResource(R.string.activity_filter_empty)) }, onClick = { expanded = false })
+            }
+        }
+    }
+}
+
+private fun rawActivityFilterOptions(values: List<String>): List<ActivityFilterOption> = values
+    .distinct()
+    .sorted()
+    .map { ActivityFilterOption(it, it) }
+
+@Composable
+private fun ActivitySessionPage(activity: ActivitySnapshot, onOpen: (String) -> Unit, onLoadMore: (ActivityTab) -> Unit) {
+    MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f), radius = 20) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
+            ActivityCoverageHeader(activity.sessionCoverage, activity.freshness, activity.sessionTotalCount)
+            if (activity.sessions.isEmpty()) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        if (activity.sessionCoverage == DetailCoverage.UNAVAILABLE) R.string.activity_unavailable_detail else R.string.activity_empty,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 20.dp),
+                )
+            } else {
+                activity.sessions.forEachIndexed { index, session ->
+                    ActivitySessionCard(session, onOpen)
+                    if (index != activity.sessions.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                }
+                if (activity.sessionHasMore) {
+                    TextButton(onClick = { onLoadMore(ActivityTab.SESSIONS) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(androidx.compose.ui.res.stringResource(R.string.activity_load_more))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivitySessionCard(session: ActivitySession, onOpen: (String) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable { onOpen(session.id) }.padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(session.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(formatFoundationUsd(session.costMicrosUsd), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            text = listOf(session.startedAt.take(10), session.sourceProjectName).joinToString(" · "),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val facts = listOfNotNull(
+            session.models.firstOrNull(),
+            session.sourceIds.firstOrNull()?.let(::sourceLabel),
+            session.routeIds.firstOrNull()?.let(MetroraModelBranding::routeLabel),
+            session.totalTokens?.let { "${it} tokens" },
+            "${session.calls} calls",
+        )
+        Text(facts.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun ActivityPullRequestPage(activity: ActivitySnapshot, onOpen: (String) -> Unit, onLoadMore: (ActivityTab) -> Unit) {
+    MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f), radius = 20) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
+            ActivityCoverageHeader(activity.pullRequestCoverage, activity.freshness, activity.pullRequestTotalCount)
+            if (activity.pullRequestCoverage != DetailCoverage.UNAVAILABLE) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        R.string.activity_pr_spend_split,
+                        formatFoundationUsd(activity.attributedCostMicrosUsd),
+                        formatFoundationUsd(activity.unattributedCostMicrosUsd),
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 5.dp),
+                )
+            }
+            if (activity.pullRequests.isEmpty()) {
+                Text(
+                    androidx.compose.ui.res.stringResource(
+                        if (activity.pullRequestCoverage == DetailCoverage.UNAVAILABLE) R.string.activity_unavailable_detail else R.string.activity_pull_requests_empty,
+                    ),
+                    modifier = Modifier.padding(vertical = 20.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                activity.pullRequests.forEachIndexed { index, row ->
+                    ActivityPullRequestCard(row, onOpen)
+                    if (index != activity.pullRequests.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                }
+                if (activity.pullRequestHasMore) {
+                    TextButton(onClick = { onLoadMore(ActivityTab.PULL_REQUESTS) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(androidx.compose.ui.res.stringResource(R.string.activity_load_more))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityPullRequestCard(row: ActivityPullRequest, onOpen: (String) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().clickable { onOpen(row.id) }.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(row.reference, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(formatFoundationUsd(row.costMicrosUsd), color = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            text = listOf("${row.linkedSessionCount} sessions", "${row.calls} calls", row.dateFrom.take(10)).joinToString(" · "),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (row.approximate || row.categoryCoverage != DetailCoverage.COMPLETE) {
+            Text(androidx.compose.ui.res.stringResource(R.string.activity_pr_approximate), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ActivityCoverageHeader(coverage: DetailCoverage, freshness: CapabilityFreshness, total: Long?) {
+    DomainFreshnessNote(freshness)
+    if (coverage == DetailCoverage.PARTIAL) {
+        Text(androidx.compose.ui.res.stringResource(R.string.activity_partial_detail), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
+    } else if (coverage == DetailCoverage.UNAVAILABLE) {
+        Text(androidx.compose.ui.res.stringResource(R.string.activity_coverage_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
+    }
+    if (coverage != DetailCoverage.UNAVAILABLE) {
+        total?.let { Text(androidx.compose.ui.res.stringResource(R.string.activity_total_count, it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
+    }
+}
+
+@Composable
+private fun ActivitySessionDetailCard(detail: ActivitySessionDetail, freshness: CapabilityFreshness, onClose: () -> Unit) {
+    val session = detail.session
+    MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f), radius = 18) {
+        Column(modifier = Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(androidx.compose.ui.res.stringResource(R.string.activity_session_detail_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, contentDescription = androidx.compose.ui.res.stringResource(R.string.close)) }
+            }
+            Text(session.title, fontWeight = FontWeight.Medium)
+            Text(listOf(session.startedAt, session.endedAt).joinToString(" → "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                listOfNotNull(
+                    session.sourceProjectName,
+                    session.models.joinToString(", ").takeIf { it.isNotBlank() },
+                    session.sourceIds.firstNotNullOfOrNull(::sourceLabel),
+                    session.routeIds.firstNotNullOfOrNull { MetroraModelBranding.routeLabel(it) },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.cost), formatFoundationUsd(session.costMicrosUsd))
+            session.estimatedCostMicrosUsd?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_estimated_pricing), formatFoundationUsd(it)) }
+            ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.calls), session.calls.toString())
+            ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.turns), session.turns.toString())
+            detail.durationMs?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_duration), "${it} ms") }
+            detail.inputTokens?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_input_tokens), it.toString()) }
+            detail.outputTokens?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_output_tokens), it.toString()) }
+            detail.cacheReadTokens?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_cache_read), it.toString()) }
+            detail.cacheWriteTokens?.let { ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.activity_cache_write), it.toString()) }
+            ActivityCoverageHeader(detail.detailCoverage, freshness, null)
+        }
+    }
+}
+
+@Composable
+private fun ActivityFactLine(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+        Text(value, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun ActivityPullRequestDetailCard(row: ActivityPullRequest, onClose: () -> Unit) {
+    MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f), radius = 18) {
+        Column(modifier = Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(androidx.compose.ui.res.stringResource(R.string.activity_pr_detail_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, contentDescription = androidx.compose.ui.res.stringResource(R.string.close)) }
+            }
+            Text(row.reference, fontWeight = FontWeight.Medium)
+            Text(listOf(row.dateFrom, row.dateTo).joinToString(" → "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (row.models.isNotEmpty()) Text(row.models.joinToString(", "), style = MaterialTheme.typography.bodySmall)
+            ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.cost), formatFoundationUsd(row.costMicrosUsd))
+            ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.calls), row.calls.toString())
+            ActivityFactLine(androidx.compose.ui.res.stringResource(R.string.sessions), row.linkedSessionCount.toString())
+            if (row.categories.isNotEmpty()) Text(row.categories.joinToString(" · ") { "${it.name}: ${formatFoundationUsd(it.costMicrosUsd)}" }, style = MaterialTheme.typography.bodySmall)
+            if (row.approximate || row.categoryCoverage != DetailCoverage.COMPLETE) Text(androidx.compose.ui.res.stringResource(R.string.activity_pr_approximate), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -545,4 +967,4 @@ private fun projectColor(color: String): Color = when (color) {
     else -> Color(0xFF43D9E9)
 }
 
-private fun formatFoundationUsd(micros: Long): String = String.format(Locale.US, "$%.2f", micros / 1_000_000.0)
+private fun formatFoundationUsd(micros: Long?): String = micros?.let { String.format(Locale.US, "$%.2f", it / 1_000_000.0) } ?: "—"

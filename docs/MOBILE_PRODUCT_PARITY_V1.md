@@ -241,7 +241,7 @@ below so their absence from the five-destination mobile IA is intentional.
 | Foundation area | Implemented state at the audit base | Authority and parity assessment |
 | --- | --- | --- |
 | Home | Native Compose destination with cost hero, calls/sessions/tokens, period picker, cost trend, trend granularity, top models, pricing evidence, freshness and refresh. | Reads `CompanionUsageV1` plus Foundation V1. This is a truthful foundation slice and is final-capable for the bounded headline, not complete Desktop Home parity. |
-| Activity | Native metadata-only session list, capped at 128 rows, with Project/Source Project, date, cost, source/route/brand/model facts and coverage/freshness notes. | Reads `MobileFoundationPayload.activity`. No prompt/response content is sent. It is a bounded foundation slice: no cursor paging, search/filter controls, PR activity or session drill-down yet. |
+| Activity | Native Sessions/Pull Requests destination with bounded cursor pages, canonical provider/route/model and Source Project filters, safe metadata-only session detail, PR summary/detail, Project scope and coverage/freshness notes. | Reads additive `activity.sessions` and `activity.pullRequests` projections. Foundation V1 remains the backward-compatible fallback for older Desktops/clients. Provider, route, model and Source Project identity remain independent; the Source Project menu uses safe labels while querying stable IDs. No prompt/response content is sent; cached pages are query-bound. |
 | Analyze | One native destination combines Models and Spend. Model rows carry cost and factual route/source/brand data; Spend shows cost/calls/sessions and trend. | Reads Foundation V1. Model token fields and accounting coverage are present in the DTO but are not yet a complete mobile presentation of Desktop Models. Compare, task/audit views, flow breakdowns and Insights are absent. |
 | Workspace | Destination is visible and explicitly renders unavailable. | Capability discovery says `no-authority`; this is correct behavior, not a placeholder to activate without a contract. |
 | Settings | Device card with Desktop identity/endpoint, connection details, remote revoke and local forget/re-pair. | Preserves local secure pairing semantics. It does not expose Project CRUD, provider configuration, pricing, export or Desktop diagnostics. |
@@ -269,7 +269,7 @@ semantics safely.
 | H4 Home current intelligence | Overview decision facts use current payload fields: comparison, driver, pricing/data quality, warning and next action. | No equivalent decision-fact layer; Home shows the underlying factual cards. | Add a small bounded `home.intelligence` projection or additive fields. It must carry evidence labels, targets and quality, not opaque Desktop copy or a universal payload. Project scope, effective bounds and domain freshness must match the headline. | One “what matters” card with progressive disclosure into Activity or Analyze; show unavailable instead of a dead action. | **B. MOBILE PARITY AFTER SMALL CONTRACT EXTENSION**; define bounded decision facts; PR 5 after factual slices. |
 | H5 Home outcome/workflow/efficiency intelligence | Git-correlated `yield`, workflow-insights and experimental efficiency fields are current Desktop diagnostics. | Not exposed. | Current yield/efficiency requests do not consistently carry Project scope or custom range. A truthful mobile contract requires a scoped core authority, methodology, confidence/coverage and explicit experimental labels. | Defer to a compact optional insight only after authority exists; never make it the Home headline or imply causal productivity. | **C. CORE AUTHORITY PREREQUISITE**; add project/range-aware bounded yield/workflow authority; PR 3. |
 | A1 Activity session cards | `sessions-report.ts`, parser/cache and `MobileFoundationPayload.activity`; Desktop Sessions is the consumer. | Implemented as metadata-only, newest-first, max 128. | Existing Foundation fields are sufficient for a bounded page. Scope is canonical and period-bound; use partial when capped or when totals exceed surviving rows; freshness is domain-specific. | Retain cards, not a dense table. Tap opens a metadata/accounting sheet; never send or display prompt/response bodies, patches, source code or unrestricted paths. | **A. MOBILE PARITY NOW** for the bounded slice; no core prerequisite; PR 1 hardens it. |
-| A2 Activity session scale and filters | Desktop supports search, sort, provider grouping, 120-row increments and rich metadata. | No paging/cursor, search, filter, sort or drill-down. | Add a versioned bounded sessions endpoint with opaque cursor, limit, `hasMore`, total/coverage, safe metadata detail, and filters for Project/provider/model/source/time. Desktop must apply filters before projection; cache keys include all effective dimensions. | Filter sheet plus chips; chronological list; cursor-driven “load more”; a focused session detail sheet. Keep totals/coverage separate from visible page count. | **B. MOBILE PARITY AFTER SMALL CONTRACT EXTENSION**; add cursor/filter projection; PR 1. |
+| A2 Activity session scale and filters | Desktop supports search, sort, provider grouping, 120-row increments and rich metadata. | Cursor pages, safe provider/route/model filters and Source Project filtering are implemented; arbitrary private-content search is not. | The versioned bounded sessions endpoint carries opaque cursor, limit, `hasMore`, total/coverage, safe metadata detail, and filters for Project/provider/route/model/Source Project. Desktop applies filters before projection; Source Project uses stable `sp_...` identity, not a label or path; cache keys include all effective dimensions. | Filter sheet plus chips; chronological list; cursor-driven “load more”; a focused session detail sheet. Keep totals/coverage separate from visible page count. | **A. MOBILE PARITY NOW** for the bounded slice; semantic correction is part of PR 1. |
 | A3 Activity Pull Requests | `buildPrAttribution` / `sessions-report.ts` → shared Desktop overview; `PullRequests.tsx`. | Absent. | Add a bounded PR activity projection with URL, safe title/identifier policy, date span, attributed/unattributed cost, linked-session count, models and approximate/detail-unavailable markers. Apply Project scope and provider/period bounds at core. | Add Pull Requests as a segmented Activity view or filter, not a fifth destination. Expand a PR card into spend/work breakdown; external links remain optional. | **B. MOBILE PARITY AFTER SMALL CONTRACT EXTENSION**; add `activity.pullRequests` contract; PR 1. |
 | N1 Analyze Spend summary | `MenubarPayload` / `MobileFoundationPayload.analyze.spend`; Desktop Spend and Home consumers. | Implemented as cost/calls/sessions and trend in Analyze. | Existing bounded spend DTO is sufficient. Project scope is canonical; period/granularity and live/cached freshness are carried; no missing trend bucket becomes zero beyond Desktop’s factual projection. | Keep summary at top of Analyze with a compact trend and tap-through to breakdown sections. | **A. MOBILE PARITY NOW**; no core prerequisite; PR 2 validates presentation. |
 | N2 Analyze Spend flow and breakdowns | `computeSpendFlow` → Desktop Spend: model→Project flow, categories, tools, MCP, subagents and expandable sessions. | Only summary/trend. | Add bounded spend-flow DTO with bounded node/edge counts, Project IDs, model identities, categories and source/route facts. Preserve estimated/pricing/coverage markers; apply `all`/`unassigned`/`mp_…`, provider and effective range in core. | Progressive disclosure: summary → model/Project flow cards → category/tool details. Avoid a desktop Sankey or wide table. | **B. MOBILE PARITY AFTER SMALL CONTRACT EXTENSION**; project-scoped flow projection; PR 2. |
@@ -429,6 +429,8 @@ sequential. These are future implementation PRs; this inventory branch must
 not create them.
 
 ### PR 1 — Activity parity: Sessions and Pull Requests
+
+**Status: implemented on `feat/mobile-activity-parity-v1`; physical phone smoke remains pending.**
 
 - **Exact scope:** add bounded session paging/cursors, safe filters and
   metadata drill-down; add bounded Pull Request activity; keep the current
@@ -620,7 +622,9 @@ not create them.
 - Project-scoped Yield/Optimize/Workflow authority is incomplete. Current
   Desktop requests omit the Project scope, and yield depends on local git
   correlation.
-- Activity pagination and Pull Request DTOs do not exist in the companion API.
+- Activity pagination, bounded session detail and Pull Request DTOs are now
+  available through the additive Activity contracts; older Foundation clients
+  remain compatible.
 - Spend flow and detailed Models views exceed the current bounded Foundation
   DTO, although their Desktop/core authorities exist.
 - Workspace is local-only and mutation-capable; no safe companion projection
@@ -654,10 +658,11 @@ historical semantics remain visible.
 
 ## Inventory conclusion
 
-The accepted five-destination IA is viable. Home, bounded Activity, bounded
-Spend/Models, Project catalog inspection and pairing/device state have enough
-authority for native implementation now. Full Activity scale, Spend detail,
-Models detail and Project mutations need bounded contract extensions. Compare,
-scoped Insights/Yield and any Workspace view require core authority work first.
+The accepted five-destination IA is viable. Home, the bounded Activity
+Sessions/Pull Requests slice, bounded Spend/Models, Project catalog inspection
+and pairing/device state have enough authority for native implementation now.
+Spend detail, Models detail and Project mutations still need bounded contract
+extensions. Compare, scoped Insights/Yield and any Workspace view require core
+authority work first.
 Desktop-only controls and deferred domains should remain explicitly absent
 from Mobile Product Parity V1.

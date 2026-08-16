@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 
 import { loadOrCreateIdentity, type Identity } from './identity.js'
 import { PeerStore } from './pairing.js'
-import { ShareServer, type PairRequest, type UsageQuery } from './share-server.js'
+import { ShareServer, type ActivityQuery, type PairRequest, type UsageQuery } from './share-server.js'
 import { advertise } from './discovery.js'
 import { getSharingDir, loadPeers, savePeers } from './store.js'
 import { buildPairingBootstrap } from './pairing-bootstrap.js'
@@ -50,6 +50,9 @@ export class ShareController {
     private readonly getCapabilities?: () => Promise<unknown>,
     private readonly getFoundation?: (q: UsageQuery) => Promise<unknown>,
     private readonly getProjectCatalog?: () => Promise<unknown>,
+    private readonly getActivitySessions?: (q: ActivityQuery) => Promise<unknown>,
+    private readonly getActivitySessionDetail?: (q: ActivityQuery, id: string) => Promise<unknown | null>,
+    private readonly getActivityPullRequests?: (q: ActivityQuery) => Promise<unknown>,
   ) {}
 
   private async getIdentity(): Promise<Identity> {
@@ -76,6 +79,9 @@ export class ShareController {
       getCapabilities: this.getCapabilities,
       getFoundation: this.getFoundation,
       getProjectCatalog: this.getProjectCatalog,
+      getActivitySessions: this.getActivitySessions,
+      getActivitySessionDetail: this.getActivitySessionDetail,
+      getActivityPullRequests: this.getActivityPullRequests,
       onPeersChanged: () => this.peers ? savePeers(this.peers.list(), this.dir) : Promise.resolve(),
       approve: (req) => this.enqueueApproval(req),
     })

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   companionHello,
@@ -8,11 +8,146 @@ import {
   fetchCompanionUsage,
   fetchUsage,
   fetchCompanionProjectCatalog,
+  fetchCompanionActivitySessions,
+  fetchCompanionActivityPullRequests,
+  fetchCompanionActivitySessionDetail,
   revokeCompanion,
 } from './client.js'
 import { generateIdentity } from './identity.js'
 import { pairingCode, PeerStore } from './pairing.js'
 import { ShareServer, type PairRequest } from './share-server.js'
+import {
+  buildCompanionActivityPullRequests,
+  buildCompanionActivitySessionDetail,
+  buildCompanionActivitySessions,
+  buildCompanionCapabilities,
+  type CompanionActivityAuthority,
+} from './share-run.js'
+import { sourceProjectIdForSummary } from '../project-scope.js'
+import type { MenubarPayload } from '../menubar-json.js'
+import type { ProjectRegistry } from '../project-registry.js'
+import type { ProjectSummary } from '../types.js'
+
+const ACTIVITY_FIXTURE_TIME = '2026-08-15T10:00:00.000Z'
+
+function activityFixtureProject(): ProjectSummary {
+  return {
+    project: 'metrora-fixture',
+    projectPath: 'C:/fixture/private-workspace',
+    totalCostUSD: 1.25,
+    totalSavingsUSD: 0,
+    totalEstimatedCostUSD: 0,
+    totalApiCalls: 1,
+    totalProxiedCostUSD: 0,
+    sessions: [{
+      sessionId: 'fixture-session',
+      project: 'metrora-fixture',
+      firstTimestamp: ACTIVITY_FIXTURE_TIME,
+      lastTimestamp: '2026-08-15T10:01:00.000Z',
+      totalCostUSD: 1.25,
+      totalSavingsUSD: 0,
+      totalEstimatedCostUSD: 0,
+      totalInputTokens: 10,
+      totalOutputTokens: 20,
+      totalReasoningTokens: 0,
+      totalCacheReadTokens: 5,
+      totalCacheWriteTokens: 0,
+      apiCalls: 1,
+      turns: [{
+        userMessage: '',
+        timestamp: ACTIVITY_FIXTURE_TIME,
+        sessionId: 'fixture-session',
+        category: 'coding',
+        retries: 0,
+        hasEdits: false,
+        assistantCalls: [{
+          provider: 'claude',
+          model: 'claude-opus-4-6',
+          modelProvider: 'anthropic-api',
+          usage: {
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 5,
+            cachedInputTokens: 0,
+            reasoningTokens: 0,
+            webSearchRequests: 0,
+          },
+          costUSD: 1.25,
+          tools: [],
+          mcpTools: [],
+          skills: [],
+          subagentTypes: [],
+          hasAgentSpawn: false,
+          hasPlanMode: false,
+          speed: 'standard',
+          timestamp: ACTIVITY_FIXTURE_TIME,
+          bashCommands: [],
+          deduplicationKey: 'fixture-call',
+        }],
+      }],
+      prLinks: ['https://github.com/metrora-fixture/repo/pull/7'],
+      modelBreakdown: {
+        'claude-opus-4-6': {
+          calls: 1,
+          costUSD: 1.25,
+          savingsUSD: 0,
+          tokens: {
+            inputTokens: 10,
+            outputTokens: 20,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 5,
+            cachedInputTokens: 0,
+            reasoningTokens: 0,
+            webSearchRequests: 0,
+          },
+        },
+      },
+      toolBreakdown: {},
+      mcpBreakdown: {},
+      bashBreakdown: {},
+      categoryBreakdown: {},
+      skillBreakdown: {},
+      subagentBreakdown: {},
+    }],
+  } as unknown as ProjectSummary
+}
+
+function activityFixtureAuthority(): CompanionActivityAuthority {
+  const project = activityFixtureProject()
+  const sourceId = sourceProjectIdForSummary(project)
+  const registry: ProjectRegistry = {
+    kind: 'metrora.project-registry',
+    version: 1,
+    projects: [{
+      id: 'mp_fixture',
+      name: 'Fixture Project',
+      icon: 'spark',
+      color: 'cyan',
+      sourceProjectMembership: [sourceId],
+      createdAt: ACTIVITY_FIXTURE_TIME,
+      updatedAt: ACTIVITY_FIXTURE_TIME,
+    }],
+  }
+  return {
+    parseAllSessions: async () => [project],
+    readProjectRegistry: async () => ({ registry, status: 'valid' }),
+  }
+}
+
+const activityFixtureAggregate = async (): Promise<MenubarPayload> => ({
+  generated: ACTIVITY_FIXTURE_TIME,
+  current: {
+    label: 'Fixture',
+    cost: 1.25,
+    calls: 1,
+    sessions: 1,
+    topModels: [],
+    topProjects: [],
+    topSessions: [],
+  },
+  history: {},
+} as unknown as MenubarPayload)
 
 describe('secure companion lifecycle', () => {
   it('locks the cross-platform six-digit SAS derivation', () => {
@@ -423,6 +558,146 @@ describe('secure companion lifecycle', () => {
       expect(peers.authorize(existing.token, phone.fingerprint)).toBe(true)
     } finally {
       await server.close()
+    }
+  }, 30_000)
+
+  it('serves additive bounded Activity routes with Desktop identity binding', async () => {
+    const desktop = await generateIdentity('Metrora desktop')
+    const phone = await generateIdentity('Android phone')
+    const peers = new PeerStore()
+    const baseActivity = (query: Record<string, unknown>) => ({
+      generatedAt: '2026-08-15T10:30:00.000Z',
+      query: { ...query, cursor: undefined },
+      freshness: 'live',
+      coverage: 'complete',
+    })
+    const server = new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async () => ({ generated: new Date().toISOString(), current: {} }),
+      getActivitySessions: async (query) => ({
+        kind: 'metrora.companion.activity.sessions', version: 1,
+        ...baseActivity(query), totalCount: 0, availableCount: 0, hasMore: false, sessions: [],
+      }),
+      getActivityPullRequests: async (query) => ({
+        kind: 'metrora.companion.activity.pullRequests', version: 1,
+        ...baseActivity(query), attributedCostMicrosUsd: 0, unattributedCostMicrosUsd: 0,
+        totalCount: 0, availableCount: 0, hasMore: false, pullRequests: [],
+      }),
+      getActivitySessionDetail: async () => null,
+      approve: async () => true,
+    })
+    const port = await server.listen(0, '127.0.0.1')
+    try {
+      const paired = await companionPairRequest(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'Android phone',
+      )
+      const token = (paired.json as { token: string }).token
+      const endpoint = { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint }
+      const query = { period: 'month', projectScopeId: 'mp_demo', order: 'newest', limit: 20 }
+      const sessions = await fetchCompanionActivitySessions(endpoint, token, query)
+      const pullRequests = await fetchCompanionActivityPullRequests(endpoint, token, query)
+      const detail = await fetchCompanionActivitySessionDetail(endpoint, token, 'missing', query)
+
+      expect(sessions.status).toBe(200)
+      expect(sessions.json).toMatchObject({
+        kind: 'metrora.companion.activity.sessions',
+        desktopId: desktop.fingerprint,
+        query: { projectScopeId: 'mp_demo', limit: 20 },
+      })
+      expect(pullRequests.status).toBe(200)
+      expect(pullRequests.json).toMatchObject({ kind: 'metrora.companion.activity.pullRequests', desktopId: desktop.fingerprint })
+      expect(detail.status).toBe(404)
+    } finally {
+      await server.close()
+    }
+  }, 30_000)
+
+  it('serves the real Activity builder through V1 for Today and Lifetime fixtures', async () => {
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'))
+    const desktop = await generateIdentity('Metrora desktop')
+    const phone = await generateIdentity('Android phone')
+    const peers = new PeerStore()
+    const authority = activityFixtureAuthority()
+    const server = new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async () => ({ generated: ACTIVITY_FIXTURE_TIME, current: {} }),
+      getCapabilities: () => buildCompanionCapabilities(),
+      getActivitySessions: (query) => buildCompanionActivitySessions(query, activityFixtureAggregate, authority),
+      getActivitySessionDetail: (query, id) => buildCompanionActivitySessionDetail(query, id, activityFixtureAggregate, authority),
+      getActivityPullRequests: (query) => buildCompanionActivityPullRequests(query, activityFixtureAggregate, authority),
+      approve: async () => true,
+    })
+    const port = await server.listen(0, '127.0.0.1')
+    try {
+      const paired = await companionPairRequest(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'Android phone',
+      )
+      const token = (paired.json as { token: string }).token
+      const endpoint = { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint }
+      const capabilities = await fetchCompanionCapabilities(endpoint, token)
+      expect(capabilities.status).toBe(200)
+      const capabilityRows = (capabilities.json as { capabilities: Array<{ id: string; availability: string }> }).capabilities
+      expect(capabilityRows.find(row => row.id === 'activity.sessions')).toMatchObject({ availability: 'available' })
+      expect(capabilityRows.find(row => row.id === 'activity.pullRequests')).toMatchObject({ availability: 'available' })
+
+      const fixtureSourceId = sourceProjectIdForSummary(activityFixtureProject())
+      for (const period of ['today', 'lifetime']) {
+        const sessions = await fetchCompanionActivitySessions(endpoint, token, {
+          period,
+          projectScopeId: 'mp_fixture',
+          order: 'newest',
+          limit: 20,
+        })
+        expect(sessions.status).toBe(200)
+        expect(sessions.json).toMatchObject({
+          kind: 'metrora.companion.activity.sessions',
+          version: 1,
+          desktopId: desktop.fingerprint,
+          query: {
+            period,
+            projectScopeId: 'mp_fixture',
+            effectiveFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+            effectiveTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          },
+          sessions: [expect.objectContaining({
+            sourceProjectId: fixtureSourceId,
+            sourceProjectName: 'private-workspace',
+            sourceIds: ['claude'],
+            routeIds: ['anthropic-api'],
+            models: ['claude-opus-4-6'],
+          })],
+        })
+        expect(JSON.stringify(sessions.json)).not.toContain('C:/fixture/private-workspace')
+
+        const sessionId = ((sessions.json as { sessions: Array<{ id: string }> }).sessions[0])!.id
+        const detail = await fetchCompanionActivitySessionDetail(endpoint, token, sessionId, {
+          period,
+          projectScopeId: 'mp_fixture',
+          order: 'newest',
+          limit: 20,
+        })
+        expect(detail.status).toBe(200)
+        expect(detail.json).toMatchObject({ session: { id: sessionId, sourceProjectId: fixtureSourceId } })
+
+        const pullRequests = await fetchCompanionActivityPullRequests(endpoint, token, {
+          period,
+          projectScopeId: 'mp_fixture',
+          order: 'newest',
+          limit: 20,
+        })
+        expect(pullRequests.status).toBe(200)
+        expect(pullRequests.json).toMatchObject({
+          kind: 'metrora.companion.activity.pullRequests',
+          pullRequests: [expect.objectContaining({ reference: 'metrora-fixture/repo#7' })],
+        })
+      }
+    } finally {
+      await server.close()
+      vi.useRealTimers()
     }
   }, 30_000)
 })

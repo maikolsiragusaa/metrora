@@ -70,6 +70,8 @@ import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.data.ModelAccountingGap
 import eu.metrora.app.data.ModelUsage
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.data.ActivityQuery
+import eu.metrora.app.data.ActivityTab
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -93,6 +95,11 @@ internal fun HomeState(
     onSelectPeriod: (String) -> Unit,
     onSelectTrendGranularity: (String) -> Unit,
     onSelectProject: (String) -> Unit,
+    onSetActivityQuery: (ActivityQuery) -> Unit,
+    onLoadMoreActivity: (ActivityTab) -> Unit,
+    onOpenActivitySession: (String) -> Unit,
+    onOpenActivityPullRequest: (String) -> Unit,
+    onCloseActivityDetail: () -> Unit,
     onRevoke: () -> Unit,
     onForget: () -> Unit,
 ) {
@@ -141,7 +148,15 @@ internal fun HomeState(
                     onRevoke = onRevoke,
                     onForget = onForget,
                 )
-                HomeDestination.ACTIVITY -> ActivitySurface(state = state)
+                HomeDestination.ACTIVITY -> ActivitySurface(
+                    state = state,
+                    onRetry = onRefresh,
+                    onSetQuery = onSetActivityQuery,
+                    onLoadMore = onLoadMoreActivity,
+                    onOpenSession = onOpenActivitySession,
+                    onOpenPullRequest = onOpenActivityPullRequest,
+                    onCloseDetail = onCloseActivityDetail,
+                )
                 HomeDestination.ANALYZE -> AnalyzeSurface(state = state)
                 HomeDestination.WORKSPACE -> WorkspaceSurface(state = state)
             }

@@ -3,7 +3,7 @@ import type { TLSSocket } from 'tls'
 
 import { certFingerprint } from './pairing.js'
 import type { Identity } from './identity.js'
-import type { UsageQuery } from './share-server.js'
+import type { ActivityQuery, UsageQuery } from './share-server.js'
 
 // req.setTimeout only arms once connected; it does not abort a stalled TCP
 // connect, so an unreachable peer would otherwise ride the OS connect timeout
@@ -133,6 +133,42 @@ export function fetchCompanionFoundation(ep: PeerEndpoint, token: string, query:
 
 export function fetchCompanionProjectCatalog(ep: PeerEndpoint, token: string): Promise<Response> {
   return call(ep, 'GET', '/api/v1/projects', { authorization: `Bearer ${token}` })
+}
+
+function activityQueryParams(query: ActivityQuery = {}): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
+  }
+  return params.toString()
+}
+
+export function fetchCompanionActivitySessions(
+  ep: PeerEndpoint,
+  token: string,
+  query: ActivityQuery = {},
+): Promise<Response> {
+  const qs = activityQueryParams(query)
+  return call(ep, 'GET', `/api/v1/activity/sessions${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
+}
+
+export function fetchCompanionActivitySessionDetail(
+  ep: PeerEndpoint,
+  token: string,
+  id: string,
+  query: ActivityQuery = {},
+): Promise<Response> {
+  const qs = activityQueryParams(query)
+  return call(ep, 'GET', `/api/v1/activity/sessions/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
+}
+
+export function fetchCompanionActivityPullRequests(
+  ep: PeerEndpoint,
+  token: string,
+  query: ActivityQuery = {},
+): Promise<Response> {
+  const qs = activityQueryParams(query)
+  return call(ep, 'GET', `/api/v1/activity/pull-requests${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
 }
 
 export function revokeCompanion(ep: PeerEndpoint, token: string): Promise<Response> {

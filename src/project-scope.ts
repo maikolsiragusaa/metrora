@@ -61,6 +61,11 @@ export function sourceProjectIdForSummary(project: Pick<ProjectSummary, 'project
   return sourceProjectId(project.projectPath, project.project)
 }
 
+/** Stable Source Project IDs are the only values accepted by Activity source filters. */
+export function isSourceProjectId(value: string): boolean {
+  return /^sp_[a-f0-9]{64}$/.test(value)
+}
+
 /** Durable keys without a path never silently equal a live name-only identity. */
 export function sourceProjectIdForDurableProject(projectKey: string, projectPath?: string): string {
   return projectPath?.trim()

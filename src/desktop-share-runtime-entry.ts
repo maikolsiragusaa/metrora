@@ -5,6 +5,9 @@ import {
   buildCompanionFoundation,
   buildCompanionProjectCatalog,
   buildCompanionUsage,
+  buildCompanionActivitySessions,
+  buildCompanionActivitySessionDetail,
+  buildCompanionActivityPullRequests,
 } from './sharing/share-run.js'
 import { loadShareAlways } from './sharing/store.js'
 
@@ -29,6 +32,9 @@ export async function createDesktopShareRuntime(port = 7777): Promise<DesktopSha
     () => buildCompanionCapabilities(),
     query => buildCompanionFoundation(query),
     () => buildCompanionProjectCatalog(),
+    query => buildCompanionActivitySessions(query),
+    (query, id) => buildCompanionActivitySessionDetail(query, id),
+    query => buildCompanionActivityPullRequests(query),
   )
 
   if (await loadShareAlways()) {

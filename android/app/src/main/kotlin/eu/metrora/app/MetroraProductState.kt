@@ -5,6 +5,7 @@ import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.data.ActivitySnapshot
 
 data class MetroraUiState(
     val initializing: Boolean = true,
@@ -15,6 +16,9 @@ data class MetroraUiState(
     val snapshot: UsageSnapshot? = null,
     val foundation: MobileFoundationSnapshot? = null,
     val projectCatalog: ProjectCatalogSnapshot? = null,
+    val activity: ActivitySnapshot? = null,
+    /** Non-sensitive Activity V1 failure; null means no known Activity error. */
+    val activityFailure: MetroraFailure? = null,
     val capabilities: CapabilityDiscovery = CapabilityDiscovery.unavailable(),
     val pairingCode: String? = null,
     val pairingDesktopName: String? = null,
@@ -34,8 +38,8 @@ data class MetroraUiState(
         )
 
     val showingCachedData: Boolean
-        get() = snapshot != null && status != MetroraConnectionState.CONNECTED
+        get() = (snapshot != null || activity != null) && status != MetroraConnectionState.CONNECTED
 
     val hasLocalState: Boolean
-        get() = paired || snapshot != null || foundation != null || projectCatalog != null || status == MetroraConnectionState.RECOVERY_REQUIRED
+        get() = paired || snapshot != null || foundation != null || projectCatalog != null || activity != null || status == MetroraConnectionState.RECOVERY_REQUIRED
 }
