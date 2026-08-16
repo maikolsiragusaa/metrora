@@ -99,6 +99,7 @@
     <string name="total_tokens">Total tokens</string>
     <string name="detail_partial_short">Partial</string>
     <string name="detail_unavailable_short">Unavailable</string>
+    <string name="partial_historical_coverage">Partial historical coverage</string>
     <string name="calls">Calls</string>
     <string name="sessions">Sessions</string>
     <string name="top_models">Main models</string>
@@ -141,6 +142,11 @@
     <string name="analyze_unavailable_body">This Desktop does not advertise a compatible Models projection for the selected Project scope.</string>
     <string name="models_partial_project_detail">Partial historical model detail. Rows shown are available evidence, not a total for the full period.</string>
     <string name="models_unavailable_project_detail">Model detail is unavailable for this Project and period. Cost, calls and sessions remain separate accounting facts.</string>
+    <string name="other_models">Other models</string>
+    <plurals name="other_models_accounting_detail">
+        <item quantity="one">%1$d call · no model identity inferred</item>
+        <item quantity="other">%1$d calls · no model identity inferred</item>
+    </plurals>
     <string name="provenance_unavailable">Provenance unavailable</string>
     <string name="domain_cached_detail">Saved domain detail · not refreshed in this session.</string>
     <string name="domain_freshness_unknown">Domain freshness unavailable.</string>

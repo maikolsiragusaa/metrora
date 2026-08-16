@@ -257,6 +257,8 @@ data class MobileFoundationSnapshot(
     val analyzeTokensCoverage: DetailCoverage = DetailCoverage.COMPLETE,
     val analyzeHistoricalDetail: Boolean = false,
     val analyzeAccountingCoverage: AnalyzeAccountingCoverage? = null,
+    /** Exact cost/call residual for the neutral Other models accounting row. */
+    val analyzeModelAccountingGap: ModelAccountingGap? = null,
     val spend: MobileSpendSummary?,
     val analyzeSpendFreshness: CapabilityFreshness = CapabilityFreshness.UNKNOWN,
     val workspaceAvailable: Boolean,
@@ -363,6 +365,12 @@ data class MobileFoundationSnapshot(
                     tokenCalls = value.optNullableFraction("tokenCalls"),
                 )
             }
+            val modelAccountingGap = modelsObject?.optJSONObject("modelAccountingGap")?.let { value ->
+                val costMicrosUsd = value.getLong("costMicrosUsd")
+                val calls = value.getLong("calls")
+                require(costMicrosUsd >= 0L && calls >= 0L) { "Model accounting gap cannot be negative." }
+                if (costMicrosUsd == 0L && calls == 0L) null else ModelAccountingGap(costMicrosUsd, calls)
+            }
             val spend = analyze?.optJSONObject("spend")?.optJSONObject("data")?.let(::parseSpend)
             return MobileFoundationSnapshot(
                 desktopId = root.optString("desktopId", fallbackDesktopId).trim(),
@@ -381,6 +389,7 @@ data class MobileFoundationSnapshot(
                 analyzeTokensCoverage = legacyTokenCoverage,
                 analyzeHistoricalDetail = modelsObject?.optBoolean("historical", false) == true,
                 analyzeAccountingCoverage = accountingCoverage,
+                analyzeModelAccountingGap = modelAccountingGap,
                 spend = spend,
                 analyzeSpendFreshness = parseFreshness(analyze?.optJSONObject("spend")),
                 workspaceAvailable = root.optJSONObject("workspace")?.optBoolean("available", false) == true,
@@ -646,6 +655,9 @@ data class MobileFoundationSnapshot(
                 .put("historical", analyzeHistoricalDetail)
                 .putOpt("accountingCoverage", analyzeAccountingCoverage?.let { value ->
                     JSONObject().putOpt("cost", value.cost).putOpt("calls", value.calls).putOpt("tokenCost", value.tokenCost).putOpt("tokenCalls", value.tokenCalls)
+                })
+                .putOpt("modelAccountingGap", analyzeModelAccountingGap?.let { value ->
+                    JSONObject().put("costMicrosUsd", value.costMicrosUsd).put("calls", value.calls)
                 })
                 .put("rows", modelJson))
                 .put("spend", JSONObject()

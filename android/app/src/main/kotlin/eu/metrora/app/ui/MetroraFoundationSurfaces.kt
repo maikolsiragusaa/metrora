@@ -311,7 +311,7 @@ private fun AnalyzeModels(foundation: MobileFoundationSnapshot) {
                 )
             }
             val visibleModels = foundation.analyzeModels.takeIf { foundation.analyzeModelsCoverage != DetailCoverage.UNAVAILABLE }.orEmpty()
-            if (visibleModels.isEmpty()) {
+            if (visibleModels.isEmpty() && foundation.analyzeModelAccountingGap == null) {
                 Text(
                     text = androidx.compose.ui.res.stringResource(
                         if (foundation.analyzeModelsCoverage == DetailCoverage.UNAVAILABLE) {
@@ -325,9 +325,28 @@ private fun AnalyzeModels(foundation: MobileFoundationSnapshot) {
                     modifier = Modifier.padding(vertical = 18.dp),
                 )
             } else {
+                if (visibleModels.isEmpty()) {
+                    Text(
+                        text = androidx.compose.ui.res.stringResource(
+                            if (foundation.analyzeModelsCoverage == DetailCoverage.UNAVAILABLE) {
+                                R.string.models_unavailable_project_detail
+                            } else {
+                                R.string.models_unavailable
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
                 visibleModels.take(32).forEachIndexed { index, model ->
                     AnalyzeModelRow(model)
-                    if (index != visibleModels.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                    if (index != visibleModels.lastIndex || foundation.analyzeModelAccountingGap != null) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+                    }
+                }
+                foundation.analyzeModelAccountingGap?.let { gap ->
+                    OtherModelsRow(gap)
                 }
             }
         }

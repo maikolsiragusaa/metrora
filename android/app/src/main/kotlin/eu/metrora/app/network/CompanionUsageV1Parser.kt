@@ -1,6 +1,7 @@
 package eu.metrora.app.network
 
 import eu.metrora.app.data.ModelUsage
+import eu.metrora.app.data.ModelAccountingGap
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.CostTrendPoint
 import eu.metrora.app.data.UsageSnapshot
@@ -53,6 +54,12 @@ internal object CompanionUsageV1Parser {
         } else {
             topModels
         }
+        val modelAccountingGap = root.optJSONObject("modelAccountingGap")?.let { gap ->
+            val costMicrosUsd = gap.getLong("costMicrosUsd")
+            val calls = gap.getLong("calls")
+            require(costMicrosUsd >= 0L && calls >= 0L) { "The desktop returned a negative model accounting gap." }
+            if (costMicrosUsd == 0L && calls == 0L) null else ModelAccountingGap(costMicrosUsd, calls)
+        }
 
         val cacheHitPercent = totals.getDouble("cacheHitPercent")
         require(cacheHitPercent.isFinite() && cacheHitPercent in 0.0..100.0) {
@@ -89,6 +96,7 @@ internal object CompanionUsageV1Parser {
             cacheHitPercent = cacheHitPercent,
             topModels = topModels,
             models = models,
+            modelAccountingGap = modelAccountingGap,
             pricingCoverage = quality?.nullableFraction("pricingCoverage"),
             tokenCoverage = if (projectDetailCoverage == null && projectScopeId != "all") {
                 DetailCoverage.UNAVAILABLE

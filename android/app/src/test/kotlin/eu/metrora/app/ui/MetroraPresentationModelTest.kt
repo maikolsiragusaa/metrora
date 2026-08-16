@@ -7,6 +7,7 @@ import eu.metrora.app.MetroraFailureReason
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
+import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.testSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -132,5 +133,13 @@ class MetroraPresentationModelTest {
 
         assertEquals(FreshnessKind.FRESH, freshnessPresentation(state).kind)
         assertEquals(R.string.data_fresh, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun partial_token_coverage_keeps_a_factual_subtotal_explicitly_partial() {
+        assertEquals("13.5B+", tokenMetricValue(DetailCoverage.PARTIAL, 13_500_000_000L))
+        assertEquals(null, tokenMetricValue(DetailCoverage.PARTIAL, 0L))
+        assertEquals("13.5B", tokenMetricValue(DetailCoverage.COMPLETE, 13_500_000_000L))
+        assertEquals(null, tokenMetricValue(DetailCoverage.UNAVAILABLE, 13_500_000_000L))
     }
 }

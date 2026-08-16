@@ -16,6 +16,16 @@ export type CompanionModelUsageV1 = {
   brandId?: ModelBrandId
 }
 
+/**
+ * Exact cost/call accounting that cannot be assigned to a retained named
+ * model without inventing model identity. This is a residual, not a model
+ * row, and intentionally carries no provider, route, pricing, or token split.
+ */
+export type ModelAccountingGapV1 = {
+  costMicrosUsd: number
+  calls: number
+}
+
 export type CompanionTrendPointV1 = {
   date: string
   costMicrosUsd: number
@@ -53,6 +63,8 @@ export type CompanionUsageV1 = {
   topModels: CompanionModelUsageV1[]
   /** Bounded full model breakdown. Older payloads may omit this field. */
   models?: CompanionModelUsageV1[]
+  /** Additive factual residual for a neutral "Other models" presentation row. */
+  modelAccountingGap?: ModelAccountingGapV1
   quality: {
     pricingCoverage: number | null
     /** Additive Project-scoped detail coverage; zero is never used as a proxy. */
@@ -96,6 +108,17 @@ function nullableNonNegativeNumber(value: unknown): number | null {
 function nullableFraction(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return null
   return value
+}
+
+function materialModelAccountingGap(value: unknown): ModelAccountingGapV1 | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const gap = value as JsonRecord
+  const costMicrosUsd = usdToMicros(gap.cost)
+  const calls = nonNegativeInteger(gap.calls)
+  // Keep the bounded contract free of floating-point dust rows. A positive
+  // call remainder remains material even when its cost rounds below one
+  // micro-dollar.
+  return costMicrosUsd > 0 || calls > 0 ? { costMicrosUsd, calls } : undefined
 }
 
 function projectDetailCoverage(value: unknown): CompanionUsageV1['quality']['projectDetailCoverage'] | undefined {
@@ -312,6 +335,7 @@ export function toCompanionUsageV1(
       .map(mapModel)
       .filter((value): value is CompanionModelUsageV1 => value !== null)
     : undefined
+  const modelAccountingGap = materialModelAccountingGap(accounting?.gap)
 
   const label = typeof current.label === 'string' && current.label.trim()
     ? current.label.trim().slice(0, 120)
@@ -352,6 +376,7 @@ export function toCompanionUsageV1(
     },
     topModels,
     ...(models ? { models } : {}),
+    ...(modelAccountingGap ? { modelAccountingGap } : {}),
     quality: {
       pricingCoverage: nullableFraction(current.pricingCoverage),
       ...(coverage ? { projectDetailCoverage: coverage } : {}),

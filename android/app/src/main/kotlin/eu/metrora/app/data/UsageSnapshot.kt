@@ -56,6 +56,8 @@ data class UsageSnapshot(
     val topModels: List<ModelUsage>,
     /** Full bounded model breakdown; older payloads use topModels as fallback. */
     val models: List<ModelUsage> = topModels,
+    /** Exact Desktop accounting remainder rendered as a neutral Other models row. */
+    val modelAccountingGap: ModelAccountingGap? = null,
     /** Portion of Desktop cost backed by a resolved price, or null when unknown. */
     val pricingCoverage: Double? = null,
     /** Project-scoped detail coverage; older unscoped payloads default to complete. */
@@ -130,6 +132,9 @@ data class UsageSnapshot(
             model.brandId?.let { modelJson.put("brandId", it) }
             modelsJson.put(modelJson)
         }
+        val modelAccountingGapJson = modelAccountingGap?.let { gap ->
+            JSONObject().put("costMicrosUsd", gap.costMicrosUsd).put("calls", gap.calls)
+        }
         val trend = JSONArray()
         costTrend.forEach { point ->
             trend.put(
@@ -159,6 +164,7 @@ data class UsageSnapshot(
             .put("retrievedAtEpochMs", retrievedAtEpochMs)
             .put("topModels", topModelsJson)
             .put("models", modelsJson)
+            .putOpt("modelAccountingGap", modelAccountingGapJson)
             .put("costTrendGranularity", costTrendGranularity)
             .put("costTrendPeriodLabel", costTrendPeriodLabel)
             .put("costTrend", trend)
@@ -189,6 +195,12 @@ data class UsageSnapshot(
             } else {
                 topModels
             }
+            val modelAccountingGap = json.optJSONObject("modelAccountingGap")?.let { gap ->
+                val costMicrosUsd = gap.getLong("costMicrosUsd")
+                val calls = gap.getLong("calls")
+                require(costMicrosUsd >= 0L && calls >= 0L) { "Model accounting gap cannot be negative." }
+                if (costMicrosUsd == 0L && calls == 0L) null else ModelAccountingGap(costMicrosUsd, calls)
+            }
             val periodLabel = json.getString("periodLabel")
             return UsageSnapshot(
                 desktopId = json.getString("desktopId"),
@@ -206,6 +218,7 @@ data class UsageSnapshot(
                 cacheHitPercent = json.getDouble("cacheHitPercent"),
                 topModels = topModels,
                 models = models,
+                modelAccountingGap = modelAccountingGap,
                 pricingCoverage = json.optNullableFraction("pricingCoverage"),
                 tokenCoverage = DetailCoverage.fromWire(json.optString("tokenCoverage", "complete")),
                 modelCoverage = DetailCoverage.fromWire(json.optString("modelCoverage", "complete")),

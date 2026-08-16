@@ -17,6 +17,7 @@ import eu.metrora.app.MetroraNotice
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.R
 import eu.metrora.app.MetroraUiState
+import eu.metrora.app.data.DetailCoverage
 import java.math.BigDecimal
 import java.text.DateFormat
 import java.text.NumberFormat
@@ -243,6 +244,17 @@ internal fun formatCompact(value: Long): String = when {
     value >= 1_000_000 -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
     value >= 1_000 -> String.format(Locale.US, "%.1fK", value / 1_000.0)
     else -> value.toString()
+}
+
+/**
+ * Keeps a factual partial token subtotal visible without presenting it as a
+ * complete period total. A null result means the UI must use its coverage
+ * label instead of displaying a numeric value.
+ */
+internal fun tokenMetricValue(coverage: DetailCoverage, totalTokens: Long): String? = when (coverage) {
+    DetailCoverage.COMPLETE -> formatCompact(totalTokens)
+    DetailCoverage.PARTIAL -> totalTokens.takeIf { it > 0L }?.let { "${formatCompact(it)}+" }
+    DetailCoverage.UNAVAILABLE -> null
 }
 
 internal fun formatDate(epochMs: Long): String = DateFormat.getDateTimeInstance(

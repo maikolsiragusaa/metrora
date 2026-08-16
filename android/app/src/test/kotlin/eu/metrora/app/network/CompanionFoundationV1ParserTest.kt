@@ -4,6 +4,7 @@ import eu.metrora.app.data.CapabilityAvailability
 import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.data.MobileFoundationSnapshot
+import eu.metrora.app.data.ModelAccountingGap
 import eu.metrora.app.data.PairingCredentials
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +31,7 @@ class CompanionFoundationV1ParserTest {
         assertEquals(CapabilityFreshness.CACHED, snapshot.analyzeModelsFreshness)
         assertEquals(DetailCoverage.PARTIAL, snapshot.analyzeModelsCoverage)
         assertEquals(DetailCoverage.UNAVAILABLE, snapshot.analyzeTokensCoverage)
+        assertEquals(ModelAccountingGap(250_000L, 3L), snapshot.analyzeModelAccountingGap)
         assertEquals(CapabilityFreshness.CACHED, snapshot.analyzeSpendFreshness)
         assertEquals("This month", snapshot.periodLabel)
         assertEquals(1, snapshot.spend?.trend?.size)
@@ -52,6 +54,7 @@ class CompanionFoundationV1ParserTest {
         assertEquals(original.analyzeModelsFreshness, restored.analyzeModelsFreshness)
         assertEquals(original.analyzeModelsCoverage, restored.analyzeModelsCoverage)
         assertEquals(original.analyzeTokensCoverage, restored.analyzeTokensCoverage)
+        assertEquals(original.analyzeModelAccountingGap, restored.analyzeModelAccountingGap)
         assertEquals(original.sourceProjects, restored.sourceProjects)
         assertEquals(original.spend, restored.spend)
         assertEquals(original.analyzeSpendFreshness, restored.analyzeSpendFreshness)
@@ -120,7 +123,7 @@ class CompanionFoundationV1ParserTest {
           "activity":{"available":true,"freshness":"cached","coverage":"partial","sessions":[
             {"id":"sessionhash","projectId":"mp_project","sourceProjectId":"sp_source","sourceProjectName":"metrora","title":"Session · 2026-08-14","sourceIds":["codex"],"routeIds":["openai"],"brandIds":["openai"],"models":["gpt-test"],"costMicrosUsd":1250000,"calls":2,"turns":1,"startedAt":"2026-08-14T09:00:00.000Z","endedAt":"2026-08-14T09:01:00.000Z"}
           ]},
-          "analyze":{"models":{"available":true,"freshness":"cached","coverage":"partial","tokenCoverage":"unavailable","historical":true,"rows":[
+          "analyze":{"models":{"available":true,"freshness":"cached","coverage":"partial","tokenCoverage":"unavailable","historical":true,"modelAccountingGap":{"costMicrosUsd":250000,"calls":3},"rows":[
             {"name":"gpt-test","routeId":"openai","sourceIds":["codex"],"brandId":"openai","calls":2,"costMicrosUsd":1250000,"inputTokens":10,"outputTokens":20,"cacheReadTokens":0,"cacheWriteTokens":0}
           ]},"spend":{"available":true,"freshness":"cached","data":{"costMicrosUsd":1250000,"calls":2,"sessions":1,"trend":[{"date":"2026-08-14","costMicrosUsd":1250000}]}}},
           "workspace":{"available":false,"reason":"no-authority"}

@@ -163,6 +163,53 @@ describe('Mobile Foundation V1 projection', () => {
     expect(result.analyze.models.tokenCoverage).toBe('partial')
     expect(result.analyze.models.historical).toBe(false)
     expect(result.analyze.models.accountingCoverage).toEqual({ cost: 1, calls: 1, tokenCost: 0.75, tokenCalls: 0.5 })
+    expect(result.analyze.models.modelAccountingGap).toBeUndefined()
+    expect(result.analyze.models.rows.reduce((sum, row) => sum + row.costMicrosUsd, 0)).toBe(result.analyze.spend.data.costMicrosUsd)
+    expect(result.analyze.models.rows.reduce((sum, row) => sum + row.calls, 0)).toBe(result.analyze.spend.data.calls)
+  })
+
+  it('carries the exact accounting residual without assigning it model identity', () => {
+    const scopedPayload = payload()
+    scopedPayload.current.cost = 5.25
+    scopedPayload.current.calls = 5
+    scopedPayload.current.modelAccounting!.gap = { cost: 1.25, savingsUSD: 0, calls: 3 }
+    const result = buildMobileFoundationPayload(scopedPayload, [project()], registry('sp_source'))
+    const namedCost = result.analyze.models.rows.reduce((sum, row) => sum + row.costMicrosUsd, 0)
+    const namedCalls = result.analyze.models.rows.reduce((sum, row) => sum + row.calls, 0)
+
+    expect(result.analyze.models.modelAccountingGap).toEqual({ costMicrosUsd: 1_250_000, calls: 3 })
+    expect(namedCost + result.analyze.models.modelAccountingGap!.costMicrosUsd).toBe(result.analyze.spend.data.costMicrosUsd)
+    expect(namedCalls + result.analyze.models.modelAccountingGap!.calls).toBe(result.analyze.spend.data.calls)
+    expect(result.analyze.models.modelAccountingGap).not.toHaveProperty('provider')
+    expect(result.analyze.models.modelAccountingGap).not.toHaveProperty('inputTokens')
+  })
+
+  it('keeps a factual residual visible even when named model identity is unavailable', () => {
+    const scopedPayload = payload()
+    scopedPayload.current.modelAccounting!.rows = []
+    scopedPayload.current.modelAccounting!.gap = { cost: 4, savingsUSD: 0, calls: 2 }
+    scopedPayload.current.projectDetailCoverage = {
+      models: 'unavailable',
+      tokens: 'partial',
+      categories: 'unavailable',
+      historical: true,
+    }
+
+    const result = buildMobileFoundationPayload(scopedPayload, [project()], registry('sp_source'))
+
+    expect(result.analyze.models.coverage).toBe('unavailable')
+    expect(result.analyze.models.available).toBe(true)
+    expect(result.analyze.models.rows).toEqual([])
+    expect(result.analyze.models.modelAccountingGap).toEqual({ costMicrosUsd: 4_000_000, calls: 2 })
+  })
+
+  it('omits zero and sub-micro-dollar residuals from the bounded projection', () => {
+    const scopedPayload = payload()
+    scopedPayload.current.modelAccounting!.gap = { cost: 0.0000001, savingsUSD: 0, calls: 0 }
+
+    const result = buildMobileFoundationPayload(scopedPayload, [project()], registry('sp_source'))
+
+    expect(result.analyze.models.modelAccountingGap).toBeUndefined()
   })
 
   it('does not use model-accounting token coverage as a Project authority fallback', () => {
@@ -173,6 +220,25 @@ describe('Mobile Foundation V1 projection', () => {
 
     expect(result.analyze.models.coverage).toBe('complete')
     expect(result.analyze.models.tokenCoverage).toBe('unavailable')
+  })
+
+  it('keeps All-project complete accounting numeric without adding an unnecessary residual', () => {
+    const allPayload = payload()
+    allPayload.projectScope!.selectedId = 'all'
+    allPayload.current.projectDetailCoverage = {
+      models: 'complete',
+      tokens: 'complete',
+      categories: 'complete',
+      historical: false,
+    }
+
+    const result = buildMobileFoundationPayload(allPayload, [project()], registry('sp_source'))
+
+    expect(result.analyze.models.coverage).toBe('complete')
+    expect(result.analyze.models.tokenCoverage).toBe('complete')
+    expect(result.analyze.models.modelAccountingGap).toBeUndefined()
+    expect(result.analyze.models.rows.reduce((sum, row) => sum + row.costMicrosUsd, 0)).toBe(result.analyze.spend.data.costMicrosUsd)
+    expect(result.analyze.models.rows.reduce((sum, row) => sum + row.calls, 0)).toBe(result.analyze.spend.data.calls)
   })
 
   it('selects a globally newest-first bounded Activity projection across Projects', () => {

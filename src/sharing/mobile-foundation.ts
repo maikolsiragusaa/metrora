@@ -6,7 +6,11 @@ import { assignedProjectId, sourceProjectIdForSummary, type ProjectScopePayload 
 import type { ProjectRegistry } from '../project-registry.js'
 import type { DetailCoverageState, ProjectDetailCoverage } from '../project-coverage.js'
 import { buildCompanionCapabilitiesV1, type CompanionCapabilitiesV1, type CapabilityFreshness } from './capability-contract.js'
-import { companionTrendBucketDate, type CompanionTrendGranularity } from './companion-contract.js'
+import {
+  companionTrendBucketDate,
+  type CompanionTrendGranularity,
+  type ModelAccountingGapV1,
+} from './companion-contract.js'
 
 export const MOBILE_FOUNDATION_KIND = 'metrora.companion.foundation' as const
 export const MOBILE_FOUNDATION_VERSION = 1 as const
@@ -74,6 +78,8 @@ export type MobileFoundationPayload = {
       historical: boolean
       accountingCoverage: { cost: number | null; calls: number | null; tokenCost: number | null; tokenCalls: number | null }
       rows: MobileModelUsageV1[]
+      /** Exact cost/call residual; no model identity or token split is inferred. */
+      modelAccountingGap?: ModelAccountingGapV1
     }
     spend: { available: true; freshness: CapabilityFreshness; data: MobileSpendV1 }
   }
@@ -166,6 +172,15 @@ function foundationTrend(
   return [{ ...buckets[0]!, costMicrosUsd: overflow }, ...buckets.slice(-127)]
 }
 
+function materialModelAccountingGap(
+  accounting: NonNullable<MenubarPayload['current']['modelAccounting']> | undefined,
+): ModelAccountingGapV1 | undefined {
+  if (!accounting) return undefined
+  const costMicrosUsd = micros(accounting.gap.cost)
+  const calls = safeNonNegative(accounting.gap.calls)
+  return costMicrosUsd > 0 || calls > 0 ? { costMicrosUsd, calls } : undefined
+}
+
 export function buildMobileFoundationPayload(
   payload: MenubarPayload,
   projects: ProjectSummary[],
@@ -232,6 +247,7 @@ export function buildMobileFoundationPayload(
 
   const coverage = detailCoverage(payload)
   const accounting = payload.current.modelAccounting
+  const modelAccountingGap = materialModelAccountingGap(accounting)
   const rows: MobileModelUsageV1[] = (payload.current.modelAccounting?.rows ?? []).slice(0, 32).map(row => {
     return {
       name: row.name.slice(0, 160),
@@ -271,7 +287,7 @@ export function buildMobileFoundationPayload(
     activity: { available: true, freshness: foundationFreshness(payload), coverage: activityCoverage, sessions: activity },
     analyze: {
       models: {
-        available: coverage.models !== 'unavailable' || rows.length > 0,
+        available: coverage.models !== 'unavailable' || rows.length > 0 || modelAccountingGap !== undefined,
         freshness: foundationFreshness(payload),
         coverage: coverage.models,
         tokenCoverage: coverage.tokens,
@@ -283,6 +299,7 @@ export function buildMobileFoundationPayload(
           tokenCalls: accounting?.tokenCoverage.calls ?? null,
         },
         rows,
+        ...(modelAccountingGap ? { modelAccountingGap } : {}),
       },
       spend: { available: true, freshness: foundationFreshness(payload), data: spend },
     },
