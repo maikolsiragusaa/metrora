@@ -11,13 +11,15 @@ import org.junit.Test
 
 class ActivityV1ParserTest {
     private val credentials = testCredentials()
+    private val sourceProjectId = "sp_" + "a".repeat(64)
+    private val otherSourceProjectId = "sp_" + "b".repeat(64)
     private val query = ActivityQuery(
         period = "month",
         projectScopeId = "mp_demo",
         provider = "claude",
         route = "anthropic-api",
         model = "claude-opus-4-6",
-        source = "claude-cli",
+        source = sourceProjectId,
         limit = 1,
     )
 
@@ -31,9 +33,11 @@ class ActivityV1ParserTest {
         assertEquals("opaque-cursor", page.meta.nextCursor)
         assertEquals("2026-08-01", page.meta.query.effectiveFrom)
         assertEquals("2026-08-15", page.meta.query.effectiveTo)
+        assertEquals(sourceProjectId, page.meta.query.source)
         assertEquals("Session · 2026-08-14", page.sessions.single().title)
         assertEquals(35L, page.sessions.single().totalTokens)
         assertTrue(page.sessions.single().sourceProjectName == "metrora")
+        assertEquals("claude-cli", page.sessions.single().sourceIds.single())
     }
 
     @Test
@@ -43,6 +47,17 @@ class ActivityV1ParserTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             ActivityV1Parser.parseSessions(sessionPage(), credentials, query.copy(model = "different"))
+        }
+    }
+
+    @Test
+    fun rejectsSessionsFromAnotherSourceProject() {
+        val response = sessionPage().replace(
+            "\"sourceProjectId\":\"$sourceProjectId\"",
+            "\"sourceProjectId\":\"$otherSourceProjectId\"",
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ActivityV1Parser.parseSessions(response, credentials, query)
         }
     }
 
@@ -79,13 +94,24 @@ class ActivityV1ParserTest {
         assertEquals(false, session.toString().contains("C:/private/source"))
     }
 
+    @Test
+    fun rejectsSourceProjectFilesystemPaths() {
+        val raw = sessionPage().replace(
+            "\"sourceProjectName\":\"metrora\"",
+            "\"sourceProjectName\":\"C:/private/source\"",
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ActivityV1Parser.parseSessions(raw, credentials, query)
+        }
+    }
+
     private fun sessionPage(): String = """
         {
           "kind":"metrora.companion.activity.sessions",
           "version":1,
           "desktopId":"${credentials.serverFingerprint}",
           "generatedAt":"2026-08-15T10:00:00.000Z",
-          "query":{"period":"month","projectScopeId":"mp_demo","effectiveFrom":"2026-08-01","effectiveTo":"2026-08-15","provider":"claude","route":"anthropic-api","model":"claude-opus-4-6","source":"claude-cli","order":"newest","limit":1},
+          "query":{"period":"month","projectScopeId":"mp_demo","effectiveFrom":"2026-08-01","effectiveTo":"2026-08-15","provider":"claude","route":"anthropic-api","model":"claude-opus-4-6","source":"$sourceProjectId","order":"newest","limit":1},
           "freshness":"live",
           "coverage":"partial",
           "totalCount":2,
@@ -93,7 +119,7 @@ class ActivityV1ParserTest {
           "hasMore":true,
           "nextCursor":"opaque-cursor",
           "sessions":[{
-            "id":"session_1","projectId":"mp_demo","sourceProjectId":"sp_123","sourceProjectName":"metrora","title":"Session · 2026-08-14",
+            "id":"session_1","projectId":"mp_demo","sourceProjectId":"$sourceProjectId","sourceProjectName":"metrora","title":"Session · 2026-08-14",
             "sourceIds":["claude-cli"],"routeIds":["anthropic-api"],"brandIds":["anthropic"],"models":["claude-opus-4-6"],
             "costMicrosUsd":1500000,"estimatedCostMicrosUsd":null,"calls":2,"turns":1,"totalTokens":35,"tokenCoverage":"partial","pricingCoverage":"complete",
             "startedAt":"2026-08-14T10:00:00.000Z","endedAt":"2026-08-14T10:01:00.000Z"
@@ -104,9 +130,9 @@ class ActivityV1ParserTest {
     private fun detailPage(): String = """
         {
           "kind":"metrora.companion.activity.session","version":1,"desktopId":"${credentials.serverFingerprint}","generatedAt":"2026-08-15T10:00:00.000Z",
-          "query":{"period":"month","projectScopeId":"mp_demo","effectiveFrom":"2026-08-01","effectiveTo":"2026-08-15","provider":"claude","route":"anthropic-api","model":"claude-opus-4-6","source":"claude-cli","order":"newest","limit":1},
+          "query":{"period":"month","projectScopeId":"mp_demo","effectiveFrom":"2026-08-01","effectiveTo":"2026-08-15","provider":"claude","route":"anthropic-api","model":"claude-opus-4-6","source":"$sourceProjectId","order":"newest","limit":1},
           "session":{
-            "id":"session_1","projectId":"mp_demo","sourceProjectId":"sp_123","sourceProjectName":"metrora","title":"Session · 2026-08-14",
+            "id":"session_1","projectId":"mp_demo","sourceProjectId":"$sourceProjectId","sourceProjectName":"metrora","title":"Session · 2026-08-14",
             "sourceIds":["claude-cli"],"routeIds":["anthropic-api"],"brandIds":["anthropic"],"models":["claude-opus-4-6"],
             "costMicrosUsd":1500000,"estimatedCostMicrosUsd":null,"calls":2,"turns":1,"totalTokens":35,"tokenCoverage":"partial","pricingCoverage":"complete",
             "startedAt":"2026-08-14T10:00:00.000Z","endedAt":"2026-08-14T10:01:00.000Z",
@@ -119,7 +145,7 @@ class ActivityV1ParserTest {
     private fun pullRequestPage(): String = """
         {
           "kind":"metrora.companion.activity.pullRequests","version":1,"desktopId":"${credentials.serverFingerprint}","generatedAt":"2026-08-15T10:00:00.000Z",
-          "query":{"period":"month","projectScopeId":"mp_demo","effectiveFrom":"2026-08-01","effectiveTo":"2026-08-15","provider":"claude","route":"anthropic-api","model":"claude-opus-4-6","source":"claude-cli","order":"newest","limit":1},
+          "query":{"period":"month","projectScopeId":"mp_demo","effectiveFrom":"2026-08-01","effectiveTo":"2026-08-15","provider":"claude","route":"anthropic-api","model":"claude-opus-4-6","source":"$sourceProjectId","order":"newest","limit":1},
           "freshness":"live","coverage":"partial","attributedCostMicrosUsd":1500000,"unattributedCostMicrosUsd":250000,"totalCount":1,"availableCount":1,"hasMore":false,
           "pullRequests":[{"id":"pr_1","reference":"acme/repo#42","url":"https://github.com/acme/repo/pull/42","dateFrom":"2026-08-14T10:00:00.000Z","dateTo":"2026-08-14T10:01:00.000Z","costMicrosUsd":1500000,"calls":2,"linkedSessionCount":1,"models":["claude-opus-4-6"],"approximate":true,"categoryCoverage":"unavailable"}]
         }

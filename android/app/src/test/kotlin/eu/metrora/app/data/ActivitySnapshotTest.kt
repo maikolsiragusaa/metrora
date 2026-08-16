@@ -2,6 +2,7 @@ package eu.metrora.app.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,6 +13,7 @@ class ActivitySnapshotTest {
             "month",
             "mp_demo",
             provider = "claude",
+            source = "sp_" + "a".repeat(64),
             limit = 1,
             effectiveFrom = "2026-08-01",
             effectiveTo = "2026-08-15",
@@ -19,7 +21,7 @@ class ActivitySnapshotTest {
         val session = ActivitySession(
             id = "session_1",
             projectId = "mp_demo",
-            sourceProjectId = "sp_123",
+            sourceProjectId = "sp_" + "a".repeat(64),
             sourceProjectName = "metrora",
             title = "Session · 2026-08-14",
             sourceIds = listOf("claude-cli"),
@@ -67,6 +69,47 @@ class ActivitySnapshotTest {
         assertEquals(DetailCoverage.PARTIAL, restored.sessionCoverage)
         assertFalse(restored.toJson().contains("prompt"))
         assertTrue(snapshot.query.cacheKey(snapshot.desktopId) != snapshot.query.copy(effectiveTo = "2026-08-14").cacheKey(snapshot.desktopId))
+        assertTrue(snapshot.query.cacheKey(snapshot.desktopId) != snapshot.query.copy(source = "sp_" + "b".repeat(64)).cacheKey(snapshot.desktopId))
         assertTrue(snapshot.query.cacheKey(snapshot.desktopId, "cursor-a") != snapshot.query.cacheKey(snapshot.desktopId, "cursor-b"))
+    }
+
+    @Test
+    fun sourceFilterOptionsKeepStableIdsBehindSafeLabels() {
+        val first = ActivitySession(
+            id = "session_1",
+            projectId = "mp_demo",
+            sourceProjectId = "sp_" + "a".repeat(64),
+            sourceProjectName = "Shared",
+            title = "Session · 2026-08-14",
+            sourceIds = emptyList(),
+            routeIds = emptyList(),
+            brandIds = emptyList(),
+            models = emptyList(),
+            costMicrosUsd = null,
+            estimatedCostMicrosUsd = null,
+            calls = 0L,
+            turns = 0L,
+            totalTokens = null,
+            tokenCoverage = DetailCoverage.UNAVAILABLE,
+            pricingCoverage = DetailCoverage.UNAVAILABLE,
+            startedAt = "2026-08-14T10:00:00.000Z",
+            endedAt = "2026-08-14T10:01:00.000Z",
+        )
+        val second = first.copy(
+            id = "session_2",
+            sourceProjectId = "sp_" + "b".repeat(64),
+        )
+
+        val options = sourceProjectFilterOptions(listOf(first, second))
+
+        assertEquals(listOf("Shared", "Shared"), options.map { it.label })
+        assertEquals(listOf("sp_" + "a".repeat(64), "sp_" + "b".repeat(64)), options.map { it.id })
+    }
+
+    @Test
+    fun sourceFilterRejectsProviderLabels() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ActivityQuery(period = "month", projectScopeId = "all", source = "claude-cli")
+        }
     }
 }

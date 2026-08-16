@@ -27,6 +27,9 @@ internal object ActivityV1Parser {
         require(sessions.all { projectMatchesScope(it.projectId, query.projectScopeId) }) {
             "Activity session Project scope does not match the response query."
         }
+        require(query.source == null || sessions.all { it.sourceProjectId == query.source }) {
+            "Activity session Source Project does not match the response query."
+        }
         return ActivitySessionsPage(
             meta = parseMeta(root, credentials, query),
             sessions = sessions,
@@ -42,6 +45,9 @@ internal object ActivityV1Parser {
         return ActivitySnapshot.parseDetail(root.getJSONObject("session")).also {
             require(projectMatchesScope(it.session.projectId, query.projectScopeId)) {
                 "Activity detail Project scope does not match the response query."
+            }
+            require(query.source == null || it.session.sourceProjectId == query.source) {
+                "Activity detail Source Project does not match the response query."
             }
         }
     }

@@ -124,6 +124,16 @@ The additive Activity contracts are separate from the Foundation envelope:
   coverage markers and never makes Android call GitHub or attribute sessions
   locally.
 
+Activity identity dimensions are independent factual fields: `provider` is the
+collector/provider value recorded on the canonical call, `route` is explicit
+model-provider provenance, `model` is canonical model identity, and `source`
+is the stable Source Project ID (`sp_<sha256>`). Android may show the safe
+Source Project label beside that ID, but it sends the ID and never sends or
+displays an arbitrary filesystem path. Source Project labels are not filter
+keys, so two similarly named Source Projects remain distinct.
+The current Android menus derive bounded options from fetched Activity rows;
+server-provided facet catalogs are a later, separate contract enhancement.
+
 Activity requests use the same `all`, `unassigned` and `mp_<stable-id>` Project
 scope IDs as Home and Foundation. Android changes the complete query identity
 when scope, period, filters, ordering or cursor changes and discards

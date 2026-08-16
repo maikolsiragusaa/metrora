@@ -45,13 +45,14 @@ describe('Metrora sharing API version compatibility', () => {
   })
 
   it('canonicalizes bounded Activity filters and page identity', () => {
+    const sourceProjectId = `sp_${'a'.repeat(64)}`
     expect(canonicalActivityQuery({
       period: 'month',
       projectScopeId: 'mp_fixture',
       provider: 'claude',
       route: 'anthropic-api',
       model: 'claude-opus-4-6',
-      source: 'claude-cli',
+      source: sourceProjectId,
       order: 'cost',
       limit: '25',
     })).toMatchObject({
@@ -61,6 +62,14 @@ describe('Metrora sharing API version compatibility', () => {
       effectiveTo: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       order: 'cost',
       limit: 25,
+      source: sourceProjectId,
     })
+  })
+
+  it('rejects provider/source aliases and requires a stable Source Project id', () => {
+    expect(() => canonicalActivityQuery({ period: 'month', source: 'claude-cli' })).toThrow(
+      'Invalid Activity source filter.',
+    )
+    expect(canonicalActivityQuery({ period: 'month', source: `sp_${'a'.repeat(64)}` }).source).toBe(`sp_${'a'.repeat(64)}`)
   })
 })

@@ -472,7 +472,7 @@ private fun testActivity(projectScopeId: String): ActivitySnapshot {
     val session = ActivitySession(
         id = "session_a",
         projectId = projectScopeId,
-        sourceProjectId = "sp_activity",
+        sourceProjectId = "sp_" + "a".repeat(64),
         sourceProjectName = "metrora",
         title = "Session · 2026-08-14",
         sourceIds = listOf("claude"),

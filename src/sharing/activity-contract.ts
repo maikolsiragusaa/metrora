@@ -17,6 +17,7 @@ export type ActivityQueryV1 = {
   provider?: string
   route?: string
   model?: string
+  /** Stable Source Project identity (`sp_...`), never a display label. */
   source?: string
   order: ActivityOrderV1
   limit: number
@@ -25,7 +26,9 @@ export type ActivityQueryV1 = {
 export type ActivitySessionSummaryV1 = {
   id: string
   projectId: string
+  /** Stable Source Project identity used for filtering; never a display label or path. */
   sourceProjectId: string
+  /** Safe display label for the Source Project identity. */
   sourceProjectName: string
   /** Always metadata-only. User-authored session titles never cross this boundary. */
   title: string

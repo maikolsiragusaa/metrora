@@ -16,7 +16,7 @@ const query: ActivityQueryV1 = {
   provider: 'claude',
   route: 'anthropic-api',
   model: 'claude-opus-4-6',
-  source: 'claude-cli',
+  source: `sp_${'a'.repeat(64)}`,
   order: 'newest',
   limit: 40,
 }
@@ -37,6 +37,9 @@ describe('bounded Activity contract', () => {
     expect(() => decodeActivityCursor({ ...query, model: 'different-model' }, ACTIVITY_SESSIONS_KIND, cursor)).toThrow(
       'activity cursor does not match query',
     )
+    expect(() => decodeActivityCursor({ ...query, source: `sp_${'b'.repeat(64)}` }, ACTIVITY_SESSIONS_KIND, cursor)).toThrow(
+      'activity cursor does not match query',
+    )
   })
 
   it('changes the cursor fingerprint when scope, bounds or ordering changes', () => {
@@ -48,6 +51,9 @@ describe('bounded Activity contract', () => {
     )
     expect(activityQueryHash(query, ACTIVITY_SESSIONS_KIND)).not.toBe(
       activityQueryHash({ ...query, period: 'lifetime' }, ACTIVITY_SESSIONS_KIND),
+    )
+    expect(activityQueryHash(query, ACTIVITY_SESSIONS_KIND)).not.toBe(
+      activityQueryHash({ ...query, source: `sp_${'b'.repeat(64)}` }, ACTIVITY_SESSIONS_KIND),
     )
   })
 })

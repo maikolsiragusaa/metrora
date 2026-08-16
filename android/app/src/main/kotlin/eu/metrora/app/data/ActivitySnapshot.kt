@@ -2,6 +2,7 @@ package eu.metrora.app.data
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 private const val ACTIVITY_CACHE_KIND = "metrora.mobile.activity.cache"
 private const val ACTIVITY_CACHE_VERSION = 1
@@ -12,6 +13,7 @@ private const val MAX_ACTIVITY_MODELS = 16
 private const val MAX_ACTIVITY_TEXT = 160
 private const val MAX_ACTIVITY_TIMESTAMP = 80
 private val ACTIVITY_SAFE_ID = Regex("[a-zA-Z0-9_.:-]{1,160}")
+private val ACTIVITY_SOURCE_PROJECT_ID = Regex("sp_[a-f0-9]{64}")
 
 enum class ActivityTab {
     SESSIONS,
@@ -39,6 +41,7 @@ data class ActivityQuery(
         listOf(provider, route, model, source).forEach { value ->
             require(value == null || safeActivityText(value)) { "Activity filter is invalid." }
         }
+        require(source == null || source.matches(ACTIVITY_SOURCE_PROJECT_ID)) { "Activity Source Project filter is invalid." }
         require(order in setOf("newest", "cost", "tokens", "calls")) { "Activity ordering is invalid." }
         require(limit in 1..50) { "Activity page size is invalid." }
         require((effectiveFrom == null) == (effectiveTo == null)) { "Activity effective bounds must be paired." }
@@ -101,7 +104,7 @@ data class ActivitySession(
     init {
         require(id.matches(ACTIVITY_SAFE_ID) && id.length <= 80) { "Activity session id is invalid." }
         require(projectId == "unassigned" || projectId.startsWith("mp_") && projectId.matches(ACTIVITY_SAFE_ID)) { "Activity Project id is invalid." }
-        require(sourceProjectId.startsWith("sp_") && sourceProjectId.length <= 80 && sourceProjectId.matches(ACTIVITY_SAFE_ID)) { "Activity Source Project id is invalid." }
+        require(sourceProjectId.matches(ACTIVITY_SOURCE_PROJECT_ID)) { "Activity Source Project id is invalid." }
         require(safeDisplayName(sourceProjectName)) { "Activity Source Project name is not privacy-safe." }
         require(title.startsWith("Session") && title.length <= MAX_ACTIVITY_TEXT) { "Activity title is not content-minimal." }
         require(sourceIds.size <= MAX_ACTIVITY_IDENTITIES && routeIds.size <= MAX_ACTIVITY_IDENTITIES && brandIds.size <= MAX_ACTIVITY_IDENTITIES) {
@@ -120,6 +123,17 @@ data class ActivitySession(
         require(safeActivityText(endedAt, MAX_ACTIVITY_TIMESTAMP)) { "Activity end is invalid." }
     }
 }
+
+data class ActivityFilterOption(
+    val id: String,
+    val label: String,
+)
+
+/** Stable Source Project IDs with safe labels for the native filter menu. */
+fun sourceProjectFilterOptions(sessions: List<ActivitySession>): List<ActivityFilterOption> = sessions
+    .map { ActivityFilterOption(it.sourceProjectId, it.sourceProjectName) }
+    .distinctBy { it.id }
+    .sortedWith(compareBy<ActivityFilterOption> { it.label.lowercase(Locale.ROOT) }.thenBy { it.id })
 
 data class ActivitySessionDetail(
     val session: ActivitySession,

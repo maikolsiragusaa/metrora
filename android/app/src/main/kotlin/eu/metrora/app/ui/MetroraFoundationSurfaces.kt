@@ -52,6 +52,7 @@ import eu.metrora.app.data.ActivitySession
 import eu.metrora.app.data.ActivityTab
 import eu.metrora.app.data.ActivitySnapshot
 import eu.metrora.app.data.ActivitySessionDetail
+import eu.metrora.app.data.ActivityFilterOption
 import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.DetailCoverage
@@ -59,6 +60,7 @@ import eu.metrora.app.data.MobileActivitySession
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectScopeOption
 import eu.metrora.app.data.SpendTrendPoint
+import eu.metrora.app.data.sourceProjectFilterOptions
 import java.util.Locale
 
 @Composable
@@ -261,14 +263,14 @@ private fun ActivityFilterBar(query: ActivityQuery, activity: ActivitySnapshot, 
                 modifier = Modifier.weight(1f),
                 label = androidx.compose.ui.res.stringResource(R.string.activity_filter_provider),
                 selected = query.provider,
-                values = activity.sessions.flatMap { it.sourceIds }.distinct().sorted(),
+                values = rawActivityFilterOptions(activity.sessions.flatMap { it.sourceIds }),
                 onSelect = { onSetQuery(query.copy(provider = it)) },
             )
             ActivityFilterMenu(
                 modifier = Modifier.weight(1f),
                 label = androidx.compose.ui.res.stringResource(R.string.activity_filter_model),
                 selected = query.model,
-                values = activity.sessions.flatMap { it.models }.distinct().sorted(),
+                values = rawActivityFilterOptions(activity.sessions.flatMap { it.models }),
                 onSelect = { onSetQuery(query.copy(model = it)) },
             )
         }
@@ -277,14 +279,17 @@ private fun ActivityFilterBar(query: ActivityQuery, activity: ActivitySnapshot, 
                 modifier = Modifier.weight(1f),
                 label = androidx.compose.ui.res.stringResource(R.string.activity_filter_route),
                 selected = query.route,
-                values = activity.sessions.flatMap { it.routeIds }.distinct().sorted(),
+                values = rawActivityFilterOptions(activity.sessions.flatMap { it.routeIds }),
                 onSelect = { onSetQuery(query.copy(route = it)) },
             )
             ActivityFilterMenu(
                 modifier = Modifier.weight(1f),
                 label = androidx.compose.ui.res.stringResource(R.string.activity_filter_source),
                 selected = query.source,
-                values = activity.sessions.flatMap { it.sourceIds }.distinct().sorted(),
+                selectedLabel = sourceProjectFilterOptions(activity.sessions)
+                    .firstOrNull { it.id == query.source }?.label
+                    ?: androidx.compose.ui.res.stringResource(R.string.activity_filter_source),
+                values = sourceProjectFilterOptions(activity.sessions),
                 onSelect = { onSetQuery(query.copy(source = it)) },
             )
         }
@@ -296,7 +301,8 @@ private fun ActivityFilterMenu(
     modifier: Modifier,
     label: String,
     selected: String?,
-    values: List<String>,
+    selectedLabel: String? = null,
+    values: List<ActivityFilterOption>,
     onSelect: (String?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -307,7 +313,7 @@ private fun ActivityFilterMenu(
             color = if (selected == null) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
         ) {
             Text(
-                text = selected ?: label,
+                text = selectedLabel ?: values.firstOrNull { it.id == selected }?.label ?: selected ?: label,
                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
@@ -323,9 +329,9 @@ private fun ActivityFilterMenu(
                 })
             }
             values.take(16).forEach { value ->
-                DropdownMenuItem(text = { Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick = {
+                DropdownMenuItem(text = { Text(value.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }, onClick = {
                     expanded = false
-                    onSelect(value)
+                    onSelect(value.id)
                 })
             }
             if (values.isEmpty()) {
@@ -334,6 +340,11 @@ private fun ActivityFilterMenu(
         }
     }
 }
+
+private fun rawActivityFilterOptions(values: List<String>): List<ActivityFilterOption> = values
+    .distinct()
+    .sorted()
+    .map { ActivityFilterOption(it, it) }
 
 @Composable
 private fun ActivitySessionPage(activity: ActivitySnapshot, onOpen: (String) -> Unit, onLoadMore: (ActivityTab) -> Unit) {

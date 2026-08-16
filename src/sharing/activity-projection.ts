@@ -96,14 +96,14 @@ function callsFor(session: SessionSummary) {
   return session.turns.flatMap(turn => turn.assistantCalls)
 }
 
-function sessionMatches(session: SessionSummary, query: ActivityQueryV1): boolean {
+function sessionMatches(project: ProjectSummary, session: SessionSummary, query: ActivityQueryV1): boolean {
   const calls = callsFor(session)
   // A provider filter must use explicit call provenance. `inferSessionProvider`
   // is useful for the canonical aggregate row, but its model fallback is not
   // strong enough to establish provider identity for a filtered projection.
   if (query.provider && !calls.some(call => call.provider === query.provider)) return false
   if (query.route && !calls.some(call => call.modelProvider === query.route)) return false
-  if (query.source && !calls.some(call => call.provider === query.source)) return false
+  if (query.source && sourceProjectIdForSummary(project) !== query.source) return false
   if (query.model && !Object.keys(session.modelBreakdown).includes(query.model)) return false
   return true
 }
@@ -113,8 +113,8 @@ function projectSessions(projects: ProjectSummary[], query: ActivityQueryV1): Pr
   if (!hasSessionFilter) return projects
   return projects.map(project => ({
     ...project,
-    sessions: project.sessions.filter(session => sessionMatches(session, query)),
-    subagentAnchors: project.subagentAnchors?.filter(session => sessionMatches(session, query)),
+    sessions: project.sessions.filter(session => sessionMatches(project, session, query)),
+    subagentAnchors: project.subagentAnchors?.filter(session => sessionMatches(project, session, query)),
   })).filter(project => project.sessions.length > 0 || (project.subagentAnchors?.length ?? 0) > 0)
 }
 
@@ -272,7 +272,7 @@ function effectiveLimit(query: ActivityQueryV1): number {
 }
 
 function filteredSessions(input: ActivityProjectionInput): { entries: SessionEntry[]; filtered: boolean } {
-  const projects = projectSessions(input.projects, input.query)
+  const projects = projectSessions(activityProjectsForQuery(input.projects, input.registry, input.query), input.query)
   const filtered = Boolean(input.query.provider || input.query.route || input.query.source || input.query.model)
   const entries = projects.flatMap(project => {
     const rows = aggregateSessions([project])
@@ -408,7 +408,7 @@ export function buildActivityPullRequestsPage(input: ActivityProjectionInput, cu
   if (input.query.order === 'tokens') {
     throw new UsageQueryError('Pull Request Activity does not expose token ordering.')
   }
-  const projects = projectSessions(input.projects, input.query)
+  const projects = projectSessions(activityProjectsForQuery(input.projects, input.registry, input.query), input.query)
   const attribution = buildPrAttribution(projects)
   const rows = sortPullRequests(attribution.rows.map(mapPullRequest), input.query.order)
   const start = pageStart(

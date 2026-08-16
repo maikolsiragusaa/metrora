@@ -241,7 +241,7 @@ private class RaceApi : MetroraApi {
                 MobileActivitySession(
                     id = "session_fixture",
                     projectId = if (scope == "mp_fixture") "mp_fixture" else "unassigned",
-                    sourceProjectId = "sp_one",
+                    sourceProjectId = "sp_" + "a".repeat(64),
                     sourceProjectName = "one",
                     title = "Session · 2026-08-16",
                     sourceIds = listOf("codex"),

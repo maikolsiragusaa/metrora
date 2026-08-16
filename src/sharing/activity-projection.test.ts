@@ -45,6 +45,18 @@ function projects(): ProjectSummary[] {
   } as unknown as ProjectSummary]
 }
 
+function projectAt(projectPath: string, sessionId: string, startedAt: string): ProjectSummary {
+  return {
+    project: 'metrora',
+    projectPath,
+    totalCostUSD: 2,
+    totalSavingsUSD: 0,
+    totalApiCalls: 2,
+    totalProxiedCostUSD: 0,
+    sessions: [session(sessionId, startedAt)],
+  } as unknown as ProjectSummary
+}
+
 function session(id: string, startedAt: string): unknown {
   return {
     sessionId: id,
@@ -101,6 +113,88 @@ describe('bounded Activity projections', () => {
     })
     expect(filtered.sessions).toEqual([])
     expect(filtered.totalCount).toBeNull()
+  })
+
+  it('keeps provider and Source Project filters independent and composable', () => {
+    const firstProject = projectAt('C:/Users/private/Projects/one/metrora', 'first', '2026-08-14T09:00:00.000Z')
+    const secondProject = projectAt('D:/Users/private/Projects/two/metrora', 'second', '2026-08-15T09:00:00.000Z')
+    const firstSourceId = sourceProjectIdForSummary(firstProject)
+    const secondSourceId = sourceProjectIdForSummary(secondProject)
+    const inputQuery = { ...query, projectScopeId: 'all', limit: 10 }
+    const input = {
+      projects: [firstProject, secondProject],
+      registry: registry(firstSourceId),
+      payload: payload(2),
+    }
+
+    expect(firstSourceId).not.toBe(secondSourceId)
+
+    const providerPage = buildActivitySessionsPage({ ...input, query: { ...inputQuery, provider: 'claude' } })
+    expect(providerPage.sessions).toHaveLength(2)
+    expect(providerPage.sessions.map(row => row.sourceProjectId).sort()).toEqual([firstSourceId, secondSourceId].sort())
+    expect(providerPage.sessions.every(row => row.sourceIds.includes('claude'))).toBe(true)
+
+    const sourcePage = buildActivitySessionsPage({ ...input, query: { ...inputQuery, source: firstSourceId } })
+    expect(sourcePage.sessions).toHaveLength(1)
+    expect(sourcePage.sessions[0]).toMatchObject({ sourceProjectId: firstSourceId, sourceProjectName: 'metrora' })
+
+    const composedPage = buildActivitySessionsPage({
+      ...input,
+      query: {
+        ...inputQuery,
+        projectScopeId: 'mp_demo',
+        source: firstSourceId,
+        provider: 'claude',
+        route: 'anthropic-api',
+        model: 'claude-opus-4-6',
+      },
+    })
+    expect(composedPage.sessions).toHaveLength(1)
+    expect(composedPage.sessions[0]?.sourceProjectId).toBe(firstSourceId)
+
+    const wrongSourceForScope = buildActivitySessionsPage({
+      ...input,
+      query: { ...inputQuery, projectScopeId: 'mp_demo', source: secondSourceId },
+    })
+    expect(wrongSourceForScope.sessions).toEqual([])
+
+    const firstPrUrl = 'https://github.com/acme/one/pull/1'
+    const secondPrUrl = 'https://github.com/acme/two/pull/2'
+    for (const [project, url] of [[firstProject, firstPrUrl], [secondProject, secondPrUrl]] as const) {
+      const candidate = project.sessions[0]!
+      candidate.prLinks = [url]
+      candidate.turns = [{
+        timestamp: candidate.firstTimestamp,
+        prRefs: [url],
+        category: 'coding',
+        assistantCalls: [{
+          provider: 'claude',
+          model: 'claude-opus-4-6',
+          modelProvider: 'anthropic-api',
+          costUSD: 2,
+        }],
+      }] as typeof candidate.turns
+    }
+    const scopedPullRequests = buildActivityPullRequestsPage({
+      ...input,
+      query: {
+        ...inputQuery,
+        projectScopeId: 'mp_demo',
+        source: firstSourceId,
+        provider: 'claude',
+        route: 'anthropic-api',
+        model: 'claude-opus-4-6',
+      },
+    })
+    expect(scopedPullRequests.pullRequests).toHaveLength(1)
+    expect(scopedPullRequests.pullRequests[0]?.reference).toBe('acme/one#1')
+    expect(scopedPullRequests.attributedCostMicrosUsd).toBe(2_000_000)
+
+    const providerLabelAsSource = buildActivitySessionsPage({
+      ...input,
+      query: { ...inputQuery, source: 'claude' },
+    })
+    expect(providerLabelAsSource.sessions).toEqual([])
   })
 
   it('does not infer provider identity from a model-only session', () => {

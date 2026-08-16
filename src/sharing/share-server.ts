@@ -12,6 +12,7 @@ import {
   type ActivityOrderV1,
   type ActivityQueryV1,
 } from './activity-contract.js'
+import { isSourceProjectId } from '../project-scope.js'
 
 export type UsageQuery = {
   period?: string
@@ -28,6 +29,7 @@ export type ActivityQuery = UsageQuery & {
   provider?: string
   route?: string
   model?: string
+  /** Stable Source Project identity (`sp_...`), never a display label. */
   source?: string
   order?: ActivityOrderV1 | string
   limit?: number | string
@@ -81,6 +83,8 @@ export function canonicalActivityQuery(query: ActivityQuery): ActivityQueryV1 & 
   }
   const cursor = query.cursor?.trim() || undefined
   if (cursor && cursor.length > 768) throw new UsageQueryError('Activity cursor is too long.')
+  const source = boundedActivityFilter(query.source, 'source')
+  if (source && !isSourceProjectId(source)) throw new UsageQueryError('Invalid Activity source filter.')
   return {
     period: base.period ?? 'month',
     projectScopeId: base.projectScopeId ?? 'all',
@@ -89,7 +93,7 @@ export function canonicalActivityQuery(query: ActivityQuery): ActivityQueryV1 & 
     ...(boundedActivityFilter(query.provider, 'provider') ? { provider: boundedActivityFilter(query.provider, 'provider') } : {}),
     ...(boundedActivityFilter(query.route, 'route') ? { route: boundedActivityFilter(query.route, 'route') } : {}),
     ...(boundedActivityFilter(query.model, 'model') ? { model: boundedActivityFilter(query.model, 'model') } : {}),
-    ...(boundedActivityFilter(query.source, 'source') ? { source: boundedActivityFilter(query.source, 'source') } : {}),
+    ...(source ? { source } : {}),
     order: order as ActivityOrderV1,
     limit: rawLimit,
     ...(cursor ? { cursor } : {}),

@@ -49,27 +49,28 @@ class ProtocolTest {
 
     @Test
     fun activityPathsBindEveryQueryDimensionAndKeepCursorOpaque() {
+        val sourceProjectId = "sp_" + "a".repeat(64)
         val query = ActivityQuery(
             period = "month",
             projectScopeId = "mp_project",
             provider = "claude",
             route = "anthropic-api",
             model = "claude opus/4",
-            source = "claude-cli",
+            source = sourceProjectId,
             order = "cost",
             limit = 25,
         )
         val page = MetroraProtocol.activitySessionsPath(query, "opaque.cursor/value")
         assertEquals(
-            "/api/v1/activity/sessions?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=claude-cli&cursor=opaque.cursor%2Fvalue",
+            "/api/v1/activity/sessions?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=$sourceProjectId&cursor=opaque.cursor%2Fvalue",
             page,
         )
         assertEquals(
-            "/api/v1/activity/sessions/session_1?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=claude-cli",
+            "/api/v1/activity/sessions/session_1?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=$sourceProjectId",
             MetroraProtocol.activitySessionDetailPath(query, "session_1"),
         )
         assertEquals(
-            "/api/v1/activity/pull-requests?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=claude-cli",
+            "/api/v1/activity/pull-requests?period=month&order=cost&limit=25&projectScopeId=mp_project&provider=claude&route=anthropic-api&model=claude%20opus%2F4&source=$sourceProjectId",
             MetroraProtocol.activityPullRequestsPath(query),
         )
     }
