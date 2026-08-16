@@ -149,7 +149,7 @@ function dateSpanDays(from: string, to: string): number {
   return Math.max(0, Math.round((end - start) / 86_400_000))
 }
 
-function trendGranularity(
+export function companionTrendGranularity(
   query: { period?: string; from?: string; to?: string; granularity?: string },
   bounds: { from: string; to: string },
 ): CompanionTrendV1['granularity'] {
@@ -164,7 +164,7 @@ function trendGranularity(
   return 'day'
 }
 
-function bucketDate(date: string, granularity: CompanionTrendV1['granularity']): string {
+export function companionTrendBucketDate(date: string, granularity: CompanionTrendV1['granularity']): string {
   if (granularity === 'day') return date
   if (granularity === 'month') return date.slice(0, 7) + '-01'
   const parsed = new Date(`${date}T00:00:00.000Z`)
@@ -175,9 +175,17 @@ function bucketDate(date: string, granularity: CompanionTrendV1['granularity']):
 
 function trendBounds(
   generatedAt: string,
-  query: { period?: string; from?: string; to?: string },
+  query: { period?: string; from?: string; to?: string; effectiveFrom?: string; effectiveTo?: string },
 ): { from: string; to: string } {
   const generatedDate = safeDate(generatedAt.slice(0, 10)) ?? new Date().toISOString().slice(0, 10)
+  const resolvedFrom = safeDate(query.effectiveFrom)
+  const resolvedTo = safeDate(query.effectiveTo)
+  if (resolvedFrom || resolvedTo) {
+    return {
+      from: resolvedFrom ?? shiftDate(resolvedTo ?? generatedDate, -180),
+      to: resolvedTo ?? generatedDate,
+    }
+  }
   const explicitFrom = safeDate(query.from)
   const explicitTo = safeDate(query.to)
   if (explicitFrom || explicitTo) {
@@ -209,7 +217,7 @@ function companionTrend(
   root: JsonRecord,
   generatedAt: string,
   periodLabel: string,
-  query: { period?: string; from?: string; to?: string; granularity?: string },
+  query: { period?: string; from?: string; to?: string; granularity?: string; effectiveFrom?: string; effectiveTo?: string },
 ): CompanionTrendV1 | undefined {
   if (typeof root.history !== 'object' || root.history === null || Array.isArray(root.history)) return undefined
   const history = root.history as JsonRecord
@@ -220,14 +228,14 @@ function companionTrend(
       : null
   if (!source) return undefined
   const bounds = trendBounds(generatedAt, query)
-  const granularity = trendGranularity(query, bounds)
+  const granularity = companionTrendGranularity(query, bounds)
   const totals = new Map<string, number>()
   source.forEach((value) => {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
       const day = value as JsonRecord
       const date = safeDate(day.date)
       if (!date || date < bounds.from || date > bounds.to) return null
-      const bucket = bucketDate(date, granularity)
+      const bucket = companionTrendBucketDate(date, granularity)
       const next = (totals.get(bucket) ?? 0) + usdToMicros(day.cost)
       totals.set(bucket, Math.min(MAX_SAFE_MICROS_USD, next))
       return null
@@ -253,7 +261,14 @@ function companionTrend(
  */
 export function toCompanionUsageV1(
   payload: unknown,
-  query: { period?: string; from?: string; to?: string; granularity?: string } = {},
+  query: {
+    period?: string
+    from?: string
+    to?: string
+    granularity?: string
+    effectiveFrom?: string
+    effectiveTo?: string
+  } = {},
 ): CompanionUsageV1 {
   const root = record(payload, 'usage payload')
   const current = record(root.current, 'usage payload current period')

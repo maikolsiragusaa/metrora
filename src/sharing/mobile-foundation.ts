@@ -6,6 +6,7 @@ import { assignedProjectId, sourceProjectIdForSummary, type ProjectScopePayload 
 import type { ProjectRegistry } from '../project-registry.js'
 import type { DetailCoverageState, ProjectDetailCoverage } from '../project-coverage.js'
 import { buildCompanionCapabilitiesV1, type CompanionCapabilitiesV1, type CapabilityFreshness } from './capability-contract.js'
+import { companionTrendBucketDate, type CompanionTrendGranularity } from './companion-contract.js'
 
 export const MOBILE_FOUNDATION_KIND = 'metrora.companion.foundation' as const
 export const MOBILE_FOUNDATION_VERSION = 1 as const
@@ -137,6 +138,28 @@ function compareActivityNewestFirst(a: MobileActivitySessionV1, b: MobileActivit
   return a.id.localeCompare(b.id)
 }
 
+function foundationTrend(
+  daily: Array<{ date: string; cost: number }>,
+  granularity: CompanionTrendGranularity | undefined,
+): Array<{ date: string; costMicrosUsd: number }> {
+  if (!granularity) return daily.slice(-128).map(point => ({ date: point.date, costMicrosUsd: micros(point.cost) }))
+  const totals = new Map<string, number>()
+  for (const point of daily) {
+    const bucket = companionTrendBucketDate(point.date, granularity)
+    const next = (totals.get(bucket) ?? 0) + micros(point.cost)
+    totals.set(bucket, Math.min(Number.MAX_SAFE_INTEGER, next))
+  }
+  const buckets = [...totals.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, costMicrosUsd]) => ({ date, costMicrosUsd }))
+  if (buckets.length <= 128) return buckets
+  const overflow = buckets.slice(0, -127).reduce(
+    (sum, value) => Math.min(Number.MAX_SAFE_INTEGER, sum + value.costMicrosUsd),
+    0,
+  )
+  return [{ ...buckets[0]!, costMicrosUsd: overflow }, ...buckets.slice(-127)]
+}
+
 export function buildMobileFoundationPayload(
   payload: MenubarPayload,
   projects: ProjectSummary[],
@@ -146,7 +169,9 @@ export function buildMobileFoundationPayload(
   const generatedAt = payload.generated
   const scope = payload.projectScope ?? {
     selectedId: 'all',
-    options: [{ id: 'all', name: 'All projects', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+    // A missing scope is an unavailable Project domain, never factual
+    // evidence that the Desktop has zero Source Projects.
+    options: [],
     sourceProjects: [],
     registry: { status: 'missing' as const, writable: true },
   }
@@ -219,11 +244,14 @@ export function buildMobileFoundationPayload(
     }
   })
   const daily = payload.history.periodDaily ?? payload.history.daily
+  const effectiveTrendGranularity = trendGranularity === 'day' || trendGranularity === 'week' || trendGranularity === 'month'
+    ? trendGranularity
+    : undefined
   const spend: MobileSpendV1 = {
     costMicrosUsd: micros(payload.current.cost),
     calls: safeNonNegative(payload.current.calls),
     sessions: safeNonNegative(payload.current.sessions),
-    trend: daily.slice(-128).map(point => ({ date: point.date, costMicrosUsd: micros(point.cost) })),
+    trend: foundationTrend(daily, effectiveTrendGranularity),
   }
 
   return {
@@ -231,7 +259,7 @@ export function buildMobileFoundationPayload(
     version: MOBILE_FOUNDATION_VERSION,
     generatedAt,
     periodLabel: payload.current.label,
-    ...(trendGranularity === 'day' || trendGranularity === 'week' || trendGranularity === 'month' ? { trendGranularity } : {}),
+    ...(effectiveTrendGranularity ? { trendGranularity: effectiveTrendGranularity } : {}),
     capabilities: buildCompanionCapabilitiesV1(generatedAt),
     projectScope: scope,
     activity: { available: true, freshness: foundationFreshness(payload), coverage: activityCoverage, sessions: activity },

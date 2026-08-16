@@ -152,6 +152,43 @@ class MetroraApiClientTest {
     }
 
     @Test
+    fun project_catalog_is_a_separate_authenticated_non_period_scoped_route() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """
+                {
+                  "kind":"metrora.companion.projects",
+                  "version":1,
+                  "desktopId":"$desktopFingerprint",
+                  "generatedAt":"2026-08-14T10:00:00Z",
+                  "freshness":"live",
+                  "available":true,
+                  "projectScope":{
+                    "options":[
+                      {"id":"all","name":"All projects","icon":"grid","color":"cyan","sourceProjectCount":3},
+                      {"id":"unassigned","name":"Unassigned","icon":"stack","color":"violet","sourceProjectCount":1},
+                      {"id":"mp_project","name":"Foundation QA Renamed","icon":"spark","color":"cyan","sourceProjectCount":2}
+                    ],
+                    "sourceProjects":[]
+                  }
+                }
+            """.trimIndent(),
+            desktopFingerprint,
+        )
+
+        val catalog = api.fetchProjectCatalog(credentials())
+
+        assertTrue(catalog.available)
+        assertEquals("Foundation QA Renamed", catalog.projectOption("mp_project")?.name)
+        assertEquals(3, catalog.projectOption("all")?.sourceProjectCount)
+        assertEquals("/api/v1/projects", transport.lastPath)
+        assertEquals("Bearer token-1", transport.lastHeaders["Authorization"])
+
+        transport.response = MetroraResponse(404, "{\"error\":\"not found\"}", desktopFingerprint)
+        assertFalse(api.fetchProjectCatalog(credentials()).available)
+    }
+
+    @Test
     fun unauthorized_usage_is_security_failure() = runTest {
         transport.response = MetroraResponse(401, "{\"error\":\"unauthorized\"}", desktopFingerprint)
 

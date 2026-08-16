@@ -3,8 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { TLSSocket } from 'tls'
 import type { AddressInfo } from 'net'
 
-import { UsageQueryError } from '../cli-date.js'
-import { toCompanionUsageV1 } from './companion-contract.js'
+import { periodInfoFromQuery, UsageQueryError } from '../cli-date.js'
+import { toDateString } from '../daily-cache.js'
+import { companionTrendGranularity, toCompanionUsageV1 } from './companion-contract.js'
 import { certFingerprint, pairingCode, PeerStore, PairingWindow, type PairedPeer } from './pairing.js'
 import type { Identity } from './identity.js'
 
@@ -14,6 +15,34 @@ export type UsageQuery = {
   to?: string
   granularity?: 'day' | 'week' | 'month' | string
   projectScopeId?: string
+  /** Desktop-resolved bounds; never supplied by the HTTP caller. */
+  effectiveFrom?: string
+  effectiveTo?: string
+}
+
+/**
+ * Resolve the request once at the Desktop authority boundary. Usage and
+ * Foundation must receive the same effective period, Project scope and trend
+ * dimension; Android must never have to guess a period-dependent default.
+ */
+export function canonicalCompanionQuery(query: UsageQuery): UsageQuery {
+  const normalized = { ...query, period: query.period?.trim() || 'month' }
+  const periodInfo = periodInfoFromQuery(normalized, 'month')
+  const bounds = {
+    from: toDateString(periodInfo.range.start),
+    to: toDateString(periodInfo.range.end),
+  }
+  const requestedGranularity = normalized.granularity?.trim() || undefined
+  if (requestedGranularity && !['day', 'week', 'month'].includes(requestedGranularity)) {
+    throw new UsageQueryError('Unknown trend granularity. Valid values: day, week, month.')
+  }
+  return {
+    ...normalized,
+    effectiveFrom: bounds.from,
+    effectiveTo: bounds.to,
+    granularity: requestedGranularity ?? companionTrendGranularity(normalized, bounds),
+    projectScopeId: normalized.projectScopeId?.trim() || 'all',
+  }
 }
 
 // An approve-style pairing request, surfaced to the user on the sharing device.
@@ -27,6 +56,8 @@ export type ShareServerOptions = {
   getCapabilities?: () => Promise<unknown>
   /** Optional bounded mobile foundation projection. */
   getFoundation?: (query: UsageQuery) => Promise<unknown>
+  /** Optional non-period-scoped Project catalog projection. */
+  getProjectCatalog?: () => Promise<unknown>
   // Legacy callback kept for compatibility with existing embedders.
   onPaired?: () => void | Promise<void>
   // Called after pairing or revocation so the caller can durably persist peers.
@@ -282,13 +313,32 @@ export class ShareServer {
         json(404, { error: 'capability unavailable' })
         return
       }
-      json(200, await this.opts.getFoundation({
+      const query = canonicalCompanionQuery({
         period: url.searchParams.get('period') ?? undefined,
         from: url.searchParams.get('from') ?? undefined,
         to: url.searchParams.get('to') ?? undefined,
         granularity: url.searchParams.get('granularity') ?? undefined,
         projectScopeId: url.searchParams.get('projectScopeId') ?? undefined,
-      }))
+      })
+      json(200, await this.opts.getFoundation(query))
+      return
+    }
+
+    if (pathname === '/api/projects' && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getProjectCatalog) {
+        json(404, { error: 'capability unavailable' })
+        return
+      }
+      const payload = await this.opts.getProjectCatalog()
+      if (typeof payload === 'object' && payload !== null && !Array.isArray(payload)) {
+        json(200, { ...payload as Record<string, unknown>, desktopId: this.opts.identity.fingerprint })
+      } else {
+        json(200, payload)
+      }
       return
     }
 
@@ -297,21 +347,18 @@ export class ShareServer {
         json(401, { error: 'unauthorized' })
         return
       }
-      const payload = await this.opts.getUsage({
+      const query = canonicalCompanionQuery({
         period: url.searchParams.get('period') ?? undefined,
         from: url.searchParams.get('from') ?? undefined,
         to: url.searchParams.get('to') ?? undefined,
+        granularity: url.searchParams.get('granularity') ?? undefined,
         projectScopeId: url.searchParams.get('projectScopeId') ?? undefined,
       })
+      const payload = await this.opts.getUsage(query)
       // The versioned companion surface is an explicit DTO. The inherited
       // unversioned route keeps its legacy payload for compatible desktop peers.
       json(200, requestedPath === '/api/v1/usage'
-        ? toCompanionUsageV1(payload, {
-            period: url.searchParams.get('period') ?? undefined,
-            from: url.searchParams.get('from') ?? undefined,
-            to: url.searchParams.get('to') ?? undefined,
-            granularity: url.searchParams.get('granularity') ?? undefined,
-          })
+        ? toCompanionUsageV1(payload, query)
         : payload)
       return
     }

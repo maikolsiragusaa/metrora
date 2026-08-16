@@ -1,6 +1,6 @@
 import { loadOrCreateIdentity } from './identity.js'
 import { PeerStore } from './pairing.js'
-import { ShareServer, type UsageQuery } from './share-server.js'
+import { canonicalCompanionQuery, ShareServer, type UsageQuery } from './share-server.js'
 import { advertise } from './discovery.js'
 import { promptYesNo } from './prompt.js'
 import { sanitizeForSharing } from './sanitize.js'
@@ -12,6 +12,7 @@ import type { MenubarPayload } from '../menubar-json.js'
 import { buildPairingBootstrap } from './pairing-bootstrap.js'
 import { getLanAddresses } from './network-address.js'
 import { buildCompanionCapabilitiesV1 } from './capability-contract.js'
+import { buildCompanionProjectCatalogProjection } from './project-catalog.js'
 
 const IDLE_TIMEOUT_MS = 10 * 60_000
 
@@ -29,13 +30,14 @@ export async function buildCompanionUsage(
   query: UsageQuery,
   aggregate: CompanionUsageAggregator = buildMenubarPayloadForRange,
 ): Promise<MenubarPayload> {
-  const periodInfo = periodInfoFromQuery(query, 'month')
+  const canonical = canonicalCompanionQuery(query)
+  const periodInfo = periodInfoFromQuery(canonical, 'month')
   return sanitizeForSharing(await aggregate(periodInfo, {
     provider: 'all',
     optimize: false,
     timeline: false,
-    metroraProjectId: query.projectScopeId,
-    trendGranularity: query.granularity,
+    metroraProjectId: canonical.projectScopeId,
+    trendGranularity: canonical.granularity,
   }))
 }
 
@@ -47,21 +49,22 @@ export async function buildCompanionFoundation(
   query: UsageQuery,
   aggregate: CompanionUsageAggregator = buildMenubarPayloadForRange,
 ): Promise<unknown> {
-  const periodInfo = periodInfoFromQuery(query, 'month')
+  const canonical = canonicalCompanionQuery(query)
+  const periodInfo = periodInfoFromQuery(canonical, 'month')
   const payload = await aggregate(periodInfo, {
     provider: 'all',
     optimize: false,
     timeline: false,
-    metroraProjectId: query.projectScopeId,
-    trendGranularity: query.granularity,
+    metroraProjectId: canonical.projectScopeId,
+    trendGranularity: canonical.granularity,
   })
   return payload.mobileFoundation ?? {
     kind: 'metrora.companion.foundation',
     version: 1,
     generatedAt: payload.generated,
     periodLabel: payload.current.label,
-    ...(query.granularity === 'day' || query.granularity === 'week' || query.granularity === 'month'
-      ? { trendGranularity: query.granularity }
+    ...(canonical.granularity === 'day' || canonical.granularity === 'week' || canonical.granularity === 'month'
+      ? { trendGranularity: canonical.granularity }
       : {}),
     capabilities: buildCompanionCapabilitiesV1(payload.generated),
     projectScope: payload.projectScope,
@@ -82,6 +85,12 @@ export async function buildCompanionFoundation(
   }
 }
 
+export async function buildCompanionProjectCatalog(
+  buildCatalog: () => Promise<unknown> = buildCompanionProjectCatalogProjection,
+): Promise<unknown> {
+  return buildCatalog()
+}
+
 // Run the secure share server. On-demand by default: it stops after 10 minutes
 // of no requests. `--always` keeps it up until Ctrl+C (the opt-in persistent
 // mode). `--pair` opens the inherited one-time PIN fallback for legacy clients.
@@ -97,6 +106,7 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     getUsage: (q) => buildCompanionUsage(q),
     getCapabilities: () => buildCompanionCapabilities(),
     getFoundation: (q) => buildCompanionFoundation(q),
+    getProjectCatalog: () => buildCompanionProjectCatalog(),
     onPeersChanged: () => savePeers(peers.list(), dir),
     approve: async (req) => {
       process.stdout.write(`\n  "${req.name}" wants access to your shared usage.\n`)

@@ -131,6 +131,10 @@ export function fetchCompanionFoundation(ep: PeerEndpoint, token: string, query:
   return call(ep, 'GET', `/api/v1/foundation${qs ? `?${qs}` : ''}`, { authorization: `Bearer ${token}` })
 }
 
+export function fetchCompanionProjectCatalog(ep: PeerEndpoint, token: string): Promise<Response> {
+  return call(ep, 'GET', '/api/v1/projects', { authorization: `Bearer ${token}` })
+}
+
 export function revokeCompanion(ep: PeerEndpoint, token: string): Promise<Response> {
   return call(ep, 'POST', '/api/v1/peer/revoke', { authorization: `Bearer ${token}` })
 }

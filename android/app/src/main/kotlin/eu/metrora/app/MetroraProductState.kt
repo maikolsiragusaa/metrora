@@ -3,6 +3,7 @@ package eu.metrora.app
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.MobileFoundationSnapshot
+import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.UsageSnapshot
 
 data class MetroraUiState(
@@ -13,6 +14,7 @@ data class MetroraUiState(
     val credentials: PairingCredentials? = null,
     val snapshot: UsageSnapshot? = null,
     val foundation: MobileFoundationSnapshot? = null,
+    val projectCatalog: ProjectCatalogSnapshot? = null,
     val capabilities: CapabilityDiscovery = CapabilityDiscovery.unavailable(),
     val pairingCode: String? = null,
     val pairingDesktopName: String? = null,
@@ -35,5 +37,5 @@ data class MetroraUiState(
         get() = snapshot != null && status != MetroraConnectionState.CONNECTED
 
     val hasLocalState: Boolean
-        get() = paired || snapshot != null || foundation != null || status == MetroraConnectionState.RECOVERY_REQUIRED
+        get() = paired || snapshot != null || foundation != null || projectCatalog != null || status == MetroraConnectionState.RECOVERY_REQUIRED
 }

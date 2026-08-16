@@ -11,6 +11,7 @@ object MetroraProtocol {
     const val USAGE_PATH = "/api/v1/usage"
     const val CAPABILITIES_PATH = "/api/v1/capabilities"
     const val FOUNDATION_PATH = "/api/v1/foundation"
+    const val PROJECTS_PATH = "/api/v1/projects"
     const val USAGE_KIND = "metrora.companion.usage"
     const val CAPABILITIES_KIND = "metrora.companion.capabilities"
     const val FOUNDATION_KIND = "metrora.companion.foundation"
@@ -66,6 +67,8 @@ object MetroraProtocol {
     }
 
     fun capabilitiesPath(): String = CAPABILITIES_PATH
+
+    fun projectCatalogPath(): String = PROJECTS_PATH
 
     fun foundationPath(period: String, granularity: String? = null, projectScopeId: String? = null): String =
         usagePath(period, granularity, projectScopeId).replace(USAGE_PATH, FOUNDATION_PATH)

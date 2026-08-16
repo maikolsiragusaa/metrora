@@ -7,6 +7,7 @@ import {
   companionPairRequest,
   fetchCompanionUsage,
   fetchUsage,
+  fetchCompanionProjectCatalog,
   revokeCompanion,
 } from './client.js'
 import { generateIdentity } from './identity.js'
@@ -93,6 +94,18 @@ describe('secure companion lifecycle', () => {
       getUsage: async () => internalPayload,
       getCapabilities: async () => ({ kind: 'metrora.companion.capabilities', version: 1, capabilities: [] }),
       getFoundation: async (query) => ({ kind: 'metrora.companion.foundation', version: 1, projectScopeId: query.projectScopeId ?? 'all' }),
+      getProjectCatalog: async () => ({
+        kind: 'metrora.companion.projects',
+        version: 1,
+        generatedAt: '2026-07-31T10:30:00.000Z',
+        available: true,
+        projectScope: {
+          selectedId: 'all',
+          options: [{ id: 'all', name: 'All projects', icon: 'grid', color: 'cyan', sourceProjectCount: 3 }],
+          sourceProjects: [],
+          registry: { status: 'valid', writable: true },
+        },
+      }),
       onPeersChanged: () => {
         peerChanges += 1
       },
@@ -144,6 +157,15 @@ describe('secure companion lifecycle', () => {
       expect(foundation.status).toBe(200)
       expect(foundation.json).toMatchObject({ kind: 'metrora.companion.foundation', version: 1, projectScopeId: 'mp_demo' })
 
+      const catalog = await fetchCompanionProjectCatalog(endpoint, token)
+      expect(catalog.status).toBe(200)
+      expect(catalog.json).toMatchObject({
+        kind: 'metrora.companion.projects',
+        version: 1,
+        desktopId: desktop.fingerprint,
+        projectScope: { options: [{ id: 'all', sourceProjectCount: 3 }] },
+      })
+
       // The inherited desktop route remains compatible and intentionally keeps
       // the legacy payload until desktop-to-desktop migration is explicit.
       const legacy = await fetchUsage(endpoint, token, { period: 'month' })
@@ -165,6 +187,201 @@ describe('secure companion lifecycle', () => {
 
       const afterRevoke = await fetchCompanionUsage(endpoint, token)
       expect(afterRevoke.status).toBe(401)
+    } finally {
+      await server.close()
+    }
+  }, 30_000)
+
+  it('passes the same period, bounds, granularity and Project scope to Usage and Foundation', async () => {
+    const desktop = await generateIdentity('Metrora desktop')
+    const phone = await generateIdentity('Android phone')
+    const peers = new PeerStore()
+    const usageQueries: unknown[] = []
+    const foundationQueries: unknown[] = []
+    const server = new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async (query) => {
+        usageQueries.push(query)
+        return {
+          generated: '2026-08-15T10:30:00.000Z',
+          current: { label: 'Last 6 months', topModels: [] },
+          history: { periodDaily: [] },
+        }
+      },
+      getFoundation: async (query) => {
+        foundationQueries.push(query)
+        return { kind: 'metrora.companion.foundation', version: 1, projectScopeId: query.projectScopeId }
+      },
+      approve: async () => true,
+    })
+
+    const port = await server.listen(0, '127.0.0.1')
+    try {
+      const paired = await companionPairRequest(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'Android phone',
+      )
+      const token = (paired.json as { token: string }).token
+      const endpoint = { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint }
+
+      await fetchCompanionUsage(endpoint, token, {
+        period: 'lifetime',
+        granularity: 'week',
+        projectScopeId: 'mp_fixture',
+      })
+      await fetchCompanionFoundation(endpoint, token, {
+        period: 'lifetime',
+        granularity: 'week',
+        projectScopeId: 'mp_fixture',
+      })
+
+      expect(usageQueries).toHaveLength(1)
+      expect(foundationQueries).toHaveLength(1)
+      expect(usageQueries[0]).toEqual(foundationQueries[0])
+      expect(usageQueries[0]).toMatchObject({
+        period: 'lifetime',
+        granularity: 'week',
+        projectScopeId: 'mp_fixture',
+        effectiveFrom: '1970-01-01',
+      })
+      expect(usageQueries[0]).toHaveProperty('effectiveTo')
+
+      const defaultCases = [
+        { period: 'today', expectedGranularity: 'day' },
+        { period: 'week', expectedGranularity: 'day' },
+        { period: '30days', expectedGranularity: 'day' },
+        { period: 'month', expectedGranularity: 'day' },
+        { period: 'all', expectedGranularity: 'week' },
+        { period: 'lifetime', expectedGranularity: 'month' },
+      ]
+      for (const projectScopeId of ['all', 'unassigned', 'mp_fixture']) {
+        for (const testCase of defaultCases) {
+          const query = { period: testCase.period, projectScopeId }
+          await fetchCompanionUsage(endpoint, token, query)
+          await fetchCompanionFoundation(endpoint, token, query)
+          const usageQuery = usageQueries.at(-1)
+          const foundationQuery = foundationQueries.at(-1)
+          expect(usageQuery).toEqual(foundationQuery)
+          expect(usageQuery).toMatchObject({
+            period: testCase.period,
+            granularity: testCase.expectedGranularity,
+            projectScopeId,
+          })
+          expect(usageQuery).toHaveProperty('effectiveFrom')
+          expect(usageQuery).toHaveProperty('effectiveTo')
+        }
+      }
+
+      const explicitCases = [
+        { period: 'today', granularity: 'day' },
+        { period: 'week', granularity: 'week' },
+        { period: 'month', granularity: 'month' },
+      ]
+      for (const query of explicitCases) {
+        await fetchCompanionUsage(endpoint, token, { ...query, projectScopeId: 'mp_fixture' })
+        await fetchCompanionFoundation(endpoint, token, { ...query, projectScopeId: 'mp_fixture' })
+        expect(usageQueries.at(-1)).toEqual(foundationQueries.at(-1))
+        expect(usageQueries.at(-1)).toMatchObject({ ...query, projectScopeId: 'mp_fixture' })
+      }
+
+      const customBounds = {
+        from: '2025-01-01',
+        to: '2026-08-15',
+        projectScopeId: 'mp_fixture',
+      }
+      await fetchCompanionUsage(endpoint, token, customBounds)
+      await fetchCompanionFoundation(endpoint, token, customBounds)
+      expect(usageQueries.at(-1)).toEqual(foundationQueries.at(-1))
+      expect(usageQueries.at(-1)).toMatchObject({
+        ...customBounds,
+        period: 'month',
+        granularity: 'month',
+        effectiveFrom: customBounds.from,
+        effectiveTo: customBounds.to,
+      })
+    } finally {
+      await server.close()
+    }
+  }, 30_000)
+
+  it('keeps the paired canonical state across a ShareServer restart', async () => {
+    const desktop = await generateIdentity('Metrora desktop')
+    const phone = await generateIdentity('Android phone')
+    const peers = new PeerStore()
+    const catalog = {
+      kind: 'metrora.companion.projects',
+      version: 1,
+      generatedAt: '2026-08-15T10:30:00.000Z',
+      available: true,
+      projectScope: {
+        selectedId: 'all',
+        options: [{ id: 'all', name: 'All projects', icon: 'grid', color: 'cyan', sourceProjectCount: 3 }],
+        sourceProjects: [],
+        registry: { status: 'valid', writable: true },
+      },
+    }
+    const createServer = () => new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async (query) => ({
+        generated: '2026-08-15T10:30:00.000Z',
+        current: { label: query.period ?? 'month', topModels: [] },
+        history: { periodDaily: [] },
+      }),
+      getFoundation: async (query) => ({
+        kind: 'metrora.companion.foundation',
+        version: 1,
+        projectScopeId: query.projectScopeId ?? 'all',
+        trendGranularity: query.granularity,
+      }),
+      getProjectCatalog: async () => catalog,
+      approve: async () => true,
+    })
+
+    let server = createServer()
+    let port = await server.listen(0, '127.0.0.1')
+    try {
+      const paired = await companionPairRequest(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'Android phone',
+      )
+      expect(paired.status).toBe(200)
+      const token = (paired.json as { token: string }).token
+      await server.close()
+
+      // Recreate the real HTTPS lifecycle with the same Desktop identity and
+      // durable peer store. The phone must reconnect without a new pairing.
+      server = createServer()
+      port = await server.listen(0, '127.0.0.1')
+      const endpoint = { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint }
+      const usage = await fetchCompanionUsage(endpoint, token, {
+        period: 'lifetime',
+        projectScopeId: 'mp_fixture',
+      })
+      const foundation = await fetchCompanionFoundation(endpoint, token, {
+        period: 'lifetime',
+        projectScopeId: 'mp_fixture',
+      })
+      const projects = await fetchCompanionProjectCatalog(endpoint, token)
+
+      expect(usage.status).toBe(200)
+      expect(foundation.status).toBe(200)
+      expect(projects.status).toBe(200)
+      // Usage/Foundation bind the Desktop identity through the mTLS peer and
+      // the Android parsers bind the resulting snapshots to the paired
+      // credentials. The catalog additionally carries the explicit identity.
+      expect(usage.json).toMatchObject({ kind: 'metrora.companion.usage' })
+      expect(foundation.json).toMatchObject({
+        kind: 'metrora.companion.foundation',
+        projectScopeId: 'mp_fixture',
+        trendGranularity: 'month',
+      })
+      expect(projects.json).toMatchObject({
+        kind: 'metrora.companion.projects',
+        desktopId: desktop.fingerprint,
+        projectScope: { options: [{ id: 'all', sourceProjectCount: 3 }] },
+      })
     } finally {
       await server.close()
     }

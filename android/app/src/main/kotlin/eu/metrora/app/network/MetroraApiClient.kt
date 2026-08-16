@@ -8,6 +8,7 @@ import eu.metrora.app.MetroraOperation
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.MobileFoundationSnapshot
+import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.DeviceIdentity
@@ -63,6 +64,10 @@ interface MetroraApi {
         trendGranularity: String? = null,
         projectScopeId: String? = null,
     ): MobileFoundationSnapshot = MobileFoundationSnapshot.unavailable(credentials.serverFingerprint)
+
+    /** Non-period-scoped Project authority; older Desktops may not expose it. */
+    suspend fun fetchProjectCatalog(credentials: PairingCredentials): ProjectCatalogSnapshot =
+        ProjectCatalogSnapshot.unavailable(credentials.serverFingerprint)
 
     suspend fun revoke(credentials: PairingCredentials)
 
@@ -366,6 +371,41 @@ class MetroraApiClient(
             )
         }
     }
+
+    override suspend fun fetchProjectCatalog(credentials: PairingCredentials): ProjectCatalogSnapshot =
+        mapped(MetroraOperation.REFRESH) {
+            requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+            val response = transport.request(
+                host = credentials.host,
+                port = credentials.port,
+                method = "GET",
+                path = MetroraProtocol.projectCatalogPath(),
+                expectedFingerprint = credentials.serverFingerprint,
+                headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+                readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+            )
+            if (response.status == 404 || response.status == 405) {
+                return@mapped ProjectCatalogSnapshot.unavailable(credentials.serverFingerprint)
+            }
+            ensureSuccess(MetroraOperation.REFRESH, response)
+            try {
+                ProjectCatalogSnapshot.fromJson(
+                    response.body,
+                    credentials.serverFingerprint,
+                    System.currentTimeMillis(),
+                )
+            } catch (error: MetroraException) {
+                throw error
+            } catch (error: Exception) {
+                throw failure(
+                    MetroraOperation.REFRESH,
+                    MetroraFailureCategory.MALFORMED_RESPONSE,
+                    MetroraFailureReason.MALFORMED_RESPONSE,
+                    "The endpoint returned an invalid Project catalog",
+                    error,
+                )
+            }
+        }
 
     override suspend fun revoke(credentials: PairingCredentials) = mapped(MetroraOperation.REVOKE) {
         requireCurrentIdentity(credentials, MetroraOperation.REVOKE)

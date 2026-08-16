@@ -124,6 +124,7 @@
     <string name="nav_analyze">Analyze</string>
     <string name="nav_workspace">Workspace</string>
     <string name="project_scope_label">Metrora Project</string>
+    <string name="project_catalog_unavailable">Project catalog unavailable</string>
     <plurals name="project_source_count">
         <item quantity="one">%1$d Source Project</item>
         <item quantity="other">%1$d Source Projects</item>

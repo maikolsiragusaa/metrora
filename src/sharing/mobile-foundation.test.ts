@@ -182,4 +182,21 @@ describe('Mobile Foundation V1 projection', () => {
       return byTime || b.startedAt.localeCompare(a.startedAt) || a.id.localeCompare(b.id)
     }))
   })
+
+  it('communicates and buckets the effective Foundation trend granularity', () => {
+    const scopedPayload = payload()
+    scopedPayload.history.periodDaily = [
+      { date: '2026-07-31', cost: 1, savingsUSD: 0, calls: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, topModels: [] },
+      { date: '2026-08-01', cost: 2, savingsUSD: 0, calls: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, topModels: [] },
+      { date: '2026-08-15', cost: 3, savingsUSD: 0, calls: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, topModels: [] },
+    ]
+
+    const result = buildMobileFoundationPayload(scopedPayload, [project()], registry('sp_source'), 'month')
+
+    expect(result.trendGranularity).toBe('month')
+    expect(result.analyze.spend.data.trend).toEqual([
+      { date: '2026-07-01', costMicrosUsd: 1_000_000 },
+      { date: '2026-08-01', costMicrosUsd: 5_000_000 },
+    ])
+  })
 })

@@ -54,9 +54,29 @@ internal fun ProjectScopePicker(
     state: MetroraUiState,
     onSelect: (String) -> Unit,
 ) {
-    val options = state.foundation?.projectOptions?.takeIf { it.isNotEmpty() } ?: listOf(
-        ProjectScopeOption("all", "All projects", "grid", "cyan", 0),
-    )
+    val options = state.projectCatalog?.takeIf { it.available }?.projectOptions?.takeIf { it.isNotEmpty() }
+        ?: state.foundation?.projectOptions?.takeIf { it.isNotEmpty() }
+    if (options == null) {
+        MetroraPanel(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+            radius = 17,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp)) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(R.string.project_scope_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = androidx.compose.ui.res.stringResource(R.string.project_catalog_unavailable),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        return
+    }
     val selected = options.firstOrNull { it.id == state.selectedProjectId } ?: options.first()
     var expanded by remember { mutableStateOf(false) }
     MetroraPanel(

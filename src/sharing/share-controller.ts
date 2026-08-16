@@ -49,6 +49,7 @@ export class ShareController {
     private readonly port = 7777,
     private readonly getCapabilities?: () => Promise<unknown>,
     private readonly getFoundation?: (q: UsageQuery) => Promise<unknown>,
+    private readonly getProjectCatalog?: () => Promise<unknown>,
   ) {}
 
   private async getIdentity(): Promise<Identity> {
@@ -74,6 +75,7 @@ export class ShareController {
       getUsage: this.getUsage,
       getCapabilities: this.getCapabilities,
       getFoundation: this.getFoundation,
+      getProjectCatalog: this.getProjectCatalog,
       onPeersChanged: () => this.peers ? savePeers(this.peers.list(), this.dir) : Promise.resolve(),
       approve: (req) => this.enqueueApproval(req),
     })

@@ -12,6 +12,8 @@ class ProtocolTest {
         assertEquals("/api/v1/peer/revoke", MetroraProtocol.REVOKE_PATH)
         assertEquals("/api/v1/capabilities", MetroraProtocol.CAPABILITIES_PATH)
         assertEquals("/api/v1/foundation", MetroraProtocol.FOUNDATION_PATH)
+        assertEquals("/api/v1/projects", MetroraProtocol.PROJECTS_PATH)
+        assertEquals("/api/v1/projects", MetroraProtocol.projectCatalogPath())
         assertEquals("/api/v1/usage?period=month", MetroraProtocol.usagePath("month"))
         assertEquals(
             "/api/v1/usage?period=all&granularity=week",
