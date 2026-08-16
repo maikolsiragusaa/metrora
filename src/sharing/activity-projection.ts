@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import { periodInfoFromQuery, UsageQueryError } from '../cli-date.js'
-import { parseAllSessions, isSessionHydrationComplete } from '../parser.js'
+import { isSessionHydrationComplete } from '../parser.js'
 import { cleanSessionProjectLabel } from '../sessions-report.js'
 import { buildPrAttribution, type PrRow } from '../sessions-report.js'
 import { aggregateSessions, inferSessionProvider, type SessionRow } from '../session-projection.js'
@@ -10,6 +10,7 @@ import type { ProjectRegistry } from '../project-registry.js'
 import {
   assignedProjectId,
   filterProjectsByMetroraScope,
+  isSourceProjectId,
   sourceProjectIdForSummary,
 } from '../project-scope.js'
 import type { ProjectSummary, SessionSummary } from '../types.js'
@@ -67,6 +68,63 @@ function micros(value: number | undefined): number {
 
 function safeText(value: string | undefined, max = 160): string {
   return (value ?? '').trim().slice(0, max)
+}
+
+/**
+ * Android validates the bounded wire fields as metadata, not as arbitrary
+ * strings. A malformed surviving legacy row must be excluded explicitly so it
+ * cannot make the whole page unparseable. We never repair identity here:
+ * callers either retain the factual value or omit the row and downgrade
+ * coverage.
+ */
+function safeWireText(value: unknown, max = 160): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max &&
+    ![...value].some(char => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f)
+}
+
+function safeSourceProjectLabel(value: string): boolean {
+  return safeWireText(value, 120) && !value.includes('/') && !value.includes('\\')
+}
+
+function safeOptionalWireText(value: unknown, max = 160): boolean {
+  return value === undefined || value === null || value === '' || (typeof value === 'string' && value.trim() === '') || safeWireText(value, max)
+}
+
+function safeSessionProjectionInput(project: ProjectSummary, session: SessionSummary): boolean {
+  try {
+    const sourceName = sourceProjectName(project)
+    if (!safeSourceProjectLabel(sourceName)) return false
+    if (!safeWireText(session.firstTimestamp, 80) || !safeWireText(session.lastTimestamp, 80)) return false
+    if (!session.sessionId || !Array.isArray(session.turns) || !session.modelBreakdown) return false
+    if (Object.keys(session.modelBreakdown).some(model => !safeOptionalWireText(model))) return false
+    for (const turn of session.turns) {
+      if (!Array.isArray(turn.assistantCalls)) return false
+      for (const call of turn.assistantCalls) {
+        if (!safeOptionalWireText(call.provider) || !safeOptionalWireText(call.modelProvider)) return false
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function safeSessionWireValue(value: ActivitySessionSummaryV1): boolean {
+  const safeId = (candidate: string): boolean => /^[a-zA-Z0-9_.:-]{1,160}$/.test(candidate)
+  const safeValues = (values: string[], max: number): boolean => values.length <= max && values.every(candidate => safeWireText(candidate))
+  return safeId(value.id) &&
+    (value.projectId === 'unassigned' || /^mp_[a-zA-Z0-9_.:-]+$/.test(value.projectId)) &&
+    isSourceProjectId(value.sourceProjectId) &&
+    safeSourceProjectLabel(value.sourceProjectName) &&
+    safeWireText(value.title) && value.title.startsWith('Session') &&
+    safeValues(value.sourceIds, MAX_IDENTITY_VALUES) &&
+    safeValues(value.routeIds, MAX_IDENTITY_VALUES) &&
+    safeValues(value.brandIds, MAX_IDENTITY_VALUES) &&
+    safeValues(value.models, MAX_MODELS) &&
+    [value.costMicrosUsd, value.estimatedCostMicrosUsd, value.calls, value.turns, value.totalTokens]
+      .every(candidate => candidate === null || (typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate >= 0)) &&
+    safeWireText(value.startedAt, 80) &&
+    safeWireText(value.endedAt, 80)
 }
 
 function uniqueSafe(values: Array<string | undefined>, max = MAX_IDENTITY_VALUES): string[] {
@@ -245,9 +303,10 @@ function sortSessions(entries: SessionEntry[], order: ActivityOrderV1): SessionE
   return [...entries].sort((a, b) => compareBoundary(a, sessionBoundary(b, order), order))
 }
 
-function sessionCoverage(entries: SessionEntry[], payload: MenubarPayload, filtered: boolean): ActivityCoverageV1 {
+function sessionCoverage(entries: SessionEntry[], payload: MenubarPayload, filtered: boolean, skipped: number): ActivityCoverageV1 {
   const durableCount = safeCount(payload.current.sessions)
   const availableCount = entries.length
+  if (skipped > 0) return 'partial'
   if (availableCount === 0 && durableCount > 0) return 'unavailable'
   if (!isSessionHydrationComplete()) return availableCount > 0 ? 'partial' : (durableCount > 0 ? 'unavailable' : 'complete')
   if (!filtered && durableCount > availableCount) return 'partial'
@@ -271,24 +330,40 @@ function effectiveLimit(query: ActivityQueryV1): number {
   return Math.max(1, Math.min(MAX_PAGE_SIZE, Math.trunc(query.limit)))
 }
 
-function filteredSessions(input: ActivityProjectionInput): { entries: SessionEntry[]; filtered: boolean } {
+function filteredSessions(input: ActivityProjectionInput): { entries: SessionEntry[]; filtered: boolean; skipped: number } {
   const projects = projectSessions(activityProjectsForQuery(input.projects, input.registry, input.query), input.query)
   const filtered = Boolean(input.query.provider || input.query.route || input.query.source || input.query.model)
-  const entries = projects.flatMap(project => {
-    const rows = aggregateSessions([project])
-    return project.sessions.map((session, index) => {
+  let skipped = 0
+  const entries = projects.flatMap(project => project.sessions.flatMap(session => {
+    if (!safeSessionProjectionInput(project, session)) {
+      skipped += 1
+      return []
+    }
+    try {
+      // Keep canonical aggregation per bounded session. This prevents one
+      // malformed legacy record from aborting the entire Project page.
+      const rows = aggregateSessions([{ ...project, sessions: [session] }])
       const provider = inferSessionProvider(session)
       const row = rows.find(candidate =>
         candidate.sessionId === session.sessionId && candidate.project === (session.project || project.project) && candidate.provider === provider,
-      ) ?? rows[index]
-      return buildEntry(project, session, input.registry, input.payload, row)
-    })
-  })
-  return { entries, filtered }
+      ) ?? rows[0]
+      if (!row) return []
+      const entry = buildEntry(project, session, input.registry, input.payload, row)
+      if (!safeSessionWireValue(entry.summary)) {
+        skipped += 1
+        return []
+      }
+      return [entry]
+    } catch {
+      skipped += 1
+      return []
+    }
+  }))
+  return { entries, filtered, skipped }
 }
 
 export function buildActivitySessionsPage(input: ActivityProjectionInput, cursor?: string): ActivitySessionsPageV1 {
-  const { entries, filtered } = filteredSessions(input)
+  const { entries, filtered, skipped } = filteredSessions(input)
   const ordered = sortSessions(entries, input.query.order)
   const start = pageStart(
     ordered,
@@ -310,7 +385,7 @@ export function buildActivitySessionsPage(input: ActivityProjectionInput, cursor
     : undefined
   const durableCount = safeCount(input.payload.current.sessions)
   const totalCount = filtered
-    ? (isSessionHydrationComplete() ? ordered.length : null)
+    ? (isSessionHydrationComplete() && skipped === 0 ? ordered.length : null)
     : Math.max(durableCount, ordered.length)
   return {
     kind: ACTIVITY_SESSIONS_KIND,
@@ -318,7 +393,7 @@ export function buildActivitySessionsPage(input: ActivityProjectionInput, cursor
     generatedAt: input.payload.generated,
     query: input.query,
     freshness: activityFreshness(input.payload),
-    coverage: sessionCoverage(ordered, input.payload, filtered),
+    coverage: sessionCoverage(ordered, input.payload, filtered, skipped),
     totalCount,
     availableCount: ordered.length,
     hasMore,
@@ -381,6 +456,14 @@ function mapPullRequest(row: PrRow): ActivityPullRequestV1 {
   }
 }
 
+function safePullRequestProjection(row: ActivityPullRequestV1): boolean {
+  return safeWireText(row.reference) &&
+    safeWireText(row.dateFrom, 80) &&
+    safeWireText(row.dateTo, 80) &&
+    row.models.every(model => safeWireText(model)) &&
+    (row.categories ?? []).every(category => safeWireText(category.name, 120))
+}
+
 function prBoundary(row: ActivityPullRequestV1, order: ActivityOrderV1): ActivityCursorBoundaryV1 {
   switch (order) {
     case 'calls': return { value: row.calls, secondary: row.dateTo, id: row.id }
@@ -410,7 +493,16 @@ export function buildActivityPullRequestsPage(input: ActivityProjectionInput, cu
   }
   const projects = projectSessions(activityProjectsForQuery(input.projects, input.registry, input.query), input.query)
   const attribution = buildPrAttribution(projects)
-  const rows = sortPullRequests(attribution.rows.map(mapPullRequest), input.query.order)
+  let skipped = 0
+  const projectedRows = attribution.rows.flatMap(row => {
+    const projected = mapPullRequest(row)
+    if (!safePullRequestProjection(projected)) {
+      skipped += 1
+      return []
+    }
+    return [projected]
+  })
+  const rows = sortPullRequests(projectedRows, input.query.order)
   const start = pageStart(
     rows,
     cursor,
@@ -429,7 +521,7 @@ export function buildActivityPullRequestsPage(input: ActivityProjectionInput, cu
   const nextCursor = hasMore && page.length > 0
     ? encodeActivityCursor(input.query, ACTIVITY_PULL_REQUESTS_KIND, prBoundary(page[page.length - 1]!, input.query.order))
     : undefined
-  const coverage: ActivityCoverageV1 = attribution.totals.unattributedCost > 0 || rows.some(row => row.approximate)
+  const coverage: ActivityCoverageV1 = skipped > 0 || attribution.totals.unattributedCost > 0 || rows.some(row => row.approximate)
     ? 'partial'
     : (rows.length > 0 ? 'complete' : 'complete')
   return {

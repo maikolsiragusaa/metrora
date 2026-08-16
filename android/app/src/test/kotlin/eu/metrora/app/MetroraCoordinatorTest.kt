@@ -3,6 +3,8 @@ package eu.metrora.app
 import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.CapabilityFreshness
+import eu.metrora.app.data.CapabilityAvailability
+import eu.metrora.app.data.CapabilityDescriptor
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.MobileSpendSummary
 import eu.metrora.app.data.ProjectCatalogSnapshot
@@ -12,6 +14,8 @@ import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.data.ActivityQuery
 import eu.metrora.app.data.ActivitySession
 import eu.metrora.app.data.ActivitySnapshot
+import eu.metrora.app.data.ActivityPageMeta
+import eu.metrora.app.data.ActivitySessionsPage
 import eu.metrora.app.network.DiscoveredDesktop
 import eu.metrora.app.network.MetroraApi
 import eu.metrora.app.security.MetroraStore
@@ -25,12 +29,87 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MetroraCoordinatorTest {
+    @Test
+    fun advertised_activity_failure_does_not_masquerade_as_foundation_compatibility() = runTest {
+        val store = FakeStore(testCredentials(), testSnapshot(), testFoundation("all"))
+        val api = FakeApi().apply {
+            capabilitiesResult = activityCapabilities()
+            activityFailure = testFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+            )
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(period = "today")
+        advanceUntilIdle()
+
+        assertNull(coordinator.state.value.activity)
+        assertEquals(MetroraFailureReason.MALFORMED_RESPONSE, coordinator.state.value.activityFailure?.reason)
+        assertTrue(coordinator.state.value.capabilities.isAvailable("activity.sessions"))
+        coordinator.close()
+    }
+
+    @Test
+    fun advertised_activity_retry_recovers_the_native_snapshot() = runTest {
+        val store = FakeStore(testCredentials(), testSnapshot(), testFoundation("all"))
+        val api = FakeApi().apply {
+            capabilitiesResult = activityCapabilities()
+            activityFailure = testFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+            )
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh()
+        advanceUntilIdle()
+        assertNotNull(coordinator.state.value.activityFailure)
+
+        api.activityFailure = null
+        api.activitySessionsResult = testActivitySessionsPage("all")
+        coordinator.refresh()
+        advanceUntilIdle()
+
+        assertNotNull(coordinator.state.value.activity)
+        assertNull(coordinator.state.value.activityFailure)
+        coordinator.close()
+    }
+
+    @Test
+    fun unsupported_activity_capability_keeps_legacy_foundation_path_without_activity_error() = runTest {
+        val store = FakeStore(testCredentials(), testSnapshot(), testFoundation("all"))
+        val api = FakeApi().apply {
+            capabilitiesResult = CapabilityDiscovery.unavailable()
+            activityFailure = testFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+            )
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh()
+        advanceUntilIdle()
+
+        assertNull(coordinator.state.value.activity)
+        assertNull(coordinator.state.value.activityFailure)
+        assertFalse(coordinator.state.value.capabilities.available)
+        coordinator.close()
+    }
+
     @Test
     fun pairing_exposes_sas_verification_then_desktop_approval_then_connected() = runTest {
         val store = FakeStore()
@@ -453,6 +532,48 @@ private fun testFoundation(projectScopeId: String): MobileFoundationSnapshot = M
     periodLabel = "This month",
 )
 
+private fun activityCapabilities(): CapabilityDiscovery = CapabilityDiscovery(
+    generatedAt = "2026-08-15T10:00:00.000Z",
+    capabilities = listOf(
+        CapabilityDescriptor(
+            id = "activity.sessions",
+            versions = listOf(1),
+            availability = CapabilityAvailability.AVAILABLE,
+            freshness = CapabilityFreshness.LIVE,
+            periodScoped = true,
+            projectScoped = true,
+            workspaceScoped = false,
+        ),
+        CapabilityDescriptor(
+            id = "activity.pullRequests",
+            versions = listOf(1),
+            availability = CapabilityAvailability.AVAILABLE,
+            freshness = CapabilityFreshness.LIVE,
+            periodScoped = true,
+            projectScoped = true,
+            workspaceScoped = false,
+        ),
+    ),
+)
+
+private fun testActivitySessionsPage(projectScopeId: String): ActivitySessionsPage {
+    val snapshot = testActivity(projectScopeId)
+    return ActivitySessionsPage(
+        meta = ActivityPageMeta(
+            desktopId = snapshot.desktopId,
+            generatedAt = "2026-08-15T10:00:00.000Z",
+            query = snapshot.query,
+            freshness = CapabilityFreshness.LIVE,
+            coverage = eu.metrora.app.data.DetailCoverage.COMPLETE,
+            totalCount = snapshot.sessionTotalCount,
+            availableCount = snapshot.sessionAvailableCount,
+            hasMore = false,
+            nextCursor = null,
+        ),
+        sessions = snapshot.sessions,
+    )
+}
+
 private fun testCatalog(): ProjectCatalogSnapshot = ProjectCatalogSnapshot(
     desktopId = testCredentials().serverFingerprint,
     generatedAt = "2026-08-14T10:00:00.000Z",
@@ -469,9 +590,10 @@ private fun testCatalog(): ProjectCatalogSnapshot = ProjectCatalogSnapshot(
 
 private fun testActivity(projectScopeId: String): ActivitySnapshot {
     val query = ActivityQuery(period = "month", projectScopeId = projectScopeId)
+    val sessionProjectId = if (projectScopeId == "all") "mp_a" else projectScopeId
     val session = ActivitySession(
         id = "session_a",
-        projectId = projectScopeId,
+        projectId = sessionProjectId,
         sourceProjectId = "sp_" + "a".repeat(64),
         sourceProjectName = "metrora",
         title = "Session · 2026-08-14",
@@ -614,6 +736,10 @@ private class FakeApi : MetroraApi {
     val scopedResults = mutableMapOf<String, UsageSnapshot>()
     var foundationResult: MobileFoundationSnapshot? = null
     var foundationFailure: MetroraException? = null
+    var capabilitiesResult: CapabilityDiscovery? = null
+    var capabilitiesFailure: MetroraException? = null
+    var activityFailure: MetroraException? = null
+    var activitySessionsResult: eu.metrora.app.data.ActivitySessionsPage? = null
     var revokeFailure: MetroraException? = null
     var identityMatches = true
     val pairCount = AtomicInteger()
@@ -674,6 +800,27 @@ private class FakeApi : MetroraApi {
         lastFoundationScopeId = projectScopeId
         foundationFailure?.let { throw it }
         return foundationResult ?: MobileFoundationSnapshot.unavailable(credentials.serverFingerprint, projectScopeId ?: "all")
+    }
+
+    override suspend fun fetchCapabilities(credentials: PairingCredentials): CapabilityDiscovery {
+        capabilitiesFailure?.let { throw it }
+        return capabilitiesResult ?: CapabilityDiscovery.unavailable()
+    }
+
+    override suspend fun fetchActivitySessions(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        cursor: String?,
+    ): eu.metrora.app.data.ActivitySessionsPage {
+        activityFailure?.let { throw it }
+        return activitySessionsResult ?: throw MetroraException(
+            MetroraFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.COMPATIBILITY,
+                MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+                "Activity Sessions projection unavailable",
+            ),
+        )
     }
 
     override suspend fun revoke(credentials: PairingCredentials) {

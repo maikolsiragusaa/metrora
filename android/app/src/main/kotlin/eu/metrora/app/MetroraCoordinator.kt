@@ -284,6 +284,7 @@ class MetroraCoordinator internal constructor(
                 snapshot = if (domainChanged) null else it.snapshot,
                 foundation = if (domainChanged) null else it.foundation,
                 activity = if (domainChanged) null else it.activity,
+                activityFailure = if (domainChanged) null else it.activityFailure,
                 notice = null,
                 failure = null,
             )
@@ -373,17 +374,24 @@ class MetroraCoordinator internal constructor(
         if (current.activity?.query == normalized) return
         val generation = ++activityRequestGeneration
         activityJob?.cancel()
-        mutableState.update { it.copy(activity = null, notice = null) }
+        mutableState.update { it.copy(activity = null, activityFailure = null, notice = null) }
         activityJob = scope.launch {
             try {
                 val loaded = fetchActivitySnapshot(credentials, normalized, generation)
                 if (activityRequestGeneration != generation) return@launch
                 store.saveActivity(loaded)
-                mutableState.update { it.copy(activity = loaded, failure = null) }
+                mutableState.update { it.copy(activity = loaded, activityFailure = null, failure = null) }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                if (activityRequestGeneration == generation) mutableState.update { it.copy(activity = null) }
+            } catch (error: Exception) {
+                if (activityRequestGeneration == generation) {
+                    mutableState.update { state ->
+                        state.copy(
+                            activity = null,
+                            activityFailure = boundedActivityFailure(error),
+                        )
+                    }
+                }
             } finally {
                 if (activityRequestGeneration == generation) activityJob = null
             }
@@ -416,8 +424,12 @@ class MetroraCoordinator internal constructor(
                 mutableState.update { it.copy(activity = merged, failure = null) }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                // A page failure leaves already fetched safe rows intact.
+            } catch (error: Exception) {
+                // A page failure leaves already fetched safe rows intact, but
+                // an advertised V1 failure must remain observable.
+                if (activityRequestGeneration == generation && mutableState.value.capabilities.isAvailable("activity.sessions")) {
+                    mutableState.update { it.copy(activityFailure = boundedActivityFailure(error)) }
+                }
             } finally {
                 if (activityRequestGeneration == generation) activityJob = null
             }
@@ -768,7 +780,10 @@ class MetroraCoordinator internal constructor(
             foundation = foundation,
             projectCatalog = projectCatalog,
             activity = activity,
-            capabilities = foundation?.capabilities ?: CapabilityDiscovery.unavailable(),
+            // Capability discovery is not persisted in Foundation. Until the
+            // paired Desktop answers the live V1 capability request, Activity
+            // must remain on the genuine legacy/unknown path.
+            capabilities = CapabilityDiscovery.unavailable(),
             selectedProjectId = listOfNotNull(
                 foundation?.projectScopeId,
                 snapshot?.projectScopeId,
@@ -846,19 +861,22 @@ class MetroraCoordinator internal constructor(
                 requestedTrendGranularity = trendGranularity,
             )
             ensureLatest(generation)
-            val activity = resolveActivity(
+            val activityResolution = resolveActivity(
                 credentials = credentials,
                 period = period,
                 projectScopeId = effectiveScopeId,
                 fallback = activityFallback,
                 activityGeneration = activityGeneration,
+                capabilities = capabilities,
             )
             ensureLatest(generation)
             // Usage and the period-scoped Foundation are committed together;
             // the catalog was already persisted independently above so a
             // period-domain failure cannot erase Project identity.
             store.saveSnapshotFoundationAndCatalog(snapshot, foundation, catalog)
-            if (activityRequestGeneration == activityGeneration && activity != null) store.saveActivity(activity)
+            if (activityRequestGeneration == activityGeneration && activityResolution.snapshot != null) {
+                store.saveActivity(activityResolution.snapshot)
+            }
             ensureLatest(generation)
             mutableState.update {
                 it.copy(
@@ -871,7 +889,8 @@ class MetroraCoordinator internal constructor(
                     // broader refresh was in flight. Do not let the older
                     // refresh overwrite that newer query with stale rows or an
                     // unavailable sentinel.
-                    activity = if (activityRequestGeneration == activityGeneration) activity else it.activity,
+                    activity = if (activityRequestGeneration == activityGeneration) activityResolution.snapshot else it.activity,
+                    activityFailure = if (activityRequestGeneration == activityGeneration) activityResolution.failure else it.activityFailure,
                     projectCatalog = catalog,
                     capabilities = capabilities,
                     selectedProjectId = snapshot.projectScopeId,
@@ -990,17 +1009,24 @@ class MetroraCoordinator internal constructor(
         }
     }
 
+    private data class ActivityResolution(
+        val snapshot: ActivitySnapshot?,
+        val failure: MetroraFailure?,
+    )
+
     private suspend fun resolveActivity(
         credentials: PairingCredentials,
         period: String,
         projectScopeId: String,
         fallback: ActivitySnapshot?,
         activityGeneration: Long,
-    ): ActivitySnapshot? {
+        capabilities: CapabilityDiscovery,
+    ): ActivityResolution {
         val query = ActivityQuery(period = period, projectScopeId = projectScopeId)
         val compatibleFallback = fallback?.takeIf { activityMatches(it, credentials, query) }
+        val activityV1Advertised = capabilities.isAvailable("activity.sessions")
         return try {
-            fetchActivitySnapshot(credentials, query, activityGeneration).also { loaded ->
+            ActivityResolution(fetchActivitySnapshot(credentials, query, activityGeneration).also { loaded ->
                 if (loaded.desktopId != credentials.serverFingerprint || !loaded.query.matchesRequest(query)) {
                     throw MetroraException(
                         MetroraFailure(
@@ -1011,11 +1037,24 @@ class MetroraCoordinator internal constructor(
                         ),
                     )
                 }
-            }
+            }, null)
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
-            compatibleFallback?.asLocallyCached()
+        } catch (error: Exception) {
+            if (activityV1Advertised) {
+                // A current Desktop that advertised Activity V1 is not a
+                // legacy peer when its bounded request fails. Retain only a
+                // query-compatible cached Activity snapshot, and expose the
+                // failure separately so the UI never falls back to Foundation.
+                ActivityResolution(
+                    snapshot = compatibleFallback?.asLocallyCached(),
+                    failure = boundedActivityFailure(error),
+                )
+            } else {
+                // An older Desktop without live Activity capability keeps the
+                // accepted Foundation compatibility path.
+                ActivityResolution(compatibleFallback?.asLocallyCached(), null)
+            }
         }
     }
 
@@ -1216,6 +1255,20 @@ class MetroraCoordinator internal constructor(
         snapshot = snapshot,
         failure = localFailure(reason, detail),
     )
+
+    /** Convert any Activity failure to the bounded, non-sensitive UI signal. */
+    private fun boundedActivityFailure(error: Throwable): MetroraFailure = when (error) {
+        is MetroraException -> error.failure.copy(
+            operation = MetroraOperation.REFRESH,
+            technicalDetail = null,
+        )
+        else -> MetroraFailure(
+            operation = MetroraOperation.REFRESH,
+            category = MetroraFailureCategory.MALFORMED_RESPONSE,
+            reason = MetroraFailureReason.MALFORMED_RESPONSE,
+            technicalDetail = null,
+        )
+    }
 
     private fun localFailure(reason: MetroraFailureReason, detail: String): MetroraFailure = MetroraFailure(
         operation = MetroraOperation.LOCAL_ACTION,

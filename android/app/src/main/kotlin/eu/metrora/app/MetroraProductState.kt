@@ -17,6 +17,8 @@ data class MetroraUiState(
     val foundation: MobileFoundationSnapshot? = null,
     val projectCatalog: ProjectCatalogSnapshot? = null,
     val activity: ActivitySnapshot? = null,
+    /** Non-sensitive Activity V1 failure; null means no known Activity error. */
+    val activityFailure: MetroraFailure? = null,
     val capabilities: CapabilityDiscovery = CapabilityDiscovery.unavailable(),
     val pairingCode: String? = null,
     val pairingDesktopName: String? = null,

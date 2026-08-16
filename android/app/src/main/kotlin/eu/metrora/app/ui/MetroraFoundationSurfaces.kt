@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +26,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -173,6 +175,7 @@ private fun ProjectToken(option: ProjectScopeOption, modifier: Modifier) {
 @Composable
 internal fun ActivitySurface(
     state: MetroraUiState,
+    onRetry: () -> Unit,
     onSetQuery: (ActivityQuery) -> Unit,
     onLoadMore: (ActivityTab) -> Unit,
     onOpenSession: (String) -> Unit,
@@ -180,9 +183,15 @@ internal fun ActivitySurface(
     onCloseDetail: () -> Unit,
 ) {
     val foundation = state.foundation
-    val capabilities = effectiveCapabilities(state)
+    // Only live capability discovery can authorize the Activity V1 surface.
+    // Foundation capability data is not an Activity endpoint health signal.
+    val activityV1Available = state.capabilities.isAvailable("activity.sessions")
+    val legacyFoundationActivityAvailable = foundation?.capabilities?.isAvailable("activity.sessions") == true
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SurfaceHeading(R.string.nav_activity, Icons.Outlined.Group)
+        if (state.activityFailure != null) {
+            ActivityFailureSurface(onRetry = onRetry, showingCached = state.activity != null)
+        }
         if (state.activity != null) {
             ActivityNativeSurface(
                 state = state,
@@ -192,11 +201,60 @@ internal fun ActivitySurface(
                 onOpenPullRequest = onOpenPullRequest,
                 onCloseDetail = onCloseDetail,
             )
-        } else if (foundation == null || !capabilities.isAvailable("activity.sessions")) {
+        } else if (state.activityFailure != null) {
+            // The bounded failure surface above is the complete state when no
+            // safe Activity snapshot is available. Never show Foundation rows
+            // for a Desktop that advertised Activity V1 and then failed it.
+        } else if (foundation == null || (!activityV1Available && !legacyFoundationActivityAvailable)) {
             UnavailableSurface(R.string.activity_unavailable_title, R.string.activity_unavailable_body)
-        } else {
+        } else if (!activityV1Available) {
             ActivityList(foundation.activitySessions, foundation.activityCoverage, foundation.activityFreshness)
+        } else {
+            ActivityLoadingSurface()
         }
+    }
+}
+
+@Composable
+private fun ActivityFailureSurface(onRetry: () -> Unit, showingCached: Boolean) {
+    MetroraPanel(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.32f),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = androidx.compose.ui.res.stringResource(R.string.activity_load_failed_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = androidx.compose.ui.res.stringResource(
+                    if (showingCached) R.string.activity_load_failed_cached_body else R.string.activity_load_failed_body,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(androidx.compose.ui.res.stringResource(R.string.activity_retry))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityLoadingSurface() {
+    MetroraPanel(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+    ) {
+        Text(
+            text = androidx.compose.ui.res.stringResource(R.string.activity_loading),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

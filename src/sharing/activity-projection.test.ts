@@ -232,6 +232,26 @@ describe('bounded Activity projections', () => {
     expect(page.sessions[0]?.costMicrosUsd).toBeNull()
   })
 
+  it('omits one malformed surviving session and downgrades coverage instead of breaking the page', () => {
+    const sourceId = sourceProjectIdForSummary(projects()[0]!)
+    const imperfect = projects()
+    imperfect[0]!.sessions[0]!.firstTimestamp = ''
+    imperfect[0]!.sessions[0]!.lastTimestamp = ''
+
+    const page = buildActivitySessionsPage({
+      query: { ...query, limit: 10 },
+      projects: imperfect,
+      registry: registry(sourceId),
+      payload: payload(2),
+    })
+
+    expect(page.sessions).toHaveLength(1)
+    expect(page.sessions[0]?.startedAt).toBe('2026-08-15T09:00:00.000Z')
+    expect(page.availableCount).toBe(1)
+    expect(page.totalCount).toBe(2)
+    expect(page.coverage).toBe('partial')
+  })
+
   it('keeps canonical Pull Request attribution split and paged', () => {
     const sourceId = sourceProjectIdForSummary(projects()[0]!)
     const withPullRequest = projects()
@@ -262,5 +282,31 @@ describe('bounded Activity projections', () => {
     expect(page.attributedCostMicrosUsd).toBe(2_000_000)
     expect(page.unattributedCostMicrosUsd).toBe(0)
     expect(page.pullRequests[0]?.categories?.[0]?.name).toBeTruthy()
+  })
+
+  it('does not let an incomplete Pull Request span make the PR page unparseable', () => {
+    const sourceId = sourceProjectIdForSummary(projects()[0]!)
+    const imperfect = projects()
+    const candidate = imperfect[0]!.sessions[0]!
+    candidate.prLinks = ['https://github.com/acme/repo/pull/42']
+    candidate.firstTimestamp = ''
+    candidate.lastTimestamp = ''
+    candidate.turns = [{
+      timestamp: '',
+      prRefs: ['https://github.com/acme/repo/pull/42'],
+      category: 'coding',
+      assistantCalls: [{ provider: 'claude', model: 'claude-opus-4-6', modelProvider: 'anthropic-api', costUSD: 2 }],
+    }] as typeof candidate.turns
+
+    const page = buildActivityPullRequestsPage({
+      query: { ...query, limit: 10 },
+      projects: imperfect,
+      registry: registry(sourceId),
+      payload: payload(2),
+    })
+
+    expect(page.pullRequests).toEqual([])
+    expect(page.coverage).toBe('partial')
+    expect(page.attributedCostMicrosUsd).toBe(2_000_000)
   })
 })

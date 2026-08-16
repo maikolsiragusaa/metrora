@@ -150,6 +150,7 @@ internal fun HomeState(
                 )
                 HomeDestination.ACTIVITY -> ActivitySurface(
                     state = state,
+                    onRetry = onRefresh,
                     onSetQuery = onSetActivityQuery,
                     onLoadMore = onLoadMoreActivity,
                     onOpenSession = onOpenActivitySession,

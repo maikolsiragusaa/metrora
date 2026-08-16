@@ -136,6 +136,11 @@
     <string name="activity_empty">No bounded session rows are available for this Project and period.</string>
     <string name="activity_unavailable_title">Activity is unavailable</string>
     <string name="activity_unavailable_body">This Desktop does not advertise a compatible Sessions projection. Home and Usage remain available when supported.</string>
+    <string name="activity_load_failed_title">Activity could not be loaded</string>
+    <string name="activity_load_failed_body">Desktop Activity data could not be loaded. Try again when Desktop is available.</string>
+    <string name="activity_load_failed_cached_body">The saved Activity rows are shown below, but a newer Activity response could not be loaded.</string>
+    <string name="activity_retry">Retry Activity</string>
+    <string name="activity_loading">Loading Activity from Desktop…</string>
     <string name="activity_partial_detail">Available session evidence · partial historical session detail.</string>
     <string name="activity_unavailable_detail">Session detail is unavailable for this Project and period.</string>
     <string name="activity_pull_requests_empty">No attributed Pull Request activity is available for this Project and period.</string>

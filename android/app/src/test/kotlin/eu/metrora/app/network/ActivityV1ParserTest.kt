@@ -72,6 +72,29 @@ class ActivityV1ParserTest {
     }
 
     @Test
+    fun preservesUnavailableAccountingAndUnknownIdentityWithoutInference() {
+        val raw = sessionPage()
+            .replace(
+                "\"provider\":\"claude\",\"route\":\"anthropic-api\",\"model\":\"claude-opus-4-6\",\"source\":\"$sourceProjectId\",",
+                "",
+            )
+            .replace("\"sourceIds\":[\"claude-cli\"],\"routeIds\":[\"anthropic-api\"],\"brandIds\":[\"anthropic\"],\"models\":[\"claude-opus-4-6\"]", "\"sourceIds\":[],\"routeIds\":[],\"brandIds\":[],\"models\":[]")
+            .replace("\"costMicrosUsd\":1500000", "\"costMicrosUsd\":null")
+            .replace("\"totalTokens\":35", "\"totalTokens\":null")
+        val page = ActivityV1Parser.parseSessions(
+            raw,
+            credentials,
+            ActivityQuery(period = "month", projectScopeId = "mp_demo", limit = 1),
+        )
+
+        assertNull(page.sessions.single().costMicrosUsd)
+        assertNull(page.sessions.single().totalTokens)
+        assertTrue(page.sessions.single().sourceIds.isEmpty())
+        assertTrue(page.sessions.single().routeIds.isEmpty())
+        assertTrue(page.sessions.single().models.isEmpty())
+    }
+
+    @Test
     fun keepsPullRequestAttributionSplitAndApproximateMarker() {
         val page = ActivityV1Parser.parsePullRequests(pullRequestPage(), credentials, query)
 

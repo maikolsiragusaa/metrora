@@ -20,9 +20,10 @@ import {
   buildActivityPullRequestsPage,
 } from './activity-projection.js'
 import { parseAllSessions } from '../parser.js'
-import { readProjectRegistry } from '../project-registry.js'
+import { readProjectRegistry, type ProjectRegistryReadResult } from '../project-registry.js'
 import { filterProjectsByMetroraScope } from '../project-scope.js'
 import type { ActivitySessionDetailPayloadV1, ActivitySessionsPageV1, ActivityPullRequestsPageV1 } from './activity-contract.js'
+import type { ProjectSummary } from '../types.js'
 
 const IDLE_TIMEOUT_MS = 10 * 60_000
 
@@ -32,6 +33,21 @@ export type CompanionUsageAggregator = (
 ) => Promise<MenubarPayload>
 
 export type CompanionActivityAggregator = CompanionUsageAggregator
+
+/**
+ * Canonical authorities used by the production Activity projection. Keeping
+ * these dependencies explicit gives the route integration tests an isolated
+ * fixture seam without introducing a second parser or accounting engine.
+ */
+export type CompanionActivityAuthority = {
+  parseAllSessions: (range: Parameters<typeof parseAllSessions>[0], providerFilter?: string) => Promise<ProjectSummary[]>
+  readProjectRegistry: () => Promise<ProjectRegistryReadResult>
+}
+
+const productionActivityAuthority: CompanionActivityAuthority = {
+  parseAllSessions,
+  readProjectRegistry,
+}
 
 /**
  * Build only the data the companion DTO can expose. The companion contract does
@@ -100,6 +116,7 @@ export async function buildCompanionFoundation(
 async function buildActivityInput(
   query: ActivityQuery,
   aggregate: CompanionActivityAggregator,
+  authority: CompanionActivityAuthority,
 ) {
   const canonicalWithCursor = canonicalActivityQuery(query)
   const { cursor, ...canonical } = canonicalWithCursor
@@ -110,9 +127,9 @@ async function buildActivityInput(
     timeline: false,
     metroraProjectId: canonical.projectScopeId,
   })
-  const registryResult = await readProjectRegistry()
+  const registryResult = await authority.readProjectRegistry()
   const projects = filterProjectsByMetroraScope(
-    await parseAllSessions(periodInfo.range, 'all'),
+    await authority.parseAllSessions(periodInfo.range, 'all'),
     registryResult.registry,
     canonical.projectScopeId,
   )
@@ -122,8 +139,9 @@ async function buildActivityInput(
 export async function buildCompanionActivitySessions(
   query: ActivityQuery,
   aggregate: CompanionActivityAggregator = buildMenubarPayloadForRange,
+  authority: CompanionActivityAuthority = productionActivityAuthority,
 ): Promise<ActivitySessionsPageV1> {
-  const input = await buildActivityInput(query, aggregate)
+  const input = await buildActivityInput(query, aggregate, authority)
   return buildActivitySessionsPage(input, input.cursor)
 }
 
@@ -131,16 +149,18 @@ export async function buildCompanionActivitySessionDetail(
   query: ActivityQuery,
   id: string,
   aggregate: CompanionActivityAggregator = buildMenubarPayloadForRange,
+  authority: CompanionActivityAuthority = productionActivityAuthority,
 ): Promise<ActivitySessionDetailPayloadV1 | null> {
-  const input = await buildActivityInput(query, aggregate)
+  const input = await buildActivityInput(query, aggregate, authority)
   return buildActivitySessionDetail(input, id)
 }
 
 export async function buildCompanionActivityPullRequests(
   query: ActivityQuery,
   aggregate: CompanionActivityAggregator = buildMenubarPayloadForRange,
+  authority: CompanionActivityAuthority = productionActivityAuthority,
 ): Promise<ActivityPullRequestsPageV1> {
-  const input = await buildActivityInput(query, aggregate)
+  const input = await buildActivityInput(query, aggregate, authority)
   return buildActivityPullRequestsPage(input, input.cursor)
 }
 
