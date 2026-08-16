@@ -60,3 +60,8 @@ When Desktop is unreachable, Android keeps showing the last valid encrypted usag
 The repository contains Android unit coverage for protocol paths, capability negotiation, Foundation parsing/round-trip, privacy bounds, Project scope selection, pairing, cache recovery, revoke and local forget. The existing physical acceptance is the bounded Windows↔Samsung local pairing/security/persistence scope from `#181`; the new Activity, Analyze and Project-scope surfaces require the corresponding physical matrix proposed in the implementation handoff before being described as physically accepted.
 
 The foundation does not add cloud relay, accounts, remote access, managed service behavior, billing, background push, a mobile gateway, mobile-side provider parsing/pricing, remote execution or Workspace authority.
+
+The broader current-product inventory and bounded execution map is maintained
+in [Mobile Product Parity V1 inventory](MOBILE_PRODUCT_PARITY_V1.md). It is the
+source for deciding which Desktop capabilities can be projected safely and
+which remain partial, blocked, Desktop-only or deferred.
