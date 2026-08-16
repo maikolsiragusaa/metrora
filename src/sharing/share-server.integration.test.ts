@@ -8,6 +8,9 @@ import {
   fetchCompanionUsage,
   fetchUsage,
   fetchCompanionProjectCatalog,
+  fetchCompanionActivitySessions,
+  fetchCompanionActivityPullRequests,
+  fetchCompanionActivitySessionDetail,
   revokeCompanion,
 } from './client.js'
 import { generateIdentity } from './identity.js'
@@ -421,6 +424,59 @@ describe('secure companion lifecycle', () => {
       expect(failedRevoke.status).toBe(500)
       expect(failedRevoke.json).toEqual({ error: 'simulated persistence failure' })
       expect(peers.authorize(existing.token, phone.fingerprint)).toBe(true)
+    } finally {
+      await server.close()
+    }
+  }, 30_000)
+
+  it('serves additive bounded Activity routes with Desktop identity binding', async () => {
+    const desktop = await generateIdentity('Metrora desktop')
+    const phone = await generateIdentity('Android phone')
+    const peers = new PeerStore()
+    const baseActivity = (query: Record<string, unknown>) => ({
+      generatedAt: '2026-08-15T10:30:00.000Z',
+      query: { ...query, cursor: undefined },
+      freshness: 'live',
+      coverage: 'complete',
+    })
+    const server = new ShareServer({
+      identity: desktop,
+      peers,
+      getUsage: async () => ({ generated: new Date().toISOString(), current: {} }),
+      getActivitySessions: async (query) => ({
+        kind: 'metrora.companion.activity.sessions', version: 1,
+        ...baseActivity(query), totalCount: 0, availableCount: 0, hasMore: false, sessions: [],
+      }),
+      getActivityPullRequests: async (query) => ({
+        kind: 'metrora.companion.activity.pullRequests', version: 1,
+        ...baseActivity(query), attributedCostMicrosUsd: 0, unattributedCostMicrosUsd: 0,
+        totalCount: 0, availableCount: 0, hasMore: false, pullRequests: [],
+      }),
+      getActivitySessionDetail: async () => null,
+      approve: async () => true,
+    })
+    const port = await server.listen(0, '127.0.0.1')
+    try {
+      const paired = await companionPairRequest(
+        { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint },
+        'Android phone',
+      )
+      const token = (paired.json as { token: string }).token
+      const endpoint = { identity: phone, host: '127.0.0.1', port, expectedFingerprint: desktop.fingerprint }
+      const query = { period: 'month', projectScopeId: 'mp_demo', order: 'newest', limit: 20 }
+      const sessions = await fetchCompanionActivitySessions(endpoint, token, query)
+      const pullRequests = await fetchCompanionActivityPullRequests(endpoint, token, query)
+      const detail = await fetchCompanionActivitySessionDetail(endpoint, token, 'missing', query)
+
+      expect(sessions.status).toBe(200)
+      expect(sessions.json).toMatchObject({
+        kind: 'metrora.companion.activity.sessions',
+        desktopId: desktop.fingerprint,
+        query: { projectScopeId: 'mp_demo', limit: 20 },
+      })
+      expect(pullRequests.status).toBe(200)
+      expect(pullRequests.json).toMatchObject({ kind: 'metrora.companion.activity.pullRequests', desktopId: desktop.fingerprint })
+      expect(detail.status).toBe(404)
     } finally {
       await server.close()
     }

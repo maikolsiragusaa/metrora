@@ -12,6 +12,7 @@ import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.StorageIssue
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.data.ActivitySnapshot
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -90,12 +91,24 @@ class SecureStore(context: Context) : MetroraStore {
         dataStore.edit { preferences -> preferences.remove(PROJECT_CATALOG_KEY) }
     }
 
+    override suspend fun loadActivity(): StorageRead<ActivitySnapshot> =
+        read(ACTIVITY_KEY) { raw -> ActivitySnapshot.fromJson(raw) }
+
+    override suspend fun saveActivity(snapshot: ActivitySnapshot) {
+        dataStore.edit { preferences -> preferences[ACTIVITY_KEY] = encrypt(snapshot.toJson()) }
+    }
+
+    override suspend fun clearActivity() {
+        dataStore.edit { preferences -> preferences.remove(ACTIVITY_KEY) }
+    }
+
     override suspend fun clearPairing() {
         dataStore.edit { preferences ->
             preferences.remove(CREDENTIALS_KEY)
             preferences.remove(SNAPSHOT_KEY)
             preferences.remove(FOUNDATION_KEY)
             preferences.remove(PROJECT_CATALOG_KEY)
+            preferences.remove(ACTIVITY_KEY)
         }
     }
 
@@ -151,6 +164,7 @@ class SecureStore(context: Context) : MetroraStore {
         val SNAPSHOT_KEY = stringPreferencesKey("encrypted_usage_snapshot_v1")
         val FOUNDATION_KEY = stringPreferencesKey("encrypted_mobile_foundation_v1")
         val PROJECT_CATALOG_KEY = stringPreferencesKey("encrypted_project_catalog_v1")
+        val ACTIVITY_KEY = stringPreferencesKey("encrypted_activity_cache_v1")
     }
 
     private object KeyUnavailableException : Exception()

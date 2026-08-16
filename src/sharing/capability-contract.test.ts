@@ -13,7 +13,8 @@ describe('Companion capability discovery', () => {
     expect(isCompanionCapabilitiesV1(discovery)).toBe(true)
     expect(negotiateCapabilityVersion(discovery, 'projects')).toBe(1)
     expect(negotiateCapabilityVersion(discovery, 'workspace')).toBeNull()
-    expect(discovery.capabilities).toHaveLength(7)
+    expect(discovery.capabilities).toHaveLength(8)
+    expect(negotiateCapabilityVersion(discovery, 'activity.pullRequests')).toBe(1)
     expect(new Set(discovery.capabilities.map(capability => capability.freshness))).toEqual(new Set(['unknown']))
   })
 

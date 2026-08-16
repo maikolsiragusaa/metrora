@@ -157,7 +157,7 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 
 Windows is the first supported public desktop distribution. Source support for other platforms does not imply that an accepted public package exists for those platforms.
 
-The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and now consumes bounded Project-aware Home, Activity, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. The QR/SAS/mTLS security foundation remains the physically accepted Windows↔Samsung scope; the new product surfaces are not described as physically accepted until their dedicated matrix is run. It is not yet a public Android release or store distribution.
+The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and consumes bounded Project-aware Home, Activity Sessions/Pull Requests, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. Activity uses additive cursor-paged metadata contracts and does not expose prompt/response content. The QR/SAS/mTLS security foundation remains the physically accepted Windows↔Samsung scope; the new product surfaces are not described as physically accepted until their dedicated matrix is run. It is not yet a public Android release or store distribution.
 
 ## Privacy model
 

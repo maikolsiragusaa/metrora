@@ -9,6 +9,9 @@ import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.ProjectScopeOption
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.data.ActivityQuery
+import eu.metrora.app.data.ActivitySession
+import eu.metrora.app.data.ActivitySnapshot
 import eu.metrora.app.network.DiscoveredDesktop
 import eu.metrora.app.network.MetroraApi
 import eu.metrora.app.security.MetroraStore
@@ -140,6 +143,25 @@ class MetroraCoordinatorTest {
         assertEquals("mp_b", store.snapshot?.projectScopeId)
         assertNull(store.foundation)
         assertEquals(catalog.asLocallyCached(), coordinator.state.value.projectCatalog)
+        coordinator.close()
+    }
+
+    @Test
+    fun project_scope_switch_clears_previous_activity_rows_before_requesting_scope_b() = runTest {
+        val snapshotA = testSnapshot(projectScopeId = "mp_a")
+        val store = FakeStore(testCredentials(), snapshotA, testFoundation("mp_a"), testCatalog(), testActivity("mp_a"))
+        val api = FakeApi().apply {
+            scopedResults["mp_b"] = testSnapshot(projectScopeId = "mp_b")
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+        assertEquals("mp_a", coordinator.state.value.activity?.query?.projectScopeId)
+
+        coordinator.refresh(projectScopeId = "mp_b")
+
+        assertNull(coordinator.state.value.activity)
+        advanceUntilIdle()
+        assertNull(coordinator.state.value.activity)
         coordinator.close()
     }
 
@@ -445,16 +467,62 @@ private fun testCatalog(): ProjectCatalogSnapshot = ProjectCatalogSnapshot(
     freshness = CapabilityFreshness.LIVE,
 )
 
+private fun testActivity(projectScopeId: String): ActivitySnapshot {
+    val query = ActivityQuery(period = "month", projectScopeId = projectScopeId)
+    val session = ActivitySession(
+        id = "session_a",
+        projectId = projectScopeId,
+        sourceProjectId = "sp_activity",
+        sourceProjectName = "metrora",
+        title = "Session · 2026-08-14",
+        sourceIds = listOf("claude"),
+        routeIds = listOf("anthropic-api"),
+        brandIds = listOf("anthropic"),
+        models = listOf("claude-opus-4-6"),
+        costMicrosUsd = 1_000_000L,
+        estimatedCostMicrosUsd = null,
+        calls = 1L,
+        turns = 1L,
+        totalTokens = 10L,
+        tokenCoverage = eu.metrora.app.data.DetailCoverage.COMPLETE,
+        pricingCoverage = eu.metrora.app.data.DetailCoverage.COMPLETE,
+        startedAt = "2026-08-14T10:00:00.000Z",
+        endedAt = "2026-08-14T10:01:00.000Z",
+    )
+    return ActivitySnapshot(
+        desktopId = testCredentials().serverFingerprint,
+        retrievedAtEpochMs = 1_700_000_000_000L,
+        query = query,
+        sessions = listOf(session),
+        sessionNextCursor = null,
+        sessionHasMore = false,
+        sessionTotalCount = 1L,
+        sessionAvailableCount = 1L,
+        sessionCoverage = eu.metrora.app.data.DetailCoverage.COMPLETE,
+        pullRequests = emptyList(),
+        pullRequestNextCursor = null,
+        pullRequestHasMore = false,
+        pullRequestTotalCount = 0L,
+        pullRequestAvailableCount = 0L,
+        pullRequestCoverage = eu.metrora.app.data.DetailCoverage.UNAVAILABLE,
+        attributedCostMicrosUsd = 0L,
+        unattributedCostMicrosUsd = 0L,
+        freshness = CapabilityFreshness.CACHED,
+    )
+}
+
 private class FakeStore(
     var credentials: PairingCredentials? = null,
     var snapshot: UsageSnapshot? = null,
     var foundation: MobileFoundationSnapshot? = null,
     var projectCatalog: ProjectCatalogSnapshot? = null,
+    var activity: ActivitySnapshot? = null,
 ) : MetroraStore {
     var credentialsRead: StorageRead<PairingCredentials>? = null
     var snapshotRead: StorageRead<UsageSnapshot>? = null
     var foundationRead: StorageRead<MobileFoundationSnapshot>? = null
     var projectCatalogRead: StorageRead<ProjectCatalogSnapshot>? = null
+    var activityRead: StorageRead<ActivitySnapshot>? = null
 
     override suspend fun loadCredentials(): StorageRead<PairingCredentials> =
         credentialsRead ?: credentials?.let { StorageRead.Present(it) } ?: StorageRead.Missing
@@ -517,11 +585,23 @@ private class FakeStore(
         projectCatalog = null
     }
 
+    override suspend fun loadActivity(): StorageRead<ActivitySnapshot> =
+        activityRead ?: activity?.let { StorageRead.Present(it) } ?: StorageRead.Missing
+
+    override suspend fun saveActivity(snapshot: ActivitySnapshot) {
+        activity = snapshot
+    }
+
+    override suspend fun clearActivity() {
+        activity = null
+    }
+
     override suspend fun clearPairing() {
         credentials = null
         snapshot = null
         foundation = null
         projectCatalog = null
+        activity = null
     }
 }
 

@@ -241,7 +241,7 @@ below so their absence from the five-destination mobile IA is intentional.
 | Foundation area | Implemented state at the audit base | Authority and parity assessment |
 | --- | --- | --- |
 | Home | Native Compose destination with cost hero, calls/sessions/tokens, period picker, cost trend, trend granularity, top models, pricing evidence, freshness and refresh. | Reads `CompanionUsageV1` plus Foundation V1. This is a truthful foundation slice and is final-capable for the bounded headline, not complete Desktop Home parity. |
-| Activity | Native metadata-only session list, capped at 128 rows, with Project/Source Project, date, cost, source/route/brand/model facts and coverage/freshness notes. | Reads `MobileFoundationPayload.activity`. No prompt/response content is sent. It is a bounded foundation slice: no cursor paging, search/filter controls, PR activity or session drill-down yet. |
+| Activity | Native Sessions/Pull Requests destination with bounded cursor pages, canonical provider/route/model/source filters, safe metadata-only session detail, PR summary/detail, Project scope and coverage/freshness notes. | Reads additive `activity.sessions` and `activity.pullRequests` projections. Foundation V1 remains the backward-compatible fallback for older Desktops/clients. No prompt/response content is sent; cached pages are query-bound. |
 | Analyze | One native destination combines Models and Spend. Model rows carry cost and factual route/source/brand data; Spend shows cost/calls/sessions and trend. | Reads Foundation V1. Model token fields and accounting coverage are present in the DTO but are not yet a complete mobile presentation of Desktop Models. Compare, task/audit views, flow breakdowns and Insights are absent. |
 | Workspace | Destination is visible and explicitly renders unavailable. | Capability discovery says `no-authority`; this is correct behavior, not a placeholder to activate without a contract. |
 | Settings | Device card with Desktop identity/endpoint, connection details, remote revoke and local forget/re-pair. | Preserves local secure pairing semantics. It does not expose Project CRUD, provider configuration, pricing, export or Desktop diagnostics. |
@@ -429,6 +429,8 @@ sequential. These are future implementation PRs; this inventory branch must
 not create them.
 
 ### PR 1 — Activity parity: Sessions and Pull Requests
+
+**Status: implemented on `feat/mobile-activity-parity-v1`; physical phone smoke remains pending.**
 
 - **Exact scope:** add bounded session paging/cursors, safe filters and
   metadata drill-down; add bounded Pull Request activity; keep the current
@@ -620,7 +622,9 @@ not create them.
 - Project-scoped Yield/Optimize/Workflow authority is incomplete. Current
   Desktop requests omit the Project scope, and yield depends on local git
   correlation.
-- Activity pagination and Pull Request DTOs do not exist in the companion API.
+- Activity pagination, bounded session detail and Pull Request DTOs are now
+  available through the additive Activity contracts; older Foundation clients
+  remain compatible.
 - Spend flow and detailed Models views exceed the current bounded Foundation
   DTO, although their Desktop/core authorities exist.
 - Workspace is local-only and mutation-capable; no safe companion projection
@@ -654,10 +658,11 @@ historical semantics remain visible.
 
 ## Inventory conclusion
 
-The accepted five-destination IA is viable. Home, bounded Activity, bounded
-Spend/Models, Project catalog inspection and pairing/device state have enough
-authority for native implementation now. Full Activity scale, Spend detail,
-Models detail and Project mutations need bounded contract extensions. Compare,
-scoped Insights/Yield and any Workspace view require core authority work first.
+The accepted five-destination IA is viable. Home, the bounded Activity
+Sessions/Pull Requests slice, bounded Spend/Models, Project catalog inspection
+and pairing/device state have enough authority for native implementation now.
+Spend detail, Models detail and Project mutations still need bounded contract
+extensions. Compare, scoped Insights/Yield and any Workspace view require core
+authority work first.
 Desktop-only controls and deferred domains should remain explicitly absent
 from Mobile Product Parity V1.

@@ -1,6 +1,6 @@
 import { loadOrCreateIdentity } from './identity.js'
 import { PeerStore } from './pairing.js'
-import { canonicalCompanionQuery, ShareServer, type UsageQuery } from './share-server.js'
+import { canonicalActivityQuery, canonicalCompanionQuery, ShareServer, type ActivityQuery, type UsageQuery } from './share-server.js'
 import { advertise } from './discovery.js'
 import { promptYesNo } from './prompt.js'
 import { sanitizeForSharing } from './sanitize.js'
@@ -13,6 +13,16 @@ import { buildPairingBootstrap } from './pairing-bootstrap.js'
 import { getLanAddresses } from './network-address.js'
 import { buildCompanionCapabilitiesV1 } from './capability-contract.js'
 import { buildCompanionProjectCatalogProjection } from './project-catalog.js'
+import {
+  activityPeriodQuery,
+  buildActivitySessionDetail,
+  buildActivitySessionsPage,
+  buildActivityPullRequestsPage,
+} from './activity-projection.js'
+import { parseAllSessions } from '../parser.js'
+import { readProjectRegistry } from '../project-registry.js'
+import { filterProjectsByMetroraScope } from '../project-scope.js'
+import type { ActivitySessionDetailPayloadV1, ActivitySessionsPageV1, ActivityPullRequestsPageV1 } from './activity-contract.js'
 
 const IDLE_TIMEOUT_MS = 10 * 60_000
 
@@ -20,6 +30,8 @@ export type CompanionUsageAggregator = (
   periodInfo: PeriodInfo,
   opts: AggregateOpts,
 ) => Promise<MenubarPayload>
+
+export type CompanionActivityAggregator = CompanionUsageAggregator
 
 /**
  * Build only the data the companion DTO can expose. The companion contract does
@@ -85,6 +97,53 @@ export async function buildCompanionFoundation(
   }
 }
 
+async function buildActivityInput(
+  query: ActivityQuery,
+  aggregate: CompanionActivityAggregator,
+) {
+  const canonicalWithCursor = canonicalActivityQuery(query)
+  const { cursor, ...canonical } = canonicalWithCursor
+  const periodInfo = activityPeriodQuery({ from: canonical.effectiveFrom, to: canonical.effectiveTo })
+  const payload = await aggregate(periodInfo, {
+    provider: canonical.provider ?? 'all',
+    optimize: false,
+    timeline: false,
+    metroraProjectId: canonical.projectScopeId,
+  })
+  const registryResult = await readProjectRegistry()
+  const projects = filterProjectsByMetroraScope(
+    await parseAllSessions(periodInfo.range, 'all'),
+    registryResult.registry,
+    canonical.projectScopeId,
+  )
+  return { query: canonical, cursor, payload, projects, registry: registryResult.registry }
+}
+
+export async function buildCompanionActivitySessions(
+  query: ActivityQuery,
+  aggregate: CompanionActivityAggregator = buildMenubarPayloadForRange,
+): Promise<ActivitySessionsPageV1> {
+  const input = await buildActivityInput(query, aggregate)
+  return buildActivitySessionsPage(input, input.cursor)
+}
+
+export async function buildCompanionActivitySessionDetail(
+  query: ActivityQuery,
+  id: string,
+  aggregate: CompanionActivityAggregator = buildMenubarPayloadForRange,
+): Promise<ActivitySessionDetailPayloadV1 | null> {
+  const input = await buildActivityInput(query, aggregate)
+  return buildActivitySessionDetail(input, id)
+}
+
+export async function buildCompanionActivityPullRequests(
+  query: ActivityQuery,
+  aggregate: CompanionActivityAggregator = buildMenubarPayloadForRange,
+): Promise<ActivityPullRequestsPageV1> {
+  const input = await buildActivityInput(query, aggregate)
+  return buildActivityPullRequestsPage(input, input.cursor)
+}
+
 export async function buildCompanionProjectCatalog(
   buildCatalog: () => Promise<unknown> = buildCompanionProjectCatalogProjection,
 ): Promise<unknown> {
@@ -107,6 +166,9 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     getCapabilities: () => buildCompanionCapabilities(),
     getFoundation: (q) => buildCompanionFoundation(q),
     getProjectCatalog: () => buildCompanionProjectCatalog(),
+    getActivitySessions: (q) => buildCompanionActivitySessions(q),
+    getActivitySessionDetail: (q, id) => buildCompanionActivitySessionDetail(q, id),
+    getActivityPullRequests: (q) => buildCompanionActivityPullRequests(q),
     onPeersChanged: () => savePeers(peers.list(), dir),
     approve: async (req) => {
       process.stdout.write(`\n  "${req.name}" wants access to your shared usage.\n`)

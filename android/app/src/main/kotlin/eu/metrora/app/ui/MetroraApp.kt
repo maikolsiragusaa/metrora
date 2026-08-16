@@ -84,6 +84,11 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
                 onSelectPeriod = coordinator::selectPeriod,
                 onSelectTrendGranularity = coordinator::selectTrendGranularity,
                 onSelectProject = coordinator::selectProject,
+                onSetActivityQuery = coordinator::setActivityQuery,
+                onLoadMoreActivity = coordinator::loadMoreActivity,
+                onOpenActivitySession = coordinator::openActivitySession,
+                onOpenActivityPullRequest = coordinator::openActivityPullRequest,
+                onCloseActivityDetail = coordinator::closeActivityDetail,
                 onRevoke = { confirmation = ConfirmAction.REVOKE },
                 onForget = { confirmation = ConfirmAction.FORGET },
             )

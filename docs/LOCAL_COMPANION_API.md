@@ -16,6 +16,9 @@ The stable first-party route prefix is `/api/v1`. The inherited unversioned path
 | `GET /api/v1/usage` | `GET /api/usage` | Read the bounded `CompanionUsageV1` Home contract |
 | `GET /api/v1/capabilities` | — | Discover domain availability and supported contract versions |
 | `GET /api/v1/foundation` | — | Read the bounded Mobile Product Foundation V1 projection |
+| `GET /api/v1/activity/sessions` | — | Read a bounded, cursor-paged Activity Sessions page |
+| `GET /api/v1/activity/sessions/:id` | — | Read bounded metadata/accounting for one Activity session |
+| `GET /api/v1/activity/pull-requests` | — | Read a bounded, cursor-paged Pull Request activity page |
 
 All authenticated endpoints require HTTPS mutual TLS and the bearer token issued to the same client certificate fingerprint. A copied token with another certificate is rejected. Discovery and the QR payload carry connection/identity information only; pairing still requires certificate verification, SAS comparison and explicit Desktop approval.
 
@@ -64,7 +67,7 @@ The response remains `CompanionUsageV1`, including integer micro-USD totals, cal
 }
 ```
 
-The bounded capability IDs are `home.usage`, `projects`, `activity.sessions`, `analyze.models`, `analyze.spend`, `workspace` and `device.settings`. Clients negotiate an intersection of advertised and supported versions. Unknown or unsupported capability versions fail safe to unavailable; they do not produce guessed UI or data.
+The bounded capability IDs are `home.usage`, `projects`, `activity.sessions`, `activity.pullRequests`, `analyze.models`, `analyze.spend`, `workspace` and `device.settings`. Clients negotiate an intersection of advertised and supported versions. Unknown or unsupported capability versions fail safe to unavailable; they do not produce guessed UI or data. The standalone Activity contracts are additive alongside Foundation V1, so older clients can continue consuming the Foundation envelope.
 
 ## Mobile Foundation V1
 
@@ -99,8 +102,37 @@ Project `id`, `name`, `icon` and `color` are presentation-compatible with Deskto
 
 Project-scoped durable history can retain exact cost, calls and sessions after raw session files expire while lacking a complete Project × model/token/category breakdown. In that case `quality.projectDetailCoverage` and Foundation `analyze.models.coverage` are `partial` or `unavailable`; clients must not render the available subtotal as the total for the full period or replace missing detail with zero. `historicalOnly: true` identifies a Source Project seen only in durable rollups, including legacy rollups without a path.
 
+## Activity V1
+
+The additive Activity contracts are separate from the Foundation envelope:
+
+- `metrora.companion.activity.sessions` version 1 is a bounded page of safe
+  session metadata; its page query carries the Desktop-resolved period bounds,
+  canonical Project scope, provider/route/model/source filters, ordering and
+  limit. `nextCursor` is opaque, deterministic and query-bound. `totalCount`
+  may be `null` when a filtered or partially retained authority cannot prove a
+  total; `availableCount`, `hasMore`, `coverage` and `freshness` describe the
+  returned authority read separately from page size.
+- `metrora.companion.activity.session` version 1 is a bounded detail DTO. It
+  carries factual timestamps, duration, Project/Source Project identity,
+  model/provenance IDs, calls, turns, token/cache dimensions, pricing markers
+  and detail coverage. Missing evidence remains `null`, `partial` or
+  `unavailable`; it is never converted to zero.
+- `metrora.companion.activity.pullRequests` version 1 is a bounded local
+  projection of canonical Desktop attribution. It keeps attributed and
+  unattributed spend as separate fields, preserves approximate/category
+  coverage markers and never makes Android call GitHub or attribute sessions
+  locally.
+
+Activity requests use the same `all`, `unassigned` and `mp_<stable-id>` Project
+scope IDs as Home and Foundation. Android changes the complete query identity
+when scope, period, filters, ordering or cursor changes and discards
+incompatible cached pages. Custom effective bounds are carried by the Desktop
+response for identity and cache binding, while the V1 Android UI stays on the
+existing period presets.
+
 ## Offline behavior and evolution
 
-A companion may retain the latest successful usage and Foundation projections in encrypted local storage. The two scoped projections are committed as one local cache transaction after compatibility checks for Desktop identity, Project scope and period. It must preserve Desktop-generated timestamps, show freshness/cache state and treat missing or corrupted projections as unavailable. It must not fill unavailable fields with zero or infer provenance.
+A companion may retain the latest successful usage, Foundation and Activity projections in encrypted local storage. Activity page cache keys bind Desktop identity, domain, Project scope, period/effective bounds, filters, ordering and page cursor. The projections are committed after compatibility checks; incompatible scope/query pages are discarded rather than relabeled. It must preserve Desktop-generated timestamps, show freshness/cache state and treat missing or corrupted projections as unavailable. It must not fill unavailable fields with zero or infer provenance.
 
 `CompanionUsageV1` remains a compatibility contract. Capability discovery and each Foundation domain are separate bounded versioned surfaces so future transports can serve the same Android domain layer without coupling presentation to HTTP. New fields may be added compatibly inside a version; incompatible shape or meaning requires a new version. No database, server, account, cloud relay, billing backend or remote execution is part of this API.

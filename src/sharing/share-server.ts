@@ -8,6 +8,10 @@ import { toDateString } from '../daily-cache.js'
 import { companionTrendGranularity, toCompanionUsageV1 } from './companion-contract.js'
 import { certFingerprint, pairingCode, PeerStore, PairingWindow, type PairedPeer } from './pairing.js'
 import type { Identity } from './identity.js'
+import {
+  type ActivityOrderV1,
+  type ActivityQueryV1,
+} from './activity-contract.js'
 
 export type UsageQuery = {
   period?: string
@@ -18,6 +22,16 @@ export type UsageQuery = {
   /** Desktop-resolved bounds; never supplied by the HTTP caller. */
   effectiveFrom?: string
   effectiveTo?: string
+}
+
+export type ActivityQuery = UsageQuery & {
+  provider?: string
+  route?: string
+  model?: string
+  source?: string
+  order?: ActivityOrderV1 | string
+  limit?: number | string
+  cursor?: string
 }
 
 /**
@@ -45,6 +59,43 @@ export function canonicalCompanionQuery(query: UsageQuery): UsageQuery {
   }
 }
 
+function boundedActivityFilter(value: string | undefined, label: string): string | undefined {
+  const normalized = value?.trim()
+  if (!normalized) return undefined
+  if (normalized.length > 160 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new UsageQueryError(`Invalid Activity ${label} filter.`)
+  }
+  return normalized
+}
+
+/** Resolve Activity query identity once at the Desktop authority boundary. */
+export function canonicalActivityQuery(query: ActivityQuery): ActivityQueryV1 & { cursor?: string } {
+  const base = canonicalCompanionQuery(query)
+  const order = query.order?.trim() || 'newest'
+  if (!['newest', 'cost', 'tokens', 'calls'].includes(order)) {
+    throw new UsageQueryError('Unknown Activity ordering. Valid values: newest, cost, tokens, calls.')
+  }
+  const rawLimit = query.limit === undefined || query.limit === '' ? 40 : Number(query.limit)
+  if (!Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > 50) {
+    throw new UsageQueryError('Activity page size must be an integer from 1 to 50.')
+  }
+  const cursor = query.cursor?.trim() || undefined
+  if (cursor && cursor.length > 768) throw new UsageQueryError('Activity cursor is too long.')
+  return {
+    period: base.period ?? 'month',
+    projectScopeId: base.projectScopeId ?? 'all',
+    effectiveFrom: base.effectiveFrom!,
+    effectiveTo: base.effectiveTo!,
+    ...(boundedActivityFilter(query.provider, 'provider') ? { provider: boundedActivityFilter(query.provider, 'provider') } : {}),
+    ...(boundedActivityFilter(query.route, 'route') ? { route: boundedActivityFilter(query.route, 'route') } : {}),
+    ...(boundedActivityFilter(query.model, 'model') ? { model: boundedActivityFilter(query.model, 'model') } : {}),
+    ...(boundedActivityFilter(query.source, 'source') ? { source: boundedActivityFilter(query.source, 'source') } : {}),
+    order: order as ActivityOrderV1,
+    limit: rawLimit,
+    ...(cursor ? { cursor } : {}),
+  }
+}
+
 // An approve-style pairing request, surfaced to the user on the sharing device.
 export type PairRequest = { name: string; fingerprint: string; code: string }
 
@@ -58,6 +109,10 @@ export type ShareServerOptions = {
   getFoundation?: (query: UsageQuery) => Promise<unknown>
   /** Optional non-period-scoped Project catalog projection. */
   getProjectCatalog?: () => Promise<unknown>
+  /** Additive bounded Activity projections; Foundation remains unchanged. */
+  getActivitySessions?: (query: ActivityQuery) => Promise<unknown>
+  getActivitySessionDetail?: (query: ActivityQuery, id: string) => Promise<unknown | null>
+  getActivityPullRequests?: (query: ActivityQuery) => Promise<unknown>
   // Legacy callback kept for compatibility with existing embedders.
   onPaired?: () => void | Promise<void>
   // Called after pairing or revocation so the caller can durably persist peers.
@@ -342,6 +397,54 @@ export class ShareServer {
       return
     }
 
+    const activitySessionDetail = pathname.match(/^\/api\/activity\/sessions\/([a-zA-Z0-9_-]{1,80})$/)
+    if (activitySessionDetail && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getActivitySessionDetail) {
+        json(404, { error: 'activity capability unavailable' })
+        return
+      }
+      const query = canonicalActivityQuery(activityQueryFromUrl(url))
+      const payload = await this.opts.getActivitySessionDetail(query, activitySessionDetail[1]!)
+      if (payload === null) {
+        json(404, { error: 'session not found' })
+        return
+      }
+      json(200, withDesktopId(payload, this.opts.identity.fingerprint))
+      return
+    }
+
+    if (pathname === '/api/activity/sessions' && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getActivitySessions) {
+        json(404, { error: 'activity capability unavailable' })
+        return
+      }
+      const query = canonicalActivityQuery(activityQueryFromUrl(url))
+      json(200, withDesktopId(await this.opts.getActivitySessions(query), this.opts.identity.fingerprint))
+      return
+    }
+
+    if (pathname === '/api/activity/pull-requests' && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getActivityPullRequests) {
+        json(404, { error: 'activity capability unavailable' })
+        return
+      }
+      const query = canonicalActivityQuery(activityQueryFromUrl(url))
+      json(200, withDesktopId(await this.opts.getActivityPullRequests(query), this.opts.identity.fingerprint))
+      return
+    }
+
     if (pathname === '/api/usage' && req.method === 'GET') {
       if (!this.authorizedPeer(req)) {
         json(401, { error: 'unauthorized' })
@@ -365,6 +468,30 @@ export class ShareServer {
 
     json(404, { error: 'not found' })
   }
+}
+
+function activityQueryFromUrl(url: URL): ActivityQuery {
+  return {
+    period: url.searchParams.get('period') ?? undefined,
+    from: url.searchParams.get('from') ?? undefined,
+    to: url.searchParams.get('to') ?? undefined,
+    granularity: url.searchParams.get('granularity') ?? undefined,
+    projectScopeId: url.searchParams.get('projectScopeId') ?? undefined,
+    provider: url.searchParams.get('provider') ?? undefined,
+    route: url.searchParams.get('route') ?? undefined,
+    model: url.searchParams.get('model') ?? undefined,
+    source: url.searchParams.get('source') ?? undefined,
+    order: url.searchParams.get('order') ?? undefined,
+    limit: url.searchParams.get('limit') ?? undefined,
+    cursor: url.searchParams.get('cursor') ?? undefined,
+  }
+}
+
+function withDesktopId(payload: unknown, desktopId: string): unknown {
+  if (typeof payload === 'object' && payload !== null && !Array.isArray(payload)) {
+    return { ...payload as Record<string, unknown>, desktopId }
+  }
+  return payload
 }
 
 function readBody(req: IncomingMessage): Promise<string> {

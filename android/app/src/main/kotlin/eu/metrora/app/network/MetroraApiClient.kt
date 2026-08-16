@@ -6,6 +6,10 @@ import eu.metrora.app.MetroraFailureCategory
 import eu.metrora.app.MetroraFailureReason
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.ActivityPullRequestsPage
+import eu.metrora.app.data.ActivityQuery
+import eu.metrora.app.data.ActivitySessionDetail
+import eu.metrora.app.data.ActivitySessionsPage
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectCatalogSnapshot
@@ -68,6 +72,46 @@ interface MetroraApi {
     /** Non-period-scoped Project authority; older Desktops may not expose it. */
     suspend fun fetchProjectCatalog(credentials: PairingCredentials): ProjectCatalogSnapshot =
         ProjectCatalogSnapshot.unavailable(credentials.serverFingerprint)
+
+    /** Additive bounded Activity Sessions contract; older test/transport implementations remain valid. */
+    suspend fun fetchActivitySessions(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        cursor: String? = null,
+    ): ActivitySessionsPage = throw MetroraException(
+        MetroraFailure(
+            MetroraOperation.REFRESH,
+            MetroraFailureCategory.COMPATIBILITY,
+            MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+            "Activity Sessions projection unavailable",
+        ),
+    )
+
+    suspend fun fetchActivitySessionDetail(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        id: String,
+    ): ActivitySessionDetail = throw MetroraException(
+        MetroraFailure(
+            MetroraOperation.REFRESH,
+            MetroraFailureCategory.COMPATIBILITY,
+            MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+            "Activity session detail unavailable",
+        ),
+    )
+
+    suspend fun fetchActivityPullRequests(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        cursor: String? = null,
+    ): ActivityPullRequestsPage = throw MetroraException(
+        MetroraFailure(
+            MetroraOperation.REFRESH,
+            MetroraFailureCategory.COMPATIBILITY,
+            MetroraFailureReason.COMPANION_API_UNAVAILABLE,
+            "Activity Pull Request projection unavailable",
+        ),
+    )
 
     suspend fun revoke(credentials: PairingCredentials)
 
@@ -406,6 +450,99 @@ class MetroraApiClient(
                 )
             }
         }
+
+    override suspend fun fetchActivitySessions(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        cursor: String?,
+    ): ActivitySessionsPage = mapped(MetroraOperation.REFRESH) {
+        requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+        val response = transport.request(
+            host = credentials.host,
+            port = credentials.port,
+            method = "GET",
+            path = MetroraProtocol.activitySessionsPath(query, cursor),
+            expectedFingerprint = credentials.serverFingerprint,
+            headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+            readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+        )
+        ensureSuccess(MetroraOperation.REFRESH, response)
+        try {
+            ActivityV1Parser.parseSessions(response.body, credentials, query)
+        } catch (error: MetroraException) {
+            throw error
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint returned an invalid Activity Sessions page",
+                error,
+            )
+        }
+    }
+
+    override suspend fun fetchActivitySessionDetail(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        id: String,
+    ): ActivitySessionDetail = mapped(MetroraOperation.REFRESH) {
+        requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+        val response = transport.request(
+            host = credentials.host,
+            port = credentials.port,
+            method = "GET",
+            path = MetroraProtocol.activitySessionDetailPath(query, id),
+            expectedFingerprint = credentials.serverFingerprint,
+            headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+            readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+        )
+        ensureSuccess(MetroraOperation.REFRESH, response)
+        try {
+            ActivityV1Parser.parseSessionDetail(response.body, credentials, query)
+        } catch (error: MetroraException) {
+            throw error
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint returned invalid Activity session detail",
+                error,
+            )
+        }
+    }
+
+    override suspend fun fetchActivityPullRequests(
+        credentials: PairingCredentials,
+        query: ActivityQuery,
+        cursor: String?,
+    ): ActivityPullRequestsPage = mapped(MetroraOperation.REFRESH) {
+        requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+        val response = transport.request(
+            host = credentials.host,
+            port = credentials.port,
+            method = "GET",
+            path = MetroraProtocol.activityPullRequestsPath(query, cursor),
+            expectedFingerprint = credentials.serverFingerprint,
+            headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+            readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+        )
+        ensureSuccess(MetroraOperation.REFRESH, response)
+        try {
+            ActivityV1Parser.parsePullRequests(response.body, credentials, query)
+        } catch (error: MetroraException) {
+            throw error
+        } catch (error: Exception) {
+            throw failure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.MALFORMED_RESPONSE,
+                MetroraFailureReason.MALFORMED_RESPONSE,
+                "The endpoint returned an invalid Activity Pull Request page",
+                error,
+            )
+        }
+    }
 
     override suspend fun revoke(credentials: PairingCredentials) = mapped(MetroraOperation.REVOKE) {
         requireCurrentIdentity(credentials, MetroraOperation.REVOKE)

@@ -1,6 +1,7 @@
 package eu.metrora.app.network
 
 import java.security.MessageDigest
+import eu.metrora.app.data.ActivityQuery
 
 object MetroraProtocol {
     const val API_VERSION = 1
@@ -12,6 +13,8 @@ object MetroraProtocol {
     const val CAPABILITIES_PATH = "/api/v1/capabilities"
     const val FOUNDATION_PATH = "/api/v1/foundation"
     const val PROJECTS_PATH = "/api/v1/projects"
+    const val ACTIVITY_SESSIONS_PATH = "/api/v1/activity/sessions"
+    const val ACTIVITY_PULL_REQUESTS_PATH = "/api/v1/activity/pull-requests"
     const val USAGE_KIND = "metrora.companion.usage"
     const val CAPABILITIES_KIND = "metrora.companion.capabilities"
     const val FOUNDATION_KIND = "metrora.companion.foundation"
@@ -72,4 +75,42 @@ object MetroraProtocol {
 
     fun foundationPath(period: String, granularity: String? = null, projectScopeId: String? = null): String =
         usagePath(period, granularity, projectScopeId).replace(USAGE_PATH, FOUNDATION_PATH)
+
+    fun activitySessionsPath(query: ActivityQuery, cursor: String? = null): String =
+        activityPath(ACTIVITY_SESSIONS_PATH, query, cursor)
+
+    fun activitySessionDetailPath(query: ActivityQuery, id: String): String {
+        require(id.matches(Regex("[a-zA-Z0-9_-]{1,80}"))) { "Invalid Activity session id." }
+        return activityPath("$ACTIVITY_SESSIONS_PATH/$id", query, null)
+    }
+
+    fun activityPullRequestsPath(query: ActivityQuery, cursor: String? = null): String =
+        activityPath(ACTIVITY_PULL_REQUESTS_PATH, query, cursor)
+
+    private fun activityPath(base: String, query: ActivityQuery, cursor: String?): String {
+        val params = buildList {
+            add("period=${encodeQueryComponent(query.period)}")
+            add("order=${encodeQueryComponent(query.order)}")
+            add("limit=${query.limit}")
+            if (query.projectScopeId != "all") add("projectScopeId=${encodeQueryComponent(query.projectScopeId)}")
+            query.provider?.let { add("provider=${encodeQueryComponent(it)}") }
+            query.route?.let { add("route=${encodeQueryComponent(it)}") }
+            query.model?.let { add("model=${encodeQueryComponent(it)}") }
+            query.source?.let { add("source=${encodeQueryComponent(it)}") }
+            cursor?.let { add("cursor=${encodeQueryComponent(it)}") }
+        }
+        return "$base?${params.joinToString("&")}"
+    }
+
+    private fun encodeQueryComponent(value: String): String = buildString {
+        val hex = "0123456789ABCDEF"
+        value.toByteArray(Charsets.UTF_8).forEach { raw ->
+            val byte = raw.toInt() and 0xff
+            if (byte in 0x30..0x39 || byte in 0x41..0x5a || byte in 0x61..0x7a || byte == '-'.code || byte == '.'.code || byte == '_'.code || byte == '~'.code) {
+                append(byte.toChar())
+            } else {
+                append('%').append(hex[byte shr 4]).append(hex[byte and 0x0f])
+            }
+        }
+    }
 }
