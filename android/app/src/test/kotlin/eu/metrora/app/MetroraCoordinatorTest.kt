@@ -1,6 +1,12 @@
 package eu.metrora.app
 
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.CapabilityFreshness
+import eu.metrora.app.data.MobileFoundationSnapshot
+import eu.metrora.app.data.MobileSpendSummary
+import eu.metrora.app.data.ProjectCatalogSnapshot
+import eu.metrora.app.data.ProjectScopeOption
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.network.DiscoveredDesktop
@@ -108,6 +114,130 @@ class MetroraCoordinatorTest {
     }
 
     @Test
+    fun project_scope_refresh_keeps_usage_scope_but_does_not_reuse_foundation_from_a() = runTest {
+        val snapshotA = testSnapshot(projectScopeId = "mp_a")
+        val foundationA = testFoundation("mp_a")
+        val catalog = testCatalog()
+        val store = FakeStore(testCredentials(), snapshotA, foundationA, catalog)
+        val api = FakeApi().apply {
+            scopedResults["mp_b"] = testSnapshot(projectScopeId = "mp_b", retrievedAtEpochMs = 1_700_000_003_000L)
+            foundationFailure = testFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.CONNECTIVITY,
+                MetroraFailureReason.TIMEOUT,
+            )
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(projectScopeId = "mp_b")
+        advanceUntilIdle()
+
+        assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
+        assertEquals("mp_b", coordinator.state.value.snapshot?.projectScopeId)
+        assertNull(coordinator.state.value.foundation)
+        assertEquals("mp_b", coordinator.state.value.selectedProjectId)
+        assertEquals("mp_b", store.snapshot?.projectScopeId)
+        assertNull(store.foundation)
+        assertEquals(catalog.asLocallyCached(), coordinator.state.value.projectCatalog)
+        coordinator.close()
+    }
+
+    @Test
+    fun same_scope_foundation_cache_is_a_safe_fallback_for_a_failed_refresh() = runTest {
+        val snapshotA = testSnapshot(projectScopeId = "mp_a")
+        val foundationA = testFoundation("mp_a")
+        val store = FakeStore(testCredentials(), snapshotA, foundationA)
+        val api = FakeApi().apply {
+            scopedResults["mp_a"] = testSnapshot(projectScopeId = "mp_a", retrievedAtEpochMs = 1_700_000_004_000L)
+            foundationFailure = testFailure(
+                MetroraOperation.REFRESH,
+                MetroraFailureCategory.CONNECTIVITY,
+                MetroraFailureReason.TIMEOUT,
+            )
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(projectScopeId = "mp_a")
+        advanceUntilIdle()
+
+        assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
+        assertEquals("mp_a", coordinator.state.value.snapshot?.projectScopeId)
+        assertEquals(foundationA.asLocallyCached(), coordinator.state.value.foundation)
+        assertEquals(foundationA.asLocallyCached(), store.foundation)
+        assertEquals(CapabilityFreshness.CACHED, coordinator.state.value.foundation?.activityFreshness)
+        assertEquals(CapabilityFreshness.CACHED, coordinator.state.value.foundation?.analyzeModelsFreshness)
+        assertEquals(CapabilityFreshness.CACHED, coordinator.state.value.foundation?.analyzeSpendFreshness)
+        coordinator.close()
+    }
+
+    @Test
+    fun fresh_foundation_success_preserves_server_domain_freshness() = runTest {
+        val snapshot = testSnapshot(projectScopeId = "mp_a")
+        val foundation = testFoundation("mp_a").copy(
+            activityFreshness = CapabilityFreshness.CACHED,
+            analyzeModelsFreshness = CapabilityFreshness.LIVE,
+            analyzeSpendFreshness = CapabilityFreshness.UNKNOWN,
+        )
+        val store = FakeStore(testCredentials(), snapshot)
+        val api = FakeApi().apply {
+            scopedResults["mp_a"] = snapshot.copy(retrievedAtEpochMs = 1_700_000_005_000L)
+            foundationResult = foundation
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(projectScopeId = "mp_a")
+        advanceUntilIdle()
+
+        assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
+        assertEquals(foundation, coordinator.state.value.foundation)
+        assertEquals(foundation, store.foundation)
+        coordinator.close()
+    }
+
+    @Test
+    fun legacy_implicit_day_foundation_is_not_treated_as_canonical_lifetime_data() = runTest {
+        val snapshot = testSnapshot().copy(
+            periodLabel = "Lifetime",
+            costTrendPeriodLabel = "Lifetime",
+        )
+        val foundation = testFoundation("all").copy(
+            periodLabel = "Lifetime",
+            trendGranularity = null,
+        )
+        val store = FakeStore(testCredentials(), snapshot, foundation)
+        val api = FakeApi().apply {
+            scopedResults["all"] = snapshot
+            foundationResult = foundation
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(period = "lifetime")
+        advanceUntilIdle()
+
+        assertEquals(MetroraConnectionState.CONNECTED, coordinator.state.value.status)
+        assertNull(coordinator.state.value.foundation)
+        coordinator.close()
+    }
+
+    @Test
+    fun restored_snapshot_preserves_the_canonical_period_preset() = runTest {
+        val snapshot = testSnapshot(projectScopeId = "mp_a").copy(
+            periodLabel = "Today",
+            costTrendPeriodLabel = "Today",
+        )
+        val coordinator = coordinator(FakeStore(testCredentials(), snapshot, projectCatalog = testCatalog()), FakeApi())
+        advanceUntilIdle()
+
+        assertEquals("today", coordinator.state.value.selectedPeriod)
+        assertEquals("mp_a", coordinator.state.value.selectedProjectId)
+        coordinator.close()
+    }
+
+    @Test
     fun selecting_trend_granularity_requests_the_desktop_aggregate() = runTest {
         val api = FakeApi()
         val coordinator = coordinator(FakeStore(testCredentials(), testSnapshot()), api)
@@ -123,7 +253,7 @@ class MetroraCoordinatorTest {
 
     @Test
     fun connectivity_failure_keeps_cached_snapshot_but_unauthorized_enters_recovery_path() = runTest {
-        val store = FakeStore(testCredentials(), testSnapshot())
+        val store = FakeStore(testCredentials(), testSnapshot(), projectCatalog = testCatalog())
         val api = FakeApi()
         val coordinator = coordinator(store, api)
         advanceUntilIdle()
@@ -137,6 +267,7 @@ class MetroraCoordinatorTest {
         advanceUntilIdle()
         assertEquals(MetroraConnectionState.OFFLINE_WITH_SNAPSHOT, coordinator.state.value.status)
         assertEquals(testSnapshot(), coordinator.state.value.snapshot)
+        assertEquals(testCatalog().asLocallyCached(), coordinator.state.value.projectCatalog)
 
         api.fetchFailure = testFailure(
             MetroraOperation.REFRESH,
@@ -277,12 +408,53 @@ class MetroraCoordinatorTest {
     }
 }
 
+private fun testFoundation(projectScopeId: String): MobileFoundationSnapshot = MobileFoundationSnapshot(
+    desktopId = testCredentials().serverFingerprint,
+    generatedAt = "2026-08-14T10:00:00.000Z",
+    retrievedAtEpochMs = 1_700_000_000_000L,
+    projectScopeId = projectScopeId,
+    projectOptions = listOf(
+        ProjectScopeOption("all", "All projects", "grid", "cyan", 2),
+        ProjectScopeOption("mp_a", "Project A", "spark", "cyan", 1),
+        ProjectScopeOption("mp_b", "Project B", "orbit", "violet", 1),
+    ),
+    sourceProjects = emptyList(),
+    capabilities = CapabilityDiscovery.unavailable(),
+    activitySessions = emptyList(),
+    activityFreshness = CapabilityFreshness.LIVE,
+    activityCoverage = eu.metrora.app.data.DetailCoverage.COMPLETE,
+    analyzeModels = emptyList(),
+    analyzeModelsFreshness = CapabilityFreshness.LIVE,
+    spend = MobileSpendSummary(0L, 0L, 0L, emptyList()),
+    analyzeSpendFreshness = CapabilityFreshness.LIVE,
+    workspaceAvailable = false,
+    periodLabel = "This month",
+)
+
+private fun testCatalog(): ProjectCatalogSnapshot = ProjectCatalogSnapshot(
+    desktopId = testCredentials().serverFingerprint,
+    generatedAt = "2026-08-14T10:00:00.000Z",
+    retrievedAtEpochMs = 1_700_000_000_000L,
+    projectOptions = listOf(
+        ProjectScopeOption("all", "All projects", "grid", "cyan", 2),
+        ProjectScopeOption("unassigned", "Unassigned", "stack", "violet", 1),
+        ProjectScopeOption("mp_a", "Project A", "spark", "cyan", 1),
+        ProjectScopeOption("mp_b", "Project B", "orbit", "violet", 1),
+    ),
+    sourceProjects = emptyList(),
+    freshness = CapabilityFreshness.LIVE,
+)
+
 private class FakeStore(
     var credentials: PairingCredentials? = null,
     var snapshot: UsageSnapshot? = null,
+    var foundation: MobileFoundationSnapshot? = null,
+    var projectCatalog: ProjectCatalogSnapshot? = null,
 ) : MetroraStore {
     var credentialsRead: StorageRead<PairingCredentials>? = null
     var snapshotRead: StorageRead<UsageSnapshot>? = null
+    var foundationRead: StorageRead<MobileFoundationSnapshot>? = null
+    var projectCatalogRead: StorageRead<ProjectCatalogSnapshot>? = null
 
     override suspend fun loadCredentials(): StorageRead<PairingCredentials> =
         credentialsRead ?: credentials?.let { StorageRead.Present(it) } ?: StorageRead.Missing
@@ -298,6 +470,30 @@ private class FakeStore(
         this.snapshot = snapshot
     }
 
+    override suspend fun saveSnapshotAndFoundation(snapshot: UsageSnapshot, foundation: MobileFoundationSnapshot?) {
+        this.snapshot = snapshot
+        this.foundation = foundation
+    }
+
+    override suspend fun saveSnapshotFoundationAndCatalog(
+        snapshot: UsageSnapshot,
+        foundation: MobileFoundationSnapshot?,
+        catalog: ProjectCatalogSnapshot?,
+    ) {
+        this.snapshot = snapshot
+        this.foundation = foundation
+        // A missing catalog means the endpoint was unavailable; the durable
+        // catalog remains valid until a newer Desktop projection replaces it.
+        if (catalog != null) this.projectCatalog = catalog
+    }
+
+    override suspend fun loadFoundation(): StorageRead<MobileFoundationSnapshot> =
+        foundationRead ?: foundation?.let { StorageRead.Present(it) } ?: StorageRead.Missing
+
+    override suspend fun saveFoundation(foundation: MobileFoundationSnapshot) {
+        this.foundation = foundation
+    }
+
     override suspend fun clearCredentials() {
         credentials = null
     }
@@ -306,9 +502,26 @@ private class FakeStore(
         snapshot = null
     }
 
+    override suspend fun clearFoundation() {
+        foundation = null
+    }
+
+    override suspend fun loadProjectCatalog(): StorageRead<ProjectCatalogSnapshot> =
+        projectCatalogRead ?: projectCatalog?.let { StorageRead.Present(it) } ?: StorageRead.Missing
+
+    override suspend fun saveProjectCatalog(catalog: ProjectCatalogSnapshot) {
+        projectCatalog = catalog
+    }
+
+    override suspend fun clearProjectCatalog() {
+        projectCatalog = null
+    }
+
     override suspend fun clearPairing() {
         credentials = null
         snapshot = null
+        foundation = null
+        projectCatalog = null
     }
 }
 
@@ -318,12 +531,17 @@ private class FakeApi : MetroraApi {
     var pairingResult: CompletableDeferred<PairingCredentials>? = null
     var fetchResult: CompletableDeferred<UsageSnapshot>? = null
     var fetchFailure: MetroraException? = null
+    val scopedResults = mutableMapOf<String, UsageSnapshot>()
+    var foundationResult: MobileFoundationSnapshot? = null
+    var foundationFailure: MetroraException? = null
     var revokeFailure: MetroraException? = null
     var identityMatches = true
     val pairCount = AtomicInteger()
     val fetchCount = AtomicInteger()
     var lastPeriod: String? = null
     var lastTrendGranularity: String? = null
+    var lastProjectScopeId: String? = null
+    var lastFoundationScopeId: String? = null
 
     override suspend fun discover(host: String, port: Int): DiscoveredDesktop = desktop
 
@@ -343,11 +561,39 @@ private class FakeApi : MetroraApi {
         period: String,
         trendGranularity: String?,
     ): UsageSnapshot {
+        return fetchUsageInternal(period, trendGranularity, null)
+    }
+
+    override suspend fun fetchUsageForScope(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+    ): UsageSnapshot = fetchUsageInternal(period, trendGranularity, projectScopeId)
+
+    private suspend fun fetchUsageInternal(
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+    ): UsageSnapshot {
         fetchCount.incrementAndGet()
         lastPeriod = period
         lastTrendGranularity = trendGranularity
+        val normalizedScope = projectScopeId?.trim()?.takeIf { it.isNotEmpty() } ?: "all"
+        lastProjectScopeId = normalizedScope
         fetchFailure?.let { throw it }
-        return fetchResult?.await() ?: testSnapshot()
+        return scopedResults[normalizedScope] ?: fetchResult?.await() ?: testSnapshot(projectScopeId = normalizedScope)
+    }
+
+    override suspend fun fetchFoundation(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+    ): MobileFoundationSnapshot {
+        lastFoundationScopeId = projectScopeId
+        foundationFailure?.let { throw it }
+        return foundationResult ?: MobileFoundationSnapshot.unavailable(credentials.serverFingerprint, projectScopeId ?: "all")
     }
 
     override suspend fun revoke(credentials: PairingCredentials) {

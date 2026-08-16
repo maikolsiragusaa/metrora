@@ -14,7 +14,9 @@ import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MetroraApiClientTest {
@@ -111,6 +113,79 @@ class MetroraApiClientTest {
         api.fetchUsage(credentials(), "all", "week")
 
         assertEquals("/api/v1/usage?period=all&granularity=week", transport.lastPath)
+    }
+
+    @Test
+    fun capability_discovery_is_authenticated_and_versioned() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """
+                {"kind":"metrora.companion.capabilities","version":1,"generatedAt":"2026-08-14T10:00:00Z","capabilities":[{"id":"projects","versions":[1],"availability":"available","freshness":"cached","scopes":{"period":false,"project":false,"workspace":false}}]}
+            """.trimIndent(),
+            desktopFingerprint,
+        )
+
+        val discovery = api.fetchCapabilities(credentials())
+
+        assertTrue(discovery.isAvailable("projects"))
+        assertEquals("/api/v1/capabilities", transport.lastPath)
+        assertEquals("Bearer token-1", transport.lastHeaders["Authorization"])
+    }
+
+    @Test
+    fun foundation_fetch_preserves_project_scope_and_older_desktop_is_explicitly_unavailable() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """{"kind":"metrora.companion.foundation","version":1,"generatedAt":"2026-08-14T10:00:00Z","projectScope":{"selectedId":"mp_project","options":[],"sourceProjects":[]},"capabilities":{"kind":"metrora.companion.capabilities","version":1,"generatedAt":"2026-08-14T10:00:00Z","capabilities":[]},"activity":{"available":true,"sessions":[]},"analyze":{"models":{"available":true,"rows":[]},"spend":{"available":true,"data":{"costMicrosUsd":0,"calls":0,"sessions":0,"trend":[]}}},"workspace":{"available":false,"reason":"no-authority"}}""",
+            desktopFingerprint,
+        )
+
+        val foundation = api.fetchFoundation(credentials(), projectScopeId = "mp_project")
+
+        assertTrue(foundation.available)
+        assertEquals("mp_project", foundation.projectScopeId)
+        assertEquals("/api/v1/foundation?period=month&projectScopeId=mp_project", transport.lastPath)
+
+        transport.response = MetroraResponse(404, "{\"error\":\"not found\"}", desktopFingerprint)
+        val unavailable = api.fetchFoundation(credentials(), projectScopeId = "mp_project")
+        assertFalse(unavailable.available)
+    }
+
+    @Test
+    fun project_catalog_is_a_separate_authenticated_non_period_scoped_route() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """
+                {
+                  "kind":"metrora.companion.projects",
+                  "version":1,
+                  "desktopId":"$desktopFingerprint",
+                  "generatedAt":"2026-08-14T10:00:00Z",
+                  "freshness":"live",
+                  "available":true,
+                  "projectScope":{
+                    "options":[
+                      {"id":"all","name":"All projects","icon":"grid","color":"cyan","sourceProjectCount":3},
+                      {"id":"unassigned","name":"Unassigned","icon":"stack","color":"violet","sourceProjectCount":1},
+                      {"id":"mp_project","name":"Foundation QA Renamed","icon":"spark","color":"cyan","sourceProjectCount":2}
+                    ],
+                    "sourceProjects":[]
+                  }
+                }
+            """.trimIndent(),
+            desktopFingerprint,
+        )
+
+        val catalog = api.fetchProjectCatalog(credentials())
+
+        assertTrue(catalog.available)
+        assertEquals("Foundation QA Renamed", catalog.projectOption("mp_project")?.name)
+        assertEquals(3, catalog.projectOption("all")?.sourceProjectCount)
+        assertEquals("/api/v1/projects", transport.lastPath)
+        assertEquals("Bearer token-1", transport.lastHeaders["Authorization"])
+
+        transport.response = MetroraResponse(404, "{\"error\":\"not found\"}", desktopFingerprint)
+        assertFalse(api.fetchProjectCatalog(credentials()).available)
     }
 
     @Test
@@ -239,6 +314,7 @@ private class FakeTransport : MetroraTransport {
     var error: Exception? = null
     var lastReadTimeoutMs: Int? = null
     var lastPath: String? = null
+    var lastHeaders: Map<String, String> = emptyMap()
 
     override suspend fun request(
         host: String,
@@ -252,6 +328,7 @@ private class FakeTransport : MetroraTransport {
     ): MetroraResponse {
         lastReadTimeoutMs = readTimeoutMs
         lastPath = path
+        lastHeaders = headers
         error?.let { throw it }
         return response
     }

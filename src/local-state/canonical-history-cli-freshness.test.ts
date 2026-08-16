@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { currentTzKey, saveDailyCache, type DailyCache } from '../daily-cache.js'
+import { currentTzKey, dailyCachePath, saveDailyCache, type DailyCache } from '../daily-cache.js'
 import {
   readCurrentDailyCacheGenerationV1,
   readCurrentSessionCacheGenerationV1,
@@ -37,7 +37,7 @@ function dateRange(date: string) {
 
 function daily(day: string, timeZone: string): DailyCache {
   return {
-    version: 18,
+    version: 19,
     savingsConfigHash: '',
     tzKey: timeZone,
     lastComputedDate: day,
@@ -119,7 +119,7 @@ async function publish(
   now: Date,
 ): Promise<void> {
   const session = await readCurrentSessionCacheGenerationV1(sessionCachePath())
-  const dailyGeneration = await readCurrentDailyCacheGenerationV1(join(process.env['METRORA_CACHE_DIR']!, 'daily-cache.v18.json'))
+  const dailyGeneration = await readCurrentDailyCacheGenerationV1(dailyCachePath())
   if (!session || !dailyGeneration) throw new Error('test authority generation was not published')
   await persistCanonicalHistoryShadowV1(projection(day, currentTzKey() || 'UTC'), {
     dataDir,
@@ -165,7 +165,7 @@ describe('C3 CLI headline freshness seal', () => {
   it('fails closed for a corrupt daily stamp and timezone authority change', async () => {
     const { dataDir, day, now } = await setup()
     await publish(dataDir, day, now)
-    await writeFile(`${process.env['METRORA_CACHE_DIR']}/daily-cache.v18.json.generation.v1.json`, '{broken')
+    await writeFile(`${dailyCachePath()}.generation.v1.json`, '{broken')
     const corrupt = await readC3CliStatusBatchV1(queries(day), { dataDir, now: () => now, timeZone: 'UTC' })
     expect(corrupt[0]).toMatchObject({ code: 'C3_UNAVAILABLE', reason: 'authority-generation-mismatch' })
 

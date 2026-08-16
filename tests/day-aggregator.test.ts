@@ -299,9 +299,13 @@ describe('aggregateProjectsIntoDays', () => {
     expect(day.categories['coding']).toMatchObject({ turns: 1, cost: 10 })
     // Per-project rollup at day level and inside each provider slice; path is
     // stored so display layers can derive a friendly name once sessions expire.
-    expect(day.projects!['p']).toEqual({ cost: 10, calls: 2, savingsUSD: 0, sessions: 1, path: '/p' })
-    expect(day.providers['claude']!.projects!['p']).toMatchObject({ cost: 7, calls: 1 })
-    expect(day.providers['codex']!.projects!['p']).toMatchObject({ cost: 3, calls: 1 })
+    expect(day.projects!['p']).toEqual({
+      cost: 10, calls: 2, savingsUSD: 0, sessions: 1,
+      inputTokens: 200, outputTokens: 400, cacheReadTokens: 100, cacheWriteTokens: 0,
+      path: '/p',
+    })
+    expect(day.providers['claude']!.projects!['p']).toMatchObject({ cost: 7, calls: 1, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0 })
+    expect(day.providers['codex']!.projects!['p']).toMatchObject({ cost: 3, calls: 1, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0 })
   })
 
   it('carries separately observed reasoning tokens through durable day and period models', () => {

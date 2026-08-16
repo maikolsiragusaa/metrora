@@ -14,7 +14,7 @@ The observer runs after the generic analytics lifecycle has:
 
 1. completed the ordinary fresh session-cache refresh;
 2. finalized a complete current-version SessionCache v8;
-3. finalized a complete, watermark-trusted DailyCache v18.
+3. finalized a complete, watermark-trusted DailyCache v19.
 
 The analytics publisher supplies the already-completed in-memory authorities
 and a local analytics-history scope. It performs no Workspace creation,

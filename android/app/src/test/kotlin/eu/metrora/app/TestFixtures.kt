@@ -19,9 +19,11 @@ internal fun testCredentials(
 internal fun testSnapshot(
     desktopId: String = "ab".repeat(32),
     retrievedAtEpochMs: Long = 1_700_000_001_000L,
+    projectScopeId: String = "all",
 ): UsageSnapshot = UsageSnapshot(
     desktopId = desktopId,
     desktopName = "Metrora Desktop",
+    projectScopeId = projectScopeId,
     generatedAtEpochMs = 1_700_000_000_500L,
     periodLabel = "This month",
     costMicrosUsd = 750_000L,

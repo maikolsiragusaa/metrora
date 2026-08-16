@@ -2,7 +2,11 @@ package eu.metrora.app
 
 import android.content.Context
 import android.os.Build
+import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.CapabilityFreshness
+import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.StorageIssue
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
@@ -44,6 +48,7 @@ class MetroraCoordinator internal constructor(
 
     private val mutableState = MutableStateFlow(MetroraUiState())
     private var operationJob: Job? = null
+    private var requestGeneration: Long = 0L
     private var pendingPairResult: Deferred<PairingCredentials>? = null
     private var pendingDesktop: DiscoveredDesktop? = null
 
@@ -192,6 +197,7 @@ class MetroraCoordinator internal constructor(
                     allowOfflineFallback = true,
                     preservePairingSuccess = true,
                     period = current.selectedPeriod,
+                    projectScopeId = current.selectedProjectId,
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -238,22 +244,42 @@ class MetroraCoordinator internal constructor(
     fun refresh(
         period: String = mutableState.value.selectedPeriod,
         trendGranularity: String? = null,
+        projectScopeId: String? = mutableState.value.selectedProjectId,
     ) {
         val current = mutableState.value
         val credentials = current.credentials ?: return
-        if (current.initializing || current.busy ||
-            current.status == MetroraConnectionState.REVOKED_OR_UNAUTHORIZED ||
-            current.status == MetroraConnectionState.RECOVERY_REQUIRED
+        if (current.initializing || current.status in setOf(
+                MetroraConnectionState.PAIRING,
+                MetroraConnectionState.VERIFYING_SAS,
+                MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL,
+                MetroraConnectionState.REVOKED_OR_UNAUTHORIZED,
+                MetroraConnectionState.RECOVERY_REQUIRED,
+                MetroraConnectionState.REVOKING,
+                MetroraConnectionState.FORGETTING,
+            )
         ) return
+
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        val generation = ++requestGeneration
+        operationJob?.cancel()
+        val domainChanged = current.snapshot?.let {
+            it.projectScopeId != requestedScopeId ||
+                current.selectedPeriod != period ||
+                (trendGranularity != null && it.costTrendGranularity != trendGranularity)
+        } ?: false
 
         mutableState.update {
             it.copy(
-                selectedPeriod = period,
                 status = MetroraConnectionState.REFRESHING,
+                selectedPeriod = period,
+                selectedProjectId = requestedScopeId,
+                snapshot = if (domainChanged) null else it.snapshot,
+                foundation = if (domainChanged) null else it.foundation,
                 notice = null,
                 failure = null,
             )
         }
+        val foundationFallback = current.foundation
         operationJob = scope.launch {
             try {
                 refreshAndApply(
@@ -262,11 +288,14 @@ class MetroraCoordinator internal constructor(
                     allowOfflineFallback = true,
                     period = period,
                     trendGranularity = trendGranularity,
+                    projectScopeId = requestedScopeId,
+                    foundationFallback = foundationFallback,
+                    generation = generation,
                 )
             } catch (error: CancellationException) {
                 throw error
             } finally {
-                operationJob = null
+                if (requestGeneration == generation) operationJob = null
             }
         }
     }
@@ -276,11 +305,42 @@ class MetroraCoordinator internal constructor(
         refresh(period)
     }
 
+    /** Project scope is a canonical Desktop selection, not a local filter. */
+    fun selectProject(projectId: String) {
+        val current = mutableState.value
+        if (current.initializing || current.credentials == null || current.status in setOf(
+                MetroraConnectionState.PAIRING,
+                MetroraConnectionState.VERIFYING_SAS,
+                MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL,
+                MetroraConnectionState.REVOKING,
+                MetroraConnectionState.FORGETTING,
+            )
+        ) return
+        if (projectId != "all") {
+            val projectKnown = if (current.projectCatalog?.available == true) {
+                // Once the independent catalog is available it is the sole
+                // authority for existence. A period-scoped Foundation must
+                // not resurrect a Project deleted by Desktop.
+                current.projectCatalog.projectOption(projectId) != null
+            } else {
+                current.projectCatalog?.projectOption(projectId) != null ||
+                    current.foundation?.projectOption(projectId) != null
+            }
+            if (!projectKnown) return
+        }
+        if (projectId == current.selectedProjectId) return
+        refresh(
+            period = current.selectedPeriod,
+            trendGranularity = current.snapshot?.costTrendGranularity,
+            projectScopeId = projectId,
+        )
+    }
+
     fun selectTrendGranularity(granularity: String) {
         if (granularity !in SUPPORTED_TREND_GRANULARITIES) return
         val current = mutableState.value
         if (current.credentials == null || current.snapshot?.costTrendGranularity == granularity) return
-        refresh(current.selectedPeriod, granularity)
+        refresh(current.selectedPeriod, granularity, current.selectedProjectId)
     }
 
     fun revoke() {
@@ -374,6 +434,7 @@ class MetroraCoordinator internal constructor(
     fun disconnect() = revoke()
 
     override fun close() {
+        requestGeneration += 1
         operationJob?.cancel()
         pendingPairResult?.cancel()
         pendingPairResult = null
@@ -386,8 +447,10 @@ class MetroraCoordinator internal constructor(
         try {
             val credentials = store.loadCredentials()
             val snapshot = store.loadSnapshot()
+            val foundation = store.loadFoundation()
+            val projectCatalog = store.loadProjectCatalog()
             when (credentials) {
-                StorageRead.Missing -> restoreWithoutCredentials(snapshot)
+                StorageRead.Missing -> restoreWithoutCredentials(snapshot, foundation, projectCatalog)
                 is StorageRead.Corrupted -> {
                     mutableState.value = recoveryState(
                         credentials = null,
@@ -399,7 +462,7 @@ class MetroraCoordinator internal constructor(
                         detail = "Saved pairing credentials need recovery",
                     )
                 }
-                is StorageRead.Present -> restorePaired(credentials.value, snapshot)
+                is StorageRead.Present -> restorePaired(credentials.value, snapshot, foundation, projectCatalog)
             }
         } catch (error: CancellationException) {
             throw error
@@ -413,9 +476,41 @@ class MetroraCoordinator internal constructor(
         }
     }
 
-    private fun restoreWithoutCredentials(snapshot: StorageRead<UsageSnapshot>) {
+    private fun restoreWithoutCredentials(
+        snapshot: StorageRead<UsageSnapshot>,
+        foundation: StorageRead<MobileFoundationSnapshot>,
+        projectCatalog: StorageRead<ProjectCatalogSnapshot>,
+    ) {
         mutableState.value = when (snapshot) {
-            StorageRead.Missing -> MetroraUiState(initializing = false)
+            StorageRead.Missing -> when (foundation) {
+                StorageRead.Missing -> when (projectCatalog) {
+                    StorageRead.Missing -> MetroraUiState(initializing = false)
+                    is StorageRead.Present -> recoveryState(
+                        credentials = null,
+                        snapshot = null,
+                        reason = MetroraFailureReason.INCONSISTENT_LOCAL_STATE,
+                        detail = "A saved Project catalog exists without a saved pairing",
+                    )
+                    is StorageRead.Corrupted -> recoveryState(
+                        credentials = null,
+                        snapshot = null,
+                        reason = MetroraFailureReason.STORAGE_CORRUPTED,
+                        detail = "Saved Project data needs recovery",
+                    )
+                }
+                is StorageRead.Present -> recoveryState(
+                    credentials = null,
+                    snapshot = null,
+                    reason = MetroraFailureReason.INCONSISTENT_LOCAL_STATE,
+                    detail = "A saved mobile foundation exists without a saved pairing",
+                )
+                is StorageRead.Corrupted -> recoveryState(
+                    credentials = null,
+                    snapshot = null,
+                    reason = MetroraFailureReason.STORAGE_CORRUPTED,
+                    detail = "Saved mobile data needs recovery",
+                )
+            }
             is StorageRead.Present -> recoveryState(
                 credentials = null,
                 snapshot = null,
@@ -434,6 +529,8 @@ class MetroraCoordinator internal constructor(
     private suspend fun restorePaired(
         credentials: PairingCredentials,
         snapshot: StorageRead<UsageSnapshot>,
+        foundation: StorageRead<MobileFoundationSnapshot>,
+        projectCatalog: StorageRead<ProjectCatalogSnapshot>,
     ) {
         if (!api.localIdentityMatches(credentials)) {
             mutableState.value = recoveryState(
@@ -444,18 +541,44 @@ class MetroraCoordinator internal constructor(
             )
             return
         }
+        val persistedSnapshot = (snapshot as? StorageRead.Present<UsageSnapshot>)?.value
+            ?.takeIf { it.desktopId == credentials.serverFingerprint }
+        val usableFoundation = when (foundation) {
+            StorageRead.Missing -> null
+            is StorageRead.Present -> foundation.value.takeIf {
+                persistedSnapshot == null || foundationMatches(
+                    it,
+                    credentials,
+                    persistedSnapshot.projectScopeId,
+                    persistedSnapshot,
+                    requestedTrendGranularity = null,
+                )
+            }
+            is StorageRead.Corrupted -> {
+                runCatching { store.clearFoundation() }
+                null
+            }
+        }
+        val usableProjectCatalog = when (projectCatalog) {
+            StorageRead.Missing -> null
+            is StorageRead.Present -> projectCatalog.value.takeIf { it.desktopId == credentials.serverFingerprint }
+            is StorageRead.Corrupted -> {
+                runCatching { store.clearProjectCatalog() }
+                null
+            }
+        }
         when (snapshot) {
-            StorageRead.Missing -> mutableState.value = restoredState(credentials, null)
+            StorageRead.Missing -> mutableState.value = restoredState(credentials, null, usableFoundation, usableProjectCatalog)
             is StorageRead.Present -> {
                 val usable = snapshot.value.takeIf { it.desktopId == credentials.serverFingerprint }
-                mutableState.value = restoredState(credentials, usable)
+                mutableState.value = restoredState(credentials, usable, usableFoundation, usableProjectCatalog)
             }
             is StorageRead.Corrupted -> {
                 val cleanupFailure = runCatching { store.clearSnapshot() }.exceptionOrNull()
                 mutableState.value = if (cleanupFailure == null) {
-                    restoredState(credentials, null).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
+                    restoredState(credentials, null, usableFoundation, usableProjectCatalog).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
                 } else {
-                    restoredState(credentials, null).copy(
+                    restoredState(credentials, null, usableFoundation, usableProjectCatalog).copy(
                         status = MetroraConnectionState.ERROR,
                         failure = localFailure(
                             MetroraFailureReason.STORAGE_CORRUPTED,
@@ -467,12 +590,31 @@ class MetroraCoordinator internal constructor(
         }
     }
 
-    private fun restoredState(credentials: PairingCredentials, snapshot: UsageSnapshot?): MetroraUiState =
+    private fun restoredState(
+        credentials: PairingCredentials,
+        snapshot: UsageSnapshot?,
+        foundation: MobileFoundationSnapshot? = null,
+        projectCatalog: ProjectCatalogSnapshot? = null,
+    ): MetroraUiState =
         MetroraUiState(
             initializing = false,
             status = MetroraConnectionState.RESTORED,
+            selectedPeriod = (snapshot?.periodLabel ?: foundation?.periodLabel)?.let(::periodKeyFromLabel) ?: "month",
             credentials = credentials,
             snapshot = snapshot,
+            foundation = foundation,
+            projectCatalog = projectCatalog,
+            capabilities = foundation?.capabilities ?: CapabilityDiscovery.unavailable(),
+            selectedProjectId = listOfNotNull(
+                foundation?.projectScopeId,
+                snapshot?.projectScopeId,
+            ).firstOrNull { id ->
+                when {
+                    id == "all" -> true
+                    projectCatalog?.available == true -> projectCatalog.projectOption(id) != null
+                    else -> projectCatalog?.projectOption(id) != null || foundation?.projectOption(id) != null
+                }
+            } ?: "all",
         )
 
     private suspend fun refreshAndApply(
@@ -482,16 +624,76 @@ class MetroraCoordinator internal constructor(
         preservePairingSuccess: Boolean = false,
         period: String = mutableState.value.selectedPeriod,
         trendGranularity: String? = null,
+        projectScopeId: String? = mutableState.value.selectedProjectId,
+        foundationFallback: MobileFoundationSnapshot? = mutableState.value.foundation,
+        generation: Long = requestGeneration,
     ) {
         try {
-            val snapshot = api.fetchUsage(credentials, period, trendGranularity)
-            currentCoroutineContext().ensureActive()
-            store.saveSnapshot(snapshot)
+            ensureLatest(generation)
+            val beforeCatalog = mutableState.value.projectCatalog
+            val catalog = resolveProjectCatalog(
+                credentials,
+                beforeCatalog,
+                foundationFallback,
+            )
+            ensureLatest(generation)
+            if (catalog != null && catalog != beforeCatalog) {
+                store.saveProjectCatalog(catalog)
+                mutableState.update { state ->
+                    state.copy(
+                        projectCatalog = catalog,
+                        selectedProjectId = state.selectedProjectId.takeIf { id ->
+                            id == "all" || catalog.projectOption(id) != null
+                        } ?: "all",
+                    )
+                }
+            }
+            val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+            val effectiveScopeId = if (requestedScopeId != "all" && catalog?.available == true) {
+                requestedScopeId.takeIf { catalog.projectOption(it) != null } ?: "all"
+            } else {
+                requestedScopeId
+            }
+            val snapshot = api.fetchUsageForScope(credentials, period, trendGranularity, effectiveScopeId)
+            ensureLatest(generation)
+            if (snapshot.desktopId != credentials.serverFingerprint || snapshot.projectScopeId != effectiveScopeId) {
+                throw MetroraException(
+                    MetroraFailure(
+                        MetroraOperation.REFRESH,
+                        MetroraFailureCategory.MALFORMED_RESPONSE,
+                        MetroraFailureReason.MALFORMED_RESPONSE,
+                        "Desktop returned a usage scope that does not match the request",
+                    ),
+                )
+            }
+            val current = mutableState.value
+            val capabilities = optionalCapabilities(credentials, current.capabilities)
+            ensureLatest(generation)
+            val foundation = resolveFoundation(
+                credentials = credentials,
+                period = period,
+                trendGranularity = trendGranularity,
+                projectScopeId = effectiveScopeId,
+                snapshot = snapshot,
+                fallback = current.foundation,
+                requestedTrendGranularity = trendGranularity,
+            )
+            ensureLatest(generation)
+            // Usage and the period-scoped Foundation are committed together;
+            // the catalog was already persisted independently above so a
+            // period-domain failure cannot erase Project identity.
+            store.saveSnapshotFoundationAndCatalog(snapshot, foundation, catalog)
+            ensureLatest(generation)
             mutableState.update {
                 it.copy(
                     initializing = false,
                     status = MetroraConnectionState.CONNECTED,
+                    selectedPeriod = period,
                     snapshot = snapshot,
+                    foundation = foundation,
+                    projectCatalog = catalog,
+                    capabilities = capabilities,
+                    selectedProjectId = snapshot.projectScopeId,
                     notice = successNotice,
                     failure = null,
                 )
@@ -499,14 +701,155 @@ class MetroraCoordinator internal constructor(
         } catch (error: CancellationException) {
             throw error
         } catch (error: MetroraException) {
+            if (requestGeneration != generation) return
             applyFailure(error.failure, allowOfflineFallback, preservePairingSuccess)
         } catch (error: Exception) {
+            if (requestGeneration != generation) return
             applyFailure(
                 localFailure(MetroraFailureReason.STORAGE_CORRUPTED, error.javaClass.simpleName),
                 allowOfflineFallback,
                 preservePairingSuccess,
             )
         }
+    }
+
+    private suspend fun optionalCapabilities(
+        credentials: PairingCredentials,
+        fallback: CapabilityDiscovery,
+    ): CapabilityDiscovery = try {
+        api.fetchCapabilities(credentials)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        fallback
+    }
+
+    private suspend fun resolveProjectCatalog(
+        credentials: PairingCredentials,
+        fallback: ProjectCatalogSnapshot?,
+        foundationFallback: MobileFoundationSnapshot?,
+    ): ProjectCatalogSnapshot? = try {
+        val candidate = api.fetchProjectCatalog(credentials)
+        when {
+            candidate.available && candidate.desktopId == credentials.serverFingerprint -> candidate
+            else -> projectCatalogFallback(credentials, fallback, foundationFallback)
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        projectCatalogFallback(credentials, fallback, foundationFallback)
+    }
+
+    private fun projectCatalogFallback(
+        credentials: PairingCredentials,
+        fallback: ProjectCatalogSnapshot?,
+        foundationFallback: MobileFoundationSnapshot?,
+    ): ProjectCatalogSnapshot? {
+        fallback?.takeIf { it.available && it.desktopId == credentials.serverFingerprint }?.let {
+            return it.asLocallyCached()
+        }
+        foundationFallback?.takeIf {
+            it.available && it.desktopId == credentials.serverFingerprint && it.projectOptions.isNotEmpty()
+        }?.let { foundation ->
+            return ProjectCatalogSnapshot(
+                desktopId = foundation.desktopId,
+                generatedAt = foundation.generatedAt,
+                retrievedAtEpochMs = foundation.retrievedAtEpochMs,
+                projectOptions = foundation.projectOptions,
+                sourceProjects = foundation.sourceProjects,
+                freshness = when (foundation.activityFreshness) {
+                    CapabilityFreshness.LIVE -> CapabilityFreshness.CACHED
+                    CapabilityFreshness.CACHED -> CapabilityFreshness.CACHED
+                    CapabilityFreshness.UNKNOWN -> CapabilityFreshness.UNKNOWN
+                },
+                available = true,
+            )
+        }
+        return null
+    }
+
+    private suspend fun resolveFoundation(
+        credentials: PairingCredentials,
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+        snapshot: UsageSnapshot,
+        fallback: MobileFoundationSnapshot?,
+        requestedTrendGranularity: String?,
+    ): MobileFoundationSnapshot? = try {
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        val compatibleFallback = fallback?.takeIf {
+            foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+        }
+        val candidate = api.fetchFoundation(credentials, period, trendGranularity, requestedScopeId)
+        when {
+            candidate.available && foundationMatches(candidate, credentials, requestedScopeId, snapshot, requestedTrendGranularity) -> candidate
+            compatibleFallback != null -> compatibleFallback.asLocallyCached()
+            else -> null
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: MetroraException) {
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        if (fallback?.let {
+            foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+        } == true) {
+            fallback.asLocallyCached()
+        } else {
+            null
+        }
+    } catch (error: Exception) {
+        val requestedScopeId = normalizedProjectScopeId(projectScopeId)
+        if (fallback?.let {
+            foundationMatches(it, credentials, requestedScopeId, snapshot, requestedTrendGranularity)
+        } == true) {
+            fallback.asLocallyCached()
+        } else {
+            null
+        }
+    }
+
+    private fun ensureLatest(generation: Long) {
+        if (requestGeneration != generation) throw CancellationException("stale refresh request")
+    }
+
+    private fun foundationMatches(
+        foundation: MobileFoundationSnapshot,
+        credentials: PairingCredentials,
+        projectScopeId: String,
+        snapshot: UsageSnapshot,
+        requestedTrendGranularity: String?,
+    ): Boolean {
+        if (!foundation.available || foundation.desktopId != credentials.serverFingerprint) return false
+        if (foundation.projectScopeId != projectScopeId || snapshot.projectScopeId != projectScopeId) return false
+        if (foundation.periodLabel == "unknown" || foundation.periodLabel != snapshot.periodLabel) return false
+        return foundation.trendGranularity == snapshot.costTrendGranularity ||
+            (foundation.trendGranularity == null && requestedTrendGranularity == null &&
+                snapshot.costTrendGranularity == "day" && legacyImplicitDayPeriod(snapshot.periodLabel))
+    }
+
+    /**
+     * Older Desktops omitted trend metadata. Their implicit day contract is
+     * safe only for short/default periods; Lifetime and All have canonical
+     * period-dependent dimensions and must remain unavailable until the
+     * authority communicates them explicitly.
+     */
+    private fun legacyImplicitDayPeriod(periodLabel: String): Boolean {
+        val normalized = periodLabel.trim().lowercase()
+        return !normalized.contains("lifetime") && !normalized.contains("6 month")
+    }
+
+    private fun normalizedProjectScopeId(value: String?): String = value?.trim()?.takeIf { it.isNotEmpty() } ?: "all"
+
+    /** Recover the bounded Android preset from the canonical Desktop label. */
+    private fun periodKeyFromLabel(label: String): String = when (label.trim().lowercase()) {
+        "today" -> "today"
+        "last 7 days", "week" -> "week"
+        "last 30 days", "30 days" -> "30days"
+        "this month", "month" -> "month"
+        "last 6 months", "6 months", "all" -> "all"
+        "lifetime" -> "lifetime"
+        else -> "month"
     }
 
     private fun applyFailure(

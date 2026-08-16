@@ -12,7 +12,7 @@ authority. C3 rendering is an optional parity-gated projection of that result.
 
 Canonical analytics history is published only by explicit Metrora-owned
 analytics triggers. The generic publisher consumes the completed in-memory
-SessionCache v8 and DailyCache v18 objects and calls the existing projection,
+SessionCache v8 and DailyCache v19 objects and calls the existing projection,
 parity observer, and shadow-store contracts. It owns no Workspace creation,
 evidence acceptance, disclosure, or reviewed-production candidate authority.
 

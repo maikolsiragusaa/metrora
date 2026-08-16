@@ -37,6 +37,7 @@ describe('CompanionUsageV1', () => {
       kind: COMPANION_USAGE_KIND,
       version: COMPANION_USAGE_VERSION,
       generatedAt: '2026-07-31T10:30:00.000Z',
+      scope: { projectId: 'all' },
       period: { label: 'This month' },
       totals: {
         costMicrosUsd: 1_234_567,
@@ -213,12 +214,29 @@ describe('CompanionUsageV1', () => {
             { name: 'GPT-5.6 Sol', provider: 'provider-a', calls: 2, cost: 1 },
             { name: 'GPT-5.6 Sol', provider: 'provider-b', calls: 1, cost: 0.5 },
           ],
+          gap: { cost: 0.25, savingsUSD: 0, calls: 3 },
         },
       },
     })
 
     expect(payload.topModels[0]?.providerId).toBe('provider-a')
     expect(payload.models?.map(model => model.providerId)).toEqual(['provider-a', 'provider-b'])
+    expect(payload.modelAccountingGap).toEqual({ costMicrosUsd: 250_000, calls: 3 })
+  })
+
+  it('does not emit a floating-point dust residual as an Other models row', () => {
+    const payload = toCompanionUsageV1({
+      generated: '2026-08-15T10:30:00.000Z',
+      current: {
+        label: 'This month',
+        modelAccounting: {
+          rows: [],
+          gap: { cost: 0.0000001, savingsUSD: 0, calls: 0 },
+        },
+      },
+    })
+
+    expect(payload.modelAccountingGap).toBeUndefined()
   })
 
   it('keeps route provenance separate from canonical model branding', () => {
@@ -251,5 +269,32 @@ describe('CompanionUsageV1', () => {
     })
     expect(invalidBrand.topModels[0]).toMatchObject({ providerId: 'openai' })
     expect(invalidBrand.topModels[0]).not.toHaveProperty('brandId')
+  })
+
+  it('carries Project detail coverage as additive metadata', () => {
+    const payload = toCompanionUsageV1({
+      generated: '2026-08-14T10:00:00.000Z',
+      projectScope: { selectedId: 'mp_project' },
+      current: {
+        label: 'This month',
+        cost: 10,
+        calls: 4,
+        sessions: 2,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        topModels: [{ name: 'Live model', calls: 1, cost: 1 }],
+        projectDetailCoverage: { models: 'partial', tokens: 'unavailable', categories: 'unavailable', historical: true },
+      },
+    })
+
+    expect(payload.scope).toEqual({ projectId: 'mp_project' })
+    expect(payload.quality.projectDetailCoverage).toEqual({
+      models: 'partial',
+      tokens: 'unavailable',
+      categories: 'unavailable',
+      historical: true,
+    })
   })
 })

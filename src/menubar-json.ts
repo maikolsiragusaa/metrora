@@ -23,7 +23,7 @@ export type PeriodData = {
   cacheWriteTokens: number
   /// Total Codex credits consumed in the period (issues #408/#495). Optional so
   /// non-menubar PeriodData producers don't have to compute it.
-  codexCredits?: number
+  codexCredits?: number; projectDetailCoverage?: ProjectDetailCoverage
   categories: Array<{ name: string; cost: number; savingsUSD: number; turns: number; editTurns: number; oneShotTurns: number }>
   /// Token fields are add-only for compatibility with older PeriodData fixtures
   /// and producers. Durable day-backed producers populate all four; callers must
@@ -118,14 +118,13 @@ import type { PrRow, BranchRow } from './sessions-report.js'
 import type { ModelBrandId } from './model-brand.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
 import type { ModelAccountingRow } from './model-accounting-types.js'
-
+import type { ProjectDetailCoverage } from './project-coverage.js'
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
 const TOP_REWORKED_FILES_LIMIT = 8
-
 export type DailyModelBreakdown = {
   name: string
   cost: number
@@ -272,7 +271,7 @@ export type MenubarPayload = {
     /// Untruncated model accounting. Optional only for compatibility with older
     /// payloads; current producers always emit it from the same PeriodData used
     /// by headline cost/calls.
-    modelAccounting?: ModelAccounting
+    modelAccounting?: ModelAccounting; projectDetailCoverage?: ProjectDetailCoverage
     /** Presentation-sized projection above exact modelAccounting rows. */
     modelPresentation?: ModelPresentation
     /// See PeriodData.unpricedModels: usage priced at $0 for lack of pricing
@@ -397,6 +396,8 @@ export type MenubarPayload = {
   currency: { code: string; symbol: string; rate: number }
   combined?: CombinedUsage
   claudeConfigs?: ClaudeConfigSelector
+  projectScope?: import('./project-scope.js').ProjectScopePayload
+  mobileFoundation?: import('./sharing/mobile-foundation.js').MobileFoundationPayload
 }
 
 function oneShotRateFor(editTurns: number, oneShotTurns: number): number | null {
@@ -530,7 +531,6 @@ export type BreakdownArrays = {
   /// schema stable for consumers that don't care about local savings.
   localModelSavings?: LocalModelSavings
 }
-
 export function buildMenubarPayload(
   current: PeriodData,
   providers: ProviderCost[],
@@ -562,7 +562,7 @@ export function buildMenubarPayload(
       topActivities: buildTopActivities(current.categories),
       topModels: buildTopModels(current.models),
       modelAccounting,
-      modelPresentation: buildModelPresentation(modelAccounting),
+      modelPresentation: buildModelPresentation(modelAccounting), projectDetailCoverage: current.projectDetailCoverage,
       unpricedModels: current.unpricedModels ?? [],
       localModelSavings: breakdowns?.localModelSavings ?? { totalUSD: 0, calls: 0, byModel: [], byProvider: [] },
       providers: buildProviders(providers),

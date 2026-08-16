@@ -30,6 +30,15 @@ function persistConfigSource(id: string | null): void {
   else removeStorage('claudeConfigSource')
 }
 
+function initialProjectScope(): string {
+  return readStorage('metroraProjectScope') || 'all'
+}
+
+function persistProjectScope(id: string): void {
+  if (id === 'all') removeStorage('metroraProjectScope')
+  else writeStorage('metroraProjectScope', id)
+}
+
 export function providerName(provider: string): string {
   if (provider === 'all') return 'All providers'
   return provider
@@ -52,6 +61,7 @@ export function useDesktopScope({
   const [provider, setProvider] = useState<string>('all')
   const [customRange, setCustomRange] = useState<DateRange | null>(null)
   const [claudeConfigSource, setClaudeConfigSource] = useState<string | null>(initialConfigSource)
+  const [metroraProjectId, setMetroraProjectId] = useState<string>(initialProjectScope)
 
   const sectionCapabilities = DESKTOP_SECTION_CAPABILITIES[section]
   const scopedClaudeConfigSource = sectionCapabilities.claudeConfig ? claudeConfigSource : null
@@ -85,6 +95,12 @@ export function useDesktopScope({
     setProvider(value)
   }, [claudeConfigSource])
 
+  const onProjectScopeSelect = useCallback((id: string) => {
+    if (!id) return
+    setMetroraProjectId(id)
+    persistProjectScope(id)
+  }, [])
+
   const providerOptions = useMemo(() => [
     { value: 'all', label: 'All providers' },
     ...detectedProviders.map(entry => ({ value: entry.id, label: entry.label })),
@@ -101,9 +117,11 @@ export function useDesktopScope({
     scopedClaudeConfigSource,
     providerOptions,
     providerLabel,
+    metroraProjectId,
     onPeriodChange,
     onRangeSelect,
     onProviderSelect,
     onConfigSelect,
+    onProjectScopeSelect,
   }
 }

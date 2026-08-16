@@ -8,6 +8,8 @@ import { sanitizeModels } from './daily-cache-model-detail.js'
 import type { CategoryDayStats, DailyCache, DailyEntry, ModelDayStats, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
 import { mergeDayEntries, setOwn } from './daily-cache-merge.js'
 import { writeDailyCacheGenerationFromPayloadV1 } from './cache-generation.js'
+// v19: Source Project daily rollups add factual token evidence. v18 history is
+// adopted losslessly, re-derived where sources survive, and carried otherwise.
 // v18: Copilot accounting changed; v17 history is adopted untrusted, re-derived where sources survive, and carried otherwise.
 // Bumped to 16: historical per-call cost assignments. Surviving source days
 // re-derive under immutable date-effective settlements; sourceless provider
@@ -65,12 +67,12 @@ import { writeDailyCacheGenerationFromPayloadV1 } from './cache-generation.js'
 // that older binaries skipped. v8 added local-model savings to the daily
 // rollup; the `savingsConfigHash` field is invalidated separately when the
 // user changes their `localModelSavings` mapping.
-export const DAILY_CACHE_VERSION = 18
+export const DAILY_CACHE_VERSION = 19
 const MIN_SUPPORTED_VERSION = 15
 // A durable source is allowed to outlive the bounded detailed session cache.
 // This marker makes the first run after that contract change an explicit,
 // one-time reconciliation rather than relying on the ordinary 365-day poll.
-export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v1'
+export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v2-project-tokens'
 // Version-suffixed so different binaries each own a distinct file and never
 // clobber an incompatible schema. Bumping the version mints a fresh filename;
 // adoptOlderDailyCaches then unions days out of every previous file (including
@@ -179,13 +181,17 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
   const out: NonNullable<DailyEntry['projects']> = {}
   for (const [name, p] of Object.entries(raw)) {
     if (!isRecord(p)) continue // Object.entries + setOwn safely preserve prototype-property names
-    setOwn(out, name, {
+    const clean: ProjectDayStats = {
       cost: num(p.cost),
       calls: num(p.calls),
       savingsUSD: num(p.savingsUSD),
       sessions: num(p.sessions),
       ...(typeof p.path === 'string' && p.path.length > 0 ? { path: p.path } : {}),
-    })
+    }
+    for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+      if (typeof p[field] === 'number' && Number.isFinite(p[field])) clean[field] = Math.max(0, p[field])
+    }
+    setOwn(out, name, clean)
   }
   return Object.keys(out).length > 0 ? { projects: out } : {}
 }

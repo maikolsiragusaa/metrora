@@ -16,6 +16,16 @@ export type CompanionModelUsageV1 = {
   brandId?: ModelBrandId
 }
 
+/**
+ * Exact cost/call accounting that cannot be assigned to a retained named
+ * model without inventing model identity. This is a residual, not a model
+ * row, and intentionally carries no provider, route, pricing, or token split.
+ */
+export type ModelAccountingGapV1 = {
+  costMicrosUsd: number
+  calls: number
+}
+
 export type CompanionTrendPointV1 = {
   date: string
   costMicrosUsd: number
@@ -31,6 +41,8 @@ export type CompanionUsageV1 = {
   kind: typeof COMPANION_USAGE_KIND
   version: typeof COMPANION_USAGE_VERSION
   generatedAt: string
+  /** Additive scope identity; absent on older Desktop payloads. */
+  scope?: { projectId: string }
   period: {
     label: string
   }
@@ -51,8 +63,17 @@ export type CompanionUsageV1 = {
   topModels: CompanionModelUsageV1[]
   /** Bounded full model breakdown. Older payloads may omit this field. */
   models?: CompanionModelUsageV1[]
+  /** Additive factual residual for a neutral "Other models" presentation row. */
+  modelAccountingGap?: ModelAccountingGapV1
   quality: {
     pricingCoverage: number | null
+    /** Additive Project-scoped detail coverage; zero is never used as a proxy. */
+    projectDetailCoverage?: {
+      models: 'complete' | 'partial' | 'unavailable'
+      tokens: 'complete' | 'partial' | 'unavailable'
+      categories: 'complete' | 'partial' | 'unavailable'
+      historical: boolean
+    }
   }
   /** Optional so older Desktop payloads remain valid for companions. */
   trend?: CompanionTrendV1
@@ -87,6 +108,29 @@ function nullableNonNegativeNumber(value: unknown): number | null {
 function nullableFraction(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) return null
   return value
+}
+
+function materialModelAccountingGap(value: unknown): ModelAccountingGapV1 | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const gap = value as JsonRecord
+  const costMicrosUsd = usdToMicros(gap.cost)
+  const calls = nonNegativeInteger(gap.calls)
+  // Keep the bounded contract free of floating-point dust rows. A positive
+  // call remainder remains material even when its cost rounds below one
+  // micro-dollar.
+  return costMicrosUsd > 0 || calls > 0 ? { costMicrosUsd, calls } : undefined
+}
+
+function projectDetailCoverage(value: unknown): CompanionUsageV1['quality']['projectDetailCoverage'] | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const coverage = value as JsonRecord
+  const state = (candidate: unknown): 'complete' | 'partial' | 'unavailable' | undefined =>
+    candidate === 'complete' || candidate === 'partial' || candidate === 'unavailable' ? candidate : undefined
+  const models = state(coverage.models)
+  const tokens = state(coverage.tokens)
+  const categories = state(coverage.categories)
+  if (!models || !tokens || !categories || typeof coverage.historical !== 'boolean') return undefined
+  return { models, tokens, categories, historical: coverage.historical }
 }
 
 function usdToMicros(value: unknown): number {
@@ -128,7 +172,7 @@ function dateSpanDays(from: string, to: string): number {
   return Math.max(0, Math.round((end - start) / 86_400_000))
 }
 
-function trendGranularity(
+export function companionTrendGranularity(
   query: { period?: string; from?: string; to?: string; granularity?: string },
   bounds: { from: string; to: string },
 ): CompanionTrendV1['granularity'] {
@@ -143,7 +187,7 @@ function trendGranularity(
   return 'day'
 }
 
-function bucketDate(date: string, granularity: CompanionTrendV1['granularity']): string {
+export function companionTrendBucketDate(date: string, granularity: CompanionTrendV1['granularity']): string {
   if (granularity === 'day') return date
   if (granularity === 'month') return date.slice(0, 7) + '-01'
   const parsed = new Date(`${date}T00:00:00.000Z`)
@@ -154,9 +198,17 @@ function bucketDate(date: string, granularity: CompanionTrendV1['granularity']):
 
 function trendBounds(
   generatedAt: string,
-  query: { period?: string; from?: string; to?: string },
+  query: { period?: string; from?: string; to?: string; effectiveFrom?: string; effectiveTo?: string },
 ): { from: string; to: string } {
   const generatedDate = safeDate(generatedAt.slice(0, 10)) ?? new Date().toISOString().slice(0, 10)
+  const resolvedFrom = safeDate(query.effectiveFrom)
+  const resolvedTo = safeDate(query.effectiveTo)
+  if (resolvedFrom || resolvedTo) {
+    return {
+      from: resolvedFrom ?? shiftDate(resolvedTo ?? generatedDate, -180),
+      to: resolvedTo ?? generatedDate,
+    }
+  }
   const explicitFrom = safeDate(query.from)
   const explicitTo = safeDate(query.to)
   if (explicitFrom || explicitTo) {
@@ -188,7 +240,7 @@ function companionTrend(
   root: JsonRecord,
   generatedAt: string,
   periodLabel: string,
-  query: { period?: string; from?: string; to?: string; granularity?: string },
+  query: { period?: string; from?: string; to?: string; granularity?: string; effectiveFrom?: string; effectiveTo?: string },
 ): CompanionTrendV1 | undefined {
   if (typeof root.history !== 'object' || root.history === null || Array.isArray(root.history)) return undefined
   const history = root.history as JsonRecord
@@ -199,14 +251,14 @@ function companionTrend(
       : null
   if (!source) return undefined
   const bounds = trendBounds(generatedAt, query)
-  const granularity = trendGranularity(query, bounds)
+  const granularity = companionTrendGranularity(query, bounds)
   const totals = new Map<string, number>()
   source.forEach((value) => {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
       const day = value as JsonRecord
       const date = safeDate(day.date)
       if (!date || date < bounds.from || date > bounds.to) return null
-      const bucket = bucketDate(date, granularity)
+      const bucket = companionTrendBucketDate(date, granularity)
       const next = (totals.get(bucket) ?? 0) + usdToMicros(day.cost)
       totals.set(bucket, Math.min(MAX_SAFE_MICROS_USD, next))
       return null
@@ -232,7 +284,14 @@ function companionTrend(
  */
 export function toCompanionUsageV1(
   payload: unknown,
-  query: { period?: string; from?: string; to?: string; granularity?: string } = {},
+  query: {
+    period?: string
+    from?: string
+    to?: string
+    granularity?: string
+    effectiveFrom?: string
+    effectiveTo?: string
+  } = {},
 ): CompanionUsageV1 {
   const root = record(payload, 'usage payload')
   const current = record(root.current, 'usage payload current period')
@@ -276,12 +335,20 @@ export function toCompanionUsageV1(
       .map(mapModel)
       .filter((value): value is CompanionModelUsageV1 => value !== null)
     : undefined
+  const modelAccountingGap = materialModelAccountingGap(accounting?.gap)
 
   const label = typeof current.label === 'string' && current.label.trim()
     ? current.label.trim().slice(0, 120)
     : 'Selected period'
 
   const generatedAt = safeGeneratedAt(root.generated)
+  const projectScope = root.projectScope && typeof root.projectScope === 'object' && !Array.isArray(root.projectScope)
+    ? root.projectScope as JsonRecord
+    : null
+  const projectId = typeof projectScope?.selectedId === 'string' && projectScope.selectedId.trim()
+    ? projectScope.selectedId.trim().slice(0, 120)
+    : 'all'
+  const coverage = projectDetailCoverage(current.projectDetailCoverage)
   const periodLabel = typeof current.label === 'string' && current.label.trim()
     ? current.label.trim().slice(0, 120)
     : 'Selected period'
@@ -291,6 +358,7 @@ export function toCompanionUsageV1(
     kind: COMPANION_USAGE_KIND,
     version: COMPANION_USAGE_VERSION,
     generatedAt,
+    scope: { projectId },
     period: { label },
     totals: {
       costMicrosUsd: usdToMicros(current.cost),
@@ -308,8 +376,10 @@ export function toCompanionUsageV1(
     },
     topModels,
     ...(models ? { models } : {}),
+    ...(modelAccountingGap ? { modelAccountingGap } : {}),
     quality: {
       pricingCoverage: nullableFraction(current.pricingCoverage),
+      ...(coverage ? { projectDetailCoverage: coverage } : {}),
     },
     ...(trend ? { trend } : {}),
   }

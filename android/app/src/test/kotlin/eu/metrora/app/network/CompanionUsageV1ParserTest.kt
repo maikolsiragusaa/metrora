@@ -1,6 +1,8 @@
 package eu.metrora.app.network
 
 import eu.metrora.app.testCredentials
+import eu.metrora.app.data.DetailCoverage
+import eu.metrora.app.data.ModelAccountingGap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -23,6 +25,7 @@ class CompanionUsageV1ParserTest {
                 "cacheHitPercent":16.7
               },
               "topModels":[{"name":"Model A","calls":5,"costMicrosUsd":750000,"estimatedCostMicrosUsd":120000}],
+              "modelAccountingGap":{"costMicrosUsd":250000,"calls":3},
               "quality":{"pricingCoverage":0.875},
               "trend":{"granularity":"day","periodLabel":"This month","buckets":[
                 {"date":"2026-08-01","costMicrosUsd":300000},
@@ -43,6 +46,8 @@ class CompanionUsageV1ParserTest {
         assertEquals(0.875, snapshot.pricingCoverage)
         assertEquals(2, snapshot.costTrend.size)
         assertEquals(120000L, snapshot.topModels.single().estimatedCostMicrosUsd)
+        assertEquals(ModelAccountingGap(250_000L, 3L), snapshot.modelAccountingGap)
+        assertEquals(snapshot.modelAccountingGap, eu.metrora.app.data.UsageSnapshot.fromJson(snapshot.toJson()).modelAccountingGap)
     }
 
     @Test
@@ -154,5 +159,29 @@ class CompanionUsageV1ParserTest {
         assertEquals(2, snapshot.models.size)
         assertEquals(listOf("anthropic", null), snapshot.models.map { it.providerId })
         assertEquals(listOf("anthropic", "anthropic"), snapshot.models.map { it.brandId })
+    }
+
+    @Test
+    fun preserves_project_cost_and_calls_while_marking_historical_detail_unavailable() {
+        val raw = """
+            {
+              "kind":"metrora.companion.usage",
+              "version":1,
+              "generatedAt":"2026-08-14T10:00:00Z",
+              "scope":{"projectId":"mp_project"},
+              "period":{"label":"This month"},
+              "totals":{"costMicrosUsd":10000000,"calls":4,"sessions":2,"tokens":{"input":100,"output":50,"cacheRead":0,"cacheWrite":0},"cacheHitPercent":0},
+              "topModels":[{"name":"Live model","providerId":"openai","brandId":"openai","calls":1,"costMicrosUsd":1000000}],
+              "quality":{"pricingCoverage":1,"projectDetailCoverage":{"models":"partial","tokens":"unavailable","categories":"unavailable","historical":true}}
+            }
+        """.trimIndent()
+
+        val snapshot = CompanionUsageV1Parser.parse(raw, testCredentials())
+
+        assertEquals("mp_project", snapshot.projectScopeId)
+        assertEquals(10_000_000L, snapshot.costMicrosUsd)
+        assertEquals(4L, snapshot.calls)
+        assertEquals(DetailCoverage.PARTIAL, snapshot.modelCoverage)
+        assertEquals(DetailCoverage.UNAVAILABLE, snapshot.tokenCoverage)
     }
 }

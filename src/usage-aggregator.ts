@@ -1,4 +1,3 @@
-import { homedir } from 'node:os'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
@@ -7,12 +6,7 @@ import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
 import { stat } from 'node:fs/promises'
 import { aggregateProjectsIntoDays, buildPeriodDataFromDays } from './day-aggregator.js'
-import {
-  durableProjectDisplayName,
-  hasDurableProjectFilter,
-  reconcileDurableProjectDay,
-  sliceDayToProvider,
-} from './durable-project-reconciliation.js'
+import { hasDurableProjectFilter, reconcileDurableProjectDay, sliceDayToProvider } from './durable-project-reconciliation.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
 import { enrichModelsWithObservedPerformance } from './model-performance.js'
 import { aggregateModels } from './models-report.js'
@@ -26,6 +20,17 @@ import { buildGranularHistory } from './granular-history.js'
 import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 import { buildUsageBreakdowns } from './usage-breakdowns.js'
+import { friendlyProject, populateProjectRollups } from './project-report.js'
+import { withProjectDetailCoverage } from './project-coverage.js'
+import { buildMobileFoundationPayload } from './sharing/mobile-foundation.js'
+import { readProjectRegistry } from './project-registry.js'
+import {
+  ALL_PROJECTS_SCOPE_ID,
+  buildProjectScopePayload,
+  filterDailyEntryByMetroraScope,
+  filterProjectsByMetroraScope,
+  type ProjectScopeId,
+} from './project-scope.js'
 // Row caps for the by-PR / by-branch payload aggregations, ranked by cost.
 const TOP_BRANCHES = 15
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -102,6 +107,10 @@ export type AggregateOpts = {
   provider?: string
   project?: string[]
   exclude?: string[]
+  /** Stable user-created Metrora Project scope; distinct from CLI name filters. */
+  metroraProjectId?: ProjectScopeId | null
+  /** Requested bounded trend bucket used by the mobile Foundation envelope. */
+  trendGranularity?: string
   daysSelection?: { range: DateRange; label: string; days: Set<string> } | null
   optimize?: boolean
   claudeConfigSourceId?: string | null
@@ -234,7 +243,14 @@ export type DurablePeriod = {
 export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<DurablePeriod> {
   const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
-  const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
+  const registryResult = await readProjectRegistry()
+  const registry = registryResult.registry
+  const scopeId = opts.metroraProjectId ?? ALL_PROJECTS_SCOPE_ID
+  const fp = (p: ProjectSummary[]) => filterProjectsByMetroraScope(
+    filterProjectsByName(p, opts.project ?? [], opts.exclude ?? []),
+    registry,
+    scopeId,
+  )
   const projectFilter = { include: opts.project, exclude: opts.exclude }
 
   const now = new Date()
@@ -279,11 +295,12 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
   const days = allDays.map(day => {
     const providerDay = pf === 'all' ? day : sliceDayToProvider(day, pf)
-    return reconcileDurableProjectDay(providerDay, projectFilter, {
-      preserveDetailedBreakdown: projectFilterActive && day.date === todayStr,
+    const scopedDay = filterDailyEntryByMetroraScope(providerDay, registry, scopeId, { preserveDetailedBreakdown: scopeId !== ALL_PROJECTS_SCOPE_ID && day.date === todayStr })
+    return reconcileDurableProjectDay(scopedDay, projectFilter, {
+      preserveDetailedBreakdown: (projectFilterActive || scopeId !== ALL_PROJECTS_SCOPE_ID) && day.date === todayStr,
     })
   })
-  const data = buildPeriodDataFromDays(days, periodInfo.label)
+  const data = withProjectDetailCoverage(buildPeriodDataFromDays(days, periodInfo.label), days, scopeId !== ALL_PROJECTS_SCOPE_ID, todayStr)
 
   // Enrich the cache-authoritative headline with fields DailyEntry cannot carry.
   // These are all derivable only from surviving sessions (estimated-cost markers,
@@ -319,9 +336,17 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
 export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<MenubarPayload> {
   const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
-  const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project ?? [], opts.exclude ?? [])
+  const registryResult = await readProjectRegistry()
+  const registry = registryResult.registry
+  const scopeId = opts.metroraProjectId ?? ALL_PROJECTS_SCOPE_ID
+  const fp = (p: ProjectSummary[]) => filterProjectsByMetroraScope(
+    filterProjectsByName(p, opts.project ?? [], opts.exclude ?? []),
+    registry,
+    scopeId,
+  )
   const projectFilter = { include: opts.project, exclude: opts.exclude }
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
+  const projectScopeActive = scopeId !== ALL_PROJECTS_SCOPE_ID
 
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -395,6 +420,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       provider: pf,
       project: opts.project,
       exclude: opts.exclude,
+      metroraProjectId: opts.metroraProjectId,
       daysSelection,
     })
     currentData = durable.data
@@ -463,6 +489,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   // in the cache, so the filtered view shows zero tokens (heatmap/trend still works on cost).
   const historyStartStr = toDateString(new Date(now.getFullYear(), now.getMonth(), now.getDate() - BACKFILL_DAYS))
   const allCacheDays = getDaysInRange(cache, historyStartStr, yesterdayStr)
+  const scopedCacheDays = allCacheDays.map(day => filterDailyEntryByMetroraScope(day, registry, scopeId))
 
   let dailyHistory
   if (isClaudeConfigScoped && claudeConfigs?.selectedId) {
@@ -475,12 +502,12 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       claudeConfigs.selectedId,
     )
     dailyHistory = dailyEntriesToHistory(aggregateProjectsIntoDays(historyProjects))
-  } else if (projectFilterActive) {
+  } else if (projectFilterActive || projectScopeActive) {
     // Historical project rollups own cost/calls/savings/session splits,
     // but not token/model/category splits. Keep those unavailable details empty
     // instead of assigning the whole day to every selected project. Today's
     // project-filtered live parse can preserve its detailed breakdown safely.
-    const historyFromCache = allCacheDays.map(day => reconcileDurableProjectDay(
+    const historyFromCache = scopedCacheDays.map(day => reconcileDurableProjectDay(
       isAllProviders ? day : sliceDayToProvider(day, pf),
       projectFilter,
     ))
@@ -531,71 +558,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     dailyHistory = [...historyFromCache, ...todayFromParse]
   }
 
-  const home = homedir()
-  const friendlyFromPath = (path: string | undefined, fallback: string): string => {
-    if (!path) return fallback
-    if (path === home || path === home + '/') return 'Home'
-    return path.split('/').filter(Boolean).pop() || fallback
-  }
-  const friendlyProject = (p: ProjectSummary) => friendlyFromPath(p.projectPath || p.project, p.project)
-  const sessionDetailsOf = (p: ProjectSummary) => [...p.sessions]
-    .sort((a, b) => b.totalCostUSD - a.totalCostUSD)
-    .slice(0, 10)
-    .map(s => ({
-      cost: s.totalCostUSD,
-      savingsUSD: s.totalSavingsUSD,
-      calls: s.apiCalls,
-      inputTokens: s.totalInputTokens,
-      outputTokens: s.totalOutputTokens,
-      date: s.firstTimestamp?.split('T')[0] ?? '',
-      models: Object.entries(s.modelBreakdown)
-        .map(([name, m]) => ({ name, cost: m.costUSD, savingsUSD: m.savingsUSD }))
-        .sort((a, b) => b.cost - a.cost)
-        .slice(0, 3),
-    }))
-
-  if (cacheDaysForPeriod !== null) {
-    // Project totals come from the SAME day set as the headline, so carried
-    // days count here too. The surviving-session parse contributes only what
-    // day entries cannot: the per-session drill-down and a fresher project
-    // path. Legacy residuals without a project split are represented by the
-    // synthetic Unattributed bucket, never assigned to a real project.
-    type CachedProjectTotal = { cost: number; savingsUSD: number; sessions: number; path?: string }
-    const cachedTotals = new Map<string, CachedProjectTotal>()
-    for (const d of cacheDaysForPeriod) {
-      for (const [name, p] of Object.entries(d.projects ?? {})) {
-        const acc = cachedTotals.get(name) ?? { cost: 0, savingsUSD: 0, sessions: 0 }
-        acc.cost += p.cost
-        acc.savingsUSD += p.savingsUSD
-        acc.sessions += p.sessions
-        if (!acc.path && p.path) acc.path = p.path
-        cachedTotals.set(name, acc)
-      }
-    }
-    const liveByName = new Map(scanProjects.map(p => [p.project, p]))
-    const names = new Set([...cachedTotals.keys(), ...liveByName.keys()])
-    currentData.projects = [...names].map(name => {
-      const cached = cachedTotals.get(name)
-      const live = liveByName.get(name)
-      return {
-        name: live ? friendlyProject(live) : friendlyFromPath(cached?.path, durableProjectDisplayName(name)),
-        cost: cached?.cost ?? live!.totalCostUSD,
-        savingsUSD: cached?.savingsUSD ?? live!.totalSavingsUSD,
-        // max for the same reason as the headline: start-day bucketing vs
-        // active-day counting, both lower bounds of distinct sessions.
-        sessions: Math.max(cached?.sessions ?? 0, live?.sessions.length ?? 0),
-        ...(live ? { sessionDetails: sessionDetailsOf(live) } : {}),
-      }
-    }).sort((a, b) => b.cost - a.cost)
-  } else {
-    currentData.projects = scanProjects.map(p => ({
-      name: friendlyProject(p),
-      cost: p.totalCostUSD,
-      savingsUSD: p.totalSavingsUSD,
-      sessions: p.sessions.length,
-      sessionDetails: sessionDetailsOf(p),
-    }))
-  }
+  populateProjectRollups(currentData, scanProjects, cacheDaysForPeriod)
 
   const effMap = aggregateModelEfficiency(scanProjects)
   currentData.modelEfficiency = [...effMap.entries()].map(([name, eff]) => ({
@@ -695,7 +658,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
   const periodDailyHistory = cacheDaysForPeriod ? dailyEntriesToHistory(cacheDaysForPeriod) : undefined
-  return withReadFreshness(
+  const payload = withReadFreshness(
     buildMenubarPayload(
       currentData,
       providers,
@@ -711,4 +674,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     cache,
     effectivelyScoped,
   )
+  payload.projectScope = buildProjectScopePayload(registry, registryResult.status, scanProjects, scopeId, cache.days)
+  payload.mobileFoundation = buildMobileFoundationPayload(payload, scanProjects, registry, opts.trendGranularity)
+  return payload
 }

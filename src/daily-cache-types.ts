@@ -19,8 +19,21 @@ export type CategoryDayStats = { turns: number; cost: number; savingsUSD: number
 
 /// `path` is the project's filesystem path when known — it is what display
 /// layers derive a friendly name from once the sessions that carried the
-/// mapping are gone.
-export type ProjectDayStats = { cost: number; calls: number; savingsUSD: number; sessions: number; path?: string }
+/// mapping are gone. Token fields are optional because pre-v19 days never
+/// materialized a Source Project token split; absence is unknown, not zero.
+export type ProjectDayStats = {
+  cost: number
+  calls: number
+  savingsUSD: number
+  sessions: number
+  inputTokens?: number
+  outputTokens?: number
+  /// Separately observed reasoning/thinking tokens. Optional for legacy days.
+  reasoningTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  path?: string
+}
 
 export type ProviderDaySlice = {
   calls: number
@@ -62,7 +75,9 @@ export type DailyEntry = {
   providers: Record<string, ProviderDaySlice>
   /// Per-project rollup (session-level project attribution). Absent on days
   /// recorded before v15 — those days keep their totals but have no project
-  /// split, and nothing can reconstruct one once the sources are gone.
+  /// split, and nothing can reconstruct one once the sources are gone. On
+  /// pre-v19 days the project rows can exist without token fields; that is
+  /// preserved as unknown project-token evidence.
   projects?: Record<string, ProjectDayStats>
   /// Present when some of this day's data was carried forward from an earlier
   /// cache generation instead of re-derived from session files (the files no

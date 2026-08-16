@@ -1,6 +1,11 @@
 import { loadPricing } from './models.js'
 import { ShareController, type ShareStatus } from './sharing/share-controller.js'
-import { buildCompanionUsage } from './sharing/share-run.js'
+import {
+  buildCompanionCapabilities,
+  buildCompanionFoundation,
+  buildCompanionProjectCatalog,
+  buildCompanionUsage,
+} from './sharing/share-run.js'
 import { loadShareAlways } from './sharing/store.js'
 
 export type DesktopShareRuntimeV1 = {
@@ -18,7 +23,13 @@ export type DesktopShareRuntimeV1 = {
 export async function createDesktopShareRuntime(port = 7777): Promise<DesktopShareRuntimeV1> {
   let pricingReady: Promise<void> | null = null
   const ensurePricing = (): Promise<void> => pricingReady ??= loadPricing()
-  const share = new ShareController(query => buildCompanionUsage(query), port)
+  const share = new ShareController(
+    query => buildCompanionUsage(query),
+    port,
+    () => buildCompanionCapabilities(),
+    query => buildCompanionFoundation(query),
+    () => buildCompanionProjectCatalog(),
+  )
 
   if (await loadShareAlways()) {
     await ensurePricing()

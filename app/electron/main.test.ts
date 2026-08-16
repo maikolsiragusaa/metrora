@@ -37,6 +37,12 @@ function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
 const CHANNELS = [
   'metrora:getOverview',
   'metrora:getQuota',
+  'metrora:getProjects',
+  'metrora:createProject',
+  'metrora:updateProject',
+  'metrora:deleteProject',
+  'metrora:assignSourceProject',
+  'metrora:unassignSourceProject',
   'metrora:getPlans',
   'metrora:getActReport',
   'metrora:getModels',

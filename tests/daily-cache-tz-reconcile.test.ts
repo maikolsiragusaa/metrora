@@ -38,8 +38,24 @@ function category(turns: number, cost: number): CategoryDayStats {
   return { turns, cost, savingsUSD: 0, editTurns: turns, oneShotTurns: turns }
 }
 
-function project(calls: number, cost: number, sessions: number): ProjectDayStats {
-  return { calls, cost, savingsUSD: 0, sessions, path: 'C:/work/metrora' }
+function project(
+  calls: number,
+  cost: number,
+  sessions: number,
+  tokens: { inputTokens: number; outputTokens: number; reasoningTokens: number } = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+): ProjectDayStats {
+  return {
+    calls,
+    cost,
+    savingsUSD: 0,
+    sessions,
+    inputTokens: tokens.inputTokens,
+    outputTokens: tokens.outputTokens,
+    reasoningTokens: tokens.reasoningTokens,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    path: 'C:/work/metrora',
+  }
 }
 
 function slice(opts: {
@@ -66,7 +82,13 @@ function slice(opts: {
     oneShotTurns: turns,
     models: { [MODEL]: model(opts.calls, opts.cost, opts.inputTokens, opts.outputTokens, opts.reasoningTokens) },
     categories: { [CATEGORY]: category(turns, opts.cost) },
-    projects: { [PROJECT]: project(opts.calls, opts.cost, opts.sessions) },
+    projects: {
+      [PROJECT]: project(opts.calls, opts.cost, opts.sessions, {
+        inputTokens: opts.inputTokens,
+        outputTokens: opts.outputTokens,
+        reasoningTokens: opts.reasoningTokens,
+      }),
+    },
   }
 }
 
@@ -159,7 +181,17 @@ describe('timezone carry reconciliation', () => {
       modelProvider: 'openai',
       sourceProviders: ['copilot'],
     })
-    expect(residual.projects?.[PROJECT]).toMatchObject({ calls: 1, cost: 20, sessions: 1, path: 'C:/work/metrora' })
+    expect(residual.projects?.[PROJECT]).toMatchObject({
+      calls: 1,
+      cost: 20,
+      sessions: 1,
+      inputTokens: 60,
+      outputTokens: 12,
+      reasoningTokens: 6,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      path: 'C:/work/metrora',
+    })
 
     expect(residual.calls + fresh.calls).toBe(2)
     expect(residual.inputTokens + fresh.inputTokens).toBe(100)

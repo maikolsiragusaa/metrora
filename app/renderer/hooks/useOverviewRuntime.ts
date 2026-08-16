@@ -18,6 +18,7 @@ type OverviewRuntimeOptions = {
   period: Period
   provider: string
   customRange: DateRange | null
+  projectScopeId?: string
   scopedClaudeConfigSource: string | null
   detectedProviders: DetectedProvider[]
   setDetectedProviders: Dispatch<SetStateAction<DetectedProvider[]>>
@@ -57,6 +58,7 @@ export function useOverviewRuntime({
   period,
   provider,
   customRange,
+  projectScopeId = 'all',
   scopedClaudeConfigSource,
   detectedProviders,
   setDetectedProviders,
@@ -69,27 +71,30 @@ export function useOverviewRuntime({
   // Preserve the existing 2/3-argument bridge calls when no config is scoped;
   // only add --claude-config-source once the user selected a real config.
   const requestOverview = (fresh: boolean) => {
+    const scopedProject = projectScopeId !== 'all' ? projectScopeId : undefined
     if (fresh) {
-      return metrora.getOverview(
-        period,
-        provider,
-        customRange ?? undefined,
-        scopedClaudeConfigSource ?? undefined,
-        false,
-        true,
-      )
+      return scopedProject
+        ? metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource ?? undefined, false, true, scopedProject)
+        : metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource ?? undefined, false, true)
     }
     return scopedClaudeConfigSource
-      ? metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
+      ? scopedProject
+        ? metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource, false, false, scopedProject)
+        : metrora.getOverview(period, provider, customRange ?? undefined, scopedClaudeConfigSource)
       : customRange
-      ? metrora.getOverview(period, provider, customRange)
-      : metrora.getOverview(period, provider)
+      ? scopedProject
+        ? metrora.getOverview(period, provider, customRange, undefined, false, false, scopedProject)
+        : metrora.getOverview(period, provider, customRange)
+      : scopedProject
+        ? metrora.getOverview(period, provider, undefined, undefined, false, false, scopedProject)
+        : metrora.getOverview(period, provider)
   }
 
-  const overviewKey = overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource)
+  const scopedProject = projectScopeId !== 'all' ? projectScopeId : undefined
+  const overviewKey = `${overviewMemoKey(provider, period, customRange, scopedClaudeConfigSource)}${scopedProject ? `|${scopedProject}` : ''}`
   const overview = usePolled<MenubarPayload>(
     () => requestOverview(false),
-    [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource],
+    [period, provider, customRange?.from, customRange?.to, scopedClaudeConfigSource, projectScopeId],
     {
       memoKey: overviewKey,
       manualFetcher: () => requestOverview(true),

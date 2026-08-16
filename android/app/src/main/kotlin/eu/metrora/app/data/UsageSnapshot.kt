@@ -42,6 +42,7 @@ data class CostTrendPoint(
 data class UsageSnapshot(
     val desktopId: String,
     val desktopName: String,
+    val projectScopeId: String = "all",
     val generatedAtEpochMs: Long,
     val periodLabel: String,
     val costMicrosUsd: Long,
@@ -55,8 +56,13 @@ data class UsageSnapshot(
     val topModels: List<ModelUsage>,
     /** Full bounded model breakdown; older payloads use topModels as fallback. */
     val models: List<ModelUsage> = topModels,
+    /** Exact Desktop accounting remainder rendered as a neutral Other models row. */
+    val modelAccountingGap: ModelAccountingGap? = null,
     /** Portion of Desktop cost backed by a resolved price, or null when unknown. */
     val pricingCoverage: Double? = null,
+    /** Project-scoped detail coverage; older unscoped payloads default to complete. */
+    val tokenCoverage: DetailCoverage = DetailCoverage.COMPLETE,
+    val modelCoverage: DetailCoverage = DetailCoverage.COMPLETE,
     /** Desktop-reported portion of cost that came from estimated token pricing. */
     val estimatedCostMicrosUsd: Long? = null,
     /** Bounded, Desktop-derived daily aggregates. Empty means unavailable, not zero. */
@@ -70,6 +76,9 @@ data class UsageSnapshot(
     init {
         require(desktopId.isNotBlank()) { "Desktop identity is missing." }
         require(desktopName.isNotBlank()) { "Desktop name is missing." }
+        require(projectScopeId == "all" || projectScopeId == "unassigned" || projectScopeId.matches(Regex("[a-zA-Z0-9_.:-]{1,120}"))) {
+            "Project scope is invalid."
+        }
         require(generatedAtEpochMs >= 0L) { "Generated timestamp is invalid." }
         require(retrievedAtEpochMs >= 0L) { "Retrieval timestamp is invalid." }
         require(periodLabel.isNotBlank()) { "Usage period is missing." }
@@ -123,6 +132,9 @@ data class UsageSnapshot(
             model.brandId?.let { modelJson.put("brandId", it) }
             modelsJson.put(modelJson)
         }
+        val modelAccountingGapJson = modelAccountingGap?.let { gap ->
+            JSONObject().put("costMicrosUsd", gap.costMicrosUsd).put("calls", gap.calls)
+        }
         val trend = JSONArray()
         costTrend.forEach { point ->
             trend.put(
@@ -134,6 +146,7 @@ data class UsageSnapshot(
         return JSONObject()
             .put("desktopId", desktopId)
             .put("desktopName", desktopName)
+            .put("projectScopeId", projectScopeId)
             .put("generatedAtEpochMs", generatedAtEpochMs)
             .put("periodLabel", periodLabel)
             .put("costMicrosUsd", costMicrosUsd)
@@ -145,10 +158,13 @@ data class UsageSnapshot(
             .put("cacheWriteTokens", cacheWriteTokens)
             .put("cacheHitPercent", cacheHitPercent)
             .putOpt("pricingCoverage", pricingCoverage)
+            .put("tokenCoverage", DetailCoverage.toWire(tokenCoverage))
+            .put("modelCoverage", DetailCoverage.toWire(modelCoverage))
             .putOpt("estimatedCostMicrosUsd", estimatedCostMicrosUsd)
             .put("retrievedAtEpochMs", retrievedAtEpochMs)
             .put("topModels", topModelsJson)
             .put("models", modelsJson)
+            .putOpt("modelAccountingGap", modelAccountingGapJson)
             .put("costTrendGranularity", costTrendGranularity)
             .put("costTrendPeriodLabel", costTrendPeriodLabel)
             .put("costTrend", trend)
@@ -179,10 +195,17 @@ data class UsageSnapshot(
             } else {
                 topModels
             }
+            val modelAccountingGap = json.optJSONObject("modelAccountingGap")?.let { gap ->
+                val costMicrosUsd = gap.getLong("costMicrosUsd")
+                val calls = gap.getLong("calls")
+                require(costMicrosUsd >= 0L && calls >= 0L) { "Model accounting gap cannot be negative." }
+                if (costMicrosUsd == 0L && calls == 0L) null else ModelAccountingGap(costMicrosUsd, calls)
+            }
             val periodLabel = json.getString("periodLabel")
             return UsageSnapshot(
                 desktopId = json.getString("desktopId"),
                 desktopName = json.getString("desktopName"),
+                projectScopeId = json.optString("projectScopeId", "all").trim().ifBlank { "all" },
                 generatedAtEpochMs = json.getLong("generatedAtEpochMs"),
                 periodLabel = periodLabel,
                 costMicrosUsd = json.getLong("costMicrosUsd"),
@@ -195,7 +218,10 @@ data class UsageSnapshot(
                 cacheHitPercent = json.getDouble("cacheHitPercent"),
                 topModels = topModels,
                 models = models,
+                modelAccountingGap = modelAccountingGap,
                 pricingCoverage = json.optNullableFraction("pricingCoverage"),
+                tokenCoverage = DetailCoverage.fromWire(json.optString("tokenCoverage", "complete")),
+                modelCoverage = DetailCoverage.fromWire(json.optString("modelCoverage", "complete")),
                 estimatedCostMicrosUsd = json.optNullableNonNegativeLong("estimatedCostMicrosUsd"),
                 costTrend = json.optJSONArray("costTrend")?.let { trendJson ->
                     buildList {

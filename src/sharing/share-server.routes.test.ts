@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SHARE_API_VERSION, canonicalSharePath } from './share-server.js'
+import { SHARE_API_VERSION, canonicalCompanionQuery, canonicalSharePath } from './share-server.js'
 
 describe('Metrora sharing API version compatibility', () => {
   it('keeps inherited unversioned routes unchanged', () => {
@@ -15,6 +15,9 @@ describe('Metrora sharing API version compatibility', () => {
     expect(canonicalSharePath('/api/v1/peer/pair-request')).toBe('/api/peer/pair-request')
     expect(canonicalSharePath('/api/v1/peer/revoke')).toBe('/api/peer/revoke')
     expect(canonicalSharePath('/api/v1/usage')).toBe('/api/usage')
+    expect(canonicalSharePath('/api/v1/capabilities')).toBe('/api/capabilities')
+    expect(canonicalSharePath('/api/v1/foundation')).toBe('/api/foundation')
+    expect(canonicalSharePath('/api/v1/projects')).toBe('/api/projects')
   })
 
   it('does not rewrite unrelated or future-version paths', () => {
@@ -24,5 +27,18 @@ describe('Metrora sharing API version compatibility', () => {
 
   it('publishes the first stable protocol version', () => {
     expect(SHARE_API_VERSION).toBe(1)
+  })
+
+  it('resolves one effective period range and trend dimension at the authority boundary', () => {
+    expect(canonicalCompanionQuery({ period: 'lifetime', projectScopeId: 'mp_fixture' })).toMatchObject({
+      period: 'lifetime',
+      effectiveFrom: '1970-01-01',
+      granularity: 'month',
+      projectScopeId: 'mp_fixture',
+    })
+    const all = canonicalCompanionQuery({ period: 'all' })
+    expect(all).toMatchObject({ period: 'all', granularity: 'week', projectScopeId: 'all' })
+    expect(all.effectiveFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(all.effectiveTo).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })

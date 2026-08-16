@@ -97,6 +97,9 @@
     <string name="pricing_coverage_unknown">Pricing coverage unavailable</string>
     <string name="estimated_cost_evidence">Estimated portion %1$s</string>
     <string name="total_tokens">Total tokens</string>
+    <string name="detail_partial_short">Partial</string>
+    <string name="detail_unavailable_short">Unavailable</string>
+    <string name="partial_historical_coverage">Partial historical coverage</string>
     <string name="calls">Calls</string>
     <string name="sessions">Sessions</string>
     <string name="top_models">Main models</string>
@@ -117,10 +120,43 @@
     <string name="empty_snapshot_offline">There is no saved overview to show yet. Try Refresh when Desktop is available.</string>
     <string name="refresh">Refresh from Desktop</string>
 
-    <string name="nav_overview">Overview</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_activity">Activity</string>
+    <string name="nav_analyze">Analyze</string>
+    <string name="nav_workspace">Workspace</string>
+    <string name="project_scope_label">Metrora Project</string>
+    <string name="project_catalog_unavailable">Project catalog unavailable</string>
+    <plurals name="project_source_count">
+        <item quantity="one">%1$d Source Project</item>
+        <item quantity="other">%1$d Source Projects</item>
+    </plurals>
+    <string name="activity_sessions_title">Sessions</string>
+    <string name="activity_privacy_note">Metadata-only Activity. Prompts, responses, code, tool arguments and private paths stay on Desktop.</string>
+    <string name="activity_empty">No bounded session rows are available for this Project and period.</string>
+    <string name="activity_unavailable_title">Activity is unavailable</string>
+    <string name="activity_unavailable_body">This Desktop does not advertise a compatible Sessions projection. Home and Usage remain available when supported.</string>
+    <string name="activity_partial_detail">Available session evidence · partial historical session detail.</string>
+    <string name="activity_unavailable_detail">Session detail is unavailable for this Project and period.</string>
+    <string name="analyze_models_title">Models</string>
+    <string name="analyze_unavailable_title">Models are unavailable</string>
+    <string name="analyze_unavailable_body">This Desktop does not advertise a compatible Models projection for the selected Project scope.</string>
+    <string name="models_partial_project_detail">Partial historical model detail. Rows shown are available evidence, not a total for the full period.</string>
+    <string name="models_unavailable_project_detail">Model detail is unavailable for this Project and period. Cost, calls and sessions remain separate accounting facts.</string>
+    <string name="other_models">Other models</string>
+    <plurals name="other_models_accounting_detail">
+        <item quantity="one">%1$d call · no model identity inferred</item>
+        <item quantity="other">%1$d calls · no model identity inferred</item>
+    </plurals>
+    <string name="provenance_unavailable">Provenance unavailable</string>
+    <string name="domain_cached_detail">Saved domain detail · not refreshed in this session.</string>
+    <string name="domain_freshness_unknown">Domain freshness unavailable.</string>
+    <string name="spend_trend_title">Spend trend</string>
+    <string name="spend_unavailable_title">Spend analysis is unavailable</string>
+    <string name="spend_unavailable_body">This Desktop did not provide a bounded Spend projection for the selected Project scope.</string>
+    <string name="workspace_unavailable_title">Workspace is unavailable</string>
+    <string name="workspace_unavailable_body">Workspace remains a Desktop/core identity and evidence boundary. No bounded mobile projection is advertised in Foundation V1.</string>
+
     <string name="nav_models">Models</string>
-    <string name="nav_sessions">Sessions</string>
-    <string name="nav_alerts">Alerts</string>
     <string name="nav_settings">Settings</string>
     <string name="destination_not_available">This companion surface is not available yet. No placeholder data is shown.</string>
     <string name="destination_unavailable_a11y">%1$s is not available yet</string>

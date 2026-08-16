@@ -10,12 +10,17 @@ class ProtocolTest {
         assertEquals("/api/v1/peer/hello", MetroraProtocol.HELLO_PATH)
         assertEquals("/api/v1/peer/pair-request", MetroraProtocol.PAIR_REQUEST_PATH)
         assertEquals("/api/v1/peer/revoke", MetroraProtocol.REVOKE_PATH)
+        assertEquals("/api/v1/capabilities", MetroraProtocol.CAPABILITIES_PATH)
+        assertEquals("/api/v1/foundation", MetroraProtocol.FOUNDATION_PATH)
+        assertEquals("/api/v1/projects", MetroraProtocol.PROJECTS_PATH)
+        assertEquals("/api/v1/projects", MetroraProtocol.projectCatalogPath())
         assertEquals("/api/v1/usage?period=month", MetroraProtocol.usagePath("month"))
         assertEquals(
             "/api/v1/usage?period=all&granularity=week",
             MetroraProtocol.usagePath("all", "week"),
         )
         assertEquals("metrora.companion.usage", MetroraProtocol.USAGE_KIND)
+        assertEquals("metrora.companion.capabilities", MetroraProtocol.CAPABILITIES_KIND)
     }
 
     @Test
@@ -23,6 +28,21 @@ class ProtocolTest {
         val periods = listOf("today", "week", "30days", "month", "all", "lifetime")
         periods.forEach { period ->
             assertEquals("/api/v1/usage?period=$period", MetroraProtocol.usagePath(period))
+        }
+    }
+
+    @Test
+    fun projectScopeIsAnAdditiveCanonicalQuery() {
+        assertEquals(
+            "/api/v1/usage?period=month&granularity=week&projectScopeId=mp_project",
+            MetroraProtocol.usagePath("month", "week", "mp_project"),
+        )
+        assertEquals(
+            "/api/v1/foundation?period=month&projectScopeId=unassigned",
+            MetroraProtocol.foundationPath("month", projectScopeId = "unassigned"),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            MetroraProtocol.usagePath("month", projectScopeId = "C:\\private")
         }
     }
 

@@ -12,6 +12,9 @@ export function sanitizeForSharing(payload: MenubarPayload): MenubarPayload {
   const timeline = payload.history?.timeline
   return {
     ...payload,
+    // The foundation DTO is served through its own authenticated, bounded
+    // endpoint. Never leak session/project projections through legacy /api.
+    mobileFoundation: undefined,
     current: {
       ...payload.current,
       topProjects: [],

@@ -8,6 +8,7 @@ import { createShareBridgeHandlers } from './share-bridge'
 import { initializeDesktopShareRuntime, stopDesktopShareRuntime, type DesktopShareRuntime } from './share-runtime'
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
+import { createProjectBridgeHandlers, validateProjectScope } from './project-bridge'
 
 export { createApplicationMenuTemplate } from './menu'
 
@@ -273,19 +274,20 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
   // The desktop never renders the granular timeline, so it always passes
   // --no-timeline (skips buildGranularHistory on every poll). The Swift menubar
   // omits the flag and keeps the timeline unchanged.
-  const buildOverviewArgs = (period: string, provider: string, range?: DateRange, configSource?: string | null): string[] => [
+  const buildOverviewArgs = (period: string, provider: string, range?: DateRange, configSource?: string | null, projectScopeId?: string | null): string[] => [
     'status', '--format', 'menubar-json', '--period', vPeriod(period), '--no-timeline',
     ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)), ...configSourceArgs(vConfigSource(configSource)),
+    ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),
   ]
 
   // `background` (renderer prefetch only) drops this fetch to background priority
   // so it yields the CLI's run slots to any interactive poll or click. Optional
   // and defaulting to interactive, so an older preload that omits it is unchanged.
-  const getOverview: Handler = async (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean) => {
+  const getOverview: Handler = async (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null) => {
     coldStartBegan ??= Date.now()
     const priority: SpawnPriority | undefined = background ? 'background' : undefined
     try {
-      const args = buildOverviewArgs(period, provider, range, configSource)
+      const args = buildOverviewArgs(period, provider, range, configSource, projectScopeId)
       const snapshot = !fresh && !configSource
       if (snapshot) {
         const value = await deps.spawnCli(args, { extraEnv: snapshotEnv, ...(priority ? { priority } : {}) })
@@ -323,13 +325,16 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
       catch (error) { return { ok: false, error: { kind: 'nonzero', message: sanitizeError(error) } } }
     },
     'metrora:getOverview': getOverview,
+    ...createProjectBridgeHandlers({ spawnCli: deps.spawnCli, spawnCliAction: deps.spawnCliAction, snapshotEnv }),
     'metrora:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
     'metrora:getActReport': run(() => ['act', 'report', '--json']),
-    'metrora:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange) => [
+    'metrora:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange, projectScopeId?: string | null) => [
       'models', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...(byTask ? ['--by-task'] : []), ...rangeArgs(vRange(range)),
+      ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),
     ]),
-    'metrora:getSessions': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getSessions': run((period: string, provider: string, range?: DateRange, projectScopeId?: string | null) => [
       'sessions', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
+      ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),
     ]),
     'metrora:getCompareModels': run((period: string, provider: string) => [
       'compare', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)),
@@ -340,8 +345,9 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     'metrora:getYield': run((period: string, provider: string, range?: DateRange) => [
       'yield', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'metrora:getSpendFlow': run((period: string, provider: string, range?: DateRange) => [
+    'metrora:getSpendFlow': run((period: string, provider: string, range?: DateRange, projectScopeId?: string | null) => [
       'spend', '--format', 'flow-json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
+      ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),
     ]),
     'metrora:getOptimizeReport': run((period: string, provider: string, range?: DateRange) => [
       'optimize', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),

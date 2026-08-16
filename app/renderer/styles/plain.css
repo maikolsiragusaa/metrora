@@ -353,6 +353,19 @@ body { overflow: hidden; background: var(--bg); color: var(--ink); }
 .set-price-form .btnp { flex: 0 0 auto; margin-left: auto; }
 .set-input { border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 11.5px; background: var(--panel); color: var(--ink); min-width: 0; }
 .set-input:focus-visible { border-color: var(--accent); outline: 1px solid var(--accent); }
+.project-create-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.project-create-row .set-input:first-child { flex: 1 1 220px; }
+.project-list { display: grid; gap: 5px; margin-top: 10px; }
+.project-list-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.project-list-row:hover, .project-list-row.on { border-color: var(--line2); background: var(--hover); }
+.project-token { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: #071117; font-size: 11px; font-weight: 700; }
+.color-cyan { background: var(--accent); }.color-blue { background: #5c9dff; }.color-violet { background: #a48cff; }.color-amber { background: #e8b45f; }.color-green { background: #5dc99a; }.color-coral { background: #ed897d; }
+.project-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px; margin-top: 4px; border-top: 1px solid var(--line2); }
+.project-source-list { display: grid; gap: 8px; margin-top: 10px; }
+.project-source-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-top: 1px solid var(--line2); }
+.project-source-row:first-child { border-top: 0; }
+.project-source-row .set-input { width: 150px; flex: 0 0 150px; }
+.project-scope-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .btnp { font-size: var(--fs-meta); font-weight: var(--fw-medium); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 11px; background: var(--panel); cursor: pointer; }
 .btnp-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btnp:disabled { opacity: .45; cursor: default; }

@@ -89,7 +89,7 @@ function sessionCache(calls: CachedCall[] = [call()]): SessionCache {
 
 function dailyCache(): DailyCache {
   const cache = emptyDailyCache('test')
-  cache.version = 18
+  cache.version = 19
   cache.complete = true
   cache.lastComputedDate = '2026-08-12'
   cache.tzKey = 'UTC'
@@ -144,7 +144,7 @@ describe('generic canonical analytics publication boundary', () => {
     expect(result.timingsMs.headlineIndexPersistenceMs).toBeGreaterThanOrEqual(0)
 
     const sessionGeneration = await readCurrentSessionCacheGenerationV1(sessionCachePath())
-    const dailyGeneration = await readCurrentDailyCacheGenerationV1(join(process.env['METRORA_CACHE_DIR']!, 'daily-cache.v18.json'))
+    const dailyGeneration = await readCurrentDailyCacheGenerationV1(dailyCachePath())
     expect(result.generation?.sessionPayloadSha256).toBe(sessionGeneration?.payloadSha256)
     expect(result.generation?.dailyPayloadSha256).toBe(dailyGeneration?.payloadSha256)
 

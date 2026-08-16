@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ShowChart
@@ -67,6 +66,8 @@ import eu.metrora.app.MetroraConnectionState
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 import eu.metrora.app.data.CostTrendPoint
+import eu.metrora.app.data.DetailCoverage
+import eu.metrora.app.data.ModelAccountingGap
 import eu.metrora.app.data.ModelUsage
 import eu.metrora.app.data.UsageSnapshot
 import java.time.LocalDate
@@ -78,10 +79,10 @@ private enum class HomeDestination(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val available: Boolean,
 ) {
-    OVERVIEW(R.string.nav_overview, Icons.Outlined.Home, true),
-    MODELS(R.string.nav_models, Icons.Outlined.Layers, true),
-    SESSIONS(R.string.nav_sessions, Icons.Outlined.Group, false),
-    ALERTS(R.string.nav_alerts, Icons.Outlined.NotificationsNone, false),
+    HOME(R.string.nav_home, Icons.Outlined.Home, true),
+    ACTIVITY(R.string.nav_activity, Icons.Outlined.Group, true),
+    ANALYZE(R.string.nav_analyze, Icons.Outlined.ShowChart, true),
+    WORKSPACE(R.string.nav_workspace, Icons.Outlined.Layers, true),
     SETTINGS(R.string.nav_settings, Icons.Outlined.Settings, true),
 }
 
@@ -91,11 +92,12 @@ internal fun HomeState(
     onRefresh: () -> Unit,
     onSelectPeriod: (String) -> Unit,
     onSelectTrendGranularity: (String) -> Unit,
+    onSelectProject: (String) -> Unit,
     onRevoke: () -> Unit,
     onForget: () -> Unit,
 ) {
-    var destination by rememberSaveable { mutableStateOf(HomeDestination.OVERVIEW.name) }
-    val selected = HomeDestination.valueOf(destination)
+    var destination by rememberSaveable { mutableStateOf(HomeDestination.HOME.name) }
+    val selected = HomeDestination.entries.firstOrNull { it.name == destination } ?: HomeDestination.HOME
     // Each destination owns an independent scroll position. Settings no
     // longer opens halfway down after a long Overview scroll on a small phone.
     val scrollState = remember(selected) { androidx.compose.foundation.ScrollState(0) }
@@ -120,21 +122,28 @@ internal fun HomeState(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (selected != HomeDestination.SETTINGS) {
+                ProjectScopePicker(
+                    state = state,
+                    onSelect = onSelectProject,
+                )
+            }
             when (selected) {
-                HomeDestination.OVERVIEW -> OverviewSurface(
+                HomeDestination.HOME -> OverviewSurface(
                     state = state,
                     onRefresh = onRefresh,
                     onSelectPeriod = onSelectPeriod,
                     onSelectTrendGranularity = onSelectTrendGranularity,
-                    onViewAllModels = { destination = HomeDestination.MODELS.name },
+                    onViewAllModels = { destination = HomeDestination.ANALYZE.name },
                 )
                 HomeDestination.SETTINGS -> SettingsSurface(
                     state = state,
                     onRevoke = onRevoke,
                     onForget = onForget,
                 )
-                HomeDestination.MODELS -> ModelsSurface(state = state)
-                else -> UnsupportedDestination(destination = selected)
+                HomeDestination.ACTIVITY -> ActivitySurface(state = state)
+                HomeDestination.ANALYZE -> AnalyzeSurface(state = state)
+                HomeDestination.WORKSPACE -> WorkspaceSurface(state = state)
             }
         }
     }
@@ -158,7 +167,7 @@ private fun OverviewSurface(
         CostHero(snapshot)
         MetricsStrip(snapshot)
         CostOverTime(snapshot.costTrend, snapshot.costTrendGranularity, onSelectTrendGranularity)
-        TopModels(snapshot.topModels, onViewAll = onViewAllModels)
+        TopModels(snapshot.topModels, snapshot.modelCoverage, snapshot.modelAccountingGap, onViewAll = onViewAllModels)
         FreshnessFooter(state)
     } ?: EmptyHomeSnapshot(state.status, onRefresh)
 }
@@ -440,6 +449,14 @@ private fun PricingEvidence(snapshot: UsageSnapshot) {
 
 @Composable
 private fun MetricsStrip(snapshot: UsageSnapshot) {
+    val factualTokenSubtotal = tokenMetricValue(snapshot.tokenCoverage, snapshot.totalTokens)
+    val tokenValue = factualTokenSubtotal ?: androidx.compose.ui.res.stringResource(
+        when (snapshot.tokenCoverage) {
+            DetailCoverage.COMPLETE -> R.string.detail_unavailable_short
+            DetailCoverage.PARTIAL -> R.string.detail_partial_short
+            DetailCoverage.UNAVAILABLE -> R.string.detail_unavailable_short
+        },
+    )
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -465,8 +482,13 @@ private fun MetricsStrip(snapshot: UsageSnapshot) {
             MetricDivider()
             HomeMetric(
                 icon = Icons.Outlined.Layers,
-                value = formatCompact(snapshot.totalTokens),
+                value = tokenValue,
                 label = R.string.total_tokens,
+                detail = if (snapshot.tokenCoverage == DetailCoverage.PARTIAL && factualTokenSubtotal != null) {
+                    R.string.partial_historical_coverage
+                } else {
+                    null
+                },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -478,6 +500,7 @@ private fun HomeMetric(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     value: String,
     label: Int,
+    detail: Int? = null,
     modifier: Modifier,
 ) {
     Column(
@@ -501,6 +524,16 @@ private fun HomeMetric(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        detail?.let {
+            Text(
+                text = androidx.compose.ui.res.stringResource(it),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -678,7 +711,12 @@ private fun TrendLabels(points: List<CostTrendPoint>) {
 }
 
 @Composable
-private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
+private fun TopModels(
+    models: List<ModelUsage>,
+    coverage: DetailCoverage,
+    modelAccountingGap: ModelAccountingGap?,
+    onViewAll: () -> Unit,
+) {
     MetroraPanel(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
@@ -701,19 +739,43 @@ private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(8.dp))
-            if (models.isEmpty()) {
+            if (coverage == DetailCoverage.PARTIAL) {
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.models_unavailable),
+                    text = androidx.compose.ui.res.stringResource(R.string.models_partial_project_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            val visibleModels = models.takeIf { coverage != DetailCoverage.UNAVAILABLE }.orEmpty()
+            if (visibleModels.isEmpty() && modelAccountingGap == null) {
+                Text(
+                    text = androidx.compose.ui.res.stringResource(
+                        if (coverage == DetailCoverage.UNAVAILABLE) R.string.models_unavailable_project_detail else R.string.models_unavailable,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp),
                 )
             } else {
-                models.forEachIndexed { index, model ->
+                if (visibleModels.isEmpty()) {
+                    Text(
+                        text = androidx.compose.ui.res.stringResource(
+                            if (coverage == DetailCoverage.UNAVAILABLE) R.string.models_unavailable_project_detail else R.string.models_unavailable,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+                visibleModels.forEachIndexed { index, model ->
                     ModelRow(model, index)
-                    if (index != models.lastIndex) {
+                    if (index != visibleModels.lastIndex || modelAccountingGap != null) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                     }
+                }
+                modelAccountingGap?.let { gap ->
+                    OtherModelsRow(gap)
                 }
             }
         }
@@ -723,6 +785,7 @@ private fun TopModels(models: List<ModelUsage>, onViewAll: () -> Unit) {
 @Composable
 private fun ModelsSurface(state: MetroraUiState) {
     val models = state.snapshot?.models ?: emptyList()
+    val modelAccountingGap = state.snapshot?.modelAccountingGap
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(
             text = androidx.compose.ui.res.stringResource(R.string.nav_models),
@@ -741,7 +804,7 @@ private fun ModelsSurface(state: MetroraUiState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                if (models.isEmpty()) {
+                if (models.isEmpty() && modelAccountingGap == null) {
                     Text(
                         text = androidx.compose.ui.res.stringResource(R.string.models_unavailable),
                         style = MaterialTheme.typography.bodyMedium,
@@ -749,12 +812,21 @@ private fun ModelsSurface(state: MetroraUiState) {
                         modifier = Modifier.padding(vertical = 16.dp),
                     )
                 } else {
+                    if (models.isEmpty()) {
+                        Text(
+                            text = androidx.compose.ui.res.stringResource(R.string.models_unavailable_project_detail),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
                     models.forEachIndexed { index, model ->
                         ModelRow(model, index, showProvider = models.count { it.name == model.name } > 1)
-                        if (index != models.lastIndex) {
+                        if (index != models.lastIndex || modelAccountingGap != null) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
                         }
                     }
+                    modelAccountingGap?.let { gap -> OtherModelsRow(gap) }
                 }
             }
         }
@@ -836,6 +908,53 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean = fals
         }
         Text(
             text = cost,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+internal fun OtherModelsRow(gap: ModelAccountingGap) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = RoundedCornerShape(11.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+            ),
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(MetroraModelBranding.logoResource(null)),
+                contentDescription = androidx.compose.ui.res.stringResource(R.string.metrora_model_logo_description),
+                modifier = Modifier.padding(9.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = androidx.compose.ui.res.stringResource(R.string.other_models),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = androidx.compose.ui.res.pluralStringResource(
+                    R.plurals.other_models_accounting_detail,
+                    gap.calls.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    gap.calls,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = formatUsd(gap.costMicrosUsd),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
         )

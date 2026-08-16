@@ -212,6 +212,7 @@ function ProviderFilterRow({
 export function Sessions({
   period,
   provider,
+  projectScopeId,
   range = null,
   refreshToken = 0,
   detectedProviders = [],
@@ -221,6 +222,7 @@ export function Sessions({
 }: {
   period: Period
   provider: string
+  projectScopeId?: string
   range?: DateRange | null
   refreshToken?: number
   detectedProviders?: Array<{ id: string; label: string }>
@@ -233,10 +235,13 @@ export function Sessions({
   const [sort, setSort] = useState<SessionSort>('recent')
   const [grouped, setGrouped] = useState(false)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
+  const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
   const report = usePolled<SessionRow[]>(
-    () => range ? metrora.getSessions(period, provider, range) : metrora.getSessions(period, provider),
-    [period, provider, range?.from, range?.to, refreshToken],
-    { enabled: ready, memoKey: `sessions|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
+    () => range
+      ? scopedProject ? metrora.getSessions(period, provider, range, scopedProject) : metrora.getSessions(period, provider, range)
+      : scopedProject ? metrora.getSessions(period, provider, undefined, scopedProject) : metrora.getSessions(period, provider),
+    [period, provider, projectScopeId, range?.from, range?.to, refreshToken],
+    { enabled: ready, memoKey: `sessions|${period}|${provider}|${projectScopeId ?? 'all'}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
   const rows = report.data ?? []
   const q = query.trim().toLowerCase()
