@@ -1,5 +1,7 @@
 import { emptyModelStats, mergeModelStats } from './daily-cache-model-detail.js'
-import type { DailyEntry, ProviderDaySlice } from './daily-cache-types.js'
+import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
+
+const PROJECT_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
 
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
@@ -7,6 +9,30 @@ function num(v: unknown): number {
 
 function hasSliceData(slice: ProviderDaySlice): boolean {
   return slice.cost > 0 || slice.calls > 0 || (slice.savingsUSD ?? 0) > 0
+    || (slice.inputTokens ?? 0) > 0 || (slice.outputTokens ?? 0) > 0
+    || (slice.reasoningTokens ?? 0) > 0 || (slice.cacheReadTokens ?? 0) > 0
+    || (slice.cacheWriteTokens ?? 0) > 0
+}
+
+function hasProjectUsage(stats: ProjectDayStats): boolean {
+  return stats.cost > 0 || stats.calls > 0 || stats.savingsUSD > 0
+}
+
+function addProjectTokenEvidence(target: ProjectDayStats, source: ProjectDayStats, targetHadUsage: boolean): void {
+  for (const field of PROJECT_TOKEN_FIELDS) {
+    const sourceValue = source[field]
+    if (!targetHadUsage) {
+      if (sourceValue !== undefined) target[field] = sourceValue
+      else delete target[field]
+    } else if (sourceValue === undefined || target[field] === undefined) {
+      // A project row aggregates contributions from multiple providers. One
+      // legacy contribution without a field makes that field unknown for the
+      // aggregate; never let a known subset masquerade as complete evidence.
+      delete target[field]
+    } else {
+      target[field] += sourceValue
+    }
+  }
 }
 
 /** A legacy day whose totals cannot be attributed to individual providers. */
@@ -55,12 +81,14 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
     if (!p || typeof p !== 'object' || Array.isArray(p)) continue
     const dayProjects = (day.projects ??= {})
     const acc = Object.hasOwn(dayProjects, name) ? dayProjects[name]! : { cost: 0, calls: 0, savingsUSD: 0, sessions: 0 }
+    const targetHadUsage = hasProjectUsage(acc)
     acc.cost += num(p.cost)
     acc.calls += num(p.calls)
     acc.savingsUSD += num(p.savingsUSD)
     if (!acc.path && typeof p.path === 'string') acc.path = p.path
     const placeholderProjectSessions = Object.hasOwn(placeholderProjects, name) ? num(placeholderProjects[name]?.sessions) : 0
     acc.sessions += Math.max(0, num(p.sessions) - placeholderProjectSessions)
+    addProjectTokenEvidence(acc, p, targetHadUsage)
     setOwn(dayProjects, name, acc)
   }
   // Placeholder-only projects survive on the merged slice rather than being

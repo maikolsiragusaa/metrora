@@ -228,6 +228,14 @@ function cloneStats(stats: ProjectDayStats): ProjectDayStats {
   return { ...stats }
 }
 
+function addProjectTokenStats(target: ProjectDayStats, source: ProjectDayStats): void {
+  if (source.inputTokens !== undefined) target.inputTokens = (target.inputTokens ?? 0) + source.inputTokens
+  if (source.outputTokens !== undefined) target.outputTokens = (target.outputTokens ?? 0) + source.outputTokens
+  if (source.reasoningTokens !== undefined) target.reasoningTokens = (target.reasoningTokens ?? 0) + source.reasoningTokens
+  if (source.cacheReadTokens !== undefined) target.cacheReadTokens = (target.cacheReadTokens ?? 0) + source.cacheReadTokens
+  if (source.cacheWriteTokens !== undefined) target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + source.cacheWriteTokens
+}
+
 function scopedProjectStats(
   stats: Record<string, ProjectDayStats> | undefined,
   registry: ProjectRegistry,
@@ -241,16 +249,16 @@ function scopedProjectStats(
   return result
 }
 
-function sumStats(stats: Record<string, ProjectDayStats>): { cost: number; savingsUSD: number; calls: number; sessions: number } {
-  return Object.values(stats).reduce(
-    (total, value) => ({
-      cost: total.cost + value.cost,
-      savingsUSD: total.savingsUSD + value.savingsUSD,
-      calls: total.calls + value.calls,
-      sessions: total.sessions + value.sessions,
-    }),
-    { cost: 0, savingsUSD: 0, calls: 0, sessions: 0 },
-  )
+function sumStats(stats: Record<string, ProjectDayStats>): ProjectDayStats {
+  const total: ProjectDayStats = { cost: 0, savingsUSD: 0, calls: 0, sessions: 0 }
+  for (const value of Object.values(stats)) {
+    total.cost += value.cost
+    total.savingsUSD += value.savingsUSD
+    total.calls += value.calls
+    total.sessions += value.sessions
+    addProjectTokenStats(total, value)
+  }
+  return total
 }
 
 function scopedProviderSlice(
@@ -278,11 +286,11 @@ function scopedProviderSlice(
     } : {
       // Daily caches do not retain model/category detail per Source Project.
       // Empty detail is explicit unavailable data; it is never a factual zero.
-      inputTokens: 0,
-      outputTokens: 0,
-      reasoningTokens: undefined,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
+      inputTokens: totals.inputTokens ?? 0,
+      outputTokens: totals.outputTokens ?? 0,
+      reasoningTokens: totals.reasoningTokens,
+      cacheReadTokens: totals.cacheReadTokens ?? 0,
+      cacheWriteTokens: totals.cacheWriteTokens ?? 0,
       editTurns: 0,
       oneShotTurns: 0,
       models: {},
@@ -322,11 +330,11 @@ export function filterDailyEntryByMetroraScope(
       models: day.models,
       categories: day.categories,
     } : {
-      inputTokens: 0,
-      outputTokens: 0,
-      reasoningTokens: undefined,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
+      inputTokens: totals.inputTokens ?? 0,
+      outputTokens: totals.outputTokens ?? 0,
+      reasoningTokens: totals.reasoningTokens,
+      cacheReadTokens: totals.cacheReadTokens ?? 0,
+      cacheWriteTokens: totals.cacheWriteTokens ?? 0,
       editTurns: 0,
       oneShotTurns: 0,
       models: {},

@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 
 import {
   DAILY_CACHE_VERSION,
+  dailyCachePath,
   ensureCacheHydrated,
   loadDailyCache,
   type DailyEntry,
@@ -59,9 +60,9 @@ afterEach(async () => {
   await rm(cacheDir, { recursive: true, force: true })
 })
 
-describe('daily-cache v18 migration', () => {
+describe('daily-cache v19 adoption from v17', () => {
   it('re-derives surviving Codex days and carries sourceless history losslessly and idempotently', async () => {
-    expect(DAILY_CACHE_VERSION).toBe(18)
+    expect(DAILY_CACHE_VERSION).toBe(19)
     await mkdir(cacheDir, { recursive: true })
     const v17 = {
       version: 17,
@@ -100,7 +101,7 @@ describe('daily-cache v18 migration', () => {
     await writeFile(join(cacheDir, 'daily-cache.v17.json'), JSON.stringify(v17))
 
     const adopted = await loadDailyCache()
-    expect(adopted.version).toBe(18)
+    expect(adopted.version).toBe(19)
     expect(adopted.complete).toBe(false)
     expect(adopted.days).toHaveLength(2)
 
@@ -160,8 +161,8 @@ describe('daily-cache v18 migration', () => {
     expect(parses).toBe(1)
     expect(again).toEqual(migrated)
 
-    const persisted = JSON.parse(await readFile(join(cacheDir, 'daily-cache.v18.json'), 'utf-8'))
-    expect(persisted.version).toBe(18)
+    const persisted = JSON.parse(await readFile(dailyCachePath(), 'utf-8'))
+    expect(persisted.version).toBe(19)
     expect(persisted.days.find((entry: DailyEntry) => entry.date === '2026-08-03').cost).toBe(12.345678)
   })
 

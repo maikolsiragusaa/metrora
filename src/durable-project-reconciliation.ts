@@ -60,13 +60,7 @@ export function matchesDurableProjectFilter(
 }
 
 function cloneProjectStats(stats: ProjectDayStats): ProjectDayStats {
-  return {
-    cost: stats.cost,
-    calls: stats.calls,
-    savingsUSD: stats.savingsUSD,
-    sessions: stats.sessions,
-    ...(stats.path ? { path: stats.path } : {}),
-  }
+  return { ...stats }
 }
 
 function sumProjects(projects: Record<string, ProjectDayStats>): ProjectDayStats {
@@ -76,6 +70,11 @@ function sumProjects(projects: Record<string, ProjectDayStats>): ProjectDayStats
     total.calls += stats.calls
     total.savingsUSD += stats.savingsUSD
     total.sessions += stats.sessions
+    if (stats.inputTokens !== undefined) total.inputTokens = (total.inputTokens ?? 0) + stats.inputTokens
+    if (stats.outputTokens !== undefined) total.outputTokens = (total.outputTokens ?? 0) + stats.outputTokens
+    if (stats.reasoningTokens !== undefined) total.reasoningTokens = (total.reasoningTokens ?? 0) + stats.reasoningTokens
+    if (stats.cacheReadTokens !== undefined) total.cacheReadTokens = (total.cacheReadTokens ?? 0) + stats.cacheReadTokens
+    if (stats.cacheWriteTokens !== undefined) total.cacheWriteTokens = (total.cacheWriteTokens ?? 0) + stats.cacheWriteTokens
   }
   return total
 }
@@ -154,10 +153,11 @@ function projectScopedSlice(
     cost: totals.cost,
     savingsUSD: totals.savingsUSD,
     sessions: totals.sessions,
-    inputTokens: preserveDetailedBreakdown ? (slice.inputTokens ?? 0) : 0,
-    outputTokens: preserveDetailedBreakdown ? (slice.outputTokens ?? 0) : 0,
-    cacheReadTokens: preserveDetailedBreakdown ? (slice.cacheReadTokens ?? 0) : 0,
-    cacheWriteTokens: preserveDetailedBreakdown ? (slice.cacheWriteTokens ?? 0) : 0,
+    inputTokens: preserveDetailedBreakdown ? (slice.inputTokens ?? 0) : (totals.inputTokens ?? 0),
+    outputTokens: preserveDetailedBreakdown ? (slice.outputTokens ?? 0) : (totals.outputTokens ?? 0),
+    reasoningTokens: preserveDetailedBreakdown ? slice.reasoningTokens : totals.reasoningTokens,
+    cacheReadTokens: preserveDetailedBreakdown ? (slice.cacheReadTokens ?? 0) : (totals.cacheReadTokens ?? 0),
+    cacheWriteTokens: preserveDetailedBreakdown ? (slice.cacheWriteTokens ?? 0) : (totals.cacheWriteTokens ?? 0),
     editTurns: preserveDetailedBreakdown ? (slice.editTurns ?? 0) : 0,
     oneShotTurns: preserveDetailedBreakdown ? (slice.oneShotTurns ?? 0) : 0,
     models: preserveDetailedBreakdown ? (slice.models ?? {}) : {},
@@ -243,10 +243,11 @@ export function reconcileDurableProjectDay(
     savingsUSD: totals.savingsUSD,
     calls: totals.calls,
     sessions: totals.sessions,
-    inputTokens: preserveDetailedBreakdown ? day.inputTokens : 0,
-    outputTokens: preserveDetailedBreakdown ? day.outputTokens : 0,
-    cacheReadTokens: preserveDetailedBreakdown ? day.cacheReadTokens : 0,
-    cacheWriteTokens: preserveDetailedBreakdown ? day.cacheWriteTokens : 0,
+    inputTokens: preserveDetailedBreakdown ? day.inputTokens : (totals.inputTokens ?? 0),
+    outputTokens: preserveDetailedBreakdown ? day.outputTokens : (totals.outputTokens ?? 0),
+    reasoningTokens: preserveDetailedBreakdown ? day.reasoningTokens : totals.reasoningTokens,
+    cacheReadTokens: preserveDetailedBreakdown ? day.cacheReadTokens : (totals.cacheReadTokens ?? 0),
+    cacheWriteTokens: preserveDetailedBreakdown ? day.cacheWriteTokens : (totals.cacheWriteTokens ?? 0),
     editTurns: preserveDetailedBreakdown ? day.editTurns : 0,
     oneShotTurns: preserveDetailedBreakdown ? day.oneShotTurns : 0,
     models: preserveDetailedBreakdown ? day.models : {},

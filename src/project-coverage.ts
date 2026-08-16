@@ -10,6 +10,13 @@ export type ProjectDetailCoverage = {
   historical: boolean
 }
 
+function hasProjectTokenEvidence(stats: NonNullable<DailyEntry['projects']>[string]): boolean {
+  return stats.inputTokens !== undefined
+    && stats.outputTokens !== undefined
+    && stats.cacheReadTokens !== undefined
+    && stats.cacheWriteTokens !== undefined
+}
+
 function coverageState(values: boolean[], hasData: boolean): DetailCoverageState {
   if (!hasData || values.length === 0) return 'complete'
   if (values.every(Boolean)) return 'complete'
@@ -32,12 +39,16 @@ export function withProjectDetailCoverage(
 
   const dataDays = days.filter(day => day.cost !== 0 || day.calls > 0 || day.sessions > 0)
   const modelDetail = dataDays.map(day => Object.keys(day.models).length > 0)
+  const projectTokenDetail = dataDays.map(day => {
+    const projects = Object.values(day.projects ?? {}).filter(value => value.cost !== 0 || value.calls > 0 || value.sessions > 0)
+    return projects.length > 0 && projects.every(hasProjectTokenEvidence)
+  })
   const categoryDetail = dataDays.map(day => Object.keys(day.categories).length > 0)
   return {
     ...data,
     projectDetailCoverage: {
       models: coverageState(modelDetail, dataDays.length > 0),
-      tokens: coverageState(modelDetail, dataDays.length > 0),
+      tokens: coverageState(projectTokenDetail, dataDays.length > 0),
       categories: coverageState(categoryDetail, dataDays.length > 0),
       historical: dataDays.some(day => day.date !== liveDate),
     },

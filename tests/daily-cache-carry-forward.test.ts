@@ -117,7 +117,10 @@ describe('mergeDayEntries', () => {
       oneShotTurns: 1,
       models: { 'opus-4-8': { calls: 3, cost: 20, savingsUSD: 0, inputTokens: 1000, outputTokens: 500, cacheReadTokens: 200, cacheWriteTokens: 100 } },
       categories: { coding: { turns: 3, cost: 20, savingsUSD: 0, editTurns: 2, oneShotTurns: 1 } },
-      projects: { eywa: { cost: 15, calls: 2, savingsUSD: 0, sessions: 1 }, metrora: { cost: 5, calls: 1, savingsUSD: 0, sessions: 1 } },
+      projects: {
+        eywa: { cost: 15, calls: 2, savingsUSD: 0, sessions: 1, inputTokens: 750, outputTokens: 375, cacheReadTokens: 150, cacheWriteTokens: 75 },
+        metrora: { cost: 5, calls: 1, savingsUSD: 0, sessions: 1, inputTokens: 250, outputTokens: 125, cacheReadTokens: 50, cacheWriteTokens: 25 },
+      },
     })
     const merged = mergeDayEntries(
       [day('2026-06-01', { codex: slice(1, 1, { projects: { metrora: { cost: 1, calls: 1, savingsUSD: 0, sessions: 1 } } }) }, { projects: { metrora: { cost: 1, calls: 1, savingsUSD: 0, sessions: 1 } } })],
@@ -135,7 +138,7 @@ describe('mergeDayEntries', () => {
     expect(m.categories['coding']!.turns).toBe(3)
     // Projects from the carried claude slice fold into the day's project map,
     // summing with the fresh codex contribution on the shared project.
-    expect(m.projects!['eywa']).toEqual({ cost: 15, calls: 2, savingsUSD: 0, sessions: 1 })
+    expect(m.projects!['eywa']).toEqual({ cost: 15, calls: 2, savingsUSD: 0, sessions: 1, inputTokens: 750, outputTokens: 375, cacheReadTokens: 150, cacheWriteTokens: 75 })
     expect(m.projects!['metrora']).toEqual({ cost: 6, calls: 2, savingsUSD: 0, sessions: 2 })
   })
 

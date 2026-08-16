@@ -1,6 +1,6 @@
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
 import type { PeriodData } from './menubar-json.js'
-import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
+import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type TokenUsage } from './types.js'
 
 // Raw model IDs remain human-readable in legacy daily caches. New rows use an
 // additive envelope so a source-recorded route can survive the daily
@@ -29,6 +29,14 @@ function decodeModelStorageKey(key: string): { name: string; modelProvider?: str
 
 function addSourceProvider(target: { sourceProviders?: string[] }, provider: string): void {
   target.sourceProviders = [...new Set([...(target.sourceProviders ?? []), provider])].sort()
+}
+
+function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage): void {
+  target.inputTokens = (target.inputTokens ?? 0) + usage.inputTokens
+  target.outputTokens = (target.outputTokens ?? 0) + usage.outputTokens
+  target.cacheReadTokens = (target.cacheReadTokens ?? 0) + usage.cacheReadInputTokens
+  target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + usage.cacheCreationInputTokens
+  if (usage.reasoningTokens > 0) target.reasoningTokens = (target.reasoningTokens ?? 0) + usage.reasoningTokens
 }
 
 function emptyEntry(date: string): DailyEntry {
@@ -207,6 +215,7 @@ export function aggregateProjectsIntoDays(
           dayProject.cost += call.costUSD
           dayProject.calls += 1
           dayProject.savingsUSD += callSavings
+          addProjectTokenUsage(dayProject, call.usage)
 
           const modelKey = modelStorageKey(call.model, call.modelProvider)
           const model = turnDay.models[modelKey] ?? {
@@ -240,6 +249,7 @@ export function aggregateProjectsIntoDays(
           sliceProject.cost += call.costUSD
           sliceProject.calls += 1
           sliceProject.savingsUSD += callSavings
+          addProjectTokenUsage(sliceProject, call.usage)
 
           const sliceModel = slice.models![modelKey] ?? {
             calls: 0, cost: 0, savingsUSD: 0,

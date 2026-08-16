@@ -57,7 +57,7 @@ describe('trusted watermark envelope propagation', () => {
     expect((await loadDailyCache()).watermarkTrusted).toBe(true)
   })
 
-  it('does not trust a v17 envelope before the v18 accounting re-derive', async () => {
+  it('does not trust a v18 envelope before the v19 Source Project token re-derive', async () => {
     await writeFile(dailyCachePath(), JSON.stringify(envelope({ version: DAILY_CACHE_VERSION - 1 })), 'utf-8')
 
     const loaded = await loadDailyCache()

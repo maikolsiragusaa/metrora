@@ -165,6 +165,16 @@ describe('Mobile Foundation V1 projection', () => {
     expect(result.analyze.models.accountingCoverage).toEqual({ cost: 1, calls: 1, tokenCost: 0.75, tokenCalls: 0.5 })
   })
 
+  it('does not use model-accounting token coverage as a Project authority fallback', () => {
+    const legacyPayload = payload()
+    delete legacyPayload.current.projectDetailCoverage
+
+    const result = buildMobileFoundationPayload(legacyPayload, [project()], registry('sp_source'))
+
+    expect(result.analyze.models.coverage).toBe('complete')
+    expect(result.analyze.models.tokenCoverage).toBe('unavailable')
+  })
+
   it('selects a globally newest-first bounded Activity projection across Projects', () => {
     const older = bulkProject('older', '/work/older', 80, '2026-08-01T00:00:00.000Z')
     const newer = bulkProject('newer', '/work/newer', 80, '2026-08-03T00:00:00.000Z')

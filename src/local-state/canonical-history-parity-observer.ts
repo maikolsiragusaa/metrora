@@ -123,12 +123,8 @@ function sortedRecord<T, R>(
 }
 
 function pathFreeProject(value: ProjectDayStats): PathFreeProjectDayStats {
-  return {
-    cost: value.cost,
-    calls: value.calls,
-    savingsUSD: value.savingsUSD,
-    sessions: value.sessions,
-  }
+  const { path: _path, ...withoutPath } = value
+  return withoutPath
 }
 
 function pathFreeProvider(value: ProviderDaySlice): PathFreeProviderDaySlice {

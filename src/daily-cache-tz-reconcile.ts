@@ -110,8 +110,23 @@ function subtractProjectStats(base: ProjectDayStats, sub: ProjectDayStats): Proj
   const calls = Math.max(0, base.calls - num(sub.calls))
   const savingsUSD = Math.max(0, num(base.savingsUSD) - num(sub.savingsUSD))
   const sessions = Math.max(0, num(base.sessions) - num(sub.sessions))
-  if (cost === 0 && calls === 0 && savingsUSD === 0 && sessions === 0) return null
-  return { cost, calls, savingsUSD, sessions, ...(base.path ? { path: base.path } : {}) }
+  const out: ProjectDayStats = { cost, calls, savingsUSD, sessions, ...(base.path ? { path: base.path } : {}) }
+  const subHasUsage = sub.cost > 0 || sub.calls > 0 || num(sub.savingsUSD) > 0
+  for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+    if (base[field] === undefined) continue
+    if (subHasUsage && sub[field] === undefined) {
+      // A basic-cost/calls subtraction without the token field cannot leave a
+      // residual that claims a complete project token split.
+      delete out[field]
+    } else {
+      out[field] = Math.max(0, base[field] - num(sub[field]))
+    }
+  }
+  if (cost === 0 && calls === 0 && savingsUSD === 0 && sessions === 0
+    && (out.inputTokens ?? 0) === 0 && (out.outputTokens ?? 0) === 0
+    && (out.reasoningTokens ?? 0) === 0 && (out.cacheReadTokens ?? 0) === 0
+    && (out.cacheWriteTokens ?? 0) === 0) return null
+  return out
 }
 
 function subtractProjects(
@@ -188,12 +203,22 @@ function categoryDelta(base: CategoryDayStats, reduced: CategoryDayStats | undef
 }
 
 function projectDelta(base: ProjectDayStats, reduced: ProjectDayStats | undefined): ProjectDayStats {
-  return {
+  const out: ProjectDayStats = {
     cost: Math.max(0, base.cost - num(reduced?.cost)),
     calls: Math.max(0, base.calls - num(reduced?.calls)),
     savingsUSD: Math.max(0, num(base.savingsUSD) - num(reduced?.savingsUSD)),
     sessions: Math.max(0, num(base.sessions) - num(reduced?.sessions)),
   }
+  const reducedHasUsage = reduced !== undefined && (reduced.cost > 0 || reduced.calls > 0 || num(reduced.savingsUSD) > 0)
+  for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+    if (base[field] === undefined) continue
+    if (reducedHasUsage && reduced?.[field] === undefined) {
+      delete out[field]
+    } else {
+      out[field] = Math.max(0, base[field] - num(reduced?.[field]))
+    }
+  }
+  return out
 }
 
 function refreshModelSourceProviders(day: DailyEntry, modelName: string): void {

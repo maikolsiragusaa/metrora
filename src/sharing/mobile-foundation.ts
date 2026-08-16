@@ -110,10 +110,16 @@ function detailCoverage(payload: MenubarPayload): ProjectDetailCoverage {
   if (explicit) return explicit
   const accounting = payload.current.modelAccounting
   const hasData = payload.current.cost > 0 || payload.current.calls > 0 || payload.current.sessions > 0
+  const projectScopeActive = payload.projectScope?.selectedId !== undefined && payload.projectScope.selectedId !== 'all'
   const models = accounting
     ? ratioCoverage(Math.min(accounting.coverage.cost, accounting.coverage.calls), hasData)
     : (hasData ? 'unavailable' : 'complete')
-  const tokens = accounting && accounting.rows.length > 0
+  // Model-accounting token coverage is not durable Source Project token
+  // authority. Legacy payloads without the explicit project dimension must
+  // therefore remain unavailable for a selected Project scope.
+  const tokens = projectScopeActive
+    ? (hasData ? 'unavailable' : 'complete')
+    : accounting && accounting.rows.length > 0
     ? ratioCoverage(Math.min(accounting.tokenCoverage.cost, accounting.tokenCoverage.calls), hasData)
     : (hasData ? 'unavailable' : 'complete')
   return { models, tokens, categories: hasData ? 'unavailable' : 'complete', historical: false }
