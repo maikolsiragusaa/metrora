@@ -1,24 +1,25 @@
 package eu.metrora.app.ui
 
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.LinkOff
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,186 +39,73 @@ import eu.metrora.app.R
 import eu.metrora.app.data.PairingCredentials
 
 @Composable
-internal fun DeviceCard(
-    state: MetroraUiState,
-    onRevoke: () -> Unit,
-    onForget: () -> Unit,
-) {
+internal fun DeviceCard(state: MetroraUiState) {
     val credentials = state.credentials ?: return
     var detailsVisible by rememberSaveable { mutableStateOf(false) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = androidx.compose.ui.res.stringResource(R.string.device_section_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = credentials.desktopName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.device_local_only_body),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = androidx.compose.ui.res.stringResource(
-                        R.string.desktop_endpoint,
-                        credentials.host,
-                        credentials.port,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            TextButton(
-                onClick = { detailsVisible = !detailsVisible },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            ) {
-                Icon(
-                    imageVector = if (detailsVisible) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = null,
-                )
-                androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
-                Text(
-                    androidx.compose.ui.res.stringResource(
-                        if (detailsVisible) R.string.hide_connection_details else R.string.connection_details,
-                    ),
-                )
-            }
-
-            if (detailsVisible) {
-                ConnectionDetails(credentials, state.failure)
-            }
-
-            if (state.status != MetroraConnectionState.REVOKED_OR_UNAUTHORIZED &&
-                state.status != MetroraConnectionState.RECOVERY_REQUIRED
-            ) {
-                OutlinedButton(
-                    onClick = onRevoke,
-                    enabled = !state.busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 52.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.LinkOff,
-                        contentDescription = null,
-                    )
-                    androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
-                    Text(androidx.compose.ui.res.stringResource(R.string.revoke_desktop))
+    val connected = state.status == MetroraConnectionState.CONNECTED || state.status == MetroraConnectionState.REFRESHING
+    MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MetroraPalette.surface.copy(alpha = 0.82f), radius = 13) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                MetroraIconBadge(Icons.Outlined.DesktopWindows, tint = MetroraPalette.cyan, size = 26.dp)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(credentials.desktopName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(androidx.compose.ui.res.stringResource(R.string.device_local_only_body), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
-                Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.revoke_desktop_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                MetroraStatusPill(androidx.compose.ui.res.stringResource(if (connected) R.string.connected else R.string.saved_state), connected = connected)
             }
-
-            OutlinedButton(
-                onClick = onForget,
-                enabled = !state.busy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteOutline,
-                    contentDescription = null,
-                )
-                androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
-                Text(
-                    androidx.compose.ui.res.stringResource(
-                        if (state.status == MetroraConnectionState.REVOKED_OR_UNAUTHORIZED ||
-                            state.status == MetroraConnectionState.RECOVERY_REQUIRED
-                        ) R.string.pair_again else R.string.forget_local,
-                    ),
-                )
+            Row(modifier = Modifier.fillMaxWidth().clickable { detailsVisible = !detailsVisible }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (detailsVisible) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(androidx.compose.ui.res.stringResource(if (detailsVisible) R.string.hide_connection_details else R.string.connection_details), color = MetroraPalette.cyan, style = MaterialTheme.typography.bodyMedium)
             }
-            Text(
-                text = androidx.compose.ui.res.stringResource(R.string.forget_local_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (detailsVisible) ConnectionDetails(credentials, state.failure)
         }
     }
 }
 
 @Composable
-private fun ConnectionDetails(
-    credentials: PairingCredentials,
-    failure: MetroraFailure?,
+internal fun DeviceActionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    body: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    MetroraPanel(
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
+        color = MetroraPalette.surface.copy(alpha = 0.78f),
+        radius = 12,
     ) {
+        Row(modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp).padding(horizontal = 10.dp, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+            MetroraIconBadge(icon, tint = MetroraPalette.cyan, size = 26.dp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(body, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun ConnectionDetails(credentials: PairingCredentials, failure: MetroraFailure?) {
+    MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MetroraPalette.background.copy(alpha = 0.52f), borderColor = MetroraPalette.border, radius = 13) {
         SelectionContainer {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DetailLine(
-                    label = androidx.compose.ui.res.stringResource(R.string.desktop_endpoint_label),
-                    value = androidx.compose.ui.res.stringResource(
-                        R.string.desktop_endpoint,
-                        credentials.host,
-                        credentials.port,
-                    ),
-                )
-                DetailLine(
-                    label = androidx.compose.ui.res.stringResource(R.string.desktop_identity_label),
-                    value = credentials.serverFingerprint,
-                    technical = true,
-                )
-                DetailLine(
-                    label = androidx.compose.ui.res.stringResource(R.string.phone_identity_label),
-                    value = credentials.clientFingerprint,
-                    technical = true,
-                )
-                DetailLine(
-                    label = androidx.compose.ui.res.stringResource(R.string.paired_on_label),
-                    value = formatDate(credentials.pairedAtEpochMs),
-                )
-                failure?.technicalDetail?.takeIf { it.isNotBlank() }?.let { detail ->
-                    DetailLine(
-                        label = androidx.compose.ui.res.stringResource(R.string.technical_detail_label),
-                        value = detail,
-                        technical = true,
-                    )
-                }
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailLine(androidx.compose.ui.res.stringResource(R.string.desktop_endpoint_label), androidx.compose.ui.res.stringResource(R.string.desktop_endpoint, credentials.host, credentials.port))
+                DetailLine(androidx.compose.ui.res.stringResource(R.string.desktop_identity_label), credentials.serverFingerprint, true)
+                DetailLine(androidx.compose.ui.res.stringResource(R.string.phone_identity_label), credentials.clientFingerprint, true)
+                DetailLine(androidx.compose.ui.res.stringResource(R.string.paired_on_label), formatDate(credentials.pairedAtEpochMs))
+                failure?.technicalDetail?.takeIf { it.isNotBlank() }?.let { DetailLine(androidx.compose.ui.res.stringResource(R.string.technical_detail_label), it, true) }
             }
         }
     }
 }
 
 @Composable
-private fun DetailLine(
-    label: String,
-    value: String,
-    technical: Boolean = false,
-) {
+private fun DetailLine(label: String, value: String, technical: Boolean = false) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = if (technical) FontFamily.Monospace else FontFamily.Default,
-        )
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = if (technical) FontFamily.Monospace else FontFamily.Default)
     }
 }
