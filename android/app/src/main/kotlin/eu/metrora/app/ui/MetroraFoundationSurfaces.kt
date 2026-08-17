@@ -302,16 +302,36 @@ private fun ActivitySessionPage(activity: ActivitySnapshot, onOpen: (String) -> 
     }
 }
 
+internal data class ActivityRowLeftMetadata(
+    val projectLabel: String,
+    val compactFacts: String,
+)
+
+internal fun activityRowLeftMetadata(
+    sourceProjectName: String,
+    totalTokens: Long?,
+    calls: Long,
+    providerLabel: String?,
+): ActivityRowLeftMetadata = ActivityRowLeftMetadata(
+    projectLabel = sourceProjectName,
+    compactFacts = listOfNotNull(
+        totalTokens?.let(::formatPreciseCount)?.let { "$it tokens" },
+        "$calls calls",
+        providerLabel,
+    ).joinToString(" · "),
+)
+
 @Composable
 private fun ActivitySessionCard(session: ActivitySession, onOpen: (String) -> Unit) {
     val model = session.models.firstOrNull() ?: session.title
+    val leftMetadata = activityRowLeftMetadata(session.sourceProjectName, session.totalTokens, session.calls, session.routeIds.firstOrNull()?.let { MetroraModelBranding.routeLabel(it) })
     val brandId = session.brandIds.firstOrNull()
     Row(modifier = Modifier.fillMaxWidth().clickable { onOpen(session.id) }.padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
         MetroraModelBrandBadge(brandId, size = 22.dp)
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
             Text(model, style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 13.sp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOf(session.sourceProjectName, formatActivityTimestamp(session.startedAt)).joinToString(" · "), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(session.totalTokens?.let(::formatPreciseCount).let { it?.plus(" tokens") }, "${session.calls} calls", session.routeIds.firstOrNull()?.let { MetroraModelBranding.routeLabel(it) }).joinToString(" · "), style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, lineHeight = 10.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(leftMetadata.projectLabel, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(leftMetadata.compactFacts, style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, lineHeight = 10.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(formatFoundationUsd(session.costMicrosUsd), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 13.sp), color = MetroraPalette.cyan, fontWeight = FontWeight.Medium)
@@ -458,7 +478,15 @@ internal fun AnalyzeSurface(state: MetroraUiState, scopeControls: @Composable ()
         else SpendSurface(foundation, foundation.spend, foundation.analyzeSpendFreshness)
         if (foundation == null || !capabilities.isAvailable("analyze.models")) UnavailableSurface(R.string.analyze_unavailable_title, R.string.analyze_unavailable_body)
         else AnalyzeModels(foundation)
-        if (foundation != null && capabilities.isAvailable("analyze.spend") && foundation.spend != null) AnalyzeCoverageSurface(foundation, foundation.spend)
+        if (foundation != null && capabilities.isAvailable("analyze.spend") && foundation.spend != null) AnalyzeCoverageSurface(
+            foundation.spend,
+            analyzeCoveragePresentation(
+                canonicalPricingCoverage = state.snapshot?.pricingCoverage,
+                accountingCoverage = foundation.analyzeAccountingCoverage,
+                tokenCoverage = foundation.analyzeTokensCoverage,
+                modelDetailCoverage = foundation.analyzeModelsCoverage,
+            ),
+        )
     }
 }
 
@@ -510,7 +538,7 @@ private fun SpendSurface(foundation: MobileFoundationSnapshot, spend: eu.metrora
                     DomainFreshnessNote(freshness)
                     Text(formatFoundationUsd(spend.costMicrosUsd), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.SemiBold)
                 }
-                foundation.analyzeAccountingCoverage?.cost?.let { CoverageValue(it, R.string.cost_coverage) }
+                foundation.analyzeAccountingCoverage?.cost?.let { CoverageValue(it, R.string.cost_accounting_coverage) }
             }
             if (spend.trend.isEmpty()) Text(androidx.compose.ui.res.stringResource(R.string.trend_unavailable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
             else FoundationTrendChart(spend.trend, Modifier.fillMaxWidth().height(42.dp))
@@ -519,7 +547,7 @@ private fun SpendSurface(foundation: MobileFoundationSnapshot, spend: eu.metrora
 }
 
 @Composable
-private fun AnalyzeCoverageSurface(foundation: MobileFoundationSnapshot, spend: eu.metrora.app.data.MobileSpendSummary) {
+private fun AnalyzeCoverageSurface(spend: eu.metrora.app.data.MobileSpendSummary, coverage: AnalyzeCoveragePresentation) {
     MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MetroraPalette.surface.copy(alpha = 0.78f), radius = 13) {
         Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -527,14 +555,15 @@ private fun AnalyzeCoverageSurface(foundation: MobileFoundationSnapshot, spend: 
                     Text(androidx.compose.ui.res.stringResource(R.string.pricing_coverage_short), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(androidx.compose.ui.res.stringResource(R.string.analyze_coverage_independent), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                foundation.analyzeAccountingCoverage?.cost?.let { CoverageValue(it, R.string.pricing_coverage_short) }
+                CoverageValue(coverage.pricingCoverage, R.string.pricing_coverage_short)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 AnalyzeInlineMetric(androidx.compose.ui.res.stringResource(R.string.calls), formatCompact(spend.calls), Modifier.weight(1f))
                 AnalyzeInlineMetric(androidx.compose.ui.res.stringResource(R.string.sessions), formatCompact(spend.sessions), Modifier.weight(1f))
-                foundation.analyzeAccountingCoverage?.tokenCost?.let { CoverageValue(it, R.string.token_coverage) }
+                coverage.accountingCostCoverage?.let { CoverageValue(it, R.string.cost_accounting_coverage) }
             }
-            CoverageLine(androidx.compose.ui.res.stringResource(R.string.models_coverage), foundation.analyzeModelsCoverage)
+            CoverageLine(androidx.compose.ui.res.stringResource(R.string.token_coverage), coverage.tokenCoverage)
+            CoverageLine(androidx.compose.ui.res.stringResource(R.string.models_coverage), coverage.modelDetailCoverage)
         }
     }
 }
@@ -548,9 +577,15 @@ private fun AnalyzeInlineMetric(label: String, value: String, modifier: Modifier
 }
 
 @Composable
-private fun CoverageValue(value: Double, label: Int) {
+private fun CoverageValue(value: Double?, label: Int) {
     Column(horizontalAlignment = Alignment.End) {
-        Text(String.format(Locale.US, "%.1f%%", value * 100.0), color = MetroraPalette.cyan, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = value?.let { String.format(Locale.US, "%.1f%%", it * 100.0) }
+                ?: androidx.compose.ui.res.stringResource(R.string.coverage_unavailable),
+            color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant else MetroraPalette.cyan,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
         Text(androidx.compose.ui.res.stringResource(label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

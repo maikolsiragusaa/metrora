@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -166,8 +165,7 @@ private fun PostConnectionHeader(state: MetroraUiState, onRefresh: () -> Unit) {
             markBoxWidth = 36.dp,
             markOffsetX = (-8).dp,
         )
-        Spacer(Modifier.weight(1f))
-        Text(desktopName, modifier = Modifier.widthIn(max = 64.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+        Text(desktopName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
         IconButton(
             onClick = onRefresh,
             enabled = !state.busy && state.status != MetroraConnectionState.RECOVERY_REQUIRED && state.status != MetroraConnectionState.REVOKED_OR_UNAUTHORIZED,
@@ -442,7 +440,7 @@ private fun ModelRow(model: ModelUsage, index: Int, showProvider: Boolean) {
     val brand = MetroraModelBranding.hasCanonicalLogo(model.brandId)
     val routeKind = MetroraModelBranding.routeSubtitleKind(model.providerId, model.brandId, showProvider)
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Surface(modifier = Modifier.size(22.dp), shape = RoundedCornerShape(6.dp), color = MetroraPalette.surfaceMuted, border = androidx.compose.foundation.BorderStroke(0.5.dp, MetroraPalette.border.copy(alpha = 0.8f))) {
+        Surface(modifier = Modifier.size(22.dp), shape = RoundedCornerShape(6.dp), color = modelBrandBadgeSurfaceColor(model.brandId), border = androidx.compose.foundation.BorderStroke(0.5.dp, modelBrandBadgeBorderColor(model.brandId).copy(alpha = 0.8f))) {
             Image(
                 painter = painterResource(MetroraModelBranding.logoResource(model.brandId)),
                 contentDescription = model.brandId?.let(MetroraModelBranding::brandLabel)?.takeIf { brand }?.let { androidx.compose.ui.res.stringResource(R.string.model_brand_logo_description, it) } ?: androidx.compose.ui.res.stringResource(R.string.metrora_model_logo_description),

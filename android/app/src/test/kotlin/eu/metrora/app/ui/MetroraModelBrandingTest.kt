@@ -59,4 +59,13 @@ class MetroraModelBrandingTest {
         )
         assertEquals(null, MetroraModelBranding.routeSubtitleKind(null, "anthropic", false))
     }
+
+    @Test
+    fun canonical_brand_badges_use_light_neutral_contrast_surfaces() {
+        listOf("openai", "anthropic", "google", "zai", "deepseek", "qwen", "moonshot").forEach { brandId ->
+            assertTrue(MetroraModelBranding.usesLightBadge(brandId))
+        }
+        assertFalse(MetroraModelBranding.usesLightBadge("unknown-provider"))
+    }
+
 }

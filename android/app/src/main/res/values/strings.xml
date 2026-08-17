@@ -181,8 +181,8 @@
     <string name="models_unavailable_project_detail">Model detail is unavailable for this Project and period. Cost, calls and sessions remain separate accounting facts.</string>
     <string name="other_models">Other models</string>
     <string name="analyze_coverage_independent">Coverage dimensions are reported independently.</string>
-    <string name="cost_coverage">cost coverage</string>
-    <string name="token_coverage">token coverage</string>
+    <string name="cost_accounting_coverage">Cost accounting coverage</string>
+    <string name="token_coverage">Token coverage</string>
     <string name="models_coverage">Model detail</string>
     <string name="pricing_coverage_short">Pricing coverage</string>
     <string name="coverage_complete">Complete</string>
@@ -198,10 +198,10 @@
     <string name="spend_trend_title">Spend trend</string>
     <string name="spend_unavailable_title">Spend analysis is unavailable</string>
     <string name="spend_unavailable_body">This Desktop did not provide a bounded Spend projection for the selected Project scope.</string>
-    <string name="workspace_unavailable_title">Workspace is unavailable</string>
-    <string name="workspace_unavailable_body">Workspace remains a Desktop/core identity and evidence boundary. No bounded mobile projection is advertised in Foundation V1.</string>
-    <string name="workspace_subtitle">Read-only shell for the current Workspace authority</string>
-    <string name="workspace_read_only_label">No Workspace mutation authority on mobile</string>
+    <string name="workspace_unavailable_title">Workspace is available on Desktop</string>
+    <string name="workspace_unavailable_body">This phone does not currently have access to Workspace. Use Metrora Desktop to view and manage it.</string>
+    <string name="workspace_subtitle">View and manage Workspace on Desktop</string>
+    <string name="workspace_read_only_label">Desktop only for now</string>
 
     <string name="nav_settings">Settings</string>
     <string name="settings_subtitle">Local controls for this phone and its paired Desktop.</string>

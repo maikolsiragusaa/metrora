@@ -25,6 +25,8 @@ internal object MetroraPalette {
     val cyanSoft = Color(0xFF0B8297)
     val success = Color(0xFF21D47A)
     val warning = Color(0xFFFFC857)
+    val brandBadgeLight = Color(0xFFF1F4F5)
+    val brandBadgeLightBorder = Color(0xFFC8D1D5)
 }
 
 internal object MetroraSpacing {

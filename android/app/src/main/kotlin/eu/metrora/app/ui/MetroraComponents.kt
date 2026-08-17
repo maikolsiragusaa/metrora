@@ -184,6 +184,12 @@ internal fun MetroraIconBadge(
     }
 }
 
+internal fun modelBrandBadgeSurfaceColor(brandId: String?): Color =
+    if (MetroraModelBranding.usesLightBadge(brandId)) MetroraPalette.brandBadgeLight else MetroraPalette.surfaceMuted
+
+internal fun modelBrandBadgeBorderColor(brandId: String?): Color =
+    if (MetroraModelBranding.usesLightBadge(brandId)) MetroraPalette.brandBadgeLightBorder else MetroraPalette.border
+
 @Composable
 internal fun MetroraModelBrandBadge(
     brandId: String?,
@@ -194,8 +200,8 @@ internal fun MetroraModelBrandBadge(
     Surface(
         modifier = modifier.size(size),
         shape = RoundedCornerShape(10.dp),
-        color = MetroraPalette.surfaceMuted,
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, MetroraPalette.border.copy(alpha = 0.8f)),
+        color = modelBrandBadgeSurfaceColor(brandId),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, modelBrandBadgeBorderColor(brandId).copy(alpha = 0.8f)),
     ) {
         Image(
             painter = painterResource(MetroraModelBranding.logoResource(brandId)),

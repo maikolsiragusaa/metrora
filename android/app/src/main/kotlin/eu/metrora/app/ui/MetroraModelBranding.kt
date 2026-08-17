@@ -72,6 +72,9 @@ internal object MetroraModelBranding {
 
     fun hasCanonicalLogo(brandId: String?): Boolean = normalize(brandId)?.let(canonicalLogos::containsKey) == true
 
+    /** Known official marks get a light neutral surface for dark-mode contrast. */
+    fun usesLightBadge(brandId: String?): Boolean = hasCanonicalLogo(brandId)
+
     fun logoResource(brandId: String?): Int = canonicalLogos[normalize(brandId)] ?: R.drawable.metrora_mark
 
     fun brandLabel(brandId: String?): String? = normalize(brandId)?.let(brandLabels::get)
