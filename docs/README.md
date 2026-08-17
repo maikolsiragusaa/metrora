@@ -54,6 +54,7 @@ Component references in this section explain bounded implementation responsibili
 - [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md) — current unsigned technical-preview source, candidate, physical and publication gates.
 - [Windows physical acceptance guided path](WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md) — two-profile guided execution for the current candidate.
 - [Windows physical acceptance R1.B.D](WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md) — historical `0.9.19` acceptance contract and evidence boundary.
+- [Android public distribution v1](ANDROID_PUBLIC_DISTRIBUTION_V1.md) — source-bound direct APK contract, production-signing boundary and Founder-gated publication path.
 - [Versioning](VERSIONING.md) — release-candidate and platform build-version authority.
 - [Releasing Metrora](../RELEASING.md) — public release responsibilities and prohibitions.
 - [Changelog](../CHANGELOG.md) — Metrora-originated public changes.
