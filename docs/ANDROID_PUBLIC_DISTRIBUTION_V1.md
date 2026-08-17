@@ -126,12 +126,17 @@ environment/repository variable
 `METRORA_ANDROID_PRODUCTION_CERTIFICATE_SHA256`. The workflow fails closed if
 it is missing and the verifier compares the APK certificate with it.
 
-The keystore is decoded only into the trusted runner's temporary directory,
-used for `githubRelease`, and removed in an `always()` cleanup step. The
-workflow has no push trigger and cannot publish a release from a push to
-`main`. Its optional draft-release job requires an existing tag already bound
-to the exact source commit and uses `--draft --verify-tag`; it never creates a
-tag and never makes a public release.
+The keystore is decoded only into the trusted runner's temporary directory and
+used inside one protected signing/build step. Signing credentials are scoped
+to that step, are not written to `GITHUB_ENV`, and are unset immediately after
+the signed APK is assembled. A shell trap and a following `always()` cleanup
+step remove the JKS even when signing fails. Metadata verification, artifact
+upload and optional draft-release preparation receive only the public
+certificate fingerprint and release outputs; they do not receive passwords,
+the key alias or private keystore material. The workflow has no push trigger
+and cannot publish a release from a push to `main`. Its optional draft-release
+job requires an existing tag already bound to the exact source commit and uses
+`--draft --verify-tag`; it never creates a tag and never makes a public release.
 
 ## Key custody and recovery gate
 
@@ -139,9 +144,9 @@ The production signing key is a Founder-owned gate, not a repository asset.
 Before a public release, the owner must complete these external operational
 steps:
 
-1. Generate one long-lived Android production signing identity on a trusted,
-   offline-controlled workstation. Use a stable production alias and a
-   supported keystore format; do not reuse the debug or QA identity.
+1. Generate one long-lived Android production signing identity in a JKS
+   keystore on a trusted, offline-controlled workstation. Use a stable
+   production alias; do not reuse the debug or QA identity.
 2. Keep the original keystore and passwords in long-term protected custody,
    with at least one separately protected offline backup and a tested recovery
    procedure. Do not place either in Git, issues, pull requests, workflow
@@ -170,14 +175,18 @@ commit. The workflow:
 
 1. checks out that exact commit and verifies it is an ancestor of `origin/main`;
 2. sets up Java 17, Gradle 9.6.1 and Android API 36;
-3. materializes the production keystore only on the protected runner;
-4. runs focused Android tests and lint;
+3. runs focused Android tests and lint before production secrets are scoped;
+4. materializes and validates the production JKS only inside the protected
+   signing/build step;
 5. requires the production signing Gradle path and assembles `githubRelease`;
-6. verifies package identity, version, signature and certificate;
-7. writes the canonical APK name, manifest and `SHA256SUMS`;
-8. independently re-verifies the complete release bundle;
-9. uploads a short-lived workflow candidate artifact; and
-10. removes the temporary keystore even on failure.
+6. removes the temporary JKS and unsets signing credentials immediately after
+   assembly, including failure paths;
+7. verifies package identity, version, signature and certificate;
+8. writes the canonical APK name, manifest and `SHA256SUMS`;
+9. independently re-verifies the complete release bundle;
+10. uploads a short-lived workflow candidate artifact; and
+11. keeps signing passwords, alias and private keystore material out of all
+    later verification, summary and draft-release steps.
 
 The optional draft preparation step is explicitly requested, requires an
 existing `android-v<versionName>` tag bound to the same commit, and creates a
@@ -250,6 +259,27 @@ S23-class visual comparison against the final production-signed APK:
 Record only the physical acceptance result and release facts in the private
 owner/release evidence. Do not commit personal S23 screenshots as marketing
 evidence.
+
+## Production-release functional smoke
+
+Because `githubRelease` enables minification and resource shrinking, the final
+production-signed APK needs one bounded S23-class functional smoke in addition
+to the visual matrix above. Use a clean install of the exact
+production-signed `eu.metrora.app` APK and verify:
+
+1. launch completes without a startup failure;
+2. real QR pairing completes and SAS/Desktop approval succeeds;
+3. Home loads and refreshes real data;
+4. Activity opens and renders real sessions;
+5. Analyze opens and renders accepted factual data;
+6. Settings opens and device/security state remains functional;
+7. the QR scanner remains functional; and
+8. one bounded offline-to-reconnect check completes without breaking the
+   local-first state.
+
+This is a production-variant smoke, not a repeat of the complete UX V2
+acceptance matrix. Record only the result and release facts in private owner
+evidence; do not commit personal screenshots publicly.
 
 ## F-Droid characterization
 

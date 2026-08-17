@@ -149,6 +149,11 @@ publish from pushes or tags, and can prepare only a draft release after an
 existing tag is independently bound to the reviewed source commit. See
 [`docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md`](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md).
 
+The V1 production custody contract uses a JKS keystore. The keystore and
+passwords remain Founder-owned external material; the repository workflow
+materializes them only for the protected signing step and does not persist
+them in `GITHUB_ENV` or release metadata.
+
 The QA physical-acceptance identity is not a production release identity.
 Google Play and F-Droid remain separate gates, and no public Android
 availability claim is made until the production key, physical acceptance and
