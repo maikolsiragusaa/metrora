@@ -5,13 +5,21 @@ on:
     paths:
       - "android/**"
       - "docs/ANDROID_COMPANION_FOUNDATION.md"
+      - "docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md"
+      - "scripts/verify-android-release.mjs"
+      - "scripts/verify-android-release.node-test.mjs"
       - ".github/workflows/android-companion.yml"
+      - ".github/workflows/android-public-release.yml"
   push:
     branches: [main]
     paths:
       - "android/**"
       - "docs/ANDROID_COMPANION_FOUNDATION.md"
+      - "docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md"
+      - "scripts/verify-android-release.mjs"
+      - "scripts/verify-android-release.node-test.mjs"
       - ".github/workflows/android-companion.yml"
+      - ".github/workflows/android-public-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -91,11 +99,11 @@ jobs:
             android/app/build/reports/**
             android/app/build/test-results/**
           if-no-files-found: warn
-      - name: Upload unsigned release packages
+      - name: Upload unsigned validation packages
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: metrora-android-alpha
+          name: metrora-android-validation
           path: |
             android/app/build/outputs/apk/github/release/*.apk
             android/app/build/outputs/apk/fdroid/release/*.apk

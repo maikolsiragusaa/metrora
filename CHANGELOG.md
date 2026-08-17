@@ -40,6 +40,10 @@ submission and publication decision.
 
 ## Unreleased — post-RC10 development
 
+### Android public distribution readiness
+
+- Added a source-bound, production-signing-gated direct APK release contract with deterministic GitHub asset naming, public checksum/manifest metadata and Obtainium-compatible release discovery; no Android release is published by this change.
+
 ### Copilot durable-history reconciliation
 
 - Reconcile only the affected source/day slices when a mutable current Copilot journal changes after daily history was materialized, so removed requests do not remain as daily-history ghosts.

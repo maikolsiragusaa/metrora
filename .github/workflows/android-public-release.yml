@@ -1,0 +1,259 @@
+name: Android public release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full 40-character commit SHA already reachable from main
+        required: true
+        type: string
+      release_tag:
+        description: Existing android-v<versionName> tag required only for draft-release preparation
+        required: false
+        type: string
+      prepare_draft:
+        description: Prepare a draft GitHub Release after the signed candidate is verified
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrora-android-public-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    name: Build and verify production-signed Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: android-production-release
+    env:
+      METRORA_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      METRORA_ANDROID_PRODUCTION_CERTIFICATE_SHA256: ${{ vars.METRORA_ANDROID_PRODUCTION_CERTIFICATE_SHA256 }}
+    outputs:
+      artifact_name: ${{ steps.verify.outputs.artifact_name }}
+      version_name: ${{ steps.metadata.outputs.version_name }}
+      version_code: ${{ steps.metadata.outputs.version_code }}
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source binding to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$METRORA_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$METRORA_SOURCE_COMMIT"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$METRORA_SOURCE_COMMIT" origin/main
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.6.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Set up Android SDK API 36
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android API 36
+        shell: bash
+        run: sdkmanager 'platforms;android-36'
+
+      - name: Materialize production signing identity
+        shell: bash
+        env:
+          METRORA_ANDROID_PRODUCTION_KEYSTORE_B64: ${{ secrets.METRORA_ANDROID_PRODUCTION_KEYSTORE_B64 }}
+          METRORA_ANDROID_PRODUCTION_STORE_PASSWORD: ${{ secrets.METRORA_ANDROID_PRODUCTION_STORE_PASSWORD }}
+          METRORA_ANDROID_PRODUCTION_KEY_PASSWORD: ${{ secrets.METRORA_ANDROID_PRODUCTION_KEY_PASSWORD }}
+          METRORA_ANDROID_PRODUCTION_KEY_ALIAS: ${{ secrets.METRORA_ANDROID_PRODUCTION_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$METRORA_ANDROID_PRODUCTION_KEYSTORE_B64"
+          test -n "$METRORA_ANDROID_PRODUCTION_STORE_PASSWORD"
+          test -n "$METRORA_ANDROID_PRODUCTION_KEY_PASSWORD"
+          test -n "$METRORA_ANDROID_PRODUCTION_KEY_ALIAS"
+          test -n "$METRORA_ANDROID_PRODUCTION_CERTIFICATE_SHA256"
+          production_keystore="$RUNNER_TEMP/metrora-android-production.jks"
+          printf '%s' "$METRORA_ANDROID_PRODUCTION_KEYSTORE_B64" | base64 --decode > "$production_keystore"
+          chmod 600 "$production_keystore"
+          keytool -list -storetype JKS -keystore "$production_keystore" \
+            -storepass "$METRORA_ANDROID_PRODUCTION_STORE_PASSWORD" \
+            -alias "$METRORA_ANDROID_PRODUCTION_KEY_ALIAS" >/dev/null 2>&1
+          {
+            echo 'METRORA_PRODUCTION_RELEASE=true'
+            echo "METRORA_ANDROID_PRODUCTION_KEYSTORE_PATH=$production_keystore"
+            echo "METRORA_ANDROID_PRODUCTION_STORE_PASSWORD=$METRORA_ANDROID_PRODUCTION_STORE_PASSWORD"
+            echo "METRORA_ANDROID_PRODUCTION_KEY_PASSWORD=$METRORA_ANDROID_PRODUCTION_KEY_PASSWORD"
+            echo "METRORA_ANDROID_PRODUCTION_KEY_ALIAS=$METRORA_ANDROID_PRODUCTION_KEY_ALIAS"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate Android and assemble the signed GitHub APK
+        shell: bash
+        run: >-
+          gradle -p android --no-daemon
+          :app:testGithubDebugUnitTest
+          :app:lint
+          :app:verifyGithubPublicRelease
+          :app:assembleGithubRelease
+
+      - name: Read Android version authority
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(gradle -p android --no-daemon --quiet :app:printGithubReleaseMetadata)"
+          version_name="$(printf '%s\n' "$metadata" | awk -F= '$1 == "versionName" { print $2 }')"
+          version_code="$(printf '%s\n' "$metadata" | awk -F= '$1 == "versionCode" { print $2 }')"
+          application_id="$(printf '%s\n' "$metadata" | awk -F= '$1 == "applicationId" { print $2 }')"
+          test "$application_id" = 'eu.metrora.app'
+          test -n "$version_name"
+          test "$version_code" -ge 1
+          mapfile -t apk_candidates < <(find android/app/build/outputs/apk/github/release -maxdepth 1 -type f -name '*.apk' -print)
+          test "${#apk_candidates[@]}" -eq 1
+          apk="${apk_candidates[0]}"
+          [[ "$apk" != *-unsigned.apk ]]
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$apk" >> "$GITHUB_OUTPUT"
+
+      - name: Create and independently verify release metadata
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          android_sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          build_tools="$(find "$android_sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -n "$build_tools"
+          test -x "$build_tools/aapt2"
+          test -x "$build_tools/apksigner"
+          release_directory="$RUNNER_TEMP/metrora-android-public-release"
+          mkdir -p "$release_directory"
+          node scripts/verify-android-release.mjs \
+            --apk '${{ steps.metadata.outputs.apk_path }}' \
+            --output-dir "$release_directory" \
+            --source-commit "$METRORA_SOURCE_COMMIT" \
+            --expected-application-id eu.metrora.app \
+            --expected-version-name '${{ steps.metadata.outputs.version_name }}' \
+            --expected-version-code '${{ steps.metadata.outputs.version_code }}' \
+            --expected-certificate-sha256 "$METRORA_ANDROID_PRODUCTION_CERTIFICATE_SHA256" \
+            --aapt2 "$build_tools/aapt2" \
+            --apksigner "$build_tools/apksigner"
+          echo "release_directory=$release_directory" >> "$GITHUB_OUTPUT"
+          artifact_name="Metrora-Android-${{ steps.metadata.outputs.version_name }}.apk"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload verified Android release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrora-android-public-${{ inputs.source_commit }}
+          path: ${{ steps.verify.outputs.release_directory }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summarize non-publishing candidate
+        shell: bash
+        run: |
+          {
+            echo '## Android public release candidate'
+            echo
+            echo '- Source commit: `${{ inputs.source_commit }}`'
+            echo '- Application ID: `eu.metrora.app`'
+            echo '- Version: `${{ steps.metadata.outputs.version_name }}` (code `${{ steps.metadata.outputs.version_code }}`)'
+            echo '- Artifact: `${{ steps.verify.outputs.artifact_name }}`'
+            echo '- State: production-signed candidate; no public release was created by this workflow run'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove production signing material
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -n "${METRORA_ANDROID_PRODUCTION_KEYSTORE_PATH:-}" ]; then
+            rm -f -- "$METRORA_ANDROID_PRODUCTION_KEYSTORE_PATH"
+          fi
+          if [ -n "${GITHUB_ENV:-}" ] && [ -f "$GITHUB_ENV" ]; then
+            sed -i \
+              -e '/^METRORA_PRODUCTION_/d' \
+              -e '/^METRORA_ANDROID_PRODUCTION_/d' \
+              "$GITHUB_ENV"
+          fi
+          unset METRORA_ANDROID_PRODUCTION_KEYSTORE_PATH \
+            METRORA_ANDROID_PRODUCTION_STORE_PASSWORD \
+            METRORA_ANDROID_PRODUCTION_KEY_PASSWORD \
+            METRORA_ANDROID_PRODUCTION_KEY_ALIAS \
+            METRORA_PRODUCTION_RELEASE
+
+  draft-release:
+    if: github.ref == 'refs/heads/main' && inputs.prepare_draft == true
+    needs: build
+    name: Optionally prepare a draft GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the source commit and existing release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify existing tag is bound to the source commit
+        shell: bash
+        env:
+          METRORA_RELEASE_TAG: ${{ inputs.release_tag }}
+          METRORA_SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          test -n "$METRORA_RELEASE_TAG"
+          [[ "$METRORA_RELEASE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$ ]]
+          git fetch --no-tags origin "refs/tags/$METRORA_RELEASE_TAG:refs/tags/$METRORA_RELEASE_TAG"
+          test "$(git rev-list -n 1 "$METRORA_RELEASE_TAG")" = "$METRORA_SOURCE_COMMIT"
+
+      - name: Download the verified candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: metrora-android-public-${{ inputs.source_commit }}
+          path: candidate
+
+      - name: Create a draft, never-public GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          METRORA_RELEASE_TAG: ${{ inputs.release_tag }}
+          METRORA_VERSION_NAME: ${{ needs.build.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/metrora-android-release-notes.md"
+          {
+            echo "# Metrora Android $METRORA_VERSION_NAME"
+            echo
+            echo 'Draft release prepared from the source-bound, production-signed Android candidate.'
+            echo
+            echo 'Publication remains a separate Founder stop/go after final physical acceptance.'
+          } > "$notes"
+          gh release create "$METRORA_RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --prerelease \
+            --verify-tag \
+            --title "Metrora Android $METRORA_VERSION_NAME" \
+            --notes-file "$notes" \
+            candidate/*

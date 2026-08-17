@@ -44,6 +44,25 @@ build with the same identity version is not, by itself, evidence of the live
 listing; later Store updates must advance according to the Store's
 package-version rules and pass their own acceptance and publication gates.
 
+## Android version authority
+
+Android uses the native `versionName` and integer `versionCode` declared in
+`android/app/build.gradle.kts`. The current never-public source value is:
+
+- `versionName = 0.1.0-alpha.1`;
+- `versionCode = 1`;
+- application ID `eu.metrora.app`.
+
+Because no production-signed Android artifact has been publicly installable,
+retaining `versionCode = 1` for the first direct APK is valid. Every later
+publicly installable Android upgrade must use a strictly larger `versionCode`.
+The human-readable `versionName` is used in the deterministic GitHub identity
+`android-v<versionName>` and asset name
+`Metrora-Android-<versionName>.apk`. Android's version line is independent of
+the frozen Windows Store package version. A future Play path keeps the same
+application ID and monotonic package line, subject to its separate signing and
+publication gates.
+
 ## Ordering
 
 Metrora accepts only stable versions and numbered release candidates in the forms:
