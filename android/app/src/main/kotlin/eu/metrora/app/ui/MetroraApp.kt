@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.metrora.app.MetroraConnectionState
 import eu.metrora.app.MetroraCoordinator
+import eu.metrora.app.MetroraNotice
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 
@@ -42,6 +44,12 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
     val state by coordinator.state.collectAsState()
     var confirmation by rememberSaveable { mutableStateOf<ConfirmAction?>(null) }
     var scannerVisible by rememberSaveable { mutableStateOf(false) }
+    var manualVisible by rememberSaveable { mutableStateOf(false) }
+    var connectedSuccessVisible by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(state.notice) {
+        if (state.notice == MetroraNotice.PAIRING_COMPLETE) connectedSuccessVisible = true
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -51,6 +59,10 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
         when {
             scannerVisible -> QrScannerScreen(
                 onBack = { scannerVisible = false },
+                onManual = {
+                    scannerVisible = false
+                    manualVisible = true
+                },
                 onPayload = { payload ->
                     val endpoint = runCatching {
                         eu.metrora.app.network.PairingBootstrap.parse(payload)
@@ -62,12 +74,27 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
                     endpoint != null
                 },
             )
-            state.initializing -> AppScrollShell { InitializingState() }
+            manualVisible && state.status == MetroraConnectionState.UNPAIRED -> ManualConnectionScreen(
+                state = state,
+                coordinator = coordinator,
+                onBack = { manualVisible = false },
+                onOpenScanner = {
+                    manualVisible = false
+                    scannerVisible = true
+                },
+            )
+            state.initializing || state.status == MetroraConnectionState.PAIRING -> AppScrollShell { InitializingState() }
             state.status == MetroraConnectionState.VERIFYING_SAS ||
                 state.status == MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL -> VerifySasScreen(
                 state = state,
-                onConfirm = coordinator::confirmPairingCode,
-                onCancel = coordinator::cancelPairing,
+                onConfirm = {
+                    connectedSuccessVisible = true
+                    coordinator.confirmPairingCode()
+                },
+                onCancel = {
+                    connectedSuccessVisible = false
+                    coordinator.cancelPairing()
+                },
             )
             state.status == MetroraConnectionState.RECOVERY_REQUIRED -> AppScrollShell {
                 Feedback(state)
@@ -76,7 +103,18 @@ fun MetroraApp(coordinator: MetroraCoordinator) {
             state.credentials == null -> ConnectScreen(
                 state = state,
                 coordinator = coordinator,
-                onOpenScanner = { scannerVisible = true },
+                onOpenScanner = {
+                    manualVisible = false
+                    scannerVisible = true
+                },
+                onOpenManual = {
+                    scannerVisible = false
+                    manualVisible = true
+                },
+            )
+            connectedSuccessVisible && state.credentials != null -> ConnectedSuccessScreen(
+                state = state,
+                onOpenHome = { connectedSuccessVisible = false },
             )
             else -> HomeState(
                 state = state,
@@ -113,7 +151,7 @@ private fun AppScrollShell(content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .padding(top = 10.dp)
             .navigationBarsPadding()
             .imePadding()
             .verticalScroll(rememberScrollState())

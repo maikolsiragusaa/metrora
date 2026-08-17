@@ -17,6 +17,7 @@ import eu.metrora.app.MetroraNotice
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.R
 import eu.metrora.app.MetroraUiState
+import eu.metrora.app.data.AnalyzeAccountingCoverage
 import eu.metrora.app.data.DetailCoverage
 import java.math.BigDecimal
 import java.text.DateFormat
@@ -255,6 +256,44 @@ internal fun tokenMetricValue(coverage: DetailCoverage, totalTokens: Long): Stri
     DetailCoverage.COMPLETE -> formatCompact(totalTokens)
     DetailCoverage.PARTIAL -> totalTokens.takeIf { it > 0L }?.let { "${formatCompact(it)}+" }
     DetailCoverage.UNAVAILABLE -> null
+}
+
+internal enum class AnalyzeCoverageDimension {
+    PRICING,
+    ACCOUNTING_COST,
+    TOKEN,
+    MODEL_DETAIL,
+}
+
+internal data class AnalyzeCoveragePresentation(
+    val pricingCoverage: Double?,
+    val accountingCostCoverage: Double?,
+    val tokenCoverage: DetailCoverage,
+    val modelDetailCoverage: DetailCoverage,
+)
+
+/**
+ * Keep Analyze's factual coverage dimensions sourced from their own
+ * authorities. In particular, accounting cost completeness is not pricing
+ * coverage, even when both values happen to be percentages.
+ */
+internal fun analyzeCoveragePresentation(
+    canonicalPricingCoverage: Double?,
+    accountingCoverage: AnalyzeAccountingCoverage?,
+    tokenCoverage: DetailCoverage,
+    modelDetailCoverage: DetailCoverage,
+): AnalyzeCoveragePresentation = AnalyzeCoveragePresentation(
+    pricingCoverage = canonicalPricingCoverage,
+    accountingCostCoverage = accountingCoverage?.cost,
+    tokenCoverage = tokenCoverage,
+    modelDetailCoverage = modelDetailCoverage,
+)
+
+internal fun analyzeCoverageLabel(dimension: AnalyzeCoverageDimension): Int = when (dimension) {
+    AnalyzeCoverageDimension.PRICING -> R.string.pricing_coverage_short
+    AnalyzeCoverageDimension.ACCOUNTING_COST -> R.string.cost_accounting_coverage
+    AnalyzeCoverageDimension.TOKEN -> R.string.token_coverage
+    AnalyzeCoverageDimension.MODEL_DETAIL -> R.string.models_coverage
 }
 
 internal fun formatDate(epochMs: Long): String = DateFormat.getDateTimeInstance(

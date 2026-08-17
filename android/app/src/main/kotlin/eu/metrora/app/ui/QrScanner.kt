@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -31,6 +33,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -58,6 +63,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -69,6 +75,7 @@ import java.util.concurrent.Executors
 @Composable
 internal fun QrScannerScreen(
     onBack: () -> Unit,
+    onManual: () -> Unit,
     onPayload: (String) -> Boolean,
 ) {
     val context = LocalContext.current
@@ -90,13 +97,17 @@ internal fun QrScannerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .padding(top = 10.dp)
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(horizontal = 19.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        MetroraBackHeader(onBack = onBack, onHelp = {})
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        MetroraBackHeader(onBack = onBack)
+        Column(
+            modifier = Modifier.padding(bottom = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text(
                 text = androidx.compose.ui.res.stringResource(R.string.scan_qr_title),
                 style = MaterialTheme.typography.headlineLarge,
@@ -104,16 +115,17 @@ internal fun QrScannerScreen(
             )
             Text(
                 text = androidx.compose.ui.res.stringResource(R.string.scan_qr_body),
-                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.widthIn(max = 230.dp),
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         MetroraPanel(
-            modifier = Modifier.fillMaxWidth().height(334.dp),
-            color = Color.Black,
-            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.75f),
-            radius = 22,
+            modifier = Modifier.fillMaxWidth().height(254.dp),
+            color = MetroraPalette.background,
+            borderColor = MetroraPalette.borderStrong,
+            radius = 20,
         ) {
             Box(Modifier.fillMaxSize()) {
                 if (hasPermission) {
@@ -122,6 +134,7 @@ internal fun QrScannerScreen(
                             invalidPayload = !onPayload(raw)
                         },
                     )
+                    ScannerAmbientGlow(Modifier.fillMaxSize())
                     ScannerCorners(Modifier.fillMaxSize())
                 } else {
                     CameraPermissionPrompt(onRequest = {
@@ -153,7 +166,7 @@ internal fun QrScannerScreen(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -172,30 +185,41 @@ internal fun QrScannerScreen(
         }
 
         MetroraPanel(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
             radius = 18,
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(22.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.CameraAlt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(30.dp),
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.Shield,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.CameraAlt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp).padding(top = 1.dp),
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
                         text = androidx.compose.ui.res.stringResource(R.string.qr_same_network_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = androidx.compose.ui.res.stringResource(R.string.qr_same_network_body),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -203,8 +227,8 @@ internal fun QrScannerScreen(
         }
 
         TextButton(
-            onClick = onBack,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            onClick = onManual,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).offset(y = (-6).dp),
         ) {
             Text(androidx.compose.ui.res.stringResource(R.string.manual_address_action))
         }
@@ -248,9 +272,9 @@ private fun CameraPermissionPrompt(onRequest: () -> Unit) {
 @Composable
 private fun ScannerCorners(modifier: Modifier) {
     val cyan = MaterialTheme.colorScheme.primary
-    Canvas(modifier.padding(30.dp)) {
-        val length = 42.dp.toPx()
-        val stroke = 4.dp.toPx()
+    Canvas(modifier.padding(35.dp)) {
+        val length = 22.dp.toPx()
+        val stroke = 3.dp.toPx()
         val cap = StrokeCap.Round
         drawLine(cyan, androidx.compose.ui.geometry.Offset(0f, length), androidx.compose.ui.geometry.Offset(0f, 0f), stroke, cap)
         drawLine(cyan, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(length, 0f), stroke, cap)
@@ -260,6 +284,26 @@ private fun ScannerCorners(modifier: Modifier) {
         drawLine(cyan, androidx.compose.ui.geometry.Offset(0f, size.height), androidx.compose.ui.geometry.Offset(length, size.height), stroke, cap)
         drawLine(cyan, androidx.compose.ui.geometry.Offset(size.width - length, size.height), androidx.compose.ui.geometry.Offset(size.width, size.height), stroke, cap)
         drawLine(cyan, androidx.compose.ui.geometry.Offset(size.width, size.height - length), androidx.compose.ui.geometry.Offset(size.width, size.height), stroke, cap)
+    }
+}
+
+@Composable
+private fun ScannerAmbientGlow(modifier: Modifier) {
+    Canvas(modifier) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    MetroraPalette.surfaceRaised.copy(alpha = 0.14f),
+                    MetroraPalette.cyan.copy(alpha = 0.16f),
+                ),
+            ),
+        )
+        drawCircle(
+            color = MetroraPalette.cyan.copy(alpha = 0.09f),
+            radius = size.width * 0.28f,
+            center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * 1.03f),
+        )
     }
 }
 

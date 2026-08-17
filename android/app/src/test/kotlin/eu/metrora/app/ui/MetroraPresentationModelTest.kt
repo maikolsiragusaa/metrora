@@ -7,6 +7,7 @@ import eu.metrora.app.MetroraFailureReason
 import eu.metrora.app.MetroraOperation
 import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
+import eu.metrora.app.data.AnalyzeAccountingCoverage
 import eu.metrora.app.data.DetailCoverage
 import eu.metrora.app.testSnapshot
 import org.junit.Assert.assertEquals
@@ -142,4 +143,42 @@ class MetroraPresentationModelTest {
         assertEquals("13.5B", tokenMetricValue(DetailCoverage.COMPLETE, 13_500_000_000L))
         assertEquals(null, tokenMetricValue(DetailCoverage.UNAVAILABLE, 13_500_000_000L))
     }
+
+    @Test
+    fun analyze_coverage_keeps_pricing_cost_token_and_model_detail_authorities_separate() {
+        val presentation = analyzeCoveragePresentation(
+            canonicalPricingCoverage = 0.976,
+            accountingCoverage = AnalyzeAccountingCoverage(
+                cost = 1.0,
+                calls = 0.9,
+                tokenCost = 0.25,
+                tokenCalls = 0.5,
+            ),
+            tokenCoverage = DetailCoverage.PARTIAL,
+            modelDetailCoverage = DetailCoverage.UNAVAILABLE,
+        )
+
+        assertEquals(0.976, presentation.pricingCoverage ?: -1.0, 0.0001)
+        assertEquals(1.0, presentation.accountingCostCoverage ?: -1.0, 0.0001)
+        assertEquals(DetailCoverage.PARTIAL, presentation.tokenCoverage)
+        assertEquals(DetailCoverage.UNAVAILABLE, presentation.modelDetailCoverage)
+    }
+
+    @Test
+    fun analyze_coverage_labels_cannot_swap_factual_dimensions() {
+        assertEquals(R.string.pricing_coverage_short, analyzeCoverageLabel(AnalyzeCoverageDimension.PRICING))
+        assertEquals(R.string.cost_accounting_coverage, analyzeCoverageLabel(AnalyzeCoverageDimension.ACCOUNTING_COST))
+        assertEquals(R.string.token_coverage, analyzeCoverageLabel(AnalyzeCoverageDimension.TOKEN))
+        assertEquals(R.string.models_coverage, analyzeCoverageLabel(AnalyzeCoverageDimension.MODEL_DETAIL))
+    }
+
+    @Test
+    fun activity_rows_keep_project_and_compact_facts_on_left_without_a_timestamp() {
+        val metadata = activityRowLeftMetadata("metrora-dev", 138_420_000L, 993L, "OpenAI")
+
+        assertEquals("metrora-dev", metadata.projectLabel)
+        assertEquals("138.42M tokens · 993 calls · OpenAI", metadata.compactFacts)
+        assertFalse(metadata.projectLabel.contains("02:14"))
+    }
+
 }
