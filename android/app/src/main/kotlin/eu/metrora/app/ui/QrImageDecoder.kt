@@ -44,6 +44,14 @@ internal sealed interface QrImageImportHandling {
     data class Failed(val error: QrImageImportError) : QrImageImportHandling
 }
 
+internal enum class QrImageBitmapSource {
+    SYSTEM_THUMBNAIL,
+    DIRECT_DECODE,
+}
+
+internal fun shouldApplySourceExifOrientation(source: QrImageBitmapSource): Boolean =
+    source == QrImageBitmapSource.DIRECT_DECODE
+
 /**
  * Converts the bounded ML Kit result into a single image-import outcome.
  * Payload parsing intentionally remains outside this boundary.
@@ -191,7 +199,12 @@ internal class QrImageDecoder(context: Context) : Closeable {
         }
         if (thumbnail != null) {
             val bounded = enforceBitmapBounds(thumbnail)
-            return enforceBitmapBounds(applyExifOrientation(contentResolver, uri, bounded))
+            return orientBitmapForSource(
+                contentResolver = contentResolver,
+                uri = uri,
+                bitmap = bounded,
+                source = QrImageBitmapSource.SYSTEM_THUMBNAIL,
+            )
         }
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -207,8 +220,23 @@ internal class QrImageDecoder(context: Context) : Closeable {
         val decoded = decodeBitmap(contentResolver, uri, options)
             ?: throw IllegalArgumentException("Image content is unavailable or unreadable")
         val bounded = enforceBitmapBounds(decoded)
-        val oriented = applyExifOrientation(contentResolver, uri, bounded)
+        val oriented = orientBitmapForSource(
+            contentResolver = contentResolver,
+            uri = uri,
+            bitmap = bounded,
+            source = QrImageBitmapSource.DIRECT_DECODE,
+        )
         return enforceBitmapBounds(oriented)
+    }
+
+    private fun orientBitmapForSource(
+        contentResolver: ContentResolver,
+        uri: Uri,
+        bitmap: Bitmap,
+        source: QrImageBitmapSource,
+    ): Bitmap {
+        if (!shouldApplySourceExifOrientation(source)) return bitmap
+        return applyExifOrientation(contentResolver, uri, bitmap)
     }
 
     private fun applyExifOrientation(
