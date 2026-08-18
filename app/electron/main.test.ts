@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }))
 
-import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers } from './main'
+import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, shouldInstallApplicationMenu } from './main'
 import { CliError } from './cli'
 import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -316,6 +316,12 @@ describe('createApplicationMenuTemplate', () => {
     expect(roles).toContain('toggleDevTools')
     expect(roles).not.toContain('reload')
     expect(roles).not.toContain('forceReload')
+  })
+
+  it('installs the menu for development on Windows but keeps packaged Windows apps menu-free', () => {
+    expect(shouldInstallApplicationMenu(true, 'win32')).toBe(true)
+    expect(shouldInstallApplicationMenu(false, 'win32')).toBe(false)
+    expect(shouldInstallApplicationMenu(false, 'darwin')).toBe(true)
   })
 })
 
