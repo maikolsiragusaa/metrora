@@ -30,8 +30,8 @@ fun requiredProductionSigningValue(environmentName: String, propertyName: String
         ?: error("Production signing is enabled but $environmentName/$propertyName is missing")
 
 val androidApplicationId = "eu.metrora.app"
-val androidVersionCode = 1
-val androidVersionName = "0.1.0-alpha.1"
+val androidVersionCode = 2
+val androidVersionName = "0.1.0-alpha.2"
 
 val productionKeystorePath = if (productionReleaseEnabled) {
     requiredProductionSigningValue(

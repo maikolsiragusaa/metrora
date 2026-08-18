@@ -47,15 +47,23 @@ package-version rules and pass their own acceptance and publication gates.
 ## Android version authority
 
 Android uses the native `versionName` and integer `versionCode` declared in
-`android/app/build.gradle.kts`. The current never-public source value is:
+`android/app/build.gradle.kts`. The immutable public Android release is:
 
 - `versionName = 0.1.0-alpha.1`;
 - `versionCode = 1`;
 - application ID `eu.metrora.app`.
 
-Because no production-signed Android artifact has been publicly installable,
-retaining `versionCode = 1` for the first direct APK is valid. Every later
-publicly installable Android upgrade must use a strictly larger `versionCode`.
+The current source candidate advances the same package line to:
+
+- `versionName = 0.1.0-alpha.2`;
+- `versionCode = 2`;
+- application ID `eu.metrora.app`.
+
+The alpha.2 source candidate is not a public release. Public download and
+release guidance must continue to point to the immutable alpha.1 artifact until
+a separately authorized production-signed alpha.2 release exists. The public
+alpha.1 artifact consumed `versionCode = 1`; every later publicly installable
+Android upgrade must use a strictly larger `versionCode`.
 The human-readable `versionName` is used in the deterministic GitHub identity
 `android-v<versionName>` and asset name
 `Metrora-Android-<versionName>.apk`. Android's version line is independent of
