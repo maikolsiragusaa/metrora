@@ -10,19 +10,32 @@ Understand where AI time, tokens and money go across tools, models, projects and
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Download-0078D4?logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
+[![Android](https://img.shields.io/badge/Android-0.1.0--alpha.1-3DDC84?logo=android&logoColor=white)](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.1)
 [![Fluxer Community](https://img.shields.io/badge/Fluxer-Community-4641D9?logo=fluxer&logoColor=white)](https://metrora.eu/community)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0F1115.svg)](LICENSE)
 
 </div>
 
 > [!IMPORTANT]
-> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The Store package is the supported public Windows distribution. Repository builds and historical GitHub pre-releases remain separate development or archival artifacts and are not the recommended install path.
+> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The **Android companion is now publicly available as an early GitHub pre-release**. The current Store package remains the frozen RC10 Windows distribution and does not yet include the latest companion runtime used by the Android alpha, so Android pairing currently requires a current Desktop source build. Repository builds and historical GitHub Windows pre-releases remain separate development or archival artifacts.
 
-## Install Metrora on Windows
+## Install Metrora
+
+### Windows
 
 Get Metrora from the [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX).
 
 The Store package installs the bundled Metrora desktop and CLI runtime without requiring a separate Node.js installation. Source builds remain available for development, inspection and contribution; see [Getting started](docs/GETTING_STARTED.md).
+
+### Android companion
+
+The first public Android alpha is [`0.1.0-alpha.1`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.1), distributed as a production-signed direct APK from GitHub Releases:
+
+- [Download `Metrora-Android-0.1.0-alpha.1.apk`](https://github.com/maikolsiragusaa/metrora/releases/download/android-v0.1.0-alpha.1/Metrora-Android-0.1.0-alpha.1.apk)
+- verify the public manifest and `SHA256SUMS` attached to the release;
+- for Obtainium, add `https://github.com/maikolsiragusaa/metrora` and track the `android-v*` releases.
+
+This is an early direct-install channel, not a Google Play or F-Droid release. The companion pairs locally with Metrora Desktop and does not become a second collection or accounting authority. Until the next Windows Store update includes the current companion runtime, use a current Desktop source build for Android pairing.
 
 ## What Metrora helps you understand
 
@@ -151,13 +164,13 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 | Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
-| Android companion | Read-only local-network companion for a paired Desktop | **Mobile Product Foundation V1 implemented over the accepted local companion security foundation; public Android distribution not released** |
+| Android companion | Read-focused local-network companion for a paired Desktop | **Public GitHub pre-release `0.1.0-alpha.1`; production-signed direct APK** |
 | macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
 | GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
 
-Windows is the first supported public desktop distribution. Source support for other platforms does not imply that an accepted public package exists for those platforms.
+Windows is the first supported public desktop distribution. Source support for other desktop platforms does not imply that an accepted public package exists for those platforms.
 
-The Android companion is available in the source tree for local build and validation. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and consumes bounded Project-aware Home, Activity Sessions/Pull Requests, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. Activity uses additive cursor-paged metadata contracts and does not expose prompt/response content. The QR/SAS/mTLS security foundation remains the physically accepted Windows↔Samsung scope; the new product surfaces are not described as physically accepted until their dedicated matrix is run. It is not yet a public Android release or store distribution.
+The Android companion is now publicly distributed through the [`android-v0.1.0-alpha.1`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.1) GitHub pre-release. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and consumes bounded Project-aware Home, Activity Sessions/Pull Requests, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. Activity uses additive cursor-paged metadata contracts and does not expose prompt/response content. QR pairing, SAS/Desktop approval and mutual-TLS device trust remain the local security boundary. The Android app does not duplicate collection, parsing, pricing, history or evidence authority. The live Microsoft Store package is still the frozen RC10 line; until a Store update carries the current companion runtime, Android-alpha pairing requires a current Desktop source build.
 
 ## Privacy model
 
@@ -190,6 +203,7 @@ Start from the [documentation index](docs/README.md):
 - [Workspace v1](docs/WORKSPACE_V1.md)
 - [Public contracts v1](docs/PUBLIC_CONTRACTS_V1.md)
 - [Android companion foundation](docs/ANDROID_COMPANION_FOUNDATION.md)
+- [Android public distribution v1](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md)
 - [Local companion API v1](docs/LOCAL_COMPANION_API.md)
 - [Windows distribution boundary](docs/WINDOWS_DISTRIBUTION.md)
 
@@ -199,7 +213,7 @@ Start from the [documentation index](docs/README.md):
 src/       collection, parsing, canonical records, CLI, analytics and sharing
 app/       Electron desktop application
 dash/      local React web dashboard
-android/   implemented local Android companion; no public Android distribution yet
+android/   production-signed Android companion and public direct-APK source
 mac/       macOS menubar application
 gnome/     GNOME extension
 tests/     core test suite
