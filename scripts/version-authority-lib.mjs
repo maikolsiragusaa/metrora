@@ -58,6 +58,7 @@ export function parseStorePackageVersion(version) {
   const minor = parseComponent(match[2], 'Store package minor version')
   const patch = parseComponent(match[3], 'Store package patch version')
   const revision = parseComponent(match[4], 'Store package revision')
+  if (major === 0) throw new Error('Store package major version must be between 1 and 65535')
   if (revision !== 0) throw new Error('Store package revision must be 0 for the Windows Store contract')
 
   return { version, major, minor, patch, revision }
