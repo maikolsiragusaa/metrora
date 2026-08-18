@@ -142,11 +142,13 @@ Rollback preserves endpoint identity, OS-vault material, analytics, Workspace st
 
 ## Android direct distribution boundary
 
-Android's first intended direct channel is a Founder-gated GitHub Release with
-one production-signed `Metrora-Android-<versionName>.apk`, a public release
-manifest and `SHA256SUMS`. The source-bound workflow is manual-only, does not
-publish from pushes or tags, and can prepare only a draft release after an
-existing tag is independently bound to the reviewed source commit. See
+Android's direct channel is a Founder-gated GitHub Release with one
+production-signed `Metrora-Android-<versionName>.apk`, a public release manifest
+and `SHA256SUMS`. The immutable public release is `0.1.0-alpha.1`; the current
+`0.1.0-alpha.2` source candidate is not public. The source-bound workflow is
+manual-only, does not publish from pushes or tags, and can prepare only a draft
+release after an existing tag is independently bound to the reviewed source
+commit. See
 [`docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md`](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md).
 
 The V1 production custody contract uses a JKS keystore. The keystore and
@@ -155,9 +157,9 @@ materializes them only for the protected signing step and does not persist
 them in `GITHUB_ENV` or release metadata.
 
 The QA physical-acceptance identity is not a production release identity.
-Google Play and F-Droid remain separate gates, and no public Android
-availability claim is made until the production key, physical acceptance and
-Founder publication decision exist.
+Google Play and F-Droid remain separate gates. The alpha.1 public availability
+claim is limited to its immutable GitHub release; alpha.2 remains blocked until
+the production key, physical acceptance and Founder publication decision exist.
 
 ## Prohibitions
 
