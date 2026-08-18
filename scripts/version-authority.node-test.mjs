@@ -26,6 +26,7 @@ test('validates the dedicated Store package authority independently of product v
 
 test('rejects Store package versions outside the four-part Windows contract', () => {
   for (const value of [
+    '0.1.0.0',
     '1.0.0',
     '1.0.0.1',
     '1.0.0.00',
