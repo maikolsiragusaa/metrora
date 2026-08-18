@@ -1,9 +1,12 @@
 package eu.metrora.app.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -32,12 +35,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,19 +84,59 @@ internal fun QrScannerScreen(
     onPayload: (String) -> Boolean,
 ) {
     val context = LocalContext.current
+    val activity = context as? Activity
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                 PackageManager.PERMISSION_GRANTED,
         )
     }
-    var invalidPayload by remember { mutableStateOf(false) }
+    var scannerError by remember { mutableStateOf<QrScannerError?>(null) }
+    var imageDecodeOperation by remember { mutableStateOf<QrImageDecodeOperation?>(null) }
     val requestPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> hasPermission = granted }
+    val latestOnPayload = rememberUpdatedState(onPayload)
+    val imageDecoder = remember(context) { QrImageDecoder(context) }
+    val latestImageDecodeOperation = rememberUpdatedState(imageDecodeOperation)
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            imageDecodeOperation?.cancel()
+            scannerError = null
+            val operation = imageDecoder.decode(uri) { result ->
+                imageDecodeOperation = null
+                when (val handling = handoffQrImageResult(result, latestOnPayload.value)) {
+                    QrImageImportHandling.Cancelled -> Unit
+                    QrImageImportHandling.Accepted -> scannerError = null
+                    is QrImageImportHandling.Failed -> {
+                        scannerError = when (handling.error) {
+                            QrImageImportError.INVALID_PAYLOAD -> QrScannerError.INVALID_PAYLOAD
+                            QrImageImportError.NO_QR_CODE -> QrScannerError.NO_QR_CODE
+                            QrImageImportError.MULTIPLE_QR_CODES -> QrScannerError.MULTIPLE_QR_CODES
+                            QrImageImportError.BLANK_RAW_VALUE,
+                            QrImageImportError.IMAGE_DECODE_FAILURE,
+                            -> QrScannerError.IMAGE_READ_FAILURE
+                        }
+                    }
+                }
+            }
+            imageDecodeOperation = operation
+        }
+    }
 
     LaunchedEffect(Unit) {
-        if (!hasPermission) requestPermission.launch(Manifest.permission.CAMERA)
+        if (!hasPermission && activity?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == false) {
+            requestPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    DisposableEffect(imageDecoder) {
+        onDispose {
+            latestImageDecodeOperation.value?.cancel()
+            imageDecoder.close()
+        }
     }
 
     Column(
@@ -131,7 +176,7 @@ internal fun QrScannerScreen(
                 if (hasPermission) {
                     QrCameraPreview(
                         onDetected = { raw ->
-                            invalidPayload = !onPayload(raw)
+                            scannerError = if (onPayload(raw)) null else QrScannerError.INVALID_PAYLOAD
                         },
                     )
                     ScannerAmbientGlow(Modifier.fillMaxSize())
@@ -144,7 +189,28 @@ internal fun QrScannerScreen(
             }
         }
 
-        if (invalidPayload) {
+        OutlinedButton(
+            onClick = {
+                imageDecodeOperation?.cancel()
+                imageDecodeOperation = null
+                scannerError = null
+                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) {
+            Icon(imageVector = Icons.Outlined.PhotoLibrary, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(androidx.compose.ui.res.stringResource(R.string.import_qr_from_image))
+        }
+
+        val errorMessage = when (scannerError) {
+            null -> null
+            QrScannerError.INVALID_PAYLOAD -> R.string.qr_invalid_payload
+            QrScannerError.NO_QR_CODE -> R.string.qr_no_code_in_image
+            QrScannerError.MULTIPLE_QR_CODES -> R.string.qr_multiple_codes_in_image
+            QrScannerError.IMAGE_READ_FAILURE -> R.string.qr_image_read_failed
+        }
+        if (errorMessage != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -158,7 +224,7 @@ internal fun QrScannerScreen(
                     tint = MaterialTheme.colorScheme.error,
                 )
                 Text(
-                    text = androidx.compose.ui.res.stringResource(R.string.qr_invalid_payload),
+                    text = androidx.compose.ui.res.stringResource(errorMessage),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -233,6 +299,13 @@ internal fun QrScannerScreen(
             Text(androidx.compose.ui.res.stringResource(R.string.manual_address_action))
         }
     }
+}
+
+private enum class QrScannerError {
+    INVALID_PAYLOAD,
+    NO_QR_CODE,
+    MULTIPLE_QR_CODES,
+    IMAGE_READ_FAILURE,
 }
 
 @Composable

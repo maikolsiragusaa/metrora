@@ -212,7 +212,11 @@
     <string name="about_body">Local-first usage companion. No account or cloud relay is required.</string>
 
     <string name="scan_qr_body">Point your camera at the QR code shown in Metrora on your computer.</string>
+    <string name="import_qr_from_image">Import from image</string>
     <string name="qr_invalid_payload">That QR code is not a Metrora Desktop connection.</string>
+    <string name="qr_no_code_in_image">No Metrora QR code found in this image.</string>
+    <string name="qr_multiple_codes_in_image">More than one QR code was found. Choose an image with a single Metrora QR code.</string>
+    <string name="qr_image_read_failed">Could not read this image. Choose another image and try again.</string>
     <string name="qr_scanner_local_only">Metrora will verify the computer and show a six-digit code before Desktop access is approved.</string>
     <string name="qr_same_network_title">Keep both devices on the same network.</string>
     <string name="qr_same_network_body">Metrora connects directly to Desktop. No account or cloud relay is used.</string>
