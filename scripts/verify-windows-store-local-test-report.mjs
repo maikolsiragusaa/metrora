@@ -65,7 +65,7 @@ exactKeys(report, [
   'limitations',
 ], 'report')
 
-if (report.kind !== 'metrora.windows-store-local-test-report' || report.version !== 1) {
+if (report.kind !== 'metrora.windows-store-local-test-report' || report.version !== 2) {
   fail('report identity is invalid')
 }
 if (!['pass', 'fail'].includes(report.status)) fail('report status is invalid')
@@ -80,6 +80,8 @@ exactKeys(report.package, [
   'artifactName',
   'unsignedSha256',
   'testSignedSha256',
+  'productVersion',
+  'desktopBuildVersion',
   'version',
   'architecture',
 ], 'package')
@@ -90,6 +92,8 @@ if (report.package.unsignedSha256 === report.package.testSignedSha256) {
   fail('test-signed package must differ from the unsigned candidate')
 }
 requireString(report.package.version, /^\d+\.\d+\.\d+\.\d+$/, 'package version')
+requireString(report.package.productVersion, /^\d+\.\d+\.\d+(?:-rc\.\d+)?$/, 'package productVersion')
+requireString(report.package.desktopBuildVersion, /^\d+\.\d+\.\d+\.\d+$/, 'package desktopBuildVersion')
 if (report.package.architecture !== 'x64') fail('package architecture is invalid')
 
 exactKeys(report.platform, ['edition', 'version', 'build', 'architecture'], 'platform')
@@ -101,6 +105,15 @@ if (report.platform.architecture !== 'x64') fail('platform architecture is inval
 exactKeys(report.observations, [
   'launch',
   'identityPresentation',
+  'connectPhoneSurface',
+  'productionAndroidQrScan',
+  'sasMatch',
+  'desktopApproval',
+  'androidHomeData',
+  'androidActivitySessions',
+  'androidAnalyzeFacts',
+  'settingsDeviceSecurity',
+  'disconnectReconnect',
   'localCollection',
   'noExternalNode',
 ], 'observations')

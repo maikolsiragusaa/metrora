@@ -11,6 +11,9 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Published Store source line: `1.0.0-rc.10`
 - Published desktop build version: `1.0.0.10`
 - Published Store AppX identity version: `1.0.0.0`
+- Current Store update candidate: `1.0.0-rc.11`
+- Current candidate desktop build version: `1.0.0.11`
+- Current candidate Store AppX identity version: `1.0.1.0`
 - Historical GitHub technical preview: `1.0.0-rc.7`
 
 Inherited names may remain only where required for compatibility or provenance. They are not Metrora distribution names.
@@ -22,6 +25,14 @@ Packaged desktop builds include the required Metrora command-line runtime and do
 The root CLI build keeps its normal production dependency closure external. `app/scripts/stage-cli.mjs` copies that exact production closure into a version-matched staging layout, and `app/scripts/after-pack.cjs` seals it into `cli.asar` inside Electron resources. A tiny stable launcher remains outside the archive and loads the runtime through Electron's ASAR-aware Node loader before any external PATH entry is considered.
 
 The Store payload must not expose a loose CLI `node_modules` tree. Keeping `@scope/package` paths inside `cli.asar` prevents AppX packaging from rewriting those path segments. The Store package workflow executes the CLI from the extracted AppX layout with packaged `Metrora.exe`, so module resolution is tested as shipped rather than inferred from file presence.
+
+The packaged companion runtime is the sealed module at
+`app/resources/cli.asar/dist/desktop-share-runtime.js`. The Store workflow
+imports that exact module through the bundled Electron runtime and requires the
+`createDesktopShareRuntime` entry point without starting a listener or creating
+pairing state. Store package versions are maintained in the canonical
+`../release/windows-store-package-version.v1.json` authority and are not derived
+from product SemVer.
 
 Persisted Workspace endpoint metadata is reconciled to the current packaged Metrora/collector version without replacing endpoint identity, Workspace membership or evidence history.
 
@@ -37,7 +48,7 @@ npm --prefix app run package:store    # Windows AppX x64, development packaging
 npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
 ```
 
-These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution.
+These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution. The RC11 Store output remains unsigned, non-submitted and non-published until separate Founder and Microsoft gates pass.
 
 ## Official distribution requirements
 

@@ -18,6 +18,33 @@ param(
   [ValidateSet('pass', 'fail')]
   [string]$NoExternalNode,
 
+  [ValidateSet('pass', 'fail')]
+  [string]$ConnectPhoneSurface = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$ProductionAndroidQrScan = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$SasMatch = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$DesktopApproval = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$AndroidHomeData = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$AndroidActivitySessions = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$AndroidAnalyzeFacts = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$SettingsDeviceSecurity = 'fail',
+
+  [ValidateSet('pass', 'fail')]
+  [string]$DisconnectReconnect = 'fail',
+
   [string]$RepositoryRoot = (Get-Location).Path
 )
 
@@ -60,11 +87,20 @@ try {
   $cleanupErrors += 'certificate removal failed'
 }
 
-$observations = [ordered]@{
-  launch = $Launch
-  identityPresentation = $IdentityPresentation
-  localCollection = $LocalCollection
-  noExternalNode = $NoExternalNode
+  $observations = [ordered]@{
+    launch = $Launch
+    identityPresentation = $IdentityPresentation
+    connectPhoneSurface = $ConnectPhoneSurface
+    productionAndroidQrScan = $ProductionAndroidQrScan
+    sasMatch = $SasMatch
+    desktopApproval = $DesktopApproval
+    androidHomeData = $AndroidHomeData
+    androidActivitySessions = $AndroidActivitySessions
+    androidAnalyzeFacts = $AndroidAnalyzeFacts
+    settingsDeviceSecurity = $SettingsDeviceSecurity
+    disconnectReconnect = $DisconnectReconnect
+    localCollection = $LocalCollection
+    noExternalNode = $NoExternalNode
 }
 $allObservationsPass = @($observations.Values | Where-Object { $_ -ne 'pass' }).Count -eq 0
 $cleanupComplete = (
@@ -77,7 +113,7 @@ $status = if ($allObservationsPass -and $cleanupComplete) { 'pass' } else { 'fai
 
 $report = [ordered]@{
   kind = 'metrora.windows-store-local-test-report'
-  version = 1
+  version = 2
   status = $status
   generatedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
   source = [ordered]@{
@@ -88,6 +124,8 @@ $report = [ordered]@{
     artifactName = [string]$context.package.artifactName
     unsignedSha256 = [string]$context.package.unsignedSha256
     testSignedSha256 = [string]$context.package.testSignedSha256
+    productVersion = [string]$context.package.productVersion
+    desktopBuildVersion = [string]$context.package.desktopBuildVersion
     version = [string]$context.package.version
     architecture = [string]$context.package.architecture
   }

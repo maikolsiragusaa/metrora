@@ -9,15 +9,29 @@ on:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'app/package.json'
       - 'app/package-lock.json'
+      - 'app/electron/share-bridge.ts'
+      - 'app/electron/main.ts'
+      - 'app/electron/share-runtime.ts'
+      - 'app/scripts/appx-manifest-created.cjs'
       - 'app/scripts/stage-cli.mjs'
       - 'app/scripts/after-pack.cjs'
+      - 'package-lock.json'
+      - 'release/windows-store-package-version.v1.json'
+      - 'scripts/appx-manifest-created.node-test.mjs'
+      - 'scripts/check-version-consistency.mjs'
       - 'tsup.config.ts'
       - 'scripts/generate-brand-assets.mjs'
+      - 'scripts/probe-packaged-companion-runtime.mjs'
+      - 'scripts/version-authority-lib.mjs'
+      - 'scripts/version-authority.node-test.mjs'
       - 'scripts/windows-store-identity.node-test.mjs'
       - 'scripts/windows-store-local-test*'
       - 'scripts/verify-windows-store-local-test-report.mjs'
       - 'scripts/*Windows-Store-Local-Test*.ps1'
       - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
+      - 'src/desktop-share-runtime-entry.ts'
+      - 'src/models.ts'
+      - 'src/sharing/**'
       - 'docs/WINDOWS_STORE_IDENTITY_V1.md'
       - 'docs/WINDOWS_STORE_LOCAL_TEST_GUIDED.md'
       - 'package.json'
@@ -28,15 +42,29 @@ on:
       - '.github/workflows/windows-physical-acceptance.yml'
       - 'app/package.json'
       - 'app/package-lock.json'
+      - 'app/electron/share-bridge.ts'
+      - 'app/electron/main.ts'
+      - 'app/electron/share-runtime.ts'
+      - 'app/scripts/appx-manifest-created.cjs'
       - 'app/scripts/stage-cli.mjs'
       - 'app/scripts/after-pack.cjs'
+      - 'package-lock.json'
+      - 'release/windows-store-package-version.v1.json'
+      - 'scripts/appx-manifest-created.node-test.mjs'
+      - 'scripts/check-version-consistency.mjs'
       - 'tsup.config.ts'
       - 'scripts/generate-brand-assets.mjs'
+      - 'scripts/probe-packaged-companion-runtime.mjs'
+      - 'scripts/version-authority-lib.mjs'
+      - 'scripts/version-authority.node-test.mjs'
       - 'scripts/windows-store-identity.node-test.mjs'
       - 'scripts/windows-store-local-test*'
       - 'scripts/verify-windows-store-local-test-report.mjs'
       - 'scripts/*Windows-Store-Local-Test*.ps1'
       - 'scripts/Test-Metrora-Windows-Release-Syntax.ps1'
+      - 'src/desktop-share-runtime-entry.ts'
+      - 'src/models.ts'
+      - 'src/sharing/**'
       - 'docs/WINDOWS_STORE_IDENTITY_V1.md'
       - 'docs/WINDOWS_STORE_LOCAL_TEST_GUIDED.md'
       - 'package.json'
@@ -56,8 +84,19 @@ jobs:
     timeout-minutes: 45
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact source binding
+        shell: pwsh
+        run: |
+          $head = (git rev-parse HEAD).Trim()
+          if ($head -cne $env:SOURCE_COMMIT) {
+            throw "checked out source $head does not match the bound source $env:SOURCE_COMMIT"
+          }
 
       - uses: actions/setup-node@v4
         with:
@@ -67,11 +106,17 @@ jobs:
       - name: Validate Store identity and channel separation
         run: node scripts/windows-store-identity.node-test.mjs
 
+      - name: Validate version authority
+        run: npm run version:check
+
       - name: Install core dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Install desktop dependencies
         run: npm --prefix app ci --no-audit --no-fund
+
+      - name: Validate AppX manifest version hook
+        run: node --test scripts/appx-manifest-created.node-test.mjs
 
       - name: Build unsigned AppX candidate without publication
         run: npm --prefix app run package:store
@@ -120,17 +165,33 @@ jobs:
             throw 'unexpected application identifier'
           }
 
-          $productVersion = [string](Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
-          $productCore = $productVersion -replace '-rc\.\d+$', ''
-          if ($productCore -notmatch '^\d+\.\d+\.\d+$') {
-            throw 'product version cannot be mapped to the Store package version'
+          $productPackage = Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json
+          $desktopPackage = Get-Content -LiteralPath 'app\package.json' -Raw | ConvertFrom-Json
+          $productVersion = [string]$productPackage.version
+          $desktopBuildVersion = [string]$desktopPackage.build.buildVersion
+          if ($productVersion -cne '1.0.0-rc.11') {
+            throw "unexpected product source version: $productVersion"
           }
-          $expectedStoreVersion = "$productCore.0"
+          if ($desktopBuildVersion -cne '1.0.0.11') {
+            throw "unexpected Desktop build version: $desktopBuildVersion"
+          }
+
+          $storeVersionAuthority = Get-Content -LiteralPath 'release\windows-store-package-version.v1.json' -Raw | ConvertFrom-Json
+          if (
+            [int]$storeVersionAuthority.schemaVersion -ne 1 -or
+            [string]$storeVersionAuthority.publishedStorePackageVersion -cne '1.0.0.0' -or
+            [string]$storeVersionAuthority.candidateStorePackageVersion -cne '1.0.1.0'
+          ) {
+            throw 'Store package version authority is not the reviewed RC10 baseline -> RC11 candidate'
+          }
+          $expectedStoreVersion = [string]$storeVersionAuthority.candidateStorePackageVersion
           if ([string]$identity.Version -cne $expectedStoreVersion) {
             throw "unexpected Store package version: expected $expectedStoreVersion, got $($identity.Version)"
           }
 
-          $capabilities = @($manifest.Package.Capabilities.ChildNodes | ForEach-Object { $_.GetAttribute('Name') })
+          $capabilities = @($manifest.Package.Capabilities.ChildNodes |
+            Where-Object { $_.NodeType -eq 1 } |
+            ForEach-Object { $_.GetAttribute('Name') })
           if ($capabilities.Count -ne 1 -or $capabilities[0] -cne 'runFullTrust') {
             throw 'unexpected capability set'
           }
@@ -165,6 +226,7 @@ jobs:
           $cliRoot = Join-Path $unpacked 'app\resources\cli'
           $cliLauncher = Join-Path $cliRoot 'dist\launch.js'
           $cliArchive = Join-Path $unpacked 'app\resources\cli.asar'
+          $companionRuntime = Join-Path $cliArchive 'dist\desktop-share-runtime.js'
           $electron = Join-Path $unpacked 'app\Metrora.exe'
           foreach ($requiredPath in @($cliLauncher, $cliArchive, $electron)) {
             if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -204,6 +266,23 @@ jobs:
             if ($null -eq $status.today -or $null -eq $status.month) {
               throw 'packaged CLI status JSON is missing expected accounting fields'
             }
+
+            $companionProbe = Join-Path $PWD 'scripts\probe-packaged-companion-runtime.mjs'
+            $companionOutput = (& $electron $companionProbe $companionRuntime | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) {
+              throw "packaged companion runtime import failed: $companionOutput"
+            }
+            try {
+              $companion = $companionOutput | ConvertFrom-Json
+            } catch {
+              throw "packaged companion runtime probe did not return JSON: $companionOutput"
+            }
+            if (
+              [string]$companion.packagedCompanionRuntimeSmoke -cne 'pass' -or
+              [string]$companion.packagedCompanionRuntimeEntry -cne 'createDesktopShareRuntime'
+            ) {
+              throw 'packaged companion runtime probe returned an unexpected result'
+            }
           } finally {
             $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode
           }
@@ -214,15 +293,27 @@ jobs:
 
           $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           $summary = [ordered]@{
-            schemaVersion = 1
-            sourceCommit = $env:GITHUB_SHA
+            schemaVersion = 2
+            sourceCommit = $env:SOURCE_COMMIT
+            productVersion = $productVersion
+            desktopBuildVersion = $desktopBuildVersion
             artifactName = $package.Name
             sha256 = $hash
             packageVersion = [string]$identity.Version
             architecture = [string]$identity.ProcessorArchitecture
+            identityName = [string]$identity.Name
+            publisher = [string]$identity.Publisher
+            publisherDisplayName = [string]$properties.PublisherDisplayName
+            displayName = [string]$properties.DisplayName
+            applicationId = [string]$application.Id
+            capabilities = @($capabilities)
             packagedCliSmoke = 'pass'
             cliRuntimeContainer = 'asar'
             looseCliNodeModules = $false
+            packagedCompanionRuntimeSmoke = 'pass'
+            packagedCompanionRuntimePath = 'app/resources/cli.asar/dist/desktop-share-runtime.js'
+            packagedCompanionRuntimeEntry = 'createDesktopShareRuntime'
+            unsigned = $true
             signed = $false
             submitted = $false
             published = $false
@@ -235,7 +326,7 @@ jobs:
       - name: Upload short-lived Store candidate
         uses: actions/upload-artifact@v4
         with:
-          name: metrora-windows-store-${{ github.sha }}
+          name: metrora-windows-store-${{ env.SOURCE_COMMIT }}
           path: app/release/Metrora-Windows-Store-Candidate
           if-no-files-found: error
           include-hidden-files: true
@@ -250,6 +341,10 @@ jobs:
 
           - Artifact: `${{ steps.inspect.outputs.artifact_name }}`
           - SHA-256: `${{ steps.inspect.outputs.sha256 }}`
+          - Product source: `1.0.0-rc.11`
+          - Desktop build: `1.0.0.11`
+          - Store AppX version: `1.0.1.0`
           - Packaged CLI: sealed ASAR executed with bundled Electron runtime
+          - Packaged companion runtime: import smoke passed at `app/resources/cli.asar/dist/desktop-share-runtime.js`
           - State: unsigned, not submitted, not published
           "@ >> $env:GITHUB_STEP_SUMMARY

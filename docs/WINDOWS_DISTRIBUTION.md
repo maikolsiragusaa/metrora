@@ -8,7 +8,7 @@ Metrora for Windows is available on the **Microsoft Store**, published by Vensen
 
 The Microsoft Store package is the supported public Windows distribution. Repository builds and historical GitHub pre-releases remain separate development or archival artifacts and are not the recommended install path.
 
-The currently published Store line is traceable to source candidate `1.0.0-rc.10`, desktop build version `1.0.0.10`, and Store AppX identity version `1.0.0.0`. Development on `main` may advance independently after that published line.
+The currently published Store line is traceable to source candidate `1.0.0-rc.10`, desktop build version `1.0.0.10`, and Store AppX identity version `1.0.0.0`. The current post-RC10 engineering candidate is `1.0.0-rc.11`, desktop build `1.0.0.11`, and Store AppX identity `1.0.1.0`; it is not published. Development on `main` may advance independently after that published line.
 
 Historical 0.9.19 and RC7 acceptance material remains immutable evidence for those source lines only.
 
@@ -23,8 +23,13 @@ Windows uses multiple version authorities deliberately:
 - published Store source line: `1.0.0-rc.10`;
 - published desktop build version: `1.0.0.10`;
 - published Microsoft Store AppX identity version: `1.0.0.0`.
+- current candidate source line: `1.0.0-rc.11`;
+- current candidate desktop build version: `1.0.0.11`;
+- current candidate Store AppX identity version: `1.0.1.0`.
 
-The Store AppX four-part identity is not the desktop build counter. See [Versioning authority](VERSIONING.md).
+The Store AppX four-part identity is not the desktop build counter. The
+published baseline and candidate are maintained in
+`release/windows-store-package-version.v1.json`. See [Versioning authority](VERSIONING.md).
 
 ## Package requirements
 
@@ -47,9 +52,9 @@ The existing RC7 release remains immutable as a historical technical preview. La
 
 ## Microsoft Store distribution
 
-The Store workflow derives an x64 AppX from reviewed source and validates its identity, architecture, capabilities and bundled runtime boundary. The Store manifest's four-part package identity remains separate from the desktop build counter.
+The Store workflow derives an x64 AppX from reviewed source and validates its identity, architecture, capabilities and bundled runtime boundary. It also imports `app/resources/cli.asar/dist/desktop-share-runtime.js` through the bundled Electron runtime and requires `createDesktopShareRuntime` without starting a listener. The Store manifest's four-part package identity remains separate from the desktop build counter.
 
-The published Store line passed its source-bound package and physical-runtime acceptance before publication. Later source work remains separate until a future Store update is explicitly prepared and accepted.
+The published Store line passed its source-bound package and physical-runtime acceptance before publication. RC11 is currently prepared only as a candidate; later source work remains separate until a future Store update is explicitly physically accepted, submitted and published.
 
 ## Accounting presentation boundary
 
@@ -64,13 +69,19 @@ For each future official Windows Store update, verify:
 1. product and publisher identity are exact;
 2. first launch works without an external Node.js installation;
 3. the bundled CLI starts from the packaged layout;
-4. supported local usage sources remain discoverable;
-5. existing endpoint and Workspace state are preserved safely;
-6. installation channels do not collide or silently migrate one another;
-7. update and rollback preserve user-owned local state;
-8. public version and channel information are truthful;
-9. no private data enters package metadata, reports or provenance;
-10. published artifacts remain bound to reviewed public source.
+4. the packaged companion runtime imports from the exact AppX ASAR path;
+5. supported local usage sources remain discoverable;
+6. existing endpoint and Workspace state are preserved safely;
+7. installation channels do not collide or silently migrate one another;
+8. update and rollback preserve user-owned local state;
+9. public version and channel information are truthful;
+10. no private data enters package metadata, reports or provenance;
+11. published artifacts remain bound to reviewed public source.
+
+The controlled RC10-to-RC11 update/profile-preservation test remains a deferred
+Founder-run acceptance step. The repository currently performs only the safe
+machine-verifiable package-version ordering check; it does not install over a
+real Store package or claim Microsoft Store-managed update certification.
 
 ## Responsibility boundary
 

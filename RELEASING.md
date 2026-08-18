@@ -12,7 +12,8 @@ current public release boundary.
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
 - Published Store source line: `1.0.0-rc.10`
-- Current desktop build version: `1.0.0.10`
+- Published desktop build version: `1.0.0.10`
+- Current Store update candidate: `1.0.0-rc.11` / Desktop `1.0.0.11` / Store `1.0.1.0`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 
 The published command is `metrora`. Historical protocol and signed-data
@@ -32,6 +33,11 @@ boundary and the sealed packaged Store CLI runtime. Post-RC10 development is
 separate from the published package; any future Store update requires its own
 candidate, acceptance, submission and publication decision.
 
+The current post-RC10 engineering candidate is `1.0.0-rc.11`, with Desktop
+build version `1.0.0.11` and Store package identity version `1.0.1.0`. It is an
+unsigned, non-published candidate only. The published Store remains RC10 until
+Microsoft publishes a later package.
+
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
 The Microsoft Store path is separate from source builds and GitHub technical
@@ -46,11 +52,16 @@ Exact source commits and artifact digests belong in the applicable workflow/rele
 
 Metrora deliberately separates three version forms:
 
-- product/source SemVer: `1.0.0-rc.10`;
-- desktop build version: `1.0.0.10`;
-- Microsoft Store AppX package identity version for the `1.0.0` line: `1.0.0.0`.
+- product/source SemVer: `1.0.0-rc.11` for the current candidate;
+- desktop build version: `1.0.0.11` for the current candidate;
+- Microsoft Store AppX package identity version: `1.0.1.0` for the current candidate;
+- published Store baseline: RC10 / `1.0.0.0`.
 
-The Store's four-component package identity is a platform contract and must not be confused with the desktop build counter or the SemVer pre-release label. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
+The Store's four-component package identity is a platform contract and must not
+be confused with the desktop build counter or the SemVer pre-release label. The
+published baseline and candidate are maintained in
+`release/windows-store-package-version.v1.json`. See
+[`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Release responsibilities
 
@@ -99,16 +110,21 @@ An unsigned GitHub pre-release must state that its portable/installer assets are
 
 ## Microsoft Store candidate boundary
 
-The Store candidate must be built from the exact reviewed source commit using the non-publishing Store workflow. A submitted artifact remains bound to that source line:
+The RC11 Store candidate must be built from the exact reviewed source commit
+using the non-publishing Store workflow. The candidate carries the current
+Desktop companion runtime in `resources/cli.asar` and must pass an import-only
+smoke through the bundled Electron runtime before physical pairing is attempted.
+A submitted artifact remains bound to that source line:
 
 1. the exact AppX artifact and workflow manifest must verify;
 2. Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
 3. the packaged CLI must execute successfully from the AppX payload without a separately installed Node.js or a loose scoped `node_modules` runtime tree;
-4. the unsigned submission candidate must remain byte-identical to the workflow output;
-5. a separately test-signed copy may be used only for bounded local physical acceptance;
-6. local-test package/certificate/private-key material must be removed afterward;
-7. the sanitized local acceptance report must pass;
-8. submission requires an explicit stop/go after those checks.
+4. the packaged companion module must import from `app/resources/cli.asar/dist/desktop-share-runtime.js` and expose `createDesktopShareRuntime` without starting a listener;
+5. the unsigned submission candidate must remain byte-identical to the workflow output;
+6. a separately test-signed copy may be used only for bounded local physical acceptance;
+7. local-test package/certificate/private-key material must be removed afterward;
+8. the sanitized local acceptance report must pass;
+9. submission requires an explicit stop/go after those checks.
 
 A passing local test is not Microsoft certification and does not authorize publication or Store-availability claims. A future Store update requires a new reviewed candidate and its own acceptance/submission decision.
 

@@ -1,6 +1,6 @@
 # Windows Store package identity v1
 
-**Status:** identity assigned / separate Store candidate boundary
+**Status:** identity assigned / RC11 candidate boundary / not published
 
 ## Purpose
 
@@ -8,7 +8,13 @@ Define the separate Windows Store packaging boundary for Metrora.
 
 The exact manifest values are maintained in the reviewed desktop build configuration. They must match the Store authority byte-for-byte and must not be duplicated across public documentation.
 
-RC10 is the source line associated with the Store submission. This document does not claim certification, publication or availability, and post-RC10 development is separate from that submitted artifact. It also does not authorize a different submission or any change to the already published GitHub `1.0.0-rc.7` artifacts.
+RC10 is the frozen source line associated with the published Store package. The
+current engineering candidate is RC11 (`1.0.0-rc.11`) with Desktop build
+`1.0.0.11` and candidate Store package version `1.0.1.0`. This document does
+not claim certification, publication or availability for RC11, and post-RC10
+development is separate from the published artifact. It also does not
+authorize a different submission or any change to the already published
+GitHub `1.0.0-rc.7` artifacts.
 
 ## Build boundary
 
@@ -19,6 +25,14 @@ npm --prefix app run package:store
 ```
 
 The command produces one non-publishing x64 AppX candidate with the assigned Store identity and the required full-trust desktop capability.
+
+The Store package identity version is not derived from product SemVer or the
+Desktop build version. The single machine-readable authority is
+`release/windows-store-package-version.v1.json`, which records the published
+baseline `1.0.0.0` and the RC11 candidate `1.0.1.0`. The supported
+`appxManifestCreated` hook validates the generated `Package/Identity` shape and
+replaces only its Version value; it fails closed on an unexpected, missing or
+ambiguous identity.
 
 The existing technical-user installer remains separate:
 
@@ -38,6 +52,10 @@ A local PASS is not Store certification and does not authorize publication or av
 
 ## Current limitations
 
-The Store target has a separate package identity and local-acceptance path. It is not a signed Microsoft channel, an automatic update for existing installations, or a publication claim.
+The Store target has a separate package identity and local-acceptance path. The
+RC11 candidate is not a signed Microsoft channel, an automatic update for
+existing installations, or a publication claim.
 
-The RC10 source line is associated with the Store submission; certification and publication remain distinct gates. No post-RC10 code is part of that submitted artifact.
+The RC10 source line and `1.0.0.0` package remain the live Store authority;
+certification, publication and Store-managed update behavior remain distinct
+gates. No post-RC10 code is part of the published RC10 artifact.

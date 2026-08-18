@@ -1,12 +1,55 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import test from 'node:test'
 
 import {
   buildVersionFor,
   compareMetroraVersions,
+  compareStorePackageVersions,
   parseMetroraVersion,
+  parseStorePackageVersion,
+  validateStorePackageVersionAuthority,
 } from './version-authority-lib.mjs'
+
+test('validates the dedicated Store package authority independently of product version', () => {
+  const authority = JSON.parse(readFileSync(resolve('release/windows-store-package-version.v1.json'), 'utf8'))
+  assert.deepEqual(validateStorePackageVersionAuthority(authority), {
+    schemaVersion: 1,
+    publishedStorePackageVersion: '1.0.0.0',
+    candidateStorePackageVersion: '1.0.1.0',
+  })
+  assert.equal(compareStorePackageVersions('1.0.0.0', '1.0.1.0'), -1)
+  assert.equal(parseStorePackageVersion('1.0.1.0').revision, 0)
+})
+
+test('rejects Store package versions outside the four-part Windows contract', () => {
+  for (const value of [
+    '1.0.0',
+    '1.0.0.1',
+    '1.0.0.00',
+    '1.0.0.0001',
+    '65536.0.0.0',
+    '1.65536.0.0',
+    '1.0.65536.0',
+    '1.0.0.65536',
+    '1.0.0.-1',
+  ]) {
+    assert.throws(() => parseStorePackageVersion(value), value)
+  }
+})
+
+test('rejects a Store authority that does not advance the published baseline', () => {
+  assert.throws(
+    () => validateStorePackageVersionAuthority({
+      schemaVersion: 1,
+      publishedStorePackageVersion: '1.0.1.0',
+      candidateStorePackageVersion: '1.0.1.0',
+    }),
+    /greater than the published baseline/,
+  )
+})
 
 test('orders the historical baseline before the first independent candidate', () => {
   assert.equal(compareMetroraVersions('0.9.19', '1.0.0-rc.1'), -1)

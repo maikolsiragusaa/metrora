@@ -5,10 +5,19 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {
+  STORE_PACKAGE_VERSION_AUTHORITY_PATH,
+  compareStorePackageVersions,
+  validateStorePackageVersionAuthority,
+} from './version-authority-lib.mjs'
+
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const rootPackage = JSON.parse(readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'))
 const desktopPackage = JSON.parse(readFileSync(resolve(repositoryRoot, 'app/package.json'), 'utf8'))
 const brandGenerator = readFileSync(resolve(repositoryRoot, 'scripts/generate-brand-assets.mjs'), 'utf8')
+const storeVersionAuthority = validateStorePackageVersionAuthority(
+  JSON.parse(readFileSync(resolve(repositoryRoot, STORE_PACKAGE_VERSION_AUTHORITY_PATH), 'utf8')),
+)
 
 const expected = Object.freeze({
   applicationId: 'eu.metrora.desktop',
@@ -29,6 +38,12 @@ assert.equal(
   desktopPackage.scripts?.['package:win'],
   'npm run stage-cli && npm run build && electron-builder --win',
   'the existing Windows packaging command must remain unchanged',
+)
+
+assert.equal(
+  desktopPackage.build?.appxManifestCreated,
+  './scripts/appx-manifest-created.cjs',
+  'the Store identity version must be applied by the bounded AppX manifest hook',
 )
 
 assert.deepEqual(
@@ -69,19 +84,30 @@ assert.equal(
 )
 
 assert.equal(desktopPackage.version, rootPackage.version, 'desktop and root product SemVer must match')
-assert.equal(rootPackage.version, '1.0.0-rc.10', 'the current source candidate must remain 1.0.0-rc.10')
+assert.equal(rootPackage.version, '1.0.0-rc.11', 'the current source candidate must be 1.0.0-rc.11')
 assert.equal(
   desktopPackage.build?.buildVersion,
-  '1.0.0.10',
-  'the current desktop build version authority must remain 1.0.0.10',
+  '1.0.0.11',
+  'the current desktop build version authority must be 1.0.0.11',
 )
 
-const productCore = rootPackage.version.replace(/-rc\.\d+$/, '')
-assert.match(productCore, /^\d+\.\d+\.\d+$/)
 assert.equal(
-  `${productCore}.0`,
+  storeVersionAuthority.publishedStorePackageVersion,
   '1.0.0.0',
-  'the current Microsoft Store AppX identity version mapping must remain 1.0.0.0',
+  'the published Store baseline must remain the immutable RC10 package version',
+)
+assert.equal(
+  storeVersionAuthority.candidateStorePackageVersion,
+  '1.0.1.0',
+  'the current candidate Store package version must be 1.0.1.0',
+)
+assert.equal(
+  compareStorePackageVersions(
+    storeVersionAuthority.publishedStorePackageVersion,
+    storeVersionAuthority.candidateStorePackageVersion,
+  ),
+  -1,
+  'the candidate Store package version must advance the published baseline',
 )
 
 for (const asset of [

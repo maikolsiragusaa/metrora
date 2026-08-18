@@ -73,21 +73,37 @@ try {
   $artifactManifest = [pscustomobject]@{
     schemaVersion = 1
     sourceCommit = ('a' * 40)
-    artifactName = 'Metrora-1.0.0-rc.10-Windows-Store-x64.appx'
+    artifactName = 'Metrora-1.0.0-rc.11-Windows-Store-x64.appx'
     sha256 = ('b' * 64)
-    packageVersion = '1.0.0.0'
+    productVersion = '1.0.0-rc.11'
+    desktopBuildVersion = '1.0.0.11'
+    packageVersion = '1.0.1.0'
     architecture = 'x64'
+    identityName = 'Vensent.Metrora'
+    publisher = 'CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F'
+    publisherDisplayName = 'Vensent'
+    displayName = 'Metrora'
+    applicationId = 'eu.metrora.desktop'
+    capabilities = @('runFullTrust')
     signed = $false
+    unsigned = $true
     submitted = $false
     published = $false
     packagedCliSmoke = 'pass'
     cliRuntimeContainer = 'asar'
     looseCliNodeModules = $false
+    packagedCompanionRuntimeSmoke = 'pass'
+    packagedCompanionRuntimePath = 'app/resources/cli.asar/dist/desktop-share-runtime.js'
+    packagedCompanionRuntimeEntry = 'createDesktopShareRuntime'
     futureAdditiveField = 'allowed'
   }
   Assert-MetroraStoreLocalContextKeys $artifactManifest @(
-    'schemaVersion', 'sourceCommit', 'artifactName', 'sha256', 'packageVersion',
-    'architecture', 'signed', 'submitted', 'published'
+    'schemaVersion', 'sourceCommit', 'productVersion', 'desktopBuildVersion',
+    'artifactName', 'sha256', 'packageVersion', 'architecture',
+    'identityName', 'publisher', 'publisherDisplayName', 'displayName', 'applicationId', 'capabilities',
+    'packagedCliSmoke', 'cliRuntimeContainer', 'looseCliNodeModules',
+    'packagedCompanionRuntimeSmoke', 'packagedCompanionRuntimePath', 'packagedCompanionRuntimeEntry',
+    'unsigned', 'signed', 'submitted', 'published'
   ) 'Store artifact manifest'
 
   $invalidArtifact = $artifactManifest | ConvertTo-Json -Depth 4 | ConvertFrom-Json
@@ -95,8 +111,12 @@ try {
   $rejectedArtifact = $false
   try {
     Assert-MetroraStoreLocalContextKeys $invalidArtifact @(
-      'schemaVersion', 'sourceCommit', 'artifactName', 'sha256', 'packageVersion',
-      'architecture', 'signed', 'submitted', 'published'
+      'schemaVersion', 'sourceCommit', 'productVersion', 'desktopBuildVersion',
+      'artifactName', 'sha256', 'packageVersion', 'architecture',
+      'identityName', 'publisher', 'publisherDisplayName', 'displayName', 'applicationId', 'capabilities',
+      'packagedCliSmoke', 'cliRuntimeContainer', 'looseCliNodeModules',
+      'packagedCompanionRuntimeSmoke', 'packagedCompanionRuntimePath', 'packagedCompanionRuntimeEntry',
+      'unsigned', 'signed', 'submitted', 'published'
     ) 'Store artifact manifest'
   } catch {
     $rejectedArtifact = $true
