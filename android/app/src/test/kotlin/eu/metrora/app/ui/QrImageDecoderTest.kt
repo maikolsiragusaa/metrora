@@ -152,4 +152,18 @@ class QrImageDecoderTest {
         assertTrue(handling == QrImageImportHandling.Accepted)
         assertEquals(raw, handedOff)
     }
+
+    @Test
+    fun system_thumbnail_does_not_reapply_source_exif_orientation() {
+        assertFalse(
+            shouldApplySourceExifOrientation(QrImageBitmapSource.SYSTEM_THUMBNAIL),
+        )
+    }
+
+    @Test
+    fun direct_decode_still_applies_source_exif_orientation() {
+        assertTrue(
+            shouldApplySourceExifOrientation(QrImageBitmapSource.DIRECT_DECODE),
+        )
+    }
 }
