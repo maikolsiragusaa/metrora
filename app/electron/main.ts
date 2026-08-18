@@ -403,6 +403,10 @@ export function ipcChannelAliases(channel: string): string[] {
   return [channel]
 }
 
+export function shouldInstallApplicationMenu(isDev: boolean, platform = process.platform): boolean {
+  return platform === 'darwin' || isDev
+}
+
 function registerHandlers(): void {
   const share = initializeDesktopShareRuntime({
     isPackaged: app.isPackaged,
@@ -439,7 +443,10 @@ function registerHandlers(): void {
 }
 
 function installApplicationMenu(): void {
-  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate(createApplicationMenuTemplate()) : null)
+  const isDev = !app.isPackaged && Boolean(process.env.VITE_DEV_SERVER_URL)
+  Menu.setApplicationMenu(shouldInstallApplicationMenu(isDev)
+    ? Menu.buildFromTemplate(createApplicationMenuTemplate(isDev))
+    : null)
 }
 
 function createWindow(): BrowserWindow {
