@@ -152,8 +152,9 @@ See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERS
 
 The Android companion is a source/build surface for the implemented local LAN
 contract. The current public GitHub pre-release is `0.1.0-alpha.1`; the
-`0.1.0-alpha.2` source candidate is not public. Ordinary contributors do not
-need private QA signing material.
+`0.1.0-alpha.3` source candidate is not public. The prior `0.1.0-alpha.2`
+candidate is historical failed evidence and was never public. Ordinary
+contributors do not need private QA signing material.
 
 Use:
 

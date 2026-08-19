@@ -1,17 +1,19 @@
 # Android public distribution v1
 
 **Status:** direct-APK distribution contract; `0.1.0-alpha.1` is the
-immutable public Android release. The `0.1.0-alpha.2` / `versionCode = 2`
-source candidate on this release line is not public.
+immutable public Android release. The `0.1.0-alpha.3` / `versionCode = 3`
+source candidate on this release line is not public. The `0.1.0-alpha.2` /
+`versionCode = 2` candidate remains historical failed evidence and was never
+public.
 
 **Historical base audit:** `maikolsiragusaa/metrora@69f0688fea5bb48f37b770e8de590ad20e490d74`
 
 This document records the Founder-gated, direct GitHub APK contract for the
-implemented Android companion. It does not authorize publication of the alpha.2
+implemented Android companion. It does not authorize publication of the alpha.3
 candidate, Google Play submission, F-Droid submission, a tag, or a
 website/README promotion wave. The table below is historical evidence for the
 named audit base; its alpha.1 and no-public-release statements are not current
-alpha.2 authority.
+alpha.3 authority.
 
 ## Current-state audit
 
@@ -52,12 +54,14 @@ APK for ordinary direct installation:
 - integrity asset: `SHA256SUMS`.
 
 The immutable public release currently remains `0.1.0-alpha.1` with
-`versionCode = 1`. The source candidate prepared on this release line is
-`0.1.0-alpha.2` with `versionCode = 2`; it is not public and must not replace
-the alpha.1 download or Obtainium guidance.
+`versionCode = 1`. The current source candidate prepared on this release line
+is `0.1.0-alpha.3` with `versionCode = 3`; it is not public and must not replace
+the alpha.1 download or Obtainium guidance. The prior `0.1.0-alpha.2` /
+`versionCode = 2` candidate is retained as historical failed, unpublished
+evidence and must not be overwritten or reissued.
 
 The following illustrative manifest uses the immutable alpha.1 public identity;
-it is a schema example, not alpha.2 release evidence:
+it is a schema example, not alpha.3 release evidence:
 
 ```json
 {
@@ -91,18 +95,20 @@ Windows Store package version:
 - source authority: `android/app/build.gradle.kts`;
 - latest public `versionName`: `0.1.0-alpha.1`;
 - latest public `versionCode`: `1`;
-- current source-candidate `versionName`: `0.1.0-alpha.2`;
-- current source-candidate `versionCode`: `2`;
+- current source-candidate `versionName`: `0.1.0-alpha.3`;
+- current source-candidate `versionCode`: `3`;
 - GitHub identity: `android-v<versionName>`;
 - Play and direct APK upgrades use the same `eu.metrora.app` package line and
   the same strictly increasing `versionCode` sequence.
 
 The immutable alpha.1 production-signed artifact consumed `versionCode = 1`.
-The alpha.2 source candidate advances the same application identity to
-`versionCode = 2`; it remains blocked from public distribution until the
-production-key, independent-review, Founder-authorization and merge gates are
-complete. Every later publicly installable upgrade must use a strictly larger
-integer. `versionName` remains human-readable and may use the existing Metrora
+The historical alpha.2 candidate advanced the same application identity to
+`versionCode = 2` but failed scanner acceptance and remains unpublished. The
+alpha.3 source candidate advances the same identity to `versionCode = 3`; it
+remains blocked from public distribution until the production-key,
+independent-review, Founder-authorization and merge gates are complete. Every
+later publicly installable upgrade must use a strictly larger integer.
+`versionName` remains human-readable and may use the existing Metrora
 pre-release convention.
 
 Android version identity is not coupled to the Windows Store package version.
@@ -350,6 +356,7 @@ confirm all of the following outside this pull request:
 - release notes, checksum and manifest are reviewed;
 - only then is the draft eligible for explicit public publication.
 
-Until those actions occur for alpha.2, the repository state is **a source
-candidate ready for the production-key gate**, not a public alpha.2 release.
+Until those actions occur for alpha.3, the repository state is **a source
+candidate ready for the production-key gate**, not a public alpha.3 release.
+The historical alpha.2 candidate remains failed and unpublished.
 The immutable alpha.1 artifact remains the current public Android release.

@@ -55,15 +55,16 @@ Android uses the native `versionName` and integer `versionCode` declared in
 
 The current source candidate advances the same package line to:
 
-- `versionName = 0.1.0-alpha.2`;
-- `versionCode = 2`;
+- `versionName = 0.1.0-alpha.3`;
+- `versionCode = 3`;
 - application ID `eu.metrora.app`.
 
-The alpha.2 source candidate is not a public release. Public download and
-release guidance must continue to point to the immutable alpha.1 artifact until
-a separately authorized production-signed alpha.2 release exists. The public
-alpha.1 artifact consumed `versionCode = 1`; every later publicly installable
-Android upgrade must use a strictly larger `versionCode`.
+The alpha.2 source candidate is historical failed evidence and was never
+public. The alpha.3 source candidate is also not a public release. Public
+download and release guidance must continue to point to the immutable alpha.1
+artifact until a separately authorized production-signed alpha.3 release
+exists. The public alpha.1 artifact consumed `versionCode = 1`; every later
+publicly installable Android upgrade must use a strictly larger `versionCode`.
 The human-readable `versionName` is used in the deterministic GitHub identity
 `android-v<versionName>` and asset name
 `Metrora-Android-<versionName>.apk`. Android's version line is independent of

@@ -1,5 +1,8 @@
+import fs from 'node:fs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   artifactFilenameForVersion,
@@ -11,6 +14,10 @@ import {
   parseSha256Sums,
   validateReleaseManifest,
 } from './verify-android-release.mjs'
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const readRepositoryFile = relativePath =>
+  fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8')
 
 const sourceCommit = 'a'.repeat(40)
 const certificate = 'b'.repeat(64)
@@ -91,4 +98,32 @@ test('SHA256SUMS parsing rejects malformed or duplicate entries', () => {
   )
   assert.throws(() => parseSha256Sums(`${apk}  artifact.apk\n${apk}  artifact.apk\n`))
   assert.throws(() => parseSha256Sums(`${apk} *artifact.apk\n`))
+})
+
+test('release scanner keeps ML Kit registrars and camera-independent image import', () => {
+  const proguardRules = readRepositoryFile('android/app/proguard-rules.pro')
+  for (const registrar of [
+    'com.google.mlkit.vision.barcode.internal.BarcodeRegistrar',
+    'com.google.mlkit.vision.common.internal.VisionCommonRegistrar',
+    'com.google.mlkit.common.internal.CommonComponentRegistrar',
+  ]) {
+    const escapedRegistrar = registrar.replaceAll('.', '\\.')
+    assert.match(
+      proguardRules,
+      new RegExp(`-keep class ${escapedRegistrar}\\s*\\{\\s*public <init>\\(\\);\\s*\\}`),
+    )
+  }
+
+  const scannerSource = readRepositoryFile(
+    'android/app/src/main/kotlin/eu/metrora/app/ui/QrScanner.kt',
+  )
+  const cameraBranch = scannerSource.indexOf('if (hasPermission)')
+  const cameraBranchEnd = scannerSource.indexOf('\n        OutlinedButton(', cameraBranch)
+  const imageImport = scannerSource.indexOf('R.string.import_qr_from_image')
+
+  assert.notEqual(cameraBranch, -1)
+  assert.notEqual(cameraBranchEnd, -1)
+  assert.notEqual(imageImport, -1)
+  assert.ok(imageImport > cameraBranchEnd)
+  assert.match(scannerSource.slice(cameraBranch, cameraBranchEnd), /CameraPermissionPrompt/)
 })
