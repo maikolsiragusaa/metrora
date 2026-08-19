@@ -34,9 +34,10 @@ separate from the published package; any future Store update requires its own
 candidate, acceptance, submission and publication decision.
 
 The current post-RC10 engineering candidate is `1.0.0-rc.11`, with Desktop
-build version `1.0.0.11` and Store package identity version `1.0.1.0`. It is an
-unsigned, non-published candidate only. The published Store remains RC10 until
-Microsoft publishes a later package.
+build version `1.0.0.11` and Store package identity version `1.0.1.0`. It has
+been submitted to Microsoft Partner Center and is undergoing certification; it
+is not publicly live. The published Store remains RC10 until Microsoft
+publishes a later package.
 
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
@@ -160,12 +161,12 @@ Rollback preserves endpoint identity, OS-vault material, analytics, Workspace st
 
 Android's direct channel is a Founder-gated GitHub Release with one
 production-signed `Metrora-Android-<versionName>.apk`, a public release manifest
-and `SHA256SUMS`. The immutable public release is `0.1.0-alpha.1`; the current
-`0.1.0-alpha.3` source candidate is not public. The prior `0.1.0-alpha.2`
-candidate is historical failed evidence and was never public. The source-bound
-workflow is manual-only, does not publish from pushes or tags, and can prepare only a draft
-release after an existing tag is independently bound to the reviewed source
-commit. See
+and `SHA256SUMS`. The current public release is `0.1.0-alpha.3` under
+`android-v0.1.0-alpha.3`; `0.1.0-alpha.1` remains historical public-release
+evidence, and `0.1.0-alpha.2` is historical failed evidence that was never
+public. The source-bound workflow is manual-only, does not publish from pushes
+or tags, and can prepare only a draft release after an existing tag is
+independently bound to the reviewed source commit. See
 [`docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md`](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md).
 
 The V1 production custody contract uses a JKS keystore. The keystore and
@@ -174,9 +175,9 @@ materializes them only for the protected signing step and does not persist
 them in `GITHUB_ENV` or release metadata.
 
 The QA physical-acceptance identity is not a production release identity.
-Google Play and F-Droid remain separate gates. The alpha.1 public availability
-claim is limited to its immutable GitHub release; alpha.3 remains blocked until
-the production key, physical acceptance and Founder publication decision exist.
+Google Play and F-Droid remain separate gates. The alpha.3 public-availability
+claim is limited to its immutable GitHub prerelease and direct APK; it does not
+imply Play or F-Droid distribution.
 
 ## Prohibitions
 

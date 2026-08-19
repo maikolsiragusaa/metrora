@@ -8,7 +8,7 @@ Metrora for Windows is available on the **Microsoft Store**, published by Vensen
 
 The Microsoft Store package is the supported public Windows distribution. Repository builds and historical GitHub pre-releases remain separate development or archival artifacts and are not the recommended install path.
 
-The currently published Store line is traceable to source candidate `1.0.0-rc.10`, desktop build version `1.0.0.10`, and Store AppX identity version `1.0.0.0`. The current post-RC10 engineering candidate is `1.0.0-rc.11`, desktop build `1.0.0.11`, and Store AppX identity `1.0.1.0`; it is not published. Development on `main` may advance independently after that published line.
+The currently published Store line is traceable to source candidate `1.0.0-rc.10`, desktop build version `1.0.0.10`, and Store AppX identity version `1.0.0.0`. The current post-RC10 engineering candidate is `1.0.0-rc.11`, desktop build `1.0.0.11`, and Store AppX identity `1.0.1.0`; it has been submitted to Microsoft Partner Center and is undergoing certification, but is not publicly live. Development on `main` may advance independently after that published line.
 
 Historical 0.9.19 and RC7 acceptance material remains immutable evidence for those source lines only.
 
@@ -54,7 +54,7 @@ The existing RC7 release remains immutable as a historical technical preview. La
 
 The Store workflow derives an x64 AppX from reviewed source and validates its identity, architecture, capabilities and bundled runtime boundary. It also imports `app/resources/cli.asar/dist/desktop-share-runtime.js` through the bundled Electron runtime and requires `createDesktopShareRuntime` without starting a listener. The Store manifest's four-part package identity remains separate from the desktop build counter.
 
-The published Store line passed its source-bound package and physical-runtime acceptance before publication. RC11 is currently prepared only as a candidate; later source work remains separate until a future Store update is explicitly physically accepted, submitted and published.
+The published Store line passed its source-bound package and physical-runtime acceptance before publication. RC11 is the submitted, in-certification candidate; later source work remains separate until a future Store update is explicitly certified, published and made available.
 
 ## Accounting presentation boundary
 

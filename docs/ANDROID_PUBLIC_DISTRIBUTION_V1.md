@@ -1,21 +1,23 @@
 # Android public distribution v1
 
-**Status:** direct-APK distribution contract; `0.1.0-alpha.1` is the
-immutable public Android release. The `0.1.0-alpha.3` / `versionCode = 3`
-source candidate on this release line is not public. The `0.1.0-alpha.2` /
-`versionCode = 2` candidate remains historical failed evidence and was never
-public.
+**Status:** direct-APK distribution contract; the current public Android
+release is `0.1.0-alpha.3` / `versionCode = 3`. Its GitHub prerelease tag is
+`android-v0.1.0-alpha.3`, with accepted artifact
+`Metrora-Android-0.1.0-alpha.3.apk` and SHA-256
+`e9868958d26b58ffefa3aaa51a687cd64abc5e73219cd2e9cc8f8d0c8561f305`.
+`0.1.0-alpha.1` remains historical public-release evidence. The
+`0.1.0-alpha.2` / `versionCode = 2` candidate failed production release
+acceptance and was never public.
 
 **Historical base audit:** `maikolsiragusaa/metrora@69f0688fea5bb48f37b770e8de590ad20e490d74`
 
 This document records the Founder-gated, direct GitHub APK contract for the
-implemented Android companion. It does not authorize publication of the alpha.3
-candidate, Google Play submission, F-Droid submission, a tag, or a
-website/README promotion wave. The table below is historical evidence for the
-named audit base; its alpha.1 and no-public-release statements are not current
-alpha.3 authority.
+implemented Android companion. The table below preserves historical evidence
+for the named audit base; its alpha.1 and no-public-release statements are not
+current alpha.3 authority. Google Play and F-Droid remain separate channels
+with their own gates.
 
-## Current-state audit
+## Historical audit at the named base
 
 The audit covered the Android Gradle project and source tree, the existing
 Android companion workflow, repository release/version authorities, public
@@ -36,6 +38,14 @@ read-only infra release/custody conventions.
 | F-Droid | The flavor builds, but dependency/license/compliance status is not a release claim | CameraX/ML Kit and reproducible metadata need a separate review | Characterize only | Separate F-Droid gate |
 | Google Play | The Play AAB builds | Listing, Play signing and publication gates are not complete | Preserve buildability only | Separate Play gate |
 
+## Current accepted authority
+
+The direct Android release gate has completed for alpha.3. The public channel is
+the GitHub prerelease identified above; it is not a Google Play or F-Droid
+publication. The accepted production APK is the canonical direct-install
+artifact, and its public manifest and `SHA256SUMS` remain the integrity
+references for users.
+
 The Android product remains local-first and read-focused. Desktop/core remains
 authoritative for collection, parsing, pricing, accounting, canonical history,
 evidence and Workspace semantics.
@@ -53,27 +63,26 @@ APK for ordinary direct installation:
 - manifest asset: `Metrora-Android-<versionName>.manifest.json`;
 - integrity asset: `SHA256SUMS`.
 
-The immutable public release currently remains `0.1.0-alpha.1` with
-`versionCode = 1`. The current source candidate prepared on this release line
-is `0.1.0-alpha.3` with `versionCode = 3`; it is not public and must not replace
-the alpha.1 download or Obtainium guidance. The prior `0.1.0-alpha.2` /
-`versionCode = 2` candidate is retained as historical failed, unpublished
-evidence and must not be overwritten or reissued.
+The current public release is `0.1.0-alpha.3` with `versionCode = 3` and tag
+`android-v0.1.0-alpha.3`. The immutable `0.1.0-alpha.1` release remains
+historical evidence. The prior `0.1.0-alpha.2` / `versionCode = 2` candidate is
+retained as historical failed, unpublished evidence and must not be
+overwritten, reissued or described as a public release.
 
-The following illustrative manifest uses the immutable alpha.1 public identity;
-it is a schema example, not alpha.3 release evidence:
+The following illustrative manifest uses the current alpha.3 public identity;
+the certificate value remains a schema placeholder and is not release evidence:
 
 ```json
 {
   "schemaVersion": 1,
   "product": "Metrora",
-  "versionName": "0.1.0-alpha.1",
-  "versionCode": 1,
+  "versionName": "0.1.0-alpha.3",
+  "versionCode": 3,
   "distributionChannel": "github",
   "applicationId": "eu.metrora.app",
-  "sourceCommit": "<40-character source commit>",
-  "artifactFilename": "Metrora-Android-0.1.0-alpha.1.apk",
-  "artifactSha256": "<64-character SHA-256>",
+  "sourceCommit": "<reviewed source commit>",
+  "artifactFilename": "Metrora-Android-0.1.0-alpha.3.apk",
+  "artifactSha256": "e9868958d26b58ffefa3aaa51a687cd64abc5e73219cd2e9cc8f8d0c8561f305",
   "signingCertificateSha256": "<64-character certificate SHA-256>"
 }
 ```
@@ -93,21 +102,20 @@ Android has a platform-native version authority separate from the frozen
 Windows Store package version:
 
 - source authority: `android/app/build.gradle.kts`;
-- latest public `versionName`: `0.1.0-alpha.1`;
-- latest public `versionCode`: `1`;
-- current source-candidate `versionName`: `0.1.0-alpha.3`;
-- current source-candidate `versionCode`: `3`;
+- latest public `versionName`: `0.1.0-alpha.3`;
+- latest public `versionCode`: `3`;
+- current accepted source `versionName`: `0.1.0-alpha.3`;
+- current accepted source `versionCode`: `3`;
 - GitHub identity: `android-v<versionName>`;
 - Play and direct APK upgrades use the same `eu.metrora.app` package line and
   the same strictly increasing `versionCode` sequence.
 
 The immutable alpha.1 production-signed artifact consumed `versionCode = 1`.
 The historical alpha.2 candidate advanced the same application identity to
-`versionCode = 2` but failed scanner acceptance and remains unpublished. The
-alpha.3 source candidate advances the same identity to `versionCode = 3`; it
-remains blocked from public distribution until the production-key,
-independent-review, Founder-authorization and merge gates are complete. Every
-later publicly installable upgrade must use a strictly larger integer.
+`versionCode = 2` but failed production release acceptance and remains
+unpublished. The accepted alpha.3 release advances the same identity to
+`versionCode = 3`. Every later publicly installable upgrade must use a
+strictly larger integer.
 `versionName` remains human-readable and may use the existing Metrora
 pre-release convention.
 
@@ -342,8 +350,9 @@ infrastructure.
 
 ## Founder release checklist
 
-Before changing the state from candidate to public release, the Founder must
-confirm all of the following outside this pull request:
+The alpha.3 release completed the following Founder-owned gates. The same
+controls remain required before any future direct release changes from
+candidate to public:
 
 - production key exists in protected custody and recovery has been checked;
 - the protected workflow environment contains the required signing values;
@@ -354,9 +363,8 @@ confirm all of the following outside this pull request:
 - the GitHub Release tag is created intentionally and points to the approved
   source commit;
 - release notes, checksum and manifest are reviewed;
-- only then is the draft eligible for explicit public publication.
+- only then is a future draft eligible for explicit public publication.
 
-Until those actions occur for alpha.3, the repository state is **a source
-candidate ready for the production-key gate**, not a public alpha.3 release.
-The historical alpha.2 candidate remains failed and unpublished.
-The immutable alpha.1 artifact remains the current public Android release.
+The accepted alpha.3 artifact is the current public Android release.
+The historical alpha.2 candidate remains failed and unpublished, and the
+immutable alpha.1 artifact remains historical public-release evidence.
