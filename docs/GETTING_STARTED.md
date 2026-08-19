@@ -144,19 +144,23 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Development builds are not official Store-signed releases. Windows is the first supported public desktop distribution, and the Microsoft Store package is the recommended Windows install path. Repository packaging commands remain development and verification tools rather than alternate public distribution channels.
+Development builds are not official Store-signed releases. Windows is the first supported public desktop distribution, and the Microsoft Store package is the recommended Windows install path. The live Store line remains RC10 while RC11 is in Microsoft certification. Repository packaging commands remain development and verification tools rather than alternate public distribution channels.
 
 See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
 
-## Build and validate the Android companion
+## Android companion
 
-The Android companion is a source/build surface for the implemented local LAN
-contract. The current public GitHub pre-release is `0.1.0-alpha.1`; the
-`0.1.0-alpha.3` source candidate is not public. The prior `0.1.0-alpha.2`
-candidate is historical failed evidence and was never public. Ordinary
-contributors do not need private QA signing material.
+The current public GitHub pre-release is [`0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3), distributed as a production-signed direct APK for `eu.metrora.app` with `versionCode = 3`. `0.1.0-alpha.1` remains immutable historical release evidence; `0.1.0-alpha.2` was never published.
 
-Use:
+Until Microsoft publishes the RC11 Store update with the current companion runtime, pair alpha.3 with a current Metrora Desktop source build. The Android companion remains read-focused and does not become a second collection, pricing, accounting or history authority.
+
+For direct installation:
+
+- download `Metrora-Android-0.1.0-alpha.3.apk` from the alpha.3 GitHub Release;
+- verify the attached manifest and `SHA256SUMS` if desired;
+- Obtainium users can track the repository's `android-v*` releases.
+
+For repository Android development use:
 
 - Java 17;
 - Gradle 9.6.1, or the project-supported equivalent;
@@ -174,9 +178,9 @@ To validate the unsigned distribution channels used by the repository workflow:
 gradle -p android --no-daemon :app:assembleGithubRelease :app:assembleFdroidRelease :app:bundlePlayRelease
 ```
 
-The dedicated non-production QA identity is used only for trusted same-repository physical-acceptance CI and is not required for these commands. Fork pull requests do not receive QA secrets. Release, F-Droid and Play signing remain separate; no private signing material belongs in Git.
+The dedicated non-production QA identity is used only for trusted same-repository physical-acceptance CI and is not required for these commands. Production, QA, F-Droid and Play signing remain separate; no private signing material belongs in Git.
 
-See [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) for the accepted Windows↔Samsung matrix and [Local companion API v1](LOCAL_COMPANION_API.md) for the protocol boundary.
+See [Android public distribution v1](ANDROID_PUBLIC_DISTRIBUTION_V1.md), [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) and [Local companion API v1](LOCAL_COMPANION_API.md).
 
 ## Local files and compatibility
 
