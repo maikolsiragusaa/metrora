@@ -77,7 +77,14 @@ function Assert-MetroraStoreLocalContextKeys($Value, [string[]]$Expected, [strin
       throw "$Label fields are invalid"
     }
 
-    $runtimeFields = @('packagedCliSmoke', 'cliRuntimeContainer', 'looseCliNodeModules')
+    $runtimeFields = @(
+      'packagedCliSmoke'
+      'cliRuntimeContainer'
+      'looseCliNodeModules'
+      'packagedCompanionRuntimeSmoke'
+      'packagedCompanionRuntimePath'
+      'packagedCompanionRuntimeEntry'
+    )
     $runtimePresent = @($runtimeFields | Where-Object { $actual -contains $_ })
     if ($runtimePresent.Count -ne 0 -and $runtimePresent.Count -ne $runtimeFields.Count) {
       throw "$Label fields are invalid"
@@ -86,9 +93,12 @@ function Assert-MetroraStoreLocalContextKeys($Value, [string[]]$Expected, [strin
       if (
         [string]$Value.packagedCliSmoke -ne 'pass' -or
         [string]$Value.cliRuntimeContainer -ne 'asar' -or
-        [bool]$Value.looseCliNodeModules
+        [bool]$Value.looseCliNodeModules -or
+        [string]$Value.packagedCompanionRuntimeSmoke -ne 'pass' -or
+        [string]$Value.packagedCompanionRuntimePath -ne 'app/resources/cli.asar/dist/desktop-share-runtime.js' -or
+        [string]$Value.packagedCompanionRuntimeEntry -ne 'createDesktopShareRuntime'
       ) {
-        throw 'Store artifact manifest packaged CLI authority is invalid'
+        throw 'Store artifact manifest packaged runtime authority is invalid'
       }
     }
     return
@@ -113,7 +123,7 @@ function Get-MetroraStoreLocalTestState([string]$AcceptanceDirectory, [string]$R
   Assert-MetroraStoreLocalContextKeys $context.source @('repository', 'commit') 'context.source'
   Assert-MetroraStoreLocalContextKeys $context.package @(
     'artifactName', 'unsignedFile', 'unsignedSha256', 'signedFile', 'testSignedSha256',
-    'version', 'architecture', 'identityName', 'publisher', 'applicationId'
+    'productVersion', 'desktopBuildVersion', 'version', 'architecture', 'identityName', 'publisher', 'applicationId'
   ) 'context.package'
   Assert-MetroraStoreLocalContextKeys $context.platform @(
     'edition', 'version', 'build', 'architecture'
@@ -132,6 +142,8 @@ function Get-MetroraStoreLocalTestState([string]$AcceptanceDirectory, [string]$R
     $context.package.unsignedSha256 -notmatch '^[a-f0-9]{64}$' -or
     $context.package.testSignedSha256 -notmatch '^[a-f0-9]{64}$' -or
     $context.package.unsignedSha256 -eq $context.package.testSignedSha256 -or
+    $context.package.productVersion -notmatch '^\d+\.\d+\.\d+(?:-rc\.\d+)?$' -or
+    $context.package.desktopBuildVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
     $context.package.version -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
     $context.package.architecture -ne 'x64' -or
     $context.platform.architecture -ne 'x64' -or

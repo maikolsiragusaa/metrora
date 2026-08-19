@@ -12,7 +12,7 @@ const commit = 'a'.repeat(40)
 function validReport() {
   return {
     kind: 'metrora.windows-store-local-test-report',
-    version: 1,
+    version: 2,
     status: 'pass',
     generatedAt: '2026-08-06T18:00:00.000Z',
     source: {
@@ -20,10 +20,12 @@ function validReport() {
       commit,
     },
     package: {
-      artifactName: 'Metrora-1.0.0-rc.7-Windows-Store-x64.appx',
+      artifactName: 'Metrora-1.0.0-rc.11-Windows-Store-x64.appx',
       unsignedSha256: '1'.repeat(64),
       testSignedSha256: '2'.repeat(64),
-      version: '1.0.0.7',
+      productVersion: '1.0.0-rc.11',
+      desktopBuildVersion: '1.0.0.11',
+      version: '1.0.1.0',
       architecture: 'x64',
     },
     platform: {
@@ -35,6 +37,15 @@ function validReport() {
     observations: {
       launch: 'pass',
       identityPresentation: 'pass',
+      connectPhoneSurface: 'pass',
+      productionAndroidQrScan: 'pass',
+      sasMatch: 'pass',
+      desktopApproval: 'pass',
+      androidHomeData: 'pass',
+      androidActivitySessions: 'pass',
+      androidAnalyzeFacts: 'pass',
+      settingsDeviceSecurity: 'pass',
+      disconnectReconnect: 'pass',
       localCollection: 'pass',
       noExternalNode: 'pass',
     },
@@ -78,6 +89,12 @@ test('accepts a complete passing report', () => {
   const result = verify(validReport(), ['--require-pass'])
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).status, 'pass')
+})
+
+test('rejects a report that omits a mandatory companion observation', () => {
+  const report = validReport()
+  delete report.observations.androidHomeData
+  assert.notEqual(verify(report, ['--require-pass']).status, 0)
 })
 
 test('accepts a consistent failure unless pass is required', () => {

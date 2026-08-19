@@ -48,21 +48,36 @@ if ($manifests.Count -ne 1) {
   throw "expected exactly one Store package manifest, found $($manifests.Count)"
 }
 
-$artifactManifest = Get-Content -LiteralPath $manifests[0].FullName -Raw | ConvertFrom-Json
-Assert-MetroraStoreLocalContextKeys $artifactManifest @(
-  'schemaVersion', 'sourceCommit', 'artifactName', 'sha256', 'packageVersion',
-  'architecture', 'signed', 'submitted', 'published'
-) 'Store artifact manifest'
-if (
-  [int]$artifactManifest.schemaVersion -ne 1 -or
-  [string]$artifactManifest.sourceCommit -ne $ExpectedCommit -or
-  [string]$artifactManifest.artifactName -ne $packages[0].Name -or
-  [string]$artifactManifest.sha256 -notmatch '^[a-f0-9]{64}$' -or
-  [string]$artifactManifest.packageVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
-  [string]$artifactManifest.architecture -ne 'x64' -or
-  [bool]$artifactManifest.signed -or
-  [bool]$artifactManifest.submitted -or
-  [bool]$artifactManifest.published
+  $artifactManifest = Get-Content -LiteralPath $manifests[0].FullName -Raw | ConvertFrom-Json
+  Assert-MetroraStoreLocalContextKeys $artifactManifest @(
+    'schemaVersion', 'sourceCommit', 'productVersion', 'desktopBuildVersion',
+    'artifactName', 'sha256', 'packageVersion', 'architecture',
+    'identityName', 'publisher', 'publisherDisplayName', 'displayName', 'applicationId', 'capabilities',
+    'packagedCliSmoke', 'cliRuntimeContainer', 'looseCliNodeModules',
+    'packagedCompanionRuntimeSmoke', 'packagedCompanionRuntimePath', 'packagedCompanionRuntimeEntry',
+    'unsigned', 'signed', 'submitted', 'published'
+  ) 'Store artifact manifest'
+  $artifactCapabilities = @($artifactManifest.capabilities | ForEach-Object { [string]$_ })
+  if (
+    [int]$artifactManifest.schemaVersion -ne 2 -or
+    [string]$artifactManifest.sourceCommit -ne $ExpectedCommit -or
+    [string]$artifactManifest.productVersion -notmatch '^\d+\.\d+\.\d+(?:-rc\.\d+)?$' -or
+    [string]$artifactManifest.desktopBuildVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+    [string]$artifactManifest.artifactName -ne $packages[0].Name -or
+    [string]$artifactManifest.sha256 -notmatch '^[a-f0-9]{64}$' -or
+    [string]$artifactManifest.packageVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+    [string]$artifactManifest.architecture -ne 'x64' -or
+    [string]$artifactManifest.identityName -ne 'Vensent.Metrora' -or
+    [string]$artifactManifest.publisher -ne 'CN=BC955F81-5099-4C27-A7A6-FF611BAACC3F' -or
+    [string]$artifactManifest.publisherDisplayName -ne 'Vensent' -or
+    [string]$artifactManifest.displayName -ne 'Metrora' -or
+    [string]$artifactManifest.applicationId -ne 'eu.metrora.desktop' -or
+    $artifactCapabilities.Count -ne 1 -or
+    $artifactCapabilities[0] -ne 'runFullTrust' -or
+    -not [bool]$artifactManifest.unsigned -or
+    [bool]$artifactManifest.signed -or
+    [bool]$artifactManifest.submitted -or
+    [bool]$artifactManifest.published
 ) {
   throw 'Store artifact manifest authority is invalid'
 }
@@ -81,10 +96,13 @@ if (Test-Path -LiteralPath (Join-Path $inspection 'AppxSignature.p7x')) {
 }
 $manifest = Get-MetroraStoreManifestInfo $inspection
 
-$desktopPackage = Get-Content -LiteralPath (Join-Path $repository 'app\package.json') -Raw | ConvertFrom-Json
-$appx = $desktopPackage.build.appx
-if (
-  $manifest.IdentityName -cne [string]$appx.identityName -or
+  $rootPackage = Get-Content -LiteralPath (Join-Path $repository 'package.json') -Raw | ConvertFrom-Json
+  $desktopPackage = Get-Content -LiteralPath (Join-Path $repository 'app\package.json') -Raw | ConvertFrom-Json
+  $appx = $desktopPackage.build.appx
+  if (
+    [string]$artifactManifest.productVersion -ne [string]$rootPackage.version -or
+    [string]$artifactManifest.desktopBuildVersion -ne [string]$desktopPackage.build.buildVersion -or
+    $manifest.IdentityName -cne [string]$appx.identityName -or
   $manifest.Publisher -cne [string]$appx.publisher -or
   $manifest.PublisherDisplayName -cne [string]$appx.publisherDisplayName -or
   $manifest.DisplayName -cne [string]$appx.displayName -or
@@ -178,6 +196,8 @@ try {
       unsignedSha256 = $unsignedSha256
       signedFile = 'local-test-signed.appx'
       testSignedSha256 = $signedSha256
+      productVersion = [string]$artifactManifest.productVersion
+      desktopBuildVersion = [string]$artifactManifest.desktopBuildVersion
       version = $manifest.Version
       architecture = $manifest.Architecture
       identityName = $manifest.IdentityName

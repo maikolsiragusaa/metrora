@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
 
-import { buildVersionFor, parseMetroraVersion } from './version-authority-lib.mjs'
+import {
+  STORE_PACKAGE_VERSION_AUTHORITY_PATH,
+  buildVersionFor,
+  parseMetroraVersion,
+  validateStorePackageVersionAuthority,
+} from './version-authority-lib.mjs'
 
 function readJson(path) { return JSON.parse(readFileSync(path, 'utf8')) }
 function fail(message) { throw new Error(`version authority: ${message}`) }
@@ -9,6 +14,7 @@ const rootPackage = readJson('package.json')
 const rootLock = readJson('package-lock.json')
 const appPackage = readJson('app/package.json')
 const appLock = readJson('app/package-lock.json')
+const storePackageVersionAuthority = validateStorePackageVersionAuthority(readJson(STORE_PACKAGE_VERSION_AUTHORITY_PATH))
 const version = rootPackage.version
 
 parseMetroraVersion(version)
@@ -21,4 +27,7 @@ if (appPackage.build?.buildVersion !== expectedBuildVersion) {
   fail(`desktop buildVersion is ${appPackage.build?.buildVersion}, expected ${expectedBuildVersion}`)
 }
 
-console.log(`Version authority verified: ${version} (${expectedBuildVersion})`)
+console.log(
+  `Version authority verified: ${version} (${expectedBuildVersion}); ` +
+  `Store package ${storePackageVersionAuthority.publishedStorePackageVersion} -> ${storePackageVersionAuthority.candidateStorePackageVersion}`,
+)

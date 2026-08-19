@@ -5,7 +5,10 @@ Metrora uses semantic versioning for public product identity and separate numeri
 ## Current line
 
 - Published Store source line: `1.0.0-rc.10`
-- Desktop build version: `1.0.0.10`
+- Published Desktop build version: `1.0.0.10`
+- Current Store update candidate source line: `1.0.0-rc.11`
+- Current candidate Desktop build version: `1.0.0.11`
+- Current candidate Store package version: `1.0.1.0`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - First intended stable release: `1.0.0`
 
@@ -33,16 +36,22 @@ The Microsoft Store AppX/MSIX manifest has a separate four-component package ide
 
 The final component is `0` for the Store package contract. The SemVer pre-release suffix (`-rc.N`) is **not** encoded into the AppX identity version, and the desktop build counter (`MAJOR.MINOR.PATCH.N`) must not be presented as the Store package version.
 
-For the current `1.0.0` Store-associated source line:
+The published baseline and the next candidate are separate authorities:
 
-- source/product candidate: `1.0.0-rc.10`;
-- desktop build version: `1.0.0.10`;
-- published Store AppX identity version: `1.0.0.0`.
+- published RC10 source/product line: `1.0.0-rc.10`;
+- published RC10 Desktop build version: `1.0.0.10`;
+- published Store AppX identity version: `1.0.0.0`;
+- current RC11 source/product candidate: `1.0.0-rc.11`;
+- current RC11 Desktop build version: `1.0.0.11`;
+- current candidate Store AppX identity version: `1.0.1.0`.
 
-The published Store authority is the frozen RC10 line under Vensent. A local
-build with the same identity version is not, by itself, evidence of the live
-listing; later Store updates must advance according to the Store's
-package-version rules and pass their own acceptance and publication gates.
+The machine-readable Store package authority is
+`release/windows-store-package-version.v1.json`. It is the single source for
+the published baseline and candidate package versions. The AppX hook reads it
+after electron-builder creates the manifest; it does not derive a package
+version from product SemVer or the Desktop build counter. A local build with a
+known identity version is not, by itself, evidence of the live listing; later
+Store updates must pass their own acceptance and publication gates.
 
 ## Android version authority
 
@@ -96,7 +105,8 @@ The following values must agree where they represent the same authority:
 - root `package.json` and root `package-lock.json` — product SemVer;
 - desktop `app/package.json` and `app/package-lock.json` — product SemVer;
 - desktop `buildVersion` — desktop numeric build mapping;
-- Store AppX manifest — Store package-version mapping;
+- `release/windows-store-package-version.v1.json` — published and candidate Store package versions;
+- Store AppX manifest — candidate Store package-version mapping after the hook;
 - current-version declarations in `RELEASING.md`;
 - current desktop declarations in `app/DISTRIBUTION.md`;
 - current release-line declarations in this document and `docs/WINDOWS_DISTRIBUTION.md`.

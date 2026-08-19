@@ -1,7 +1,7 @@
 {
   "name": "metrora-desktop",
   "private": true,
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "description": "Metrora Desktop — local-first AI usage intelligence",
   "main": "dist/electron/bootstrap.js",
   "scripts": {
@@ -37,6 +37,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "@xmldom/xmldom": "^0.8.13",
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "electron": "^43.1.0",
@@ -60,6 +61,7 @@
       "package.json"
     ],
     "afterPack": "./scripts/after-pack.cjs",
+    "appxManifestCreated": "./scripts/appx-manifest-created.cjs",
     "mac": {
       "target": [
         {
@@ -143,7 +145,7 @@
       "maintainer": "Vensent (https://metrora.eu)",
       "executableName": "metrora"
     },
-    "buildVersion": "1.0.0.10"
+    "buildVersion": "1.0.0.11"
   },
   "homepage": "https://metrora.eu",
   "publisher": "Vensent",
