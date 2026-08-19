@@ -416,7 +416,8 @@ Mobile Product Parity V1 until their authority and UX are separately defined:
 - specialized context, throughput, guard, hook, diagnostics and action
   workflows;
 - sync, remote relay, accounts, billing, subscription systems and provisioning;
-- public Android distribution/signing and release work;
+- Google Play/F-Droid distribution and later Android release-channel work beyond
+  the current direct alpha.3 channel;
 - historical backfill or mobile-side repair of incomplete model/category
   identity.
 

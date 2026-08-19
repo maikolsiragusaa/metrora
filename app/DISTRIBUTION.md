@@ -48,7 +48,7 @@ npm --prefix app run package:store    # Windows AppX x64, development packaging
 npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
 ```
 
-These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution. The RC11 Store output remains unsigned, non-submitted and non-published until separate Founder and Microsoft gates pass.
+These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution. The RC11 Store output is an unsigned submitted candidate undergoing Microsoft certification; it is not publicly published until the remaining release gates pass.
 
 ## Official distribution requirements
 

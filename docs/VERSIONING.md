@@ -62,18 +62,18 @@ Android uses the native `versionName` and integer `versionCode` declared in
 - `versionCode = 1`;
 - application ID `eu.metrora.app`.
 
-The current source candidate advances the same package line to:
+The current public direct APK advances the same package line to:
 
 - `versionName = 0.1.0-alpha.3`;
 - `versionCode = 3`;
 - application ID `eu.metrora.app`.
 
 The alpha.2 source candidate is historical failed evidence and was never
-public. The alpha.3 source candidate is also not a public release. Public
-download and release guidance must continue to point to the immutable alpha.1
-artifact until a separately authorized production-signed alpha.3 release
-exists. The public alpha.1 artifact consumed `versionCode = 1`; every later
-publicly installable Android upgrade must use a strictly larger `versionCode`.
+public. Alpha.3 is the current public GitHub prerelease under tag
+`android-v0.1.0-alpha.3`, with the canonical direct-install APK named
+`Metrora-Android-0.1.0-alpha.3.apk`. The public alpha.1 artifact consumed
+`versionCode = 1`; every later publicly installable Android upgrade must use a
+strictly larger `versionCode`.
 The human-readable `versionName` is used in the deterministic GitHub identity
 `android-v<versionName>` and asset name
 `Metrora-Android-<versionName>.apk`. Android's version line is independent of

@@ -166,7 +166,7 @@ See [`WINDOWS_DISTRIBUTION.md`](WINDOWS_DISTRIBUTION.md), [`WINDOWS_FORMAT_DERIV
 src/       canonical collection, parsing, pricing, analytics, evidence and CLI
 app/       Electron desktop application
 dash/      local browser dashboard
-android/   implemented local companion; public alpha.1 release, alpha.2 source candidate
+android/   implemented local companion; public alpha.3 release, alpha.1 historical, alpha.2 failed candidate
 mac/       native macOS menubar companion
 gnome/     GNOME Shell companion
 tests/     canonical core and integration tests

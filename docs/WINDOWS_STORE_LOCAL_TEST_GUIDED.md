@@ -13,7 +13,7 @@ The local test verifies:
 - the candidate carries an importable companion runtime at `app/resources/cli.asar/dist/desktop-share-runtime.js`;
 - the package installs for the current Windows user;
 - Metrora launches with the expected product presentation;
-- the production Android `0.1.0-alpha.1` APK can complete the bounded companion flow;
+- the production Android `0.1.0-alpha.3` APK can complete the bounded companion flow;
 - local collection works without a separately installed Node.js runtime;
 - the package, trusted certificate and private key are removed afterward;
 - the final report contains no local paths, usernames, package identity values, keys or certificates.
@@ -64,8 +64,8 @@ Temporary PFX and CER files are deleted before the script exits. The trusted pub
 
 ## Manual observations
 
-In the launched app, confirm every observation below with the production
-Android APK already published as `android-v0.1.0-alpha.1`:
+In the launched app, confirm every observation below with the current production
+Android APK published as `android-v0.1.0-alpha.3`:
 
 1. Metrora launches normally.
 2. Windows and the app present the expected product identity.
