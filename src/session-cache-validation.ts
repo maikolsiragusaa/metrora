@@ -30,6 +30,21 @@ function isOptionalBool(value: unknown): boolean {
   return value === undefined || typeof value === 'boolean'
 }
 
+function isOptionalReasoningSemantics(value: unknown): boolean {
+  return value === undefined
+    || value === 'separate'
+    || value === 'aggregate-output'
+    || value === 'unavailable'
+    || value === 'mixed'
+}
+
+function isOptionalCacheTokenEvidence(value: unknown): boolean {
+  return value === undefined
+    || value === 'complete'
+    || value === 'partial'
+    || value === 'unavailable'
+    || value === 'inconsistent'
+}
 // A plain object whose every value is a string. Used for the sidechain
 // `agentSpawnLinks` map (agentId -> spawn tool_use id).
 function isOptionalStringRecord(value: unknown): boolean {
@@ -92,6 +107,8 @@ function validateCall(value: unknown): value is CachedCall {
     && typeof call['model'] === 'string'
     && isOptionalString(call['modelProvider'])
     && (call['pricingContext'] === undefined || HistoricalPricingContextV1Schema.safeParse(call['pricingContext']).success)
+    && isOptionalReasoningSemantics(call['reasoningSemantics'])
+    && isOptionalCacheTokenEvidence(call['cacheTokenEvidence'])
     && typeof call['deduplicationKey'] === 'string'
     && typeof call['timestamp'] === 'string'
     && (call['speed'] === 'standard' || call['speed'] === 'fast')

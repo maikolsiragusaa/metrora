@@ -3,7 +3,7 @@ import { join } from 'path'
 
 import { presentationIdentityForModelName } from './model-presentation.js'
 import type { ProjectSummary } from './types.js'
-import { combineReasoningSemantics, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const PLANNING_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode'])
 
@@ -93,13 +93,11 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
           cs.calls++
           cs.cost += call.costUSD
           cs.outputTokens += call.usage.outputTokens
-          const callReasoningSemantics = reasoningSemanticsForProviders([call.provider])
+          const callReasoningSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
           cs.reasoningSemantics = cs.calls === 1
             ? callReasoningSemantics
             : combineReasoningSemantics([cs.reasoningSemantics, callReasoningSemantics])
-          if (callReasoningSemantics === 'separate') {
-            cs.reasoningTokens += call.usage.reasoningTokens
-          }
+          cs.reasoningTokens += separatelyReportedReasoningTokens(call.usage.reasoningTokens, callReasoningSemantics)
           cs.inputTokens += call.usage.inputTokens
           cs.cacheReadTokens += call.usage.cacheReadInputTokens
           cs.cacheWriteTokens += call.usage.cacheCreationInputTokens

@@ -1,3 +1,4 @@
+import { generatedTokensForReasoningMix, type ReasoningTokenSemantics } from './token-semantics.js'
 export const REASONING_LEVELS = [
   'none',
   'minimal',
@@ -41,6 +42,7 @@ export type ReasoningMixInput = {
   outputTokens?: number
   reasoningTokens?: number
   costUSD?: number
+  reasoningSemantics?: ReasoningTokenSemantics
 }
 
 const LEVEL_SET = new Set<string>(REASONING_LEVELS)
@@ -180,7 +182,7 @@ export function buildReasoningMix(calls: ReasoningMixInput[]): ReasoningMix {
       sources: new Set<ReasoningLevelSource>(),
     }
     row.calls++
-    row.generatedTokens += finiteNonNegative(call.outputTokens) + finiteNonNegative(call.reasoningTokens)
+    row.generatedTokens += generatedTokensForReasoningMix(finiteNonNegative(call.outputTokens), finiteNonNegative(call.reasoningTokens), call.reasoningSemantics)
     row.reasoningTokens += finiteNonNegative(call.reasoningTokens)
     row.costUSD += finiteNonNegative(call.costUSD)
     if (call.reasoningLevelSource) row.sources.add(call.reasoningLevelSource)

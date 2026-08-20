@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'crypto'
 import { join } from 'path'
 import type { ReasoningLevel, ReasoningLevelSource } from './reasoning-level.js'
 import type { ToolCall } from './types.js'
+import type { CacheTokenEvidence, ReasoningTokenSemantics } from './token-semantics.js'
 import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
 import { fingerprintSourceFile, type SQLiteWalFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
@@ -28,6 +29,11 @@ export type CachedCall = {
   /** Explicit model/API provider preserved from the source when available. */
   modelProvider?: string; pricingContext?: import('./pricing/pricing-context.js').HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
+  /** Source-specific reasoning inclusion authority, when one was proven. */
+  reasoningSemantics?: ReasoningTokenSemantics
+  /** OTel cache subfield evidence; absent on legacy/provider paths and old cache. */
+  cacheTokenEvidence?: CacheTokenEvidence
+
   reasoningLevelSource?: ReasoningLevelSource
   usage: CachedUsage
   costUSD?: number
@@ -238,7 +244,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
-  copilot: 'cli-shutdown-cost-v3-source-provenance',
+  copilot: 'cli-shutdown-cost-v3-source-provenance-otel-token-semantics-v1',
   goose: 'sqlite-session-v1-provider-provenance',
   grok: 'estimated-cost-v1',
   hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2-pricing-evidence-v1',

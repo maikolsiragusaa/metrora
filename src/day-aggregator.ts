@@ -1,6 +1,7 @@
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
 import type { PeriodData } from './menubar-json.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type TokenUsage } from './types.js'
+import { combineReasoningSemantics, type ReasoningTokenSemantics } from './token-semantics.js'
 
 // Raw model IDs remain human-readable in legacy daily caches. New rows use an
 // additive envelope so a source-recorded route can survive the daily
@@ -29,6 +30,16 @@ function decodeModelStorageKey(key: string): { name: string; modelProvider?: str
 
 function addSourceProvider(target: { sourceProviders?: string[] }, provider: string): void {
   target.sourceProviders = [...new Set([...(target.sourceProviders ?? []), provider])].sort()
+}
+
+function addCallReasoningSemantics(
+  target: { reasoningSemantics?: ReasoningTokenSemantics },
+  call: { reasoningSemantics?: ReasoningTokenSemantics },
+): void {
+  if (call.reasoningSemantics === undefined) return
+  target.reasoningSemantics = target.reasoningSemantics === undefined
+    ? call.reasoningSemantics
+    : combineReasoningSemantics([target.reasoningSemantics, call.reasoningSemantics])
 }
 
 function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage): void {
@@ -232,6 +243,7 @@ export function aggregateProjectsIntoDays(
           model.cacheReadTokens += call.usage.cacheReadInputTokens
           model.cacheWriteTokens += call.usage.cacheCreationInputTokens
           if (call.modelProvider) model.modelProvider = call.modelProvider
+          addCallReasoningSemantics(model, call)
           addSourceProvider(model, call.provider)
           turnDay.models[modelKey] = model
 
@@ -266,6 +278,7 @@ export function aggregateProjectsIntoDays(
           sliceModel.cacheWriteTokens += call.usage.cacheCreationInputTokens
           if (call.modelProvider) sliceModel.modelProvider = call.modelProvider
           addSourceProvider(sliceModel, call.provider)
+          addCallReasoningSemantics(sliceModel, call)
           slice.models![modelKey] = sliceModel
         }
       }
@@ -292,6 +305,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     cacheWriteTokens: number
     modelProvider?: string
     sourceProviders?: string[]
+    reasoningSemantics?: ReasoningTokenSemantics
   }> = {}
 
   for (const d of days) {
@@ -324,6 +338,11 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
       acc.inputTokens += m.inputTokens
       acc.outputTokens += m.outputTokens
       if (m.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + m.reasoningTokens
+      if (m.reasoningSemantics) {
+        acc.reasoningSemantics = acc.reasoningSemantics === undefined
+          ? m.reasoningSemantics
+          : combineReasoningSemantics([acc.reasoningSemantics, m.reasoningSemantics])
+      }
       acc.cacheReadTokens += m.cacheReadTokens
       acc.cacheWriteTokens += m.cacheWriteTokens
       if (m.modelProvider) acc.modelProvider = m.modelProvider
@@ -372,6 +391,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
           savingsUSD: d.savingsUSD,
           inputTokens: d.inputTokens,
           outputTokens: d.outputTokens,
+          ...(d.reasoningSemantics ? { reasoningSemantics: d.reasoningSemantics } : {}),
           ...(d.reasoningTokens !== undefined ? { reasoningTokens: d.reasoningTokens } : {}),
           cacheReadTokens: d.cacheReadTokens,
           cacheWriteTokens: d.cacheWriteTokens,

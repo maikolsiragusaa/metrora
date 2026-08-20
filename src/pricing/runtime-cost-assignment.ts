@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 
 import catalogData from '../data/pricing-history/catalog.v1.json'
 import { explicitZeroReasonForModel, getHistoricalPricingModelKey } from '../models.js'
+import { billableOutputTokens, type ReasoningTokenSemantics } from '../token-semantics.js'
 import {
   CostAssignmentV1Schema,
   costUsdToMicrosV1,
@@ -53,6 +54,8 @@ export type RuntimeCostAssignmentInputV1 = {
   meteredCostSource?: RuntimeMeteredCostV1['source']
   timestamp: string
   speed: 'standard' | 'fast'
+  /** Source-specific inclusion authority; omitted preserves historic provider defaults. */
+  reasoningSemantics?: ReasoningTokenSemantics
   usage: RuntimePricingUsageV1
   legacyCostUSD: number
   isEstimated?: boolean
@@ -328,9 +331,7 @@ function explicitMeteredEvidence(input: RuntimeCostAssignmentInputV1): CostAssig
 }
 
 function usageForSettlement(input: RuntimeCostAssignmentInputV1) {
-  const outputTokens = input.provider === 'claude'
-    ? input.usage.outputTokens
-    : input.usage.outputTokens + input.usage.reasoningTokens
+  const outputTokens = billableOutputTokens(input.provider, input.usage.outputTokens, input.usage.reasoningTokens, input.reasoningSemantics)
   const pricingContext = contextForInput(input)
   return {
     inputTokens: input.usage.inputTokens,

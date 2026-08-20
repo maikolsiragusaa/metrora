@@ -66,6 +66,7 @@ function subtractModelStats(base: ModelDayStats, sub: ModelDayStats): ModelDaySt
     cacheWriteTokens,
     ...(base.modelProvider ? { modelProvider: base.modelProvider } : {}),
     ...(base.sourceProviders?.length ? { sourceProviders: [...base.sourceProviders] } : {}),
+    ...(base.reasoningSemantics ? { reasoningSemantics: base.reasoningSemantics } : {}),
   }
 }
 
@@ -189,6 +190,7 @@ function modelDelta(base: ModelDayStats, reduced: ModelDayStats | undefined): Mo
       : {}),
     cacheReadTokens: Math.max(0, base.cacheReadTokens - num(reduced?.cacheReadTokens)),
     cacheWriteTokens: Math.max(0, base.cacheWriteTokens - num(reduced?.cacheWriteTokens)),
+    ...(base.reasoningSemantics ? { reasoningSemantics: base.reasoningSemantics } : {}),
   }
 }
 

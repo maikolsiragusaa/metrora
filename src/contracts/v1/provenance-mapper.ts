@@ -113,7 +113,9 @@ function reasoningAttributionIsAllowed(
 }
 
 function positiveUsageHasPricingCoverage(call: ParsedApiCall, costs: ModelCosts): boolean {
-  const outputAndReasoning = call.usage.outputTokens + call.usage.reasoningTokens
+  const outputAndReasoning = call.reasoningSemantics === 'aggregate-output'
+    ? call.usage.outputTokens
+    : call.usage.outputTokens + call.usage.reasoningTokens
   if (!Number.isSafeInteger(outputAndReasoning)) return false
 
   let sawBillableFact = false
@@ -136,7 +138,9 @@ function locallyCalculatedCostMatches(
   call: ParsedApiCall,
   calculator: typeof calculateCost,
 ): boolean {
-  const outputAndReasoning = call.usage.outputTokens + call.usage.reasoningTokens
+  const outputAndReasoning = call.reasoningSemantics === 'aggregate-output'
+    ? call.usage.outputTokens
+    : call.usage.outputTokens + call.usage.reasoningTokens
   if (!Number.isSafeInteger(outputAndReasoning)) return false
 
   const expected = calculator(

@@ -1,7 +1,15 @@
 import type { DailyEntry, ModelDayStats } from './daily-cache-core.js'
+import { combineReasoningSemantics, type ReasoningTokenSemantics } from './token-semantics.js'
 
 function finiteNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function isReasoningTokenSemantics(value: unknown): value is ReasoningTokenSemantics {
+  return value === 'separate'
+    || value === 'aggregate-output'
+    || value === 'unavailable'
+    || value === 'mixed'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -28,6 +36,7 @@ export function sanitizeModels(raw: unknown): DailyEntry['models'] {
         : {}),
       cacheReadTokens: finiteNumber(m.cacheReadTokens),
       cacheWriteTokens: finiteNumber(m.cacheWriteTokens),
+      ...(isReasoningTokenSemantics(m.reasoningSemantics) ? { reasoningSemantics: m.reasoningSemantics } : {}),
       ...(typeof m.modelProvider === 'string' && m.modelProvider.trim().length > 0
         ? { modelProvider: m.modelProvider.trim() }
         : {}),
@@ -57,5 +66,10 @@ export function mergeModelStats(target: ModelDayStats, source: ModelDayStats): v
   if (!target.modelProvider && source.modelProvider) target.modelProvider = source.modelProvider
   if (source.sourceProviders && source.sourceProviders.length > 0) {
     target.sourceProviders = [...new Set([...(target.sourceProviders ?? []), ...source.sourceProviders])].sort()
+  }
+  if (source.reasoningSemantics) {
+    target.reasoningSemantics = target.reasoningSemantics === undefined
+      ? source.reasoningSemantics
+      : combineReasoningSemantics([target.reasoningSemantics, source.reasoningSemantics])
   }
 }

@@ -72,6 +72,7 @@ import type {
   SessionParser,
   ParsedProviderCall,
 } from './types.js'
+import type { CacheTokenEvidence } from '../token-semantics.js'
 import {
   getAgentTracesDbPath,
   getCopilotDoctorProbeRoots,
@@ -248,6 +249,8 @@ interface SpanAttributes {
   'gen_ai.usage.output_tokens'?: number
   'gen_ai.usage.cache_read.input_tokens'?: number
   'gen_ai.usage.cache_creation.input_tokens'?: number
+  'gen_ai.usage.reasoning.output_tokens'?: number
+  'gen_ai.usage.reasoning_tokens'?: number
   'gen_ai.conversation.id'?: string
   'gen_ai.agent.name'?: string
   'gen_ai.tool.name'?: string
@@ -330,6 +333,80 @@ function loadSpanAttributesFromTable(
     return attrs
   } catch {
     return {}
+  }
+}
+
+type NumericAttributeEvidence = {
+  present: boolean
+  valid: boolean
+  value: number
+}
+
+function readNumericOtelAttribute(attrs: SpanAttributes, key: string): NumericAttributeEvidence {
+  const raw = attrs[key]
+  const present = raw !== undefined && raw !== null && raw !== ''
+  if (!present) return { present: false, valid: false, value: 0 }
+
+  const value = typeof raw === 'number' ? raw : Number(raw)
+  const valid = Number.isFinite(value) && value >= 0
+  return { present: true, valid, value: valid ? value : 0 }
+}
+
+type NormalizedOtelUsage = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  reasoningTokens: number
+  cacheTokenEvidence: CacheTokenEvidence
+  reasoningSemantics: 'aggregate-output'
+}
+
+/**
+ * Normalize the verified VS Code Copilot OTel representation at the provider
+ * boundary. In that representation input_tokens is cache-inclusive, while the
+ * two cache fields are subfields of input_tokens. A missing cache subfield is
+ * intentionally not treated as an emitted zero.
+ */
+function normalizeOtelUsage(attrs: SpanAttributes): NormalizedOtelUsage {
+  const input = readNumericOtelAttribute(attrs, 'gen_ai.usage.input_tokens')
+  const output = readNumericOtelAttribute(attrs, 'gen_ai.usage.output_tokens')
+  const cacheRead = readNumericOtelAttribute(attrs, 'gen_ai.usage.cache_read.input_tokens')
+  const cacheCreation = readNumericOtelAttribute(attrs, 'gen_ai.usage.cache_creation.input_tokens')
+
+  const invalidEvidence = !input.valid
+    || !output.valid
+    || (cacheRead.present && !cacheRead.valid)
+    || (cacheCreation.present && !cacheCreation.valid)
+  const bothCacheFieldsPresent = cacheRead.present && cacheCreation.present
+  const cacheSum = cacheRead.value + cacheCreation.value
+
+  let cacheTokenEvidence: CacheTokenEvidence
+  if (invalidEvidence || (bothCacheFieldsPresent && cacheSum > input.value)) {
+    cacheTokenEvidence = 'inconsistent'
+  } else if (!cacheRead.present && !cacheCreation.present) {
+    cacheTokenEvidence = 'unavailable'
+  } else if (!bothCacheFieldsPresent) {
+    cacheTokenEvidence = 'partial'
+  } else {
+    cacheTokenEvidence = 'complete'
+  }
+
+  const subtractCaches = cacheTokenEvidence === 'complete'
+  const reasoningCanonical = readNumericOtelAttribute(attrs, 'gen_ai.usage.reasoning.output_tokens')
+  const reasoningLegacy = readNumericOtelAttribute(attrs, 'gen_ai.usage.reasoning_tokens')
+  // Canonical evidence wins whenever the key is present, including an explicit
+  // zero or malformed value. Legacy is only a bounded compatibility fallback.
+  const reasoning = reasoningCanonical.present ? reasoningCanonical : reasoningLegacy
+
+  return {
+    inputTokens: subtractCaches ? input.value - cacheSum : input.value,
+    outputTokens: output.value,
+    cacheReadTokens: cacheRead.value,
+    cacheCreationTokens: cacheCreation.value,
+    reasoningTokens: reasoning.valid ? reasoning.value : 0,
+    cacheTokenEvidence,
+    reasoningSemantics: 'aggregate-output',
   }
 }
 
@@ -1664,12 +1741,9 @@ function createOtelParser(
               spanMetadata.response_model ??
               'unknown'
 
-            const inputTokens = Number(attrs['gen_ai.usage.input_tokens'] ?? 0)
-            const outputTokens = Number(attrs['gen_ai.usage.output_tokens'] ?? 0)
-            const cacheReadTokens = Number(attrs['gen_ai.usage.cache_read.input_tokens'] ?? 0)
-            const cacheCreationTokens = Number(attrs['gen_ai.usage.cache_creation.input_tokens'] ?? 0)
+            const usage = normalizeOtelUsage(attrs)
 
-            if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheCreationTokens === 0) {
+            if (usage.inputTokens === 0 && usage.outputTokens === 0 && usage.cacheReadTokens === 0 && usage.cacheCreationTokens === 0) {
               continue
             }
 
@@ -1695,11 +1769,11 @@ function createOtelParser(
             // calculateCost with FULL token data — this is the key improvement.
             const costUSD = calculateCost(
               model,
-              inputTokens,
-              outputTokens,
-              cacheCreationTokens,
-              cacheReadTokens,
-              0 // reasoningTokens — not exposed in current OTel schema
+              usage.inputTokens,
+              usage.outputTokens,
+              usage.cacheCreationTokens,
+              usage.cacheReadTokens,
+              0 // reasoning is included in OTel output_tokens
             )
 
             yield {
@@ -1707,12 +1781,14 @@ function createOtelParser(
               sessionId: conversationId,
               project,
               model,
-              inputTokens,
-              outputTokens,
-              cacheCreationInputTokens: cacheCreationTokens,
-              cacheReadInputTokens: cacheReadTokens,
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+              cacheCreationInputTokens: usage.cacheCreationTokens,
+              cacheReadInputTokens: usage.cacheReadTokens,
               cachedInputTokens: 0,
-              reasoningTokens: 0,
+              reasoningTokens: usage.reasoningTokens,
+              cacheTokenEvidence: usage.cacheTokenEvidence,
+              reasoningSemantics: usage.reasoningSemantics,
               webSearchRequests: 0,
               costUSD,
               tools,
@@ -2184,6 +2260,7 @@ export function createCopilotProvider(
     displayName: 'Copilot',
     durableSources: true,
     probeRoots: async () => getCopilotDoctorProbeRoots(sessionStateDir, workspaceStorageDir, globalStorageDir, jetbrainsDir),
+    durableFreshWinsForSource: source => (source as { sourceType?: unknown }).sourceType === 'otel',
 
     modelDisplayName(model: string): string {
       for (const [key, display] of modelDisplayEntries) {

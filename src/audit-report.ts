@@ -2,6 +2,7 @@ import { getModelCosts, type ModelCosts } from './models.js'
 import { getProvider } from './providers/index.js'
 import { formatCost, formatTokens } from './format.js'
 import { renderTable, type TableColumn } from './text-table.js'
+import { reasoningSemanticsForProviders, separatelyReportedReasoningTokens } from './token-semantics.js'
 import type { ProjectSummary } from './types.js'
 
 // One (provider, model) bucket, exposing both the raw token fields as recorded
@@ -23,7 +24,7 @@ export type AuditRow = {
     cachedInputTokens: number // OpenAI vocab
     webSearchRequests: number
   }
-  // What the reports display: reasoning folds into output, and the two
+  // What the reports display: separate reasoning folds into output, and the two
   // cache-read vocabularies collapse to their max (providers fill one or both).
   displayed: {
     inputTokens: number
@@ -55,6 +56,7 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
     calls: number
     attributedCostUSD: number
     cacheReadDisplayed: number
+    displayedReasoningTokens: number
     raw: AuditRow['raw']
   }
   const buckets = new Map<string, Bucket>()
@@ -72,6 +74,7 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
               provider,
               model,
               calls: 0,
+              displayedReasoningTokens: 0,
               attributedCostUSD: 0,
               cacheReadDisplayed: 0,
               raw: {
@@ -87,6 +90,10 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
             buckets.set(key, bucket)
           }
           const u = call.usage
+          const callSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
+          bucket.displayedReasoningTokens += call.reasoningSemantics === undefined
+            ? u.reasoningTokens
+            : separatelyReportedReasoningTokens(u.reasoningTokens, callSemantics)
           bucket.raw.inputTokens += u.inputTokens
           bucket.raw.outputTokens += u.outputTokens
           bucket.raw.reasoningTokens += u.reasoningTokens
@@ -122,7 +129,7 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
     const meta = await resolveProvider(bucket.provider)
     const displayed = {
       inputTokens: bucket.raw.inputTokens,
-      outputTokens: bucket.raw.outputTokens + bucket.raw.reasoningTokens,
+      outputTokens: bucket.raw.outputTokens + bucket.displayedReasoningTokens,
       cacheWriteTokens: bucket.raw.cacheCreationInputTokens,
       cacheReadTokens: bucket.cacheReadDisplayed,
     }

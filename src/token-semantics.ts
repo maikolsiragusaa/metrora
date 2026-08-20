@@ -6,6 +6,12 @@
  */
 export type ReasoningTokenSemantics = 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
 
+/**
+ * Evidence quality for the two OTel cache subfields. `partial` is deliberate:
+ * a missing cache subfield is not equivalent to an emitted zero.
+ */
+export type CacheTokenEvidence = 'complete' | 'partial' | 'unavailable' | 'inconsistent'
+
 const SEPARATE_REASONING_PROVIDERS = new Set([
   'antigravity',
   'codex',
@@ -56,4 +62,35 @@ export function separatelyReportedReasoningTokens(
   return typeof reasoningTokens === 'number' && Number.isFinite(reasoningTokens) && reasoningTokens > 0
     ? reasoningTokens
     : 0
+}
+
+/**
+ * The canonical cost contract prices output inclusively only when the source
+ * says reasoning is separate. The undefined branch preserves the historic
+ * provider defaults used by collectors that predate explicit semantics.
+ */
+export function billableOutputTokens(
+  provider: string | undefined,
+  outputTokens: number,
+  reasoningTokens: number,
+  semantics?: ReasoningTokenSemantics,
+): number {
+  const includeReasoning = semantics === 'separate'
+    || semantics === 'mixed'
+    || (semantics === undefined && provider !== 'claude')
+  return outputTokens + (includeReasoning ? reasoningTokens : 0)
+}
+
+/**
+ * Generated-token display for a single call. Aggregate-output reasoning is
+ * already inside the producer's output count and must not be added again.
+ */
+export function generatedTokensForReasoningMix(
+  outputTokens: number,
+  reasoningTokens: number,
+  semantics?: ReasoningTokenSemantics,
+): number {
+  return semantics === 'aggregate-output' || semantics === 'unavailable'
+    ? outputTokens
+    : outputTokens + reasoningTokens
 }

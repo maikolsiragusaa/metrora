@@ -6,7 +6,7 @@ import { formatCost, formatTokens } from './format.js'
 import { createModelPricingCounts, observeModelPricing, summarizeModelPricing, type ModelPricingCounts, type ModelPricingSummary } from './model-pricing-summary.js'
 import { getProvider } from './providers/index.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
-import { providerHasSeparateReasoning, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
 import type { AggregateOptions, ModelReportRow } from './models-report-types.js'
 export type { AggregateOptions, ModelReportRow } from './models-report-types.js'
 
@@ -87,10 +87,15 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
           }
           bucket.inputTokens += call.usage.inputTokens
           bucket.outputTokens += call.usage.outputTokens
-          if (providerHasSeparateReasoning(call.provider)) {
-            bucket.reasoningTokens += call.usage.reasoningTokens
-            bucket.reasoningSemantics = 'separate'
-          }
+          const callReasoningSemantics = call.reasoningSemantics
+            ?? reasoningSemanticsForProviders([call.provider])
+          bucket.reasoningSemantics = bucket.calls === 0
+            ? callReasoningSemantics
+            : combineReasoningSemantics([bucket.reasoningSemantics, callReasoningSemantics])
+          bucket.reasoningTokens += separatelyReportedReasoningTokens(
+            call.usage.reasoningTokens,
+            callReasoningSemantics,
+          )
           bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
           // The two cache-read fields are provider vocabularies for the same tokens.
           bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)

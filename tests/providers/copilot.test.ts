@@ -1060,6 +1060,16 @@ function insertSpan(dbPath: string, span: SpanDef): void {
   db.close()
 }
 
+async function parseSingleOtelCall(dbPath: string): Promise<ParsedProviderCall> {
+  const provider = createCopilotProvider('/nonexistent/jsonl', '/nonexistent/ws', '/nonexistent/global', '/nonexistent/jetbrains')
+  const source = (await provider.discoverSessions()).find(candidate => candidate.path === dbPath)
+  if (!source) throw new Error('OTel source not discovered: ' + dbPath)
+  const calls: ParsedProviderCall[] = []
+  for await (const call of provider.createSessionParser(source, new Set()).parse()) calls.push(call)
+  if (calls.length !== 1) throw new Error('Expected one OTel call, got ' + calls.length)
+  return calls[0]!
+}
+
 describe('copilot provider - OTel cache token parsing', () => {
   let tmpDir: string
   let dbPath: string

@@ -3,6 +3,7 @@ import { lstat, readFile, readdir, stat } from 'fs/promises'
 import { basename, dirname, join, normalize, resolve, sep } from 'path'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, calculateLocalModelSavings, getShortModelName, isProxiedPath, getProxyPathsConfigHash } from './models.js'
+import { billableOutputTokens } from './token-semantics.js'
 import { buildReasoningMix, reasoningLevelFromModelLabel, type ReasoningMixInput } from './reasoning-level.js'
 import { resolveSubagentAttribution, sessionIdentity } from './sessions-report.js'
 import { normalizeContentBlocks } from './content-utils.js'
@@ -1736,6 +1737,7 @@ function buildSessionSummary(
         reasoningLevelSource: call.reasoningLevelSource,
         outputTokens: call.usage.outputTokens,
         reasoningTokens: call.usage.reasoningTokens,
+        reasoningSemantics: call.reasoningSemantics,
         costUSD: call.costUSD,
       })
 
@@ -1760,7 +1762,7 @@ function buildSessionSummary(
       modelBreakdown[modelKey].tokens.reasoningTokens += call.usage.reasoningTokens
       if (call.activeDurationMs !== undefined) {
         modelBreakdown[modelKey].activeDurationMs = (modelBreakdown[modelKey].activeDurationMs ?? 0) + call.activeDurationMs
-        modelBreakdown[modelKey].activeGeneratedTokens = (modelBreakdown[modelKey].activeGeneratedTokens ?? 0) + (call.activeGeneratedTokens ?? call.usage.outputTokens + call.usage.reasoningTokens)
+        modelBreakdown[modelKey].activeGeneratedTokens = (modelBreakdown[modelKey].activeGeneratedTokens ?? 0) + (call.activeGeneratedTokens ?? billableOutputTokens(call.provider, call.usage.outputTokens, call.usage.reasoningTokens, call.reasoningSemantics))
         modelBreakdown[modelKey].toolWaitMs = (modelBreakdown[modelKey].toolWaitMs ?? 0) + (call.toolWaitMs ?? 0)
       }
 
@@ -2372,6 +2374,7 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
+    reasoningSemantics: call.reasoningSemantics,
     legacyCostUSD: call.costUSD,
     isEstimated: call.costIsEstimated,
     existingAssignment: call.costAssignment,
@@ -2385,6 +2388,8 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
+    ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
+    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
     usage,
     costUSD: settlement.runtimeCostUSD,
     costAssignment: settlement.runtimeAssignment,
@@ -2431,6 +2436,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
+    reasoningSemantics: call.reasoningSemantics,
     legacyCostUSD: call.costUSD,
     isEstimated: call.costIsEstimated,
     existingAssignment: call.costAssignment,
@@ -2443,6 +2449,8 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
+    ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
+    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
     usage,
     ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
     costAssignment: settlement.storedAssignment,
@@ -2496,6 +2504,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     timestamp: call.timestamp,
     speed: call.speed,
     usage,
+    reasoningSemantics: call.reasoningSemantics,
     legacyCostUSD: legacyApiEquivalentCost,
     isEstimated: call.isEstimated,
     existingAssignment: call.isLocalSavings ? undefined : call.costAssignment,
@@ -2508,6 +2517,8 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
+    ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
+    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
     usage,
     ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
     costAssignment: settlement.storedAssignment,
@@ -2610,9 +2621,7 @@ function providerCallsToCachedTurns(calls: ParsedProviderCall[]): CachedTurn[] {
 
 function currentCostForCachedCall(call: CachedCall): number {
   const u = call.usage
-  const outputForCost = call.provider === 'claude'
-    ? u.outputTokens
-    : u.outputTokens + u.reasoningTokens
+  const outputForCost = billableOutputTokens(call.provider, u.outputTokens, u.reasoningTokens, call.reasoningSemantics)
   return calculateCost(
     call.model, u.inputTokens, outputForCost,
     u.cacheCreationInputTokens, u.cacheReadInputTokens,
@@ -2628,12 +2637,57 @@ function settledCachedCall(call: CachedCall) {
     timestamp: call.timestamp,
     speed: call.speed,
     usage: call.usage,
+    reasoningSemantics: call.reasoningSemantics,
     legacyCostUSD: call.legacyCostUSD ?? call.costUSD ?? currentCostForCachedCall(call),
     isEstimated: call.isEstimated,
     existingAssignment: call.costAssignment,
     existingStoredCostUSD: call.costUSD,
     existingLegacyCostUSD: call.legacyCostUSD,
   })
+}
+
+function migrateLegacyCopilotOtelCacheCall(call: CachedCall): boolean {
+  if (call.provider !== 'copilot' || !call.deduplicationKey.startsWith('copilot-otel:')) return false
+  if (call.cacheTokenEvidence !== undefined) return false
+
+  const { inputTokens, cacheReadInputTokens, cacheCreationInputTokens } = call.usage
+  if (!Number.isFinite(inputTokens) || !Number.isFinite(cacheReadInputTokens) || !Number.isFinite(cacheCreationInputTokens)) return false
+  if (cacheReadInputTokens <= 0 || cacheCreationInputTokens <= 0) return false
+  const normalizedInput = inputTokens - cacheReadInputTokens - cacheCreationInputTokens
+  if (normalizedInput < 0) return false
+
+  const previousInput = call.usage.inputTokens
+  const previousCost = call.costUSD
+  const previousAssignment = call.costAssignment
+  const previousLegacyCost = call.legacyCostUSD
+  const previousEvidence = call.cacheTokenEvidence
+
+  try {
+    call.usage.inputTokens = normalizedInput
+    call.cacheTokenEvidence = 'complete'
+    delete call.costUSD
+    delete call.costAssignment
+    delete call.legacyCostUSD
+
+    const settlement = settledCachedCall(call)
+    if (settlement.storedCostUSD === undefined) delete call.costUSD
+    else call.costUSD = settlement.storedCostUSD
+    call.costAssignment = settlement.storedAssignment
+    if (settlement.storedLegacyCostUSD === undefined) delete call.legacyCostUSD
+    else call.legacyCostUSD = settlement.storedLegacyCostUSD
+    return true
+  } catch {
+    call.usage.inputTokens = previousInput
+    if (previousCost === undefined) delete call.costUSD
+    else call.costUSD = previousCost
+    if (previousAssignment === undefined) delete call.costAssignment
+    else call.costAssignment = previousAssignment
+    if (previousLegacyCost === undefined) delete call.legacyCostUSD
+    else call.legacyCostUSD = previousLegacyCost
+    if (previousEvidence === undefined) delete call.cacheTokenEvidence
+    else call.cacheTokenEvidence = previousEvidence
+    return false
+  }
 }
 
 export function settleSessionCacheCostsForRuntimeV1(cache: SessionCache): boolean {
@@ -2679,6 +2733,8 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
       reasoningLevel: call.reasoningLevel,
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
+    ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
+    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
     usage: {
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,
@@ -2959,6 +3015,7 @@ async function parseProviderSources(
   readOnly = false,
 ): Promise<ProjectSummary[]> {
   const provider = await getProvider(providerName)
+  const previousSection = diskCache.providers[providerName]
   if (!provider) return []
 
   const section = getOrCreateProviderSection(diskCache, providerName)
@@ -2966,7 +3023,11 @@ async function parseProviderSources(
   const servedSources = [...sources]
 
   const unchangedSources: Array<{ source: SessionSource; cached: CachedFile }> = []
-  const changedSources: Array<{ source: SessionSource; fp: NonNullable<Awaited<ReturnType<typeof fingerprintFile>>> }> = []
+  const changedSources: Array<{
+    source: SessionSource
+    fp: NonNullable<Awaited<ReturnType<typeof fingerprintFile>>>
+    cached?: CachedFile
+  }> = []
 
   for (const source of sources) {
     allDiscoveredFiles.add(source.path)
@@ -2991,7 +3052,19 @@ async function parseProviderSources(
     if (cached && (readOnly || (action.action === 'unchanged' && (cached.failed || !cachedFileNeedsProviderReparse(providerName, source.path, cached))))) {
       unchangedSources.push({ source, cached })
     } else if (!readOnly) {
-      changedSources.push(queueCopilotChatJournalSource(providerName, source, fp, cached?.turns ?? []))
+      const queued = queueCopilotChatJournalSource(
+        providerName,
+        source,
+        fp,
+        (cached ?? previousSection?.files[source.path])?.turns ?? [],
+      )
+      changedSources.push({
+        ...queued,
+        // A provider-authority change intentionally removes present files from
+        // the new section before reparse. Keep the prior durable file available
+        // as a fail-closed fallback if the raw source cannot be read.
+        cached: cached ?? previousSection?.files[source.path],
+      })
     }
   }
 
@@ -3027,7 +3100,7 @@ async function parseProviderSources(
   // being wiped on every iteration.
   const clearedPaths = new Set<string>()
   try {
-    for (const { source, fp } of changedSources) {
+    for (const { source, fp, cached: cachedFallback } of changedSources) {
       if (dateRange) {
         if (fp.mtimeMs < dateRange.start.getTime()) continue
       }
@@ -3056,7 +3129,7 @@ async function parseProviderSources(
         if (provider.durableSources) {
             const existingEntry = section.files[source.path]
             if (existingEntry) {
-              if (provider.durableFreshWins) {
+              if (provider.durableFreshWins || provider.durableFreshWinsForSource?.(source)) {
                 const freshKeys = new Set(turns.flatMap(t => t.calls.map(c => c.deduplicationKey)))
                 existingEntry.turns = existingEntry.turns.map(t => ({ ...t, calls: t.calls.filter(c => !freshKeys.has(c.deduplicationKey)) })).filter(t => t.calls.length > 0)
               }
@@ -3084,6 +3157,13 @@ async function parseProviderSources(
         ;(diskCache as { _dirty?: boolean })._dirty = true
       } catch (err) {
         if (isSqliteBusyError(err)) {
+          // A temporary SQLite lock must not turn an authority-triggered
+          // durable reparse into an apparent deletion. Preserve the prior
+          // entry with its old fingerprint so the next refresh retries it.
+          if (provider.durableSources && !section.files[source.path] && cachedFallback) {
+            section.files[source.path] = cachedFallback
+            ;(diskCache as { _dirty?: boolean })._dirty = true
+          }
           warnProviderReadFailureOnce(providerName, err)
           continue
         }
@@ -3093,7 +3173,15 @@ async function parseProviderSources(
         // current fingerprint so we don't re-read + re-throw this unchanged file
         // on every refresh; it re-parses only if it changes. Empty turns => no
         // usage contributed.
-        section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns: [], failed: true }
+        if (provider.durableSources && (section.files[source.path] ?? cachedFallback)) {
+          section.files[source.path] = {
+            ...(section.files[source.path] ?? cachedFallback),
+            fingerprint: fp,
+            failed: true,
+          }
+        } else {
+          section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns: [], failed: true }
+        }
         recordCopilotChatJournalSourceFailure(providerName, source.path)
         ;(diskCache as { _dirty?: boolean })._dirty = true
         warnProviderParseFailure(providerName, source.path, err)
@@ -3173,6 +3261,15 @@ async function parseProviderSources(
       if (allDiscoveredFiles.has(cachedPath)) continue  // already counted above
 
       for (const turn of cachedFile.turns) {
+        if (!readOnly) {
+          let migrated = false
+          for (const call of turn.calls) {
+            if (migrateLegacyCopilotOtelCacheCall(call)) migrated = true
+          }
+          if (migrated) {
+            ;(diskCache as { _dirty?: boolean })._dirty = true
+          }
+        }
         const projectedTurn = dateRange ? sliceCachedTurnToDateRange(turn, dateRange) : turn
         if (!projectedTurn) continue
 

@@ -1,3 +1,4 @@
+import type { ReasoningTokenSemantics } from './token-semantics.js'
 export type ModelDayStats = {
   calls: number
   cost: number
@@ -6,6 +7,9 @@ export type ModelDayStats = {
   outputTokens: number
   /// Separately observed reasoning/thinking tokens. Optional for legacy days.
   reasoningTokens?: number
+  /// Explicit source semantics when a model row contains a source with
+  /// independently classified reasoning tokens.
+  reasoningSemantics?: ReasoningTokenSemantics
   cacheReadTokens: number
   cacheWriteTokens: number
   /// Source-recorded model/API provider when the collector exposes it.

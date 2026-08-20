@@ -1,6 +1,6 @@
 import type { ReasoningMix } from './reasoning-level.js'
 import type { ProjectSummary, SessionSummary } from './types.js'
-import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
 
 export type SessionRow = {
   sessionId: string
@@ -56,11 +56,14 @@ function sessionKey(session: SessionSummary, project: string, provider: string):
 
 function reasoningDetails(session: SessionSummary): { semantics: ReasoningTokenSemantics; reasoningTokens: number } {
   const values = session.turns.flatMap(turn => turn.assistantCalls.map(call =>
-    reasoningSemanticsForProviders([call.provider]),
+    call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider]),
   ))
   const semantics = combineReasoningSemantics(values)
   const reasoningTokens = session.turns.reduce((sum, turn) => sum + turn.assistantCalls.reduce((calls, call) =>
-    calls + (providerHasSeparateReasoning(call.provider) ? (call.usage?.reasoningTokens ?? 0) : 0), 0), 0)
+    calls + separatelyReportedReasoningTokens(
+      call.usage?.reasoningTokens,
+      call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider]),
+    ), 0), 0)
   return { semantics, reasoningTokens }
 }
 
