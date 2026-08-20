@@ -8,9 +8,9 @@ Metrora for Windows is available on the **Microsoft Store**, published by Vensen
 
 The Microsoft Store package is the supported public Windows distribution. Repository builds and historical GitHub pre-releases remain separate development or archival artifacts and are not the recommended install path.
 
-The currently published Store line is traceable to source candidate `1.0.0-rc.10`, desktop build version `1.0.0.10`, and Store AppX identity version `1.0.0.0`. The current post-RC10 engineering candidate is `1.0.0-rc.11`, desktop build `1.0.0.11`, and Store AppX identity `1.0.1.0`; it has been submitted to Microsoft Partner Center and is undergoing certification, but is not publicly live. Development on `main` may advance independently after that published line.
+The currently published Store line is traceable to source candidate `1.0.0-rc.11`, desktop build version `1.0.0.11`, and Store AppX identity version `1.0.1.0`. RC11 was accepted through Microsoft certification and published as the Store update. The previous RC10 line (`1.0.0-rc.10`, Desktop `1.0.0.10`, Store `1.0.0.0`) remains immutable historical publication evidence. Development on `main` may advance independently after the published RC11 line.
 
-Historical 0.9.19 and RC7 acceptance material remains immutable evidence for those source lines only.
+Historical 0.9.19, RC7 and RC10 acceptance material remains immutable evidence for those source lines only.
 
 ## Identity
 
@@ -20,16 +20,14 @@ An official distribution uses the exact Metrora product and publisher identity a
 
 Windows uses multiple version authorities deliberately:
 
-- published Store source line: `1.0.0-rc.10`;
-- published desktop build version: `1.0.0.10`;
-- published Microsoft Store AppX identity version: `1.0.0.0`.
-- current candidate source line: `1.0.0-rc.11`;
-- current candidate desktop build version: `1.0.0.11`;
-- current candidate Store AppX identity version: `1.0.1.0`.
+- current published Store source line: `1.0.0-rc.11`;
+- current published desktop build version: `1.0.0.11`;
+- current published Microsoft Store AppX identity version: `1.0.1.0`;
+- previous published Store source line: `1.0.0-rc.10`;
+- previous published desktop build version: `1.0.0.10`;
+- previous published Store AppX identity version: `1.0.0.0`.
 
-The Store AppX four-part identity is not the desktop build counter. The
-published baseline and candidate are maintained in
-`release/windows-store-package-version.v1.json`. See [Versioning authority](VERSIONING.md).
+The Store AppX four-part identity is not the desktop build counter. The machine-readable packaging authority in `release/windows-store-package-version.v1.json` records the RC10-to-RC11 package-version transition used to derive this update. It must be advanced under a separately reviewed future Store-candidate decision before another Store package is derived; RC11 publication does not itself authorize RC12 or any later package version. See [Versioning authority](VERSIONING.md).
 
 ## Package requirements
 
@@ -54,7 +52,7 @@ The existing RC7 release remains immutable as a historical technical preview. La
 
 The Store workflow derives an x64 AppX from reviewed source and validates its identity, architecture, capabilities and bundled runtime boundary. It also imports `app/resources/cli.asar/dist/desktop-share-runtime.js` through the bundled Electron runtime and requires `createDesktopShareRuntime` without starting a listener. The Store manifest's four-part package identity remains separate from the desktop build counter.
 
-The published Store line passed its source-bound package and physical-runtime acceptance before publication. RC11 is the submitted, in-certification candidate; later source work remains separate until a future Store update is explicitly certified, published and made available.
+RC10 established the first published Store line. RC11 subsequently passed the source/package submission boundary, Microsoft certification and publication, and is now the current Store update. Later source work remains separate until a future Store update is explicitly reviewed, certified, published and made available.
 
 ## Accounting presentation boundary
 
@@ -78,10 +76,7 @@ For each future official Windows Store update, verify:
 10. no private data enters package metadata, reports or provenance;
 11. published artifacts remain bound to reviewed public source.
 
-The controlled RC10-to-RC11 update/profile-preservation test remains a deferred
-Founder-run acceptance step. The repository currently performs only the safe
-machine-verifiable package-version ordering check; it does not install over a
-real Store package or claim Microsoft Store-managed update certification.
+The RC10-to-RC11 Store publication is complete. Any separate Founder-run physical profile-preservation/update reproduction remains acceptance evidence rather than a prerequisite for truthfully stating Microsoft's publication result; the repository does not claim to simulate or control Microsoft Store-managed rollout behavior.
 
 ## Responsibility boundary
 
