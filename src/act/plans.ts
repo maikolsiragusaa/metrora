@@ -12,6 +12,7 @@ import {
   versionPredates,
 } from '../optimize.js'
 import type { WasteFinding } from '../optimize.js'
+import { authorizeBuiltPlan } from './plan-authority.js'
 
 // Turns an optimize finding into a concrete, journaled file-mutation plan.
 // Only config-class findings are appliable; everything else yields plan: null
@@ -25,6 +26,7 @@ export type PlanContext = {
   // Installed Claude Code version (null when undeterminable). Injectable so
   // tests never shell out; production defaults to probing `claude --version`.
   claudeVersion?: () => string | null
+  provider?: string // action-target authority; omitted preserves all-provider behavior
 }
 
 export type BuiltPlan = {
@@ -38,7 +40,7 @@ export type BuiltPlan = {
 
 export type FindingPlan = BuiltPlan & { finding: WasteFinding }
 
-type ResolvedPaths = {
+export type ResolvedPaths = {
   homeDir: string
   cwd: string
   projectMcpJson: string
@@ -95,15 +97,16 @@ function resolvePaths(ctx: PlanContext): ResolvedPaths {
 }
 
 export function planFor(finding: WasteFinding, ctx: PlanContext = {}): ActionPlan | null {
-  return buildPlan(finding, resolvePaths(ctx)).plan
+  const r = resolvePaths(ctx)
+  return authorizeBuiltPlan(buildPlanForFinding(finding, r), ctx.provider, r).plan
 }
 
 export function planFindings(findings: WasteFinding[], ctx: PlanContext = {}): FindingPlan[] {
   const r = resolvePaths(ctx)
-  return findings.map(finding => ({ finding, ...buildPlan(finding, r) }))
+  return findings.map(finding => ({ finding, ...authorizeBuiltPlan(buildPlanForFinding(finding, r), ctx.provider, r) }))
 }
 
-function buildPlan(finding: WasteFinding, r: ResolvedPaths): BuiltPlan {
+function buildPlanForFinding(finding: WasteFinding, r: ResolvedPaths): BuiltPlan {
   switch (finding.id) {
     case 'mcp-low-coverage': return buildMcpRemove(finding, r)
     case 'unused-mcp': return buildMcpRemove(finding, r)
@@ -115,11 +118,7 @@ function buildPlan(finding: WasteFinding, r: ResolvedPaths): BuiltPlan {
     case 'unused-agents': return buildArchive(finding, r, 'agent')
     case 'unused-commands': return buildArchive(finding, r, 'command')
     case 'bash-output-cap': return buildShellConfig(finding, r)
-    default:
-      if (finding.fix.type === 'paste' && finding.fix.destination === 'claude-md') {
-        return buildClaudeMdRule(finding, r)
-      }
-      return { plan: null, notes: [] }
+    default: return finding.fix.type === 'paste' && finding.fix.destination === 'claude-md' ? buildClaudeMdRule(finding, r) : { plan: null, notes: [] }
   }
 }
 

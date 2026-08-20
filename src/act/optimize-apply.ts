@@ -122,7 +122,10 @@ export async function runOptimizeApply(
     findings = scanned.findings
     costRate = scanned.costRate
   }
-  const plans = planFindings(findings, opts.ctx)
+  const plans = planFindings(findings, {
+    ...opts.ctx,
+    provider: opts.provider ?? opts.ctx?.provider,
+  })
 
   let appliable = plans.filter(p => p.plan !== null)
   const manual = plans.filter(p => p.plan === null)
