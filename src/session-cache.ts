@@ -68,7 +68,7 @@ export type CachedCall = {
   activeDurationMs?: number
   activeGeneratedTokens?: number
   toolWaitMs?: number
-}
+} & import('./session-cache-token-authority.js').CachedCallTokenAuthority
 
 export type CachedTurn = {
   timestamp: string
@@ -238,7 +238,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
-  copilot: 'cli-shutdown-cost-v3-source-provenance',
+  copilot: 'cli-shutdown-cost-v3-source-provenance-otel-token-semantics-v1-reasoning-evidence-v1',
   goose: 'sqlite-session-v1-provider-provenance',
   grok: 'estimated-cost-v1',
   hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2-pricing-evidence-v1',

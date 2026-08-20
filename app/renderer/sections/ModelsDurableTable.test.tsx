@@ -11,9 +11,10 @@ function delivery(): DurableModelAccountingRow {
     cost: 1,
     savingsUSD: 0,
     calls: 2,
-    inputTokens: 100,
+    inputTokens: 0,
     outputTokens: 200,
     reasoningTokens: 50,
+    additiveReasoningTokens: 30,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
     tokenDetail: true,
@@ -40,7 +41,7 @@ function presentationRow(row: DurableModelAccountingRow): DurableModelPresentati
 }
 
 describe('durable Models table reasoning presentation', () => {
-  it('shows the observed mixed subtotal and includes it in Total', () => {
+  it('shows observed mixed reasoning and adds only the explicit subtotal to Total', () => {
     const row = delivery()
     const accounting: ModelAccounting = {
       rows: [row],
@@ -73,8 +74,8 @@ describe('durable Models table reasoning presentation', () => {
       />,
     )
 
-    expect(screen.getByText('≥50')).toBeInTheDocument()
-    expect(screen.getByText('350')).toBeInTheDocument()
-    expect(screen.getByTitle(/At least the shown reasoning tokens/)).toBeInTheDocument()
+    expect(screen.getByText('50')).toBeInTheDocument()
+    expect(screen.getByText('230')).toBeInTheDocument()
+    expect(screen.getByTitle(/only the additive subset/)).toBeInTheDocument()
   })
 })

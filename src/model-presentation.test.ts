@@ -79,9 +79,9 @@ describe('model presentation projection', () => {
     const mixed = projection.rows.find(value => value.name === 'Mixed evidence model')!
     const unavailable = projection.rows.find(value => value.name === 'Unavailable reasoning model')!
 
-    expect(separate).toMatchObject({ reasoningSemantics: 'separate', reasoningTokens: 9 })
-    expect(shared).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 17 })
-    expect(mixed).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 11 })
+    expect(separate).toMatchObject({ reasoningSemantics: 'separate', reasoningTokens: 9, additiveReasoningTokens: 9 })
+    expect(shared).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 17, additiveReasoningTokens: 17 })
+    expect(mixed).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 11, additiveReasoningTokens: 0 })
     expect(unavailable.reasoningSemantics).toBe('unavailable')
     expect(unavailable).not.toHaveProperty('reasoningTokens')
     expect(projection.rows.reduce((sum, value) => sum + (value.reasoningTokens ?? 0), 0)).toBe(37)

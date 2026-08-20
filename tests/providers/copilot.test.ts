@@ -1060,6 +1060,16 @@ function insertSpan(dbPath: string, span: SpanDef): void {
   db.close()
 }
 
+async function parseSingleOtelCall(dbPath: string): Promise<ParsedProviderCall> {
+  const provider = createCopilotProvider('/nonexistent/jsonl', '/nonexistent/ws', '/nonexistent/global', '/nonexistent/jetbrains')
+  const source = (await provider.discoverSessions()).find(candidate => candidate.path === dbPath)
+  if (!source) throw new Error('OTel source not discovered: ' + dbPath)
+  const calls: ParsedProviderCall[] = []
+  for await (const call of provider.createSessionParser(source, new Set()).parse()) calls.push(call)
+  if (calls.length !== 1) throw new Error('Expected one OTel call, got ' + calls.length)
+  return calls[0]!
+}
+
 describe('copilot provider - OTel cache token parsing', () => {
   let tmpDir: string
   let dbPath: string
@@ -1094,7 +1104,7 @@ describe('copilot provider - OTel cache token parsing', () => {
       attrs: {
         'gen_ai.conversation.id': 'conv-001',
         'gen_ai.response.model': 'gpt-4.1',
-        'gen_ai.usage.input_tokens': 1000,
+        'gen_ai.usage.input_tokens': 51500,
         'gen_ai.usage.output_tokens': 200,
         'gen_ai.usage.cache_read.input_tokens': 50000,
         'gen_ai.usage.cache_creation.input_tokens': 500,
@@ -1134,7 +1144,7 @@ describe('copilot provider - OTel cache token parsing', () => {
       attrs: {
         'gen_ai.conversation.id': 'conv-alpha',
         'gen_ai.response.model': 'gpt-4.1',
-        'gen_ai.usage.input_tokens': 800,
+        'gen_ai.usage.input_tokens': 41200,
         'gen_ai.usage.output_tokens': 100,
         'gen_ai.usage.cache_read.input_tokens': 40000,
         'gen_ai.usage.cache_creation.input_tokens': 400,
@@ -1145,7 +1155,7 @@ describe('copilot provider - OTel cache token parsing', () => {
       attrs: {
         'gen_ai.conversation.id': 'conv-beta',
         'gen_ai.response.model': 'claude-sonnet-4',
-        'gen_ai.usage.input_tokens': 600,
+        'gen_ai.usage.input_tokens': 30900,
         'gen_ai.usage.output_tokens': 80,
         'gen_ai.usage.cache_read.input_tokens': 30000,
         'gen_ai.usage.cache_creation.input_tokens': 300,
@@ -1180,7 +1190,7 @@ describe('copilot provider - OTel cache token parsing', () => {
       attrs: {
         'gen_ai.conversation.id': 'conv-c',
         'gen_ai.response.model': 'gpt-4.1',
-        'gen_ai.usage.input_tokens': 500,
+        'gen_ai.usage.input_tokens': 20700,
         'gen_ai.usage.output_tokens': 100,
         'gen_ai.usage.cache_read.input_tokens': 20000,
         'gen_ai.usage.cache_creation.input_tokens': 200,
@@ -1191,7 +1201,7 @@ describe('copilot provider - OTel cache token parsing', () => {
       attrs: {
         'gen_ai.conversation.id': 'conv-d',
         'gen_ai.response.model': 'gpt-4.1',
-        'gen_ai.usage.input_tokens': 700,
+        'gen_ai.usage.input_tokens': 36050,
         'gen_ai.usage.output_tokens': 150,
         'gen_ai.usage.cache_read.input_tokens': 35000,
         'gen_ai.usage.cache_creation.input_tokens': 350,
@@ -1228,7 +1238,7 @@ describe('copilot provider - OTel cache token parsing', () => {
       attrs: {
         'gen_ai.conversation.id': 'conv-e',
         'gen_ai.response.model': 'gpt-4.1',
-        'gen_ai.usage.input_tokens': 300,
+        'gen_ai.usage.input_tokens': 10400,
         'gen_ai.usage.output_tokens': 50,
         'gen_ai.usage.cache_read.input_tokens': 10000,
         'gen_ai.usage.cache_creation.input_tokens': 100,
@@ -1285,8 +1295,9 @@ describe('copilot provider - OTel cache token parsing', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.inputTokens).toBe(0)
     expect(calls[0]!.outputTokens).toBe(0)
-    expect(calls[0]!.cacheReadInputTokens).toBe(50000)
-    expect(calls[0]!.cacheCreationInputTokens).toBe(500)
+    expect(calls[0]!.cacheReadInputTokens).toBe(0)
+    expect(calls[0]!.cacheCreationInputTokens).toBe(0)
+    expect(calls[0]!.cacheTokenEvidence).toBe('inconsistent')
   })
 
   it('OTel source path equals the plain DB file path and durableSources is true', async () => {

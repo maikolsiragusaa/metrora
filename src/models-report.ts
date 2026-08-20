@@ -6,9 +6,11 @@ import { formatCost, formatTokens } from './format.js'
 import { createModelPricingCounts, observeModelPricing, summarizeModelPricing, type ModelPricingCounts, type ModelPricingSummary } from './model-pricing-summary.js'
 import { getProvider } from './providers/index.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
-import { providerHasSeparateReasoning, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
 import type { AggregateOptions, ModelReportRow } from './models-report-types.js'
+import { renderCsv } from './models-report-csv.js'
 export type { AggregateOptions, ModelReportRow } from './models-report-types.js'
+export { renderCsv }
 
 type Bucket = {
   provider: string
@@ -17,7 +19,7 @@ type Bucket = {
   agentType: string | null
   inputTokens: number
   outputTokens: number
-  reasoningTokens: number
+  reasoningTokens: number; additiveReasoningTokens: number
   reasoningSemantics: ReasoningTokenSemantics
   cacheWriteTokens: number
   cacheReadTokens: number
@@ -73,7 +75,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
               agentType,
               inputTokens: 0,
               outputTokens: 0,
-              reasoningTokens: 0,
+              reasoningTokens: 0, additiveReasoningTokens: 0,
               reasoningSemantics: 'unavailable',
               cacheWriteTokens: 0,
               cacheReadTokens: 0,
@@ -87,10 +89,11 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
           }
           bucket.inputTokens += call.usage.inputTokens
           bucket.outputTokens += call.usage.outputTokens
-          if (providerHasSeparateReasoning(call.provider)) {
-            bucket.reasoningTokens += call.usage.reasoningTokens
-            bucket.reasoningSemantics = 'separate'
-          }
+          const callReasoningSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
+          const callReasoning = reasoningTokenTotals(call.usage.reasoningTokens, callReasoningSemantics)
+          bucket.reasoningSemantics = bucket.calls === 0 ? callReasoningSemantics : combineReasoningSemantics([bucket.reasoningSemantics, callReasoningSemantics])
+          bucket.reasoningTokens += callReasoning.observedReasoningTokens
+          bucket.additiveReasoningTokens += callReasoning.additiveReasoningTokens
           bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
           // The two cache-read fields are provider vocabularies for the same tokens.
           bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)
@@ -131,7 +134,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
   const rows: ModelReportRow[] = []
   for (const bucket of buckets.values()) {
     const meta = await resolveProvider(bucket.provider)
-    const total = bucket.inputTokens + bucket.outputTokens + bucket.reasoningTokens + bucket.cacheWriteTokens + bucket.cacheReadTokens
+    const total = bucket.inputTokens + bucket.outputTokens + bucket.additiveReasoningTokens + bucket.cacheWriteTokens + bucket.cacheReadTokens
     const row: ModelReportRow = {
       provider: bucket.provider,
       providerDisplayName: meta.displayName,
@@ -141,7 +144,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
       agentType: bucket.agentType,
       inputTokens: bucket.inputTokens,
       outputTokens: bucket.outputTokens,
-      reasoningTokens: bucket.reasoningTokens,
+      reasoningTokens: bucket.reasoningTokens, additiveReasoningTokens: bucket.additiveReasoningTokens,
       reasoningSemantics: bucket.reasoningSemantics,
       cacheWriteTokens: bucket.cacheWriteTokens,
       cacheReadTokens: bucket.cacheReadTokens,
@@ -156,7 +159,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
         ? codexCredits(bucket.model, {
             inputTokens: bucket.inputTokens,
             cachedReadTokens: bucket.cacheReadTokens,
-            outputTokens: bucket.outputTokens + bucket.reasoningTokens,
+            outputTokens: bucket.outputTokens + bucket.additiveReasoningTokens,
           })
         : null,
     }
@@ -568,6 +571,7 @@ export function renderJson(rows: ModelReportRow[]): string {
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
       reasoningTokens: r.reasoningTokens ?? 0,
+      additiveReasoningTokens: r.additiveReasoningTokens ?? 0,
       reasoningSemantics: r.reasoningSemantics ?? 'unavailable',
       cacheWriteTokens: r.cacheWriteTokens,
       cacheReadTokens: r.cacheReadTokens,
@@ -583,13 +587,6 @@ export function renderJson(rows: ModelReportRow[]): string {
   )
 }
 
-function csvEscape(value: string | undefined | null): string {
-  if (value === undefined || value === null) return ''
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`
-  }
-  return value
-}
 
 function mdEscape(value: string): string {
   // Pipes break GitHub-flavored markdown tables; escape them.
@@ -667,70 +664,5 @@ export function renderMarkdown(rows: ModelReportRow[], opts: { byTask?: boolean;
     lines.push(`| ${totalCells.join(' | ')} |`)
   }
 
-  return lines.join('\n')
-}
-
-export function renderCsv(rows: ModelReportRow[], opts: { byTask?: boolean; byAgent?: boolean } = {}): string {
-  const byTask = opts.byTask ?? false
-  const byAgent = opts.byAgent ?? false
-  // CSV intentionally repeats provider/model on every row so downstream
-  // consumers can sort/filter without first reconstructing the grouping.
-  const header = byAgent
-    ? ['provider', 'model', 'agent', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
-    : byTask
-    ? ['provider', 'model', 'task', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
-    : ['provider', 'model', 'top_task', 'top_task_share', 'input_tokens', 'output_tokens', 'reasoning_tokens', 'cache_write_tokens', 'cache_read_tokens', 'total_tokens', 'calls', 'cost_usd', 'savings_usd', 'savings_baseline_model']
-  const lines: string[] = [header.join(',')]
-  for (const r of rows) {
-    const cells = byAgent
-      ? [
-          csvEscape(r.providerDisplayName),
-          csvEscape(r.modelDisplayName),
-          csvEscape(r.agentType ?? ''),
-          String(r.inputTokens),
-          String(r.outputTokens),
-          String(r.reasoningTokens ?? 0),
-          String(r.cacheWriteTokens),
-          String(r.cacheReadTokens),
-          String(r.totalTokens),
-          String(r.calls),
-          r.costUSD.toFixed(6),
-          (r.savingsUSD ?? 0).toFixed(6),
-          csvEscape(r.savingsBaselineModel),
-        ]
-      : byTask
-      ? [
-          csvEscape(r.providerDisplayName),
-          csvEscape(r.modelDisplayName),
-          r.category ? categoryLabel(r.category) : '',
-          String(r.inputTokens),
-          String(r.outputTokens),
-           String(r.reasoningTokens ?? 0),
-          String(r.cacheWriteTokens),
-          String(r.cacheReadTokens),
-          String(r.totalTokens),
-          String(r.calls),
-          r.costUSD.toFixed(6),
-          (r.savingsUSD ?? 0).toFixed(6),
-          csvEscape(r.savingsBaselineModel),
-        ]
-      : [
-          csvEscape(r.providerDisplayName),
-          csvEscape(r.modelDisplayName),
-          r.topCategory ? categoryLabel(r.topCategory) : '',
-          r.topCategoryShare !== undefined ? r.topCategoryShare.toFixed(4) : '',
-          String(r.inputTokens),
-          String(r.outputTokens),
-          String(r.reasoningTokens ?? 0),
-          String(r.cacheWriteTokens),
-          String(r.cacheReadTokens),
-          String(r.totalTokens),
-          String(r.calls),
-          r.costUSD.toFixed(6),
-          (r.savingsUSD ?? 0).toFixed(6),
-          csvEscape(r.savingsBaselineModel),
-        ]
-    lines.push(cells.join(','))
-  }
   return lines.join('\n')
 }

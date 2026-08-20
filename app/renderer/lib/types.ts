@@ -4,9 +4,10 @@
 
 // ————— Period + IPC error contract —————
 
-import type { ModelAccounting, ModelPresentation, ReasoningTokenSemantics } from './model-projection-types'
+import type { ModelAccounting, ModelPresentation } from './model-projection-types'
 import type { ModelReportRow } from './model-report-types'
 import type { ProjectScopePayload } from './project-bridge-types'
+import type { ModelStats, SessionRow } from './usage-projection-types'
 export type { ProjectScopePayload } from './project-bridge-types'
 
 export type {
@@ -18,6 +19,7 @@ export type {
 } from './model-projection-types'
 
 export type { ModelReportRow } from './model-report-types'
+export type { ModelStats, SessionRow } from './usage-projection-types'
 
 export type Period = 'today' | 'week' | '30days' | 'month' | 'all' | 'lifetime'
 
@@ -473,54 +475,7 @@ export type ReasoningMix = {
   }>
 }
 
-export type SessionRow = {
-  sessionId: string
-  /** Provider + exact id + project/source authority; never raw id alone. */
-  sessionKey?: string
-  // Captured human title (src/sessions-report.ts). Empty string when the
-  // transcript produced none; optional so older CLIs that predate the field
-  // render unchanged (the row falls back to the project as its primary label).
-  title?: string
-  project: string
-  provider: string
-  models: string[]
-  cost: number
-  savingsUSD: number
-  calls: number
-  turns: number
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  reasoningTokens?: number
-  reasoningSemantics?: ReasoningTokenSemantics
-  reasoningMix?: ReasoningMix
-  startedAt: string
-  endedAt: string
-  durationMs: number
-}
-
 // ————— src/compare-stats.ts —————
-export type ModelStats = {
-  model: string
-  presentationIdentity?: string
-  calls: number
-  cost: number
-  outputTokens: number
-  reasoningTokens?: number
-  reasoningSemantics?: ReasoningTokenSemantics
-  inputTokens: number
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  totalTurns: number
-  editTurns: number
-  oneShotTurns: number
-  retries: number
-  selfCorrections: number
-  editCost: number
-  firstSeen: string
-  lastSeen: string
-}
 export type ComparisonRow = {
   section: string
   label: string

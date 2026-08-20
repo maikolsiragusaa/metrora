@@ -4,7 +4,29 @@ export type UsageTokenTotals = {
   cacheReadTokens: number
   cacheWriteTokens: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   reasoningSemantics?: 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
+}
+
+/**
+ * The only reasoning contribution that may be added to output totals.
+ *
+ * Explicit additive evidence is authoritative. The legacy fallback is limited
+ * to separate rows, where the old numeric reasoning field had that meaning.
+ * Mixed rows without the optional field cannot safely infer which observed
+ * reasoning was additive, so they contribute zero.
+ */
+export function additiveReasoningTokenCount(usage: UsageTokenTotals): number {
+  switch (usage.reasoningSemantics) {
+    case 'separate':
+      return usage.additiveReasoningTokens ?? usage.reasoningTokens ?? 0
+    case 'mixed':
+      return usage.additiveReasoningTokens ?? 0
+    case 'aggregate-output':
+    case 'unavailable':
+    default:
+      return 0
+  }
 }
 
 /**
@@ -17,21 +39,15 @@ export function observedTokenTotal(usage: UsageTokenTotals): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
 }
 
-/**
- * Safe user-facing total. Reasoning is added only from separately reported
- * evidence. For mixed sources this is a known subtotal; unavailable or
- * aggregate-output portions are not guessed.
- */
+/** Safe user-facing total. Observed reasoning remains a breakdown; only the
+ * additive subtotal contributes separately to the total. */
 export function totalTokenCount(usage: UsageTokenTotals): number {
-  const reasoning = usage.reasoningSemantics === 'separate' || usage.reasoningSemantics === 'mixed'
-    ? usage.reasoningTokens ?? 0
-    : 0
-  return observedTokenTotal(usage) + reasoning
+  return observedTokenTotal(usage) + additiveReasoningTokenCount(usage)
 }
 
 export function generatedTokenCount(usage: UsageTokenTotals): number | null {
   if (usage.reasoningSemantics === 'unavailable') return null
-  return usage.outputTokens + ((usage.reasoningSemantics === 'separate' || usage.reasoningSemantics === 'mixed') ? usage.reasoningTokens ?? 0 : 0)
+  return usage.outputTokens + additiveReasoningTokenCount(usage)
 }
 
 /**

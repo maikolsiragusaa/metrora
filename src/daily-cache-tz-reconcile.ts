@@ -22,6 +22,7 @@ function hasSliceData(slice: ProviderDaySlice): boolean {
     || num(slice.inputTokens) > 0
     || num(slice.outputTokens) > 0
     || num(slice.reasoningTokens) > 0
+    || num(slice.additiveReasoningTokens) > 0
     || num(slice.cacheReadTokens) > 0
     || num(slice.cacheWriteTokens) > 0
     || num(slice.editTurns) > 0
@@ -35,6 +36,7 @@ function hasModelData(model: ModelDayStats): boolean {
     || model.inputTokens > 0
     || model.outputTokens > 0
     || num(model.reasoningTokens) > 0
+    || num(model.additiveReasoningTokens) > 0
     || model.cacheReadTokens > 0
     || model.cacheWriteTokens > 0
 }
@@ -46,12 +48,14 @@ function subtractModelStats(base: ModelDayStats, sub: ModelDayStats): ModelDaySt
   const inputTokens = Math.max(0, base.inputTokens - num(sub.inputTokens))
   const outputTokens = Math.max(0, base.outputTokens - num(sub.outputTokens))
   const reasoningTokens = Math.max(0, num(base.reasoningTokens) - num(sub.reasoningTokens))
+  const additiveReasoningTokens = Math.max(0, num(base.additiveReasoningTokens) - num(sub.additiveReasoningTokens))
   const cacheReadTokens = Math.max(0, base.cacheReadTokens - num(sub.cacheReadTokens))
   const cacheWriteTokens = Math.max(0, base.cacheWriteTokens - num(sub.cacheWriteTokens))
 
   if (
     calls === 0 && cost === 0 && savingsUSD === 0
     && inputTokens === 0 && outputTokens === 0 && reasoningTokens === 0
+    && additiveReasoningTokens === 0
     && cacheReadTokens === 0 && cacheWriteTokens === 0
   ) return null
 
@@ -62,10 +66,13 @@ function subtractModelStats(base: ModelDayStats, sub: ModelDayStats): ModelDaySt
     inputTokens,
     outputTokens,
     ...(base.reasoningTokens !== undefined || sub.reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    ...(base.additiveReasoningTokens !== undefined || sub.additiveReasoningTokens !== undefined
+      ? { additiveReasoningTokens } : {}),
     cacheReadTokens,
     cacheWriteTokens,
     ...(base.modelProvider ? { modelProvider: base.modelProvider } : {}),
     ...(base.sourceProviders?.length ? { sourceProviders: [...base.sourceProviders] } : {}),
+    ...(base.reasoningSemantics ? { reasoningSemantics: base.reasoningSemantics } : {}),
   }
 }
 
@@ -112,7 +119,7 @@ function subtractProjectStats(base: ProjectDayStats, sub: ProjectDayStats): Proj
   const sessions = Math.max(0, num(base.sessions) - num(sub.sessions))
   const out: ProjectDayStats = { cost, calls, savingsUSD, sessions, ...(base.path ? { path: base.path } : {}) }
   const subHasUsage = sub.cost > 0 || sub.calls > 0 || num(sub.savingsUSD) > 0
-  for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+  for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
     if (base[field] === undefined) continue
     if (subHasUsage && sub[field] === undefined) {
       // A basic-cost/calls subtraction without the token field cannot leave a
@@ -125,6 +132,7 @@ function subtractProjectStats(base: ProjectDayStats, sub: ProjectDayStats): Proj
   if (cost === 0 && calls === 0 && savingsUSD === 0 && sessions === 0
     && (out.inputTokens ?? 0) === 0 && (out.outputTokens ?? 0) === 0
     && (out.reasoningTokens ?? 0) === 0 && (out.cacheReadTokens ?? 0) === 0
+    && (out.additiveReasoningTokens ?? 0) === 0
     && (out.cacheWriteTokens ?? 0) === 0) return null
   return out
 }
@@ -150,6 +158,7 @@ function subtractSlice(base: ProviderDaySlice, sub: ProviderDaySlice): ProviderD
   const inputTokens = Math.max(0, num(base.inputTokens) - num(sub.inputTokens))
   const outputTokens = Math.max(0, num(base.outputTokens) - num(sub.outputTokens))
   const reasoningTokens = Math.max(0, num(base.reasoningTokens) - num(sub.reasoningTokens))
+  const additiveReasoningTokens = Math.max(0, num(base.additiveReasoningTokens) - num(sub.additiveReasoningTokens))
   const cacheReadTokens = Math.max(0, num(base.cacheReadTokens) - num(sub.cacheReadTokens))
   const cacheWriteTokens = Math.max(0, num(base.cacheWriteTokens) - num(sub.cacheWriteTokens))
   const editTurns = Math.max(0, num(base.editTurns) - num(sub.editTurns))
@@ -166,6 +175,8 @@ function subtractSlice(base: ProviderDaySlice, sub: ProviderDaySlice): ProviderD
     ...(base.inputTokens !== undefined || sub.inputTokens !== undefined ? { inputTokens } : {}),
     ...(base.outputTokens !== undefined || sub.outputTokens !== undefined ? { outputTokens } : {}),
     ...(base.reasoningTokens !== undefined || sub.reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    ...(base.additiveReasoningTokens !== undefined || sub.additiveReasoningTokens !== undefined
+      ? { additiveReasoningTokens } : {}),
     ...(base.cacheReadTokens !== undefined || sub.cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
     ...(base.cacheWriteTokens !== undefined || sub.cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
     ...(base.editTurns !== undefined || sub.editTurns !== undefined ? { editTurns } : {}),
@@ -187,8 +198,12 @@ function modelDelta(base: ModelDayStats, reduced: ModelDayStats | undefined): Mo
     ...(base.reasoningTokens !== undefined || reduced?.reasoningTokens !== undefined
       ? { reasoningTokens: Math.max(0, num(base.reasoningTokens) - num(reduced?.reasoningTokens)) }
       : {}),
+    ...(base.additiveReasoningTokens !== undefined || reduced?.additiveReasoningTokens !== undefined
+      ? { additiveReasoningTokens: Math.max(0, num(base.additiveReasoningTokens) - num(reduced?.additiveReasoningTokens)) }
+      : {}),
     cacheReadTokens: Math.max(0, base.cacheReadTokens - num(reduced?.cacheReadTokens)),
     cacheWriteTokens: Math.max(0, base.cacheWriteTokens - num(reduced?.cacheWriteTokens)),
+    ...(base.reasoningSemantics ? { reasoningSemantics: base.reasoningSemantics } : {}),
   }
 }
 
@@ -210,7 +225,7 @@ function projectDelta(base: ProjectDayStats, reduced: ProjectDayStats | undefine
     sessions: Math.max(0, num(base.sessions) - num(reduced?.sessions)),
   }
   const reducedHasUsage = reduced !== undefined && (reduced.cost > 0 || reduced.calls > 0 || num(reduced.savingsUSD) > 0)
-  for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+  for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
     if (base[field] === undefined) continue
     if (reducedHasUsage && reduced?.[field] === undefined) {
       delete out[field]
@@ -255,6 +270,9 @@ function subtractSliceFromDay(day: DailyEntry, provider: string, sub: ProviderDa
   if (day.reasoningTokens !== undefined || current.reasoningTokens !== undefined || reduced?.reasoningTokens !== undefined) {
     day.reasoningTokens = Math.max(0, num(day.reasoningTokens) - (num(current.reasoningTokens) - num(reduced?.reasoningTokens)))
   }
+  if (day.additiveReasoningTokens !== undefined || current.additiveReasoningTokens !== undefined || reduced?.additiveReasoningTokens !== undefined) {
+    day.additiveReasoningTokens = Math.max(0, num(day.additiveReasoningTokens) - (num(current.additiveReasoningTokens) - num(reduced?.additiveReasoningTokens)))
+  }
   day.cacheReadTokens = Math.max(0, day.cacheReadTokens - (num(current.cacheReadTokens) - num(reduced?.cacheReadTokens)))
   day.cacheWriteTokens = Math.max(0, day.cacheWriteTokens - (num(current.cacheWriteTokens) - num(reduced?.cacheWriteTokens)))
   day.editTurns = Math.max(0, day.editTurns - (num(current.editTurns) - num(reduced?.editTurns)))
@@ -296,6 +314,7 @@ function hasPositiveDayContent(day: DailyEntry): boolean {
     || day.inputTokens > 0
     || day.outputTokens > 0
     || num(day.reasoningTokens) > 0
+    || num(day.additiveReasoningTokens) > 0
     || day.cacheReadTokens > 0
     || day.cacheWriteTokens > 0
     || day.editTurns > 0

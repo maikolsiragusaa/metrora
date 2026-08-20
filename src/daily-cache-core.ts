@@ -148,7 +148,7 @@ function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
   return out
 }
 
-const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
+const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
 
 /// Same junk-tolerance as sanitizeProjects, one level up: a foreign cache can
 /// hold anything under a provider slice, and structuredClone in the merge
@@ -188,7 +188,7 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
       sessions: num(p.sessions),
       ...(typeof p.path === 'string' && p.path.length > 0 ? { path: p.path } : {}),
     }
-    for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
+    for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
       if (typeof p[field] === 'number' && Number.isFinite(p[field])) clean[field] = Math.max(0, p[field])
     }
     setOwn(out, name, clean)
@@ -211,6 +211,9 @@ export function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
       outputTokens: num(d.outputTokens),
       ...(typeof d.reasoningTokens === 'number' && Number.isFinite(d.reasoningTokens)
         ? { reasoningTokens: Math.max(0, d.reasoningTokens) }
+        : {}),
+      ...(typeof d.additiveReasoningTokens === 'number' && Number.isFinite(d.additiveReasoningTokens)
+        ? { additiveReasoningTokens: Math.max(0, d.additiveReasoningTokens) }
         : {}),
       cacheReadTokens: num(d.cacheReadTokens),
       cacheWriteTokens: num(d.cacheWriteTokens),

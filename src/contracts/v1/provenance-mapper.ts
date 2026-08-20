@@ -1,5 +1,6 @@
 import type { ModelCosts } from '../../models.js'
 import { calculateCost, getModelCosts } from '../../models.js'
+import { billableOutputTokens } from '../../token-semantics.js'
 import {
   CostAssignmentV1Schema,
   costAssignmentMatchesUsdV1,
@@ -113,7 +114,7 @@ function reasoningAttributionIsAllowed(
 }
 
 function positiveUsageHasPricingCoverage(call: ParsedApiCall, costs: ModelCosts): boolean {
-  const outputAndReasoning = call.usage.outputTokens + call.usage.reasoningTokens
+  const outputAndReasoning = billableOutputTokens(call.provider, call.usage.outputTokens, call.usage.reasoningTokens, call.reasoningSemantics)
   if (!Number.isSafeInteger(outputAndReasoning)) return false
 
   let sawBillableFact = false
@@ -136,7 +137,7 @@ function locallyCalculatedCostMatches(
   call: ParsedApiCall,
   calculator: typeof calculateCost,
 ): boolean {
-  const outputAndReasoning = call.usage.outputTokens + call.usage.reasoningTokens
+  const outputAndReasoning = billableOutputTokens(call.provider, call.usage.outputTokens, call.usage.reasoningTokens, call.reasoningSemantics)
   if (!Number.isSafeInteger(outputAndReasoning)) return false
 
   const expected = calculator(

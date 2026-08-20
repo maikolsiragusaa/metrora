@@ -3,7 +3,7 @@ import type { ModelAccounting, ModelAccountingRow } from './menubar-json.js'
 import {
   combineReasoningSemantics,
   reasoningSemanticsForProviders,
-  separatelyReportedReasoningTokens,
+  reasoningTokenTotals,
   type ReasoningTokenSemantics,
 } from './token-semantics.js'
 
@@ -20,6 +20,7 @@ export type ModelPresentationRow = {
   inputTokens: number
   outputTokens: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
@@ -177,12 +178,16 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
     row.reasoningSemantics ?? reasoningSemanticsForProviders(row.sourceProviders),
   ))
   const tokenDetail = rows.every(row => row.tokenDetail)
-  const reasoningTokens = rows.reduce((sum, row) => {
+  const reasoning = rows.reduce((sum, row) => {
     const rowSemantics = row.reasoningSemantics ?? reasoningSemanticsForProviders(row.sourceProviders)
-    return sum + separatelyReportedReasoningTokens(row.reasoningTokens, rowSemantics)
-  }, 0)
-  const hasReasoningEvidence = reasoningSemantics === 'separate'
-    || (reasoningSemantics === 'mixed' && reasoningTokens > 0)
+    const totals = reasoningTokenTotals(row.reasoningTokens, rowSemantics)
+    return {
+      observedReasoningTokens: sum.observedReasoningTokens + totals.observedReasoningTokens,
+      additiveReasoningTokens: sum.additiveReasoningTokens
+        + (row.additiveReasoningTokens ?? totals.additiveReasoningTokens),
+    }
+  }, { observedReasoningTokens: 0, additiveReasoningTokens: 0 })
+  const hasReasoningEvidence = reasoningSemantics !== 'unavailable' && reasoning.observedReasoningTokens > 0
   const activeDurationMs = rows.reduce((sum, row) => sum + (row.activeDurationMs ?? 0), 0)
   const activeGeneratedTokens = rows.reduce((sum, row) => sum + (row.activeGeneratedTokens ?? 0), 0)
   const estimatedCostUSD = rows.reduce((sum, row) => sum + (row.estimatedCostUSD ?? 0), 0)
@@ -200,7 +205,8 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
     calls: rows.reduce((sum, row) => sum + row.calls, 0),
     inputTokens: rows.reduce((sum, row) => sum + row.inputTokens, 0),
     outputTokens: rows.reduce((sum, row) => sum + row.outputTokens, 0),
-    ...(hasReasoningEvidence ? { reasoningTokens } : {}),
+    ...(hasReasoningEvidence ? { reasoningTokens: reasoning.observedReasoningTokens } : {}),
+    ...(hasReasoningEvidence ? { additiveReasoningTokens: reasoning.additiveReasoningTokens } : {}),
     cacheReadTokens: rows.reduce((sum, row) => sum + row.cacheReadTokens, 0),
     cacheWriteTokens: rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0),
     tokenDetail,

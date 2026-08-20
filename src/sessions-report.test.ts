@@ -80,6 +80,6 @@ describe('session projection identity', () => {
       }],
     }] as unknown as ProjectSummary[])
 
-    expect(rows[0]).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 7 })
+    expect(rows[0]).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 7, additiveReasoningTokens: 7 })
   })
 })

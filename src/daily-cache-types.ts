@@ -1,3 +1,4 @@
+import type { ReasoningTokenSemantics } from './token-semantics.js'
 export type ModelDayStats = {
   calls: number
   cost: number
@@ -6,6 +7,11 @@ export type ModelDayStats = {
   outputTokens: number
   /// Separately observed reasoning/thinking tokens. Optional for legacy days.
   reasoningTokens?: number
+  /// Only the observed reasoning subtotal that is additive to output.
+  additiveReasoningTokens?: number
+  /// Explicit source semantics when a model row contains a source with
+  /// independently classified reasoning tokens.
+  reasoningSemantics?: ReasoningTokenSemantics
   cacheReadTokens: number
   cacheWriteTokens: number
   /// Source-recorded model/API provider when the collector exposes it.
@@ -30,6 +36,8 @@ export type ProjectDayStats = {
   outputTokens?: number
   /// Separately observed reasoning/thinking tokens. Optional for legacy days.
   reasoningTokens?: number
+  /// Only the observed reasoning subtotal that is additive to output.
+  additiveReasoningTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   path?: string
@@ -47,6 +55,7 @@ export type ProviderDaySlice = {
   inputTokens?: number
   outputTokens?: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   editTurns?: number
@@ -66,6 +75,8 @@ export type DailyEntry = {
   outputTokens: number
   /// Separately observed reasoning/thinking tokens. Optional for legacy days.
   reasoningTokens?: number
+  /// Only the observed reasoning subtotal that is additive to output.
+  additiveReasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   editTurns: number

@@ -625,6 +625,7 @@ describe('renderJson', () => {
       topCategory: 'feature',
       inputTokens: 100,
       outputTokens: 50,
+      additiveReasoningTokens: 0,
       totalTokens: 150,
       calls: 1,
     })
@@ -678,8 +679,8 @@ describe('renderCsv', () => {
     ]
     const csv = renderCsv(rows)
     const lines = csv.split('\n')
-    expect(lines[0]).toBe('provider,model,top_task,top_task_share,input_tokens,output_tokens,reasoning_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
-    expect(lines[1]).toBe('Claude,Sonnet 4.6,Feature Dev,0.6000,100,50,0,0,0,150,1,1.500000,0.000000,')
+    expect(lines[0]).toBe('provider,model,top_task,top_task_share,input_tokens,output_tokens,reasoning_tokens,additive_reasoning_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
+    expect(lines[1]).toBe('Claude,Sonnet 4.6,Feature Dev,0.6000,100,50,0,0,0,0,150,1,1.500000,0.000000,')
   })
 
   it('emits an agent column in byAgent mode', () => {
@@ -704,8 +705,8 @@ describe('renderCsv', () => {
     ]
     const csv = renderCsv(rows, { byAgent: true })
     const lines = csv.split('\n')
-    expect(lines[0]).toBe('provider,model,agent,input_tokens,output_tokens,reasoning_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
-    expect(lines[1]).toBe('Claude,Opus 4.8,planner,100,50,0,0,0,150,1,6.000000,0.000000,')
+    expect(lines[0]).toBe('provider,model,agent,input_tokens,output_tokens,reasoning_tokens,additive_reasoning_tokens,cache_write_tokens,cache_read_tokens,total_tokens,calls,cost_usd,savings_usd,savings_baseline_model')
+    expect(lines[1]).toBe('Claude,Opus 4.8,planner,100,50,0,0,0,0,150,1,6.000000,0.000000,')
   })
 
   it('escapes commas in provider/model cells', () => {

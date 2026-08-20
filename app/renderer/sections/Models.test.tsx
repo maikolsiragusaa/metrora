@@ -66,6 +66,19 @@ const taskRows: ModelReportRow[] = [
   },
 ]
 
+const mixedTaskRow: ModelReportRow = {
+  ...taskRows[0]!,
+  inputTokens: 0,
+  outputTokens: 200,
+  reasoningTokens: 50,
+  additiveReasoningTokens: 30,
+  reasoningSemantics: 'mixed',
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  totalTokens: 230,
+  costUSD: 2.3,
+}
+
 const auditRows: AuditRow[] = [{
   provider: 'anthropic',
   providerDisplayName: 'Anthropic',
@@ -238,6 +251,17 @@ describe('Models', () => {
     expect(screen.getByText(/Task attribution needs the original session records/i)).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
+  })
+
+  it('carries observed and additive reasoning into task totals', async () => {
+    getModels.mockResolvedValue([mixedTaskRow])
+    render(<Models period="week" provider="anthropic" overview={loadedOverview()} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'By task' }))
+
+    expect(await screen.findByText('coding')).toBeInTheDocument()
+    expect(screen.getAllByText('50').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('230').length).toBeGreaterThan(0)
   })
 
   it('keeps Audit as an explicit on-demand diagnostic lens', async () => {

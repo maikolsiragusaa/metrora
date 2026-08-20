@@ -3,7 +3,7 @@ import { join } from 'path'
 
 import { presentationIdentityForModelName } from './model-presentation.js'
 import type { ProjectSummary } from './types.js'
-import { combineReasoningSemantics, reasoningSemanticsForProviders, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const PLANNING_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'EnterPlanMode', 'ExitPlanMode'])
 
@@ -15,6 +15,7 @@ export type ModelStats = {
   cost: number
   outputTokens: number
   reasoningTokens: number
+  additiveReasoningTokens: number
   reasoningSemantics: ReasoningTokenSemantics
   inputTokens: number
   cacheReadTokens: number
@@ -38,6 +39,7 @@ function emptyModelStats(model: string): ModelStats {
     cost: 0,
     outputTokens: 0,
     reasoningTokens: 0,
+    additiveReasoningTokens: 0,
     reasoningSemantics: 'unavailable',
     inputTokens: 0,
     cacheReadTokens: 0,
@@ -93,13 +95,13 @@ export function aggregateModelStats(projects: ProjectSummary[]): ModelStats[] {
           cs.calls++
           cs.cost += call.costUSD
           cs.outputTokens += call.usage.outputTokens
-          const callReasoningSemantics = reasoningSemanticsForProviders([call.provider])
+          const callReasoningSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
+          const callReasoning = reasoningTokenTotals(call.usage.reasoningTokens, callReasoningSemantics)
           cs.reasoningSemantics = cs.calls === 1
             ? callReasoningSemantics
             : combineReasoningSemantics([cs.reasoningSemantics, callReasoningSemantics])
-          if (callReasoningSemantics === 'separate') {
-            cs.reasoningTokens += call.usage.reasoningTokens
-          }
+          cs.reasoningTokens += callReasoning.observedReasoningTokens
+          cs.additiveReasoningTokens += callReasoning.additiveReasoningTokens
           cs.inputTokens += call.usage.inputTokens
           cs.cacheReadTokens += call.usage.cacheReadInputTokens
           cs.cacheWriteTokens += call.usage.cacheCreationInputTokens
@@ -133,6 +135,7 @@ export function aggregatePresentationModelStats(projects: ProjectSummary[]): Mod
     existing.cost += raw.cost
     existing.outputTokens += raw.outputTokens
     existing.reasoningTokens += raw.reasoningTokens
+    existing.additiveReasoningTokens += raw.additiveReasoningTokens
     existing.reasoningSemantics = combineReasoningSemantics([existing.reasoningSemantics, raw.reasoningSemantics])
     existing.inputTokens += raw.inputTokens
     existing.cacheReadTokens += raw.cacheReadTokens

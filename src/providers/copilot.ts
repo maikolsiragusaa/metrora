@@ -72,6 +72,7 @@ import type {
   SessionParser,
   ParsedProviderCall,
 } from './types.js'
+import { loadCopilotOtelSpanAttributes, normalizeCopilotOtelUsage } from './copilot-otel-token-semantics.js'
 import {
   getAgentTracesDbPath,
   getCopilotDoctorProbeRoots,
@@ -239,24 +240,6 @@ type ChatSessionRequest = Record<string, unknown>
 // The Copilot Budget extension reads from this same DB and uses per-span
 // token counts, confirming this schema is stable enough to depend on.
 
-// Parsed attribute bag from a span
-interface SpanAttributes {
-  'gen_ai.operation.name'?: string
-  'gen_ai.response.model'?: string
-  'gen_ai.request.model'?: string
-  'gen_ai.usage.input_tokens'?: number
-  'gen_ai.usage.output_tokens'?: number
-  'gen_ai.usage.cache_read.input_tokens'?: number
-  'gen_ai.usage.cache_creation.input_tokens'?: number
-  'gen_ai.conversation.id'?: string
-  'gen_ai.agent.name'?: string
-  'gen_ai.tool.name'?: string
-  'gen_ai.tool.call.arguments'?: string
-  'copilot_chat.parent_chat_session_id'?: string
-  'github.copilot.chat.turn.id'?: string
-  [key: string]: unknown
-}
-
 // ---------------------------------------------------------------------------
 
 /**
@@ -297,40 +280,6 @@ function parseCwd(yaml: string): string | null {
   // Strip surrounding single/double quotes
   raw = raw.replace(/^['"]|['"]$/g, '').trim()
   return raw || null
-}
-
-/**
- * Load span attributes from the span_attributes table (key-value pairs).
- * This handles the modern VS Code Copilot Chat schema where attributes
- * are stored as separate key-value rows rather than a JSON blob.
- */
-function loadSpanAttributesFromTable(
-  db: ReturnType<typeof import('../sqlite.js')['openDatabase']>,
-  spanId: string
-): SpanAttributes {
-  try {
-    const rows = db.query<{ key: string; value: string | null }>(
-      `SELECT key, value FROM span_attributes WHERE span_id = ?`,
-      [spanId]
-    )
-    const attrs: SpanAttributes = {}
-    for (const row of rows) {
-      if (row.key && row.value) {
-        try {
-          // Try to parse numeric values
-          const numValue = Number(row.value)
-          attrs[row.key as keyof SpanAttributes] = Number.isNaN(numValue) 
-            ? row.value
-            : numValue
-        } catch {
-          attrs[row.key as keyof SpanAttributes] = row.value
-        }
-      }
-    }
-    return attrs
-  } catch {
-    return {}
-  }
 }
 
 /**
@@ -1614,7 +1563,7 @@ function createOtelParser(
 
             if (opName === 'execute_tool') {
               // Load tool name from attributes and normalise to display form
-              const attrs = loadSpanAttributesFromTable(db, span.span_id)
+              const attrs = loadCopilotOtelSpanAttributes(db, span.span_id)
               const rawToolName = attrs['gen_ai.tool.name'] as string | undefined
               if (rawToolName) {
                 const existing = toolsByTrace.get(span.trace_id) ?? []
@@ -1640,7 +1589,7 @@ function createOtelParser(
             // chat session. The root turn agent ('GitHub Copilot Chat') has no
             // parent session and is skipped to avoid a bogus agents-view entry.
             if (opName === 'invoke_agent') {
-              const attrs = loadSpanAttributesFromTable(db, span.span_id)
+              const attrs = loadCopilotOtelSpanAttributes(db, span.span_id)
               const parentSession = attrs['copilot_chat.parent_chat_session_id']
               const agentName = attrs['gen_ai.agent.name'] as string | undefined
               if (parentSession && agentName) {
@@ -1653,7 +1602,7 @@ function createOtelParser(
 
           // Yield one ParsedProviderCall per chat span
           for (const spanId of chatSpanIds) {
-            const attrs = loadSpanAttributesFromTable(db, spanId)
+            const attrs = loadCopilotOtelSpanAttributes(db, spanId)
 
             const spanMetadata = spanMetaById.get(spanId)
             if (!spanMetadata) continue
@@ -1664,12 +1613,9 @@ function createOtelParser(
               spanMetadata.response_model ??
               'unknown'
 
-            const inputTokens = Number(attrs['gen_ai.usage.input_tokens'] ?? 0)
-            const outputTokens = Number(attrs['gen_ai.usage.output_tokens'] ?? 0)
-            const cacheReadTokens = Number(attrs['gen_ai.usage.cache_read.input_tokens'] ?? 0)
-            const cacheCreationTokens = Number(attrs['gen_ai.usage.cache_creation.input_tokens'] ?? 0)
+            const usage = normalizeCopilotOtelUsage(attrs)
 
-            if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheCreationTokens === 0) {
+            if (usage.inputTokens === 0 && usage.outputTokens === 0 && usage.cacheReadTokens === 0 && usage.cacheCreationTokens === 0 && usage.cacheTokenEvidence !== 'inconsistent') {
               continue
             }
 
@@ -1695,11 +1641,11 @@ function createOtelParser(
             // calculateCost with FULL token data — this is the key improvement.
             const costUSD = calculateCost(
               model,
-              inputTokens,
-              outputTokens,
-              cacheCreationTokens,
-              cacheReadTokens,
-              0 // reasoningTokens — not exposed in current OTel schema
+              usage.inputTokens,
+              usage.outputTokens,
+              usage.cacheCreationTokens,
+              usage.cacheReadTokens,
+              0 // reasoning is included in OTel output_tokens
             )
 
             yield {
@@ -1707,12 +1653,14 @@ function createOtelParser(
               sessionId: conversationId,
               project,
               model,
-              inputTokens,
-              outputTokens,
-              cacheCreationInputTokens: cacheCreationTokens,
-              cacheReadInputTokens: cacheReadTokens,
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+              cacheCreationInputTokens: usage.cacheCreationTokens,
+              cacheReadInputTokens: usage.cacheReadTokens,
               cachedInputTokens: 0,
-              reasoningTokens: 0,
+              reasoningTokens: usage.reasoningTokens,
+              cacheTokenEvidence: usage.cacheTokenEvidence,
+              reasoningSemantics: usage.reasoningSemantics,
               webSearchRequests: 0,
               costUSD,
               tools,
@@ -2184,6 +2132,7 @@ export function createCopilotProvider(
     displayName: 'Copilot',
     durableSources: true,
     probeRoots: async () => getCopilotDoctorProbeRoots(sessionStateDir, workspaceStorageDir, globalStorageDir, jetbrainsDir),
+    durableFreshWinsForSource: source => (source as { sourceType?: unknown }).sourceType === 'otel',
 
     modelDisplayName(model: string): string {
       for (const [key, display] of modelDisplayEntries) {

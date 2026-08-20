@@ -237,6 +237,7 @@ function addProjectTokenStats(target: ProjectDayStats, source: ProjectDayStats):
   if (source.inputTokens !== undefined) target.inputTokens = (target.inputTokens ?? 0) + source.inputTokens
   if (source.outputTokens !== undefined) target.outputTokens = (target.outputTokens ?? 0) + source.outputTokens
   if (source.reasoningTokens !== undefined) target.reasoningTokens = (target.reasoningTokens ?? 0) + source.reasoningTokens
+  if (source.additiveReasoningTokens !== undefined) target.additiveReasoningTokens = (target.additiveReasoningTokens ?? 0) + source.additiveReasoningTokens
   if (source.cacheReadTokens !== undefined) target.cacheReadTokens = (target.cacheReadTokens ?? 0) + source.cacheReadTokens
   if (source.cacheWriteTokens !== undefined) target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + source.cacheWriteTokens
 }
@@ -282,6 +283,7 @@ function scopedProviderSlice(
       inputTokens: slice.inputTokens,
       outputTokens: slice.outputTokens,
       reasoningTokens: slice.reasoningTokens,
+      additiveReasoningTokens: slice.additiveReasoningTokens,
       cacheReadTokens: slice.cacheReadTokens,
       cacheWriteTokens: slice.cacheWriteTokens,
       editTurns: slice.editTurns,
@@ -294,6 +296,7 @@ function scopedProviderSlice(
       inputTokens: totals.inputTokens ?? 0,
       outputTokens: totals.outputTokens ?? 0,
       reasoningTokens: totals.reasoningTokens,
+      additiveReasoningTokens: totals.additiveReasoningTokens,
       cacheReadTokens: totals.cacheReadTokens ?? 0,
       cacheWriteTokens: totals.cacheWriteTokens ?? 0,
       editTurns: 0,
@@ -328,6 +331,7 @@ export function filterDailyEntryByMetroraScope(
       inputTokens: day.inputTokens,
       outputTokens: day.outputTokens,
       reasoningTokens: day.reasoningTokens,
+      additiveReasoningTokens: day.additiveReasoningTokens,
       cacheReadTokens: day.cacheReadTokens,
       cacheWriteTokens: day.cacheWriteTokens,
       editTurns: day.editTurns,
@@ -338,6 +342,7 @@ export function filterDailyEntryByMetroraScope(
       inputTokens: totals.inputTokens ?? 0,
       outputTokens: totals.outputTokens ?? 0,
       reasoningTokens: totals.reasoningTokens,
+      additiveReasoningTokens: totals.additiveReasoningTokens,
       cacheReadTokens: totals.cacheReadTokens ?? 0,
       cacheWriteTokens: totals.cacheWriteTokens ?? 0,
       editTurns: 0,

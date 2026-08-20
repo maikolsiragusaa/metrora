@@ -1,5 +1,6 @@
 import { getShortModelName } from './models.js'
 import type { ProjectSummary } from './types.js'
+import { generatedTokensForReasoningMix } from './token-semantics.js'
 
 export type ObservedModelPerformance = {
   activeDurationMs: number
@@ -52,7 +53,7 @@ export function aggregateModelPerformanceByRoute(projects: ProjectSummary[]): Ma
       for (const turn of turns) {
         for (const call of turn.assistantCalls) {
           const durationMs = call.activeDurationMs ?? 0
-          const generatedTokens = call.activeGeneratedTokens ?? (call.usage.outputTokens + call.usage.reasoningTokens)
+          const generatedTokens = call.activeGeneratedTokens ?? generatedTokensForReasoningMix(call.usage.outputTokens, call.usage.reasoningTokens, call.reasoningSemantics)
           if (!(durationMs > 0) || !(generatedTokens > 0)) continue
           const model = modelKey(call.model)
           const routes = result.get(model) ?? new Map<string, ObservedModelPerformance>()

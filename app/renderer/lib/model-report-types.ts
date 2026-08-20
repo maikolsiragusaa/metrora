@@ -10,6 +10,7 @@ export type ModelReportRow = {
   inputTokens: number
   outputTokens: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   reasoningSemantics?: ReasoningTokenSemantics
   cacheWriteTokens: number
   cacheReadTokens: number

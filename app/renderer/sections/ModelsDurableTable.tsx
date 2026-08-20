@@ -54,23 +54,15 @@ function tokenTotal(row: DurableModelRow): number {
 }
 
 function reasoningDisplay(row: Pick<DurableModelAccountingRow, 'reasoningSemantics' | 'reasoningTokens'>): string {
-  if (row.reasoningSemantics === 'separate') return formatCompact(row.reasoningTokens ?? 0)
-  if (row.reasoningSemantics === 'mixed' && (row.reasoningTokens ?? 0) > 0) {
-    return `≥${formatCompact(row.reasoningTokens!)}`
-  }
-  return '—'
+  if (row.reasoningSemantics === 'unavailable' || row.reasoningTokens === undefined) return '—'
+  return formatCompact(row.reasoningTokens)
 }
 
 function reasoningTitle(row: Pick<DurableModelAccountingRow, 'reasoningSemantics' | 'reasoningTokens'>): string {
-  if (row.reasoningSemantics === 'separate') return 'Separately reported reasoning tokens included in Total.'
-  if (row.reasoningSemantics === 'aggregate-output') return 'Reasoning is already included in Output; it is not added separately.'
-  if (row.reasoningSemantics === 'mixed' && (row.reasoningTokens ?? 0) > 0) {
-    return 'At least the shown reasoning tokens were separately observed and included in Total; other delivery reasoning is unavailable or already aggregated.'
-  }
-  if (row.reasoningSemantics === 'mixed') {
-    return 'Some delivery reasoning is unavailable or already aggregated; no separately reported reasoning evidence was retained.'
-  }
-  return 'Separate reasoning evidence is unavailable; it is not guessed.'
+  if (row.reasoningSemantics === 'separate') return 'Observed reasoning evidence; reasoning reported separately is included in Total.'
+  if (row.reasoningSemantics === 'aggregate-output') return 'Observed reasoning is already included in Output; it is not added separately to Total.'
+  if (row.reasoningSemantics === 'mixed') return 'Observed reasoning may include both output-included and separately additive tokens; only the additive subset is included separately in Total.'
+  return 'Observed reasoning evidence is unavailable; it is not guessed.'
 }
 
 function modelCacheReuse(row: DurableModelRow): number | null {

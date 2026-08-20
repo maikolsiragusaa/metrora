@@ -421,11 +421,13 @@ describe('model accounting payload', () => {
     expect(accounting.rows).toHaveLength(1)
     expect(accounting.rows[0]).toMatchObject({
       reasoningTokens: 57_133,
+      additiveReasoningTokens: 0,
       reasoningSemantics: 'mixed',
     })
     expect(presentation.rows).toHaveLength(1)
     expect(presentation.rows[0]).toMatchObject({
       reasoningTokens: 57_133,
+      additiveReasoningTokens: 0,
       reasoningSemantics: 'mixed',
       deliveryRows: [accounting.rows[0]],
     })

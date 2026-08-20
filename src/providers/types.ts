@@ -1,5 +1,6 @@
 import type { DateRange, ToolCall } from '../types.js'
 import type { ReasoningLevel, ReasoningLevelSource } from '../reasoning-level.js'
+import type { CacheTokenEvidence, ReasoningTokenSemantics } from '../token-semantics.js'
 import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 import type { HistoricalPricingContextV1 } from '../pricing/pricing-context.js'
 
@@ -35,6 +36,11 @@ export type ParsedProviderCall = {
   /** Optional bounded delivery/pricing evidence preserved separately from model labels. */
   pricingContext?: HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
+  /** Explicit source semantics; absent preserves the provider's existing default. */
+  reasoningSemantics?: ReasoningTokenSemantics
+  /** Whether OTel cache subfields were complete, partial, unavailable, or inconsistent. */
+  cacheTokenEvidence?: CacheTokenEvidence
+
   reasoningLevelSource?: ReasoningLevelSource
   inputTokens: number
   outputTokens: number
@@ -103,6 +109,10 @@ export type Provider = {
   // Fresh derivation for a present durable source replaces cached calls with the
   // same native identity while retaining cached calls absent from that derivation.
   durableFreshWins?: boolean
+  // Optional source-aware variant used when only one durable source's parser
+  // authority is changing; other provider paths retain their cached calls.
+  durableFreshWinsForSource?: (source: SessionSource) => boolean
+
   modelDisplayName(model: string): string
   toolDisplayName(rawTool: string): string
   discoverSessions(): Promise<SessionSource[]>

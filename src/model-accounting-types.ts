@@ -32,4 +32,5 @@ export type ModelAccountingRow = {
   /** Whether active-generation timing is observed for this exact row. */
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
   reasoningTokens?: number
+  additiveReasoningTokens?: number
 }

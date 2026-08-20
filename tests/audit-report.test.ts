@@ -86,8 +86,9 @@ describe('aggregateAudit', () => {
     expect(r.raw.reasoningTokens).toBe(10)
     expect(r.raw.cacheReadInputTokens).toBe(200)
     expect(r.raw.cachedInputTokens).toBe(300)
-    // reasoning folds into output for pricing
-    expect(r.displayed.outputTokens).toBe(110)
+    // reasoning remains visible as a breakdown; this legacy Claude call is
+    // still additive for pricing because its authority was omitted.
+    expect(r.displayed).toMatchObject({ outputTokens: 110, reasoningTokens: 10, additiveReasoningTokens: 10 })
     // cache read is the SUM of per-call max(anthropic, openai), not max of sums
     expect(r.displayed.cacheReadTokens).toBe(500)
     // attributed cost is preserved exactly

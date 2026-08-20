@@ -214,7 +214,7 @@ function ObservedUsageCard({ modelA, modelB }: { modelA: ModelStats; modelB: Mod
     { label: 'Calls', valueA: modelA.calls.toLocaleString('en-US'), valueB: modelB.calls.toLocaleString('en-US') },
     { label: 'Input', valueA: formatCompact(modelA.inputTokens), valueB: formatCompact(modelB.inputTokens) },
     { label: 'Output', valueA: formatCompact(modelA.outputTokens), valueB: formatCompact(modelB.outputTokens) },
-    { label: 'Reasoning', valueA: modelA.reasoningSemantics === 'separate' || modelA.reasoningSemantics === 'mixed' ? formatCompact(modelA.reasoningTokens ?? 0) : '—', valueB: modelB.reasoningSemantics === 'separate' || modelB.reasoningSemantics === 'mixed' ? formatCompact(modelB.reasoningTokens ?? 0) : '—' },
+    { label: 'Reasoning', valueA: modelA.reasoningSemantics !== 'unavailable' && modelA.reasoningTokens !== undefined ? formatCompact(modelA.reasoningTokens) : '—', valueB: modelB.reasoningSemantics !== 'unavailable' && modelB.reasoningTokens !== undefined ? formatCompact(modelB.reasoningTokens) : '—' },
     { label: 'Cache R', valueA: formatCompact(modelA.cacheReadTokens), valueB: formatCompact(modelB.cacheReadTokens) },
     { label: 'Cache W', valueA: formatCompact(modelA.cacheWriteTokens), valueB: formatCompact(modelB.cacheWriteTokens) },
     { label: 'Cache ×', valueA: formatReuseMultiple(reuseA), valueB: formatReuseMultiple(reuseB), note: `Cache share: ${shareA == null ? '—' : `${Math.round(shareA * 1000) / 10}%`} / ${shareB == null ? '—' : `${Math.round(shareB * 1000) / 10}%`}` },

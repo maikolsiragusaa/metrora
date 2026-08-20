@@ -18,7 +18,7 @@ export type PeriodData = {
   sessions: number
   inputTokens: number
   outputTokens: number
-  reasoningTokens?: number
+  reasoningTokens?: number; additiveReasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   /// Total Codex credits consumed in the period (issues #408/#495). Optional so
@@ -39,7 +39,7 @@ export type PeriodData = {
     estimatedCostUSD?: number
     inputTokens?: number
     outputTokens?: number
-    reasoningTokens?: number
+    reasoningTokens?: number; additiveReasoningTokens?: number
     reasoningSemantics?: 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
     cacheReadTokens?: number
     cacheWriteTokens?: number

@@ -128,6 +128,29 @@ describe('Sessions', () => {
     expect(within(table).getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
   })
 
+  it('preserves observed mixed reasoning while adding only the explicit subtotal', async () => {
+    getSessions.mockResolvedValue([session({
+      sessionId: 'mixed',
+      title: 'Mixed reasoning',
+      project: 'metrora',
+      provider: 'copilot',
+      inputTokens: 0,
+      outputTokens: 200,
+      reasoningTokens: 50,
+      additiveReasoningTokens: 30,
+      reasoningSemantics: 'mixed',
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cost: 2.3,
+    })])
+    render(<Sessions period="lifetime" provider="all" />)
+
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    const row = within(table).getAllByRole('row')[1]!
+    expect(row).toHaveTextContent('50')
+    expect(row).toHaveTextContent('230')
+  })
+
   it('keeps provider grouping as an explicit optional lens', async () => {
     const user = userEvent.setup()
     render(<Sessions period="lifetime" provider="all" />)

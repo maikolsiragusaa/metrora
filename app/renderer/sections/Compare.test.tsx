@@ -89,6 +89,28 @@ describe('Compare', () => {
     expect(mocks.getCompare).toHaveBeenCalledWith('30days', 'all', 'Sonnet 5', 'Opus 4.8')
   })
 
+  it('preserves observed mixed reasoning and uses the additive subtotal for totals and Cost / 1M', async () => {
+    const mixedA: ModelStats = {
+      ...modelA,
+      inputTokens: 0,
+      outputTokens: 200,
+      reasoningTokens: 50,
+      additiveReasoningTokens: 30,
+      reasoningSemantics: 'mixed',
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      cost: 2.3,
+    }
+    mocks.getCompareModels.mockResolvedValue([mixedA, modelB])
+    mocks.getCompare.mockResolvedValue({ ...report, modelA: mixedA })
+    render(<Compare period="30days" provider="all" />)
+
+    const usage = await screen.findByRole('table', { name: 'Observed usage comparison' })
+    expect(within(usage).getByLabelText('Opus 4.8, Reasoning: 50')).toBeInTheDocument()
+    expect(within(usage).getByLabelText('Opus 4.8, Total tokens: 230')).toBeInTheDocument()
+    expect(within(usage).getByLabelText('Opus 4.8, Cost / 1M: $10,000.00')).toBeInTheDocument()
+  })
+
   it('keeps workflow heuristics collapsed and explicitly experimental', async () => {
     const user = userEvent.setup()
     mocks.getCompareModels.mockResolvedValue([modelA, modelB])

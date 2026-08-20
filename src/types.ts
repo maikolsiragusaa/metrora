@@ -1,5 +1,6 @@
 import type { ReasoningLevel, ReasoningLevelSource, ReasoningMix } from './reasoning-level.js'
 import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
+import type { CacheTokenEvidence, ReasoningTokenSemantics } from './token-semantics.js'
 import type { HistoricalPricingContextV1 } from './pricing/pricing-context.js'
 
 export type TokenUsage = {
@@ -118,6 +119,11 @@ export type ParsedApiCall = {
   modelProvider?: string
   pricingContext?: HistoricalPricingContextV1
   reasoningLevel?: ReasoningLevel
+  /** Source-specific reasoning inclusion authority; absent preserves legacy defaults. */
+  reasoningSemantics?: ReasoningTokenSemantics
+  /** Bounded OTel cache-subfield evidence; absent for non-OTel sources. */
+  cacheTokenEvidence?: CacheTokenEvidence
+
   reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage
   costUSD: number

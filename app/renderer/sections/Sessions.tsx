@@ -96,6 +96,18 @@ function sessionUnitCost(row: SessionRow): number | null {
   return costPerMillionTotal(row.cost, row)
 }
 
+function hasObservedReasoning(row: Pick<SessionRow, 'reasoningSemantics' | 'reasoningTokens'>): boolean {
+  return row.reasoningSemantics !== 'unavailable' && row.reasoningTokens !== undefined
+}
+
+function sessionReasoningTitle(row: Pick<SessionRow, 'reasoningSemantics' | 'reasoningTokens'>): string {
+  if (!hasObservedReasoning(row)) return 'Observed reasoning evidence is unavailable; it is not guessed.'
+  if (row.reasoningSemantics === 'aggregate-output') return 'Observed reasoning is already included in Output; it is not added separately to Total.'
+  if (row.reasoningSemantics === 'mixed') return 'Observed reasoning may include both output-included and separately additive tokens; only the additive subset is included separately in Total.'
+  if (row.reasoningSemantics === 'separate') return 'Observed reasoning evidence; reasoning reported separately is included in Total.'
+  return 'Observed reasoning evidence; only reasoning reported as additive contributes separately to Total.'
+}
+
 function compareNullableDescending(a: number | null, b: number | null): number {
   if (a == null && b == null) return 0
   if (a == null) return 1
@@ -436,7 +448,7 @@ export function Sessions({
                       <td>{entry.row.calls.toLocaleString('en-US')}</td>
                       <td>{formatCompact(entry.row.inputTokens)}</td>
                       <td>{formatCompact(entry.row.outputTokens)}</td>
-                      <td title={entry.row.reasoningSemantics === 'unavailable' ? 'Separate reasoning evidence is unavailable; it is not guessed.' : 'Separately reported reasoning tokens included in Total.'}>{entry.row.reasoningSemantics === 'separate' || entry.row.reasoningSemantics === 'mixed' ? formatCompact(entry.row.reasoningTokens ?? 0) : '\u2014'}</td>
+                      <td title={sessionReasoningTitle(entry.row)}>{hasObservedReasoning(entry.row) ? formatCompact(entry.row.reasoningTokens!) : '\u2014'}</td>
                       <td>{formatCompact(entry.row.cacheReadTokens)}</td>
                       <td>{formatCompact(entry.row.cacheWriteTokens)}</td>
                       <td title={cacheShare(entry.row.inputTokens, entry.row.cacheReadTokens) == null ? undefined : `${Math.round((cacheShare(entry.row.inputTokens, entry.row.cacheReadTokens) ?? 0) * 1000) / 10}% of input served from cache`}>{formatReuseMultiple(sessionCacheReuse(entry.row))}</td>
@@ -475,10 +487,10 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
   const reuse = sessionCacheReuse(session)
   const share = cacheShare(session.inputTokens, session.cacheReadTokens)
   const unitCost = sessionUnitCost(session)
-  const hasSeparateReasoning = session.reasoningSemantics === 'separate' || session.reasoningSemantics === 'mixed'
-  const reasoningTokenSummary = !hasSeparateReasoning
+  const hasReasoning = hasObservedReasoning(session)
+  const reasoningTokenSummary = !hasReasoning
     ? 'Reasoning-token count unavailable'
-    : `${formatCompact(session.reasoningTokens ?? 0)} dedicated reasoning tokens`
+    : `${formatCompact(session.reasoningTokens!)} observed reasoning tokens`
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -505,11 +517,11 @@ function SessionDetail({ session, onCollapse }: { session: SessionRow; onCollaps
         <Stat label="Turns" value={session.turns.toLocaleString()} delta="assistant turns" />
         <Stat label="Input" value={formatCompact(session.inputTokens)} delta="uncached input" />
         <Stat label="Output" value={formatCompact(session.outputTokens)} delta="generated" />
-        <Stat label="Reasoning" value={hasSeparateReasoning ? formatCompact(session.reasoningTokens ?? 0) : '—'} delta={hasSeparateReasoning ? 'separately reported' : 'separate evidence unavailable'} />
+        <Stat label="Reasoning" value={hasReasoning ? formatCompact(session.reasoningTokens!) : '—'} delta={hasReasoning ? 'observed evidence' : 'evidence unavailable'} />
         <Stat label="Cache read" value={formatCompact(session.cacheReadTokens)} delta="reused input" />
         <Stat label="Cache write" value={formatCompact(session.cacheWriteTokens)} delta="written to cache" />
         <Stat label="Cache reuse" value={formatReuseMultiple(reuse)} delta={share == null ? 'No comparable input' : `${Math.round(share * 1000) / 10}% cache share`} />
-        <Stat label="Total" value={formatCompact(totalTokens)} delta="input + output + reasoning + cache" />
+        <Stat label="Total" value={formatCompact(totalTokens)} delta="input + output + additive reasoning + cache" />
         {session.savingsUSD > 0 ? <Stat label="Saved" value={formatUsd(session.savingsUSD)} delta="configured baseline" /> : null}
       </div>
       {session.reasoningMix && session.reasoningMix.rows.length > 0 && (

@@ -73,6 +73,7 @@ function sumProjects(projects: Record<string, ProjectDayStats>): ProjectDayStats
     if (stats.inputTokens !== undefined) total.inputTokens = (total.inputTokens ?? 0) + stats.inputTokens
     if (stats.outputTokens !== undefined) total.outputTokens = (total.outputTokens ?? 0) + stats.outputTokens
     if (stats.reasoningTokens !== undefined) total.reasoningTokens = (total.reasoningTokens ?? 0) + stats.reasoningTokens
+    if (stats.additiveReasoningTokens !== undefined) total.additiveReasoningTokens = (total.additiveReasoningTokens ?? 0) + stats.additiveReasoningTokens
     if (stats.cacheReadTokens !== undefined) total.cacheReadTokens = (total.cacheReadTokens ?? 0) + stats.cacheReadTokens
     if (stats.cacheWriteTokens !== undefined) total.cacheWriteTokens = (total.cacheWriteTokens ?? 0) + stats.cacheWriteTokens
   }
@@ -156,6 +157,7 @@ function projectScopedSlice(
     inputTokens: preserveDetailedBreakdown ? (slice.inputTokens ?? 0) : (totals.inputTokens ?? 0),
     outputTokens: preserveDetailedBreakdown ? (slice.outputTokens ?? 0) : (totals.outputTokens ?? 0),
     reasoningTokens: preserveDetailedBreakdown ? slice.reasoningTokens : totals.reasoningTokens,
+    additiveReasoningTokens: preserveDetailedBreakdown ? slice.additiveReasoningTokens : totals.additiveReasoningTokens,
     cacheReadTokens: preserveDetailedBreakdown ? (slice.cacheReadTokens ?? 0) : (totals.cacheReadTokens ?? 0),
     cacheWriteTokens: preserveDetailedBreakdown ? (slice.cacheWriteTokens ?? 0) : (totals.cacheWriteTokens ?? 0),
     editTurns: preserveDetailedBreakdown ? (slice.editTurns ?? 0) : 0,
@@ -198,6 +200,7 @@ export function sliceDayToProvider(day: DailyEntry, provider: string): DailyEntr
     sessions: slice.sessions ?? 0,
     inputTokens: slice.inputTokens ?? 0,
     outputTokens: slice.outputTokens ?? 0,
+    additiveReasoningTokens: slice.additiveReasoningTokens,
     cacheReadTokens: slice.cacheReadTokens ?? 0,
     cacheWriteTokens: slice.cacheWriteTokens ?? 0,
     editTurns: slice.editTurns ?? 0,
@@ -246,6 +249,7 @@ export function reconcileDurableProjectDay(
     inputTokens: preserveDetailedBreakdown ? day.inputTokens : (totals.inputTokens ?? 0),
     outputTokens: preserveDetailedBreakdown ? day.outputTokens : (totals.outputTokens ?? 0),
     reasoningTokens: preserveDetailedBreakdown ? day.reasoningTokens : totals.reasoningTokens,
+    additiveReasoningTokens: preserveDetailedBreakdown ? day.additiveReasoningTokens : totals.additiveReasoningTokens,
     cacheReadTokens: preserveDetailedBreakdown ? day.cacheReadTokens : (totals.cacheReadTokens ?? 0),
     cacheWriteTokens: preserveDetailedBreakdown ? day.cacheWriteTokens : (totals.cacheWriteTokens ?? 0),
     editTurns: preserveDetailedBreakdown ? day.editTurns : 0,
