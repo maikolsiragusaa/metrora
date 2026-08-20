@@ -2,19 +2,14 @@ import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { type SourceFileFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
 import { cleanupSnapshotDirectory, cleanupStaleSnapshots, writeSnapshotOwner } from './sqlite-snapshot-ownership.js'
 import {
   observeSource,
-  probeSource,
   resolveSourcePath,
-  sameMainIdentity,
   sameSourceProbe,
-  sourceProbeFromObservation,
   type SourceObservation,
-  type SourceProbe,
 } from './sqlite-source-probe.js'
 
 
@@ -136,21 +131,10 @@ export function isSqliteBusyError(err: unknown): boolean {
   )
 }
 
-type OpenMode = 'direct' | 'immutable' | 'snapshot'
-
-
 type SourceSnapshot = {
   directory: string
   databasePath: string
   ownerToken: string
-}
-
-
-type OpenedSource = {
-  db: RawDatabase
-  mode: OpenMode
-  snapshot: SourceSnapshot | null
-  probe: SourceProbe
 }
 
 const SNAPSHOT_DIRECTORY = 'sqlite-source-snapshots'
@@ -160,31 +144,6 @@ const SNAPSHOT_ATTEMPTS = 3
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
-
-/**
- * Identify only the SQLite open failure that can be caused by a WAL reader
- * needing source-side shared-memory support. Callers still require current
- * live-WAL evidence before promoting a read to a snapshot.
- */
-export function isSqliteSourceSafeReadError(err: unknown): boolean {
-  const e = err as { code?: unknown; errcode?: unknown; errstr?: unknown; message?: unknown } | null
-  const code = typeof e?.code === 'string' ? e.code : ''
-  const errcode = typeof e?.errcode === 'number' ? e.errcode : null
-  const message = [
-    typeof e?.message === 'string' ? e.message : '',
-    typeof e?.errstr === 'string' ? e.errstr : '',
-  ].join(' ')
-
-  if (isSqliteBusyError(err)) return false
-  return (
-    errcode === 14 ||
-    code === 'SQLITE_CANTOPEN' ||
-    code === 'ERR_SQLITE_CANTOPEN' ||
-    /\bSQLITE_CANTOPEN\b/i.test(`${code} ${message}`) ||
-    /\bunable to open database file\b/i.test(message)
-  )
-}
-
 
 function sameFingerprint(a: SourceFileFingerprint | null, b: SourceFileFingerprint | null): boolean {
   if (a === null || b === null) return a === b
@@ -211,13 +170,12 @@ function sameSourceObservation(a: SourceObservation, b: SourceObservation): bool
 function isWithin(parent: string, candidate: string): boolean {
   const relativePath = relative(resolve(parent), resolve(candidate))
   return relativePath === ''
-    || (relativePath !== '..' && !relativePath.startsWith(`..${sep}`))
+    || (relativePath !== '..' && !relativePath.startsWith('..' + sep))
 }
 
 function pathsOverlap(a: string, b: string): boolean {
   return isWithin(a, b) || isWithin(b, a)
 }
-
 
 function ensureSnapshotRoot(sourcePath: string): string {
   const sourceDirectory = resolve(dirname(resolveSourcePath(sourcePath)))
@@ -237,7 +195,7 @@ function ensureSnapshotRoot(sourcePath: string): string {
     }
   }
 
-  throw new Error(`Metrora could not create an owned SQLite snapshot directory for ${sourcePath}`)
+  throw new Error('Metrora could not create an owned SQLite snapshot directory for ' + sourcePath)
 }
 
 function createSnapshot(sourcePath: string): SourceSnapshot {
@@ -247,7 +205,13 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
   for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt++) {
     const before = observeSource(sourcePath)
     if (before.fingerprint === null) {
-      throw new Error(`SQLite source disappeared before a safe snapshot could be taken: ${sourcePath}`)
+      throw new Error('SQLite source disappeared before a safe snapshot could be taken: ' + sourcePath)
+    }
+
+    if (before.hasActiveJournal) {
+      lastFailure = 'an active rollback journal was present before copying'
+      if (attempt + 1 === SNAPSHOT_ATTEMPTS) break
+      continue
     }
 
     let directory: string | undefined
@@ -255,9 +219,9 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
       directory = fs.mkdtempSync(join(root, SNAPSHOT_PREFIX))
       const ownerToken = writeSnapshotOwner(directory)
       const databasePath = join(directory, 'source.sqlite')
-      const walPath = `${databasePath}-wal`
-      const stagedDatabasePath = `${databasePath}.copying`
-      const stagedWalPath = `${walPath}.copying`
+      const walPath = databasePath + '-wal'
+      const stagedDatabasePath = databasePath + '.copying'
+      const stagedWalPath = walPath + '.copying'
 
       // Copy WAL first, then the main file. Neither name is published until
       // both copies pass the source consistency fence; SHM is never copied.
@@ -267,6 +231,20 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
       fs.copyFileSync(before.path, stagedDatabasePath)
 
       const after = observeSource(sourcePath)
+      if (after.fingerprint === null) {
+        lastFailure = 'source disappeared while its main/WAL pair was copied'
+        cleanupSnapshotDirectory(directory, SNAPSHOT_PREFIX)
+        directory = undefined
+        if (attempt + 1 < SNAPSHOT_ATTEMPTS) continue
+        break
+      }
+      if (after.hasActiveJournal) {
+        lastFailure = 'an active rollback journal appeared while its source was copied'
+        cleanupSnapshotDirectory(directory, SNAPSHOT_PREFIX)
+        directory = undefined
+        if (attempt + 1 < SNAPSHOT_ATTEMPTS) continue
+        break
+      }
       if (!sameSourceObservation(before, after)) {
         lastFailure = 'source changed while its main/WAL pair was copied'
         cleanupSnapshotDirectory(directory, SNAPSHOT_PREFIX)
@@ -287,13 +265,12 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
     }
   }
 
-  throw new Error(`SQLite source-safe snapshot failed for ${sourcePath}: ${lastFailure}`)
+  throw new Error('SQLite source-safe snapshot failed for ' + sourcePath + ': ' + lastFailure)
 }
 
-function openRawDatabase(path: string, immutable: boolean): RawDatabase {
+function openRawDatabase(path: string): RawDatabase {
   if (DatabaseSync === null) throw new Error(getSqliteLoadError())
-  const openPath = immutable ? `${pathToFileURL(path).href}?immutable=1` : path
-  const db = new DatabaseSync(openPath, { readOnly: true })
+  const db = new DatabaseSync(path, { readOnly: true })
   try {
     db.exec?.('PRAGMA busy_timeout = 1000')
   } catch {
@@ -303,188 +280,33 @@ function openRawDatabase(path: string, immutable: boolean): RawDatabase {
 }
 
 function closeRawDatabase(db: RawDatabase): void {
-  try { db.close() } catch { /* best effort during promotion */ }
+  try { db.close() } catch { /* best effort during close */ }
 }
 
-function openSnapshotSource(sourcePath: string, observed: SourceObservation): OpenedSource {
-  const snapshot = createSnapshot(sourcePath)
-  try {
-    return {
-      db: openRawDatabase(snapshot.databasePath, false),
-      mode: 'snapshot',
-      snapshot,
-      probe: sourceProbeFromObservation(observed),
-    }
-  } catch (err) {
-    cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
-    throw err
-  }
-}
-function openClassifiedSource(sourcePath: string, observed: SourceObservation): OpenedSource {
-  if (observed.main === null || observed.fingerprint === null) {
-    throw new Error(`SQLite source is unavailable or disappeared: ${sourcePath}`)
-  }
-
-  if (observed.hasLiveWal) return openSnapshotSource(sourcePath, observed)
-
-  if (observed.walMode) {
-    try {
-      const db = openRawDatabase(observed.path, true)
-      return {
-        db,
-        mode: 'immutable',
-        snapshot: null,
-        probe: sourceProbeFromObservation(observed),
-      }
-    } catch (err) {
-      const current = observeSource(sourcePath)
-      if (!isSqliteSourceSafeReadError(err) || !current.hasLiveWal) throw err
-      return openSnapshotSource(sourcePath, current)
-    }
-  }
-
-  try {
-    const db = openRawDatabase(observed.path, false)
-    return {
-      db,
-      mode: 'direct',
-      snapshot: null,
-      probe: sourceProbeFromObservation(observed),
-    }
-  } catch (err) {
-    const current = observeSource(sourcePath)
-    if (!isSqliteSourceSafeReadError(err) || !current.hasLiveWal) throw err
-    return openSnapshotSource(sourcePath, current)
-  }
-}
 export function openDatabase(path: string): SqliteDatabase {
   if (!loadDriver() || DatabaseSync === null) {
     throw new Error(getSqliteLoadError())
   }
 
-  const initial = observeSource(path)
+  // Every synchronous reader gets one stable, Metrora-owned point-in-time
+  // view. No application SELECT is ever executed against the producer path.
+  const snapshot = createSnapshot(path)
   let db: RawDatabase | null = null
-  let mode: OpenMode = 'direct'
-  let snapshot: SourceSnapshot | null = null
-  let handleProbe: SourceProbe | null = null
-
   try {
-    const opened = openClassifiedSource(path, initial)
-    db = opened.db
-    mode = opened.mode
-    snapshot = opened.snapshot
-    handleProbe = opened.probe
+    db = openRawDatabase(snapshot.databasePath)
   } catch (err) {
-    cleanupSnapshotDirectory(snapshot?.directory, SNAPSHOT_PREFIX, snapshot?.ownerToken)
-    throw err
-  }
-
-  if (db === null || handleProbe === null) {
-    cleanupSnapshotDirectory(snapshot?.directory, SNAPSHOT_PREFIX, snapshot?.ownerToken)
-    throw new Error(`SQLite database could not be opened: ${path}`)
+    cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
+    throw new Error(
+      'SQLite source snapshot could not be opened: ' + errorMessage(err),
+      { cause: err },
+    )
   }
 
   let closed = false
-  let terminalError: Error | null = null
-
-  const clearOpenSource = (): void => {
-    if (db !== null) {
-      closeRawDatabase(db)
-      db = null
-    }
-    if (snapshot !== null) {
-      cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
-      snapshot = null
-    }
-    handleProbe = null
-  }
-
-  const reclassify = (current: SourceObservation, reason: string): void => {
-    if (current.main === null || current.fingerprint === null) {
-      const error = new Error(`SQLite source disappeared or was replaced while reading: ${path}`)
-      clearOpenSource()
-      terminalError = error
-      throw error
-    }
-
-    clearOpenSource()
-    try {
-      const opened = openClassifiedSource(path, current)
-      db = opened.db
-      mode = opened.mode
-      snapshot = opened.snapshot
-      handleProbe = opened.probe
-    } catch (err) {
-      const error = new Error(
-        `SQLite source could not be reclassified after ${reason}: ${errorMessage(err)}`,
-        { cause: err },
-      )
-      terminalError = error
-      throw error
-    }
-  }
-
-  const preflightSource = (): void => {
-    if (mode === 'snapshot') return
-    if (handleProbe === null) throw terminalError ?? new Error(`SQLite source is not open: ${path}`)
-
-    const currentProbe = probeSource(path, handleProbe.path, handleProbe.wal)
-    if (currentProbe.main === null) {
-      reclassify(observeSource(path), 'source disappearance')
-      return
-    }
-    if (sameSourceProbe(handleProbe, currentProbe)) return
-
-    const current = observeSource(path)
-    if (current.main === null || current.fingerprint === null) {
-      reclassify(current, 'source disappearance')
-      return
-    }
-
-    // A normal rollback-journal write stays on the same inode and remains
-    // correctly visible through the existing direct SQLite handle.
-    if (
-      mode === 'direct' &&
-      !current.hasLiveWal &&
-      !current.walMode &&
-      sameMainIdentity(handleProbe.main, current.main)
-    ) {
-      handleProbe = sourceProbeFromObservation(current)
-      return
-    }
-
-    reclassify(current, 'source identity or mode change')
-  }
-
-  const execute = <T extends Row>(sql: string, params: unknown[]): T[] => {
-    if (db === null) throw terminalError ?? new Error(`SQLite database is not open: ${path}`)
-    return db.prepare(sql).all(...params) as T[]
-  }
-
   return {
     query<T extends Row = Row>(sql: string, params: unknown[] = []): T[] {
-      if (closed) throw new Error('SQLite database is closed')
-      if (terminalError !== null) throw terminalError
-      preflightSource()
-
-      let retryAttempted = false
-      try {
-        return execute<T>(sql, params)
-      } catch (err) {
-        if (
-          !retryAttempted &&
-          mode !== 'snapshot' &&
-          isSqliteSourceSafeReadError(err)
-        ) {
-          retryAttempted = true
-          const current = observeSource(path)
-          if (current.hasLiveWal) {
-            reclassify(current, 'query-time source-safe fallback')
-            return execute<T>(sql, params)
-          }
-        }
-        throw err
-      }
+      if (closed || db === null) throw new Error('SQLite database is closed')
+      return db.prepare(sql).all(...params) as T[]
     },
     close() {
       if (closed) return
@@ -492,12 +314,8 @@ export function openDatabase(path: string): SqliteDatabase {
       try {
         if (db !== null) closeRawDatabase(db)
       } finally {
-        if (snapshot !== null) {
-          cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
-          snapshot = null
-        }
+        cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
         db = null
-        handleProbe = null
       }
     },
   }

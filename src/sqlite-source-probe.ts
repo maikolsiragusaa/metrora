@@ -27,6 +27,9 @@ export type SourceProbe = {
   walPath: string
   wal: WalObservation | null
   hasLiveWal: boolean
+  journalPath: string
+  journal: WalObservation | null
+  hasActiveJournal: boolean
 }
 
 export type SourceObservation = SourceProbe & {
@@ -71,7 +74,7 @@ export function resolveSourcePath(sourcePath: string, preferredPath?: string): s
   return resolveSourceFile(sourcePath, preferredPath).path
 }
 
-function readWalObservation(path: string): WalObservation | null {
+function readSidecarObservation(path: string): WalObservation | null {
   try {
     const stat = fs.statSync(path)
     return {
@@ -110,17 +113,22 @@ export function probeSource(
 ): SourceProbe {
   const resolved = resolveSourceFile(sourcePath, preferredPath)
   const walPath = `${resolved.path}-wal`
+  const journalPath = resolved.path + '-journal'
   const wal = resolved.main === null
     ? null
     : previousWal === null && !fs.existsSync(walPath)
       ? null
-      : readWalObservation(walPath)
+      : readSidecarObservation(walPath)
+  const journal = resolved.main === null ? null : readSidecarObservation(journalPath)
   return {
     path: resolved.path,
     main: resolved.main,
     walPath,
     wal,
     hasLiveWal: wal !== null && wal.size > 0,
+    journalPath,
+    journal,
+    hasActiveJournal: journal !== null,
   }
 }
 
@@ -156,10 +164,15 @@ function sameMainMetadata(a: MainObservation | null, b: MainObservation | null):
 
 export function sameSourceProbe(a: SourceProbe, b: SourceProbe): boolean {
   if (a.path !== b.path) return false
-  if (a.main === null || b.main === null) return a.main === b.main && sameWalObservation(a.wal, b.wal)
+  if (a.main === null || b.main === null) {
+    return a.main === b.main
+      && sameWalObservation(a.wal, b.wal)
+      && sameWalObservation(a.journal, b.journal)
+  }
   return sameMainIdentity(a.main, b.main)
     && sameMainMetadata(a.main, b.main)
     && sameWalObservation(a.wal, b.wal)
+    && sameWalObservation(a.journal, b.journal)
 }
 
 export function sourceProbeFromObservation(observation: SourceObservation): SourceProbe {
@@ -169,5 +182,8 @@ export function sourceProbeFromObservation(observation: SourceObservation): Sour
     walPath: observation.walPath,
     wal: observation.wal,
     hasLiveWal: observation.hasLiveWal,
+    journalPath: observation.journalPath,
+    journal: observation.journal,
+    hasActiveJournal: observation.hasActiveJournal,
   }
 }
