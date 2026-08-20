@@ -1,11 +1,22 @@
 import { createRequire } from 'node:module'
-import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fingerprintSourceFileSync, sourcePathCandidates, type SourceFileFingerprint } from './sqlite-source-fingerprint.js'
+import { type SourceFileFingerprint } from './sqlite-source-fingerprint.js'
 import { getMetroraCacheDir } from './product-paths.js'
+import { cleanupSnapshotDirectory, cleanupStaleSnapshots, writeSnapshotOwner } from './sqlite-snapshot-ownership.js'
+import {
+  observeSource,
+  probeSource,
+  resolveSourcePath,
+  sameMainIdentity,
+  sameSourceProbe,
+  sourceProbeFromObservation,
+  type SourceObservation,
+  type SourceProbe,
+} from './sqlite-source-probe.js'
+
 
 
 /// Thin SQLite read-only wrapper over Node's built-in `node:sqlite` module (stable in
@@ -127,34 +138,6 @@ export function isSqliteBusyError(err: unknown): boolean {
 
 type OpenMode = 'direct' | 'immutable' | 'snapshot'
 
-type MainObservation = {
-  dev: number
-  ino: number
-  mtimeMs: number
-  ctimeMs: number
-  size: number
-}
-
-type WalObservation = {
-  dev: number
-  ino: number
-  mtimeMs: number
-  ctimeMs: number
-  size: number
-}
-
-type SourceProbe = {
-  path: string
-  main: MainObservation | null
-  walPath: string
-  wal: WalObservation | null
-  hasLiveWal: boolean
-}
-
-type SourceObservation = SourceProbe & {
-  fingerprint: SourceFileFingerprint | null
-  walMode: boolean
-}
 
 type SourceSnapshot = {
   directory: string
@@ -162,11 +145,6 @@ type SourceSnapshot = {
   ownerToken: string
 }
 
-type SnapshotOwner = {
-  pid: number
-  token: string
-  createdAtMs: number
-}
 
 type OpenedSource = {
   db: RawDatabase
@@ -177,8 +155,6 @@ type OpenedSource = {
 
 const SNAPSHOT_DIRECTORY = 'sqlite-source-snapshots'
 const SNAPSHOT_PREFIX = 'sqlite-source-read-'
-const SNAPSHOT_OWNER_FILE = '.owner.json'
-const SNAPSHOT_STALE_MS = 24 * 60 * 60 * 1000
 const SNAPSHOT_ATTEMPTS = 3
 
 function errorMessage(err: unknown): string {
@@ -209,98 +185,6 @@ export function isSqliteSourceSafeReadError(err: unknown): boolean {
   )
 }
 
-function readMainObservation(path: string): MainObservation | null {
-  try {
-    const stat = fs.statSync(path)
-    if (!stat.isFile()) return null
-    return {
-      dev: stat.dev,
-      ino: stat.ino,
-      mtimeMs: stat.mtimeMs,
-      ctimeMs: stat.ctimeMs,
-      size: stat.size,
-    }
-  } catch {
-    return null
-  }
-}
-function resolveSourceFile(
-  sourcePath: string,
-  preferredPath?: string,
-): { path: string; main: MainObservation | null } {
-  const candidates = preferredPath === undefined
-    ? sourcePathCandidates(sourcePath)
-    : [preferredPath, ...sourcePathCandidates(sourcePath)]
-
-  for (const candidate of [...new Set(candidates)]) {
-    const main = readMainObservation(candidate)
-    if (main !== null) return { path: candidate, main }
-  }
-
-  return { path: preferredPath ?? sourcePath, main: null }
-}
-
-function resolveSourcePath(sourcePath: string, preferredPath?: string): string {
-  return resolveSourceFile(sourcePath, preferredPath).path
-}
-
-function readWalObservation(path: string): WalObservation | null {
-  try {
-    const stat = fs.statSync(path)
-    return {
-      dev: stat.dev,
-      ino: stat.ino,
-      mtimeMs: stat.mtimeMs,
-      ctimeMs: stat.ctimeMs,
-      size: stat.size,
-    }
-  } catch {
-    return null
-  }
-}
-
-function hasWalModeHeader(path: string): boolean {
-  let handle: number | undefined
-  try {
-    handle = fs.openSync(path, 'r')
-    const header = Buffer.alloc(20)
-    const bytesRead = fs.readSync(handle, header, 0, header.length, 0)
-    // SQLite's file-format read/write version bytes are both 2 in WAL mode.
-    return bytesRead === header.length && header[18] === 2 && header[19] === 2
-  } catch {
-    return false
-  } finally {
-    if (handle !== undefined) {
-      try { fs.closeSync(handle) } catch { /* best effort */ }
-    }
-  }
-}
-
-function probeSource(sourcePath: string, preferredPath?: string, previousWal?: WalObservation | null): SourceProbe {
-  const resolved = resolveSourceFile(sourcePath, preferredPath)
-  const walPath = `${resolved.path}-wal`
-  const wal = resolved.main === null
-    ? null
-    : previousWal === null && !fs.existsSync(walPath)
-      ? null
-      : readWalObservation(walPath)
-  return {
-    path: resolved.path,
-    main: resolved.main,
-    walPath,
-    wal,
-    hasLiveWal: wal !== null && wal.size > 0,
-  }
-}
-
-function observeSource(sourcePath: string): SourceObservation {
-  const probe = probeSource(sourcePath)
-  return {
-    ...probe,
-    fingerprint: fingerprintSourceFileSync(sourcePath),
-    walMode: probe.main !== null && hasWalModeHeader(probe.path),
-  }
-}
 
 function sameFingerprint(a: SourceFileFingerprint | null, b: SourceFileFingerprint | null): boolean {
   if (a === null || b === null) return a === b
@@ -318,44 +202,6 @@ function sameFingerprint(a: SourceFileFingerprint | null, b: SourceFileFingerpri
     && a.sqliteWal.sizeBytes === b.sqliteWal.sizeBytes
 }
 
-function sameWalObservation(a: WalObservation | null, b: WalObservation | null): boolean {
-  if (a === null || b === null) return a === b
-  return a.dev === b.dev
-    && a.ino === b.ino
-    && a.mtimeMs === b.mtimeMs
-    && a.ctimeMs === b.ctimeMs
-    && a.size === b.size
-}
-
-function sameMainIdentity(a: MainObservation | null, b: MainObservation | null): boolean {
-  if (a === null || b === null) return a === b
-  return a.dev === b.dev && a.ino === b.ino
-}
-
-function sameMainMetadata(a: MainObservation | null, b: MainObservation | null): boolean {
-  if (a === null || b === null) return a === b
-  return a.mtimeMs === b.mtimeMs
-    && a.ctimeMs === b.ctimeMs
-    && a.size === b.size
-}
-
-function sameSourceProbe(a: SourceProbe, b: SourceProbe): boolean {
-  if (a.path !== b.path) return false
-  if (a.main === null || b.main === null) return a.main === b.main && sameWalObservation(a.wal, b.wal)
-  return sameMainIdentity(a.main, b.main)
-    && sameMainMetadata(a.main, b.main)
-    && sameWalObservation(a.wal, b.wal)
-}
-
-function sourceProbeFromObservation(observation: SourceObservation): SourceProbe {
-  return {
-    path: observation.path,
-    main: observation.main,
-    walPath: observation.walPath,
-    wal: observation.wal,
-    hasLiveWal: observation.hasLiveWal,
-  }
-}
 function sameSourceObservation(a: SourceObservation, b: SourceObservation): boolean {
   return sameSourceProbe(a, b)
     && sameFingerprint(a.fingerprint, b.fingerprint)
@@ -372,89 +218,6 @@ function pathsOverlap(a: string, b: string): boolean {
   return isWithin(a, b) || isWithin(b, a)
 }
 
-function writeSnapshotOwner(directory: string): SnapshotOwner {
-  const owner: SnapshotOwner = {
-    pid: process.pid,
-    token: randomUUID(),
-    createdAtMs: Date.now(),
-  }
-  const stagedPath = join(directory, `${SNAPSHOT_OWNER_FILE}.copying`)
-  fs.writeFileSync(stagedPath, JSON.stringify(owner), { encoding: 'utf8', flag: 'wx' })
-  fs.renameSync(stagedPath, join(directory, SNAPSHOT_OWNER_FILE))
-  return owner
-}
-
-function readSnapshotOwner(directory: string): SnapshotOwner | null {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(join(directory, SNAPSHOT_OWNER_FILE), 'utf8')) as Partial<SnapshotOwner>
-    if (
-      typeof parsed.pid !== 'number' ||
-      !Number.isInteger(parsed.pid) ||
-      parsed.pid <= 0 ||
-      typeof parsed.token !== 'string' ||
-      parsed.token.length === 0 ||
-      typeof parsed.createdAtMs !== 'number' ||
-      !Number.isFinite(parsed.createdAtMs)
-    ) return null
-    return {
-      pid: parsed.pid,
-      token: parsed.token,
-      createdAtMs: parsed.createdAtMs,
-    }
-  } catch {
-    return null
-  }
-}
-
-function isSnapshotOwnerAlive(pid: number): boolean {
-  if (pid === process.pid) return true
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    const code = err && typeof err === 'object' && 'code' in err
-      ? (err as { code?: unknown }).code
-      : undefined
-    return code !== 'ESRCH'
-  }
-}
-function cleanupStaleSnapshots(root: string): void {
-  let entries: fs.Dirent[]
-  try {
-    entries = fs.readdirSync(root, { withFileTypes: true })
-  } catch {
-    return
-  }
-
-  const cutoff = Date.now() - SNAPSHOT_STALE_MS
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith(SNAPSHOT_PREFIX)) continue
-    const directory = join(root, entry.name)
-    try {
-      if (fs.statSync(directory).mtimeMs < cutoff) {
-        const owner = readSnapshotOwner(directory)
-        if (owner === null || isSnapshotOwnerAlive(owner.pid)) continue
-        fs.rmSync(directory, { recursive: true, force: true })
-      }
-    } catch {
-      // A concurrent reader or a platform file lock owns the directory.
-    }
-  }
-}
-
-function cleanupSnapshotDirectory(directory: string | undefined, ownerToken?: string): void {
-  if (!directory || !basename(directory).startsWith(SNAPSHOT_PREFIX)) return
-  if (ownerToken !== undefined) {
-    const owner = readSnapshotOwner(directory)
-    if (owner === null || owner.token !== ownerToken) return
-  }
-  try {
-    fs.rmSync(directory, { recursive: true, force: true })
-  } catch {
-    // Close remains safe if a platform briefly holds a snapshot-side handle;
-    // the bounded stale cleanup handles the remaining owned directory later.
-  }
-}
 
 function ensureSnapshotRoot(sourcePath: string): string {
   const sourceDirectory = resolve(dirname(resolveSourcePath(sourcePath)))
@@ -467,7 +230,7 @@ function ensureSnapshotRoot(sourcePath: string): string {
     if (pathsOverlap(sourceDirectory, root)) continue
     try {
       fs.mkdirSync(root, { recursive: true })
-      cleanupStaleSnapshots(root)
+      cleanupStaleSnapshots(root, SNAPSHOT_PREFIX)
       return root
     } catch {
       // A restricted cache is not a reason to write beside the producer.
@@ -488,10 +251,9 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
     }
 
     let directory: string | undefined
-    let owner: SnapshotOwner | undefined
     try {
       directory = fs.mkdtempSync(join(root, SNAPSHOT_PREFIX))
-      owner = writeSnapshotOwner(directory)
+      const ownerToken = writeSnapshotOwner(directory)
       const databasePath = join(directory, 'source.sqlite')
       const walPath = `${databasePath}-wal`
       const stagedDatabasePath = `${databasePath}.copying`
@@ -507,7 +269,7 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
       const after = observeSource(sourcePath)
       if (!sameSourceObservation(before, after)) {
         lastFailure = 'source changed while its main/WAL pair was copied'
-        cleanupSnapshotDirectory(directory)
+        cleanupSnapshotDirectory(directory, SNAPSHOT_PREFIX)
         directory = undefined
         if (attempt + 1 < SNAPSHOT_ATTEMPTS) continue
         break
@@ -517,10 +279,10 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
       // directory is unique to this reader, so other readers cannot collide.
       if (before.hasLiveWal) fs.renameSync(stagedWalPath, walPath)
       fs.renameSync(stagedDatabasePath, databasePath)
-      return { directory, databasePath, ownerToken: owner.token }
+      return { directory, databasePath, ownerToken }
     } catch (err) {
       lastFailure = errorMessage(err)
-      cleanupSnapshotDirectory(directory)
+      cleanupSnapshotDirectory(directory, SNAPSHOT_PREFIX)
       if (attempt + 1 === SNAPSHOT_ATTEMPTS) break
     }
   }
@@ -554,7 +316,7 @@ function openSnapshotSource(sourcePath: string, observed: SourceObservation): Op
       probe: sourceProbeFromObservation(observed),
     }
   } catch (err) {
-    cleanupSnapshotDirectory(snapshot.directory, snapshot.ownerToken)
+    cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
     throw err
   }
 }
@@ -613,12 +375,12 @@ export function openDatabase(path: string): SqliteDatabase {
     snapshot = opened.snapshot
     handleProbe = opened.probe
   } catch (err) {
-    cleanupSnapshotDirectory(snapshot?.directory, snapshot?.ownerToken)
+    cleanupSnapshotDirectory(snapshot?.directory, SNAPSHOT_PREFIX, snapshot?.ownerToken)
     throw err
   }
 
   if (db === null || handleProbe === null) {
-    cleanupSnapshotDirectory(snapshot?.directory, snapshot?.ownerToken)
+    cleanupSnapshotDirectory(snapshot?.directory, SNAPSHOT_PREFIX, snapshot?.ownerToken)
     throw new Error(`SQLite database could not be opened: ${path}`)
   }
 
@@ -631,7 +393,7 @@ export function openDatabase(path: string): SqliteDatabase {
       db = null
     }
     if (snapshot !== null) {
-      cleanupSnapshotDirectory(snapshot.directory, snapshot.ownerToken)
+      cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
       snapshot = null
     }
     handleProbe = null
@@ -731,7 +493,7 @@ export function openDatabase(path: string): SqliteDatabase {
         if (db !== null) closeRawDatabase(db)
       } finally {
         if (snapshot !== null) {
-          cleanupSnapshotDirectory(snapshot.directory, snapshot.ownerToken)
+          cleanupSnapshotDirectory(snapshot.directory, SNAPSHOT_PREFIX, snapshot.ownerToken)
           snapshot = null
         }
         db = null
