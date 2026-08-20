@@ -328,6 +328,25 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toEqual([])
   })
 
+  it('does not promote a CANTOPEN error without live WAL evidence', () => {
+    const testRoot = root('metrora-sqlite-safe-unrelated-cantopen-')
+    const cache = cacheFor(testRoot)
+    const source = createRollbackSource(testRoot)
+    const db = openDatabase(source.sourcePath)
+    const DatabaseSync = databaseConstructor()
+
+    vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(() => {
+      throw Object.assign(new Error('unable to open database file'), {
+        code: 'ERR_SQLITE_ERROR',
+        errcode: 14,
+      })
+    })
+
+    expect(() => db.query('SELECT value FROM items')).toThrow(/unable to open database file/i)
+    db.close()
+    expect(snapshotDirectories(cache)).toEqual([])
+  })
+
   it('preserves busy/locked classification and excludes it from source-safe fallback', () => {
     const busy = { code: 'ERR_SQLITE_ERROR', errcode: 5, errstr: 'database is locked' }
     expect(isSqliteBusyError(busy)).toBe(true)
@@ -350,21 +369,3 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toEqual([])
   })
 })
-  it('does not promote a CANTOPEN error without live WAL evidence', () => {
-    const testRoot = root('metrora-sqlite-safe-unrelated-cantopen-')
-    const cache = cacheFor(testRoot)
-    const source = createRollbackSource(testRoot)
-    const db = openDatabase(source.sourcePath)
-    const DatabaseSync = databaseConstructor()
-
-    vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(() => {
-      throw Object.assign(new Error('unable to open database file'), {
-        code: 'ERR_SQLITE_ERROR',
-        errcode: 14,
-      })
-    })
-
-    expect(() => db.query('SELECT value FROM items')).toThrow(/unable to open database file/i)
-    db.close()
-    expect(snapshotDirectories(cache)).toEqual([])
-  })
