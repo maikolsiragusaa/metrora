@@ -8,12 +8,12 @@ This document defines the desktop packaging boundary. Platform-specific release 
 - Desktop app ID: `eu.metrora.desktop`
 - Website: `https://metrora.eu`
 - Microsoft Store: `https://apps.microsoft.com/detail/9NXSZFQSBBDX`
-- Published Store source line: `1.0.0-rc.10`
-- Published desktop build version: `1.0.0.10`
-- Published Store AppX identity version: `1.0.0.0`
-- Current Store update candidate: `1.0.0-rc.11`
-- Current candidate desktop build version: `1.0.0.11`
-- Current candidate Store AppX identity version: `1.0.1.0`
+- Published Store source line: `1.0.0-rc.11`
+- Published desktop build version: `1.0.0.11`
+- Published Store AppX identity version: `1.0.1.0`
+- Previous published Store source line: `1.0.0-rc.10`
+- Previous published desktop build version: `1.0.0.10`
+- Previous published Store AppX identity version: `1.0.0.0`
 - Historical GitHub technical preview: `1.0.0-rc.7`
 
 Inherited names may remain only where required for compatibility or provenance. They are not Metrora distribution names.
@@ -27,12 +27,10 @@ The root CLI build keeps its normal production dependency closure external. `app
 The Store payload must not expose a loose CLI `node_modules` tree. Keeping `@scope/package` paths inside `cli.asar` prevents AppX packaging from rewriting those path segments. The Store package workflow executes the CLI from the extracted AppX layout with packaged `Metrora.exe`, so module resolution is tested as shipped rather than inferred from file presence.
 
 The packaged companion runtime is the sealed module at
-`app/resources/cli.asar/dist/desktop-share-runtime.js`. The Store workflow
-imports that exact module through the bundled Electron runtime and requires the
-`createDesktopShareRuntime` entry point without starting a listener or creating
-pairing state. Store package versions are maintained in the canonical
-`../release/windows-store-package-version.v1.json` authority and are not derived
-from product SemVer.
+`app/resources/cli.asar/dist/desktop-share-runtime.js`. The current RC11 Store
+line includes that runtime. Store package versions are maintained through the
+canonical `../release/windows-store-package-version.v1.json` packaging
+authority and are not derived from product SemVer.
 
 Persisted Workspace endpoint metadata is reconciled to the current packaged Metrora/collector version without replacing endpoint identity, Workspace membership or evidence history.
 
@@ -48,7 +46,7 @@ npm --prefix app run package:store    # Windows AppX x64, development packaging
 npm --prefix app run package:linux    # Linux AppImage, deb and rpm x64
 ```
 
-These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution. The RC11 Store output is an unsigned submitted candidate undergoing Microsoft certification; it is not publicly published until the remaining release gates pass.
+These commands create development or engineering artifacts. They do not by themselves create an official release or replace the Microsoft Store distribution. RC11 is already the current published Store line; any later Store output remains only a candidate until its own acceptance, submission and Microsoft publication gates pass.
 
 ## Official distribution requirements
 
@@ -67,7 +65,7 @@ An official desktop package must:
 
 ### Windows
 
-The supported public Windows distribution is the Microsoft Store package published by Vensent.
+The supported public Windows distribution is the Microsoft Store package published by Vensent. RC11 is the current Store line.
 
 Development Windows installers may still be produced for engineering validation. They are not the recommended public install path and must not be represented as Store-distributed packages.
 
