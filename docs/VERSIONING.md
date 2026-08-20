@@ -4,11 +4,12 @@ Metrora uses semantic versioning for public product identity and separate numeri
 
 ## Current line
 
-- Published Store source line: `1.0.0-rc.10`
-- Published Desktop build version: `1.0.0.10`
-- Current Store update candidate source line: `1.0.0-rc.11`
-- Current candidate Desktop build version: `1.0.0.11`
-- Current candidate Store package version: `1.0.1.0`
+- Published Store source line: `1.0.0-rc.11`
+- Published Desktop build version: `1.0.0.11`
+- Published Store package version: `1.0.1.0`
+- Previous published Store source line: `1.0.0-rc.10`
+- Previous published Desktop build version: `1.0.0.10`
+- Previous published Store package version: `1.0.0.0`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 - First intended stable release: `1.0.0`
 
@@ -36,27 +37,29 @@ The Microsoft Store AppX/MSIX manifest has a separate four-component package ide
 
 The final component is `0` for the Store package contract. The SemVer pre-release suffix (`-rc.N`) is **not** encoded into the AppX identity version, and the desktop build counter (`MAJOR.MINOR.PATCH.N`) must not be presented as the Store package version.
 
-The published baseline and the next candidate are separate authorities:
+The current and previous published authorities are:
 
-- published RC10 source/product line: `1.0.0-rc.10`;
-- published RC10 Desktop build version: `1.0.0.10`;
-- published Store AppX identity version: `1.0.0.0`;
-- current RC11 source/product candidate: `1.0.0-rc.11`;
+- current RC11 source/product line: `1.0.0-rc.11`;
 - current RC11 Desktop build version: `1.0.0.11`;
-- current candidate Store AppX identity version: `1.0.1.0`.
+- current Store AppX identity version: `1.0.1.0`;
+- previous RC10 source/product line: `1.0.0-rc.10`;
+- previous RC10 Desktop build version: `1.0.0.10`;
+- previous Store AppX identity version: `1.0.0.0`.
 
 The machine-readable Store package authority is
-`release/windows-store-package-version.v1.json`. It is the single source for
-the published baseline and candidate package versions. The AppX hook reads it
-after electron-builder creates the manifest; it does not derive a package
-version from product SemVer or the Desktop build counter. A local build with a
-known identity version is not, by itself, evidence of the live listing; later
+`release/windows-store-package-version.v1.json`. Its current values encode the
+RC10-to-RC11 package transition that produced the now-published RC11 update.
+Before another Store candidate is derived, that authority must be advanced by a
+separate reviewed release decision so the published baseline reflects
+`1.0.1.0` and any next candidate remains strictly greater. A local build with a
+known identity version is not, by itself, evidence of a live listing; later
 Store updates must pass their own acceptance and publication gates.
 
 ## Android version authority
 
 Android uses the native `versionName` and integer `versionCode` declared in
-`android/app/build.gradle.kts`. The immutable public Android release is:
+`android/app/build.gradle.kts`. The immutable historical public Android release
+is:
 
 - `versionName = 0.1.0-alpha.1`;
 - `versionCode = 1`;
@@ -74,12 +77,13 @@ public. Alpha.3 is the current public GitHub prerelease under tag
 `Metrora-Android-0.1.0-alpha.3.apk`. The public alpha.1 artifact consumed
 `versionCode = 1`; every later publicly installable Android upgrade must use a
 strictly larger `versionCode`.
+
 The human-readable `versionName` is used in the deterministic GitHub identity
 `android-v<versionName>` and asset name
 `Metrora-Android-<versionName>.apk`. Android's version line is independent of
-the frozen Windows Store package version. A future Play path keeps the same
-application ID and monotonic package line, subject to its separate signing and
-publication gates.
+the Windows Store package version. The planned Google Play release keeps the
+same application ID and monotonic package line; Google Play publication is
+planned within 30 days but remains non-authoritative until the listing is live.
 
 ## Ordering
 
@@ -105,7 +109,7 @@ The following values must agree where they represent the same authority:
 - root `package.json` and root `package-lock.json` — product SemVer;
 - desktop `app/package.json` and `app/package-lock.json` — product SemVer;
 - desktop `buildVersion` — desktop numeric build mapping;
-- `release/windows-store-package-version.v1.json` — published and candidate Store package versions;
+- `release/windows-store-package-version.v1.json` — Store package transition authority for candidate derivation;
 - Store AppX manifest — candidate Store package-version mapping after the hook;
 - current-version declarations in `RELEASING.md`;
 - current desktop declarations in `app/DISTRIBUTION.md`;
@@ -119,6 +123,6 @@ CI executes the same check on pull requests and pushes to `main`.
 
 ## Historical evidence
 
-Historical version references are immutable evidence, not active version authorities. Published RC7 release records and accepted 0.9.19 candidate reports, manifests, migration fixtures, provenance notices and changelog history retain their original version/source binding.
+Historical version references are immutable evidence, not active version authorities. Published RC7, RC10 and earlier accepted candidate reports, manifests, migration fixtures, provenance notices and changelog history retain their original version/source binding.
 
 Never rename an old report or artifact to the current version, and never treat an accepted artifact as evidence for a later source commit.
