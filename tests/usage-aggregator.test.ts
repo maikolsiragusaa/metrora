@@ -4,6 +4,7 @@ vi.setConfig({ testTimeout: 30_000 })
 import { buildMenubarPayloadForRange } from '../src/usage-aggregator.js'
 import { getDateRange } from '../src/cli-date.js'
 import { loadPricing } from '../src/models.js'
+import * as optimize from '../src/optimize.js'
 
 describe('buildMenubarPayloadForRange', () => {
   beforeAll(async () => {
@@ -25,5 +26,26 @@ describe('buildMenubarPayloadForRange', () => {
     expect(payload.current.codexCredits).toBeGreaterThanOrEqual(0)
     // optimize:false => scanAndDetect skipped => empty optimize block regardless of data
     expect(payload.optimize).toEqual({ findingCount: 0, savingsUSD: 0, topFindings: [] })
+  })
+
+  it('forwards the selected provider to Optimize for menubar payloads', async () => {
+    const scan = vi.spyOn(optimize, 'scanAndDetect').mockResolvedValue({
+      findings: [],
+      costRate: 0,
+      healthScore: 100,
+      healthGrade: 'A',
+      modelRecommendations: [],
+    })
+    try {
+      await buildMenubarPayloadForRange(getDateRange('today'), {
+        provider: 'codex',
+        optimize: true,
+        timeline: false,
+      })
+      const lastCall = scan.mock.calls.at(-1)
+      expect(lastCall?.[2]).toBe('codex')
+    } finally {
+      scan.mockRestore()
+    }
   })
 })

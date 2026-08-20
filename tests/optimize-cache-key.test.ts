@@ -119,9 +119,25 @@ describe('Optimize content-addressed result cache key', () => {
     )
   })
 
+  it('isolates provider scopes and normalizes the provider authority', () => {
+    const input = [project('alpha')]
+    expect(optimizeResultCacheKey(input, range(), 'claude')).not.toBe(
+      optimizeResultCacheKey(input, range(), 'codex'),
+    )
+    expect(optimizeResultCacheKey(input, range(), 'all')).not.toBe(
+      optimizeResultCacheKey(input, range(), 'codex'),
+    )
+    expect(optimizeResultCacheKey(input, range())).toBe(
+      optimizeResultCacheKey(input, range(), ' ALL '),
+    )
+    expect(optimizeResultCacheKey(input, range(), ' CoDeX ')).toBe(
+      optimizeResultCacheKey(input, range(), 'codex'),
+    )
+  })
+
   it('returns only version, scope, and digest without raw project content', () => {
     const key = optimizeResultCacheKey([project('secret-project')], range())
-    expect(key).toMatch(/^optimize-project-summary-v1:\d+-\d+:[A-Za-z0-9_-]{43}$/)
+    expect(key).toMatch(/^optimize-project-summary-v2:all:\d+-\d+:[A-Za-z0-9_-]{43}$/)
     expect(key).not.toContain('secret-project')
     expect(key).not.toContain('/private/')
   })

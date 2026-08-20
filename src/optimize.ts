@@ -13,6 +13,7 @@ import { formatTokens } from './format.js'
 import { recommendModelDefault, type ModelDefaultRecommendation } from './act/model-defaults.js'
 import { aggregateFileChurn, buildCoachingNotes, scanUserCorrections, medianTimeToFirstEditMs, worstOneShotCategory, type ReworkedFile } from './workflow-insights.js'
 import { optimizeResultCacheKey } from './optimize-cache-key.js'
+import { claudeOnlyDetector, providerCoversClaude } from './optimize-provider-authority.js'
 import { shortHomePath } from './optimize-paths.js'
 
 // ============================================================================
@@ -548,7 +549,8 @@ export async function scanJsonlFile(
   return { calls, cwds, apiCalls, userMessages }
 }
 
-async function scanSessions(dateRange?: DateRange): Promise<ScanData> {
+async function scanSessions(dateRange?: DateRange, provider?: string): Promise<ScanData | null> {
+  if (!providerCoversClaude(provider)) return null
   const sources = await discoverAllSessions('claude')
   const allCalls: ToolCall[] = []
   const allCwds = new Set<string>()
@@ -2965,17 +2967,18 @@ const resultCache = new Map<string, CacheEntry>()
 export async function scanAndDetect(
   projects: ProjectSummary[],
   dateRange?: DateRange,
+  provider?: string,
 ): Promise<OptimizeResult> {
   if (projects.length === 0) {
     return { findings: [], costRate: 0, healthScore: 100, healthGrade: 'A', modelRecommendations: [] }
   }
 
-  const key = optimizeResultCacheKey(projects, dateRange)
+  const key = optimizeResultCacheKey(projects, dateRange, provider)
   const cached = resultCache.get(key)
   if (cached && Date.now() - cached.ts < RESULT_CACHE_TTL_MS) return cached.data
 
   const costRate = computeInputCostRate(projects)
-  const { toolCalls, projectCwds, apiCalls, userMessages } = await scanSessions(dateRange)
+  const { toolCalls, projectCwds, apiCalls, userMessages } = await scanSessions(dateRange, provider) ?? { toolCalls: [], projectCwds: new Set<string>(), apiCalls: [], userMessages: [] }
   const mcpCoverage = aggregateMcpCoverage(projects)
 
   const findings: WasteFinding[] = []
@@ -2990,40 +2993,37 @@ export async function scanAndDetect(
   )
   const firstSessionIds = findYoungProjectFirstSessionIds(projects)
   const outlierExclusions = new Set([...lowWorthSessionIds, ...contextBloatVisibleIds, ...firstSessionIds])
+
   const syncDetectors: Array<() => WasteFinding | null> = [
-    () => detectCacheBloat(apiCalls, projects, dateRange),
-    () => detectLowReadEditRatio(toolCalls),
-    () => detectJunkReads(toolCalls, dateRange),
-    () => detectDuplicateReads(toolCalls, dateRange),
-    () => detectUnusedMcp(toolCalls, projects, projectCwds, mcpCoverage),
+    claudeOnlyDetector(provider, () => detectCacheBloat(apiCalls, projects, dateRange)),
+    claudeOnlyDetector(provider, () => detectLowReadEditRatio(toolCalls)),
+    claudeOnlyDetector(provider, () => detectJunkReads(toolCalls, dateRange)),
+    claudeOnlyDetector(provider, () => detectDuplicateReads(toolCalls, dateRange)),
+    claudeOnlyDetector(provider, () => detectUnusedMcp(toolCalls, projects, projectCwds, mcpCoverage)),
     () => detectMcpToolCoverage(projects, mcpCoverage),
     () => detectMcpProfileAdvisor(projects, mcpCoverage),
     // mcp-deferral-gaps family (#614): detection only, no apply plans yet.
-    () => detectMcpDeferralOff(toolCalls, projects, projectCwds, apiCalls),
-    () => detectMcpAlwaysLoadHygiene(projects, projectCwds, apiCalls, mcpCoverage),
-    () => detectMcpDeferThreshold(projects, projectCwds),
+    claudeOnlyDetector(provider, () => detectMcpDeferralOff(toolCalls, projects, projectCwds, apiCalls)),
+    claudeOnlyDetector(provider, () => detectMcpAlwaysLoadHygiene(projects, projectCwds, apiCalls, mcpCoverage)),
+    claudeOnlyDetector(provider, () => detectMcpDeferThreshold(projects, projectCwds)),
     () => detectCapabilityReliability(projects),
     () => detectLowWorthSessions(projects),
     () => detectContextBloat(projects, lowWorthSessionIds),
     () => detectSessionOutliers(projects, outlierExclusions),
-    () => detectBloatedClaudeMd(projectCwds),
-    () => detectBashBloat(),
+    claudeOnlyDetector(provider, () => detectBloatedClaudeMd(projectCwds)),
+    claudeOnlyDetector(provider, () => detectBashBloat()),
   ]
   for (const detect of syncDetectors) {
     const finding = detect()
     if (finding) findings.push(finding)
   }
 
-  const ghostResults = await Promise.all([
-    detectGhostAgents(toolCalls),
-    detectGhostSkills(toolCalls),
-    detectGhostCommands(userMessages),
-  ])
+  const ghostResults = await Promise.all(providerCoversClaude(provider) ? [detectGhostAgents(toolCalls), detectGhostSkills(toolCalls), detectGhostCommands(userMessages)] : [])
   for (const f of ghostResults) if (f) findings.push(f)
 
   findings.sort((a, b) => urgencyScore(b) - urgencyScore(a))
   const { score, grade } = computeHealth(findings)
-  
+
   const modelRecommendations: ModelDefaultRecommendation[] = []
   for (const project of projects) {
     const rec = recommendModelDefault(project, { now: dateRange?.end })
@@ -3246,7 +3246,7 @@ export async function runOptimize(
   projects: ProjectSummary[],
   periodLabel: string,
   dateRange?: DateRange,
-  opts: { format?: 'text' | 'json'; appliedHeader?: string; previouslyApplied?: Record<string, string> } = {},
+  opts: { format?: 'text' | 'json'; appliedHeader?: string; previouslyApplied?: Record<string, string>; provider?: string } = {},
 ): Promise<void> {
   const format = opts.format ?? 'text'
   if (projects.length === 0 && format === 'text') {
@@ -3258,7 +3258,7 @@ export async function runOptimize(
     process.stderr.write(chalk.dim('  Analyzing your sessions...\n'))
   }
 
-  const result = await scanAndDetect(projects, dateRange)
+  const result = await scanAndDetect(projects, dateRange, opts.provider)
   const { findings, costRate, healthScore, healthGrade } = result
   const sessions = projects.flatMap(p => p.sessions)
   const periodCost = projects.reduce((s, p) => s + p.totalCostUSD, 0)
