@@ -1,7 +1,7 @@
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
 import type { PeriodData } from './menubar-json.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type TokenUsage } from './types.js'
-import { combineReasoningSemantics, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
 
 // Raw model IDs remain human-readable in legacy daily caches. New rows use an
 // additive envelope so a source-recorded route can survive the daily
@@ -42,12 +42,17 @@ function addCallReasoningSemantics(
     : combineReasoningSemantics([target.reasoningSemantics, call.reasoningSemantics])
 }
 
-function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage): void {
+function callReasoningTokens(call: { provider: string; usage: TokenUsage; reasoningSemantics?: ReasoningTokenSemantics }): number {
+  if (call.reasoningSemantics === undefined) return call.usage.reasoningTokens
+  return separatelyReportedReasoningTokens(call.usage.reasoningTokens, call.reasoningSemantics)
+}
+
+function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage, reasoningTokens: number): void {
   target.inputTokens = (target.inputTokens ?? 0) + usage.inputTokens
   target.outputTokens = (target.outputTokens ?? 0) + usage.outputTokens
   target.cacheReadTokens = (target.cacheReadTokens ?? 0) + usage.cacheReadInputTokens
   target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + usage.cacheCreationInputTokens
-  if (usage.reasoningTokens > 0) target.reasoningTokens = (target.reasoningTokens ?? 0) + usage.reasoningTokens
+  if (reasoningTokens > 0) target.reasoningTokens = (target.reasoningTokens ?? 0) + reasoningTokens
 }
 
 function emptyEntry(date: string): DailyEntry {
@@ -212,13 +217,14 @@ export function aggregateProjectsIntoDays(
 
         for (const call of turn.assistantCalls) {
           const callSavings = call.savingsUSD ?? 0
+          const callReasoning = callReasoningTokens(call)
 
           turnDay.cost += call.costUSD
           turnDay.savingsUSD += callSavings
           turnDay.calls += 1
           turnDay.inputTokens += call.usage.inputTokens
           turnDay.outputTokens += call.usage.outputTokens
-          if (call.usage.reasoningTokens > 0) turnDay.reasoningTokens = (turnDay.reasoningTokens ?? 0) + call.usage.reasoningTokens
+          if (callReasoning > 0) turnDay.reasoningTokens = (turnDay.reasoningTokens ?? 0) + callReasoning
           turnDay.cacheReadTokens += call.usage.cacheReadInputTokens
           turnDay.cacheWriteTokens += call.usage.cacheCreationInputTokens
 
@@ -226,7 +232,7 @@ export function aggregateProjectsIntoDays(
           dayProject.cost += call.costUSD
           dayProject.calls += 1
           dayProject.savingsUSD += callSavings
-          addProjectTokenUsage(dayProject, call.usage)
+          addProjectTokenUsage(dayProject, call.usage, callReasoning)
 
           const modelKey = modelStorageKey(call.model, call.modelProvider)
           const model = turnDay.models[modelKey] ?? {
@@ -239,7 +245,7 @@ export function aggregateProjectsIntoDays(
           model.savingsUSD += callSavings
           model.inputTokens += call.usage.inputTokens
           model.outputTokens += call.usage.outputTokens
-          if (call.usage.reasoningTokens > 0) model.reasoningTokens = (model.reasoningTokens ?? 0) + call.usage.reasoningTokens
+          if (callReasoning > 0) model.reasoningTokens = (model.reasoningTokens ?? 0) + callReasoning
           model.cacheReadTokens += call.usage.cacheReadInputTokens
           model.cacheWriteTokens += call.usage.cacheCreationInputTokens
           if (call.modelProvider) model.modelProvider = call.modelProvider
@@ -253,7 +259,7 @@ export function aggregateProjectsIntoDays(
           slice.savingsUSD += callSavings
           slice.inputTokens! += call.usage.inputTokens
           slice.outputTokens! += call.usage.outputTokens
-          if (call.usage.reasoningTokens > 0) slice.reasoningTokens = (slice.reasoningTokens ?? 0) + call.usage.reasoningTokens
+          if (callReasoning > 0) slice.reasoningTokens = (slice.reasoningTokens ?? 0) + callReasoning
           slice.cacheReadTokens! += call.usage.cacheReadInputTokens
           slice.cacheWriteTokens! += call.usage.cacheCreationInputTokens
 
@@ -261,7 +267,7 @@ export function aggregateProjectsIntoDays(
           sliceProject.cost += call.costUSD
           sliceProject.calls += 1
           sliceProject.savingsUSD += callSavings
-          addProjectTokenUsage(sliceProject, call.usage)
+          addProjectTokenUsage(sliceProject, call.usage, callReasoning)
 
           const sliceModel = slice.models![modelKey] ?? {
             calls: 0, cost: 0, savingsUSD: 0,
@@ -273,7 +279,7 @@ export function aggregateProjectsIntoDays(
           sliceModel.savingsUSD += callSavings
           sliceModel.inputTokens += call.usage.inputTokens
           sliceModel.outputTokens += call.usage.outputTokens
-          if (call.usage.reasoningTokens > 0) sliceModel.reasoningTokens = (sliceModel.reasoningTokens ?? 0) + call.usage.reasoningTokens
+          if (callReasoning > 0) sliceModel.reasoningTokens = (sliceModel.reasoningTokens ?? 0) + callReasoning
           sliceModel.cacheReadTokens += call.usage.cacheReadInputTokens
           sliceModel.cacheWriteTokens += call.usage.cacheCreationInputTokens
           if (call.modelProvider) sliceModel.modelProvider = call.modelProvider

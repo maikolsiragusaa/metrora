@@ -72,7 +72,7 @@ import type {
   SessionParser,
   ParsedProviderCall,
 } from './types.js'
-import type { CacheTokenEvidence } from '../token-semantics.js'
+import { loadCopilotOtelSpanAttributes, normalizeCopilotOtelUsage } from './copilot-otel-token-semantics.js'
 import {
   getAgentTracesDbPath,
   getCopilotDoctorProbeRoots,
@@ -240,26 +240,6 @@ type ChatSessionRequest = Record<string, unknown>
 // The Copilot Budget extension reads from this same DB and uses per-span
 // token counts, confirming this schema is stable enough to depend on.
 
-// Parsed attribute bag from a span
-interface SpanAttributes {
-  'gen_ai.operation.name'?: string
-  'gen_ai.response.model'?: string
-  'gen_ai.request.model'?: string
-  'gen_ai.usage.input_tokens'?: number
-  'gen_ai.usage.output_tokens'?: number
-  'gen_ai.usage.cache_read.input_tokens'?: number
-  'gen_ai.usage.cache_creation.input_tokens'?: number
-  'gen_ai.usage.reasoning.output_tokens'?: number
-  'gen_ai.usage.reasoning_tokens'?: number
-  'gen_ai.conversation.id'?: string
-  'gen_ai.agent.name'?: string
-  'gen_ai.tool.name'?: string
-  'gen_ai.tool.call.arguments'?: string
-  'copilot_chat.parent_chat_session_id'?: string
-  'github.copilot.chat.turn.id'?: string
-  [key: string]: unknown
-}
-
 // ---------------------------------------------------------------------------
 
 /**
@@ -300,114 +280,6 @@ function parseCwd(yaml: string): string | null {
   // Strip surrounding single/double quotes
   raw = raw.replace(/^['"]|['"]$/g, '').trim()
   return raw || null
-}
-
-/**
- * Load span attributes from the span_attributes table (key-value pairs).
- * This handles the modern VS Code Copilot Chat schema where attributes
- * are stored as separate key-value rows rather than a JSON blob.
- */
-function loadSpanAttributesFromTable(
-  db: ReturnType<typeof import('../sqlite.js')['openDatabase']>,
-  spanId: string
-): SpanAttributes {
-  try {
-    const rows = db.query<{ key: string; value: string | null }>(
-      `SELECT key, value FROM span_attributes WHERE span_id = ?`,
-      [spanId]
-    )
-    const attrs: SpanAttributes = {}
-    for (const row of rows) {
-      if (row.key && row.value) {
-        try {
-          // Try to parse numeric values
-          const numValue = Number(row.value)
-          attrs[row.key as keyof SpanAttributes] = Number.isNaN(numValue) 
-            ? row.value
-            : numValue
-        } catch {
-          attrs[row.key as keyof SpanAttributes] = row.value
-        }
-      }
-    }
-    return attrs
-  } catch {
-    return {}
-  }
-}
-
-type NumericAttributeEvidence = {
-  present: boolean
-  valid: boolean
-  value: number
-}
-
-function readNumericOtelAttribute(attrs: SpanAttributes, key: string): NumericAttributeEvidence {
-  const raw = attrs[key]
-  const present = raw !== undefined && raw !== null && raw !== ''
-  if (!present) return { present: false, valid: false, value: 0 }
-
-  const value = typeof raw === 'number' ? raw : Number(raw)
-  const valid = Number.isFinite(value) && value >= 0
-  return { present: true, valid, value: valid ? value : 0 }
-}
-
-type NormalizedOtelUsage = {
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
-  reasoningTokens: number
-  cacheTokenEvidence: CacheTokenEvidence
-  reasoningSemantics: 'aggregate-output'
-}
-
-/**
- * Normalize the verified VS Code Copilot OTel representation at the provider
- * boundary. In that representation input_tokens is cache-inclusive, while the
- * two cache fields are subfields of input_tokens. A missing cache subfield is
- * intentionally not treated as an emitted zero.
- */
-function normalizeOtelUsage(attrs: SpanAttributes): NormalizedOtelUsage {
-  const input = readNumericOtelAttribute(attrs, 'gen_ai.usage.input_tokens')
-  const output = readNumericOtelAttribute(attrs, 'gen_ai.usage.output_tokens')
-  const cacheRead = readNumericOtelAttribute(attrs, 'gen_ai.usage.cache_read.input_tokens')
-  const cacheCreation = readNumericOtelAttribute(attrs, 'gen_ai.usage.cache_creation.input_tokens')
-
-  const invalidEvidence = !input.valid
-    || !output.valid
-    || (cacheRead.present && !cacheRead.valid)
-    || (cacheCreation.present && !cacheCreation.valid)
-  const bothCacheFieldsPresent = cacheRead.present && cacheCreation.present
-  const cacheSum = cacheRead.value + cacheCreation.value
-
-  let cacheTokenEvidence: CacheTokenEvidence
-  if (invalidEvidence || (bothCacheFieldsPresent && cacheSum > input.value)) {
-    cacheTokenEvidence = 'inconsistent'
-  } else if (!cacheRead.present && !cacheCreation.present) {
-    cacheTokenEvidence = 'unavailable'
-  } else if (!bothCacheFieldsPresent) {
-    cacheTokenEvidence = 'partial'
-  } else {
-    cacheTokenEvidence = 'complete'
-  }
-
-  const subtractCaches = cacheTokenEvidence === 'complete'
-  const reasoningCanonical = readNumericOtelAttribute(attrs, 'gen_ai.usage.reasoning.output_tokens')
-  const reasoningLegacy = readNumericOtelAttribute(attrs, 'gen_ai.usage.reasoning_tokens')
-  // Canonical evidence wins whenever the key is present, including an explicit
-  // zero or malformed value. Legacy is only a bounded compatibility fallback.
-  const reasoning = reasoningCanonical.present ? reasoningCanonical : reasoningLegacy
-
-  return {
-    inputTokens: subtractCaches ? input.value - cacheSum : input.value,
-    outputTokens: output.value,
-    cacheReadTokens: cacheRead.value,
-    cacheCreationTokens: cacheCreation.value,
-    reasoningTokens: reasoning.valid ? reasoning.value : 0,
-    cacheTokenEvidence,
-    reasoningSemantics: 'aggregate-output',
-  }
 }
 
 /**
@@ -1691,7 +1563,7 @@ function createOtelParser(
 
             if (opName === 'execute_tool') {
               // Load tool name from attributes and normalise to display form
-              const attrs = loadSpanAttributesFromTable(db, span.span_id)
+              const attrs = loadCopilotOtelSpanAttributes(db, span.span_id)
               const rawToolName = attrs['gen_ai.tool.name'] as string | undefined
               if (rawToolName) {
                 const existing = toolsByTrace.get(span.trace_id) ?? []
@@ -1717,7 +1589,7 @@ function createOtelParser(
             // chat session. The root turn agent ('GitHub Copilot Chat') has no
             // parent session and is skipped to avoid a bogus agents-view entry.
             if (opName === 'invoke_agent') {
-              const attrs = loadSpanAttributesFromTable(db, span.span_id)
+              const attrs = loadCopilotOtelSpanAttributes(db, span.span_id)
               const parentSession = attrs['copilot_chat.parent_chat_session_id']
               const agentName = attrs['gen_ai.agent.name'] as string | undefined
               if (parentSession && agentName) {
@@ -1730,7 +1602,7 @@ function createOtelParser(
 
           // Yield one ParsedProviderCall per chat span
           for (const spanId of chatSpanIds) {
-            const attrs = loadSpanAttributesFromTable(db, spanId)
+            const attrs = loadCopilotOtelSpanAttributes(db, spanId)
 
             const spanMetadata = spanMetaById.get(spanId)
             if (!spanMetadata) continue
@@ -1741,9 +1613,9 @@ function createOtelParser(
               spanMetadata.response_model ??
               'unknown'
 
-            const usage = normalizeOtelUsage(attrs)
+            const usage = normalizeCopilotOtelUsage(attrs)
 
-            if (usage.inputTokens === 0 && usage.outputTokens === 0 && usage.cacheReadTokens === 0 && usage.cacheCreationTokens === 0) {
+            if (usage.inputTokens === 0 && usage.outputTokens === 0 && usage.cacheReadTokens === 0 && usage.cacheCreationTokens === 0 && usage.cacheTokenEvidence !== 'inconsistent') {
               continue
             }
 

@@ -87,15 +87,9 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
           }
           bucket.inputTokens += call.usage.inputTokens
           bucket.outputTokens += call.usage.outputTokens
-          const callReasoningSemantics = call.reasoningSemantics
-            ?? reasoningSemanticsForProviders([call.provider])
-          bucket.reasoningSemantics = bucket.calls === 0
-            ? callReasoningSemantics
-            : combineReasoningSemantics([bucket.reasoningSemantics, callReasoningSemantics])
-          bucket.reasoningTokens += separatelyReportedReasoningTokens(
-            call.usage.reasoningTokens,
-            callReasoningSemantics,
-          )
+          const callReasoningSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
+          bucket.reasoningSemantics = bucket.calls === 0 ? callReasoningSemantics : combineReasoningSemantics([bucket.reasoningSemantics, callReasoningSemantics])
+          bucket.reasoningTokens += separatelyReportedReasoningTokens(call.usage.reasoningTokens, callReasoningSemantics)
           bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
           // The two cache-read fields are provider vocabularies for the same tokens.
           bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)

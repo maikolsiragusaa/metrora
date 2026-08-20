@@ -126,11 +126,11 @@ describe.skipIf(!isSqliteAvailable())(
 
       const conversations: ConvSpec[] = [
         { spanId: 'span-1', traceId: 'trace-1', convId: 'conv-1', model: 'claude-haiku-4-5-20251001',
-          input: 1_000, output: 100, cacheRead: 50_000, cacheCreate: 500 },
+          input: 51_500, output: 100, cacheRead: 50_000, cacheCreate: 500 },
         { spanId: 'span-2', traceId: 'trace-2', convId: 'conv-2', model: 'claude-haiku-4-5-20251001',
-          input: 2_000, output: 200, cacheRead: 60_000, cacheCreate: 600 },
+          input: 62_600, output: 200, cacheRead: 60_000, cacheCreate: 600 },
         { spanId: 'span-3', traceId: 'trace-3', convId: 'conv-3', model: 'claude-haiku-4-5-20251001',
-          input: 3_000, output: 300, cacheRead: 70_000, cacheCreate: 700 },
+          input: 73_700, output: 300, cacheRead: 70_000, cacheCreate: 700 },
       ]
       for (const c of conversations) insertConversation(dbPath, c)
 
@@ -174,9 +174,9 @@ describe.skipIf(!isSqliteAvailable())(
 
       const conversations: ConvSpec[] = [
         { spanId: 'span-a', traceId: 'trace-a', convId: 'conv-a', model: 'claude-haiku-4-5-20251001',
-          input: 500, output: 50, cacheRead: 25_000, cacheCreate: 250 },
+          input: 25_750, output: 50, cacheRead: 25_000, cacheCreate: 250 },
         { spanId: 'span-b', traceId: 'trace-b', convId: 'conv-b', model: 'claude-haiku-4-5-20251001',
-          input: 500, output: 50, cacheRead: 25_000, cacheCreate: 250 },
+          input: 25_750, output: 50, cacheRead: 25_000, cacheCreate: 250 },
       ]
       for (const c of conversations) insertConversation(dbPath, c)
 

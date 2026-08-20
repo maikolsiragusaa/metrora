@@ -98,12 +98,12 @@ describe('Copilot OTel token semantics', () => {
       {
         name: 'read only',
         attrs: { 'gen_ai.usage.cache_read.input_tokens': 300 },
-        input: 1000, read: 300, creation: 0, evidence: 'partial',
+        input: 700, read: 300, creation: 0, evidence: 'partial',
       },
       {
         name: 'creation only',
         attrs: { 'gen_ai.usage.cache_creation.input_tokens': 200 },
-        input: 1000, read: 0, creation: 200, evidence: 'partial',
+        input: 800, read: 0, creation: 200, evidence: 'partial',
       },
       {
         name: 'explicit zeros',
@@ -124,6 +124,10 @@ describe('Copilot OTel token semantics', () => {
       expect(call.cacheCreationInputTokens, fixture.name).toBe(fixture.creation)
       expect(call.cacheTokenEvidence, fixture.name).toBe(fixture.evidence)
       expect(call.outputTokens, fixture.name).toBe(100)
+      expect(
+        call.inputTokens + call.cacheReadInputTokens + call.cacheCreationInputTokens + call.outputTokens,
+        fixture.name,
+      ).toBe(1100)
     }
 
     const complete = await parseCall({
@@ -146,6 +150,46 @@ describe('Copilot OTel token semantics', () => {
     expect(malformed.cacheCreationInputTokens).toBe(0)
     expect(malformed.cacheTokenEvidence).toBe('inconsistent')
     expect(malformed.inputTokens).toBeGreaterThanOrEqual(0)
+    expect(malformed.inputTokens + malformed.cacheReadInputTokens + malformed.cacheCreationInputTokens + malformed.outputTokens).toBe(1100)
+
+    const validReadMalformedCreation = await parseCall({
+      'gen_ai.usage.cache_read.input_tokens': 300,
+      'gen_ai.usage.cache_creation.input_tokens': 'garbage',
+    })
+    expect(validReadMalformedCreation.inputTokens).toBe(700)
+    expect(validReadMalformedCreation.cacheReadInputTokens).toBe(300)
+    expect(validReadMalformedCreation.cacheCreationInputTokens).toBe(0)
+    expect(validReadMalformedCreation.cacheTokenEvidence).toBe('inconsistent')
+    expect(validReadMalformedCreation.inputTokens + validReadMalformedCreation.cacheReadInputTokens + validReadMalformedCreation.cacheCreationInputTokens + validReadMalformedCreation.outputTokens).toBe(1100)
+
+    const validCreationMalformedRead = await parseCall({
+      'gen_ai.usage.cache_read.input_tokens': 'garbage',
+      'gen_ai.usage.cache_creation.input_tokens': 200,
+    })
+    expect(validCreationMalformedRead.inputTokens).toBe(800)
+    expect(validCreationMalformedRead.cacheReadInputTokens).toBe(0)
+    expect(validCreationMalformedRead.cacheCreationInputTokens).toBe(200)
+    expect(validCreationMalformedRead.cacheTokenEvidence).toBe('inconsistent')
+    expect(validCreationMalformedRead.inputTokens + validCreationMalformedRead.cacheReadInputTokens + validCreationMalformedRead.cacheCreationInputTokens + validCreationMalformedRead.outputTokens).toBe(1100)
+
+    const invalidInput = await parseCall({
+      'gen_ai.usage.input_tokens': 'garbage',
+      'gen_ai.usage.cache_read.input_tokens': 300,
+    })
+    expect(invalidInput.inputTokens).toBe(0)
+    expect(invalidInput.cacheReadInputTokens).toBe(0)
+    expect(invalidInput.cacheTokenEvidence).toBe('inconsistent')
+    expect(invalidInput.inputTokens + invalidInput.cacheReadInputTokens + invalidInput.cacheCreationInputTokens + invalidInput.outputTokens).toBe(100)
+
+    const invalidOutput = await parseCall({
+      'gen_ai.usage.cache_read.input_tokens': 300,
+      'gen_ai.usage.cache_creation.input_tokens': 200,
+      'gen_ai.usage.output_tokens': 'garbage',
+    })
+    expect(invalidOutput.inputTokens).toBe(500)
+    expect(invalidOutput.cacheTokenEvidence).toBe('complete')
+    expect(invalidOutput.outputTokens).toBe(0)
+    expect(invalidOutput.inputTokens + invalidOutput.cacheReadInputTokens + invalidOutput.cacheCreationInputTokens + invalidOutput.outputTokens).toBe(1000)
 
     const inconsistent = await parseCall({
       'gen_ai.usage.input_tokens': 100,
@@ -153,10 +197,11 @@ describe('Copilot OTel token semantics', () => {
       'gen_ai.usage.cache_creation.input_tokens': 30,
     })
     expect(inconsistent.inputTokens).toBe(100)
-    expect(inconsistent.cacheReadInputTokens).toBe(80)
-    expect(inconsistent.cacheCreationInputTokens).toBe(30)
+    expect(inconsistent.cacheReadInputTokens).toBe(0)
+    expect(inconsistent.cacheCreationInputTokens).toBe(0)
     expect(inconsistent.cacheTokenEvidence).toBe('inconsistent')
     expect(inconsistent.inputTokens).toBeGreaterThanOrEqual(0)
+    expect(inconsistent.inputTokens + inconsistent.cacheReadInputTokens + inconsistent.cacheCreationInputTokens + inconsistent.outputTokens).toBe(200)
   })
 
   it('prefers canonical reasoning evidence and marks OTel output as aggregate', async () => {
