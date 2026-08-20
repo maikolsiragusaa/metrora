@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import {
   isSqliteAvailable,
@@ -95,14 +95,18 @@ function createCopiedWalSource(testRoot: string): { sourcePath: string; sourceDi
   return { sourcePath, sourceDirectory, producer: producer.db }
 }
 
-function createWalModeMainOnly(testRoot: string): {
+function createWalModeMainOnly(
+  testRoot: string,
+  sourceName = 'main-only-source',
+  producerName = 'producer-main-only',
+): {
   sourcePath: string
   sourceDirectory: string
   walBytes: Buffer
   producer: TestDatabase
 } {
-  const producerDirectory = join(testRoot, 'producer-main-only')
-  const sourceDirectory = join(testRoot, 'main-only-source')
+  const producerDirectory = join(testRoot, producerName)
+  const sourceDirectory = join(testRoot, sourceName)
   const producer = createWalProducer(producerDirectory)
   const initialMain = fs.readFileSync(producer.path)
   const walBytes = fs.readFileSync(`${producer.path}-wal`)
@@ -114,14 +118,60 @@ function createWalModeMainOnly(testRoot: string): {
   return { sourcePath, sourceDirectory, walBytes, producer: producer.db }
 }
 
-function createRollbackSource(testRoot: string): { sourcePath: string; sourceDirectory: string } {
-  const sourceDirectory = join(testRoot, 'rollback-source')
+function createRollbackSource(testRoot: string, value = 'rollback-row', directoryName = 'rollback-source'): { sourcePath: string; sourceDirectory: string } {
+  const sourceDirectory = join(testRoot, directoryName)
   fs.mkdirSync(sourceDirectory, { recursive: true })
   const sourcePath = join(sourceDirectory, 'source.sqlite')
   const db = new (databaseConstructor())(sourcePath)
-  db.exec('CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT NOT NULL); INSERT INTO items VALUES (1, \'rollback-row\');')
+  db.exec('CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT NOT NULL)')
+  db.prepare('INSERT INTO items (id, value) VALUES (?, ?)').run(1, value)
   db.close()
   return { sourcePath, sourceDirectory }
+}
+
+function createImmutableWalSource(testRoot: string, value: string, directoryName: string): { sourcePath: string; sourceDirectory: string } {
+  const sourceDirectory = join(testRoot, directoryName)
+  fs.mkdirSync(sourceDirectory, { recursive: true })
+  const sourcePath = join(sourceDirectory, 'source.sqlite')
+  const db = new (databaseConstructor())(sourcePath)
+  producers.push(db)
+  db.exec(`
+    PRAGMA journal_mode=WAL;
+    PRAGMA wal_autocheckpoint=0;
+    CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+  `)
+  db.prepare('INSERT INTO items (id, value) VALUES (?, ?)').run(1, value)
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  db.close()
+  return { sourcePath, sourceDirectory }
+}
+function replaceSourceFile(sourcePath: string, replacementPath: string): void {
+  const temporaryPath = join(dirname(sourcePath), `.replacement-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  try {
+    fs.copyFileSync(replacementPath, temporaryPath)
+    if (process.platform === 'win32') {
+      fs.copyFileSync(temporaryPath, sourcePath)
+    } else {
+      fs.renameSync(temporaryPath, sourcePath)
+    }
+  } finally {
+    if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true })
+  }
+}
+
+function publishWalPair(sourcePath: string, producerPath: string): void {
+  const suffix = `.wal-replacement-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const mainTemporaryPath = `${sourcePath}${suffix}`
+  const walTemporaryPath = `${sourcePath}-wal${suffix}`
+  try {
+    fs.copyFileSync(producerPath, mainTemporaryPath)
+    fs.copyFileSync(`${producerPath}-wal`, walTemporaryPath)
+    fs.renameSync(walTemporaryPath, `${sourcePath}-wal`)
+    fs.renameSync(mainTemporaryPath, sourcePath)
+  } finally {
+    if (fs.existsSync(mainTemporaryPath)) fs.rmSync(mainTemporaryPath, { force: true })
+    if (fs.existsSync(walTemporaryPath)) fs.rmSync(walTemporaryPath, { force: true })
+  }
 }
 
 afterEach(() => {
@@ -159,7 +209,9 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const before = directorySnapshot(source.sourceDirectory)
 
     const snapshotCopy = vi.spyOn(fs, 'copyFileSync')
+    const sourceStats = vi.spyOn(fs, 'statSync')
     const db = openDatabase(source.sourcePath)
+    const statsAfterOpen = sourceStats.mock.calls.length
     expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
     expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
     expect(snapshotDirectories(cache)).toHaveLength(1)
@@ -240,6 +292,33 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toEqual([])
   })
 
+  it('keeps fallback authority available when CANTOPEN has no live WAL yet', () => {
+    const testRoot = root('metrora-sqlite-safe-two-stage-fallback-')
+    const cache = cacheFor(testRoot)
+    const source = createWalModeMainOnly(testRoot)
+    const db = openDatabase(source.sourcePath)
+    const DatabaseSync = databaseConstructor()
+    const originalPrepare = DatabaseSync.prototype.prepare
+    let failOnce = true
+
+    vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (this: TestDatabase, sql: string) {
+      if (failOnce) {
+        failOnce = false
+        throw Object.assign(new Error('unable to open database file'), { code: 'ERR_SQLITE_ERROR', errcode: 14 })
+      }
+      return originalPrepare.call(this, sql)
+    })
+
+    expect(() => db.query('SELECT value FROM items')).toThrow(/unable to open database file/i)
+    expect(snapshotDirectories(cache)).toEqual([])
+
+    fs.writeFileSync(`${source.sourcePath}-wal`, source.walBytes)
+    expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
+    expect(snapshotDirectories(cache)).toHaveLength(1)
+    db.close()
+
+  })
+
   it('uses the immutable URI for a WAL-mode main file with no live WAL', () => {
     const testRoot = root('metrora-sqlite-safe-immutable-')
     const cache = cacheFor(testRoot)
@@ -252,6 +331,76 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
 
     expect(directorySnapshot(source.sourceDirectory)).toEqual(before)
     expect(fs.existsSync(`${source.sourcePath}-shm`)).toBe(false)
+    expect(snapshotDirectories(cache)).toEqual([])
+  })
+
+  it('reclassifies direct readers after pathname rotation', () => {
+    const testRoot = root('metrora-sqlite-safe-direct-rotation-')
+    const cache = cacheFor(testRoot)
+    const oldSource = createRollbackSource(testRoot, 'old-row', 'rotation-old')
+    const nextSource = createRollbackSource(testRoot, 'new-row', 'rotation-new')
+    const nextBefore = directorySnapshot(nextSource.sourceDirectory)
+    const db = openDatabase(oldSource.sourcePath)
+
+    replaceSourceFile(oldSource.sourcePath, nextSource.sourcePath)
+    expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'new-row' }])
+    db.close()
+
+    expect(directorySnapshot(nextSource.sourceDirectory)).toEqual(nextBefore)
+    expect(fs.existsSync(`${oldSource.sourcePath}-wal`)).toBe(false)
+    expect(fs.existsSync(`${oldSource.sourcePath}-shm`)).toBe(false)
+  })
+
+  it('reclassifies immutable readers after pathname rotation', () => {
+    const testRoot = root('metrora-sqlite-safe-immutable-rotation-')
+    const cache = cacheFor(testRoot)
+    const oldSource = createImmutableWalSource(testRoot, 'old-row', 'immutable-old')
+    const nextSource = createImmutableWalSource(testRoot, 'new-row', 'immutable-new')
+    const db = openDatabase(oldSource.sourcePath)
+
+    replaceSourceFile(oldSource.sourcePath, nextSource.sourcePath)
+    expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'new-row' }])
+    db.close()
+
+    expect(fs.existsSync(`${oldSource.sourcePath}-shm`)).toBe(false)
+    expect(snapshotDirectories(cache)).toEqual([])
+  })
+  it('reclassifies immutable readers after an in-place main-file change', () => {
+    const testRoot = root('metrora-sqlite-safe-immutable-change-')
+    const cache = cacheFor(testRoot)
+    const oldSource = createImmutableWalSource(testRoot, 'old-row', 'immutable-change-old')
+    const nextSource = createImmutableWalSource(testRoot, 'new-row', 'immutable-change-new')
+    const db = openDatabase(oldSource.sourcePath)
+
+    fs.copyFileSync(nextSource.sourcePath, oldSource.sourcePath)
+    const touched = new Date(Date.now() + 2000)
+    fs.utimesSync(oldSource.sourcePath, touched, touched)
+    expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'new-row' }])
+    db.close()
+
+  })
+
+  it('uses lightweight source probes in direct and immutable steady state', () => {
+    const testRoot = root('metrora-sqlite-safe-preflight-')
+    const cache = cacheFor(testRoot)
+    const sourceStats = vi.spyOn(fs, 'openSync')
+    const directSource = createRollbackSource(testRoot, 'direct-row', 'preflight-direct')
+    const direct = openDatabase(directSource.sourcePath)
+    const directOpenCount = sourceStats.mock.calls.length
+    for (let index = 0; index < 20; index++) {
+      expect(direct.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'direct-row' }])
+    }
+    expect(sourceStats.mock.calls.length).toBe(directOpenCount)
+    direct.close()
+
+    const immutableSource = createImmutableWalSource(testRoot, 'immutable-row', 'preflight-immutable')
+    const immutable = openDatabase(immutableSource.sourcePath)
+    const immutableOpenCount = sourceStats.mock.calls.length
+    for (let index = 0; index < 20; index++) {
+      expect(immutable.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'immutable-row' }])
+    }
+    expect(sourceStats.mock.calls.length).toBe(immutableOpenCount)
+    immutable.close()
     expect(snapshotDirectories(cache)).toEqual([])
   })
 
@@ -282,6 +431,33 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toEqual([])
   })
 
+  it.skipIf(process.platform === 'win32')('promotes an existing direct reader when rollback mode becomes live WAL', () => {
+    const testRoot = root('metrora-sqlite-safe-rollback-to-wal-')
+    const cache = cacheFor(testRoot)
+    const source = createRollbackSource(testRoot, 'rollback-row', 'rollback-to-wal-source')
+    const producer = createActiveWalSource(testRoot)
+    const db = openDatabase(source.sourcePath)
+
+    publishWalPair(source.sourcePath, producer.sourcePath)
+    expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
+    expect(snapshotDirectories(cache)).toHaveLength(1)
+    db.close()
+
+    expect(fs.existsSync(`${source.sourcePath}-shm`)).toBe(false)
+    expect(snapshotDirectories(cache)).toEqual([])
+  })
+
+  it.skipIf(process.platform === 'win32')('fails clearly when the current source disappears', () => {
+    const testRoot = root('metrora-sqlite-safe-disappearance-')
+    const cache = cacheFor(testRoot)
+    const source = createRollbackSource(testRoot)
+    const db = openDatabase(source.sourcePath)
+
+    fs.unlinkSync(source.sourcePath)
+    expect(() => db.query('SELECT value FROM items')).toThrow(/disappeared|replaced|unavailable/i)
+    db.close()
+  })
+
   it('keeps concurrent reader snapshots collision-free and cleans them on close', () => {
     const testRoot = root('metrora-sqlite-safe-concurrent-')
     const cache = cacheFor(testRoot)
@@ -299,12 +475,36 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toEqual([])
   })
 
+  it('does not reclaim an active snapshot whose owner appears stale by wall clock', () => {
+    const testRoot = root('metrora-sqlite-safe-active-owner-')
+    const cache = cacheFor(testRoot)
+    const source = createActiveWalSource(testRoot)
+    const first = openDatabase(source.sourcePath)
+    const firstDirectory = join(cache, 'sqlite-source-snapshots', snapshotDirectories(cache)[0])
+    const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    fs.utimesSync(firstDirectory, old, old)
+
+    const second = openDatabase(source.sourcePath)
+    expect(snapshotDirectories(cache)).toHaveLength(2)
+    expect(fs.existsSync(firstDirectory)).toBe(true)
+    expect(first.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
+    second.close()
+    expect(fs.existsSync(firstDirectory)).toBe(true)
+    first.close()
+    expect(snapshotDirectories(cache)).toEqual([])
+  })
+
   it('removes stale owned material before opening and cleans the active snapshot on close', () => {
     const testRoot = root('metrora-sqlite-safe-cleanup-')
     const cache = cacheFor(testRoot)
     const snapshotRoot = join(cache, 'sqlite-source-snapshots')
     const stale = join(snapshotRoot, 'sqlite-source-read-stale')
     fs.mkdirSync(stale, { recursive: true })
+    const stalePid = Number.MAX_SAFE_INTEGER
+    fs.writeFileSync(join(stale, '.owner.json'), JSON.stringify({ pid: stalePid, token: 'abandoned', createdAtMs: Date.now() - 2 * 24 * 60 * 60 * 1000 }))
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('owner is gone'), { code: 'ESRCH' })
+    })
     const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
     fs.utimesSync(stale, old, old)
 
@@ -314,6 +514,22 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toHaveLength(1)
     db.close()
     expect(snapshotDirectories(cache)).toEqual([])
+  })
+
+  it('does not reclaim stale material when ownership is ambiguous', () => {
+    const testRoot = root('metrora-sqlite-safe-ambiguous-owner-')
+    const cache = cacheFor(testRoot)
+    const snapshotRoot = join(cache, 'sqlite-source-snapshots')
+    const ambiguous = join(snapshotRoot, 'sqlite-source-read-ambiguous')
+    fs.mkdirSync(ambiguous, { recursive: true })
+    const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    fs.utimesSync(ambiguous, old, old)
+
+    const source = createActiveWalSource(testRoot)
+    const db = openDatabase(source.sourcePath)
+    expect(fs.existsSync(ambiguous)).toBe(true)
+    db.close()
+    expect(fs.existsSync(ambiguous)).toBe(true)
   })
 
   it('does not retry unrelated SQL errors or create a snapshot', () => {

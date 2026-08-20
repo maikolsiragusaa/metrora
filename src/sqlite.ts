@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
@@ -126,6 +127,14 @@ export function isSqliteBusyError(err: unknown): boolean {
 
 type OpenMode = 'direct' | 'immutable' | 'snapshot'
 
+type MainObservation = {
+  dev: number
+  ino: number
+  mtimeMs: number
+  ctimeMs: number
+  size: number
+}
+
 type WalObservation = {
   dev: number
   ino: number
@@ -134,22 +143,41 @@ type WalObservation = {
   size: number
 }
 
-type SourceObservation = {
+type SourceProbe = {
   path: string
-  fingerprint: SourceFileFingerprint | null
+  main: MainObservation | null
   walPath: string
   wal: WalObservation | null
   hasLiveWal: boolean
+}
+
+type SourceObservation = SourceProbe & {
+  fingerprint: SourceFileFingerprint | null
   walMode: boolean
 }
 
 type SourceSnapshot = {
   directory: string
   databasePath: string
+  ownerToken: string
+}
+
+type SnapshotOwner = {
+  pid: number
+  token: string
+  createdAtMs: number
+}
+
+type OpenedSource = {
+  db: RawDatabase
+  mode: OpenMode
+  snapshot: SourceSnapshot | null
+  probe: SourceProbe
 }
 
 const SNAPSHOT_DIRECTORY = 'sqlite-source-snapshots'
 const SNAPSHOT_PREFIX = 'sqlite-source-read-'
+const SNAPSHOT_OWNER_FILE = '.owner.json'
 const SNAPSHOT_STALE_MS = 24 * 60 * 60 * 1000
 const SNAPSHOT_ATTEMPTS = 3
 
@@ -181,15 +209,39 @@ export function isSqliteSourceSafeReadError(err: unknown): boolean {
   )
 }
 
-function resolveSourcePath(sourcePath: string): string {
-  for (const candidate of sourcePathCandidates(sourcePath)) {
-    try {
-      if (fs.statSync(candidate).isFile()) return candidate
-    } catch {
-      // Source discovery is allowed to race rotation and cleanup.
+function readMainObservation(path: string): MainObservation | null {
+  try {
+    const stat = fs.statSync(path)
+    if (!stat.isFile()) return null
+    return {
+      dev: stat.dev,
+      ino: stat.ino,
+      mtimeMs: stat.mtimeMs,
+      ctimeMs: stat.ctimeMs,
+      size: stat.size,
     }
+  } catch {
+    return null
   }
-  return sourcePath
+}
+function resolveSourceFile(
+  sourcePath: string,
+  preferredPath?: string,
+): { path: string; main: MainObservation | null } {
+  const candidates = preferredPath === undefined
+    ? sourcePathCandidates(sourcePath)
+    : [preferredPath, ...sourcePathCandidates(sourcePath)]
+
+  for (const candidate of [...new Set(candidates)]) {
+    const main = readMainObservation(candidate)
+    if (main !== null) return { path: candidate, main }
+  }
+
+  return { path: preferredPath ?? sourcePath, main: null }
+}
+
+function resolveSourcePath(sourcePath: string, preferredPath?: string): string {
+  return resolveSourceFile(sourcePath, preferredPath).path
 }
 
 function readWalObservation(path: string): WalObservation | null {
@@ -224,17 +276,29 @@ function hasWalModeHeader(path: string): boolean {
   }
 }
 
-function observeSource(sourcePath: string): SourceObservation {
-  const resolvedPath = resolveSourcePath(sourcePath)
-  const walPath = `${resolvedPath}-wal`
-  const wal = readWalObservation(walPath)
+function probeSource(sourcePath: string, preferredPath?: string, previousWal?: WalObservation | null): SourceProbe {
+  const resolved = resolveSourceFile(sourcePath, preferredPath)
+  const walPath = `${resolved.path}-wal`
+  const wal = resolved.main === null
+    ? null
+    : previousWal === null && !fs.existsSync(walPath)
+      ? null
+      : readWalObservation(walPath)
   return {
-    path: resolvedPath,
-    fingerprint: fingerprintSourceFileSync(sourcePath),
+    path: resolved.path,
+    main: resolved.main,
     walPath,
     wal,
     hasLiveWal: wal !== null && wal.size > 0,
-    walMode: hasWalModeHeader(resolvedPath),
+  }
+}
+
+function observeSource(sourcePath: string): SourceObservation {
+  const probe = probeSource(sourcePath)
+  return {
+    ...probe,
+    fingerprint: fingerprintSourceFileSync(sourcePath),
+    walMode: probe.main !== null && hasWalModeHeader(probe.path),
   }
 }
 
@@ -263,9 +327,38 @@ function sameWalObservation(a: WalObservation | null, b: WalObservation | null):
     && a.size === b.size
 }
 
-function sameSourceObservation(a: SourceObservation, b: SourceObservation): boolean {
-  return sameFingerprint(a.fingerprint, b.fingerprint)
+function sameMainIdentity(a: MainObservation | null, b: MainObservation | null): boolean {
+  if (a === null || b === null) return a === b
+  return a.dev === b.dev && a.ino === b.ino
+}
+
+function sameMainMetadata(a: MainObservation | null, b: MainObservation | null): boolean {
+  if (a === null || b === null) return a === b
+  return a.mtimeMs === b.mtimeMs
+    && a.ctimeMs === b.ctimeMs
+    && a.size === b.size
+}
+
+function sameSourceProbe(a: SourceProbe, b: SourceProbe): boolean {
+  if (a.path !== b.path) return false
+  if (a.main === null || b.main === null) return a.main === b.main && sameWalObservation(a.wal, b.wal)
+  return sameMainIdentity(a.main, b.main)
+    && sameMainMetadata(a.main, b.main)
     && sameWalObservation(a.wal, b.wal)
+}
+
+function sourceProbeFromObservation(observation: SourceObservation): SourceProbe {
+  return {
+    path: observation.path,
+    main: observation.main,
+    walPath: observation.walPath,
+    wal: observation.wal,
+    hasLiveWal: observation.hasLiveWal,
+  }
+}
+function sameSourceObservation(a: SourceObservation, b: SourceObservation): boolean {
+  return sameSourceProbe(a, b)
+    && sameFingerprint(a.fingerprint, b.fingerprint)
     && a.walMode === b.walMode
 }
 
@@ -279,6 +372,52 @@ function pathsOverlap(a: string, b: string): boolean {
   return isWithin(a, b) || isWithin(b, a)
 }
 
+function writeSnapshotOwner(directory: string): SnapshotOwner {
+  const owner: SnapshotOwner = {
+    pid: process.pid,
+    token: randomUUID(),
+    createdAtMs: Date.now(),
+  }
+  const stagedPath = join(directory, `${SNAPSHOT_OWNER_FILE}.copying`)
+  fs.writeFileSync(stagedPath, JSON.stringify(owner), { encoding: 'utf8', flag: 'wx' })
+  fs.renameSync(stagedPath, join(directory, SNAPSHOT_OWNER_FILE))
+  return owner
+}
+
+function readSnapshotOwner(directory: string): SnapshotOwner | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(join(directory, SNAPSHOT_OWNER_FILE), 'utf8')) as Partial<SnapshotOwner>
+    if (
+      typeof parsed.pid !== 'number' ||
+      !Number.isInteger(parsed.pid) ||
+      parsed.pid <= 0 ||
+      typeof parsed.token !== 'string' ||
+      parsed.token.length === 0 ||
+      typeof parsed.createdAtMs !== 'number' ||
+      !Number.isFinite(parsed.createdAtMs)
+    ) return null
+    return {
+      pid: parsed.pid,
+      token: parsed.token,
+      createdAtMs: parsed.createdAtMs,
+    }
+  } catch {
+    return null
+  }
+}
+
+function isSnapshotOwnerAlive(pid: number): boolean {
+  if (pid === process.pid) return true
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err
+      ? (err as { code?: unknown }).code
+      : undefined
+    return code !== 'ESRCH'
+  }
+}
 function cleanupStaleSnapshots(root: string): void {
   let entries: fs.Dirent[]
   try {
@@ -293,6 +432,8 @@ function cleanupStaleSnapshots(root: string): void {
     const directory = join(root, entry.name)
     try {
       if (fs.statSync(directory).mtimeMs < cutoff) {
+        const owner = readSnapshotOwner(directory)
+        if (owner === null || isSnapshotOwnerAlive(owner.pid)) continue
         fs.rmSync(directory, { recursive: true, force: true })
       }
     } catch {
@@ -301,8 +442,12 @@ function cleanupStaleSnapshots(root: string): void {
   }
 }
 
-function cleanupSnapshotDirectory(directory: string | undefined): void {
+function cleanupSnapshotDirectory(directory: string | undefined, ownerToken?: string): void {
   if (!directory || !basename(directory).startsWith(SNAPSHOT_PREFIX)) return
+  if (ownerToken !== undefined) {
+    const owner = readSnapshotOwner(directory)
+    if (owner === null || owner.token !== ownerToken) return
+  }
   try {
     fs.rmSync(directory, { recursive: true, force: true })
   } catch {
@@ -343,8 +488,10 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
     }
 
     let directory: string | undefined
+    let owner: SnapshotOwner | undefined
     try {
       directory = fs.mkdtempSync(join(root, SNAPSHOT_PREFIX))
+      owner = writeSnapshotOwner(directory)
       const databasePath = join(directory, 'source.sqlite')
       const walPath = `${databasePath}-wal`
       const stagedDatabasePath = `${databasePath}.copying`
@@ -370,7 +517,7 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
       // directory is unique to this reader, so other readers cannot collide.
       if (before.hasLiveWal) fs.renameSync(stagedWalPath, walPath)
       fs.renameSync(stagedDatabasePath, databasePath)
-      return { directory, databasePath }
+      return { directory, databasePath, ownerToken: owner.token }
     } catch (err) {
       lastFailure = errorMessage(err)
       cleanupSnapshotDirectory(directory)
@@ -397,6 +544,57 @@ function closeRawDatabase(db: RawDatabase): void {
   try { db.close() } catch { /* best effort during promotion */ }
 }
 
+function openSnapshotSource(sourcePath: string, observed: SourceObservation): OpenedSource {
+  const snapshot = createSnapshot(sourcePath)
+  try {
+    return {
+      db: openRawDatabase(snapshot.databasePath, false),
+      mode: 'snapshot',
+      snapshot,
+      probe: sourceProbeFromObservation(observed),
+    }
+  } catch (err) {
+    cleanupSnapshotDirectory(snapshot.directory, snapshot.ownerToken)
+    throw err
+  }
+}
+function openClassifiedSource(sourcePath: string, observed: SourceObservation): OpenedSource {
+  if (observed.main === null || observed.fingerprint === null) {
+    throw new Error(`SQLite source is unavailable or disappeared: ${sourcePath}`)
+  }
+
+  if (observed.hasLiveWal) return openSnapshotSource(sourcePath, observed)
+
+  if (observed.walMode) {
+    try {
+      const db = openRawDatabase(observed.path, true)
+      return {
+        db,
+        mode: 'immutable',
+        snapshot: null,
+        probe: sourceProbeFromObservation(observed),
+      }
+    } catch (err) {
+      const current = observeSource(sourcePath)
+      if (!isSqliteSourceSafeReadError(err) || !current.hasLiveWal) throw err
+      return openSnapshotSource(sourcePath, current)
+    }
+  }
+
+  try {
+    const db = openRawDatabase(observed.path, false)
+    return {
+      db,
+      mode: 'direct',
+      snapshot: null,
+      probe: sourceProbeFromObservation(observed),
+    }
+  } catch (err) {
+    const current = observeSource(sourcePath)
+    if (!isSqliteSourceSafeReadError(err) || !current.hasLiveWal) throw err
+    return openSnapshotSource(sourcePath, current)
+  }
+}
 export function openDatabase(path: string): SqliteDatabase {
   if (!loadDriver() || DatabaseSync === null) {
     throw new Error(getSqliteLoadError())
@@ -406,109 +604,122 @@ export function openDatabase(path: string): SqliteDatabase {
   let db: RawDatabase | null = null
   let mode: OpenMode = 'direct'
   let snapshot: SourceSnapshot | null = null
+  let handleProbe: SourceProbe | null = null
 
   try {
-    if (initial.hasLiveWal) {
-      snapshot = createSnapshot(path)
-      db = openRawDatabase(snapshot.databasePath, false)
-      mode = 'snapshot'
-    } else if (initial.walMode) {
-      try {
-        db = openRawDatabase(initial.path, true)
-        mode = 'immutable'
-      } catch (err) {
-        if (!isSqliteSourceSafeReadError(err) || !observeSource(path).hasLiveWal) throw err
-        snapshot = createSnapshot(path)
-        db = openRawDatabase(snapshot.databasePath, false)
-        mode = 'snapshot'
-      }
-    } else {
-      try {
-        db = openRawDatabase(initial.path, false)
-      } catch (err) {
-        if (!isSqliteSourceSafeReadError(err) || !observeSource(path).hasLiveWal) throw err
-        snapshot = createSnapshot(path)
-        db = openRawDatabase(snapshot.databasePath, false)
-        mode = 'snapshot'
-      }
-    }
+    const opened = openClassifiedSource(path, initial)
+    db = opened.db
+    mode = opened.mode
+    snapshot = opened.snapshot
+    handleProbe = opened.probe
   } catch (err) {
-    cleanupSnapshotDirectory(snapshot?.directory)
+    cleanupSnapshotDirectory(snapshot?.directory, snapshot?.ownerToken)
     throw err
   }
 
-  if (db === null) {
-    cleanupSnapshotDirectory(snapshot?.directory)
+  if (db === null || handleProbe === null) {
+    cleanupSnapshotDirectory(snapshot?.directory, snapshot?.ownerToken)
     throw new Error(`SQLite database could not be opened: ${path}`)
   }
 
-  let fallbackAttempted = mode === 'snapshot'
   let closed = false
+  let terminalError: Error | null = null
 
-  const promoteToSnapshot = (allowNoWalEvidence: boolean): boolean => {
-    if (mode === 'snapshot') return true
-    if (fallbackAttempted) return false
-    fallbackAttempted = true
+  const clearOpenSource = (): void => {
+    if (db !== null) {
+      closeRawDatabase(db)
+      db = null
+    }
+    if (snapshot !== null) {
+      cleanupSnapshotDirectory(snapshot.directory, snapshot.ownerToken)
+      snapshot = null
+    }
+    handleProbe = null
+  }
 
-    const current = observeSource(path)
-    if (!current.hasLiveWal && !(allowNoWalEvidence && current.fingerprint !== null)) {
-      return false
+  const reclassify = (current: SourceObservation, reason: string): void => {
+    if (current.main === null || current.fingerprint === null) {
+      const error = new Error(`SQLite source disappeared or was replaced while reading: ${path}`)
+      clearOpenSource()
+      terminalError = error
+      throw error
     }
 
-    const previous = db!
-    closeRawDatabase(previous)
-    let nextSnapshot: SourceSnapshot | null = null
+    clearOpenSource()
     try {
-      nextSnapshot = createSnapshot(path)
-      const nextDb = openRawDatabase(nextSnapshot.databasePath, false)
-      db = nextDb
-      snapshot = nextSnapshot
-      mode = 'snapshot'
-      return true
+      const opened = openClassifiedSource(path, current)
+      db = opened.db
+      mode = opened.mode
+      snapshot = opened.snapshot
+      handleProbe = opened.probe
     } catch (err) {
-      cleanupSnapshotDirectory(nextSnapshot?.directory)
-      throw new Error(`SQLite source could not be read without source-side support files: ${path}. ${errorMessage(err)}`, { cause: err })
+      const error = new Error(
+        `SQLite source could not be reclassified after ${reason}: ${errorMessage(err)}`,
+        { cause: err },
+      )
+      terminalError = error
+      throw error
     }
   }
 
+  const preflightSource = (): void => {
+    if (mode === 'snapshot') return
+    if (handleProbe === null) throw terminalError ?? new Error(`SQLite source is not open: ${path}`)
+
+    const currentProbe = probeSource(path, handleProbe.path, handleProbe.wal)
+    if (currentProbe.main === null) {
+      reclassify(observeSource(path), 'source disappearance')
+      return
+    }
+    if (sameSourceProbe(handleProbe, currentProbe)) return
+
+    const current = observeSource(path)
+    if (current.main === null || current.fingerprint === null) {
+      reclassify(current, 'source disappearance')
+      return
+    }
+
+    // A normal rollback-journal write stays on the same inode and remains
+    // correctly visible through the existing direct SQLite handle.
+    if (
+      mode === 'direct' &&
+      !current.hasLiveWal &&
+      !current.walMode &&
+      sameMainIdentity(handleProbe.main, current.main)
+    ) {
+      handleProbe = sourceProbeFromObservation(current)
+      return
+    }
+
+    reclassify(current, 'source identity or mode change')
+  }
+
   const execute = <T extends Row>(sql: string, params: unknown[]): T[] => {
-    return db!.prepare(sql).all(...params) as T[]
+    if (db === null) throw terminalError ?? new Error(`SQLite database is not open: ${path}`)
+    return db.prepare(sql).all(...params) as T[]
   }
 
   return {
     query<T extends Row = Row>(sql: string, params: unknown[] = []): T[] {
       if (closed) throw new Error('SQLite database is closed')
+      if (terminalError !== null) throw terminalError
+      preflightSource()
 
-      const beforeQuery = mode === 'immutable' ? observeSource(path) : null
-      if (mode !== 'snapshot') {
-        const current = observeSource(path)
-        if (current.hasLiveWal) promoteToSnapshot(false)
-        else if (mode === 'direct' && current.walMode) promoteToSnapshot(true)
-      }
-
+      let retryAttempted = false
       try {
-        const result = execute<T>(sql, params)
-
-        // Immutable mode intentionally avoids all source-side WAL/SHM access.
-        // If the source moved while this statement ran, discard that result
-        // and take a stable owned copy before retrying once.
-        if (mode === 'immutable' && beforeQuery !== null) {
-          const afterQuery = observeSource(path)
-          if (!sameSourceObservation(beforeQuery, afterQuery) && promoteToSnapshot(true)) {
+        return execute<T>(sql, params)
+      } catch (err) {
+        if (
+          !retryAttempted &&
+          mode !== 'snapshot' &&
+          isSqliteSourceSafeReadError(err)
+        ) {
+          retryAttempted = true
+          const current = observeSource(path)
+          if (current.hasLiveWal) {
+            reclassify(current, 'query-time source-safe fallback')
             return execute<T>(sql, params)
           }
-        }
-        return result
-      } catch (err) {
-        // A DatabaseSync constructor can succeed while the first prepare/all
-        // fails when SQLite later needs WAL shared-memory support. Promote only
-        // this precise class, only once, and only with current WAL evidence.
-        if (
-          mode !== 'snapshot' &&
-          isSqliteSourceSafeReadError(err) &&
-          promoteToSnapshot(false)
-        ) {
-          return execute<T>(sql, params)
         }
         throw err
       }
@@ -517,9 +728,14 @@ export function openDatabase(path: string): SqliteDatabase {
       if (closed) return
       closed = true
       try {
-        db!.close()
+        if (db !== null) closeRawDatabase(db)
       } finally {
-        cleanupSnapshotDirectory(snapshot?.directory)
+        if (snapshot !== null) {
+          cleanupSnapshotDirectory(snapshot.directory, snapshot.ownerToken)
+          snapshot = null
+        }
+        db = null
+        handleProbe = null
       }
     },
   }
