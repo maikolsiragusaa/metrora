@@ -17,7 +17,7 @@ Understand where AI time, tokens and money go across tools, models, projects and
 </div>
 
 > [!IMPORTANT]
-> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The **Android companion is publicly available as the production-signed `0.1.0-alpha.3` GitHub pre-release**. The live Store package remains the frozen RC10 Windows distribution while the RC11 update is in Microsoft certification; until Microsoft publishes RC11, Android pairing requires a current Desktop source build with the companion runtime. Repository builds and historical GitHub Windows pre-releases remain separate development or archival artifacts.
+> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The current Store update is the accepted **RC11** Windows line and includes the companion runtime used for local Android pairing. The **Android companion is publicly available now as the production-signed `0.1.0-alpha.3` GitHub pre-release**, with a Google Play release planned within 30 days. Repository builds and historical GitHub Windows pre-releases remain separate development or archival artifacts.
 
 ## Install Metrora
 
@@ -35,7 +35,7 @@ The current public Android alpha is [`0.1.0-alpha.3`](https://github.com/maikols
 - verify the public manifest and `SHA256SUMS` attached to the release;
 - for Obtainium, add `https://github.com/maikolsiragusaa/metrora` and track the `android-v*` releases.
 
-`0.1.0-alpha.1` remains an immutable historical release and `0.1.0-alpha.2` was never published. This is an early direct-install channel, not a Google Play or F-Droid release. The companion pairs locally with Metrora Desktop and does not become a second collection or accounting authority. Until the live Windows Store package includes the current companion runtime, use a current Desktop source build for Android pairing.
+`0.1.0-alpha.1` remains an immutable historical release and `0.1.0-alpha.2` was never published. The direct GitHub APK remains available now; Google Play publication is planned within 30 days and remains a separate release channel until it is actually live. The companion pairs locally with the current Microsoft Store Desktop and does not become a second collection or accounting authority. F-Droid remains separately gated.
 
 ## What Metrora helps you understand
 
@@ -161,16 +161,16 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 
 | Surface | Role | Current status |
 | --- | --- | --- |
-| Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows** |
+| Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows; RC11 current Store line** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
-| Android companion | Read-focused local-network companion for a paired Desktop | **Public GitHub pre-release `0.1.0-alpha.3`; production-signed direct APK** |
+| Android companion | Read-focused local-network companion for a paired Desktop | **Public GitHub pre-release `0.1.0-alpha.3`; Google Play release planned within 30 days** |
 | macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
 | GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
 
 Windows is the first supported public desktop distribution. Source support for other desktop platforms does not imply that an accepted public package exists for those platforms.
 
-The Android companion is publicly distributed through the [`android-v0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3) GitHub pre-release. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and consumes bounded Project-aware Home, Activity Sessions/Pull Requests, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. Activity uses additive cursor-paged metadata contracts and does not expose prompt/response content. QR pairing, image import, SAS/Desktop approval and mutual-TLS device trust remain the local security boundary. The Android app does not duplicate collection, parsing, pricing, history or evidence authority. The live Microsoft Store package is still the frozen RC10 line while RC11 is in Microsoft certification; until that Store update is published with the current companion runtime, Android pairing requires a current Desktop source build.
+The Android companion is publicly distributed through the [`android-v0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3) GitHub pre-release. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and consumes bounded Project-aware Home, Activity Sessions/Pull Requests, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. Activity uses additive cursor-paged metadata contracts and does not expose prompt/response content. QR pairing, image import, SAS/Desktop approval and mutual-TLS device trust remain the local security boundary. The Android app does not duplicate collection, parsing, pricing, history or evidence authority. The current Microsoft Store RC11 line includes the companion runtime required by this pairing path. Google Play publication is planned within 30 days; until that channel is actually live, GitHub remains the current public Android distribution authority.
 
 ## Privacy model
 
@@ -206,6 +206,7 @@ Start from the [documentation index](docs/README.md):
 - [Android public distribution v1](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md)
 - [Local companion API v1](docs/LOCAL_COMPANION_API.md)
 - [Windows distribution boundary](docs/WINDOWS_DISTRIBUTION.md)
+- [Community and commercial boundary](docs/COMMERCIAL_BOUNDARY.md)
 
 ## Repository map
 

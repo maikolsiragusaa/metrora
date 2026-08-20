@@ -2,7 +2,7 @@
 
 Metrora does not yet have an official stable desktop release. Windows is
 currently distributed publicly through the Microsoft Store, published by
-Vensent, with RC10 as the frozen Store authority. This document defines the
+Vensent, with RC11 as the current Store authority. This document defines the
 current public release boundary.
 
 ## Canonical identity
@@ -11,9 +11,10 @@ current public release boundary.
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Published Store source line: `1.0.0-rc.10`
-- Published desktop build version: `1.0.0.10`
-- Current Store update candidate: `1.0.0-rc.11` / Desktop `1.0.0.11` / Store `1.0.1.0`
+- Published Store source line: `1.0.0-rc.11`
+- Published desktop build version: `1.0.0.11`
+- Published Store package version: `1.0.1.0`
+- Previous published Store line: `1.0.0-rc.10` / Desktop `1.0.0.10` / Store `1.0.0.0`
 - Latest published GitHub technical preview: `1.0.0-rc.7`
 
 The published command is `metrora`. Historical protocol and signed-data
@@ -24,28 +25,22 @@ The root npm package is private and must not be published from this repository.
 
 ## Current engineering authority
 
-`1.0.0-rc.10` is the **frozen Microsoft Store source line** for the live
-Windows distribution published by Vensent. It advances RC9 because audited
-source-completeness and durable-history reconciliation materially changed
-user-visible accounting after the RC9 candidate was established. RC9 had
-already introduced the explicit durable-vs-surviving-detail accounting
-boundary and the sealed packaged Store CLI runtime. Post-RC10 development is
-separate from the published package; any future Store update requires its own
-candidate, acceptance, submission and publication decision.
+`1.0.0-rc.11` is the current **published Microsoft Store source line** for the
+Windows distribution published by Vensent. It was accepted by Microsoft as the
+Store update with Desktop build version `1.0.0.11` and Store package identity
+version `1.0.1.0`.
 
-The current post-RC10 engineering candidate is `1.0.0-rc.11`, with Desktop
-build version `1.0.0.11` and Store package identity version `1.0.1.0`. It has
-been submitted to Microsoft Partner Center and is undergoing certification; it
-is not publicly live. The published Store remains RC10 until Microsoft
-publishes a later package.
+RC10 remains immutable historical publication evidence. RC9 and earlier
+candidate lines remain bound to their own source and acceptance records.
+Post-RC11 development is separate from the Store artifact; any future Store
+update requires its own candidate, acceptance, submission and publication
+decision.
 
 `1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
 
 The Microsoft Store path is separate from source builds and GitHub technical
-pre-releases. Metrora has an assigned Store identity, and RC10 passed its
-source-bound package and physical acceptance boundary before publication.
-The live Store listing is the supported public Windows install path; later
-source work does not retroactively change the frozen RC10 authority.
+pre-releases. The live Store listing is the supported public Windows install
+path; later source work does not retroactively change the frozen RC11 authority.
 
 Exact source commits and artifact digests belong in the applicable workflow/release acceptance evidence rather than being copied into general release guidance.
 
@@ -53,15 +48,16 @@ Exact source commits and artifact digests belong in the applicable workflow/rele
 
 Metrora deliberately separates three version forms:
 
-- product/source SemVer: `1.0.0-rc.11` for the current candidate;
-- desktop build version: `1.0.0.11` for the current candidate;
-- Microsoft Store AppX package identity version: `1.0.1.0` for the current candidate;
-- published Store baseline: RC10 / `1.0.0.0`.
+- product/source SemVer: `1.0.0-rc.11` for the current published Store line;
+- desktop build version: `1.0.0.11` for that published line;
+- Microsoft Store AppX package identity version: `1.0.1.0` for that published line;
+- previous Store baseline: RC10 / `1.0.0.0`.
 
 The Store's four-component package identity is a platform contract and must not
-be confused with the desktop build counter or the SemVer pre-release label. The
-published baseline and candidate are maintained in
-`release/windows-store-package-version.v1.json`. See
+be confused with the desktop build counter or the SemVer pre-release label.
+`release/windows-store-package-version.v1.json` records the RC10-to-RC11
+packaging transition used for the published update. It must be advanced under a
+separate release decision before another Store candidate is derived. See
 [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Release responsibilities
@@ -111,11 +107,12 @@ An unsigned GitHub pre-release must state that its portable/installer assets are
 
 ## Microsoft Store candidate boundary
 
-The RC11 Store candidate must be built from the exact reviewed source commit
-using the non-publishing Store workflow. The candidate carries the current
-Desktop companion runtime in `resources/cli.asar` and must pass an import-only
-smoke through the bundled Electron runtime before physical pairing is attempted.
-A submitted artifact remains bound to that source line:
+The published RC11 Store package was built from its exact reviewed source commit
+using the non-publishing Store workflow. The accepted package carries the
+Desktop companion runtime in `resources/cli.asar` and passed the bundled-runtime
+checks used for the submission boundary.
+
+For any future Store candidate:
 
 1. the exact AppX artifact and workflow manifest must verify;
 2. Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
@@ -175,9 +172,10 @@ materializes them only for the protected signing step and does not persist
 them in `GITHUB_ENV` or release metadata.
 
 The QA physical-acceptance identity is not a production release identity.
-Google Play and F-Droid remain separate gates. The alpha.3 public-availability
-claim is limited to its immutable GitHub prerelease and direct APK; it does not
-imply Play or F-Droid distribution.
+Google Play publication is planned within 30 days but remains a separate channel
+until the Play listing is actually public. The alpha.3 GitHub APK remains the
+current public Android authority in the meantime. F-Droid remains separately
+gated.
 
 ## Prohibitions
 
@@ -187,4 +185,5 @@ imply Play or F-Droid distribution.
 - no publication from an unverified local build;
 - no silent replacement of accepted artifacts;
 - no claim of Microsoft Store certification/publication before Microsoft actually accepts that channel;
+- no claim of Google Play publication before the listing is actually public;
 - no claim of an official stable release before the relevant channel passes acceptance.

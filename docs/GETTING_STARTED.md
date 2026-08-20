@@ -144,7 +144,7 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Development builds are not official Store-signed releases. Windows is the first supported public desktop distribution, and the Microsoft Store package is the recommended Windows install path. The live Store line remains RC10 while RC11 is in Microsoft certification. Repository packaging commands remain development and verification tools rather than alternate public distribution channels.
+Development builds are not official Store-signed releases. Windows is the first supported public desktop distribution, and the Microsoft Store package is the recommended Windows install path. The current live Store line is RC11 (`1.0.0-rc.11`, Desktop `1.0.0.11`, Store package `1.0.1.0`). Repository packaging commands remain development and verification tools rather than alternate public distribution channels.
 
 See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
 
@@ -152,13 +152,15 @@ See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERS
 
 The current public GitHub pre-release is [`0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3), distributed as a production-signed direct APK for `eu.metrora.app` with `versionCode = 3`. `0.1.0-alpha.1` remains immutable historical release evidence; `0.1.0-alpha.2` was never published.
 
-Until Microsoft publishes the RC11 Store update with the current companion runtime, pair alpha.3 with a current Metrora Desktop source build. The Android companion remains read-focused and does not become a second collection, pricing, accounting or history authority.
+The current RC11 Microsoft Store Desktop includes the companion runtime used by alpha.3, so ordinary Windows users can pair the Android companion with the Store installation. The Android companion remains read-focused and does not become a second collection, pricing, accounting or history authority.
 
 For direct installation:
 
 - download `Metrora-Android-0.1.0-alpha.3.apk` from the alpha.3 GitHub Release;
 - verify the attached manifest and `SHA256SUMS` if desired;
 - Obtainium users can track the repository's `android-v*` releases.
+
+Google Play publication is planned within 30 days. Until that channel is actually live, the production-signed GitHub APK remains the current public Android distribution authority. F-Droid remains separately gated.
 
 For repository Android development use:
 
