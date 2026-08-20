@@ -1816,7 +1816,7 @@ program
     const projects = await parseAllSessions(range, opts.provider)
     if (opts.apply) {
       const { runOptimizeApply } = await import('./act/optimize-apply.js')
-      await runOptimizeApply(projects, range, { yes: opts.yes, dryRun: opts.dryRun, only: opts.only })
+      await runOptimizeApply(projects, range, { yes: opts.yes, dryRun: opts.dryRun, only: opts.only, provider: opts.provider })
       return
     }
     assertFormat(format, ['text', 'json'], 'optimize')
@@ -1834,9 +1834,9 @@ program
         appliedHeader = buildOptimizeAppliedHeader(applied) ?? undefined
         previouslyApplied = applied.appliedByFinding
       } catch { /* the header is optional; never block the findings */ }
-      await runOptimize(projects, label, range, { format, appliedHeader, previouslyApplied })
+      await runOptimize(projects, label, range, { format, appliedHeader, previouslyApplied, provider: opts.provider })
     } else {
-      await runOptimize(projects, label, range, { format })
+      await runOptimize(projects, label, range, { format, provider: opts.provider })
     }
   })
 
