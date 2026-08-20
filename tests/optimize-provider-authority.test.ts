@@ -21,7 +21,7 @@ const roots = [FAKE_HOME]
 let fixtureNumber = 0
 
 import { runOptimizeApply } from '../src/act/optimize-apply.js'
-import { scanAndDetect } from '../src/optimize.js'
+import { buildOptimizeJsonReport, runOptimize, scanAndDetect } from '../src/optimize.js'
 import type { ProjectSummary } from '../src/types.js'
 
 type Fixture = {
@@ -62,6 +62,22 @@ function makeProjectSummary(name: string, projectPath: string): ProjectSummary {
     totalSavingsUSD: 0,
     totalApiCalls: 1,
     totalProxiedCostUSD: 0,
+  }
+}
+
+function makeMcpProjectSummary(name: string, projectPath: string): ProjectSummary {
+  const inventory = Array.from({ length: 12 }, (_, i) => 'mcp__server__tool-' + i)
+  const project = makeProjectSummary(name, projectPath)
+  const template = project.sessions[0]
+  if (!template) throw new Error('MCP fixture requires a session')
+  const sessions = [template, { ...template, sessionId: name + '-second' }]
+  return {
+    ...project,
+    sessions: sessions.map(session => ({
+      ...session,
+      mcpBreakdown: { server: { calls: 0 } },
+      mcpInventory: inventory,
+    })),
   }
 }
 
@@ -265,6 +281,114 @@ describe('Optimize provider authority', () => {
       expect(readFileSync(fixture.skillPath)).toEqual(before)
       expect(existsSync(fixture.actionsDir)).toBe(false)
     } finally {
+      cleanupFixture(fixture)
+    }
+  })
+  it('keeps a Claude-scan-derived action available in all-provider scope', async () => {
+    const fixture = makeFixture()
+    const before = readFileSync(fixture.skillPath)
+    let output = ''
+    const capture = new Writable({ write(chunk, _encoding, callback) { output += chunk.toString(); callback() } })
+    try {
+      const result = await scanAndDetect([fixture.project], undefined, 'all')
+      const finding = result.findings.find(item => item.id === 'unused-skills')
+      expect(finding).toBeDefined()
+
+      await runOptimizeApply([fixture.project], undefined, {
+        provider: 'all',
+        findings: [finding!],
+        dryRun: true,
+        actionsDir: fixture.actionsDir,
+        output: capture,
+        errorOutput: sink(),
+      })
+      expect(output).toContain('Appliable config-class fixes:')
+      expect(output).toContain('unused')
+      expect(readFileSync(fixture.skillPath)).toEqual(before)
+      expect(existsSync(fixture.actionsDir)).toBe(false)
+    } finally {
+      cleanupFixture(fixture)
+    }
+  })
+
+  it('preserves all-provider MCP reporting while denying ambiguous mutation authority', async () => {
+    const fixture = makeFixture()
+    const configPath = join(FAKE_HOME, '.claude.json')
+    writeFileSync(configPath, JSON.stringify({ mcpServers: { server: { command: 'node' } } }) + '\n')
+    const before = readFileSync(configPath)
+    try {
+      rmSync(fixture.claudeProjectDir, { recursive: true, force: true })
+      rmSync(join(fixture.skillPath, '..', '..'), { recursive: true, force: true })
+
+      const codexProject = makeMcpProjectSummary('codex-only', fixture.project.projectPath)
+      const all = await scanAndDetect([codexProject], undefined, 'all')
+      const finding = all.findings.find(item => item.id === 'mcp-low-coverage')
+      expect(finding).toBeDefined()
+
+      const json = buildOptimizeJsonReport([codexProject], '2026-08-01', all)
+      expect(json.summary.findingCount).toBeGreaterThan(0)
+      expect(json.findings.map(item => item.id)).toContain('mcp-low-coverage')
+
+      let text = ''
+      const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        text += args.map(String).join(' ')
+      })
+      try {
+        await runOptimize([codexProject], '2026-08-01', undefined, { provider: 'all' })
+      } finally {
+        log.mockRestore()
+      }
+      expect(text.toLowerCase()).toContain('low tool coverage')
+
+      const dryIo = new Writable({ write(_chunk, _encoding, callback) { callback() } })
+      let dryOutput = ''
+      const dryCapture = new Writable({ write(chunk, _encoding, callback) { dryOutput += chunk.toString(); callback() } })
+      await runOptimizeApply([codexProject], undefined, {
+        provider: 'all',
+        findings: [finding!],
+        dryRun: true,
+        actionsDir: fixture.actionsDir,
+        ctx: { homeDir: FAKE_HOME, cwd: fixture.project.projectPath },
+        output: dryCapture,
+        errorOutput: dryIo,
+      })
+      expect(dryOutput).toContain('mcp-low-coverage')
+      expect(dryOutput).toContain('not auto-appliable')
+      expect(readFileSync(configPath)).toEqual(before)
+      expect(existsSync(fixture.actionsDir)).toBe(false)
+
+      await runOptimizeApply([codexProject], undefined, {
+        provider: 'all',
+        findings: [finding!],
+        yes: true,
+        actionsDir: fixture.actionsDir,
+        ctx: { homeDir: FAKE_HOME, cwd: fixture.project.projectPath },
+        output: sink(),
+        errorOutput: sink(),
+      })
+      expect(readFileSync(configPath)).toEqual(before)
+      expect(existsSync(fixture.actionsDir)).toBe(false)
+
+      const mixedProject = makeMcpProjectSummary('claude-mixed', join(fixture.root, 'mixed-project'))
+      const mixed = await scanAndDetect([codexProject, mixedProject], undefined, 'all')
+      const mixedFinding = mixed.findings.find(item => item.id === 'mcp-low-coverage')
+      expect(mixedFinding).toBeDefined()
+      let mixedOutput = ''
+      const mixedCapture = new Writable({ write(chunk, _encoding, callback) { mixedOutput += chunk.toString(); callback() } })
+      await runOptimizeApply([codexProject, mixedProject], undefined, {
+        provider: 'all',
+        findings: [mixedFinding!],
+        dryRun: true,
+        actionsDir: fixture.actionsDir,
+        ctx: { homeDir: FAKE_HOME, cwd: fixture.project.projectPath },
+        output: mixedCapture,
+        errorOutput: sink(),
+      })
+      expect(mixedOutput).toContain('not auto-appliable')
+      expect(readFileSync(configPath)).toEqual(before)
+      expect(existsSync(fixture.actionsDir)).toBe(false)
+    } finally {
+      rmSync(configPath, { force: true })
       cleanupFixture(fixture)
     }
   })

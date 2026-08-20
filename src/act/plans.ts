@@ -98,12 +98,12 @@ function resolvePaths(ctx: PlanContext): ResolvedPaths {
 
 export function planFor(finding: WasteFinding, ctx: PlanContext = {}): ActionPlan | null {
   const r = resolvePaths(ctx)
-  return authorizeBuiltPlan(buildPlanForFinding(finding, r), ctx.provider, r).plan
+  return authorizeBuiltPlan(buildPlanForFinding(finding, r), ctx.provider, r, finding.id).plan
 }
 
 export function planFindings(findings: WasteFinding[], ctx: PlanContext = {}): FindingPlan[] {
   const r = resolvePaths(ctx)
-  return findings.map(finding => ({ finding, ...authorizeBuiltPlan(buildPlanForFinding(finding, r), ctx.provider, r) }))
+  return findings.map(finding => ({ finding, ...authorizeBuiltPlan(buildPlanForFinding(finding, r), ctx.provider, r, finding.id) }))
 }
 
 function buildPlanForFinding(finding: WasteFinding, r: ResolvedPaths): BuiltPlan {

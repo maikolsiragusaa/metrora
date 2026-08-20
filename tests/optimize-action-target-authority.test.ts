@@ -9,7 +9,7 @@ import { runAction } from '../src/act/apply.js'
 import { undoAction } from '../src/act/undo.js'
 import { planFindings, planFor, type PlanContext } from '../src/act/plans.js'
 import { runOptimizeApply } from '../src/act/optimize-apply.js'
-import { ACTION_TARGET_AUTHORITY } from '../src/optimize-provider-authority.js'
+import { ACTION_TARGET_AUTHORITY, FINDING_EVIDENCE_REQUIREMENT } from '../src/optimize-provider-authority.js'
 import { scanAndDetect, type FindingApply, type FindingId, type WasteAction, type WasteFinding } from '../src/optimize.js'
 import type { ActionKind } from '../src/act/types.js'
 import type { ProjectSummary } from '../src/types.js'
@@ -104,6 +104,18 @@ const planCases: PlanCase[] = [
     setup: mcpRemoveSetup,
     finding: () => makeFinding('mcp-low-coverage', CMD_FIX, { kind: 'mcp-remove', servers: ['server'] }),
     actionKind: 'mcp-remove',
+    authority: 'claude-targeted',
+  },
+  {
+    name: 'build-folder-reads',
+    setup: () => {},
+    finding: () => makeFinding('build-folder-reads', {
+      type: 'paste',
+      destination: 'claude-md',
+      label: '',
+      text: 'Avoid generated folders.',
+    }),
+    actionKind: 'claude-md-rule',
     authority: 'claude-targeted',
   },
   {
@@ -238,19 +250,27 @@ describe('Optimize action-target authority', () => {
       'shell-config': 'claude-targeted',
     })
 
+    expect(FINDING_EVIDENCE_REQUIREMENT).toMatchObject({
+      'mcp-low-coverage': 'explicit-claude-scope',
+      'mcp-project-scope': 'explicit-claude-scope',
+    })
+
     for (const row of planCases) {
       const fx = makeFixture()
       row.setup(fx)
       const finding = row.finding(fx)
       expect(ACTION_TARGET_AUTHORITY[row.actionKind]).toBe(row.authority)
+      expect(FINDING_EVIDENCE_REQUIREMENT[finding.id]).toBeDefined()
 
       const codex = planFindings([finding], context(fx, 'codex'))[0]!
       const claude = planFindings([finding], context(fx, 'claude'))[0]!
       const all = planFindings([finding], context(fx, 'all'))[0]!
+      const allAutomatic = !['mcp-low-coverage', 'mcp-project-scope'].includes(finding.id)
 
       expect(codex.plan !== null, row.name).toBe(row.authority === 'provider-neutral')
       expect(claude.plan, row.name).not.toBeNull()
-      expect(all.plan, row.name).not.toBeNull()
+      expect(all.plan !== null, row.name).toBe(allAutomatic)
+      expect(planFor(finding, context(fx, 'all')) !== null, row.name).toBe(allAutomatic)
       if (row.authority === 'claude-targeted') {
         expect(codex.notes.join('\n')).toContain('not auto-appliable under provider=codex')
       }
@@ -279,6 +299,39 @@ describe('Optimize action-target authority', () => {
         expect(io.stderr(), row.name).toContain(finding.id)
         expect(io.stderr(), row.name).toContain('not-appliable')
         expect(existsSync(fx.actionsDir), row.name).toBe(false)
+      }
+    } finally {
+      process.exitCode = previousExitCode
+    }
+  })
+
+  it('rejects --only for ambiguous ProjectSummary MCP actions under all', async () => {
+    const previousExitCode = process.exitCode
+    try {
+      for (const id of ['mcp-low-coverage', 'mcp-project-scope'] as const) {
+        const fx = makeFixture()
+        mcpRemoveSetup(fx)
+        const finding = id === 'mcp-low-coverage'
+          ? makeFinding(id, CMD_FIX, { kind: 'mcp-remove', servers: ['server'] })
+          : makeFinding(id, CMD_FIX, {
+            kind: 'mcp-project-scope',
+            servers: [{ server: 'server', keepProjects: [fx.keeper], removeProjects: [] }],
+          })
+        process.exitCode = undefined
+        const io = captureIo()
+        await runOptimizeApply([], undefined, {
+          provider: 'all',
+          findings: [finding],
+          only: id,
+          actionsDir: fx.actionsDir,
+          ctx: context(fx, 'all'),
+          output: io.output,
+          errorOutput: io.errorOutput,
+        })
+        expect(process.exitCode, id).toBe(2)
+        expect(io.stderr(), id).toContain(id)
+        expect(io.stderr(), id).toContain('not-appliable')
+        expect(existsSync(fx.actionsDir), id).toBe(false)
       }
     } finally {
       process.exitCode = previousExitCode
@@ -316,6 +369,20 @@ describe('Optimize action-target authority', () => {
       errorOutput: applyIo.errorOutput,
     })
     expect(applyIo.stdout()).toContain('not auto-appliable')
+    expect(readFileSync(fx.claudeJson)).toEqual(original)
+    expect(existsSync(fx.actionsDir)).toBe(false)
+    const allIo = captureIo()
+    await runOptimizeApply([], undefined, {
+      provider: 'all',
+      findings: [finding],
+      dryRun: true,
+      actionsDir: fx.actionsDir,
+      ctx: context(fx, 'all'),
+      output: allIo.output,
+      errorOutput: allIo.errorOutput,
+    })
+    expect(allIo.stdout()).toContain('not auto-appliable')
+    expect(planFor(finding, context(fx, 'all'))).toBeNull()
     expect(readFileSync(fx.claudeJson)).toEqual(original)
     expect(existsSync(fx.actionsDir)).toBe(false)
 
@@ -380,6 +447,40 @@ describe('Optimize action-target authority', () => {
     expect(existsSync(codexFx.keeper)).toBe(false)
     expect(existsSync(codexFx.actionsDir)).toBe(false)
 
+    const allFx = makeFixture()
+    mcpRemoveSetup(allFx)
+    const allFinding = makeFinding('mcp-project-scope', CMD_FIX, {
+      kind: 'mcp-project-scope',
+      servers: [{ server: 'server', keepProjects: [allFx.keeper], removeProjects: [] }],
+    })
+    const allDryIo = captureIo()
+    await runOptimizeApply([], undefined, {
+      provider: 'all',
+      findings: [allFinding],
+      dryRun: true,
+      actionsDir: allFx.actionsDir,
+      ctx: context(allFx, 'all'),
+      output: allDryIo.output,
+      errorOutput: allDryIo.errorOutput,
+    })
+    expect(allDryIo.stdout()).toContain('not auto-appliable')
+    expect(planFor(allFinding, context(allFx, 'all'))).toBeNull()
+    expect(readFileSync(allFx.claudeJson)).toEqual(readFileSync(codexFx.claudeJson))
+    expect(existsSync(allFx.keeper)).toBe(false)
+    expect(existsSync(allFx.actionsDir)).toBe(false)
+
+    await runOptimizeApply([], undefined, {
+      provider: 'all',
+      findings: [allFinding],
+      yes: true,
+      actionsDir: allFx.actionsDir,
+      ctx: context(allFx, 'all'),
+      output: captureIo().output,
+      errorOutput: captureIo().errorOutput,
+    })
+    expect(readFileSync(allFx.claudeJson)).toEqual(readFileSync(codexFx.claudeJson))
+    expect(existsSync(allFx.keeper)).toBe(false)
+    expect(existsSync(allFx.actionsDir)).toBe(false)
     const claudeFx = makeFixture()
     mcpRemoveSetup(claudeFx)
     const claudeFinding = makeFinding('mcp-project-scope', CMD_FIX, {

@@ -83,7 +83,7 @@ describe('mcp-remove plan', () => {
     await writeFile(join(fx.project, '.mcp.json'), JSON.stringify({ mcpServers: { gamma: {} } }, null, 2) + '\n')
 
     const finding = makeFinding('mcp-low-coverage', CMD_FIX, { kind: 'mcp-remove', servers: ['beta'] })
-    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project })
+    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     expect(plan).not.toBeNull()
     expect(plan!.changes).toHaveLength(1)
     expect(plan!.changes[0]!.path).toBe(claudeJson)
@@ -121,7 +121,7 @@ describe('mcp-project-scope plan', () => {
       kind: 'mcp-project-scope',
       servers: [{ server: 'srv', keepProjects: [keeper], removeProjects: [] }],
     })
-    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project })
+    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     expect(plan).not.toBeNull()
 
     const rec = await runAction(plan!, fx.actionsDir)
@@ -145,7 +145,7 @@ describe('unparseable config file', () => {
     await writeFile(brokenMcp, '{ this is not valid json,,, ')
 
     const finding = makeFinding('mcp-low-coverage', CMD_FIX, { kind: 'mcp-remove', servers: ['good', 'bad'] })
-    const { plan, notes } = planFindings([finding], { homeDir: fx.home, cwd: fx.project })[0]!
+    const { plan, notes } = planFindings([finding], { homeDir: fx.home, cwd: fx.project, provider: 'claude' })[0]!
 
     expect(notes.some(n => /could not parse/.test(n) && n.includes('.mcp.json'))).toBe(true)
     expect(notes.some(n => n.includes('bad'))).toBe(true)
@@ -173,7 +173,7 @@ describe('archive plan', () => {
     await writeFile(join(agentsDir, 'bar.md'), 'agent body')
 
     const skillFinding = makeFinding('unused-skills', CMD_FIX, { kind: 'archive', names: ['foo'] })
-    const skillPlan = planFor(skillFinding, { homeDir: fx.home, cwd: fx.project })
+    const skillPlan = planFor(skillFinding, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     expect(skillPlan!.changes[0]).toMatchObject({
       op: 'move',
       path: join(skillsDir, 'foo'),
@@ -186,7 +186,7 @@ describe('archive plan', () => {
     expect(await readFile(join(skillsDir, '.archived', 'foo', 'SKILL.md'), 'utf-8')).toBe('old archived')
 
     const agentFinding = makeFinding('unused-agents', CMD_FIX, { kind: 'archive', names: ['bar'] })
-    const agentPlan = planFor(agentFinding, { homeDir: fx.home, cwd: fx.project })
+    const agentPlan = planFor(agentFinding, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     expect(agentPlan!.changes[0]).toMatchObject({
       op: 'move',
       path: join(agentsDir, 'bar.md'),
@@ -211,7 +211,7 @@ describe('claude-md rule plan', () => {
     await writeFile(claudeMd, original)
 
     const first = makeFinding('read-edit-ratio', { type: 'paste', destination: 'claude-md', label: '', text: 'Read before editing.' })
-    const firstPlan = planFor(first, { homeDir: fx.home, cwd: fx.project })
+    const firstPlan = planFor(first, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     const firstRec = await runAction(firstPlan!, fx.actionsDir)
 
     let body = await readFile(claudeMd, 'utf-8')
@@ -222,7 +222,7 @@ describe('claude-md rule plan', () => {
 
     // Second apply with the same id replaces the block instead of duplicating.
     const second = makeFinding('read-edit-ratio', { type: 'paste', destination: 'claude-md', label: '', text: 'Read first, then edit.' })
-    const secondPlan = planFor(second, { homeDir: fx.home, cwd: fx.project })
+    const secondPlan = planFor(second, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     const secondRec = await runAction(secondPlan!, fx.actionsDir)
 
     body = await readFile(claudeMd, 'utf-8')
@@ -240,7 +240,7 @@ describe('shell-config plan', () => {
   it('writes the bash cap inside # markers to the rc chosen from $SHELL', async () => {
     const fx = await makeFixture()
     const finding = makeFinding('bash-output-cap', { type: 'paste', destination: 'shell-config', label: '', text: 'export BASH_MAX_OUTPUT_LENGTH=15000' })
-    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project, shell: '/bin/zsh' })
+    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project, provider: 'claude', shell: '/bin/zsh' })
     expect(plan!.changes[0]!.path).toBe(join(fx.home, '.zshrc'))
 
     await runAction(plan!, fx.actionsDir)
@@ -265,7 +265,7 @@ describe('dry-run', () => {
     ]
 
     const before = await hashTree(fx.root)
-    const plans = planFindings(findings, { homeDir: fx.home, cwd: fx.project, shell: '/bin/zsh' })
+    const plans = planFindings(findings, { homeDir: fx.home, cwd: fx.project, provider: 'claude', shell: '/bin/zsh' })
     // Exercise the exact rendering the dry-run path prints.
     renderApplyList(plans.filter(p => p.plan !== null), plans.filter(p => p.plan === null), 0.000002)
     const after = await hashTree(fx.root)
@@ -332,7 +332,7 @@ describe('unused-mcp plan', () => {
     }, null, 2) + '\n')
 
     const finding = makeFinding('unused-mcp', CMD_FIX, { kind: 'mcp-remove', servers: ['u'] })
-    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project })
+    const plan = planFor(finding, { homeDir: fx.home, cwd: fx.project, provider: 'claude' })
     expect(plan).not.toBeNull()
     expect(plan!.kind).toBe('mcp-remove')
 
@@ -351,7 +351,7 @@ describe('BOM handling', () => {
 
     const { plan, notes } = planFindings(
       [makeFinding('mcp-low-coverage', CMD_FIX, { kind: 'mcp-remove', servers: ['b'] })],
-      { homeDir: fx.home, cwd: fx.project },
+      { homeDir: fx.home, cwd: fx.project, provider: 'claude' },
     )[0]!
     expect(notes).toEqual([])
     expect(plan).not.toBeNull()
@@ -391,7 +391,7 @@ function makeIo(answer?: string): Io {
 }
 
 function applyOpts(fx: Fixture, io: Io, extra: Partial<ApplyOptions> & { findings: WasteFinding[] }): ApplyOptions {
-  const ctx: PlanContext = { homeDir: fx.home, cwd: fx.project, shell: '/bin/zsh' }
+  const ctx: PlanContext = { homeDir: fx.home, cwd: fx.project, provider: 'claude', shell: '/bin/zsh' }
   return {
     ctx,
     actionsDir: fx.actionsDir,
@@ -594,7 +594,7 @@ describe('stale-plan detection', () => {
     await writeFile(claudeJson, JSON.stringify({ mcpServers: { s: {} } }, null, 2) + '\n')
     const plan = planFor(
       makeFinding('mcp-low-coverage', CMD_FIX, { kind: 'mcp-remove', servers: ['s'] }),
-      { homeDir: fx.home, cwd: fx.project },
+      { homeDir: fx.home, cwd: fx.project, provider: 'claude' },
     )
     expect(plan).not.toBeNull()
 
@@ -613,7 +613,7 @@ describe('stale-plan detection', () => {
     const claudeMd = join(fx.project, 'CLAUDE.md')
     const plan = planFor(
       makeFinding('read-edit-ratio', { type: 'paste', destination: 'claude-md', label: '', text: 'rule' }),
-      { homeDir: fx.home, cwd: fx.project },
+      { homeDir: fx.home, cwd: fx.project, provider: 'claude' },
     )
     expect(plan!.changes[0]).toMatchObject({ op: 'create', expectedHash: null })
 
@@ -630,7 +630,7 @@ describe('stale-plan detection', () => {
     await writeFile(claudeJson, JSON.stringify({ mcpServers: { s: {} } }, null, 2) + '\n')
     const plan = planFor(
       makeFinding('mcp-low-coverage', CMD_FIX, { kind: 'mcp-remove', servers: ['s'] }),
-      { homeDir: fx.home, cwd: fx.project },
+      { homeDir: fx.home, cwd: fx.project, provider: 'claude' },
     )
     expect(plan!.changes[0]!.op === 'move' ? undefined : plan!.changes[0]!.expectedHash).toMatch(/^[0-9a-f]{64}$/)
 
