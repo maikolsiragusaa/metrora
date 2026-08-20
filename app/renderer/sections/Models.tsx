@@ -11,7 +11,7 @@ import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
+import { additiveReasoningTokenCount, cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { AuditRow, DateRange, DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation, ModelReportRow, Period, ReasoningTokenSemantics } from '../lib/types'
 import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
@@ -225,7 +225,7 @@ function ModelsUsage({
             <strong>Model usage</strong>
             <div style={authorityNoteStyle}>Historical cost, calls and retained token detail from Metrora&apos;s durable local ledger.</div>
             <div style={authorityNoteStyle}>Generated tok/s uses retained active-generation evidence only. Observed active-generation timing is shown where the source provides it; Active ms / 1K is the inverse secondary view and unavailable routes remain —.</div>
-            <div style={authorityNoteStyle}>Total = Input + Output + separately reported Reasoning + Cache R + Cache W. Reasoning is never guessed.</div>
+            <div style={authorityNoteStyle}>Total includes Input, Output, Cache R, Cache W, and only reasoning reported as additive. Reasoning shows observed evidence; mixed rows can include reasoning already inside Output.</div>
           {incomplete ? <div style={authorityNoteStyle}>Some older usage no longer has a reliable model identity; that remainder is shown as Other models.</div> : null}
           {tokenIncomplete ? <div style={authorityNoteStyle}>Legacy rows without a durable token split show — for token-derived metrics instead of guessing.</div> : null}
         </div>
@@ -370,10 +370,19 @@ function reportRowTotal(row: ModelReportRow): number {
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
     reasoningTokens: row.reasoningTokens,
+    additiveReasoningTokens: row.additiveReasoningTokens,
     reasoningSemantics: row.reasoningSemantics,
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
   })
+}
+
+function groupReasoningSemantics(rows: ModelReportRow[]): ReasoningTokenSemantics {
+  const semantics = new Set(rows.map(row => row.reasoningSemantics ?? 'unavailable'))
+  if (semantics.has('mixed') || (semantics.has('separate') && semantics.has('aggregate-output'))) return 'mixed'
+  if (semantics.has('separate')) return 'separate'
+  if (semantics.has('aggregate-output')) return 'aggregate-output'
+  return 'unavailable'
 }
 
 function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
@@ -383,16 +392,15 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
   const input = rows.reduce((sum, row) => sum + row.inputTokens, 0)
   const output = rows.reduce((sum, row) => sum + row.outputTokens, 0)
   const reasoning = rows.reduce((sum, row) => sum + (row.reasoningTokens ?? 0), 0)
-  const reasoningSemantics: ReasoningTokenSemantics = rows.some(row => row.reasoningSemantics === 'separate' || row.reasoningSemantics === 'mixed')
-    ? 'separate'
-    : 'unavailable'
+  const additiveReasoning = rows.reduce((sum, row) => sum + additiveReasoningTokenCount(row), 0)
+  const reasoningSemantics = groupReasoningSemantics(rows)
   const cacheRead = rows.reduce((sum, row) => sum + row.cacheReadTokens, 0)
   const cacheWrite = rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0)
-  const total = totalTokenCount({ inputTokens: input, outputTokens: output, reasoningTokens: reasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
+  const total = totalTokenCount({ inputTokens: input, outputTokens: output, reasoningTokens: reasoning, additiveReasoningTokens: additiveReasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
   const pricing = modelPricingPresentation(combineModelPricing(rows), calls)
   const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(costUSD)
   const reuse = cacheReuseMultiple(input, cacheRead)
-  const unitCost = costPerMillionTotal(costUSD, { inputTokens: input, outputTokens: output, reasoningTokens: reasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
+  const unitCost = costPerMillionTotal(costUSD, { inputTokens: input, outputTokens: output, reasoningTokens: reasoning, additiveReasoningTokens: additiveReasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
 
   return (
     <tr className="model-group-row">
@@ -407,7 +415,7 @@ function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlia
         </span>
       </td>
       <td>{fmtInt(calls)}</td>
-      <td>{reasoningSemantics === 'separate' ? formatCompact(reasoning) : '—'}</td>
+      <td>{reasoningSemantics !== 'unavailable' ? formatCompact(reasoning) : '—'}</td>
       <td>{formatCompact(input)}</td>
       <td>{formatCompact(output)}</td>
       <td>{formatCompact(cacheRead)}</td>
@@ -429,6 +437,7 @@ function ModelTaskRow({ row }: { row: ModelReportRow }) {
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
     reasoningTokens: row.reasoningTokens,
+    additiveReasoningTokens: row.additiveReasoningTokens,
     reasoningSemantics: row.reasoningSemantics,
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
@@ -438,7 +447,7 @@ function ModelTaskRow({ row }: { row: ModelReportRow }) {
     <tr className="model-task-row">
       <td>{row.category ?? 'general'}</td>
       <td>{fmtInt(row.calls)}</td>
-      <td>{row.reasoningSemantics === 'separate' || row.reasoningSemantics === 'mixed' ? formatCompact(row.reasoningTokens ?? 0) : '—'}</td>
+      <td>{row.reasoningSemantics !== 'unavailable' && row.reasoningTokens !== undefined ? formatCompact(row.reasoningTokens) : '—'}</td>
       <td>{formatCompact(row.inputTokens)}</td>
       <td>{formatCompact(row.outputTokens)}</td>
       <td>{formatCompact(row.cacheReadTokens)}</td>

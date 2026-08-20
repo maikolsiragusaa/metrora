@@ -8,6 +8,7 @@ export type DurableModelAccountingRow = {
   inputTokens: number
   outputTokens: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
