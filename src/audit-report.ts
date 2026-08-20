@@ -2,7 +2,7 @@ import { getModelCosts, type ModelCosts } from './models.js'
 import { getProvider } from './providers/index.js'
 import { formatCost, formatTokens } from './format.js'
 import { renderTable, type TableColumn } from './text-table.js'
-import { reasoningSemanticsForProviders, separatelyReportedReasoningTokens } from './token-semantics.js'
+import { reasoningSemanticsForProviders, reasoningTokenTotals } from './token-semantics.js'
 import type { ProjectSummary } from './types.js'
 
 // One (provider, model) bucket, exposing both the raw token fields as recorded
@@ -24,11 +24,14 @@ export type AuditRow = {
     cachedInputTokens: number // OpenAI vocab
     webSearchRequests: number
   }
-  // What the reports display: separate reasoning folds into output, and the two
-  // cache-read vocabularies collapse to their max (providers fill one or both).
+  // What the reports display: raw reasoning remains a factual breakdown, while
+  // only additive reasoning folds into generated output. The two cache-read
+  // vocabularies collapse to their max (providers fill one or both).
   displayed: {
     inputTokens: number
     outputTokens: number
+    reasoningTokens: number
+    additiveReasoningTokens: number
     cacheWriteTokens: number
     cacheReadTokens: number
   }
@@ -56,7 +59,8 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
     calls: number
     attributedCostUSD: number
     cacheReadDisplayed: number
-    displayedReasoningTokens: number
+    observedReasoningTokens: number
+    additiveReasoningTokens: number
     raw: AuditRow['raw']
   }
   const buckets = new Map<string, Bucket>()
@@ -74,7 +78,8 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
               provider,
               model,
               calls: 0,
-              displayedReasoningTokens: 0,
+              observedReasoningTokens: 0,
+              additiveReasoningTokens: 0,
               attributedCostUSD: 0,
               cacheReadDisplayed: 0,
               raw: {
@@ -91,9 +96,12 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
           }
           const u = call.usage
           const callSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
-          bucket.displayedReasoningTokens += call.reasoningSemantics === undefined
-            ? u.reasoningTokens
-            : separatelyReportedReasoningTokens(u.reasoningTokens, callSemantics)
+          const callReasoning = reasoningTokenTotals(
+            u.reasoningTokens,
+            call.reasoningSemantics === undefined ? undefined : callSemantics,
+          )
+          bucket.observedReasoningTokens += callReasoning.observedReasoningTokens
+          bucket.additiveReasoningTokens += callReasoning.additiveReasoningTokens
           bucket.raw.inputTokens += u.inputTokens
           bucket.raw.outputTokens += u.outputTokens
           bucket.raw.reasoningTokens += u.reasoningTokens
@@ -129,7 +137,9 @@ export async function aggregateAudit(projects: ProjectSummary[]): Promise<AuditR
     const meta = await resolveProvider(bucket.provider)
     const displayed = {
       inputTokens: bucket.raw.inputTokens,
-      outputTokens: bucket.raw.outputTokens + bucket.displayedReasoningTokens,
+      outputTokens: bucket.raw.outputTokens + bucket.additiveReasoningTokens,
+      reasoningTokens: bucket.observedReasoningTokens,
+      additiveReasoningTokens: bucket.additiveReasoningTokens,
       cacheWriteTokens: bucket.raw.cacheCreationInputTokens,
       cacheReadTokens: bucket.cacheReadDisplayed,
     }
@@ -214,7 +224,7 @@ export function renderAuditTable(rows: AuditRow[]): string {
   const legend = [
     '',
     'Columns are the raw token fields each provider records. metrora then normalizes for pricing:',
-    '  - Reason folds into Output (priced output = output + reasoning)',
+    '  - Reason is an observed breakdown; only additive reasoning folds into generated Output',
     '  - Cache rd = max(Anthropic cacheReadInput, OpenAI cached), since providers fill one or both',
     '  - Cache wr is priced at 1.25x the input rate, Cache rd at 0.1x, when a model omits explicit cache rates',
     'Use --format json for per-component cost, the rates applied, and both raw cache-read fields.',

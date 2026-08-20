@@ -1,6 +1,6 @@
 import type { ReasoningMix } from './reasoning-level.js'
 import type { ProjectSummary, SessionSummary } from './types.js'
-import { combineReasoningSemantics, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
 
 export type SessionRow = {
   sessionId: string
@@ -19,6 +19,7 @@ export type SessionRow = {
   cacheReadTokens: number
   cacheWriteTokens: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   reasoningSemantics: ReasoningTokenSemantics
   reasoningMix?: ReasoningMix
   startedAt: string
@@ -54,17 +55,22 @@ function sessionKey(session: SessionSummary, project: string, provider: string):
   return [provider, session.sessionId, project, sessionAuthority(session, project)].join('\u0000')
 }
 
-function reasoningDetails(session: SessionSummary): { semantics: ReasoningTokenSemantics; reasoningTokens: number } {
+function reasoningDetails(session: SessionSummary): { semantics: ReasoningTokenSemantics; reasoningTokens: number; additiveReasoningTokens: number } {
   const values = session.turns.flatMap(turn => turn.assistantCalls.map(call =>
     call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider]),
   ))
   const semantics = combineReasoningSemantics(values)
-  const reasoningTokens = session.turns.reduce((sum, turn) => sum + turn.assistantCalls.reduce((calls, call) =>
-    calls + separatelyReportedReasoningTokens(
+  const totals = session.turns.reduce((sum, turn) => turn.assistantCalls.reduce((calls, call) => {
+    const callTotals = reasoningTokenTotals(
       call.usage?.reasoningTokens,
       call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider]),
-    ), 0), 0)
-  return { semantics, reasoningTokens }
+    )
+    return {
+      observedReasoningTokens: calls.observedReasoningTokens + callTotals.observedReasoningTokens,
+      additiveReasoningTokens: calls.additiveReasoningTokens + callTotals.additiveReasoningTokens,
+    }
+  }, sum), { observedReasoningTokens: 0, additiveReasoningTokens: 0 })
+  return { semantics, reasoningTokens: totals.observedReasoningTokens, additiveReasoningTokens: totals.additiveReasoningTokens }
 }
 
 export function aggregateSessions(projects: ProjectSummary[]): SessionRow[] {
@@ -88,6 +94,7 @@ export function aggregateSessions(projects: ProjectSummary[]): SessionRow[] {
       cacheReadTokens: session.totalCacheReadTokens,
       cacheWriteTokens: session.totalCacheWriteTokens,
       ...(reasoning.semantics !== 'unavailable' ? { reasoningTokens: reasoning.reasoningTokens } : {}),
+      ...(reasoning.semantics !== 'unavailable' ? { additiveReasoningTokens: reasoning.additiveReasoningTokens } : {}),
       reasoningSemantics: reasoning.semantics,
       ...(session.reasoningMix ? { reasoningMix: session.reasoningMix } : {}),
       startedAt: session.firstTimestamp,

@@ -1,7 +1,7 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
 import { resolveModelBrandId, type ModelBrandId } from './model-brand.js'
-import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
 
 const TOP_MODELS_LIMIT = 20
 const SYNTHETIC_MODEL_NAME = '<synthetic>'
@@ -14,6 +14,7 @@ type MergedModelRow = {
   inputTokens: number
   outputTokens: number
   reasoningTokens?: number
+  additiveReasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
@@ -160,10 +161,17 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       ? modelReasoningSemantics
       : combineReasoningSemantics([acc.reasoningSemantics, modelReasoningSemantics])
     if (hasTokenDetail && modelReasoningSemantics === 'separate') {
-      acc.reasoningTokens = (acc.reasoningTokens ?? 0) + (model.reasoningTokens ?? 0)
+      const totals = reasoningTokenTotals(model.reasoningTokens, modelReasoningSemantics)
+      if (totals.observedReasoningTokens > 0) {
+        acc.reasoningTokens = (acc.reasoningTokens ?? 0) + totals.observedReasoningTokens
+        acc.additiveReasoningTokens = (acc.additiveReasoningTokens ?? 0) + (model.additiveReasoningTokens ?? totals.additiveReasoningTokens)
+      }
     } else if (hasTokenDetail) {
-      const observedReasoning = separatelyReportedReasoningTokens(model.reasoningTokens, modelReasoningSemantics)
-      if (observedReasoning > 0) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + observedReasoning
+      const totals = reasoningTokenTotals(model.reasoningTokens, modelReasoningSemantics)
+      if (totals.observedReasoningTokens > 0) {
+        acc.reasoningTokens = (acc.reasoningTokens ?? 0) + totals.observedReasoningTokens
+        acc.additiveReasoningTokens = (acc.additiveReasoningTokens ?? 0) + (model.additiveReasoningTokens ?? totals.additiveReasoningTokens)
+      }
     }
     if (
       typeof model.activeDurationMs === 'number' && Number.isFinite(model.activeDurationMs) && model.activeDurationMs > 0
@@ -241,6 +249,7 @@ export function buildModelAccounting(models: PeriodData['models'], totalCost: nu
     ...(row.semanticVariant ? { semanticVariant: row.semanticVariant } : {}),
     ...(row.reasoningSemantics && row.reasoningSemantics !== 'unavailable' ? { reasoningSemantics: row.reasoningSemantics } : {}),
     ...(row.reasoningTokens !== undefined ? { reasoningTokens: row.reasoningTokens } : {}),
+    ...(row.reasoningTokens !== undefined ? { additiveReasoningTokens: row.additiveReasoningTokens ?? 0 } : {}),
     ...(row.estimatedCostUSD > 0 ? { estimatedCostUSD: row.estimatedCostUSD } : {}),
     ...(row.costIsEstimated ? { costIsEstimated: true } : {}),
     ...(row.activeDurationMs > 0 && row.activeGeneratedTokens > 0

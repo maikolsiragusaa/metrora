@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { aggregateAudit } from '../src/audit-report.js'
 import { aggregateModelStats } from '../src/compare-stats.js'
+import { migrateDays } from '../src/daily-cache-core.js'
 import { aggregateProjectsIntoDays, buildPeriodDataFromDays } from '../src/day-aggregator.js'
+import { mergeDayEntries } from '../src/daily-cache-merge.js'
 import { aggregateModelPerformanceByRoute } from '../src/model-performance.js'
 import { buildModelAccounting } from '../src/model-accounting.js'
 import { buildModelPresentation } from '../src/model-presentation.js'
@@ -102,43 +104,44 @@ describe('mixed reasoning aggregation', () => {
   const separateCall = call('codex', 'separate', 20, 100, 30, calculateCost('gpt-4.1', 20, 130, 0, 0, 0))
   const project = projectWithCalls([copilotCall, separateCall])
 
-  it('keeps the true generated total at 230 across live, session, and daily model views', async () => {
+  it('preserves observed reasoning while keeping the generated total at 230 across live, session, and daily model views', async () => {
     const modelRows = await aggregateModels([project])
-    expect(modelRows.reduce((sum, row) => sum + row.outputTokens + (row.reasoningTokens ?? 0), 0)).toBe(230)
-    expect(modelRows.find(row => row.provider === 'copilot')).toMatchObject({ outputTokens: 100, reasoningTokens: 0, reasoningSemantics: 'aggregate-output' })
-    expect(modelRows.find(row => row.provider === 'codex')).toMatchObject({ outputTokens: 100, reasoningTokens: 30, reasoningSemantics: 'separate' })
+    expect(modelRows.reduce((sum, row) => sum + row.outputTokens + (row.additiveReasoningTokens ?? 0), 0)).toBe(230)
+    expect(modelRows.find(row => row.provider === 'copilot')).toMatchObject({ outputTokens: 100, reasoningTokens: 20, additiveReasoningTokens: 0, reasoningSemantics: 'aggregate-output', totalTokens: 110 })
+    expect(modelRows.find(row => row.provider === 'codex')).toMatchObject({ outputTokens: 100, reasoningTokens: 30, additiveReasoningTokens: 30, reasoningSemantics: 'separate', totalTokens: 150 })
 
     const compare = aggregateModelStats([project])[0]!
-    expect(compare).toMatchObject({ outputTokens: 200, reasoningTokens: 30, reasoningSemantics: 'mixed' })
-    expect(compare.outputTokens + compare.reasoningTokens).toBe(230)
+    expect(compare).toMatchObject({ outputTokens: 200, reasoningTokens: 50, additiveReasoningTokens: 30, reasoningSemantics: 'mixed' })
+    expect(compare.outputTokens + compare.additiveReasoningTokens).toBe(230)
 
     const session = aggregateSessions([project])[0]!
-    expect(session).toMatchObject({ outputTokens: 200, reasoningTokens: 30, reasoningSemantics: 'mixed' })
-    expect(session.outputTokens + (session.reasoningTokens ?? 0)).toBe(230)
+    expect(session).toMatchObject({ outputTokens: 200, reasoningTokens: 50, additiveReasoningTokens: 30, reasoningSemantics: 'mixed' })
+    expect(session.outputTokens + (session.additiveReasoningTokens ?? 0)).toBe(230)
 
     const day = aggregateProjectsIntoDays([project])[0]!
     expect(day.outputTokens).toBe(200)
-    expect(day.reasoningTokens).toBe(30)
-    expect(day.models['mixed-model']).toMatchObject({ outputTokens: 200, reasoningTokens: 30, reasoningSemantics: 'mixed' })
+    expect(day.reasoningTokens).toBe(50)
+    expect(day.additiveReasoningTokens).toBe(30)
+    expect(day.models['mixed-model']).toMatchObject({ outputTokens: 200, reasoningTokens: 50, additiveReasoningTokens: 30, reasoningSemantics: 'mixed' })
     const period = buildPeriodDataFromDays([day], 'synthetic')
-    expect(period.models[0]).toMatchObject({ outputTokens: 200, reasoningTokens: 30, reasoningSemantics: 'mixed' })
-    expect(period.models[0]!.outputTokens! + period.models[0]!.reasoningTokens!).toBe(230)
+    expect(period.models[0]).toMatchObject({ outputTokens: 200, reasoningTokens: 50, additiveReasoningTokens: 30, reasoningSemantics: 'mixed' })
+    expect(period.models[0]!.outputTokens! + (period.models[0]!.additiveReasoningTokens ?? 0)).toBe(230)
 
     const accounting = buildModelAccounting(period.models, period.cost, period.calls)
-    expect(accounting.rows[0]).toMatchObject({ outputTokens: 200, reasoningTokens: 30, reasoningSemantics: 'mixed' })
-    expect(accounting.rows[0]!.outputTokens + (accounting.rows[0]!.reasoningTokens ?? 0)).toBe(230)
+    expect(accounting.rows[0]).toMatchObject({ outputTokens: 200, reasoningTokens: 50, additiveReasoningTokens: 30, reasoningSemantics: 'mixed' })
+    expect(accounting.rows[0]!.outputTokens + (accounting.rows[0]!.additiveReasoningTokens ?? 0)).toBe(230)
     const presentation = buildModelPresentation(accounting)
-    expect(presentation.rows[0]).toMatchObject({ outputTokens: 200, reasoningTokens: 30, reasoningSemantics: 'mixed' })
-    expect(presentation.rows[0]!.outputTokens + (presentation.rows[0]!.reasoningTokens ?? 0)).toBe(230)
+    expect(presentation.rows[0]).toMatchObject({ outputTokens: 200, reasoningTokens: 50, additiveReasoningTokens: 30, reasoningSemantics: 'mixed' })
+    expect(presentation.rows[0]!.outputTokens + (presentation.rows[0]!.additiveReasoningTokens ?? 0)).toBe(230)
   })
 
-  it('keeps raw audit evidence while displaying only separately additive reasoning', async () => {
+  it('keeps raw and observed audit evidence while displaying only additive generated output', async () => {
     const rows = await aggregateAudit([project])
     expect(rows).toHaveLength(2)
     expect(rows.reduce((sum, row) => sum + row.raw.reasoningTokens, 0)).toBe(50)
     expect(rows.reduce((sum, row) => sum + row.displayed.outputTokens, 0)).toBe(230)
-    expect(rows.find(row => row.provider === 'copilot')!.displayed.outputTokens).toBe(100)
-    expect(rows.find(row => row.provider === 'codex')!.displayed.outputTokens).toBe(130)
+    expect(rows.find(row => row.provider === 'copilot')!.displayed).toMatchObject({ outputTokens: 100, reasoningTokens: 20, additiveReasoningTokens: 0 })
+    expect(rows.find(row => row.provider === 'codex')!.displayed).toMatchObject({ outputTokens: 130, reasoningTokens: 30, additiveReasoningTokens: 30 })
   })
 
   it('uses the same 230 generated-token denominator for observed performance', () => {
@@ -156,5 +159,41 @@ describe('mixed reasoning aggregation', () => {
     expect(calculateCost('gpt-4.1', 10, aggregateOutput, 0, 0, 0)).toBe(calculateCost('gpt-4.1', 10, 100, 0, 0, 0))
     expect(generatedTokensForReasoningMix(100, 20, 'aggregate-output')).toBe(100)
     expect(generatedTokensForReasoningMix(100, 30, 'separate')).toBe(130)
+  })
+
+  it('keeps a single aggregate-output call visible without adding it to generated volume', async () => {
+    const onlyCopilot = projectWithCalls([copilotCall])
+    const model = (await aggregateModels([onlyCopilot]))[0]!
+    const session = aggregateSessions([onlyCopilot])[0]!
+    const day = aggregateProjectsIntoDays([onlyCopilot])[0]!
+    expect(model).toMatchObject({ outputTokens: 100, reasoningTokens: 20, additiveReasoningTokens: 0, totalTokens: 110 })
+    expect(session).toMatchObject({ outputTokens: 100, reasoningTokens: 20, additiveReasoningTokens: 0 })
+    expect(day).toMatchObject({ outputTokens: 100, reasoningTokens: 20, additiveReasoningTokens: 0 })
+  })
+
+  it('keeps legacy daily rows readable without fabricating a new subtotal', () => {
+    const legacyDay = {
+      date: '2026-08-19', cost: 1, savingsUSD: 0, calls: 1, sessions: 1,
+      inputTokens: 10, outputTokens: 100, reasoningTokens: 20,
+      cacheReadTokens: 0, cacheWriteTokens: 0, editTurns: 0, oneShotTurns: 0,
+      models: { 'mixed-model': {
+        calls: 1, cost: 1, savingsUSD: 0, inputTokens: 10, outputTokens: 100,
+        reasoningTokens: 20, reasoningSemantics: 'aggregate-output' as const,
+        cacheReadTokens: 0, cacheWriteTokens: 0,
+      } },
+      categories: {}, providers: {},
+    }
+    const period = buildPeriodDataFromDays([legacyDay], 'legacy')
+    expect(period.models[0]).toMatchObject({ reasoningTokens: 20, reasoningSemantics: 'aggregate-output' })
+    expect(period.models[0]).not.toHaveProperty('additiveReasoningTokens')
+  })
+
+  it('persists observed and additive reasoning through synthetic daily-cache migration and merge', () => {
+    const day = aggregateProjectsIntoDays([project])[0]!
+    const migrated = migrateDays([day as unknown as Record<string, unknown>])[0]!
+    const merged = mergeDayEntries([migrated], [], false)[0]!
+    expect(merged).toMatchObject({ reasoningTokens: 50, additiveReasoningTokens: 30 })
+    expect(merged.models['mixed-model']).toMatchObject({ reasoningTokens: 50, additiveReasoningTokens: 30 })
+    expect(merged.providers.copilot).toMatchObject({ reasoningTokens: 20, additiveReasoningTokens: 0 })
   })
 })

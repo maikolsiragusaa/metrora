@@ -1,7 +1,7 @@
 import { emptyModelStats, mergeModelStats } from './daily-cache-model-detail.js'
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
 
-const PROJECT_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
+const PROJECT_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
 
 function num(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
@@ -11,6 +11,7 @@ function hasSliceData(slice: ProviderDaySlice): boolean {
   return slice.cost > 0 || slice.calls > 0 || (slice.savingsUSD ?? 0) > 0
     || (slice.inputTokens ?? 0) > 0 || (slice.outputTokens ?? 0) > 0
     || (slice.reasoningTokens ?? 0) > 0 || (slice.cacheReadTokens ?? 0) > 0
+    || (slice.additiveReasoningTokens ?? 0) > 0
     || (slice.cacheWriteTokens ?? 0) > 0
 }
 
@@ -58,6 +59,7 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
   day.inputTokens += slice.inputTokens ?? 0
   day.outputTokens += slice.outputTokens ?? 0
   if (slice.reasoningTokens !== undefined) day.reasoningTokens = (day.reasoningTokens ?? 0) + slice.reasoningTokens
+  if (slice.additiveReasoningTokens !== undefined) day.additiveReasoningTokens = (day.additiveReasoningTokens ?? 0) + slice.additiveReasoningTokens
   day.cacheReadTokens += slice.cacheReadTokens ?? 0
   day.cacheWriteTokens += slice.cacheWriteTokens ?? 0
   day.editTurns += slice.editTurns ?? 0

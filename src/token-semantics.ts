@@ -6,6 +6,13 @@
  */
 export type ReasoningTokenSemantics = 'separate' | 'aggregate-output' | 'unavailable' | 'mixed'
 
+export type ReasoningTokenTotals = {
+  /** Factual reasoning-token evidence retained for breakdown/reporting. */
+  observedReasoningTokens: number
+  /** Only the reasoning subtotal that is additive to output. */
+  additiveReasoningTokens: number
+}
+
 /**
  * Evidence quality for the two OTel cache subfields. `partial` is deliberate:
  * a missing cache subfield is not equivalent to an emitted zero.
@@ -50,18 +57,53 @@ export function combineReasoningSemantics(values: readonly ReasoningTokenSemanti
   return values.every(value => value === first) ? first : 'mixed'
 }
 
+function finiteReasoningTokens(reasoningTokens: number | undefined): number {
+  return typeof reasoningTokens === 'number' && Number.isFinite(reasoningTokens) && reasoningTokens > 0
+    ? reasoningTokens
+    : 0
+}
+
+/**
+ * Split a reasoning count into the factual breakdown and the generated-token
+ * subtotal. `mixed` is intentionally non-additive: its constituents are not
+ * available at this boundary, so the aggregate must carry an explicit
+ * additive subtotal instead of inferring it from the observed total.
+ *
+ * An omitted authority preserves the historic collector behavior. Explicit
+ * `unavailable` remains out of normalized aggregate evidence.
+ */
+export function reasoningTokenTotals(
+  reasoningTokens: number | undefined,
+  semantics: ReasoningTokenSemantics | undefined,
+): ReasoningTokenTotals {
+  const observedReasoningTokens = semantics === 'unavailable' ? 0 : finiteReasoningTokens(reasoningTokens)
+  const additiveReasoningTokens = semantics === 'separate' || semantics === undefined
+    ? finiteReasoningTokens(reasoningTokens)
+    : 0
+  return { observedReasoningTokens, additiveReasoningTokens }
+}
+
+export function observedReasoningTokens(
+  reasoningTokens: number | undefined,
+  semantics?: ReasoningTokenSemantics,
+): number {
+  return reasoningTokenTotals(reasoningTokens, semantics).observedReasoningTokens
+}
+
+export function additiveReasoningTokens(
+  reasoningTokens: number | undefined,
+  semantics?: ReasoningTokenSemantics,
+): number {
+  return reasoningTokenTotals(reasoningTokens, semantics).additiveReasoningTokens
+}
+
+/** Compatibility name retained for existing consumers; it now means only the
+ * independently additive subtotal and never infers from `mixed`. */
 export function separatelyReportedReasoningTokens(
   reasoningTokens: number | undefined,
   semantics: ReasoningTokenSemantics | undefined,
 ): number {
-  // A mixed row may retain a positive subtotal from the independently observed
-  // constituent(s). Preserve that evidence, while the mixed status tells the
-  // presentation that other constituents are unavailable or aggregate-output;
-  // no missing reasoning is estimated.
-  if (semantics !== 'separate' && semantics !== 'mixed') return 0
-  return typeof reasoningTokens === 'number' && Number.isFinite(reasoningTokens) && reasoningTokens > 0
-    ? reasoningTokens
-    : 0
+  return additiveReasoningTokens(reasoningTokens, semantics)
 }
 
 /**
@@ -75,10 +117,10 @@ export function billableOutputTokens(
   reasoningTokens: number,
   semantics?: ReasoningTokenSemantics,
 ): number {
-  const includeReasoning = semantics === 'separate'
-    || semantics === 'mixed'
-    || (semantics === undefined && provider !== 'claude')
-  return outputTokens + (includeReasoning ? reasoningTokens : 0)
+  const additive = semantics === undefined && provider === 'claude'
+    ? 0
+    : additiveReasoningTokens(reasoningTokens, semantics)
+  return outputTokens + additive
 }
 
 /**
@@ -90,7 +132,5 @@ export function generatedTokensForReasoningMix(
   reasoningTokens: number,
   semantics?: ReasoningTokenSemantics,
 ): number {
-  return semantics === 'aggregate-output' || semantics === 'unavailable'
-    ? outputTokens
-    : outputTokens + reasoningTokens
+  return outputTokens + additiveReasoningTokens(reasoningTokens, semantics)
 }

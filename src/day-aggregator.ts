@@ -1,7 +1,7 @@
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
 import type { PeriodData } from './menubar-json.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type TokenUsage } from './types.js'
-import { combineReasoningSemantics, separatelyReportedReasoningTokens, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, reasoningTokenTotals, type ReasoningTokenSemantics, type ReasoningTokenTotals } from './token-semantics.js'
 
 // Raw model IDs remain human-readable in legacy daily caches. New rows use an
 // additive envelope so a source-recorded route can survive the daily
@@ -42,17 +42,25 @@ function addCallReasoningSemantics(
     : combineReasoningSemantics([target.reasoningSemantics, call.reasoningSemantics])
 }
 
-function callReasoningTokens(call: { provider: string; usage: TokenUsage; reasoningSemantics?: ReasoningTokenSemantics }): number {
-  if (call.reasoningSemantics === undefined) return call.usage.reasoningTokens
-  return separatelyReportedReasoningTokens(call.usage.reasoningTokens, call.reasoningSemantics)
+function callReasoningTotals(call: { provider: string; usage: TokenUsage; reasoningSemantics?: ReasoningTokenSemantics }): ReasoningTokenTotals {
+  return reasoningTokenTotals(call.usage.reasoningTokens, call.reasoningSemantics)
 }
 
-function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage, reasoningTokens: number): void {
+function addReasoningTotals(target: { reasoningTokens?: number; additiveReasoningTokens?: number }, totals: ReasoningTokenTotals): void {
+  if (totals.observedReasoningTokens > 0) {
+    target.reasoningTokens = (target.reasoningTokens ?? 0) + totals.observedReasoningTokens
+    // Keep an explicit zero for aggregate-output evidence so a durable row
+    // cannot later be mistaken for a legacy row with no additive authority.
+    target.additiveReasoningTokens = (target.additiveReasoningTokens ?? 0) + totals.additiveReasoningTokens
+  }
+}
+
+function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage, reasoning: ReasoningTokenTotals): void {
   target.inputTokens = (target.inputTokens ?? 0) + usage.inputTokens
   target.outputTokens = (target.outputTokens ?? 0) + usage.outputTokens
   target.cacheReadTokens = (target.cacheReadTokens ?? 0) + usage.cacheReadInputTokens
   target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + usage.cacheCreationInputTokens
-  if (reasoningTokens > 0) target.reasoningTokens = (target.reasoningTokens ?? 0) + reasoningTokens
+  addReasoningTotals(target, reasoning)
 }
 
 function emptyEntry(date: string): DailyEntry {
@@ -217,14 +225,14 @@ export function aggregateProjectsIntoDays(
 
         for (const call of turn.assistantCalls) {
           const callSavings = call.savingsUSD ?? 0
-          const callReasoning = callReasoningTokens(call)
+          const callReasoning = callReasoningTotals(call)
 
           turnDay.cost += call.costUSD
           turnDay.savingsUSD += callSavings
           turnDay.calls += 1
           turnDay.inputTokens += call.usage.inputTokens
           turnDay.outputTokens += call.usage.outputTokens
-          if (callReasoning > 0) turnDay.reasoningTokens = (turnDay.reasoningTokens ?? 0) + callReasoning
+          addReasoningTotals(turnDay, callReasoning)
           turnDay.cacheReadTokens += call.usage.cacheReadInputTokens
           turnDay.cacheWriteTokens += call.usage.cacheCreationInputTokens
 
@@ -245,7 +253,7 @@ export function aggregateProjectsIntoDays(
           model.savingsUSD += callSavings
           model.inputTokens += call.usage.inputTokens
           model.outputTokens += call.usage.outputTokens
-          if (callReasoning > 0) model.reasoningTokens = (model.reasoningTokens ?? 0) + callReasoning
+          addReasoningTotals(model, callReasoning)
           model.cacheReadTokens += call.usage.cacheReadInputTokens
           model.cacheWriteTokens += call.usage.cacheCreationInputTokens
           if (call.modelProvider) model.modelProvider = call.modelProvider
@@ -259,7 +267,7 @@ export function aggregateProjectsIntoDays(
           slice.savingsUSD += callSavings
           slice.inputTokens! += call.usage.inputTokens
           slice.outputTokens! += call.usage.outputTokens
-          if (callReasoning > 0) slice.reasoningTokens = (slice.reasoningTokens ?? 0) + callReasoning
+          addReasoningTotals(slice, callReasoning)
           slice.cacheReadTokens! += call.usage.cacheReadInputTokens
           slice.cacheWriteTokens! += call.usage.cacheCreationInputTokens
 
@@ -279,7 +287,7 @@ export function aggregateProjectsIntoDays(
           sliceModel.savingsUSD += callSavings
           sliceModel.inputTokens += call.usage.inputTokens
           sliceModel.outputTokens += call.usage.outputTokens
-          if (callReasoning > 0) sliceModel.reasoningTokens = (sliceModel.reasoningTokens ?? 0) + callReasoning
+          addReasoningTotals(sliceModel, callReasoning)
           sliceModel.cacheReadTokens += call.usage.cacheReadInputTokens
           sliceModel.cacheWriteTokens += call.usage.cacheCreationInputTokens
           if (call.modelProvider) sliceModel.modelProvider = call.modelProvider
@@ -297,8 +305,9 @@ export function aggregateProjectsIntoDays(
 export function buildPeriodDataFromDays(days: DailyEntry[], label: string): PeriodData {
   let cost = 0, savingsUSD = 0, calls = 0, sessions = 0
   let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0
-  let reasoningTokens = 0
+  let reasoningTokens = 0, additiveReasoningTokens = 0
   let hasReasoningTokens = false
+  let hasAdditiveReasoningTokens = false
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
   const modelTotals: Record<string, {
     calls: number
@@ -307,6 +316,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     inputTokens: number
     outputTokens: number
     reasoningTokens?: number
+    additiveReasoningTokens?: number
     cacheReadTokens: number
     cacheWriteTokens: number
     modelProvider?: string
@@ -324,6 +334,10 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     if (d.reasoningTokens !== undefined) {
       reasoningTokens += d.reasoningTokens
       hasReasoningTokens = true
+    }
+    if (d.additiveReasoningTokens !== undefined) {
+      additiveReasoningTokens += d.additiveReasoningTokens
+      hasAdditiveReasoningTokens = true
     }
     cacheReadTokens += d.cacheReadTokens
     cacheWriteTokens += d.cacheWriteTokens
@@ -344,6 +358,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
       acc.inputTokens += m.inputTokens
       acc.outputTokens += m.outputTokens
       if (m.reasoningTokens !== undefined) acc.reasoningTokens = (acc.reasoningTokens ?? 0) + m.reasoningTokens
+      if (m.additiveReasoningTokens !== undefined) acc.additiveReasoningTokens = (acc.additiveReasoningTokens ?? 0) + m.additiveReasoningTokens
       if (m.reasoningSemantics) {
         acc.reasoningSemantics = acc.reasoningSemantics === undefined
           ? m.reasoningSemantics
@@ -377,6 +392,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     inputTokens,
     outputTokens,
     ...(hasReasoningTokens ? { reasoningTokens } : {}),
+    ...(hasAdditiveReasoningTokens ? { additiveReasoningTokens } : {}),
     cacheReadTokens,
     cacheWriteTokens,
     categories: Object.entries(catTotals)
@@ -399,6 +415,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
           outputTokens: d.outputTokens,
           ...(d.reasoningSemantics ? { reasoningSemantics: d.reasoningSemantics } : {}),
           ...(d.reasoningTokens !== undefined ? { reasoningTokens: d.reasoningTokens } : {}),
+          ...(d.additiveReasoningTokens !== undefined ? { additiveReasoningTokens: d.additiveReasoningTokens } : {}),
           cacheReadTokens: d.cacheReadTokens,
           cacheWriteTokens: d.cacheWriteTokens,
         }

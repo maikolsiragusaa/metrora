@@ -12,7 +12,10 @@ export type ModelReportRow = {
   agentType?: string | null
   inputTokens: number
   outputTokens: number
+  /** Factual observed reasoning-token breakdown; not necessarily additive to output. */
   reasoningTokens?: number
+  /** Only the reasoning subtotal that is additive to generated output. */
+  additiveReasoningTokens?: number
   reasoningSemantics?: ReasoningTokenSemantics
   cacheWriteTokens: number
   cacheReadTokens: number

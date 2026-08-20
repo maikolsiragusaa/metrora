@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, separatelyReportedReasoningTokens } from './token-semantics.js'
+import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, reasoningTokenTotals, separatelyReportedReasoningTokens } from './token-semantics.js'
 
 describe('reasoning token semantics', () => {
   it('recognizes providers whose parser contract carries reasoning separately', () => {
@@ -23,7 +23,13 @@ describe('reasoning token semantics', () => {
     expect(combineReasoningSemantics(['separate', 'unavailable'])).toBe('mixed')
     expect(reasoningSemanticsForProviders(['gemini', 'zed'])).toBe('mixed')
     expect(reasoningSemanticsForProviders(['gemini', 'zed'], true)).toBe('mixed')
-    expect(separatelyReportedReasoningTokens(123, 'mixed')).toBe(123)
+    expect(separatelyReportedReasoningTokens(123, 'mixed')).toBe(0)
     expect(separatelyReportedReasoningTokens(undefined, 'mixed')).toBe(0)
+  })
+
+  it('keeps observed reasoning separate from the additive subtotal', () => {
+    expect(reasoningTokenTotals(20, 'aggregate-output')).toEqual({ observedReasoningTokens: 20, additiveReasoningTokens: 0 })
+    expect(reasoningTokenTotals(30, 'separate')).toEqual({ observedReasoningTokens: 30, additiveReasoningTokens: 30 })
+    expect(reasoningTokenTotals(50, 'mixed')).toEqual({ observedReasoningTokens: 50, additiveReasoningTokens: 0 })
   })
 })

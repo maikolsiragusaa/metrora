@@ -17,7 +17,7 @@ describe('model report reasoning totals', () => {
     const codex = rows.find(row => row.provider === 'codex')!
     const zed = rows.find(row => row.provider === 'zed')!
 
-    expect(codex).toMatchObject({ outputTokens: 100, reasoningTokens: 40, reasoningSemantics: 'separate', totalTokens: 170 })
-    expect(zed).toMatchObject({ outputTokens: 100, reasoningTokens: 0, reasoningSemantics: 'unavailable', totalTokens: 130 })
+    expect(codex).toMatchObject({ outputTokens: 100, reasoningTokens: 40, additiveReasoningTokens: 40, reasoningSemantics: 'separate', totalTokens: 170 })
+    expect(zed).toMatchObject({ outputTokens: 100, reasoningTokens: 0, additiveReasoningTokens: 0, reasoningSemantics: 'unavailable', totalTokens: 130 })
   })
 })
