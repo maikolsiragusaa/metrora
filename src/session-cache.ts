@@ -241,7 +241,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
   copilot: 'cli-shutdown-cost-v3-source-provenance-otel-token-semantics-v1-reasoning-evidence-v1',
   goose: 'sqlite-session-v1-provider-provenance',
-  grok: 'estimated-cost-v1',
+  grok: 'estimated-cost-v1-authoritative-turn-usage-v1',
   hermes: 'reasoning-output-accounting-v2-provider-provenance-cost-semantics-v2-pricing-evidence-v1',
   'lingtai-tui': 'token-ledger-registry-activity-v3',
   'ibm-bob': 'worktree-project-grouping-v1',
