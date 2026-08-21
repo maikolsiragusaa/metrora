@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import catalogData from '../src/data/pricing-history/catalog.v1.json'
 import { getDailyCacheConfigHash } from '../src/usage-aggregator.js'
+import { DAILY_CACHE_VERSION } from '../src/daily-cache.js'
+import { parseHistoricalPriceBookV1 } from '../src/pricing/history.js'
+import {
+  reviewedHistoricalPricingAuthorityFingerprintV1,
+  runtimeHistoricalPricingCacheKeyV1,
+} from '../src/pricing/runtime-cost-assignment.js'
 
 const originalMode = process.env['METRORA_HISTORICAL_PRICING']
 
@@ -34,5 +41,19 @@ describe('daily cache historical-pricing boundary', () => {
     const off = getDailyCacheConfigHash()
     process.env['METRORA_HISTORICAL_PRICING'] = 'legacy'
     expect(getDailyCacheConfigHash()).toBe(off)
+  })
+
+  it('binds daily accounting to a deterministic semantic reviewed-price-book authority', () => {
+    const book = parseHistoricalPriceBookV1(catalogData)
+    const fingerprint = reviewedHistoricalPricingAuthorityFingerprintV1(book)
+    const hash = getDailyCacheConfigHash()
+
+    expect(hash).toContain(`reviewedBook=${fingerprint}`)
+    expect(runtimeHistoricalPricingCacheKeyV1()).toContain(`reviewedBook=${fingerprint}`)
+    expect(DAILY_CACHE_VERSION).toBe(19)
+
+    const changed = structuredClone(book)
+    changed.records[0]!.rates.inputPerToken += 1e-12
+    expect(reviewedHistoricalPricingAuthorityFingerprintV1(changed)).not.toBe(fingerprint)
   })
 })

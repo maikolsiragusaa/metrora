@@ -1,9 +1,8 @@
-import { calculateCost } from './models.js'
+import { calculateCost, getHistoricalPricingModelKey } from './models.js'
 import { billableOutputTokens } from './token-semantics.js'
 import type { CachedCall, SessionCache } from './session-cache.js'
-import {
-  assignRuntimeCostV1,
-} from './pricing/runtime-cost-assignment.js'
+import { settledCostUsdV1 } from './pricing/cost-assignment.js'
+import { assignRuntimeCostV1 } from './pricing/runtime-cost-assignment.js'
 
 function currentCostForCachedCall(call: CachedCall): number {
   const u = call.usage
@@ -15,7 +14,72 @@ function currentCostForCachedCall(call: CachedCall): number {
   )
 }
 
+const DEEPSEEK_V4_PRICING_CUTOVER_MS = Date.parse('2026-08-16T16:00:00Z')
+const DEEPSEEK_V4_LEGACY_RECORDS = new Map<string, {
+  model: 'deepseek-v4-flash' | 'deepseek-v4-pro'
+  successorRecordId: string
+}>([
+  ['deepseek:deepseek-v4-flash:standard:official-2026-08-07', {
+    model: 'deepseek-v4-flash',
+    successorRecordId: 'deepseek:deepseek-v4-flash:standard:official-2026-08-16',
+  }],
+  ['deepseek:deepseek-v4-pro:standard:official-2026-08-07', {
+    model: 'deepseek-v4-pro',
+    successorRecordId: 'deepseek:deepseek-v4-pro:standard:official-2026-08-16',
+  }],
+])
+
+function normalizedOptional(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase()
+  return normalized || undefined
+}
+
+/**
+ * Explicit, one-release repair authority for the DeepSeek V4 pricing cutover.
+ * This is deliberately narrower than generic assignment immutability: only an
+ * old reviewed-book token assignment can be replaced, and only when the call
+ * timestamp and model identity prove that the old interval is impossible.
+ */
+export function deepseekV4PricingMigrationTargetV1(call: CachedCall): {
+  model: 'deepseek-v4-flash' | 'deepseek-v4-pro'
+  successorRecordId: string
+} | undefined {
+  const assignment = call.costAssignment
+  if (assignment?.kind !== 'token-price' || assignment.priceOrigin !== 'reviewed-book') return undefined
+
+  const target = DEEPSEEK_V4_LEGACY_RECORDS.get(assignment.priceRecordId)
+  if (!target) return undefined
+
+  const timestamp = Date.parse(call.timestamp)
+  if (!Number.isFinite(timestamp) || timestamp < DEEPSEEK_V4_PRICING_CUTOVER_MS) return undefined
+  if (getHistoricalPricingModelKey(call.model) !== target.model) return undefined
+
+  const contextAuthority = normalizedOptional(call.pricingContext?.pricingAuthority)
+  if (contextAuthority !== undefined && contextAuthority !== 'deepseek') return undefined
+  const contextRoute = normalizedOptional(call.pricingContext?.route)
+  if (contextRoute !== undefined && contextRoute !== 'standard') return undefined
+
+  const provenance = assignment.pricingProvenance
+  if (normalizedOptional(provenance?.pricingAuthority) !== undefined
+    && normalizedOptional(provenance?.pricingAuthority) !== 'deepseek') return undefined
+  if (provenance?.pricingModel !== undefined
+    && getHistoricalPricingModelKey(provenance.pricingModel) !== target.model) return undefined
+  if (normalizedOptional(provenance?.route) !== undefined
+    && normalizedOptional(provenance?.route) !== 'standard') return undefined
+
+  return target
+}
+
+function migrationLegacyEvidenceUSD(call: CachedCall): number {
+  return call.legacyCostUSD
+    ?? call.costUSD
+    ?? (call.costAssignment ? settledCostUsdV1(call.costAssignment) : undefined)
+    ?? currentCostForCachedCall(call)
+}
+
 export function settleCachedCallCost(call: CachedCall) {
+  const migration = deepseekV4PricingMigrationTargetV1(call)
+  const legacyCostUSD = migration ? migrationLegacyEvidenceUSD(call) : undefined
   return assignRuntimeCostV1({
     provider: call.provider,
     model: call.model,
@@ -24,11 +88,11 @@ export function settleCachedCallCost(call: CachedCall) {
     speed: call.speed,
     usage: call.usage,
     reasoningSemantics: call.reasoningSemantics,
-    legacyCostUSD: call.legacyCostUSD ?? call.costUSD ?? currentCostForCachedCall(call),
+    legacyCostUSD: legacyCostUSD ?? call.legacyCostUSD ?? call.costUSD ?? currentCostForCachedCall(call),
     isEstimated: call.isEstimated,
-    existingAssignment: call.costAssignment,
-    existingStoredCostUSD: call.costUSD,
-    existingLegacyCostUSD: call.legacyCostUSD,
+    ...(migration ? {} : { existingAssignment: call.costAssignment }),
+    ...(migration ? {} : { existingStoredCostUSD: call.costUSD }),
+    ...(migration ? {} : { existingLegacyCostUSD: call.legacyCostUSD }),
   })
 }
 

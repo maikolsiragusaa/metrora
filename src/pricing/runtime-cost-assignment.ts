@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { createHash } from 'node:crypto'
 
 import catalogData from '../data/pricing-history/catalog.v1.json'
 import { explicitZeroReasonForModel, getHistoricalPricingModelKey } from '../models.js'
@@ -23,6 +24,7 @@ import {
   resolveHistoricalPriceAcrossBooksV1,
 } from './local-observation-ledger.js'
 import { settleHistoricalCostV1 } from './settled-historical-cost.js'
+import { canonicalizeRfc8785 } from '../vendor/rfc8785-canonicalize.js'
 
 export type RuntimeHistoricalPricingModeV1 = 'historical' | 'compare' | 'legacy'
 
@@ -89,6 +91,13 @@ type RuntimePricingContextV1 = {
 }
 
 const reviewedBook = parseHistoricalPriceBookV1(catalogData)
+function reviewedPricingBookFingerprintV1(book: HistoricalPriceBookV1): string {
+  return `sha256:${createHash('sha256')
+    .update(`metrora-reviewed-pricing-book-v1\0${canonicalizeRfc8785(book)}`)
+    .digest('hex')}`
+}
+
+const reviewedPricingBookAuthorityFingerprint = reviewedPricingBookFingerprintV1(reviewedBook)
 const emptyBook: HistoricalPriceBookV1 = { schemaVersion: 1, records: [] }
 const contextStorage = new AsyncLocalStorage<RuntimePricingContextV1>()
 
@@ -104,7 +113,14 @@ export function runtimeHistoricalPricingModeV1(): RuntimeHistoricalPricingModeV1
 }
 
 export function runtimeHistoricalPricingCacheKeyV1(): string {
-  return runtimeHistoricalPricingModeV1()
+  return `${runtimeHistoricalPricingModeV1()}\u0002reviewedBook=${reviewedPricingBookAuthorityFingerprint}`
+}
+
+/** Deterministic authority for the bundled, reviewed Metrora price book. */
+export function reviewedHistoricalPricingAuthorityFingerprintV1(
+  bookInput: HistoricalPriceBookV1 | unknown = reviewedBook,
+): string {
+  return reviewedPricingBookFingerprintV1(parseHistoricalPriceBookV1(bookInput))
 }
 
 async function createContext(): Promise<RuntimePricingContextV1> {
