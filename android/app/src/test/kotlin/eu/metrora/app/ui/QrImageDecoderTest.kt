@@ -1,5 +1,8 @@
 package eu.metrora.app.ui
 
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.common.BitMatrix
+import com.google.zxing.qrcode.QRCodeWriter
 import eu.metrora.app.network.PairingBootstrap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -165,5 +168,55 @@ class QrImageDecoderTest {
         assertTrue(
             shouldApplySourceExifOrientation(QrImageBitmapSource.DIRECT_DECODE),
         )
+    }
+
+    @Test
+    fun zxing_camera_luminance_decoder_round_trips_pairing_payload() {
+        val raw = "metrora://connect?host=desktop.local&port=7777&token=test"
+        val matrix = qrMatrix(raw)
+
+        assertEquals(
+            raw,
+            decodeSingleQrLuminance(matrix.width, matrix.height, matrix.toLuminance()),
+        )
+    }
+
+    @Test
+    fun zxing_camera_luminance_decoder_handles_inverted_qr() {
+        val raw = "metrora://connect?host=desktop.local&port=7777&token=inverted"
+        val matrix = qrMatrix(raw)
+        val inverted = matrix.toLuminance().also { bytes ->
+            for (index in bytes.indices) {
+                bytes[index] = (255 - (bytes[index].toInt() and 0xff)).toByte()
+            }
+        }
+
+        assertEquals(raw, decodeSingleQrLuminance(matrix.width, matrix.height, inverted))
+    }
+
+    @Test
+    fun zxing_bitmap_pixel_decoder_round_trips_imported_qr() {
+        val raw = "metrora://connect?host=desktop.local&port=7777&token=image"
+        val matrix = qrMatrix(raw)
+
+        assertEquals(
+            listOf(raw),
+            decodeQrBitmapPixels(matrix.width, matrix.height, matrix.toArgbPixels()),
+        )
+    }
+
+    private fun qrMatrix(raw: String): BitMatrix =
+        QRCodeWriter().encode(raw, BarcodeFormat.QR_CODE, 256, 256)
+
+    private fun BitMatrix.toLuminance(): ByteArray = ByteArray(width * height) { index ->
+        val x = index % width
+        val y = index / width
+        if (get(x, y)) 0 else 0xff.toByte()
+    }
+
+    private fun BitMatrix.toArgbPixels(): IntArray = IntArray(width * height) { index ->
+        val x = index % width
+        val y = index / width
+        if (get(x, y)) 0xff000000.toInt() else 0xffffffff.toInt()
     }
 }
