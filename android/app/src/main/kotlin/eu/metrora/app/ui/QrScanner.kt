@@ -5,11 +5,11 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -56,8 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -68,12 +69,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.widthIn
 import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
 import eu.metrora.app.R
 import java.util.concurrent.Executors
 
@@ -381,20 +377,12 @@ private fun ScannerAmbientGlow(modifier: Modifier) {
 }
 
 @Composable
-@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 private fun QrCameraPreview(onDetected: (String) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestOnDetected by rememberUpdatedState(onDetected)
     val previewView = remember { PreviewView(context) }
     val executor = remember { Executors.newSingleThreadExecutor() }
-    val scanner = remember {
-        BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                .build(),
-        )
-    }
 
     DisposableEffect(lifecycleOwner) {
         var cameraProvider: ProcessCameraProvider? = null
@@ -408,17 +396,17 @@ private fun QrCameraPreview(onDetected: (String) -> Unit) {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
             analysis.setAnalyzer(executor) { imageProxy ->
-                val mediaImage = imageProxy.image
-                if (mediaImage == null) {
-                    imageProxy.close()
-                } else {
-                    scanner.process(
-                        InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees),
-                    ).addOnSuccessListener { codes ->
-                        codes.firstOrNull()?.rawValue?.let(latestOnDetected)
-                    }.addOnCompleteListener {
-                        imageProxy.close()
+                try {
+                    val luminance = imageProxy.copyLuminancePlane()
+                    if (luminance != null) {
+                        decodeSingleQrLuminance(
+                            imageProxy.width,
+                            imageProxy.height,
+                            luminance,
+                        )?.takeIf(String::isNotBlank)?.let(latestOnDetected)
                     }
+                } finally {
+                    imageProxy.close()
                 }
             }
             runCatching {
@@ -434,7 +422,6 @@ private fun QrCameraPreview(onDetected: (String) -> Unit) {
         providerFuture.addListener(listener, ContextCompat.getMainExecutor(context))
         onDispose {
             cameraProvider?.unbindAll()
-            scanner.close()
             executor.shutdown()
         }
     }
@@ -443,4 +430,28 @@ private fun QrCameraPreview(onDetected: (String) -> Unit) {
         factory = { previewView },
         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(21.dp)),
     )
+}
+
+private fun ImageProxy.copyLuminancePlane(): ByteArray? {
+    val plane = planes.firstOrNull() ?: return null
+    val frameWidth = width
+    val frameHeight = height
+    if (frameWidth <= 0 || frameHeight <= 0) return null
+
+    val output = ByteArray(frameWidth * frameHeight)
+    val buffer = plane.buffer.duplicate()
+    val baseOffset = buffer.position()
+    val limit = buffer.limit()
+    val rowStride = plane.rowStride
+    val pixelStride = plane.pixelStride
+
+    for (row in 0 until frameHeight) {
+        val rowOffset = baseOffset + row * rowStride
+        for (column in 0 until frameWidth) {
+            val sourceIndex = rowOffset + column * pixelStride
+            if (sourceIndex < baseOffset || sourceIndex >= limit) return null
+            output[row * frameWidth + column] = buffer.get(sourceIndex)
+        }
+    }
+    return output
 }

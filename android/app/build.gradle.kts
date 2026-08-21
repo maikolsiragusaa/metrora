@@ -230,7 +230,7 @@ dependencies {
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
-    implementation(libs.mlkit.barcode)
+    implementation(libs.zxing.core)
     implementation(libs.exifinterface)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.datastore.preferences)

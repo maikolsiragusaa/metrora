@@ -4,7 +4,7 @@ composeBom = "2026.06.01"
 camera = "1.4.2"
 datastore = "1.2.1"
 coroutines = "1.11.0"
-mlkitBarcode = "17.3.0"
+zxing = "3.5.4"
 exifinterface = "1.4.2"
 lifecycle = "2.9.4"
 junit = "4.13.2"
@@ -21,7 +21,7 @@ compose-icons = { module = "androidx.compose.material:material-icons-extended" }
 camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera" }
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera" }
 camera-view = { module = "androidx.camera:camera-view", version.ref = "camera" }
-mlkit-barcode = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkitBarcode" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
