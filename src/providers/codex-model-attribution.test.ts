@@ -25,7 +25,7 @@ afterEach(async () => {
 
 function sessionMeta(options: {
   sessionId?: string
-  directModel?: string
+  directModel?: unknown
   nestedModel?: string
   modelProvider?: string
   large?: boolean
@@ -44,7 +44,7 @@ function sessionMeta(options: {
     originator: 'codex_cli_rs',
   }
   if (options.nestedFirst) payload.base_instructions = nested
-  if (options.directModel) payload.model = options.directModel
+  if (Object.prototype.hasOwnProperty.call(options, 'directModel')) payload.model = options.directModel
   if (options.modelProvider) payload.model_provider = options.modelProvider
   if (!options.nestedFirst) payload.base_instructions = nested
 
@@ -152,6 +152,43 @@ describe('Codex session_meta model attribution', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.model).toBe('gpt-5')
     expect(calls[0]!.model).not.toBe('NESTED_MODEL')
+  })
+
+  it.each([
+    ['null', null],
+    ['number', 42],
+    ['object', { name: 'NOT_AUTHORITY' }],
+    ['array', ['NOT_AUTHORITY']],
+  ] as const)('fails closed when direct payload.model is %s before nested metadata', async (_label, directModel) => {
+    const path = await writeRollout(`invalid-direct-${_label}`, [
+      sessionMeta({ directModel, nestedModel: 'WRONG_MODEL', large: true }),
+      tokenCount('2026-08-01T10:00:02.000Z', 120),
+    ])
+    await assertUsesBufferFastPath(path)
+
+    const calls = await parseRollout(path)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.model).toBe('gpt-5')
+    expect(calls[0]!.model).not.toBe('WRONG_MODEL')
+  })
+
+  it.each([
+    ['null', null],
+    ['number', 42],
+    ['object', { name: 'NOT_AUTHORITY' }],
+    ['array', ['NOT_AUTHORITY']],
+  ] as const)('preserves an active turn model after an invalid direct %s field', async (_label, directModel) => {
+    const path = await writeRollout(`active-invalid-direct-${_label}`, [
+      sessionMeta({ directModel, nestedModel: 'WRONG_MODEL', large: true }),
+      turnContext('RIGHT_MODEL'),
+      tokenCount('2026-08-01T10:00:02.000Z', 120),
+      sessionMeta({ directModel, nestedModel: 'WRONG_MODEL', large: true }),
+      tokenCount('2026-08-01T10:00:03.000Z', 240, 80, 40),
+    ])
+    await assertUsesBufferFastPath(path)
+
+    const calls = await parseRollout(path)
+    expect(calls.map(call => call.model)).toEqual(['RIGHT_MODEL', 'RIGHT_MODEL'])
   })
 
   it('preserves the active turn model across nested-only mid-file session_meta records', async () => {
