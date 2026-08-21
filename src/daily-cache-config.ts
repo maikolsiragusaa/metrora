@@ -29,6 +29,7 @@ export function getDailyCacheConfigHash(): string {
     + `\u0002copilotJournal=${COPILOT_CHAT_JOURNAL_AUTHORITY}`
     + `\u0002copilotCliResume=${COPILOT_CLI_RESUME_AUTHORITY}`
     + `\u0002antigravityCollector=${PROVIDER_PARSE_VERSIONS['antigravity'] ?? ''}`
+    + `\u0002grokCollector=${PROVIDER_PARSE_VERSIONS['grok'] ?? ''}`
     + `\u0002opencodeCollector=${PROVIDER_PARSE_VERSIONS['opencode'] ?? ''}`
     + `\u0002modelIdentity=v3`
     + `\u0002${accountingHash}`
