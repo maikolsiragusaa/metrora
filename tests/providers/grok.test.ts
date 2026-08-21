@@ -358,7 +358,7 @@ describe('grok provider - parsing', () => {
     expect(inconsistentCalls[0]).toMatchObject({ inputTokens: 100, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, cacheTokenEvidence: 'inconsistent', costIsEstimated: true })
   })
 
-  it('bounds reasoning to inclusive output and keeps absent reasoning at zero', async () => {
+  it('bounds explicitly reported reasoning to inclusive output', async () => {
     await writeSession({
       turns: [],
       completedTurns: [
@@ -368,6 +368,16 @@ describe('grok provider - parsing', () => {
     const [bounded] = await parse()
     expect(bounded).toMatchObject({ outputTokens: 200, reasoningTokens: 200, reasoningSemantics: 'aggregate-output' })
     expect(generatedTokensForReasoningMix(bounded!.outputTokens, bounded!.reasoningTokens, bounded!.reasoningSemantics)).toBe(200)
+    expect(billableOutputTokens('grok', bounded!.outputTokens, bounded!.reasoningTokens, bounded!.reasoningSemantics)).toBe(200)
+  })
+
+  it('distinguishes explicit zero reasoning from absent reasoning', async () => {
+    await writeSession({
+      turns: [],
+      completedTurns: [{ promptId: 'explicit-zero', usage: authoritativeUsage({ input: 1000, output: 200, reasoning: 0 }) }],
+    })
+    const [explicitZero] = await parse()
+    expect(explicitZero).toMatchObject({ reasoningTokens: 0, reasoningSemantics: 'aggregate-output', costIsEstimated: false })
 
     await writeSession({
       uuid: '019edf9c-0000-7000-8000-000000000004',
@@ -379,7 +389,49 @@ describe('grok provider - parsing', () => {
     const calls: ParsedProviderCall[] = []
     const absentSource = sources.find(source => source.path.includes('000000000004'))!
     for await (const item of provider.createSessionParser(absentSource, new Set()).parse()) calls.push(item)
-    expect(calls[0]).toMatchObject({ reasoningTokens: 0, reasoningSemantics: 'aggregate-output' })
+    expect(calls[0]).toMatchObject({ reasoningTokens: 0, reasoningSemantics: 'unavailable', costIsEstimated: false })
+    expect(generatedTokensForReasoningMix(calls[0]!.outputTokens, calls[0]!.reasoningTokens, calls[0]!.reasoningSemantics)).toBe(200)
+    expect(billableOutputTokens('grok', calls[0]!.outputTokens, calls[0]!.reasoningTokens, calls[0]!.reasoningSemantics)).toBe(200)
+  })
+
+  it('fails closed when reasoning is malformed', async () => {
+    await writeSession({
+      turns: [],
+      completedTurns: [{
+        promptId: 'malformed-reasoning',
+        usage: { inputTokens: 1000, outputTokens: 200, cachedReadTokens: 500, cacheCreationTokens: 100, reasoningTokens: 'bad' },
+      }],
+    })
+    const [call] = await parse()
+    expect(call).toMatchObject({ reasoningTokens: 0, reasoningSemantics: 'unavailable', costIsEstimated: false })
+  })
+
+  it('combines aggregate-output and unavailable reasoning as mixed without double counting', async () => {
+    await writeSession({
+      turns: [],
+      completedTurns: [
+        { promptId: 'observed', usage: { inputTokens: 1000, outputTokens: 200, cachedReadTokens: 500, cacheCreationTokens: 100, reasoningTokens: 100 } },
+        { promptId: 'unobserved', usage: { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 600, cacheCreationTokens: 100 } },
+      ],
+    })
+    const [call] = await parse()
+    expect(call).toMatchObject({ outputTokens: 500, reasoningTokens: 100, reasoningSemantics: 'mixed', costIsEstimated: false })
+    expect(generatedTokensForReasoningMix(call!.outputTokens, call!.reasoningTokens, call!.reasoningSemantics)).toBe(500)
+    expect(billableOutputTokens('grok', call!.outputTokens, call!.reasoningTokens, call!.reasoningSemantics)).toBe(500)
+  })
+
+  it('marks a session unavailable when all contributing turns omit reasoning', async () => {
+    await writeSession({
+      uuid: '019edf9c-0000-7000-8000-000000000004',
+      turns: [],
+      completedTurns: [{ promptId: 'absent-all', usage: { inputTokens: 1000, outputTokens: 200, cachedReadTokens: 500, cacheCreationTokens: 100 } }],
+    })
+    const provider = createGrokProvider(tmpDir)
+    const sources = await provider.discoverSessions()
+    const calls: ParsedProviderCall[] = []
+    const absentSource = sources.find(source => source.path.includes('000000000004'))!
+    for await (const item of provider.createSessionParser(absentSource, new Set()).parse()) calls.push(item)
+    expect(calls[0]).toMatchObject({ reasoningTokens: 0, reasoningSemantics: 'unavailable' })
   })
 
   it('keeps one top-level call for multi-model usage and chooses a bounded priced attribution', async () => {

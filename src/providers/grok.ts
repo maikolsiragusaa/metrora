@@ -5,7 +5,7 @@ import { homedir } from 'os'
 import { readSessionFile } from '../fs-utils.js'
 import { calculateCost, getModelCosts, getShortModelName } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
-import type { CacheTokenEvidence } from '../token-semantics.js'
+import { combineReasoningSemantics, type CacheTokenEvidence, type ReasoningTokenSemantics } from '../token-semantics.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
 // Grok Build (xAI's coding CLI) stores one session per directory at
@@ -15,7 +15,8 @@ import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from 
 //
 // Newer Grok CLI versions append a `turn_completed` update with provider-recorded
 // input/output/cache/reasoning usage. That record is the best accounting evidence
-// available: Grok's input is cache-inclusive and reasoning is a subset of output.
+// available: Grok's input is cache-inclusive and explicitly reported reasoning is
+// a subset of output; absent reasoning evidence remains unavailable.
 // Older sessions only carry the running `_meta.totalTokens` curve, so the
 // compaction-aware estimate below remains the compatibility path. `costUsdTicks`
 // is deliberately ignored because its unit is undocumented.
@@ -102,13 +103,15 @@ type GrokUsageValues = {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
-  /** Factual reasoning, bounded to the provider-reported output. */
+  /** Factual reasoning, bounded to output when explicitly reported. */
   reasoningTokens: number
+  /** Whether this record explicitly evidenced reasoning as an output subset. */
+  reasoningSemantics: ReasoningTokenSemantics
   cacheTokenEvidence: CacheTokenEvidence
   /** Input and output were both explicitly valid numeric top-level fields. */
   topLevelAccountingComplete: boolean
-  /** At least one valid positive top-level accounting field was present. */
-  hasPositiveTopLevelUsage: boolean
+  /** At least one normalized accounting bucket contributes to the subtotal. */
+  hasPositiveAccountingUsage: boolean
   /** Actual model ids from modelUsage, used only for session attribution. */
   modelIds: string[]
 }
@@ -128,13 +131,6 @@ function emptyTokenTotals(): GrokTokenTotals {
 }
 
 const MAX_SAFE_TOKEN_COUNT = Number.MAX_SAFE_INTEGER
-const authoritativeTokenFields = [
-  'inputTokens',
-  'outputTokens',
-  'cachedReadTokens',
-  'cacheCreationTokens',
-  'reasoningTokens',
-] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -196,6 +192,9 @@ function parseAuthoritativeUsage(raw: unknown): GrokUsageValues | null {
   const cacheRead = readUsageNumber(raw, 'cachedReadTokens')
   const cacheCreation = readUsageNumber(raw, 'cacheCreationTokens')
   const reasoning = readUsageNumber(raw, 'reasoningTokens')
+  const reasoningSemantics: ReasoningTokenSemantics = output.valid && reasoning.present && reasoning.valid
+    ? 'aggregate-output'
+    : 'unavailable'
 
   const anyCachePresent = cacheRead.present || cacheCreation.present
   const invalidCacheField = (cacheRead.present && !cacheRead.valid)
@@ -232,13 +231,14 @@ function parseAuthoritativeUsage(raw: unknown): GrokUsageValues | null {
     outputTokens: output.value,
     cacheReadTokens: normalizedCacheRead,
     cacheCreationTokens: normalizedCacheCreation,
-    reasoningTokens: Math.min(reasoning.value, output.value),
+    reasoningTokens: reasoningSemantics === 'aggregate-output' ? Math.min(reasoning.value, output.value) : 0,
+    reasoningSemantics,
     cacheTokenEvidence,
     topLevelAccountingComplete: input.valid && output.valid,
-    hasPositiveTopLevelUsage: authoritativeTokenFields.some(field => {
-      const evidence = readUsageNumber(raw, field)
-      return evidence.valid && evidence.value > 0
-    }),
+    hasPositiveAccountingUsage: normalizedInput > 0
+      || normalizedCacheRead > 0
+      || normalizedCacheCreation > 0
+      || output.value > 0,
     modelIds: modelUsageIds(raw),
   }
 }
@@ -261,6 +261,7 @@ function parseUpdates(updates: string): {
   authoritative: boolean
   costIsEstimated: boolean
   cacheTokenEvidence?: CacheTokenEvidence
+  reasoningSemantics?: ReasoningTokenSemantics
   tools: string[]
   bashCommands: string[]
   subagentTypes: string[]
@@ -351,7 +352,7 @@ function parseUpdates(updates: string): {
 
   const completed = [...completedByPromptId.values(), ...completedWithoutPromptId]
   const validCompleted = completed.filter((usage): usage is GrokUsageValues => usage !== null)
-  const positiveCompleted = validCompleted.filter(usage => usage.hasPositiveTopLevelUsage)
+  const positiveCompleted = validCompleted.filter(usage => usage.hasPositiveAccountingUsage)
   const usageTotals = emptyTokenTotals()
   const modelIds: string[] = []
   const seenModelIds = new Set<string>()
@@ -381,13 +382,13 @@ function parseUpdates(updates: string): {
 
   const hasUncoveredTurn = [...streamedPromptIds].some(promptId => {
     const usage = completedByPromptId.get(promptId)
-    return usage === undefined || usage === null || !usage.hasPositiveTopLevelUsage
+    return usage === undefined || usage === null || !usage.hasPositiveAccountingUsage
   })
   const hasIncompleteCompletedUsage = completed.some(usage =>
     usage === null
     || !usage.topLevelAccountingComplete
     || usage.cacheTokenEvidence !== 'complete'
-    || !usage.hasPositiveTopLevelUsage,
+    || !usage.hasPositiveAccountingUsage,
   )
   const cacheTokenEvidence = combineCacheEvidence(
     completed.map(usage => usage?.cacheTokenEvidence ?? 'inconsistent'),
@@ -399,6 +400,7 @@ function parseUpdates(updates: string): {
     authoritative: true,
     costIsEstimated: hasUncoveredTurn || hasIncompleteCompletedUsage || cacheTokenEvidence !== 'complete',
     cacheTokenEvidence,
+    reasoningSemantics: combineReasoningSemantics(positiveCompleted.map(usage => usage.reasoningSemantics)),
     tools,
     bashCommands,
     subagentTypes,
@@ -453,15 +455,18 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         model,
         inputTokens: parsed.usage.input,
         // Grok reports output inclusive of reasoning. Metrora retains that
-        // provider truth and marks reasoning as an aggregate-output subset, so
-        // generated tokens and billable output remain the reported output.
+        // provider truth and carries the per-record reasoning evidence at the
+        // session boundary, so generated tokens and billable output remain the
+        // reported output even when reasoning evidence is unavailable.
         outputTokens: parsed.usage.output,
         cacheCreationInputTokens: parsed.usage.cacheCreation,
         cacheReadInputTokens: parsed.usage.cacheRead,
         cachedInputTokens: parsed.usage.cacheRead,
         reasoningTokens: parsed.usage.reasoning,
         webSearchRequests: 0,
-        ...(parsed.authoritative ? { reasoningSemantics: 'aggregate-output' as const } : {}),
+        ...(parsed.authoritative && parsed.reasoningSemantics
+          ? { reasoningSemantics: parsed.reasoningSemantics }
+          : {}),
         ...(parsed.authoritative && parsed.cacheTokenEvidence
           ? { cacheTokenEvidence: parsed.cacheTokenEvidence }
           : {}),

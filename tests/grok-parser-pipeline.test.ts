@@ -42,7 +42,11 @@ function usage(): Record<string, unknown> {
   }
 }
 
-async function writeGrokSession(): Promise<string> {
+async function writeGrokSession(
+  completedUsages: Array<{ promptId: string; usage: Record<string, unknown> }> = [
+    { promptId: 'pipeline-prompt', usage: usage() },
+  ],
+): Promise<string> {
   const sessionDir = join(process.env['GROK_HOME']!, 'sessions', '%2Fworkspace', SESSION_ID)
   await mkdir(sessionDir, { recursive: true })
   await writeFile(join(sessionDir, 'summary.json'), JSON.stringify({
@@ -59,7 +63,9 @@ async function writeGrokSession(): Promise<string> {
   const lines = [
     JSON.stringify({ params: { _meta: { totalTokens: 100, promptId: 'pipeline-prompt' }, update: { sessionUpdate: 'agent_message_chunk' } } }),
     JSON.stringify({ params: { _meta: { totalTokens: 120, promptId: 'pipeline-prompt' }, update: { sessionUpdate: 'agent_message_chunk' } } }),
-    JSON.stringify({ params: { update: { sessionUpdate: 'turn_completed', prompt_id: 'pipeline-prompt', usage: usage() } } }),
+    ...completedUsages.map(completed => JSON.stringify({ params: {
+      update: { sessionUpdate: 'turn_completed', prompt_id: completed.promptId, usage: completed.usage },
+    } })),
   ]
   const updatesPath = join(sessionDir, 'updates.jsonl')
   await writeFile(updatesPath, lines.join('\n') + '\n')
@@ -142,5 +148,49 @@ describe('Grok parser/session-cache pipeline', () => {
     } finally {
       sessionCacheApi.PROVIDER_PARSE_VERSIONS.grok = currentAuthority
     }
+  })
+
+  it('preserves unavailable reasoning semantics through cold and warm cache reloads', async () => {
+    await writeGrokSession([{
+      promptId: 'unavailable-prompt',
+      usage: {
+        inputTokens: 1000,
+        outputTokens: 200,
+        cachedReadTokens: 500,
+        cacheCreationTokens: 100,
+        modelUsage: { 'grok-build': { inputTokens: 1000, outputTokens: 200 } },
+      },
+    }])
+    const cold = firstCall(await parseGrok())
+    expect(cold).toMatchObject({ usage: { outputTokens: 200, reasoningTokens: 0 }, reasoningSemantics: 'unavailable' })
+
+    const { clearSessionCache } = await import('../src/parser.js')
+    clearSessionCache()
+    const warm = firstCall(await parseGrok())
+    expect(warm).toEqual(cold)
+
+    const cache = await sessionCacheApi.loadCache()
+    const updatesPath = join(process.env['GROK_HOME']!, 'sessions', '%2Fworkspace', SESSION_ID, 'updates.jsonl')
+    expect(cache.providers.grok?.files[updatesPath]?.turns[0]?.calls[0]).toMatchObject({ reasoningSemantics: 'unavailable', usage: { reasoningTokens: 0 } })
+  })
+
+  it('preserves mixed reasoning semantics and output totals through cold and warm cache reloads', async () => {
+    await writeGrokSession([
+      {
+        promptId: 'observed-prompt',
+        usage: { inputTokens: 1000, outputTokens: 200, cachedReadTokens: 500, cacheCreationTokens: 100, reasoningTokens: 100 },
+      },
+      {
+        promptId: 'unobserved-prompt',
+        usage: { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 600, cacheCreationTokens: 100 },
+      },
+    ])
+    const cold = firstCall(await parseGrok())
+    expect(cold).toMatchObject({ usage: { outputTokens: 500, reasoningTokens: 100 }, reasoningSemantics: 'mixed' })
+
+    const { clearSessionCache } = await import('../src/parser.js')
+    clearSessionCache()
+    const warm = firstCall(await parseGrok())
+    expect(warm).toEqual(cold)
   })
 })

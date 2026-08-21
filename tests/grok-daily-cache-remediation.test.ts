@@ -34,7 +34,19 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-async function writeGrokSession(): Promise<void> {
+async function writeGrokSession(
+  completedUsages: Array<{ promptId: string; usage: Record<string, unknown> }> = [{
+    promptId: 'daily-prompt',
+    usage: {
+      inputTokens: 1000,
+      outputTokens: 200,
+      cachedReadTokens: 500,
+      cacheCreationTokens: 100,
+      reasoningTokens: 150,
+      modelUsage: { 'grok-build': { inputTokens: 1000, outputTokens: 200 } },
+    },
+  }],
+): Promise<void> {
   const sessionDir = join(process.env['GROK_HOME']!, 'sessions', '%2Fworkspace', SESSION_ID)
   await mkdir(sessionDir, { recursive: true })
   await writeFile(join(sessionDir, 'summary.json'), JSON.stringify({
@@ -46,18 +58,9 @@ async function writeGrokSession(): Promise<void> {
   await writeFile(join(sessionDir, 'signals.json'), JSON.stringify({ primaryModelId: 'grok-build' }))
   await writeFile(join(sessionDir, 'updates.jsonl'), [
     JSON.stringify({ params: { _meta: { totalTokens: 100, promptId: 'daily-prompt' }, update: { sessionUpdate: 'agent_message_chunk' } } }),
-    JSON.stringify({ params: { update: {
-      sessionUpdate: 'turn_completed',
-      prompt_id: 'daily-prompt',
-      usage: {
-        inputTokens: 1000,
-        outputTokens: 200,
-        cachedReadTokens: 500,
-        cacheCreationTokens: 100,
-        reasoningTokens: 150,
-        modelUsage: { 'grok-build': { inputTokens: 1000, outputTokens: 200 } },
-      },
-    } } }),
+    ...completedUsages.map(completed => JSON.stringify({ params: {
+      update: { sessionUpdate: 'turn_completed', prompt_id: completed.promptId, usage: completed.usage },
+    } })),
   ].join('\n') + '\n')
 }
 
@@ -173,5 +176,39 @@ describe('Grok daily-cache authority', () => {
     expect(result?.providers.grok).toEqual(sourcelessSlice)
     expect(result?.providers.grok).not.toHaveProperty('inputTokens')
     expect(result?.providers.grok).not.toHaveProperty('reasoningTokens')
+  })
+
+  it('keeps mixed reasoning non-additive in daily aggregation', async () => {
+    await writeGrokSession([
+      {
+        promptId: 'observed-daily',
+        usage: { inputTokens: 1000, outputTokens: 200, cachedReadTokens: 500, cacheCreationTokens: 100, reasoningTokens: 100 },
+      },
+      {
+        promptId: 'unobserved-daily',
+        usage: { inputTokens: 1200, outputTokens: 300, cachedReadTokens: 600, cacheCreationTokens: 100 },
+      },
+    ])
+    const { parseAllSessions } = await import('../src/parser.js')
+    const { aggregateProjectsIntoDays } = await import('../src/day-aggregator.js')
+    const [entry] = aggregateProjectsIntoDays(await parseAllSessions(undefined, 'grok'))
+    expect(entry).toMatchObject({ outputTokens: 500, reasoningTokens: 100, additiveReasoningTokens: 0 })
+    expect(entry?.models['grok-build']).toMatchObject({ outputTokens: 500, reasoningTokens: 100, additiveReasoningTokens: 0, reasoningSemantics: 'mixed' })
+    expect(entry?.providers.grok).toMatchObject({ outputTokens: 500, reasoningTokens: 100, additiveReasoningTokens: 0 })
+  })
+
+  it('keeps unavailable reasoning non-additive in daily aggregation', async () => {
+    await writeGrokSession([{
+      promptId: 'unavailable-daily',
+      usage: { inputTokens: 1000, outputTokens: 200, cachedReadTokens: 500, cacheCreationTokens: 100 },
+    }])
+    const { parseAllSessions } = await import('../src/parser.js')
+    const { aggregateProjectsIntoDays } = await import('../src/day-aggregator.js')
+    const [entry] = aggregateProjectsIntoDays(await parseAllSessions(undefined, 'grok'))
+    expect(entry).toMatchObject({ outputTokens: 200 })
+    expect(entry).not.toHaveProperty('reasoningTokens')
+    expect(entry?.models['grok-build']).toMatchObject({ outputTokens: 200, reasoningSemantics: 'unavailable' })
+    expect(entry?.models['grok-build']).not.toHaveProperty('reasoningTokens')
+    expect(entry?.models['grok-build']).not.toHaveProperty('additiveReasoningTokens')
   })
 })
