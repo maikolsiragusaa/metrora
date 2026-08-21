@@ -100,23 +100,32 @@ test('SHA256SUMS parsing rejects malformed or duplicate entries', () => {
   assert.throws(() => parseSha256Sums(`${apk} *artifact.apk\n`))
 })
 
-test('release scanner keeps ML Kit registrars and camera-independent image import', () => {
+test('release scanner uses ZXing core and keeps camera-independent image import', () => {
+  const versionCatalog = readRepositoryFile('android/gradle/libs.versions.toml')
+  const buildGradle = readRepositoryFile('android/app/build.gradle.kts')
   const proguardRules = readRepositoryFile('android/app/proguard-rules.pro')
-  for (const registrar of [
-    'com.google.mlkit.vision.barcode.internal.BarcodeRegistrar',
-    'com.google.mlkit.vision.common.internal.VisionCommonRegistrar',
-    'com.google.mlkit.common.internal.CommonComponentRegistrar',
-  ]) {
-    const escapedRegistrar = registrar.replaceAll('.', '\\.')
-    assert.match(
-      proguardRules,
-      new RegExp(`-keep class ${escapedRegistrar}\\s*\\{\\s*public <init>\\(\\);\\s*\\}`),
-    )
-  }
-
   const scannerSource = readRepositoryFile(
     'android/app/src/main/kotlin/eu/metrora/app/ui/QrScanner.kt',
   )
+  const imageDecoderSource = readRepositoryFile(
+    'android/app/src/main/kotlin/eu/metrora/app/ui/QrImageDecoder.kt',
+  )
+  const zxingDecoderSource = readRepositoryFile(
+    'android/app/src/main/kotlin/eu/metrora/app/ui/QrCodeDecoder.kt',
+  )
+
+  assert.match(versionCatalog, /zxing = "3\.5\.4"/)
+  assert.match(versionCatalog, /com\.google\.zxing:core/)
+  assert.match(buildGradle, /implementation\(libs\.zxing\.core\)/)
+  assert.match(zxingDecoderSource, /QRCodeReader/)
+  assert.match(zxingDecoderSource, /QRCodeMultiReader/)
+
+  for (const source of [versionCatalog, buildGradle, proguardRules, scannerSource, imageDecoderSource]) {
+    assert.doesNotMatch(source, /com\.google\.mlkit/)
+  }
+  assert.doesNotMatch(versionCatalog, /mlkitBarcode|mlkit-barcode/)
+  assert.doesNotMatch(imageDecoderSource, /com\.google\.android\.gms\.tasks/)
+
   const cameraBranch = scannerSource.indexOf('if (hasPermission)')
   const cameraBranchEnd = scannerSource.indexOf('\n        OutlinedButton(', cameraBranch)
   const imageImport = scannerSource.indexOf('R.string.import_qr_from_image')
