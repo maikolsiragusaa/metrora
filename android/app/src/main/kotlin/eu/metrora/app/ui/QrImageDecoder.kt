@@ -10,11 +10,6 @@ import android.os.Build
 import android.util.Size
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
-import com.google.android.gms.tasks.Tasks
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -53,7 +48,7 @@ internal fun shouldApplySourceExifOrientation(source: QrImageBitmapSource): Bool
     source == QrImageBitmapSource.DIRECT_DECODE
 
 /**
- * Converts the bounded ML Kit result into a single image-import outcome.
+ * Converts the bounded QR decoder result into a single image-import outcome.
  * Payload parsing intentionally remains outside this boundary.
  */
 internal fun classifyQrImageResults(rawValues: List<String?>): QrImageImportResult = when {
@@ -101,17 +96,12 @@ internal class QrImageDecodeOperation internal constructor() {
 
 /**
  * Local, QR-only static-image decoder. The source bitmap is downsampled and
- * released after ML Kit finishes; the selected Uri is never copied or stored.
+ * released after ZXing finishes; the selected Uri is never copied or stored.
  */
 internal class QrImageDecoder(context: Context) : Closeable {
     private val applicationContext = context.applicationContext
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
     private val callbackExecutor = ContextCompat.getMainExecutor(applicationContext)
-    private val scanner = BarcodeScanning.getClient(
-        BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .build(),
-    )
     private val closed = AtomicBoolean(false)
 
     internal fun decode(
@@ -137,7 +127,6 @@ internal class QrImageDecoder(context: Context) : Closeable {
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         worker.shutdownNow()
-        scanner.close()
     }
 
     private fun decodeOnWorker(
@@ -152,10 +141,21 @@ internal class QrImageDecoder(context: Context) : Closeable {
             bitmap = decodedBitmap
             if (!operation.isActive()) return
 
-            val barcodes = Tasks.await(scanner.process(InputImage.fromBitmap(decodedBitmap, 0)))
+            val pixels = IntArray(decodedBitmap.width * decodedBitmap.height)
+            decodedBitmap.getPixels(
+                pixels,
+                0,
+                decodedBitmap.width,
+                0,
+                0,
+                decodedBitmap.width,
+                decodedBitmap.height,
+            )
             deliver(
                 operation = operation,
-                result = classifyQrImageResults(barcodes.map { it.rawValue }),
+                result = classifyQrImageResults(
+                    decodeQrBitmapPixels(decodedBitmap.width, decodedBitmap.height, pixels),
+                ),
                 onResult = onResult,
             )
         } catch (_: InterruptedException) {
