@@ -12,6 +12,7 @@ import { estimateTokensFromChars } from '../token-estimate.js'
 import { findExplicitReasoningLevel, reasoningLevelFromModelLabel, type ReasoningLevel } from '../reasoning-level.js'
 import type { ToolCall } from '../types.js'
 import type { Provider, ProbeRoot, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import { getRawDirectPayloadStringField, getRawPayloadFieldWindow } from './codex-buffer-fields.js'
 import { finiteTimestamp, isPlainObject, nonEmptyString, sanitizeProject } from './codex-input-guards.js'
 import { mcpToolFromShellCommand } from './codex-shell-tools.js'
 
@@ -199,54 +200,6 @@ function getRawJsonNumberField(head: string, field: string): number | undefined 
   return Number.isFinite(value) ? value : undefined
 }
 
-function getRawPayloadFieldWindow(source: Buffer, field: string, windowBytes = 4096): string | undefined {
-  const payloadKey = Buffer.from('"payload"')
-  const payloadIndex = source.indexOf(payloadKey)
-  if (payloadIndex < 0) return undefined
-  let payloadStart = source.indexOf(0x7b, payloadIndex + payloadKey.length) // {
-  if (payloadStart < 0) return undefined
-
-  let depth = 0
-  let inString = false
-  let escaped = false
-  for (let i = payloadStart; i < source.length; i++) {
-    const byte = source[i]!
-    if (inString) {
-      if (escaped) escaped = false
-      else if (byte === 0x5c) escaped = true // \\
-      else if (byte === 0x22) inString = false // "
-      continue
-    }
-    if (byte === 0x22) {
-      const keyStart = i + 1
-      let keyEnd = keyStart
-      let keyEscaped = false
-      for (; keyEnd < source.length; keyEnd++) {
-        const keyByte = source[keyEnd]!
-        if (keyEscaped) { keyEscaped = false; continue }
-        if (keyByte === 0x5c) { keyEscaped = true; continue }
-        if (keyByte === 0x22) break
-      }
-      if (depth === 1 && keyEnd < source.length) {
-        const key = source.subarray(keyStart, keyEnd).toString('utf-8')
-        let valueStart = keyEnd + 1
-        while (valueStart < source.length && (source[valueStart] === 0x20 || source[valueStart] === 0x09 || source[valueStart] === 0x0a || source[valueStart] === 0x0d)) valueStart++
-        if (source[valueStart] === 0x3a && key === field) {
-          return source.subarray(i, Math.min(source.length, i + windowBytes)).toString('utf-8')
-        }
-      }
-      i = keyEnd
-      inString = false
-      continue
-    }
-    if (byte === 0x22) inString = true
-    else if (byte === 0x7b || byte === 0x5b) depth++ // { or [
-    else if (byte === 0x7d || byte === 0x5d) depth-- // } or ]
-    if (depth < 0) break
-  }
-  return undefined
-}
-
 function getRawDurationMs(head: string): number | undefined {
   const objectMatch = /"duration"\s*:\s*\{\s*"secs"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"nanos"\s*:\s*(-?\d+(?:\.\d+)?)\s*\}/.exec(head)
   if (objectMatch) {
@@ -404,7 +357,8 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
     ? getRawDurationMs(getRawPayloadFieldWindow(line, 'duration') ?? '')
     : undefined
   const timingDuration = payloadDuration ?? getRawDurationMs(pHead) ?? getRawDurationMs(timingTail)
-  const compactModel = getRawJsonStringField(pHead, 'model')
+  // Only direct session_meta.payload.model is authoritative on the Buffer path.
+  const compactModel = type === 'session_meta' ? getRawDirectPayloadStringField(line, 'model') : getRawJsonStringField(pHead, 'model')
   const compactModelName = getRawJsonStringField(pHead, 'model_name')
   const compactReasoningEffort = getRawReasoningEffort(pHead)
   const compactLastUsage = getRawTokenUsage(pHead, 'last_token_usage')
@@ -426,7 +380,7 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
       id: getRawJsonStringField(pHead, 'id'),
       session_id: getRawJsonStringField(pHead, 'session_id'),
       forked_from_id: getRawJsonStringField(pHead, 'forked_from_id'),
-      model: getRawJsonStringField(pHead, 'model'),
+      model: compactModel,
       reasoning_effort: compactReasoningEffort,
       name: getRawJsonStringField(pHead, 'name'),
       invocation,

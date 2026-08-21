@@ -72,7 +72,10 @@ const MIN_SUPPORTED_VERSION = 15
 // A durable source is allowed to outlive the bounded detailed session cache.
 // This marker makes the first run after that contract change an explicit,
 // one-time reconciliation rather than relying on the ordinary 365-day poll.
-export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v2-project-tokens'
+// The Codex session-meta model authority change also advances this marker so
+// surviving Codex sources anywhere in the 10-year retained history are
+// re-derived; sourceless provider slices remain carried by NEVER-LOSE merge.
+export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v2-project-tokens-codex-session-meta-model-v1'
 // Version-suffixed so different binaries each own a distinct file and never
 // clobber an incompatible schema. Bumping the version mints a fresh filename;
 // adoptOlderDailyCaches then unions days out of every previous file (including

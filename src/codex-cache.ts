@@ -20,7 +20,10 @@ import { flattenParsedProviderCalls } from './string-retention.js'
 // v11: legacy session_meta.payload.id is a native session identity fallback.
 // Reparse any surviving result-cache entries so their session identity cannot
 // remain pinned to the pre-v11 admission/identity contract.
-const CODEX_CACHE_VERSION = 11
+// v12: session_meta model attribution is restricted to the direct
+// session_meta.payload.model field; reparse entries that may have promoted
+// nested provenance.model from the compact Buffer path.
+const CODEX_CACHE_VERSION = 12
 const CACHE_FILE = 'codex-results.json'
 
 type FileFingerprint = { mtimeMs: number; sizeBytes: number }

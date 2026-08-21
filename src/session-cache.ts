@@ -235,7 +235,8 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // rich-session-capture-v1: per-call LOC deltas + editFailed from
   // patch_apply_end. (The codex-results.json CODEX_CACHE_VERSION is bumped in
   // lockstep so the pre-session-cache layer re-parses too.)
-  codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1',
+  // session-meta-model-v1: direct payload.model only; nested provenance.model is metadata.
+  codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1-session-meta-model-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
   copilot: 'cli-shutdown-cost-v3-source-provenance-otel-token-semantics-v1-reasoning-evidence-v1',
@@ -260,7 +261,6 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   zed: 'sqlite-zstd-ledger-v1-model-provider-v1-pricing-context-v1',
 }
 // ── Cache Dir ──────────────────────────────────────────────────────────
-
 function getCacheDir(): string {
   return getMetroraCacheDir()
 }
