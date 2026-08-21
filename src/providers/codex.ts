@@ -246,7 +246,6 @@ function getRawPayloadFieldWindow(source: Buffer, field: string, windowBytes = 4
   }
   return undefined
 }
-
 function getRawDurationMs(head: string): number | undefined {
   const objectMatch = /"duration"\s*:\s*\{\s*"secs"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"nanos"\s*:\s*(-?\d+(?:\.\d+)?)\s*\}/.exec(head)
   if (objectMatch) {
@@ -404,7 +403,8 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
     ? getRawDurationMs(getRawPayloadFieldWindow(line, 'duration') ?? '')
     : undefined
   const timingDuration = payloadDuration ?? getRawDurationMs(pHead) ?? getRawDurationMs(timingTail)
-  const compactModel = getRawJsonStringField(pHead, 'model')
+  // Only direct session_meta.payload.model is authoritative on the Buffer path.
+  const compactModel = type === 'session_meta' ? getRawJsonStringField(getRawPayloadFieldWindow(line, 'model') ?? '', 'model') : getRawJsonStringField(pHead, 'model')
   const compactModelName = getRawJsonStringField(pHead, 'model_name')
   const compactReasoningEffort = getRawReasoningEffort(pHead)
   const compactLastUsage = getRawTokenUsage(pHead, 'last_token_usage')
@@ -426,7 +426,7 @@ function parseCodexLine(line: string | Buffer): CodexEntry | null {
       id: getRawJsonStringField(pHead, 'id'),
       session_id: getRawJsonStringField(pHead, 'session_id'),
       forked_from_id: getRawJsonStringField(pHead, 'forked_from_id'),
-      model: getRawJsonStringField(pHead, 'model'),
+      model: compactModel,
       reasoning_effort: compactReasoningEffort,
       name: getRawJsonStringField(pHead, 'name'),
       invocation,

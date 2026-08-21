@@ -105,6 +105,7 @@ describe('codex provider - legacy session_meta identity', () => {
     const dailyHash = getDailyCacheConfigHash()
 
     expect(effective).toContain(CODEX_LEGACY_SESSION_META_AUTHORITY)
+    expect(effective).toContain('session-meta-model-v1')
     expect(PROVIDER_PARSE_VERSIONS['codex']).toBe(effective)
     expect(repeated).toBe(effective)
     expect(repeatedFingerprint).toBe(fingerprint)

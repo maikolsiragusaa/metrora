@@ -78,7 +78,7 @@ export type CollectorCostProvenanceV1 = z.infer<typeof CollectorCostProvenanceSc
 export type CollectorProvenanceProfileV1 = z.infer<typeof CollectorProvenanceProfileV1Schema>
 
 const CLAUDE_PARSER_VERSION = 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1-native-id-reconciliation-v1'
-const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1'
+const CODEX_PARSER_VERSION = 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1-session-meta-model-v1'
 const GEMINI_PARSER_VERSION = 'message-token-ledger-v1'
 const ZED_PARSER_VERSION = 'sqlite-zstd-ledger-v1-model-provider-v1-pricing-context-v1'
 
