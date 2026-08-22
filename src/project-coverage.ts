@@ -21,16 +21,48 @@ function hasProjectUsage(stats: NonNullable<DailyEntry['projects']>[string]): bo
   return stats.cost > 0 || stats.calls > 0 || stats.savingsUSD > 0
 }
 
+function hasDayUsage(day: DailyEntry): boolean {
+  return day.cost !== 0 || day.calls > 0 || day.savingsUSD !== 0
+}
+
+function hasModelRows(project: NonNullable<DailyEntry['projects']>[string]): boolean {
+  return Object.values(project.modelDetail?.rows ?? {}).some(row =>
+    row.calls > 0
+    || row.cost > 0
+    || row.savingsUSD > 0
+    || row.inputTokens > 0
+    || row.outputTokens > 0
+    || (row.reasoningTokens ?? 0) > 0
+    || (row.additiveReasoningTokens ?? 0) > 0
+    || row.cacheReadTokens > 0
+    || row.cacheWriteTokens > 0,
+  )
+}
+
+function hasCategoryRows(project: NonNullable<DailyEntry['projects']>[string]): boolean {
+  return Object.values(project.categoryDetail?.rows ?? {}).some(row =>
+    row.turns > 0 || row.cost > 0 || row.savingsUSD > 0,
+  )
+}
+
 function projectDetailCoverage(
   days: DailyEntry[],
   kind: 'modelDetail' | 'categoryDetail',
 ): DetailCoverageState[] {
   return days.map(day => {
     const projects = Object.values(day.projects ?? {}).filter(hasProjectUsage)
-    if (projects.length === 0) return 'unavailable'
-    const blocks = projects.map(project => project[kind])
-    if (blocks.every(block => block !== undefined && block.coverage === 'complete')) return 'complete'
-    if (blocks.some(block => block !== undefined)) return 'partial'
+    // A sessions-only shell has no model/category usage to cover. Treat it as
+    // neutral complete-empty evidence; a cost/call-bearing day with no
+    // attributed project usage remains unavailable.
+    if (projects.length === 0) return hasDayUsage(day) ? 'unavailable' : 'complete'
+    const states = projects.map(project => {
+      const block = project[kind]
+      const hasRows = kind === 'modelDetail' ? hasModelRows(project) : hasCategoryRows(project)
+      if (!block || !hasRows) return 'unavailable' as const
+      return block.coverage
+    })
+    if (states.every(state => state === 'complete')) return 'complete'
+    if (states.some(state => state === 'complete' || state === 'partial')) return 'partial'
     return 'unavailable'
   })
 }

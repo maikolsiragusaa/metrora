@@ -176,6 +176,26 @@ function v19Envelope(days: DailyEntry[], authority = 'materialize-before-evict-v
   }
 }
 
+function foreignDay(project: Record<string, unknown>): Record<string, unknown> {
+  return {
+    date: '2026-08-02',
+    cost: project.cost ?? 0,
+    savingsUSD: project.savingsUSD ?? 0,
+    calls: project.calls ?? 0,
+    sessions: project.sessions ?? 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    editTurns: 0,
+    oneShotTurns: 0,
+    models: {},
+    categories: {},
+    providers: {},
+    projects: { A: project },
+  }
+}
+
 beforeEach(async () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-08-03T12:00:00.000Z'))
@@ -308,7 +328,7 @@ describe('v20 durable Source Project model/category authority', () => {
     expect(accounting.rows[0]).not.toHaveProperty('tokenDetail', false)
   })
 
-  it('distinguishes explicit complete-empty detail from unavailable detail', () => {
+  it('fails closed when call-bearing complete-empty detail is serialized', () => {
     const base: DailyEntry = {
       date: '2026-08-02', cost: 1, savingsUSD: 0, calls: 1, sessions: 1,
       inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
@@ -317,16 +337,134 @@ describe('v20 durable Source Project model/category authority', () => {
     }
     const missing = { ...base, projects: { A: { cost: 1, calls: 1, savingsUSD: 0, sessions: 1, path: '/source/a' } } }
     const scope = registry({ mp_a: [sourceProjectIdForSummary(projectSummary('A', '/source/a', []))] })
-    const complete = filterDailyEntryByMetroraScope(base, scope, 'mp_a')
+    const normalized = migrateDays([base as unknown as Record<string, unknown>])[0]!
+    const complete = filterDailyEntryByMetroraScope(normalized, scope, 'mp_a')
     const unavailable = filterDailyEntryByMetroraScope(missing, scope, 'mp_a')
+    const unsanitizedCoverage = withProjectDetailCoverage(buildPeriodDataFromDays([base], 'Lifetime'), [base], true, '2026-08-03')
     const completeCoverage = withProjectDetailCoverage(buildPeriodDataFromDays([complete], 'Lifetime'), [complete], true, '2026-08-03')
     const unavailableCoverage = withProjectDetailCoverage(buildPeriodDataFromDays([unavailable], 'Lifetime'), [unavailable], true, '2026-08-03')
 
+    expect(normalized.projects?.A?.modelDetail).toBeUndefined()
+    expect(normalized.projects?.A?.categoryDetail).toBeUndefined()
     expect(complete.models).toEqual({})
-    expect(completeCoverage.projectDetailCoverage?.models).toBe('complete')
-    expect(completeCoverage.projectDetailCoverage?.categories).toBe('complete')
+    expect(unsanitizedCoverage.projectDetailCoverage?.models).toBe('unavailable')
+    expect(unsanitizedCoverage.projectDetailCoverage?.categories).toBe('unavailable')
+    expect(completeCoverage.projectDetailCoverage?.models).toBe('unavailable')
+    expect(completeCoverage.projectDetailCoverage?.categories).toBe('unavailable')
     expect(unavailableCoverage.projectDetailCoverage?.models).toBe('unavailable')
     expect(unavailableCoverage.projectDetailCoverage?.categories).toBe('unavailable')
+  })
+
+  it('preserves complete-empty detail for a genuine sessions-only project', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 0,
+      calls: 0,
+      savingsUSD: 0,
+      sessions: 1,
+      modelDetail: { coverage: 'complete', rows: {} },
+      categoryDetail: { coverage: 'complete', rows: {} },
+    })])[0]!
+    const scope = registry({ mp_a: [sourceProjectIdForSummary(projectSummary('A', '/source/a', []))] })
+    const scoped = filterDailyEntryByMetroraScope(normalized, scope, 'mp_a')
+    const coverage = withProjectDetailCoverage(buildPeriodDataFromDays([scoped], 'Lifetime'), [scoped], true, '2026-08-03')
+
+    expect(normalized.projects?.A?.modelDetail).toEqual({ coverage: 'complete', rows: {} })
+    expect(normalized.projects?.A?.categoryDetail).toEqual({ coverage: 'complete', rows: {} })
+    expect(coverage.projectDetailCoverage?.models).toBe('complete')
+    expect(coverage.projectDetailCoverage?.categories).toBe('complete')
+  })
+
+  it('downgrades a complete model claim when sanitization drops a malformed row', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 2,
+      calls: 2,
+      savingsUSD: 0,
+      sessions: 1,
+      modelDetail: {
+        coverage: 'complete',
+        rows: {
+          known: { calls: 1, cost: 1, savingsUSD: 0, inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          malformed: 'drop-me',
+        },
+      },
+    })])[0]!
+    const detail = normalized.projects?.A?.modelDetail
+
+    expect(detail?.coverage).toBe('partial')
+    expect(detail?.rows).toHaveProperty('known')
+    expect(detail?.rows).not.toHaveProperty('malformed')
+  })
+
+  it('downgrades a complete category claim when sanitization drops a malformed row', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 2,
+      calls: 2,
+      savingsUSD: 0,
+      sessions: 1,
+      categoryDetail: {
+        coverage: 'complete',
+        rows: {
+          coding: { turns: 1, cost: 1, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 },
+          malformed: null,
+        },
+      },
+    })])[0]!
+    const detail = normalized.projects?.A?.categoryDetail
+
+    expect(detail?.coverage).toBe('partial')
+    expect(detail?.rows).toHaveProperty('coding')
+    expect(detail?.rows).not.toHaveProperty('malformed')
+  })
+
+  it('removes a partial detail block when sanitization removes every factual row', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 2,
+      calls: 2,
+      savingsUSD: 0,
+      sessions: 1,
+      modelDetail: { coverage: 'partial', rows: { malformed: [] } },
+      categoryDetail: { coverage: 'partial', rows: { malformed: false } },
+    })])[0]!
+
+    expect(normalized.projects?.A?.modelDetail).toBeUndefined()
+    expect(normalized.projects?.A?.categoryDetail).toBeUndefined()
+  })
+
+  it('keeps valid complete model rows only when they reconcile to Project facts', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 3,
+      calls: 2,
+      savingsUSD: 0,
+      sessions: 1,
+      inputTokens: 30,
+      outputTokens: 40,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 4,
+      modelDetail: {
+        coverage: 'complete',
+        rows: {
+          first: { calls: 1, cost: 1, savingsUSD: 0, inputTokens: 10, outputTokens: 20, cacheReadTokens: 1, cacheWriteTokens: 2 },
+          second: { calls: 1, cost: 2, savingsUSD: 0, inputTokens: 20, outputTokens: 20, cacheReadTokens: 2, cacheWriteTokens: 2 },
+        },
+      },
+    })])[0]!
+
+    expect(normalized.projects?.A?.modelDetail?.coverage).toBe('complete')
+  })
+
+  it('keeps valid complete category rows when cost and savings reconcile', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 3,
+      calls: 2,
+      savingsUSD: 0.25,
+      sessions: 1,
+      categoryDetail: {
+        coverage: 'complete',
+        rows: { coding: { turns: 1, cost: 3, savingsUSD: 0.25, editTurns: 0, oneShotTurns: 0 } },
+      },
+    })])[0]!
+
+    expect(normalized.projects?.A?.categoryDetail?.coverage).toBe('complete')
   })
 
   it('preserves separate, aggregate-output, and mixed reasoning algebra in project rows', () => {
@@ -376,8 +514,7 @@ describe('v20 durable Source Project model/category authority', () => {
     const migrated = migrateDays([raw])[0]!
 
     expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
-    expect(migrated.projects?.A?.modelDetail?.rows).not.toHaveProperty('__proto__')
-    expect(migrated.projects?.A?.modelDetail?.rows).not.toHaveProperty('constructor')
+    expect(migrated.projects?.A?.modelDetail).toBeUndefined()
     expect(migrated.projects?.A?.categoryDetail?.rows).toHaveProperty('coding')
   })
 

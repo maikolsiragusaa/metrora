@@ -193,7 +193,7 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
     for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
       if (typeof p[field] === 'number' && Number.isFinite(p[field])) clean[field] = Math.max(0, p[field])
     }
-    Object.assign(clean, sanitizeProjectDetails(p))
+    Object.assign(clean, sanitizeProjectDetails(p, clean))
     setOwn(out, name, clean)
   }
   return Object.keys(out).length > 0 ? { projects: out } : {}
