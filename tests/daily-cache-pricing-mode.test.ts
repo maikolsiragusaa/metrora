@@ -50,7 +50,7 @@ describe('daily cache historical-pricing boundary', () => {
 
     expect(hash).toContain(`reviewedBook=${fingerprint}`)
     expect(runtimeHistoricalPricingCacheKeyV1()).toContain(`reviewedBook=${fingerprint}`)
-    expect(DAILY_CACHE_VERSION).toBe(19)
+    expect(DAILY_CACHE_VERSION).toBe(20)
 
     const changed = structuredClone(book)
     changed.records[0]!.rates.inputPerToken += 1e-12

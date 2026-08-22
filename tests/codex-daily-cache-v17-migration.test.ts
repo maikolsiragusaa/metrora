@@ -62,7 +62,7 @@ afterEach(async () => {
 
 describe('daily-cache v19 adoption from v17', () => {
   it('re-derives surviving Codex days and carries sourceless history losslessly and idempotently', async () => {
-    expect(DAILY_CACHE_VERSION).toBe(19)
+    expect(DAILY_CACHE_VERSION).toBe(20)
     await mkdir(cacheDir, { recursive: true })
     const v17 = {
       version: 17,
@@ -101,7 +101,7 @@ describe('daily-cache v19 adoption from v17', () => {
     await writeFile(join(cacheDir, 'daily-cache.v17.json'), JSON.stringify(v17))
 
     const adopted = await loadDailyCache()
-    expect(adopted.version).toBe(19)
+    expect(adopted.version).toBe(20)
     expect(adopted.complete).toBe(false)
     expect(adopted.days).toHaveLength(2)
 
@@ -162,7 +162,7 @@ describe('daily-cache v19 adoption from v17', () => {
     expect(again).toEqual(migrated)
 
     const persisted = JSON.parse(await readFile(dailyCachePath(), 'utf-8'))
-    expect(persisted.version).toBe(19)
+    expect(persisted.version).toBe(20)
     expect(persisted.days.find((entry: DailyEntry) => entry.date === '2026-08-03').cost).toBe(12.345678)
   })
 

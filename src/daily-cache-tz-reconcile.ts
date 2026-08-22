@@ -6,6 +6,9 @@ import {
   type ProjectDayStats,
   type ProviderDaySlice,
 } from './daily-cache-core.js'
+import { cloneCategoryStats } from './daily-cache-category-detail.js'
+import { cloneModelStats } from './daily-cache-model-detail.js'
+import { cloneProjectStats } from './daily-cache-project-detail.js'
 
 function num(value: number | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
@@ -83,7 +86,7 @@ function subtractModels(
   if (!base) return undefined
   const out: Record<string, ModelDayStats> = {}
   for (const [name, stats] of Object.entries(base)) {
-    const reduced = sub && Object.hasOwn(sub, name) ? subtractModelStats(stats, sub[name]!) : structuredClone(stats)
+    const reduced = sub && Object.hasOwn(sub, name) ? subtractModelStats(stats, sub[name]!) : cloneModelStats(stats)
     if (reduced) setOwn(out, name, reduced)
   }
   return Object.keys(out).length > 0 ? out : undefined
@@ -106,10 +109,50 @@ function subtractCategories(
   if (!base) return undefined
   const out: Record<string, CategoryDayStats> = {}
   for (const [name, stats] of Object.entries(base)) {
-    const reduced = sub && Object.hasOwn(sub, name) ? subtractCategoryStats(stats, sub[name]!) : structuredClone(stats)
+    const reduced = sub && Object.hasOwn(sub, name) ? subtractCategoryStats(stats, sub[name]!) : cloneCategoryStats(stats)
     if (reduced) setOwn(out, name, reduced)
   }
   return Object.keys(out).length > 0 ? out : undefined
+}
+
+function detailCoverage(
+  base: 'complete' | 'partial',
+  sub: 'complete' | 'partial' | undefined,
+  missingSubIsPartial: boolean,
+): 'complete' | 'partial' {
+  return base === 'partial' || sub === 'partial' || (missingSubIsPartial && sub === undefined) ? 'partial' : 'complete'
+}
+
+function subtractModelDetail(
+  base: NonNullable<ProjectDayStats['modelDetail']>,
+  sub: NonNullable<ProjectDayStats['modelDetail']> | undefined,
+  missingSubIsPartial: boolean,
+): NonNullable<ProjectDayStats['modelDetail']> {
+  const rows: NonNullable<ProjectDayStats['modelDetail']>['rows'] = {}
+  for (const [name, stats] of Object.entries(base.rows)) {
+    const reduced = sub && Object.hasOwn(sub.rows, name) ? subtractModelStats(stats, sub.rows[name]!) : cloneModelStats(stats)
+    if (reduced) setOwn(rows, name, reduced)
+  }
+  return {
+    coverage: detailCoverage(base.coverage, sub?.coverage, missingSubIsPartial),
+    rows,
+  }
+}
+
+function subtractCategoryDetail(
+  base: NonNullable<ProjectDayStats['categoryDetail']>,
+  sub: NonNullable<ProjectDayStats['categoryDetail']> | undefined,
+  missingSubIsPartial: boolean,
+): NonNullable<ProjectDayStats['categoryDetail']> {
+  const rows: NonNullable<ProjectDayStats['categoryDetail']>['rows'] = {}
+  for (const [name, stats] of Object.entries(base.rows)) {
+    const reduced = sub && Object.hasOwn(sub.rows, name) ? subtractCategoryStats(stats, sub.rows[name]!) : cloneCategoryStats(stats)
+    if (reduced) setOwn(rows, name, reduced)
+  }
+  return {
+    coverage: detailCoverage(base.coverage, sub?.coverage, missingSubIsPartial),
+    rows,
+  }
 }
 
 function subtractProjectStats(base: ProjectDayStats, sub: ProjectDayStats): ProjectDayStats | null {
@@ -129,6 +172,12 @@ function subtractProjectStats(base: ProjectDayStats, sub: ProjectDayStats): Proj
       out[field] = Math.max(0, base[field] - num(sub[field]))
     }
   }
+  if (base.modelDetail) {
+    out.modelDetail = subtractModelDetail(base.modelDetail, sub.modelDetail, subHasUsage)
+  }
+  if (base.categoryDetail) {
+    out.categoryDetail = subtractCategoryDetail(base.categoryDetail, sub.categoryDetail, subHasUsage)
+  }
   if (cost === 0 && calls === 0 && savingsUSD === 0 && sessions === 0
     && (out.inputTokens ?? 0) === 0 && (out.outputTokens ?? 0) === 0
     && (out.reasoningTokens ?? 0) === 0 && (out.cacheReadTokens ?? 0) === 0
@@ -144,7 +193,7 @@ function subtractProjects(
   if (!base) return undefined
   const out: Record<string, ProjectDayStats> = {}
   for (const [name, stats] of Object.entries(base)) {
-    const reduced = sub && Object.hasOwn(sub, name) ? subtractProjectStats(stats, sub[name]!) : structuredClone(stats)
+    const reduced = sub && Object.hasOwn(sub, name) ? subtractProjectStats(stats, sub[name]!) : cloneProjectStats(stats)
     if (reduced) setOwn(out, name, reduced)
   }
   return Object.keys(out).length > 0 ? out : undefined
@@ -232,6 +281,12 @@ function projectDelta(base: ProjectDayStats, reduced: ProjectDayStats | undefine
     } else {
       out[field] = Math.max(0, base[field] - num(reduced?.[field]))
     }
+  }
+  if (base.modelDetail) {
+    out.modelDetail = subtractModelDetail(base.modelDetail, reduced?.modelDetail, reduced !== undefined)
+  }
+  if (base.categoryDetail) {
+    out.categoryDetail = subtractCategoryDetail(base.categoryDetail, reduced?.categoryDetail, reduced !== undefined)
   }
   return out
 }

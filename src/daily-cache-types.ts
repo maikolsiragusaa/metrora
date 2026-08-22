@@ -23,6 +23,18 @@ export type ModelDayStats = {
 
 export type CategoryDayStats = { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }
 
+export type DurableProjectDetailCoverage = 'complete' | 'partial'
+
+export type ProjectModelDetail = {
+  coverage: DurableProjectDetailCoverage
+  rows: Record<string, ModelDayStats>
+}
+
+export type ProjectCategoryDetail = {
+  coverage: DurableProjectDetailCoverage
+  rows: Record<string, CategoryDayStats>
+}
+
 /// `path` is the project's filesystem path when known — it is what display
 /// layers derive a friendly name from once the sessions that carried the
 /// mapping are gone. Token fields are optional because pre-v19 days never
@@ -41,6 +53,10 @@ export type ProjectDayStats = {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   path?: string
+  /// Model/category detail is source-backed aggregate authority. An absent
+  /// block is unavailable; an explicit complete empty block is authoritative.
+  modelDetail?: ProjectModelDetail
+  categoryDetail?: ProjectCategoryDetail
 }
 
 export type ProviderDaySlice = {

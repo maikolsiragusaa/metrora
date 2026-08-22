@@ -1,4 +1,7 @@
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
+import { cloneCategoryStats } from './daily-cache-category-detail.js'
+import { cloneModelStats } from './daily-cache-model-detail.js'
+import { cloneProjectStats as cloneDurableProjectStats, cloneProjectStatsMap, hasProjectUsage, mergeProjectDetails } from './daily-cache-project-detail.js'
 
 export const UNATTRIBUTED_PROJECT_KEY = '\u0000metrora:unattributed'
 export const UNATTRIBUTED_PROJECT_LABEL = 'Unattributed'
@@ -11,8 +14,9 @@ export type DurableProjectFilter = {
 export type DurableProjectScopeOptions = {
   /**
    * True only for a day already produced from a project-filtered live parse.
-   * Historical project rollups do not own token/model/category attribution, so
-   * those details must remain empty when a project filter is applied.
+   * Historical project rollups use durable Source Project detail when present;
+   * this flag is reserved for a day already produced from a project-filtered
+   * live parse, whose day-level maps are already authoritative.
    */
   preserveDetailedBreakdown?: boolean
 }
@@ -60,12 +64,13 @@ export function matchesDurableProjectFilter(
 }
 
 function cloneProjectStats(stats: ProjectDayStats): ProjectDayStats {
-  return { ...stats }
+  return cloneDurableProjectStats(stats)
 }
 
 function sumProjects(projects: Record<string, ProjectDayStats>): ProjectDayStats {
   const total: ProjectDayStats = { cost: 0, calls: 0, savingsUSD: 0, sessions: 0 }
   for (const stats of Object.values(projects)) {
+    const targetHadUsage = hasProjectUsage(total)
     total.cost += stats.cost
     total.calls += stats.calls
     total.savingsUSD += stats.savingsUSD
@@ -76,8 +81,21 @@ function sumProjects(projects: Record<string, ProjectDayStats>): ProjectDayStats
     if (stats.additiveReasoningTokens !== undefined) total.additiveReasoningTokens = (total.additiveReasoningTokens ?? 0) + stats.additiveReasoningTokens
     if (stats.cacheReadTokens !== undefined) total.cacheReadTokens = (total.cacheReadTokens ?? 0) + stats.cacheReadTokens
     if (stats.cacheWriteTokens !== undefined) total.cacheWriteTokens = (total.cacheWriteTokens ?? 0) + stats.cacheWriteTokens
+    mergeProjectDetails(total, stats, targetHadUsage)
   }
   return total
+}
+
+function cloneModels(rows: ProviderDaySlice['models'] | undefined): NonNullable<ProviderDaySlice['models']> {
+  const out: NonNullable<ProviderDaySlice['models']> = {}
+  for (const [name, stats] of Object.entries(rows ?? {})) setOwn(out, name, cloneModelStats(stats))
+  return out
+}
+
+function cloneCategories(rows: ProviderDaySlice['categories'] | undefined): NonNullable<ProviderDaySlice['categories']> {
+  const out: NonNullable<ProviderDaySlice['categories']> = {}
+  for (const [name, stats] of Object.entries(rows ?? {})) setOwn(out, name, cloneCategoryStats(stats))
+  return out
 }
 
 function positiveFloatRemainder(total: number, attributed: number): number {
@@ -149,21 +167,19 @@ function projectScopedSlice(
 
   const selected = filterProjects(projects, filter)
   const totals = sumProjects(selected)
+  const { modelDetail, categoryDetail, ...scalarTotals } = totals
   return {
-    calls: totals.calls,
-    cost: totals.cost,
-    savingsUSD: totals.savingsUSD,
-    sessions: totals.sessions,
-    inputTokens: preserveDetailedBreakdown ? (slice.inputTokens ?? 0) : (totals.inputTokens ?? 0),
-    outputTokens: preserveDetailedBreakdown ? (slice.outputTokens ?? 0) : (totals.outputTokens ?? 0),
-    reasoningTokens: preserveDetailedBreakdown ? slice.reasoningTokens : totals.reasoningTokens,
-    additiveReasoningTokens: preserveDetailedBreakdown ? slice.additiveReasoningTokens : totals.additiveReasoningTokens,
-    cacheReadTokens: preserveDetailedBreakdown ? (slice.cacheReadTokens ?? 0) : (totals.cacheReadTokens ?? 0),
-    cacheWriteTokens: preserveDetailedBreakdown ? (slice.cacheWriteTokens ?? 0) : (totals.cacheWriteTokens ?? 0),
+    ...scalarTotals,
+    inputTokens: preserveDetailedBreakdown ? (slice.inputTokens ?? 0) : (scalarTotals.inputTokens ?? 0),
+    outputTokens: preserveDetailedBreakdown ? (slice.outputTokens ?? 0) : (scalarTotals.outputTokens ?? 0),
+    reasoningTokens: preserveDetailedBreakdown ? slice.reasoningTokens : scalarTotals.reasoningTokens,
+    additiveReasoningTokens: preserveDetailedBreakdown ? slice.additiveReasoningTokens : scalarTotals.additiveReasoningTokens,
+    cacheReadTokens: preserveDetailedBreakdown ? (slice.cacheReadTokens ?? 0) : (scalarTotals.cacheReadTokens ?? 0),
+    cacheWriteTokens: preserveDetailedBreakdown ? (slice.cacheWriteTokens ?? 0) : (scalarTotals.cacheWriteTokens ?? 0),
     editTurns: preserveDetailedBreakdown ? (slice.editTurns ?? 0) : 0,
     oneShotTurns: preserveDetailedBreakdown ? (slice.oneShotTurns ?? 0) : 0,
-    models: preserveDetailedBreakdown ? (slice.models ?? {}) : {},
-    categories: preserveDetailedBreakdown ? (slice.categories ?? {}) : {},
+    models: preserveDetailedBreakdown ? cloneModels(slice.models) : cloneModels(modelDetail?.rows),
+    categories: preserveDetailedBreakdown ? cloneCategories(slice.categories) : cloneCategories(categoryDetail?.rows),
     ...(Object.keys(selected).length > 0 ? { projects: selected } : {}),
   }
 }
@@ -191,24 +207,30 @@ export function sliceDayToProvider(day: DailyEntry, provider: string): DailyEntr
   }
 
   const providers = ownRecord<ProviderDaySlice>()
-  setOwn(providers, provider, slice)
+  setOwn(providers, provider, {
+    ...slice,
+    ...(slice.models ? { models: cloneModels(slice.models) } : {}),
+    ...(slice.categories ? { categories: cloneCategories(slice.categories) } : {}),
+    ...(slice.projects ? { projects: cloneProjectStatsMap(slice.projects) } : {}),
+  })
+  const projectedSlice = providers[provider]!
   return {
     date: day.date,
-    cost: slice.cost,
-    savingsUSD: slice.savingsUSD ?? 0,
-    calls: slice.calls,
-    sessions: slice.sessions ?? 0,
-    inputTokens: slice.inputTokens ?? 0,
-    outputTokens: slice.outputTokens ?? 0,
-    additiveReasoningTokens: slice.additiveReasoningTokens,
-    cacheReadTokens: slice.cacheReadTokens ?? 0,
-    cacheWriteTokens: slice.cacheWriteTokens ?? 0,
-    editTurns: slice.editTurns ?? 0,
-    oneShotTurns: slice.oneShotTurns ?? 0,
-    models: slice.models ?? {},
-    categories: slice.categories ?? {},
+    cost: projectedSlice.cost,
+    savingsUSD: projectedSlice.savingsUSD ?? 0,
+    calls: projectedSlice.calls,
+    sessions: projectedSlice.sessions ?? 0,
+    inputTokens: projectedSlice.inputTokens ?? 0,
+    outputTokens: projectedSlice.outputTokens ?? 0,
+    additiveReasoningTokens: projectedSlice.additiveReasoningTokens,
+    cacheReadTokens: projectedSlice.cacheReadTokens ?? 0,
+    cacheWriteTokens: projectedSlice.cacheWriteTokens ?? 0,
+    editTurns: projectedSlice.editTurns ?? 0,
+    oneShotTurns: projectedSlice.oneShotTurns ?? 0,
+    models: projectedSlice.models ?? {},
+    categories: projectedSlice.categories ?? {},
     providers,
-    ...(slice.projects ? { projects: slice.projects } : {}),
+    ...(projectedSlice.projects ? { projects: projectedSlice.projects } : {}),
     ...(day.carried ? { carried: true as const } : {}),
   }
 }
@@ -240,22 +262,20 @@ export function reconcileDurableProjectDay(
 
   const selected = filterProjects(projects, filter)
   const totals = sumProjects(selected)
+  const { modelDetail, categoryDetail, ...scalarTotals } = totals
   return {
     date: day.date,
-    cost: totals.cost,
-    savingsUSD: totals.savingsUSD,
-    calls: totals.calls,
-    sessions: totals.sessions,
-    inputTokens: preserveDetailedBreakdown ? day.inputTokens : (totals.inputTokens ?? 0),
-    outputTokens: preserveDetailedBreakdown ? day.outputTokens : (totals.outputTokens ?? 0),
-    reasoningTokens: preserveDetailedBreakdown ? day.reasoningTokens : totals.reasoningTokens,
-    additiveReasoningTokens: preserveDetailedBreakdown ? day.additiveReasoningTokens : totals.additiveReasoningTokens,
-    cacheReadTokens: preserveDetailedBreakdown ? day.cacheReadTokens : (totals.cacheReadTokens ?? 0),
-    cacheWriteTokens: preserveDetailedBreakdown ? day.cacheWriteTokens : (totals.cacheWriteTokens ?? 0),
+    ...scalarTotals,
+    inputTokens: preserveDetailedBreakdown ? day.inputTokens : (scalarTotals.inputTokens ?? 0),
+    outputTokens: preserveDetailedBreakdown ? day.outputTokens : (scalarTotals.outputTokens ?? 0),
+    reasoningTokens: preserveDetailedBreakdown ? day.reasoningTokens : scalarTotals.reasoningTokens,
+    additiveReasoningTokens: preserveDetailedBreakdown ? day.additiveReasoningTokens : scalarTotals.additiveReasoningTokens,
+    cacheReadTokens: preserveDetailedBreakdown ? day.cacheReadTokens : (scalarTotals.cacheReadTokens ?? 0),
+    cacheWriteTokens: preserveDetailedBreakdown ? day.cacheWriteTokens : (scalarTotals.cacheWriteTokens ?? 0),
     editTurns: preserveDetailedBreakdown ? day.editTurns : 0,
     oneShotTurns: preserveDetailedBreakdown ? day.oneShotTurns : 0,
-    models: preserveDetailedBreakdown ? day.models : {},
-    categories: preserveDetailedBreakdown ? day.categories : {},
+    models: preserveDetailedBreakdown ? cloneModels(day.models) : cloneModels(modelDetail?.rows),
+    categories: preserveDetailedBreakdown ? cloneCategories(day.categories) : cloneCategories(categoryDetail?.rows),
     providers,
     ...(Object.keys(selected).length > 0 ? { projects: selected } : {}),
     ...(day.carried ? { carried: true as const } : {}),

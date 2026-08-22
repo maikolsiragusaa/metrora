@@ -1,13 +1,16 @@
-import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
+import type { CategoryDayStats, DailyEntry, ModelDayStats, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
 import type { PeriodData } from './menubar-json.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type TokenUsage } from './types.js'
 import { combineReasoningSemantics, reasoningTokenTotals, type ReasoningTokenSemantics, type ReasoningTokenTotals } from './token-semantics.js'
+import { emptyModelStats, mergeModelStats } from './daily-cache-model-detail.js'
+import { emptyCategoryStats, mergeCategoryStats, setOwn } from './daily-cache-category-detail.js'
+import { addCategoryDetail, addModelDetail } from './daily-cache-project-detail.js'
 
 // Raw model IDs remain human-readable in legacy daily caches. New rows use an
 // additive envelope so a source-recorded route can survive the daily
 // projection without changing the model ID used for pricing.
 const MODEL_KEY_PREFIX = '\u0001metrora-model\u0001'
-function modelStorageKey(model: string, modelProvider?: string): string {
+export function modelStorageKey(model: string, modelProvider?: string): string {
   return modelProvider ? `${MODEL_KEY_PREFIX}${JSON.stringify([modelProvider, model])}` : model
 }
 
@@ -26,10 +29,6 @@ function decodeModelStorageKey(key: string): { name: string; modelProvider?: str
     // dropped from durable accounting.
   }
   return { name: key }
-}
-
-function addSourceProvider(target: { sourceProviders?: string[] }, provider: string): void {
-  target.sourceProviders = [...new Set([...(target.sourceProviders ?? []), provider])].sort()
 }
 
 function addCallReasoningSemantics(
@@ -61,6 +60,31 @@ function addProjectTokenUsage(target: ProjectDayStats, usage: TokenUsage, reason
   target.cacheReadTokens = (target.cacheReadTokens ?? 0) + usage.cacheReadInputTokens
   target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + usage.cacheCreationInputTokens
   addReasoningTotals(target, reasoning)
+}
+
+function modelStatsForCall(call: {
+  provider: string
+  modelProvider?: string
+  model: string
+  costUSD: number
+  savingsUSD?: number
+  usage: TokenUsage
+  reasoningSemantics?: ReasoningTokenSemantics
+}, reasoning: ReasoningTokenTotals): ModelDayStats {
+  const stats: ModelDayStats = {
+    calls: 1,
+    cost: call.costUSD,
+    savingsUSD: call.savingsUSD ?? 0,
+    inputTokens: call.usage.inputTokens,
+    outputTokens: call.usage.outputTokens,
+    cacheReadTokens: call.usage.cacheReadInputTokens,
+    cacheWriteTokens: call.usage.cacheCreationInputTokens,
+    ...(call.modelProvider ? { modelProvider: call.modelProvider } : {}),
+    sourceProviders: [call.provider],
+  }
+  addReasoningTotals(stats, reasoning)
+  addCallReasoningSemantics(stats, call)
+  return stats
 }
 
 function emptyEntry(date: string): DailyEntry {
@@ -127,8 +151,8 @@ export function aggregateProjectsIntoDays(
     return d
   }
   const ensureSlice = (day: DailyEntry, provider: string): ProviderDaySlice => {
-    let s = day.providers[provider]
-    if (!s) { s = emptySlice(); day.providers[provider] = s }
+    let s = Object.hasOwn(day.providers, provider) ? day.providers[provider] : undefined
+    if (!s) { s = emptySlice(); setOwn(day.providers, provider, s) }
     return s
   }
   const ensureProject = (holder: { projects?: Record<string, ProjectDayStats> }, project: string, path?: string): ProjectDayStats => {
@@ -179,13 +203,21 @@ export function aggregateProjectsIntoDays(
         turnDay.editTurns += editTurns
         turnDay.oneShotTurns += oneShotTurns
 
-        const cat = turnDay.categories[turn.category] ?? { turns: 0, cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 }
-        cat.turns += 1
-        cat.cost += turnCost
-        cat.savingsUSD += turnSavings
-        cat.editTurns += editTurns
-        cat.oneShotTurns += oneShotTurns
-        turnDay.categories[turn.category] = cat
+        const categoryContribution: CategoryDayStats = {
+          turns: 1,
+          cost: turnCost,
+          savingsUSD: turnSavings,
+          editTurns,
+          oneShotTurns,
+        }
+        const cat = Object.hasOwn(turnDay.categories, turn.category)
+          ? turnDay.categories[turn.category]!
+          : emptyCategoryStats()
+        mergeCategoryStats(cat, categoryContribution)
+        setOwn(turnDay.categories, turn.category, cat)
+
+        const dayProject = ensureProject(turnDay, session.project, project.projectPath)
+        addCategoryDetail(dayProject, turn.category, categoryContribution)
 
         // Cost stays attributed to every provider actually present in the turn,
         // but turn counts belong to exactly one slice. Otherwise carrying one
@@ -214,18 +246,27 @@ export function aggregateProjectsIntoDays(
           const ownsTurn = prov === primaryProvider
           turnSlice.editTurns! += ownsTurn ? editTurns : 0
           turnSlice.oneShotTurns! += ownsTurn ? oneShotTurns : 0
-          const sliceCat = turnSlice.categories![turn.category] ?? { turns: 0, cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 }
-          sliceCat.turns += ownsTurn ? 1 : 0
-          sliceCat.cost += totals.cost
-          sliceCat.savingsUSD += totals.savingsUSD
-          sliceCat.editTurns += ownsTurn ? editTurns : 0
-          sliceCat.oneShotTurns += ownsTurn ? oneShotTurns : 0
-          turnSlice.categories![turn.category] = sliceCat
+          const sliceCategoryContribution: CategoryDayStats = {
+            turns: ownsTurn ? 1 : 0,
+            cost: totals.cost,
+            savingsUSD: totals.savingsUSD,
+            editTurns: ownsTurn ? editTurns : 0,
+            oneShotTurns: ownsTurn ? oneShotTurns : 0,
+          }
+          const sliceCat = Object.hasOwn(turnSlice.categories!, turn.category)
+            ? turnSlice.categories![turn.category]!
+            : emptyCategoryStats()
+          mergeCategoryStats(sliceCat, sliceCategoryContribution)
+          setOwn(turnSlice.categories!, turn.category, sliceCat)
+
+          const sliceProject = ensureProject(turnSlice, session.project, project.projectPath)
+          addCategoryDetail(sliceProject, turn.category, sliceCategoryContribution)
         }
 
         for (const call of turn.assistantCalls) {
           const callSavings = call.savingsUSD ?? 0
           const callReasoning = callReasoningTotals(call)
+          const modelContribution = modelStatsForCall(call, callReasoning)
 
           turnDay.cost += call.costUSD
           turnDay.savingsUSD += callSavings
@@ -236,30 +277,16 @@ export function aggregateProjectsIntoDays(
           turnDay.cacheReadTokens += call.usage.cacheReadInputTokens
           turnDay.cacheWriteTokens += call.usage.cacheCreationInputTokens
 
-          const dayProject = ensureProject(turnDay, session.project, project.projectPath)
           dayProject.cost += call.costUSD
           dayProject.calls += 1
           dayProject.savingsUSD += callSavings
           addProjectTokenUsage(dayProject, call.usage, callReasoning)
 
           const modelKey = modelStorageKey(call.model, call.modelProvider)
-          const model = turnDay.models[modelKey] ?? {
-            calls: 0, cost: 0, savingsUSD: 0,
-            inputTokens: 0, outputTokens: 0,
-            cacheReadTokens: 0, cacheWriteTokens: 0,
-          }
-          model.calls += 1
-          model.cost += call.costUSD
-          model.savingsUSD += callSavings
-          model.inputTokens += call.usage.inputTokens
-          model.outputTokens += call.usage.outputTokens
-          addReasoningTotals(model, callReasoning)
-          model.cacheReadTokens += call.usage.cacheReadInputTokens
-          model.cacheWriteTokens += call.usage.cacheCreationInputTokens
-          if (call.modelProvider) model.modelProvider = call.modelProvider
-          addCallReasoningSemantics(model, call)
-          addSourceProvider(model, call.provider)
-          turnDay.models[modelKey] = model
+          const model = Object.hasOwn(turnDay.models, modelKey) ? turnDay.models[modelKey]! : emptyModelStats()
+          mergeModelStats(model, modelContribution)
+          setOwn(turnDay.models, modelKey, model)
+          addModelDetail(dayProject, modelKey, modelContribution)
 
           const slice = ensureSlice(turnDay, call.provider)
           slice.calls += 1
@@ -277,23 +304,10 @@ export function aggregateProjectsIntoDays(
           sliceProject.savingsUSD += callSavings
           addProjectTokenUsage(sliceProject, call.usage, callReasoning)
 
-          const sliceModel = slice.models![modelKey] ?? {
-            calls: 0, cost: 0, savingsUSD: 0,
-            inputTokens: 0, outputTokens: 0,
-            cacheReadTokens: 0, cacheWriteTokens: 0,
-          }
-          sliceModel.calls += 1
-          sliceModel.cost += call.costUSD
-          sliceModel.savingsUSD += callSavings
-          sliceModel.inputTokens += call.usage.inputTokens
-          sliceModel.outputTokens += call.usage.outputTokens
-          addReasoningTotals(sliceModel, callReasoning)
-          sliceModel.cacheReadTokens += call.usage.cacheReadInputTokens
-          sliceModel.cacheWriteTokens += call.usage.cacheCreationInputTokens
-          if (call.modelProvider) sliceModel.modelProvider = call.modelProvider
-          addSourceProvider(sliceModel, call.provider)
-          addCallReasoningSemantics(sliceModel, call)
-          slice.models![modelKey] = sliceModel
+          const sliceModel = Object.hasOwn(slice.models!, modelKey) ? slice.models![modelKey]! : emptyModelStats()
+          mergeModelStats(sliceModel, modelContribution)
+          setOwn(slice.models!, modelKey, sliceModel)
+          addModelDetail(sliceProject, modelKey, modelContribution)
         }
       }
     }

@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
 
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
+import { cloneCategoryStats, setOwn } from './daily-cache-category-detail.js'
+import { cloneModelStats } from './daily-cache-model-detail.js'
+import { cloneProjectStats, hasProjectUsage, mergeProjectDetails } from './daily-cache-project-detail.js'
 import { durableProjectDisplayName } from './durable-project-reconciliation.js'
 import { normalizeProjectPathKey, projectNameFromPath } from './project-path-utils.js'
 import type { ProjectRegistry, MetroraProject } from './project-registry.js'
@@ -230,7 +233,19 @@ export function filterProjectsByMetroraScope(
 }
 
 function cloneStats(stats: ProjectDayStats): ProjectDayStats {
-  return { ...stats }
+  return cloneProjectStats(stats)
+}
+
+function cloneModelRows(rows: DailyEntry['models'] | undefined): DailyEntry['models'] {
+  const result: DailyEntry['models'] = {}
+  for (const [name, stats] of Object.entries(rows ?? {})) setOwn(result, name, cloneModelStats(stats))
+  return result
+}
+
+function cloneCategoryRows(rows: DailyEntry['categories'] | undefined): DailyEntry['categories'] {
+  const result: DailyEntry['categories'] = {}
+  for (const [name, stats] of Object.entries(rows ?? {})) setOwn(result, name, cloneCategoryStats(stats))
+  return result
 }
 
 function addProjectTokenStats(target: ProjectDayStats, source: ProjectDayStats): void {
@@ -250,7 +265,7 @@ function scopedProjectStats(
   const result: Record<string, ProjectDayStats> = {}
   for (const [name, value] of Object.entries(stats ?? {})) {
     const id = sourceProjectIdForDurableProject(name, value.path)
-    if (includeSource(scopeId, assignedProjectId(registry, id))) result[name] = cloneStats(value)
+    if (includeSource(scopeId, assignedProjectId(registry, id))) setOwn(result, name, cloneStats(value))
   }
   return result
 }
@@ -258,11 +273,13 @@ function scopedProjectStats(
 function sumStats(stats: Record<string, ProjectDayStats>): ProjectDayStats {
   const total: ProjectDayStats = { cost: 0, savingsUSD: 0, calls: 0, sessions: 0 }
   for (const value of Object.values(stats)) {
+    const targetHadUsage = hasProjectUsage(total)
     total.cost += value.cost
     total.savingsUSD += value.savingsUSD
     total.calls += value.calls
     total.sessions += value.sessions
     addProjectTokenStats(total, value)
+    mergeProjectDetails(total, value, targetHadUsage)
   }
   return total
 }
@@ -275,9 +292,10 @@ function scopedProviderSlice(
 ): ProviderDaySlice {
   const projects = scopedProjectStats(slice.projects, registry, scopeId)
   const totals = sumStats(projects)
+  const { modelDetail, categoryDetail, ...scalarTotals } = totals
   return {
     ...slice,
-    ...totals,
+    ...scalarTotals,
     projects,
     ...(preserveDetailedBreakdown ? {
       inputTokens: slice.inputTokens,
@@ -288,11 +306,11 @@ function scopedProviderSlice(
       cacheWriteTokens: slice.cacheWriteTokens,
       editTurns: slice.editTurns,
       oneShotTurns: slice.oneShotTurns,
-      models: slice.models ?? {},
-      categories: slice.categories ?? {},
+      models: cloneModelRows(slice.models),
+      categories: cloneCategoryRows(slice.categories),
     } : {
-      // Daily caches do not retain model/category detail per Source Project.
-      // Empty detail is explicit unavailable data; it is never a factual zero.
+      // Historical project detail is sourced only from the selected Source
+      // Project rows. A missing block remains an unavailable empty projection.
       inputTokens: totals.inputTokens ?? 0,
       outputTokens: totals.outputTokens ?? 0,
       reasoningTokens: totals.reasoningTokens,
@@ -301,13 +319,13 @@ function scopedProviderSlice(
       cacheWriteTokens: totals.cacheWriteTokens ?? 0,
       editTurns: 0,
       oneShotTurns: 0,
-      models: {},
-      categories: {},
+      models: cloneModelRows(modelDetail?.rows),
+      categories: cloneCategoryRows(categoryDetail?.rows),
     }),
   }
 }
 
-/** Project-scoped durable days reuse cached project totals without inventing model detail. */
+/** Project-scoped durable days derive detail only from selected Source Project rows. */
 export function filterDailyEntryByMetroraScope(
   day: DailyEntry,
   registry: ProjectRegistry,
@@ -317,14 +335,15 @@ export function filterDailyEntryByMetroraScope(
   if (!scopeId || scopeId === ALL_PROJECTS_SCOPE_ID) return day
   const projects = scopedProjectStats(day.projects, registry, scopeId)
   const totals = sumStats(projects)
+  const { modelDetail, categoryDetail, ...scalarTotals } = totals
   const providers: Record<string, ProviderDaySlice> = {}
   for (const [provider, slice] of Object.entries(day.providers)) {
     const scoped = scopedProviderSlice(slice, registry, scopeId, options.preserveDetailedBreakdown === true)
-    if (scoped.calls > 0 || (scoped.sessions ?? 0) > 0 || scoped.cost !== 0 || Object.keys(scoped.projects ?? {}).length > 0) providers[provider] = scoped
+    if (scoped.calls > 0 || (scoped.sessions ?? 0) > 0 || scoped.cost !== 0 || Object.keys(scoped.projects ?? {}).length > 0) setOwn(providers, provider, scoped)
   }
   return {
     ...day,
-    ...totals,
+    ...scalarTotals,
     projects,
     providers,
     ...(options.preserveDetailedBreakdown ? {
@@ -336,8 +355,8 @@ export function filterDailyEntryByMetroraScope(
       cacheWriteTokens: day.cacheWriteTokens,
       editTurns: day.editTurns,
       oneShotTurns: day.oneShotTurns,
-      models: day.models,
-      categories: day.categories,
+      models: cloneModelRows(day.models),
+      categories: cloneCategoryRows(day.categories),
     } : {
       inputTokens: totals.inputTokens ?? 0,
       outputTokens: totals.outputTokens ?? 0,
@@ -347,8 +366,8 @@ export function filterDailyEntryByMetroraScope(
       cacheWriteTokens: totals.cacheWriteTokens ?? 0,
       editTurns: 0,
       oneShotTurns: 0,
-      models: {},
-      categories: {},
+      models: cloneModelRows(modelDetail?.rows),
+      categories: cloneCategoryRows(categoryDetail?.rows),
     }),
   }
 }

@@ -503,10 +503,10 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     )
     dailyHistory = dailyEntriesToHistory(aggregateProjectsIntoDays(historyProjects))
   } else if (projectFilterActive || projectScopeActive) {
-    // Historical project rollups own cost/calls/savings/session splits,
-    // but not token/model/category splits. Keep those unavailable details empty
-    // instead of assigning the whole day to every selected project. Today's
-    // project-filtered live parse can preserve its detailed breakdown safely.
+    // Historical project rollups use durable Source Project detail for token,
+    // model, and category splits where that authority survived. Missing blocks
+    // remain unavailable instead of assigning global rows to every selected
+    // project. Today's project-filtered live parse preserves its detail.
     const historyFromCache = scopedCacheDays.map(day => reconcileDurableProjectDay(
       isAllProviders ? day : sliceDayToProvider(day, pf),
       projectFilter,

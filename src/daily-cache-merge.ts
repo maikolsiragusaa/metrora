@@ -1,4 +1,5 @@
 import { emptyModelStats, mergeModelStats } from './daily-cache-model-detail.js'
+import { cloneProjectStats, cloneProjectStatsMap, hasProjectUsage, mergeProjectDetails } from './daily-cache-project-detail.js'
 import type { DailyEntry, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
 
 const PROJECT_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
@@ -13,10 +14,6 @@ function hasSliceData(slice: ProviderDaySlice): boolean {
     || (slice.reasoningTokens ?? 0) > 0 || (slice.cacheReadTokens ?? 0) > 0
     || (slice.additiveReasoningTokens ?? 0) > 0
     || (slice.cacheWriteTokens ?? 0) > 0
-}
-
-function hasProjectUsage(stats: ProjectDayStats): boolean {
-  return stats.cost > 0 || stats.calls > 0 || stats.savingsUSD > 0
 }
 
 function addProjectTokenEvidence(target: ProjectDayStats, source: ProjectDayStats, targetHadUsage: boolean): void {
@@ -49,7 +46,12 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
   // it pollutes every object in the process.
   const placeholder = Object.hasOwn(day.providers, provider) ? day.providers[provider] : undefined
   const placeholderSessions = placeholder?.sessions ?? 0
-  const merged = structuredClone(slice)
+  const merged: ProviderDaySlice = {
+    ...slice,
+    ...(slice.models ? { models: structuredClone(slice.models) } : {}),
+    ...(slice.categories ? { categories: structuredClone(slice.categories) } : {}),
+    ...(slice.projects ? { projects: cloneProjectStatsMap(slice.projects) } : {}),
+  }
   if (placeholderSessions > (merged.sessions ?? 0)) merged.sessions = placeholderSessions
   setOwn(day.providers, provider, merged)
   day.cost += slice.cost
@@ -91,6 +93,7 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
     const placeholderProjectSessions = Object.hasOwn(placeholderProjects, name) ? num(placeholderProjects[name]?.sessions) : 0
     acc.sessions += Math.max(0, num(p.sessions) - placeholderProjectSessions)
     addProjectTokenEvidence(acc, p, targetHadUsage)
+    mergeProjectDetails(acc, p, targetHadUsage)
     setOwn(dayProjects, name, acc)
   }
   // Placeholder-only projects survive on the merged slice rather than being
@@ -102,11 +105,11 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
       if (Object.hasOwn(mergedProjects, name)) {
         if (num(p.sessions) > num(mergedProjects[name]!.sessions)) mergedProjects[name]!.sessions = num(p.sessions)
       } else {
-        setOwn(mergedProjects, name, { cost: 0, calls: 0, savingsUSD: 0, sessions: num(p.sessions) })
+        setOwn(mergedProjects, name, cloneProjectStats({ cost: 0, calls: 0, savingsUSD: 0, sessions: num(p.sessions) }))
       }
     }
   } else if (placeholder?.projects) {
-    merged.projects = structuredClone(placeholder.projects)
+    merged.projects = cloneProjectStatsMap(placeholder.projects)
   }
 }
 

@@ -102,7 +102,7 @@ async function authorities() {
 describe('Grok daily-cache authority', () => {
   it('re-derives retained Grok source evidence without a global daily-version bump', async () => {
     const { daily, currentHash, oldHash } = await authorities()
-    expect(daily.DAILY_CACHE_VERSION).toBe(19)
+    expect(daily.DAILY_CACHE_VERSION).toBe(20)
     expect(daily.DURABLE_HISTORY_AUTHORITY).toContain('codex-session-meta-model-v1')
     expect(currentHash).not.toBe(oldHash)
     expect(currentHash).toContain(`grokCollector=${sessionCacheApi.PROVIDER_PARSE_VERSIONS.grok}`)

@@ -296,8 +296,8 @@ describe('v19 Source Project token authority', () => {
     const rehydrated = migrated.days.find(day => day.date === '2026-07-20')!
     const carried = migrated.days.find(day => day.date === '2026-07-21')!
 
-    expect(DAILY_CACHE_VERSION).toBe(19)
-    expect(migrated.version).toBe(19)
+    expect(DAILY_CACHE_VERSION).toBe(20)
+    expect(migrated.version).toBe(20)
     expect(rehydrated.projects?.A).toMatchObject({ inputTokens: 11, outputTokens: 22, cacheReadTokens: 3, cacheWriteTokens: 4 })
     expect(carried.cost).toBe(6)
     expect(carried.calls).toBe(3)
@@ -306,7 +306,7 @@ describe('v19 Source Project token authority', () => {
     expect(carried.carried).toBe(true)
     expect(await readFile(oldPath, 'utf8')).toBe(oldBytes)
     expect(existsSync(dailyCachePath())).toBe(true)
-    expect(JSON.parse(await readFile(dailyCachePath(), 'utf8')).version).toBe(19)
+    expect(JSON.parse(await readFile(dailyCachePath(), 'utf8')).version).toBe(20)
   })
 
   it('keeps Desktop/core numeric projection identical to Companion tokens for complete Project scope', () => {

@@ -30,6 +30,8 @@ function day(
       metrora: {
         cost: 10, calls: 4, sessions: 1, savingsUSD: 0, path: '/work/metrora',
         ...(tokens ? { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 } : {}),
+        ...(models ? { modelDetail: { coverage: 'complete' as const, rows: { 'claude-opus-4-6': { calls: 4, cost: 10, savingsUSD: 0, inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 } } } } : {}),
+        ...(categories ? { categoryDetail: { coverage: 'complete' as const, rows: { build: { turns: 4, cost: 10, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 } } } } : {}),
       },
     },
   }
