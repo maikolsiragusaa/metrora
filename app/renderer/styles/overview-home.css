@@ -14,12 +14,40 @@
 .ov-home-shell > .ov-heatmap-bare { grid-area: history; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
 .ov-home-shell > .ov-efficiency { grid-area: efficiency; border-left: 1px solid var(--line2); }
 
-.ov-home-primary-copy { max-width: 54ch; margin: 4px 0 0; color: var(--mut2); font-size: 10.5px; line-height: 1.45; }
+.ov-home-usage-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; margin-top: 1px; color: var(--mut); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ov-home-usage-summary .ov-label { margin-right: 2px; color: var(--mut2); font-size: 9.5px; font-weight: 620; letter-spacing: .045em; text-transform: uppercase; }
+.ov-home-usage-summary strong { color: var(--ink); font-size: 11.5px; font-weight: 620; }
+.ov-home-primary-copy { max-width: 54ch; margin: 2px 0 0; color: var(--mut2); font-size: 10.5px; line-height: 1.45; }
+.ov-home-details { width: 100%; margin-top: 5px; border-top: 1px solid var(--line2); color: var(--mut); }
+.ov-home-details > summary { display: flex; align-items: baseline; gap: 12px; padding: 9px 0 3px; color: var(--ink); font-size: 11px; font-weight: 620; cursor: pointer; list-style-position: outside; user-select: none; }
+.ov-home-details > summary:hover { color: var(--accent-text); }
+.ov-home-details > summary:focus-visible { border-radius: 4px; outline: 1px solid var(--accent); outline-offset: 2px; }
+.ov-home-details-hint { margin-left: auto; color: var(--mut2); font-size: 10px; font-weight: 500; }
+.ov-home-details-body { display: grid; gap: 12px; padding: 7px 0 1px; }
+.ov-home-detail-section + .ov-home-detail-section { padding-top: 11px; border-top: 1px solid var(--line2); }
+.ov-home-detail-section h3 { margin: 0 0 8px; color: var(--mut2); font-size: 9.5px; font-weight: 620; letter-spacing: .045em; text-transform: uppercase; }
+.ov-home-token-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 0; }
+.ov-home-token-metric { min-width: 0; }
+.ov-home-token-metric dt { color: var(--mut2); font-size: 10.5px; }
+.ov-home-token-metric dd { display: flex; min-width: 0; flex-direction: column; gap: 2px; margin: 2px 0 0; }
+.ov-home-token-metric strong { overflow: hidden; color: var(--ink); font-family: var(--mono); font-size: 12px; font-weight: 620; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.ov-home-token-metric small { color: var(--mut); font-size: 9.5px; line-height: 1.35; }
+.ov-home-token-partial strong, .ov-home-token-partial small { color: var(--warn); }
+.ov-home-token-unavailable strong { color: var(--mut); font-family: inherit; font-size: 11px; font-weight: 560; }
+.ov-home-detail-note { margin: 9px 0 0; color: var(--mut2); font-size: 10px; line-height: 1.4; }
+.ov-home-cost-list { display: grid; gap: 8px; }
+.ov-home-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 3px 10px; font-size: 10.5px; }
+.ov-home-cost-row > span { color: var(--mut2); }
+.ov-home-cost-row > strong { color: var(--ink); font-family: var(--mono); font-size: 11.5px; font-weight: 620; font-variant-numeric: tabular-nums; text-align: right; }
+.ov-home-cost-row > small { grid-column: 1 / -1; color: var(--mut); font-size: 9.5px; line-height: 1.35; }
+.ov-home-cost-partial > strong { color: var(--warn); }
+.ov-home-cost-unavailable > strong { color: var(--mut); font-family: inherit; font-size: 11px; font-weight: 560; }
+.ov-home-cost-estimated > strong { color: var(--warn); }
 .ov-home-savings { width: 100%; margin-top: auto; }
 .ov-home-savings:empty { display: none; }
 .ov-home-savings .ov-saved-line + .ov-saved-line { margin-top: 0; }
 
-.ov-home-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ov-home-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ov-home-fact {
   position: relative; display: flex; min-width: 0; flex-direction: column; align-items: flex-start;
   gap: 3px; min-height: 82px; padding: 12px 13px; border: 0; border-right: 1px solid var(--line2);
@@ -65,5 +93,6 @@
 @media (max-width: 620px) {
   .ov-home-facts { grid-template-columns: 1fr; }
   .ov-home-fact { min-height: 0; border-right: 0; }
+  .ov-home-token-grid { grid-template-columns: 1fr; }
   .ov-home-next-action { align-items: flex-start; flex-direction: column; }
 }
