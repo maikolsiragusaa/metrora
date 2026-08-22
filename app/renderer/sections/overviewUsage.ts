@@ -28,24 +28,22 @@ export type OverviewPricingDetails = {
   state: 'complete' | 'partial' | 'unavailable' | 'estimated'
 }
 
-const EMPTY_TOKENS = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheReadTokens: 0,
-  cacheWriteTokens: 0,
+export type OverviewCurrent = MenubarPayload['current'] & {
+  estimatedCostUSD?: number
+  projectDetailCoverage?: {
+    models: 'complete' | 'partial' | 'unavailable'
+    tokens: 'complete' | 'partial' | 'unavailable'
+    categories: 'complete' | 'partial' | 'unavailable'
+    historical: boolean
+  }
+}
+
+export function asOverviewCurrent(current: MenubarPayload['current']): OverviewCurrent {
+  return current as OverviewCurrent
 }
 
 function tokenMetric(value: number | null, state: OverviewEvidenceState): OverviewTokenMetric {
   return { value, state }
-}
-
-function sumTokenRows(rows: DurableModelAccountingRow[]) {
-  return rows.reduce((totals, row) => ({
-    inputTokens: totals.inputTokens + row.inputTokens,
-    outputTokens: totals.outputTokens + row.outputTokens,
-    cacheReadTokens: totals.cacheReadTokens + row.cacheReadTokens,
-    cacheWriteTokens: totals.cacheWriteTokens + row.cacheWriteTokens,
-  }), { ...EMPTY_TOKENS })
 }
 
 function combineReasoningSemantics(rows: DurableModelAccountingRow[]): ReasoningTokenSemantics {
@@ -55,7 +53,7 @@ function combineReasoningSemantics(rows: DurableModelAccountingRow[]): Reasoning
   return semantics.every(value => value === first) ? first : 'mixed'
 }
 
-function reasoningForRows(rows: DurableModelAccountingRow[], state: OverviewEvidenceState): OverviewReasoning {
+function reasoningForRows(rows: DurableModelAccountingRow[]): OverviewReasoning {
   const semantics = combineReasoningSemantics(rows)
   if (semantics === 'unavailable') {
     return { observedTokens: null, semantics, state: 'unavailable' }
@@ -69,48 +67,7 @@ function reasoningForRows(rows: DurableModelAccountingRow[], state: OverviewEvid
   return {
     observedTokens,
     semantics,
-    state: semantics === 'mixed' || state === 'partial' ? 'partial' : 'available',
-  }
-}
-
-function fromTokenRows(current: MenubarPayload['current']): OverviewUsageDetails | null {
-  const accounting = current.modelAccounting
-  if (!accounting) return null
-
-  const detailedRows = accounting.rows.filter(row => row.tokenDetail)
-  if (detailedRows.length === 0) {
-    // A genuinely empty scope can truthfully show explicit zeros. A non-empty
-    // scope without token-detail rows must remain unavailable instead.
-    if (current.calls === 0 && accounting.gap.calls === 0 && accounting.gap.cost <= 0.000001) {
-      return {
-        input: tokenMetric(0, 'available'),
-        output: tokenMetric(0, 'available'),
-        cacheRead: tokenMetric(0, 'available'),
-        cacheWrite: tokenMetric(0, 'available'),
-        reasoning: { observedTokens: null, semantics: 'unavailable', state: 'unavailable' },
-        evidenceNote: 'No usage was recorded for this scope.',
-      }
-    }
-    return unavailableUsage('Token-level evidence is unavailable for this scope, so missing values are not shown as zero.')
-  }
-
-  const totals = sumTokenRows(detailedRows)
-  const complete = accounting.rows.length > 0
-    && accounting.rows.every(row => row.tokenDetail)
-    && accounting.gap.calls === 0
-    && accounting.gap.cost <= 0.000001
-  const state: OverviewEvidenceState = complete ? 'available' : 'partial'
-  const evidenceNote = complete
-    ? 'Usage totals are reported for the selected scope.'
-    : 'Some usage does not include token-level detail; this breakdown is partial.'
-
-  return {
-    input: tokenMetric(totals.inputTokens, state),
-    output: tokenMetric(totals.outputTokens, state),
-    cacheRead: tokenMetric(totals.cacheReadTokens, state),
-    cacheWrite: tokenMetric(totals.cacheWriteTokens, state),
-    reasoning: reasoningForRows(detailedRows, state),
-    evidenceNote,
+    state: semantics === 'mixed' ? 'partial' : 'available',
   }
 }
 
@@ -125,27 +82,62 @@ function unavailableUsage(evidenceNote: string): OverviewUsageDetails {
   }
 }
 
+function reasoningFromAccounting(current: MenubarPayload['current']): OverviewReasoning {
+  const detailedRows = current.modelAccounting?.rows.filter(row => row.tokenDetail) ?? []
+  return reasoningForRows(detailedRows)
+}
+
+function projectTokenUsage(current: OverviewCurrent): OverviewUsageDetails | null {
+  const coverage = current.projectDetailCoverage?.tokens
+  if (!coverage) return null
+
+  const reasoning = reasoningFromAccounting(current)
+  if (coverage === 'unavailable') {
+    return {
+      ...unavailableUsage('Token totals are unavailable for this Project scope; missing values are not shown as zero.'),
+      reasoning,
+    }
+  }
+
+  const state: OverviewEvidenceState = coverage === 'complete' ? 'available' : 'partial'
+  return {
+    input: tokenMetric(current.inputTokens, state),
+    output: tokenMetric(current.outputTokens, state),
+    cacheRead: tokenMetric(current.cacheReadTokens, state),
+    cacheWrite: tokenMetric(current.cacheWriteTokens, state),
+    reasoning,
+    evidenceNote: coverage === 'complete'
+      ? 'Period token totals are complete for this Project scope; model identity detail is tracked separately.'
+      : 'Period token totals remain factual for this Project scope, but the supporting detail is partial.',
+  }
+}
+
 /**
  * Derives Overview-only display facts. It does not aggregate accounting data
  * for any other surface and never turns an absent token field into zero.
  */
 export function deriveOverviewUsage(current: MenubarPayload['current']): OverviewUsageDetails {
-  const fromRows = fromTokenRows(current)
-  if (fromRows) return fromRows
+  const overviewCurrent = asOverviewCurrent(current)
+  const projectUsage = projectTokenUsage(overviewCurrent)
+  if (projectUsage) return projectUsage
 
-  const values = [current.inputTokens, current.outputTokens, current.cacheReadTokens, current.cacheWriteTokens]
-  const hasLegacyEvidence = current.calls === 0 || values.some(value => value > 0)
+  const values = [overviewCurrent.inputTokens, overviewCurrent.outputTokens, overviewCurrent.cacheReadTokens, overviewCurrent.cacheWriteTokens]
+  const hasAccountingTokenEvidence = overviewCurrent.modelAccounting?.rows.some(row => row.tokenDetail) ?? false
+  const hasLegacyEvidence = overviewCurrent.calls === 0 || values.some(value => value > 0) || hasAccountingTokenEvidence
   if (!hasLegacyEvidence) {
     return unavailableUsage('This payload does not include token-level evidence for the selected scope.')
   }
 
+  const reasoning = reasoningFromAccounting(overviewCurrent)
   return {
-    input: tokenMetric(current.inputTokens, 'available'),
-    output: tokenMetric(current.outputTokens, 'available'),
-    cacheRead: tokenMetric(current.cacheReadTokens, 'available'),
-    cacheWrite: tokenMetric(current.cacheWriteTokens, 'available'),
-    reasoning: { observedTokens: null, semantics: 'unavailable', state: 'unavailable' },
-    evidenceNote: 'Usage totals are reported by this Overview payload; reasoning detail is unavailable here.',
+    input: tokenMetric(overviewCurrent.inputTokens, 'available'),
+    output: tokenMetric(overviewCurrent.outputTokens, 'available'),
+    cacheRead: tokenMetric(overviewCurrent.cacheReadTokens, 'available'),
+    cacheWrite: tokenMetric(overviewCurrent.cacheWriteTokens, 'available'),
+    reasoning,
+    evidenceNote: reasoning.state === 'unavailable'
+      ? 'Usage totals are reported by this Overview payload; reasoning detail is unavailable here.'
+      : 'Usage totals are reported by this Overview payload; reasoning detail comes from model accounting evidence.',
   }
 }
 
@@ -155,10 +147,11 @@ export function deriveOverviewUsage(current: MenubarPayload['current']): Overvie
  * not part of the Overview payload, so this is not a "Why this cost?" answer.
  */
 export function deriveOverviewPricing(current: MenubarPayload['current']): OverviewPricingDetails {
-  const coverage = current.pricingCoverage
-  const estimatedCostUSD = (current as MenubarPayload['current'] & { estimatedCostUSD?: number }).estimatedCostUSD ?? 0
-  const hasEstimatedRows = current.modelAccounting?.rows.some(row => row.costIsEstimated === true || (row.estimatedCostUSD ?? 0) > 0) ?? false
-  const hasUnpricedModels = (current.unpricedModels?.length ?? 0) > 0
+  const overviewCurrent = asOverviewCurrent(current)
+  const coverage = overviewCurrent.pricingCoverage
+  const estimatedCostUSD = overviewCurrent.estimatedCostUSD ?? 0
+  const hasEstimatedRows = overviewCurrent.modelAccounting?.rows.some(row => row.costIsEstimated === true || (row.estimatedCostUSD ?? 0) > 0) ?? false
+  const hasUnpricedModels = (overviewCurrent.unpricedModels?.length ?? 0) > 0
 
   if (typeof coverage !== 'number') {
     return {

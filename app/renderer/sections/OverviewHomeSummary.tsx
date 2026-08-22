@@ -82,19 +82,37 @@ function UsageMetric({ label, metric, testId }: { label: string; metric: Overvie
   )
 }
 
-function reasoningPresentation(reasoning: OverviewReasoning, usageState: OverviewTokenMetric['state']): { value: string; detail: string; state: OverviewTokenMetric['state'] } {
+function CostQualityIndicator({ current }: { current: MenubarPayload['current'] }) {
+  const pricing = deriveOverviewPricing(current)
+  if (pricing.state === 'complete') return null
+
+  const label = pricing.state === 'estimated' ? 'Some cost estimated' : pricing.label
+  return (
+    <div
+      className={`ov-home-cost-quality ov-home-cost-quality-${pricing.state}`}
+      data-testid="overview-cost-quality"
+      data-state={pricing.state}
+      aria-label={`Cost quality: ${pricing.label}. ${pricing.detail}`}
+    >
+      <span className="ov-label">Cost quality</span>
+      <strong>{label}</strong>
+    </div>
+  )
+}
+
+function reasoningPresentation(reasoning: OverviewReasoning): { value: string; detail: string; state: OverviewTokenMetric['state'] } {
   if (reasoning.semantics === 'unavailable') {
     return { value: 'Unavailable', detail: 'No reasoning evidence was reported for this scope.', state: 'unavailable' }
   }
   if (reasoning.semantics === 'aggregate-output') {
     return {
       value: 'Included in output',
-      detail: usageState === 'partial' ? 'Already included in Output; token detail is partial.' : 'Already included in Output; it is not counted again.',
-      state: usageState === 'partial' ? 'partial' : 'available',
+      detail: reasoning.state === 'partial' ? 'Already included in Output; reasoning evidence is partial.' : 'Already included in Output; it is not counted again.',
+      state: reasoning.state,
     }
   }
   if (reasoning.semantics === 'separate') {
-    if (usageState === 'partial') {
+    if (reasoning.state === 'partial') {
       return { value: 'Partial', detail: 'Separate reasoning is evidenced for part of this scope.', state: 'partial' }
     }
     return {
@@ -114,7 +132,7 @@ function reasoningPresentation(reasoning: OverviewReasoning, usageState: Overvie
 function CostDetails({ current }: { current: MenubarPayload['current'] }) {
   const usage = deriveOverviewUsage(current)
   const pricing = deriveOverviewPricing(current)
-  const reasoning = reasoningPresentation(usage.reasoning, usage.input.state)
+  const reasoning = reasoningPresentation(usage.reasoning)
 
   return (
     <details className="ov-home-details" data-testid="overview-cost-details">
@@ -187,11 +205,14 @@ export function OverviewHomeSummary({
           <span className="ov-streak"><b>{streak}</b>-day streak</span>
         </div>
         <CountUp value={current.cost} animateKey={animateKey} />
-        <div className="ov-home-usage-summary" aria-label="Usage summary">
-          <span className="ov-label">Usage</span>
-          <strong>{current.calls.toLocaleString('en-US')} calls</strong>
-          <span aria-hidden="true">·</span>
-          <strong>{current.sessions.toLocaleString('en-US')} sessions</strong>
+        <div className="ov-home-primary-meta">
+          <div className="ov-home-usage-summary" aria-label="Usage summary">
+            <span className="ov-label">Usage</span>
+            <strong>{current.calls.toLocaleString('en-US')} calls</strong>
+            <span aria-hidden="true">·</span>
+            <strong>{current.sessions.toLocaleString('en-US')} sessions</strong>
+          </div>
+          <CostQualityIndicator current={current} />
         </div>
         <p className="ov-home-primary-copy">Current cost and activity for the selected scope.</p>
         <CostDetails current={current} />

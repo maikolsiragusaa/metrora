@@ -14,9 +14,14 @@
 .ov-home-shell > .ov-heatmap-bare { grid-area: history; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
 .ov-home-shell > .ov-efficiency { grid-area: efficiency; border-left: 1px solid var(--line2); }
 
+.ov-home-primary-meta { display: flex; width: 100%; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; }
 .ov-home-usage-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; margin-top: 1px; color: var(--mut); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .ov-home-usage-summary .ov-label { margin-right: 2px; color: var(--mut2); font-size: 9.5px; font-weight: 620; letter-spacing: .045em; text-transform: uppercase; }
 .ov-home-usage-summary strong { color: var(--ink); font-size: 11.5px; font-weight: 620; }
+.ov-home-cost-quality { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 5px; margin-top: 1px; font-size: 10.5px; }
+.ov-home-cost-quality .ov-label { color: var(--mut2); font-size: 9.5px; font-weight: 620; letter-spacing: .045em; text-transform: uppercase; }
+.ov-home-cost-quality strong { color: var(--warn); font-size: 10.5px; font-weight: 650; }
+.ov-home-cost-quality-unavailable strong { color: var(--mut); }
 .ov-home-primary-copy { max-width: 54ch; margin: 2px 0 0; color: var(--mut2); font-size: 10.5px; line-height: 1.45; }
 .ov-home-details { width: 100%; margin-top: 5px; border-top: 1px solid var(--line2); color: var(--mut); }
 .ov-home-details > summary { display: flex; align-items: baseline; gap: 12px; padding: 9px 0 3px; color: var(--ink); font-size: 11px; font-weight: 620; cursor: pointer; list-style-position: outside; user-select: none; }

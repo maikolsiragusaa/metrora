@@ -6,7 +6,7 @@ import type { Polled } from '../hooks/usePolled'
 import { setActiveCurrency } from '../lib/format'
 import type { ActReportJson, DailyHistoryEntry, DurableModelAccountingRow, MenubarPayload, YieldJsonReport } from '../lib/types'
 import { Overview, OverviewContent, deriveSignals, localDateKey } from './Overview'
-import { deriveOverviewPricing, deriveOverviewUsage } from './overviewUsage'
+import { asOverviewCurrent, deriveOverviewPricing, deriveOverviewUsage } from './overviewUsage'
 
 function polled(data: MenubarPayload): Polled<MenubarPayload> {
   return { data, error: null, loading: false, switching: false, lastSuccessAt: Date.now(), refresh: vi.fn(), refreshFresh: vi.fn() }
@@ -785,6 +785,99 @@ describe('Overview', () => {
     expect(missing.reasoning).toMatchObject({ observedTokens: null, semantics: 'unavailable', state: 'unavailable' })
   })
 
+  it('keeps Project period totals factual when model token detail is absent', () => {
+    const now = new Date()
+    const project = withTokenAccounting(makePayload(now), { tokenDetail: false, reasoningTokens: undefined, additiveReasoningTokens: undefined, reasoningSemantics: undefined })
+    const projectCurrent = asOverviewCurrent(project.current)
+    projectCurrent.inputTokens = 4_321
+    projectCurrent.outputTokens = 987
+    projectCurrent.cacheReadTokens = 654
+    projectCurrent.cacheWriteTokens = 123
+    projectCurrent.projectDetailCoverage = { models: 'partial', tokens: 'complete', categories: 'partial', historical: true }
+    projectCurrent.modelAccounting!.rows = []
+
+    const usage = deriveOverviewUsage(projectCurrent)
+    expect(usage.input).toEqual({ value: 4_321, state: 'available' })
+    expect(usage.output).toEqual({ value: 987, state: 'available' })
+    expect(usage.cacheRead).toEqual({ value: 654, state: 'available' })
+    expect(usage.cacheWrite).toEqual({ value: 123, state: 'available' })
+    expect(usage.reasoning).toMatchObject({ observedTokens: null, semantics: 'unavailable', state: 'unavailable' })
+  })
+
+  it('keeps a factual Project token subtotal visible with Partial state', () => {
+    const now = new Date()
+    const project = withTokenAccounting(makePayload(now), { tokenDetail: false })
+    const projectCurrent = asOverviewCurrent(project.current)
+    projectCurrent.inputTokens = 4_321
+    projectCurrent.outputTokens = 987
+    projectCurrent.cacheReadTokens = 654
+    projectCurrent.cacheWriteTokens = 123
+    projectCurrent.projectDetailCoverage = { models: 'partial', tokens: 'partial', categories: 'partial', historical: true }
+
+    const usage = deriveOverviewUsage(projectCurrent)
+    expect(usage.input).toEqual({ value: 4_321, state: 'partial' })
+    expect(usage.output).toEqual({ value: 987, state: 'partial' })
+    expect(usage.cacheRead).toEqual({ value: 654, state: 'partial' })
+    expect(usage.cacheWrite).toEqual({ value: 123, state: 'partial' })
+  })
+
+  it('does not present Project token coverage unavailable as factual zero', () => {
+    const now = new Date()
+    const project = withTokenAccounting(makePayload(now), { tokenDetail: false })
+    const projectCurrent = asOverviewCurrent(project.current)
+    projectCurrent.inputTokens = 0
+    projectCurrent.outputTokens = 0
+    projectCurrent.cacheReadTokens = 0
+    projectCurrent.cacheWriteTokens = 0
+    projectCurrent.projectDetailCoverage = { models: 'unavailable', tokens: 'unavailable', categories: 'unavailable', historical: true }
+    projectCurrent.modelAccounting!.rows = []
+
+    const usage = deriveOverviewUsage(projectCurrent)
+    expect(usage.input).toEqual({ value: null, state: 'unavailable' })
+    expect(usage.output).toEqual({ value: null, state: 'unavailable' })
+    expect(usage.cacheRead).toEqual({ value: null, state: 'unavailable' })
+    expect(usage.cacheWrite).toEqual({ value: null, state: 'unavailable' })
+  })
+
+  it('ignores model-accounting token coverage when Project period coverage is complete', () => {
+    const now = new Date()
+    const project = withTokenAccounting(makePayload(now), { tokenDetail: false }, { tokenCoverage: { cost: 0.4, calls: 0.4 } })
+    const projectCurrent = asOverviewCurrent(project.current)
+    projectCurrent.inputTokens = 4_321
+    projectCurrent.outputTokens = 987
+    projectCurrent.cacheReadTokens = 654
+    projectCurrent.cacheWriteTokens = 123
+    projectCurrent.projectDetailCoverage = { models: 'partial', tokens: 'complete', categories: 'partial', historical: true }
+
+    const usage = deriveOverviewUsage(projectCurrent)
+    expect(usage.input).toEqual({ value: 4_321, state: 'available' })
+    expect(usage.output).toEqual({ value: 987, state: 'available' })
+    expect(usage.cacheRead).toEqual({ value: 654, state: 'available' })
+    expect(usage.cacheWrite).toEqual({ value: 123, state: 'available' })
+  })
+
+  it('uses current headline token totals for unscoped payloads', () => {
+    const now = new Date()
+    const unscoped = withTokenAccounting(makePayload(now), {
+      inputTokens: 11,
+      outputTokens: 22,
+      cacheReadTokens: 33,
+      cacheWriteTokens: 44,
+    }, { tokenCoverage: { cost: 0.4, calls: 0.4 } })
+    const unscopedCurrent = asOverviewCurrent(unscoped.current)
+    unscopedCurrent.inputTokens = 4_321
+    unscopedCurrent.outputTokens = 987
+    unscopedCurrent.cacheReadTokens = 654
+    unscopedCurrent.cacheWriteTokens = 123
+    delete unscopedCurrent.projectDetailCoverage
+
+    const usage = deriveOverviewUsage(unscopedCurrent)
+    expect(usage.input).toEqual({ value: 4_321, state: 'available' })
+    expect(usage.output).toEqual({ value: 987, state: 'available' })
+    expect(usage.cacheRead).toEqual({ value: 654, state: 'available' })
+    expect(usage.cacheWrite).toEqual({ value: 123, state: 'available' })
+  })
+
   it('uses partial pricing language and mainstream reasoning semantics', () => {
     const now = new Date()
     const payload = withTokenAccounting(makePayload(now), { reasoningSemantics: 'aggregate-output', reasoningTokens: 100, additiveReasoningTokens: 0 })
@@ -834,6 +927,69 @@ describe('Overview', () => {
     fireEvent.click(mixedDetails.querySelector('summary') as HTMLElement)
     expect(within(mixedDetails).getByTestId('overview-token-reasoning')).toHaveTextContent('Partial')
     expect(within(mixedDetails).getByTestId('overview-token-reasoning')).toHaveTextContent('only separately additive usage contributes')
+  })
+
+  it('keeps reasoning evidence independent from Project input-token coverage', () => {
+    const now = new Date()
+    const project = withTokenAccounting(makePayload(now), { reasoningSemantics: 'separate', reasoningTokens: 80, additiveReasoningTokens: 80 })
+    const projectCurrent = asOverviewCurrent(project.current)
+    projectCurrent.projectDetailCoverage = { models: 'partial', tokens: 'partial', categories: 'partial', historical: true }
+
+    const usage = deriveOverviewUsage(projectCurrent)
+    expect(usage.input.state).toBe('partial')
+    expect(usage.reasoning).toMatchObject({ observedTokens: 80, semantics: 'separate', state: 'available' })
+
+    const completeInputUnavailableReasoning = withTokenAccounting(makePayload(now), { tokenDetail: false, reasoningSemantics: undefined, reasoningTokens: undefined, additiveReasoningTokens: undefined })
+    const completeCurrent = asOverviewCurrent(completeInputUnavailableReasoning.current)
+    completeCurrent.projectDetailCoverage = { models: 'partial', tokens: 'complete', categories: 'partial', historical: true }
+    completeCurrent.modelAccounting!.rows = []
+    const completeUsage = deriveOverviewUsage(completeCurrent)
+    expect(completeUsage.input.state).toBe('available')
+    expect(completeUsage.reasoning.state).toBe('unavailable')
+  })
+
+  it('keeps material pricing quality visible in the collapsed Home', () => {
+    const now = new Date()
+    const partial = makePayload(now)
+    partial.current.pricingCoverage = 0.92
+    render(<OverviewContent period="30days" provider="all" overview={polled(partial)} />)
+
+    const quality = screen.getByTestId('overview-cost-quality')
+    expect(quality).toHaveAttribute('data-state', 'partial')
+    expect(quality).toHaveTextContent('92% priced')
+    expect(screen.getByTestId('overview-cost-details')).not.toHaveAttribute('open')
+  })
+
+  it('keeps unavailable pricing quality visible in the collapsed Home', () => {
+    const now = new Date()
+    const unavailable = makePayload(now)
+    unavailable.current.pricingCoverage = null
+    render(<OverviewContent period="30days" provider="all" overview={polled(unavailable)} />)
+
+    const quality = screen.getByTestId('overview-cost-quality')
+    expect(quality).toHaveAttribute('data-state', 'unavailable')
+    expect(quality).toHaveTextContent('Coverage unavailable')
+    expect(screen.getByTestId('overview-cost-details')).not.toHaveAttribute('open')
+  })
+
+  it('keeps estimation visible even when pricing coverage is complete', () => {
+    const now = new Date()
+    const estimated = withTokenAccounting(makePayload(now), { costIsEstimated: true })
+    estimated.current.pricingCoverage = 1
+    render(<OverviewContent period="30days" provider="all" overview={polled(estimated)} />)
+
+    const quality = screen.getByTestId('overview-cost-quality')
+    expect(quality).toHaveAttribute('data-state', 'estimated')
+    expect(quality).toHaveTextContent('Some cost estimated')
+  })
+
+  it('omits unnecessary cost-quality warning clutter for fully settled pricing', () => {
+    const now = new Date()
+    const complete = withTokenAccounting(makePayload(now))
+    complete.current.pricingCoverage = 1
+    render(<OverviewContent period="30days" provider="all" overview={polled(complete)} />)
+
+    expect(screen.queryByTestId('overview-cost-quality')).not.toBeInTheDocument()
   })
 
   it('keeps Overview navigation actions available beside the disclosure', () => {
