@@ -49,3 +49,41 @@ export function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
   }
   return out
 }
+
+export type SanitizedCategories = {
+  rows: DailyEntry['categories']
+  sanitizationIsLossless: boolean
+}
+
+const REQUIRED_CATEGORY_NUMERICS = ['turns', 'cost', 'savingsUSD', 'editTurns', 'oneShotTurns'] as const
+
+function hasRequiredCategoryStats(category: Record<string, unknown>): boolean {
+  return REQUIRED_CATEGORY_NUMERICS.every(field =>
+    Object.hasOwn(category, field) && typeof category[field] === 'number' && Number.isFinite(category[field]),
+  )
+}
+
+/**
+ * Sanitize Project category detail while retaining whether any serialized row
+ * was rejected or had its required numeric structure altered.
+ */
+export function sanitizeCategoriesWithIntegrity(raw: unknown): SanitizedCategories {
+  if (!isRecord(raw)) return { rows: {}, sanitizationIsLossless: false }
+
+  const rows: DailyEntry['categories'] = {}
+  let sanitizationIsLossless = true
+  for (const [name, category] of Object.entries(raw)) {
+    if (name in Object.prototype || !isRecord(category) || !hasRequiredCategoryStats(category)) {
+      sanitizationIsLossless = false
+      continue
+    }
+    setOwn(rows, name, {
+      turns: category.turns as number,
+      cost: category.cost as number,
+      savingsUSD: category.savingsUSD as number,
+      editTurns: category.editTurns as number,
+      oneShotTurns: category.oneShotTurns as number,
+    })
+  }
+  return { rows, sanitizationIsLossless }
+}

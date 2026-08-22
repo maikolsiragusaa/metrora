@@ -467,6 +467,45 @@ describe('v20 durable Source Project model/category authority', () => {
     expect(normalized.projects?.A?.categoryDetail?.coverage).toBe('complete')
   })
 
+  it('fails closed on a malformed zero-cost category row even when surviving rows reconcile', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 0,
+      calls: 2,
+      savingsUSD: 0,
+      sessions: 1,
+      categoryDetail: {
+        coverage: 'complete',
+        rows: {
+          coding: { turns: 1, cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 },
+          testing: { turns: 'malformed', cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 },
+        },
+      },
+    })])[0]!
+    const detail = normalized.projects?.A?.categoryDetail
+
+    expect(detail?.coverage).toBe('partial')
+    expect(detail?.rows).toHaveProperty('coding')
+    expect(detail?.rows).not.toHaveProperty('testing')
+  })
+
+  it('keeps complete zero-cost category detail when every serialized row is valid', () => {
+    const normalized = migrateDays([foreignDay({
+      cost: 0,
+      calls: 2,
+      savingsUSD: 0,
+      sessions: 1,
+      categoryDetail: {
+        coverage: 'complete',
+        rows: {
+          coding: { turns: 1, cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 },
+          testing: { turns: 1, cost: 0, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 },
+        },
+      },
+    })])[0]!
+
+    expect(normalized.projects?.A?.categoryDetail?.coverage).toBe('complete')
+  })
+
   it('preserves separate, aggregate-output, and mixed reasoning algebra in project rows', () => {
     const source = projectSummary('A', '/source/a', [
       call({ timestamp: '2026-08-02T10:00:00.000Z', costUSD: 1, provider: 'codex', model: 'reasoning-model', outputTokens: 100, reasoningTokens: 40, reasoningSemantics: 'separate' }),

@@ -6,7 +6,7 @@ import type {
   ProjectDayStats,
   ProjectModelDetail,
 } from './daily-cache-types.js'
-import { cloneCategoryStats, mergeCategoryStats, sanitizeCategories, setOwn } from './daily-cache-category-detail.js'
+import { cloneCategoryStats, mergeCategoryStats, sanitizeCategoriesWithIntegrity, setOwn } from './daily-cache-category-detail.js'
 import { cloneModelStats, mergeModelStats, sanitizeModels } from './daily-cache-model-detail.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -135,15 +135,17 @@ function normalizeCategoryDetail(
   coverage: DurableProjectDetailCoverage,
   rows: Record<string, CategoryDayStats>,
   project: ProjectDayStats,
+  sanitizationIsLossless: boolean,
 ): ProjectCategoryDetail | undefined {
   const hasUsage = hasFactualProjectUsage(project)
   const hasRows = Object.values(rows).some(hasFactualCategoryRow)
 
   if (!hasUsage) {
-    return coverage === 'complete' && !hasRows ? { coverage: 'complete', rows: {} } : undefined
+    return coverage === 'complete' && sanitizationIsLossless && !hasRows ? { coverage: 'complete', rows: {} } : undefined
   }
   if (!hasRows) return undefined
   if (coverage === 'partial') return { coverage: 'partial', rows }
+  if (!sanitizationIsLossless) return { coverage: 'partial', rows }
   return { coverage: categoryRowsReconcile(project, rows) ? 'complete' : 'partial', rows }
 }
 
@@ -273,8 +275,8 @@ export function sanitizeProjectDetails(
   }
   const category = raw.categoryDetail
   if (isRecord(category) && isCoverage(category.coverage) && isRecord(category.rows)) {
-    const rows = sanitizeCategories(category.rows)
-    const normalized = normalizeCategoryDetail(category.coverage, rows, project)
+    const sanitized = sanitizeCategoriesWithIntegrity(category.rows)
+    const normalized = normalizeCategoryDetail(category.coverage, sanitized.rows, project, sanitized.sanitizationIsLossless)
     if (normalized) result.categoryDetail = normalized
   }
   return result
