@@ -5,9 +5,14 @@ import { join } from 'path'
 import type { DateRange, ProjectSummary } from './types.js'
 import { getMetroraCacheDir } from './product-paths.js'
 import { sanitizeModels } from './daily-cache-model-detail.js'
+import { sanitizeCategories } from './daily-cache-category-detail.js'
+import { sanitizeProjectDetails } from './daily-cache-project-detail.js'
 import type { CategoryDayStats, DailyCache, DailyEntry, ModelDayStats, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
 import { mergeDayEntries, setOwn } from './daily-cache-merge.js'
 import { writeDailyCacheGenerationFromPayloadV1 } from './cache-generation.js'
+// v20: Source Project daily rollups add factual model/category detail alongside
+// the existing token evidence. v19 history is adopted losslessly, re-derived
+// where sources survive, and carried otherwise.
 // v19: Source Project daily rollups add factual token evidence. v18 history is
 // adopted losslessly, re-derived where sources survive, and carried otherwise.
 // v18: Copilot accounting changed; v17 history is adopted untrusted, re-derived where sources survive, and carried otherwise.
@@ -67,15 +72,15 @@ import { writeDailyCacheGenerationFromPayloadV1 } from './cache-generation.js'
 // that older binaries skipped. v8 added local-model savings to the daily
 // rollup; the `savingsConfigHash` field is invalidated separately when the
 // user changes their `localModelSavings` mapping.
-export const DAILY_CACHE_VERSION = 19
-const MIN_SUPPORTED_VERSION = 15
+export const DAILY_CACHE_VERSION = 20
+export const MIN_SUPPORTED_VERSION = 15
 // A durable source is allowed to outlive the bounded detailed session cache.
 // This marker makes the first run after that contract change an explicit,
 // one-time reconciliation rather than relying on the ordinary 365-day poll.
 // The Codex session-meta model authority change also advances this marker so
 // surviving Codex sources anywhere in the 10-year retained history are
 // re-derived; sourceless provider slices remain carried by NEVER-LOSE merge.
-export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v2-project-tokens-codex-session-meta-model-v1'
+export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v2-project-tokens-codex-session-meta-model-v1-project-model-category-v1'
 // Version-suffixed so different binaries each own a distinct file and never
 // clobber an incompatible schema. Bumping the version mints a fresh filename;
 // adoptOlderDailyCaches then unions days out of every previous file (including
@@ -84,7 +89,17 @@ export const DURABLE_HISTORY_AUTHORITY = 'materialize-before-evict-v2-project-to
 const DAILY_CACHE_FILENAME = `daily-cache.v${DAILY_CACHE_VERSION}.json`
 
 
-export type { CategoryDayStats, DailyCache, DailyEntry, ModelDayStats, ProjectDayStats, ProviderDaySlice } from './daily-cache-types.js'
+export type {
+  CategoryDayStats,
+  DailyCache,
+  DailyEntry,
+  DurableProjectDetailCoverage,
+  ModelDayStats,
+  ProjectCategoryDetail,
+  ProjectDayStats,
+  ProjectModelDetail,
+  ProviderDaySlice,
+} from './daily-cache-types.js'
 export { emptyDailyEntry } from './daily-cache-reconciliation.js'
 export { mergeDayEntries } from './daily-cache-merge.js'
 
@@ -135,22 +150,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function sanitizeCategories(raw: unknown): DailyEntry['categories'] {
-  if (!isRecord(raw)) return {}
-  const out: DailyEntry['categories'] = {}
-  for (const [name, c] of Object.entries(raw)) {
-    if (name in Object.prototype || !isRecord(c)) continue
-    setOwn(out, name, {
-      turns: num(c.turns),
-      cost: num(c.cost),
-      savingsUSD: num(c.savingsUSD),
-      editTurns: num(c.editTurns),
-      oneShotTurns: num(c.oneShotTurns),
-    })
-  }
-  return out
-}
-
 const OPTIONAL_SLICE_NUMERICS = ['sessions', 'inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens', 'editTurns', 'oneShotTurns'] as const
 
 /// Same junk-tolerance as sanitizeProjects, one level up: a foreign cache can
@@ -194,6 +193,7 @@ function sanitizeProjects(raw: unknown): { projects?: DailyEntry['projects'] } {
     for (const field of ['inputTokens', 'outputTokens', 'reasoningTokens', 'additiveReasoningTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const) {
       if (typeof p[field] === 'number' && Number.isFinite(p[field])) clean[field] = Math.max(0, p[field])
     }
+    Object.assign(clean, sanitizeProjectDetails(p))
     setOwn(out, name, clean)
   }
   return Object.keys(out).length > 0 ? { projects: out } : {}

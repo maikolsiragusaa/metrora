@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { currentTzKey, dailyCachePath, saveDailyCache, type DailyCache } from '../daily-cache.js'
+import { currentTzKey, dailyCachePath, DAILY_CACHE_VERSION, saveDailyCache, type DailyCache } from '../daily-cache.js'
 import {
   readCurrentDailyCacheGenerationV1,
   readCurrentSessionCacheGenerationV1,
@@ -37,7 +37,7 @@ function dateRange(date: string) {
 
 function daily(day: string, timeZone: string): DailyCache {
   return {
-    version: 19,
+    version: DAILY_CACHE_VERSION,
     savingsConfigHash: '',
     tzKey: timeZone,
     lastComputedDate: day,

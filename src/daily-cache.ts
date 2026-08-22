@@ -45,8 +45,8 @@ async function readTrust(path: string): Promise<{ version: number; trusted: bool
 
 function supportsActiveTrust(version: number): boolean {
   // The immediately previous envelope is an adoptable baseline, not active
-  // authority: v18 carried no durable Source Project token split and must
-  // re-derive surviving sources before its watermark becomes trusted again.
+  // authority: v19 carried no durable Source Project model/category detail and
+  // must re-derive surviving sources before its watermark becomes trusted again.
   return version === core.DAILY_CACHE_VERSION
 }
 

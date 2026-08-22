@@ -303,9 +303,40 @@ describe('aggregateProjectsIntoDays', () => {
       cost: 10, calls: 2, savingsUSD: 0, sessions: 1,
       inputTokens: 200, outputTokens: 400, cacheReadTokens: 100, cacheWriteTokens: 0,
       path: '/p',
+      modelDetail: {
+        coverage: 'complete',
+        rows: {
+          'Opus 4.7': { calls: 1, cost: 7, savingsUSD: 0, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0, sourceProviders: ['claude'] },
+          'gpt-5': { calls: 1, cost: 3, savingsUSD: 0, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0, sourceProviders: ['codex'] },
+        },
+      },
+      categoryDetail: {
+        coverage: 'complete',
+        rows: { coding: { turns: 1, cost: 10, savingsUSD: 0, editTurns: 0, oneShotTurns: 0 } },
+      },
     })
-    expect(day.providers['claude']!.projects!['p']).toMatchObject({ cost: 7, calls: 1, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0 })
-    expect(day.providers['codex']!.projects!['p']).toMatchObject({ cost: 3, calls: 1, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0 })
+    expect(day.providers['claude']!.projects!['p']).toMatchObject({
+      cost: 7, calls: 1, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0,
+      modelDetail: {
+        coverage: 'complete',
+        rows: { 'Opus 4.7': { calls: 1, cost: 7, sourceProviders: ['claude'] } },
+      },
+      categoryDetail: {
+        coverage: 'complete',
+        rows: { coding: { turns: 1, cost: 7 } },
+      },
+    })
+    expect(day.providers['codex']!.projects!['p']).toMatchObject({
+      cost: 3, calls: 1, inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheWriteTokens: 0,
+      modelDetail: {
+        coverage: 'complete',
+        rows: { 'gpt-5': { calls: 1, cost: 3, sourceProviders: ['codex'] } },
+      },
+      categoryDetail: {
+        coverage: 'complete',
+        rows: { coding: { turns: 0, cost: 3 } },
+      },
+    })
   })
 
   it('carries separately observed reasoning tokens through durable day and period models', () => {

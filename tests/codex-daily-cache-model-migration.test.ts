@@ -87,7 +87,7 @@ async function seedDailyCache(daily: DailyApi, days: DailyEntry[], savingsConfig
 describe('Codex session_meta model attribution and durable daily history', () => {
   it('changes the daily hash and re-derives a surviving source across the 3650-day horizon', async () => {
     const daily = await import('../src/daily-cache.js')
-    expect(daily.DAILY_CACHE_VERSION).toBe(19)
+    expect(daily.DAILY_CACHE_VERSION).toBe(20)
     expect(daily.DURABLE_HISTORY_AUTHORITY).toContain('codex-session-meta-model-v1')
 
     const oldHash = configHashForAuthority(priorCodexAuthority())
