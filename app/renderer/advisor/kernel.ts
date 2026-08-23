@@ -30,15 +30,14 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
     async investigate({ question, scope, overview: suppliedOverview = null, conversation = [], signal, onToolEvent, onDelta }) {
       throwIfAborted(signal)
       const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
-      if (runtime.mode !== 'ollama-local') {
-        const intent = classifyAdvisorQuestion(question)
-        if (intent === 'unknown') return runtime.generate({ question, evidence: buildUnknownEvidence(question, scope), conversation, tools: toolRegistry.definitions, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+      const intent = classifyAdvisorQuestion(question)
+      let evidence = buildUnknownEvidence(question, scope)
+      if (intent !== 'unknown') {
         const overview = suppliedOverview ?? await source.getOverview(scope)
         throwIfAborted(signal)
-        const evidence = await deterministicEvidence(source, intent, question, scope, overview, signal)
-        return runtime.generate({ question, evidence, conversation, tools: toolRegistry.definitions, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+        evidence = await deterministicEvidence(source, intent, question, scope, overview, signal)
       }
-      return runtime.generate({ question, evidence: buildUnknownEvidence(question, scope), conversation, tools: toolRegistry.definitions, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+      return runtime.generate({ question, evidence, conversation, tools: toolRegistry.definitions, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
     },
   }
 }

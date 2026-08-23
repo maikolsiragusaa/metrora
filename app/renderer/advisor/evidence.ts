@@ -102,17 +102,49 @@ function spendCoverage(data: MenubarPayload): AdvisorCoverage {
     ? { level: 'high', label: formatAdvisorPercent(coverage) + ' priced coverage', detail: 'The canonical payload reports near-complete pricing coverage.' }
     : { level: 'partial', label: formatAdvisorPercent(coverage) + ' priced coverage', detail: 'Some cost-bearing calls lack complete pricing/accounting detail.' }
 }
+function reconciliationCoverage(data: MenubarPayload, coverage: AdvisorCoverage): AdvisorCoverage {
+  const state = data.freshness?.reconciliation
+  if ((state !== 'degraded' && state !== 'targeted') || coverage.level !== 'high') return coverage
+  return {
+    level: 'partial',
+    label: state === 'degraded' ? 'Degraded source reconciliation' : 'Targeted source reconciliation',
+    detail: state === 'degraded'
+      ? 'Canonical last-good data is usable, but source reconciliation is incomplete.'
+      : 'Only the requested reconciliation slice is current; evidence outside that slice may be incomplete.',
+  }
+}
+function reconciliationUnknown(data: MenubarPayload): string[] {
+  if (data.freshness?.reconciliation === 'degraded') return ['Source reconciliation is degraded; newly changed source data may be missing.']
+  if (data.freshness?.reconciliation === 'targeted') return ['Source reconciliation was targeted; data outside the requested slice may be incomplete.']
+  return []
+}
 export function buildSpendEvidence(question: string, scope: AdvisorScope, data: MenubarPayload): AdvisorEvidence {
-  const models = modelDrivers(data).filter(row => !scope.model || row.name === scope.model)
-  const projects = projectDrivers(data).filter(row => scope.projectId === 'all' || row.name === scope.projectName)
-  const sessions = sessionDrivers(data)
-  const trend = trendFromHistory(data)
-  const refs: AdvisorEvidenceRef[] = [{ id: 'overview.current', label: 'Measured spend and call totals', source: 'overview' }]
-  if (data.history.daily.length) refs.push({ id: 'overview.history.daily', label: 'Daily spend history', source: 'history' })
-  if (models.length) refs.push({ id: 'overview.models', label: 'Top model spend breakdown', source: 'overview' })
+  const modelScoped = Boolean(scope.model)
+  const accountingRows = modelScoped
+    ? (data.current.modelAccounting?.rows ?? []).filter(row => row.name === scope.model && finite(row.cost) && finite(row.calls))
+    : []
+  const selectedModel = accountingRows.length ? {
+    name: scope.model!,
+    costUSD: accountingRows.reduce((sum, row) => sum + row.cost, 0),
+    calls: accountingRows.reduce((sum, row) => sum + row.calls, 0),
+  } : null
+  const models = modelScoped ? (selectedModel ? [selectedModel] : []) : modelDrivers(data)
+  const projects = modelScoped ? [] : projectDrivers(data).filter(row => scope.projectId === 'all' || row.name === scope.projectName)
+  const sessions = modelScoped ? [] : sessionDrivers(data)
+  const trend = modelScoped ? null : trendFromHistory(data)
+  const refs: AdvisorEvidenceRef[] = modelScoped
+    ? (selectedModel ? [{ id: 'overview.modelAccounting', label: 'Canonical model accounting row', source: 'overview' }] : [])
+    : [{ id: 'overview.current', label: 'Measured spend and call totals', source: 'overview' }]
+  if (!modelScoped && data.history.daily.length) refs.push({ id: 'overview.history.daily', label: 'Daily spend history', source: 'history' })
+  if (!modelScoped && models.length) refs.push({ id: 'overview.models', label: 'Top model spend breakdown', source: 'overview' })
   if (projects.length) refs.push({ id: 'overview.projects', label: 'Top project spend breakdown', source: 'overview' })
   if (sessions.length) refs.push({ id: 'overview.sessions', label: 'Highest-cost session summaries', source: 'overview' })
-  const coverage = spendCoverage(data)
+  const baseCoverage: AdvisorCoverage = modelScoped
+    ? selectedModel
+      ? { level: 'partial', label: 'Model-scoped accounting available', detail: 'Canonical model cost and calls are available; model-specific sessions and daily history are not.' }
+      : { level: 'unavailable', label: 'Model-scoped spend unavailable', detail: 'The Overview payload has no canonical accounting row for the requested model.' }
+    : spendCoverage(data)
+  const coverage = reconciliationCoverage(data, baseCoverage)
   return {
     intent: 'spend-change',
     question,
@@ -124,20 +156,21 @@ export function buildSpendEvidence(question: string, scope: AdvisorScope, data: 
       'Drivers are descriptive rankings from the canonical payload, not causal proof.',
     ],
     unknown: [
-      ...(trend ? [] : ['A reliable latest-day comparison is unavailable in the returned history.']),
+      ...reconciliationUnknown(data),
+      ...(trend ? [] : [modelScoped ? 'Model-specific daily history is unavailable in the returned payload.' : 'A reliable latest-day comparison is unavailable in the returned history.']),
       ...(models.length || projects.length || sessions.length ? [] : ['No driver breakdown is available for this scope.']),
       ...(coverage.level === 'high' ? [] : ['Some cost-bearing usage may lack complete pricing or model attribution.']),
     ],
     nextInvestigations: ['Compare the highest-cost models for the same Project and period.', 'Inspect detailed sessions around the latest high-cost day.'],
     spend: {
-      measuredCostUSD: finite(data.current.cost) ? data.current.cost : null,
-      calls: finite(data.current.calls) ? data.current.calls : null,
-      sessions: finite(data.current.sessions) ? data.current.sessions : null,
+      measuredCostUSD: modelScoped ? selectedModel?.costUSD ?? null : finite(data.current.cost) ? data.current.cost : null,
+      calls: modelScoped ? selectedModel?.calls ?? null : finite(data.current.calls) ? data.current.calls : null,
+      sessions: modelScoped ? null : finite(data.current.sessions) ? data.current.sessions : null,
       models,
       projects,
       sessionsByCost: sessions,
       trend,
-      pricingCoverage: finite(data.current.pricingCoverage) ? clamp(data.current.pricingCoverage) : null,
+      pricingCoverage: modelScoped ? null : finite(data.current.pricingCoverage) ? clamp(data.current.pricingCoverage) : null,
     },
   }
 }
@@ -155,7 +188,7 @@ function fallbackModels(data: MenubarPayload, scope: AdvisorScope): AdvisorModel
     calls: row.calls,
     costUSD: row.cost,
     outputTokens: null,
-    costPerCallUSD: row.calls > 0 ? row.cost / row.calls : null,
+    costPerCallUSD: null,
     pricingState: 'unknown' as const,
   }))
 }
@@ -170,17 +203,18 @@ export function buildModelEfficiencyEvidence(question: string, scope: AdvisorSco
         calls: row.calls,
         costUSD: row.costUSD,
         outputTokens: finite(row.outputTokens) ? row.outputTokens : null,
-        costPerCallUSD: row.calls > 0 ? row.costUSD / row.calls : null,
+        costPerCallUSD: pricingState(row) === 'priced' && row.calls > 0 ? row.costUSD / row.calls : null,
         pricingState: pricingState(row),
       }))
     : fallbackModels(data, scope)
   canonicalRows.sort((a, b) => (a.costPerCallUSD ?? Number.POSITIVE_INFINITY) - (b.costPerCallUSD ?? Number.POSITIVE_INFINITY))
   const rowsLimited = canonicalRows.slice(0, 12)
-  const coverage: AdvisorCoverage = !rowsLimited.length
+  const modelCoverage: AdvisorCoverage = !rowsLimited.length
     ? { level: 'unavailable', label: 'Model detail unavailable', detail: 'No model rows were returned for this scope.' }
     : rowsLimited.some(row => row.pricingState !== 'priced')
       ? { level: 'partial', label: 'Partial model coverage', detail: 'One or more rows lack complete pricing or route detail.' }
       : { level: 'high', label: 'Model rows available', detail: 'The selected scope returned canonical model usage rows.' }
+  const coverage = reconciliationCoverage(data, modelCoverage)
   return {
     intent: 'model-efficiency',
     question,
@@ -192,6 +226,7 @@ export function buildModelEfficiencyEvidence(question: string, scope: AdvisorSco
       'Rows use canonical Metrora pricing/accounting output and are not recalculated from raw tokens.',
     ],
     unknown: [
+      ...reconciliationUnknown(data),
       ...(rowsLimited.length > 1 ? ['Calls are not normalized for task complexity, output quality, or prompt size.'] : ['A multi-model comparison is unavailable in this scope.']),
       ...(coverage.level === 'high' ? [] : ['Some model pricing or attribution is incomplete.']),
     ],
@@ -249,6 +284,7 @@ export function buildQuotaEvidence(question: string, scope: AdvisorScope, data: 
       'A stale snapshot keeps its last observed values and is labeled stale; unavailable snapshots show no quota numbers.',
     ],
     unknown: [
+      ...(data ? reconciliationUnknown(data) : []),
       ...(coverage.level === 'high' ? [] : ['A fresh provider quota response is unavailable for every matching provider.']),
       'Metrora usage and provider quota use different authorities and are not combined into a burn-rate forecast.',
     ],

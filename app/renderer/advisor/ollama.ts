@@ -49,12 +49,8 @@ function extractNarrative(value: string): string {
 }
 function sanitizeNarrative(value: string): string {
   const original = extractNarrative(value)
-  const text = original
-    .replace(/(?:[$€£]\s*)\d[\d,.]*(?:\s*(?:USD|EUR|GBP))?/gi, 'the verified amount')
-    .replace(/\b\d[\d,.]*\s*%/g, 'the verified share')
-    .replace(/\b\d{4}-\d{2}-\d{2}(?:T[0-9:.+-]+Z?)?\b/g, 'the verified date')
-    .trim()
-  if (/\b(?:calls?|sessions?|projects?|models?|credits?|tokens?|remaining|used|cost|spend|quota)\b/i.test(original) && /(?:^|[\s,(])(?:[$€£]\s*)?\d[\d,.]*(?:\s*(?:%|USD|EUR|GBP|calls?|sessions?|projects?|models?|credits?|tokens?))?\b/i.test(original)) return ''
+  if (/\d/.test(original)) return ''
+  const text = original.trim()
   return text.length > 800 ? text.slice(0, 797) + '…' : text
 }
 function systemPrompt(): string {
@@ -67,7 +63,31 @@ function systemPrompt(): string {
     'If the question is outside Metrora, explain the boundary briefly and suggest a supported investigation.',
   ].join(' ')
 }
-function mergeEvidence(items: AdvisorEvidence[]): AdvisorEvidence {
+function sameEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
+  return left.period === right.period
+    && left.provider === right.provider
+    && left.projectId === right.projectId
+    && left.projectName === right.projectName
+    && left.model === right.model
+    && left.range?.from === right.range?.from
+    && left.range?.to === right.range?.to
+}
+function hasMixedEvidenceScopes(items: AdvisorEvidence[]): boolean {
+  return items.length > 1 && items.some(item => !sameEvidenceScope(item.scope, items[0]!.scope))
+}
+function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidence): AdvisorEvidence {
+  if (hasMixedEvidenceScopes(items)) {
+    return {
+      intent: 'unknown',
+      question: fallback.question,
+      scope: fallback.scope,
+      refs: [],
+      coverage: { level: 'unavailable', label: 'Conflicting evidence scopes', detail: 'Tool evidence from different scopes was rejected instead of being combined.' },
+      assumptions: [],
+      unknown: ['The local model requested evidence from different scopes; no cross-scope facts were combined.'],
+      nextInvestigations: ['Repeat the investigation with one explicit period, Project, provider, and model scope.'],
+    }
+  }
   const last = items[items.length - 1]!
   const usable = items.filter(item => item.coverage.level !== 'unavailable')
   const level: AdvisorCoverageLevel = items.length > 0 && items.every(item => item.coverage.level === 'high')
@@ -147,9 +167,9 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
     const evidences: AdvisorEvidence[] = []
     let finalContent = ''
     let streamed = false
-    let allowDelta = !(input.tools && input.tools.length)
+    let allowDelta = false
     const offDelta = this.transport.onDelta(event => {
-      if (event.requestId === requestId && allowDelta) {
+      if (event.requestId === requestId && allowDelta && !/\d/.test(event.text)) {
         streamed = true
         input.onDelta?.(event.text)
       }
@@ -165,7 +185,6 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
         tools: definitions,
         stream: definitions.length === 0,
       })
-      streamed = streamed || Boolean(planning.streamed && definitions.length === 0)
       const planningMessage = planning.message ?? {}
       const calls = Array.isArray(planningMessage.tool_calls) ? planningMessage.tool_calls.slice(0, 8) : []
       messages.push({ role: 'assistant', content: typeof planningMessage.content === 'string' ? planningMessage.content : '', tool_calls: calls })
@@ -184,32 +203,40 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
           messages.push({ role: 'tool', content: result.content.slice(0, 32_000), tool_name: name })
           input.onToolEvent?.({ name, status: 'completed' })
         }
+        const validToolEvidence = !hasMixedEvidenceScopes(evidences)
+          && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
         if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
-        allowDelta = true
-        const finalResponse = await this.transport.chat(requestId, {
-          model: this.model,
-          messages,
-          tools: [],
-          stream: true,
-        })
-        streamed = streamed || Boolean(finalResponse.streamed)
-        finalContent = typeof finalResponse.message?.content === 'string' ? finalResponse.message.content : ''
+        if (validToolEvidence) {
+          allowDelta = true
+          const finalResponse = await this.transport.chat(requestId, {
+            model: this.model,
+            messages,
+            tools: [],
+            stream: true,
+          })
+          streamed = streamed || Boolean(finalResponse.streamed)
+          finalContent = typeof finalResponse.message?.content === 'string' ? finalResponse.message.content : ''
+        }
       }
     } finally {
       signal?.removeEventListener('abort', cancel)
       offDelta()
     }
-    const evidence = mergeEvidence(evidences.length ? evidences : [input.evidence])
-    const deterministicAnswers = await Promise.all((evidences.length ? evidences : [input.evidence]).map(item => new DeterministicAdvisorRuntime().generate({ question: input.question, evidence: item }, signal)))
+    const evidenceItems = evidences.length ? evidences : [input.evidence]
+    const evidence = mergeEvidence(evidenceItems, input.evidence)
+    const homogeneous = !hasMixedEvidenceScopes(evidenceItems)
+    const deterministicItems = homogeneous ? evidenceItems : [evidence]
+    const deterministicAnswers = await Promise.all(deterministicItems.map(item => new DeterministicAdvisorRuntime().generate({ question: input.question, evidence: item }, signal)))
     const fallback = await new DeterministicAdvisorRuntime().generate({ question: input.question, evidence }, signal)
     const verifiedConclusions = Array.from(new Set(deterministicAnswers.map(answer => answer.conclusion).filter(Boolean)))
     const verifiedConclusion = verifiedConclusions.length ? verifiedConclusions.join(' ') : fallback.conclusion
-    const insight = sanitizeNarrative(finalContent)
+    const hasValidEvidence = evidences.length > 0 && homogeneous && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
+    const insight = hasValidEvidence ? sanitizeNarrative(finalContent) : ''
     const conclusion = verifiedConclusion + (insight ? ' Local model context: ' + insight : '')
     const details = Array.from(new Set([
       ...deterministicAnswers.flatMap(answer => answer.details),
       ...fallback.details,
-      ...evidences.flatMap(item => item.refs.map(ref => 'Evidence · ' + ref.label)),
+      ...(homogeneous ? evidences.flatMap(item => item.refs.map(ref => 'Evidence · ' + ref.label)) : []),
     ]))
     return {
       ...fallback,

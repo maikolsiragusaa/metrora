@@ -56,7 +56,7 @@ const quotaEvidence: AdvisorEvidence = {
     measuredCalls: 3,
   },
 }
-function transportFor(events: string[], calls: Array<Record<string, unknown>[]>): OllamaTransport {
+function transportFor(events: string[], calls: Array<Record<string, unknown>[]>, finalContent = 'The observed pattern is worth investigating further.', finalDelta = finalContent): OllamaTransport {
   let listener: ((event: { requestId: string; text: string }) => void) | null = null
   let index = 0
   return {
@@ -72,10 +72,18 @@ function transportFor(events: string[], calls: Array<Record<string, unknown>[]>)
         listener?.({ requestId, text: 'Planning 99 calls' })
         return { streamed: false, message: { content: '', tool_calls: calls[0] } }
       }
-      listener?.({ requestId, text: 'The observed pattern is worth investigating further.' })
+      listener?.({ requestId, text: finalDelta })
       events.push(JSON.stringify({ model: payload.model, tools: payload.tools, stream: payload.stream }))
-      return { streamed: true, message: { content: 'The observed pattern is worth investigating further.' } }
+      return { streamed: true, message: { content: finalContent } }
     },
+  }
+}
+function noToolTransport(content: string): OllamaTransport {
+  return {
+    probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+    cancel: async () => true,
+    onDelta: () => () => {},
+    chat: async () => ({ streamed: false, message: { content, tool_calls: [] } }),
   }
 }
 describe('Ollama Advisor renderer state machine', () => {
@@ -122,5 +130,90 @@ describe('Ollama Advisor renderer state machine', () => {
       onDelta: () => {},
     })
     expect(answer.conclusion).toContain('GPT-5.6')
+  })
+
+  it.each(['Spend rose by 12.', 'The scope contains 12 calls.'])(
+    'suppresses the entire model narrative when it contains an unverified numeric token: %s',
+    async narrative => {
+      const transport = transportFor([], [[{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]], narrative, narrative)
+      const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+        question: 'What changed in spend?',
+        evidence: spendEvidence,
+        tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+        executeTool: async () => ({ content: 'spend', evidence: spendEvidence }),
+      })
+      expect(answer.conclusion).not.toContain('Local model context')
+      expect(answer.conclusion).not.toContain(narrative)
+    },
+  )
+
+  it('suppresses qualitative no-tool context even when recognized evidence was prefetched', async () => {
+    const narrative = 'The observed pattern deserves a closer look.'
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport: noToolTransport(narrative) }).generate({
+      question: 'What changed in spend?', evidence: spendEvidence, tools: [],
+    })
+    expect(answer.conclusion).not.toContain(narrative)
+    expect(answer.conclusion).not.toContain('Local model context')
+  })
+
+  it('does not expose numeric streamed deltas before final narrative validation', async () => {
+    const deltas: string[] = []
+    const transport = transportFor([], [[{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]], 'A qualitative observation.', 'Planning found 99 calls.')
+    await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'What changed in spend?', evidence: spendEvidence,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async () => ({ content: 'spend', evidence: spendEvidence }),
+      onDelta: text => deltas.push(text),
+    })
+    expect(deltas).toEqual([])
+  })
+
+  it('suppresses no-tool model narrative when the question has no valid mapped evidence', async () => {
+    const unknown: AdvisorEvidence = {
+      ...spendEvidence,
+      intent: 'unknown',
+      refs: [],
+      coverage: { level: 'unavailable', label: 'Unavailable', detail: 'No mapped evidence.' },
+      spend: undefined,
+    }
+    const narrative = 'Trust me, this is definitely the cause.'
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport: noToolTransport(narrative) }).generate({
+      question: 'Tell me a joke', evidence: unknown, tools: [],
+    })
+    expect(answer.conclusion).not.toContain(narrative)
+    expect(answer.conclusion).not.toContain('Local model context')
+  })
+
+  it.each([
+    ['claude', 'codex'],
+    ['codex', 'claude'],
+  ])('rejects mixed-scope tool evidence without cross-scope contamination (%s then %s)', async (first, second) => {
+    const finalRequests: string[] = []
+    const transport = transportFor(finalRequests, [[
+      { function: { name: 'get_spend_snapshot', arguments: { provider: first } } },
+      { function: { name: 'get_spend_snapshot', arguments: { provider: second } } },
+    ]])
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'Compare spend',
+      evidence: spendEvidence,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async (_name, args) => {
+        const provider = String(args.provider)
+        const evidence: AdvisorEvidence = {
+          ...spendEvidence,
+          scope: { ...scope, provider },
+          refs: [{ id: 'spend-' + provider, label: provider + ' spend', source: 'overview' }],
+          spend: { ...spendEvidence.spend!, measuredCostUSD: provider === 'claude' ? 41 : 73 },
+        }
+        return { content: provider, evidence }
+      },
+    })
+
+    expect(answer.coverage).toMatchObject({ level: 'unavailable', label: 'Conflicting evidence scopes' })
+    expect(answer.evidence).toEqual([])
+    expect(answer.scopeLabel).toContain('All providers')
+    expect(answer.conclusion).not.toMatch(/41|73|claude spend|codex spend/i)
+    expect(answer.details.join(' ')).not.toMatch(/41|73|claude spend|codex spend/i)
+    expect(finalRequests).toEqual([])
   })
 })

@@ -14,6 +14,7 @@ import type { AdvisorAnswer, AdvisorConversationTurn, AdvisorScope } from '../ad
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
+type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 type RuntimeState = { status: 'checking' | 'ready' | 'unavailable'; detail: string; models: string[] }
 
 const PERIODS: Array<{ value: Period; label: string }> = PERIOD_OPTIONS.map(option => ({ value: option.value as Period, label: option.label }))
@@ -134,6 +135,7 @@ export function Advisor({
   const [streamPreview, setStreamPreview] = useState('')
   const [toolStatus, setToolStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [failedRequest, setFailedRequest] = useState<AdvisorFailedRequest | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
   const requestController = useRef<AbortController | null>(null)
@@ -142,25 +144,32 @@ export function Advisor({
   const messages = activeConversation.messages
   const selectedAnswer = answerForMessage(messages, selectedAnswerId)
 
-  const updateActiveConversation = useCallback((update: (conversation: AdvisorConversation) => AdvisorConversation) => {
-    setConversations(current => current.map(conversation => conversation.id === activeConversationId ? update(conversation) : conversation))
-  }, [activeConversationId])
+  const updateConversation = useCallback((conversationId: string, update: (conversation: AdvisorConversation) => AdvisorConversation) => {
+    setConversations(current => current.map(conversation => conversation.id === conversationId ? update(conversation) : conversation))
+  }, [])
 
-  const ask = useCallback(async (rawQuestion: string) => {
+  const ask = useCallback(async (rawQuestion: string, retryRequest?: AdvisorFailedRequest) => {
     const question = rawQuestion.trim()
     if (!question || loadingQuestion) return
+    const requestedScope = retryRequest?.scope ?? scope
+    const conversationId = retryRequest?.conversationId ?? activeConversationId
+    const targetConversation = conversations.find(conversation => conversation.id === conversationId)
+    if (!targetConversation) return
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
-    const history: AdvisorConversationTurn[] = messages.map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '' }))
-    const userMessage: AdvisorMessage = { id: makeId('user'), role: 'user', text: question }
-    updateActiveConversation(conversation => ({
-      ...conversation,
-      title: conversation.messages.length === 0 ? question.slice(0, 42) : conversation.title,
-      messages: [...conversation.messages, userMessage],
-    }))
+    const history: AdvisorConversationTurn[] = retryRequest?.conversation ?? targetConversation.messages.map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '' }))
+    if (!retryRequest) {
+      const userMessage: AdvisorMessage = { id: makeId('user'), role: 'user', text: question }
+      updateConversation(conversationId, conversation => ({
+        ...conversation,
+        title: conversation.messages.length === 0 ? question.slice(0, 42) : conversation.title,
+        messages: [...conversation.messages, userMessage],
+      }))
+    }
     setComposer('')
     setError(null)
+    setFailedRequest(null)
     setNotice(null)
     setLoadingQuestion(question)
     setStreamPreview('')
@@ -168,8 +177,15 @@ export function Advisor({
     try {
       const answer = await kernel.investigate({
         question,
-        scope,
-        overview: suppliedOverviewMatchesScope ? overview.data : null,
+        scope: requestedScope,
+        overview: requestedScope.period === period
+          && requestedScope.provider === provider
+          && requestedScope.projectId === projectScopeId
+          && requestedScope.range?.from === range?.from
+          && requestedScope.range?.to === range?.to
+          && requestedScope.model === null
+          && !overview.loading
+          && !overview.switching ? overview.data : null,
         conversation: history,
         signal: controller.signal,
         onToolEvent: event => setToolStatus(event.status === 'started' ? 'Investigating ' + event.name.replaceAll('_', ' ') + '…' : null),
@@ -177,18 +193,26 @@ export function Advisor({
       })
       if (controller.signal.aborted) return
       const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer }
-      updateActiveConversation(conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
+      updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {
       if (isCancelled(caught)) setNotice('Investigation cancelled. Your conversation stays local to this session.')
-      else setError(caught instanceof Error ? caught.message : 'Advisor could not complete this investigation.')
+      else {
+        setFailedRequest({
+          question,
+          scope: { ...requestedScope, range: requestedScope.range ? { ...requestedScope.range } : null },
+          conversationId,
+          conversation: history.map(turn => ({ ...turn })),
+        })
+        setError(caught instanceof Error ? caught.message : 'Advisor could not complete this investigation.')
+      }
     } finally {
       if (requestController.current === controller) requestController.current = null
       setLoadingQuestion(null)
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [kernel, loadingQuestion, messages, overview.data, scope, updateActiveConversation])
+  }, [activeConversationId, conversations, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -212,7 +236,11 @@ export function Advisor({
     setError(null)
     setNotice(null)
   }
-  const filteredConversations = conversations.filter(conversation => conversation.title.toLowerCase().includes(historyQuery.trim().toLowerCase()))
+  const normalizedHistoryQuery = historyQuery.trim().toLowerCase()
+  const filteredConversations = conversations.filter(conversation => !normalizedHistoryQuery || [
+    conversation.title,
+    ...conversation.messages.map(message => message.text ?? message.answer?.conclusion ?? ''),
+  ].some(value => value.toLowerCase().includes(normalizedHistoryQuery)))
   const runtimeLabel = runtimeState.status === 'ready' && ollamaRuntime ? ollamaRuntime.label : 'Offline evidence fallback'
   const runtimeDescription = runtimeState.status === 'ready' && ollamaRuntime
     ? 'Local Ollama model · read-only evidence tools · capability varies by model'
@@ -281,7 +309,7 @@ export function Advisor({
             )
           )}
           {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor</div><p className="advisor-tool-progress">{toolStatus ?? 'Thinking with local evidence…'}</p>{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button></article> : null}
-          {error ? <div className="advisor-error" role="alert"><strong>Investigation unavailable.</strong> {error}<button type="button" onClick={() => void ask(composer || loadingQuestion || '')}>Retry</button></div> : null}
+          {error ? <div className="advisor-error" role="alert"><strong>Investigation unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequest) { setActiveConversationId(failedRequest.conversationId); void ask(failedRequest.question, failedRequest) } }}>Retry</button></div> : null}
           {notice ? <div className="advisor-notice" role="status">{notice}</div> : null}
         </div>
         <form className="advisor-composer" onSubmit={submit}>

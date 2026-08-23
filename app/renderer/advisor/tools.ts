@@ -49,9 +49,10 @@ export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: Advi
       return { content: compactEvidence(evidence), evidence }
     }
     if (name === 'get_quota_snapshot') {
+      const overview = suppliedOverview && sameScope(nextScope, scope) ? suppliedOverview : await source.getOverview(nextScope)
       let quota: QuotaProvider[] = []
       try { quota = await source.getQuota() } catch { /* unavailable is factual, not zero. */ }
-      const evidence = buildQuotaEvidence('tool: quota snapshot', nextScope, suppliedOverview, quota)
+      const evidence = buildQuotaEvidence('tool: quota snapshot', nextScope, overview, quota)
       return { content: compactEvidence(evidence), evidence }
     }
     throw new Error('Unknown Advisor tool: ' + name)

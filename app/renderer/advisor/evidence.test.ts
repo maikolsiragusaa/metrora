@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { MenubarPayload } from '../lib/types'
 import type { QuotaProvider } from '../../electron/quota/types'
-import { buildQuotaEvidence, buildSpendEvidence } from './evidence'
+import { buildModelEfficiencyEvidence, buildQuotaEvidence, buildSpendEvidence } from './evidence'
 import type { AdvisorScope } from './types'
 
 const scope: AdvisorScope = { period: 'week', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }
@@ -65,5 +65,36 @@ describe('Advisor evidence truth contract', () => {
     const evidence = buildQuotaEvidence('quota', scope, null, [quota('codex', 'stale', 'available')])
     expect(evidence.coverage.level).toBe('unavailable')
     expect(evidence.quota?.providers[0]).toMatchObject({ planLabel: null, windows: [], creditsUSD: null })
+  })
+
+  it.each(['degraded', 'targeted'] as const)('downgrades otherwise-high spend coverage for %s source reconciliation', reconciliation => {
+    const payload = {
+      ...emptyOverview,
+      freshness: { readMode: 'snapshot', reconciliation, durableThrough: '2026-08-22' },
+      current: { ...emptyOverview.current, cost: 12, calls: 3, sessions: 2, pricingCoverage: 1 },
+    } as unknown as MenubarPayload
+    const evidence = buildSpendEvidence('spend', scope, payload)
+    expect(evidence.coverage.level).toBe('partial')
+    expect(evidence.coverage.label.toLowerCase()).toContain(reconciliation)
+    expect(evidence.unknown.some(item => item.toLowerCase().includes('reconciliation'))).toBe(true)
+  })
+
+  it('does not publish fallback Overview cost-per-call as authoritative model efficiency', () => {
+    const payload = {
+      ...emptyOverview,
+      current: { ...emptyOverview.current, cost: 12, calls: 3, sessions: 2, pricingCoverage: 1, topModels: [{ name: 'fallback-model', cost: 12, calls: 3 }] },
+    } as unknown as MenubarPayload
+    const evidence = buildModelEfficiencyEvidence('model efficiency', scope, payload, [])
+    expect(evidence.coverage.level).toBe('partial')
+    expect(evidence.modelEfficiency?.rows[0]).toMatchObject({ model: 'fallback-model', pricingState: 'unknown', costPerCallUSD: null })
+  })
+
+  it('preserves provider observation timestamps instead of synthesizing newer freshness', () => {
+    const older = quota('codex', 'stale', 'unavailable')
+    older.observedAt = '2026-08-22T08:00:00Z'
+    const newer = quota('claude', 'fresh', 'available')
+    newer.observedAt = '2026-08-23T12:00:00Z'
+    const evidence = buildQuotaEvidence('quota', scope, null, [older, newer])
+    expect(evidence.quota?.providers.map(item => item.observedAt)).toEqual(['2026-08-22T08:00:00Z', '2026-08-23T12:00:00Z'])
   })
 })
