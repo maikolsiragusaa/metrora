@@ -45,13 +45,32 @@ describe('provider quota contract', () => {
     const safe = sanitizeQuotaProvider(quota({
       observedAt: null,
       windows: [{ id: 'primary', label: '5-hour', usedFraction: 0.25, resetsAt: null, windowSeconds: null }],
+      credits: { balance: 3.5, currency: 'USD' },
+      planLabel: 'Plus',
     }))!
     expect(safe).toMatchObject({
       availability: 'unavailable',
       freshness: 'unavailable',
       observedAt: null,
-      windows: [{ id: 'primary', usedFraction: 0.25 }],
+      windows: [],
+      credits: null,
+      planLabel: null,
     })
+  })
+
+  it('clears credits and plan facts when the observation time is invalid', () => {
+    const credits = sanitizeQuotaProvider(quota({ observedAt: 'not-a-date', credits: { balance: 3.5, currency: 'USD' } }))!
+    const plan = sanitizeQuotaProvider(quota({ observedAt: 'not-a-date', planLabel: 'Plus' }))!
+
+    expect(credits).toMatchObject({ availability: 'unavailable', freshness: 'unavailable', observedAt: null, credits: null, planLabel: null, windows: [] })
+    expect(plan).toMatchObject({ availability: 'unavailable', freshness: 'unavailable', observedAt: null, credits: null, planLabel: null, windows: [] })
+  })
+
+  it('preserves valid fresh credits-only facts, including explicit zero', () => {
+    for (const balance of [3.5, 0]) {
+      const input = quota({ credits: { balance, currency: 'USD' } })
+      expect(sanitizeQuotaProvider(input)).toEqual(input)
+    }
   })
 
   it('preserves a valid fresh factual snapshot semantically', () => {
@@ -75,6 +94,11 @@ describe('provider quota contract', () => {
     expect(sanitizeQuotaProvider(input)).toEqual(input)
 
     const invalid = sanitizeQuotaProvider({ ...input, observedAt: 'not-a-date' })!
-    expect(invalid).toMatchObject({ availability: 'unavailable', freshness: 'unavailable', observedAt: null, credits: input.credits })
+    expect(invalid).toMatchObject({ availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [], credits: null, planLabel: null })
+  })
+
+  it('fails closed when stale facts do not carry a transient connection', () => {
+    const safe = sanitizeQuotaProvider(quota({ freshness: 'stale', availability: 'unavailable', connection: 'connected', credits: { balance: 3.5, currency: 'USD' } }))!
+    expect(safe).toMatchObject({ availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [], credits: null, planLabel: null })
   })
 })

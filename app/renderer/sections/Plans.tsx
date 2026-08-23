@@ -151,10 +151,11 @@ function renderBudgetPlans(data: StatusJson | null, error: ReturnType<typeof use
 
 function QuotaPanel({ quota, onReconnect }: { quota: QuotaProvider; onReconnect: () => void }) {
   const providerName = quota.provider === 'claude' ? 'Claude' : 'Codex'
+  const planLabel = quota.freshness === 'unavailable' ? null : quota.planLabel
   return (
     <Panel
       className="quota-card"
-      title={<span className="quota-title">{providerName}{quota.planLabel ? <small>{quota.planLabel}</small> : null}</span>}
+      title={<span className="quota-title">{providerName}{planLabel ? <small>{planLabel}</small> : null}</span>}
       right={<ConnectionIndicator connection={quota.connection} />}
     >
       <QuotaContent quota={quota} onReconnect={onReconnect} />
@@ -178,14 +179,19 @@ function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnec
   if (quota.connection === 'terminalFailure') {
     return <p className="quota-connection-note quota-terminal">Quota is currently unavailable.</p>
   }
-
-  const hasWindows = quota.windows.length > 0
   const stale = quota.freshness === 'stale' || quota.connection === 'stale' || quota.connection === 'transientFailure'
   const note = isRateLimited(quota)
     ? rateLimitedNote(quota.provider)
     : stale
       ? staleQuotaNote(quota)
       : null
+  if (quota.freshness === 'unavailable') {
+    return note
+      ? <p className="quota-connection-note">{note}</p>
+      : <p className="quota-connection-note">The provider did not report quota evidence.</p>
+  }
+
+  const hasWindows = quota.windows.length > 0
 
   return (
     <>

@@ -220,7 +220,7 @@ describe('createBridgeHandlers (IPC wiring)', () => {
     const invalidFresh = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => [{ ...value[0], observedAt: null }]) })
     expect(await invalidFresh['metrora:getQuota']!()).toMatchObject({
       ok: true,
-      value: [{ connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [{ id: 'seven_day' }] }],
+      value: [{ connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [], credits: null, planLabel: null }],
     })
 
     const failed = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => { throw new Error('Bearer secret sk-ant-leak') }) })

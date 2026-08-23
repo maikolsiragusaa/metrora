@@ -226,11 +226,20 @@ export function sanitizeQuotaProvider(value: unknown): QuotaProvider | null {
     return { ...sanitized, availability: 'available', freshness: 'fresh' }
   }
 
-  if (sanitized.freshness === 'stale' && sanitized.observedAt !== null) {
+  const staleConnection = sanitized.connection === 'stale' || sanitized.connection === 'transientFailure'
+  if (sanitized.freshness === 'stale' && staleConnection && sanitized.observedAt !== null) {
     return { ...sanitized, availability: 'unavailable', freshness: 'stale' }
   }
 
-  return { ...sanitized, availability: 'unavailable', freshness: 'unavailable', observedAt: null }
+  return {
+    ...sanitized,
+    availability: 'unavailable',
+    freshness: 'unavailable',
+    observedAt: null,
+    windows: [],
+    credits: null,
+    planLabel: null,
+  }
 }
 
 export function sanitizeQuotaProviders(value: unknown): QuotaProvider[] {

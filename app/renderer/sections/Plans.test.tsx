@@ -170,6 +170,26 @@ describe('Plans', () => {
     expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
   })
 
+  it('does not render injected provider facts when freshness is unavailable', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', {
+      availability: 'unavailable',
+      freshness: 'unavailable',
+      observedAt: null,
+      planLabel: 'Injected Plan',
+      windows: [{ id: 'primary', label: 'Injected window', usedFraction: 0.25, resetsAt: null, windowSeconds: null }],
+      credits: { balance: 3.5, currency: 'USD' },
+    })])
+
+    const { container } = render(<Plans period="30days" />)
+
+    expect(await screen.findByText('The provider did not report quota evidence.')).toBeInTheDocument()
+    expect(screen.queryByText('Injected Plan')).not.toBeInTheDocument()
+    expect(screen.queryByText('Credits remaining · $3.50')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('quota-track-primary')).not.toBeInTheDocument()
+    expect(container.querySelector('.quota-windows')).not.toBeInTheDocument()
+  })
+
   it('keeps manual budget overage and clamped-track behavior', async () => {
     getPlans.mockResolvedValue({
       ...baseStatus,
