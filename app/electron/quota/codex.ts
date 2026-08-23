@@ -1,18 +1,15 @@
 import os from 'node:os'
 import path from 'node:path'
 
-import { atomicWriteSecureFile, fraction, quotaRequestSignal, readKeychainPassword, readSecureFile, sanitizeError } from './security'
+import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
+import { fraction, quotaRequestSignal, readKeychainPassword, readSecureFile, sanitizeError } from './security'
 import type { KeychainOutcome } from './security'
-import type { QuotaProvider, QuotaWindow } from './types'
 
 const USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage'
-const TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token'
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
-const EIGHT_DAYS = 8 * 24 * 60 * 60_000
 // The Metrora menubar caches its ChatGPT-mode Codex OAuth here as a
 // `CredentialRecord` JSON blob (accessToken/refreshToken/idToken/accountId/…),
 // account "default". Same brand, same machine, already consented — preferred
-// over any OpenAI-owned storage.
+// over any OpenAI-owned storage. It remains read-only to this quota path.
 const MENUBAR_KEYCHAIN_SERVICE = 'eu.metrora.menubar.codex.oauth.v1'
 
 type AuthDoc = Record<string, any> & {
@@ -25,8 +22,8 @@ export type CodexDeps = {
   fetch: typeof fetch
   authPath: string
   openaiAuthPath: string
+  /** Read-only credential source. Codex owns rotation of this document. */
   readFile: typeof readSecureFile
-  writeFile: typeof atomicWriteSecureFile
   keychain: (service: string) => Promise<KeychainOutcome>
   now: () => number
 }
@@ -36,23 +33,19 @@ const defaults: CodexDeps = {
   authPath: path.join(os.homedir(), '.codex', 'auth.json'),
   openaiAuthPath: path.join(os.homedir(), 'Library', 'Application Support', 'com.openai.codex', 'auth.json'),
   readFile: readSecureFile,
-  writeFile: atomicWriteSecureFile,
   keychain: service => readKeychainPassword(service, ['default', null]),
   now: Date.now,
 }
 
-/** A resolved Codex credential plus how much of its lifecycle we own. Only the
- * Codex CLI's own auth.json is `writable` (we may rotate + write it back); the
- * menubar keychain and OpenAI app-support copies are read-only. */
+/** Every Codex credential source is provider-owned and read-only here. */
 type CodexSource = {
   name: 'menubarKeychain' | 'authFile' | 'openaiAppSupport'
   auth: AuthDoc
-  writable: boolean
   reread: () => Promise<AuthDoc | null>
 }
 
 function empty(connection: QuotaProvider['connection']): QuotaProvider {
-  return { provider: 'codex', connection, primary: null, details: [], planLabel: null, footerLines: [] }
+  return emptyQuota('codex', connection)
 }
 
 async function readAuth(deps: CodexDeps, filePath: string = deps.authPath): Promise<AuthDoc | null> {
@@ -82,7 +75,7 @@ function authFromMenubarRecord(raw: string): AuthDoc | null {
 async function discoverSource(deps: CodexDeps, allowKeychain: boolean): Promise<CodexSource | 'accessDenied' | null> {
   let denied = false
   // (a) Metrora menubar's own cached Codex OAuth. Read-only: the menubar owns
-  // rotation, so we never write it back and never proactively refresh it.
+  // rotation, so this path never writes it back or proactively refreshes it.
   if (allowKeychain && process.platform === 'darwin') {
     const outcome = await deps.keychain(MENUBAR_KEYCHAIN_SERVICE)
     if (outcome.status === 'accessDenied') denied = true
@@ -90,7 +83,7 @@ async function discoverSource(deps: CodexDeps, allowKeychain: boolean): Promise<
       const auth = authFromMenubarRecord(outcome.value)
       if (auth) {
         return {
-          name: 'menubarKeychain', auth, writable: false,
+          name: 'menubarKeychain', auth,
           reread: async () => {
             const next = await deps.keychain(MENUBAR_KEYCHAIN_SERVICE)
             return next.status === 'found' ? authFromMenubarRecord(next.value) : null
@@ -99,21 +92,27 @@ async function discoverSource(deps: CodexDeps, allowKeychain: boolean): Promise<
       }
     }
   }
-  // (b) The Codex CLI's own ~/.codex/auth.json. We own rotation + write-back.
+  // (b) The Codex CLI's own ~/.codex/auth.json. Read-only: Codex owns refresh
+  // token rotation and Metrora must never write this provider-owned file.
   const fileAuth = await readAuth(deps)
-  if (fileAuth) return { name: 'authFile', auth: fileAuth, writable: true, reread: () => readAuth(deps) }
+  if (fileAuth) return { name: 'authFile', auth: fileAuth, reread: () => readAuth(deps) }
   // (c) com.openai.codex App Support, only if it holds a plaintext auth JSON
   // with a usable token. Tokens encrypted via "Codex Safe Storage" have no
   // plaintext access_token here, so they fall through — we never decrypt.
   const openaiAuth = await readAuth(deps, deps.openaiAuthPath).catch(() => null)
   if (openaiAuth?.tokens?.access_token) {
-    return { name: 'openaiAppSupport', auth: openaiAuth, writable: false, reread: () => readAuth(deps, deps.openaiAuthPath).catch(() => null) }
+    return { name: 'openaiAppSupport', auth: openaiAuth, reread: () => readAuth(deps, deps.openaiAuthPath).catch(() => null) }
   }
   return denied ? 'accessDenied' : null
 }
 
-function labelForSeconds(value: unknown): string {
-  const seconds = typeof value === 'number' ? Math.max(0, Math.trunc(value)) : 0
+function windowSeconds(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : null
+}
+
+function labelForSeconds(value: number | null): string {
+  const seconds = value ?? 0
+  if (seconds <= 0) return 'Quota window'
   if (seconds < 3600) return 'Hourly'
   if (seconds < 7200) return 'Hour'
   if (seconds >= 18_000 && seconds < 19_000) return '5-hour'
@@ -123,14 +122,28 @@ function labelForSeconds(value: unknown): string {
   return hours < 24 ? `${hours}-hour` : `${Math.floor(hours / 24)}-day`
 }
 
-function windowOf(value: unknown, override?: string): QuotaWindow | null {
+function resetAt(value: unknown): string | null {
+  const date = typeof value === 'number' && Number.isFinite(value)
+    ? new Date(value * 1000)
+    : typeof value === 'string' && Number.isFinite(Date.parse(value))
+      ? new Date(value)
+      : null
+  return date && Number.isFinite(date.getTime()) ? date.toISOString() : null
+}
+
+function windowOf(value: unknown, id: string, override?: string): QuotaWindow | null {
   if (!value || typeof value !== 'object') return null
   const row = value as Record<string, unknown>
-  const percent = fraction(row.used_percent)
-  if (percent === null) return null
-  const reset = typeof row.reset_at === 'number' && Number.isFinite(row.reset_at)
-    ? new Date(row.reset_at * 1000).toISOString() : null
-  return { label: override ?? labelForSeconds(row.limit_window_seconds), percent, resetsAt: reset }
+  const usedFraction = fraction(row.used_percent)
+  if (usedFraction === null) return null
+  const seconds = windowSeconds(row.limit_window_seconds)
+  return {
+    id,
+    label: override ?? labelForSeconds(seconds),
+    usedFraction,
+    resetsAt: resetAt(row.reset_at),
+    windowSeconds: seconds,
+  }
 }
 
 function planLabel(value: unknown): string | null {
@@ -146,56 +159,43 @@ function planLabel(value: unknown): string | null {
   return known[lower] ?? lower.replace(/(^|[_-])\w/g, match => match.replace(/[_-]/, ' ').toUpperCase())
 }
 
-export function decodeCodexUsage(body: unknown): QuotaProvider {
-  const data = body && typeof body === 'object' ? body as Record<string, any> : {}
-  const primaryRaw = windowOf(data.rate_limit?.primary_window)
-  const secondaryRaw = windowOf(data.rate_limit?.secondary_window)
-  const primary = primaryRaw ?? secondaryRaw
-  const details: QuotaWindow[] = []
-  if (primaryRaw) details.push(primaryRaw)
-  if (secondaryRaw && secondaryRaw !== primary) details.push(secondaryRaw)
-  else if (!primaryRaw && secondaryRaw) details.push(secondaryRaw)
-  if (Array.isArray(data.additional_rate_limits)) {
-    for (const additional of data.additional_rate_limits) {
-      if (!additional || typeof additional !== 'object' || typeof additional.limit_name !== 'string') continue
-      for (const key of ['primary_window', 'secondary_window'] as const) {
-        const raw = additional.rate_limit?.[key]
-        const base = windowOf(raw)
-        if (base && base.percent > 0) details.push({ ...base, label: `${additional.limit_name} · ${base.label}` })
-      }
-    }
-  }
-  const rawBalance = data.credits?.balance
-  const balance = typeof rawBalance === 'number' ? rawBalance : typeof rawBalance === 'string' ? Number(rawBalance) : NaN
-  return {
-    provider: 'codex', connection: 'connected', primary, details,
-    planLabel: planLabel(data.plan_type),
-    footerLines: Number.isFinite(balance) && balance > 0 ? [`Credits remaining · $${balance.toFixed(2)}`] : [],
-  }
+function credits(value: unknown): QuotaProvider['credits'] {
+  if (!value || typeof value !== 'object') return null
+  const raw = (value as Record<string, unknown>).balance
+  const balance = typeof raw === 'number'
+    ? raw
+    : typeof raw === 'string' && raw.trim()
+      ? Number(raw)
+      : NaN
+  return Number.isFinite(balance) ? { balance, currency: 'USD' } : null
 }
 
-async function refresh(auth: AuthDoc, deps: CodexDeps, signal?: AbortSignal): Promise<AuthDoc | null> {
-  const refreshToken = auth.tokens?.refresh_token
-  if (!refreshToken) return null
-  const response = await deps.fetch(TOKEN_ENDPOINT, {
-    method: 'POST', signal: quotaRequestSignal(signal),
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: CLIENT_ID, grant_type: 'refresh_token', refresh_token: refreshToken, scope: 'openid profile email' }),
-  })
-  if (!response.ok) return null
-  const next = await response.json() as Record<string, unknown>
-  if (typeof next.access_token !== 'string' || !next.access_token) return null
-  const latest = await readAuth(deps)
-  if (!latest || latest.auth_mode !== 'chatgpt') return null
-  latest.tokens = {
-    ...latest.tokens,
-    access_token: next.access_token,
-    ...(typeof next.refresh_token === 'string' ? { refresh_token: next.refresh_token } : {}),
-    ...(typeof next.id_token === 'string' ? { id_token: next.id_token } : {}),
+export function decodeCodexUsage(body: unknown): QuotaProvider {
+  const data = body && typeof body === 'object' ? body as Record<string, any> : {}
+  const windows: QuotaWindow[] = []
+  const primary = windowOf(data.rate_limit?.primary_window, 'primary')
+  const secondary = windowOf(data.rate_limit?.secondary_window, 'secondary')
+  if (primary) windows.push(primary)
+  if (secondary) windows.push(secondary)
+
+  if (Array.isArray(data.additional_rate_limits)) {
+    for (const additional of data.additional_rate_limits) {
+      if (!additional || typeof additional !== 'object' || typeof additional.limit_name !== 'string' || !additional.limit_name.trim()) continue
+      const name = additional.limit_name.trim()
+      const primaryAdditional = windowOf(additional.rate_limit?.primary_window, `additional:${name}:primary`, `${name} · ${labelForSeconds(windowSeconds(additional.rate_limit?.primary_window?.limit_window_seconds))}`)
+      const secondaryAdditional = windowOf(additional.rate_limit?.secondary_window, `additional:${name}:secondary`, `${name} · ${labelForSeconds(windowSeconds(additional.rate_limit?.secondary_window?.limit_window_seconds))}`)
+      if (primaryAdditional) windows.push(primaryAdditional)
+      if (secondaryAdditional) windows.push(secondaryAdditional)
+    }
   }
-  latest.last_refresh = new Date(deps.now()).toISOString()
-  await deps.writeFile(deps.authPath, `${JSON.stringify(latest, null, 2)}\n`)
-  return latest
+
+  const decoded = emptyQuota('codex', 'connected')
+  return {
+    ...decoded,
+    planLabel: planLabel(data.plan_type),
+    windows,
+    credits: credits(data.credits),
+  }
 }
 
 async function usage(auth: AuthDoc, deps: CodexDeps, signal?: AbortSignal): Promise<Response | null> {
@@ -219,31 +219,22 @@ export async function fetchCodexQuota(options: Partial<CodexDeps> & { signal?: A
     if (auth.auth_mode !== 'chatgpt') return { quota: empty('terminalFailure') }
     if (!auth.tokens?.access_token) return { quota: empty('disconnected') }
 
-    // Proactive staleness refresh only for the source whose rotation we own.
-    if (source.writable) {
-      const refreshedAt = typeof auth.last_refresh === 'string' ? Date.parse(auth.last_refresh) : NaN
-      if (!Number.isFinite(refreshedAt) || deps.now() - refreshedAt > EIGHT_DAYS) {
-        const next = await refresh(auth, deps, options.signal)
-        if (next) auth = next
-      }
-    }
+    // Provider-owned Codex OAuth is observationally read-only. In particular,
+    // a stale refresh_token in auth.json is never spent by this code.
     let response = await usage(auth, deps, options.signal)
     if (!response) return { quota: empty('disconnected') }
     if (response.status === 401) {
+      // One bounded reread lets the owner win a concurrent rotation. If the
+      // access token did not change, truthfully wait rather than refreshing or
+      // mutating the provider-owned credential source.
       const reread = await source.reread()
-      if (reread?.tokens?.access_token && reread.tokens.access_token !== auth.tokens?.access_token) {
-        auth = reread
-      } else if (source.writable) {
-        const next = await refresh(reread ?? auth, deps, options.signal)
-        if (!next) return { quota: empty('transientFailure') }
-        auth = next
-      } else {
-        // Read-only source: the owner (menubar) rotates tokens on its own
-        // cadence, so re-read once and otherwise wait for the next poll.
-        return { quota: empty('transientFailure') }
-      }
+      const nextToken = reread?.tokens?.access_token
+      if (!nextToken || nextToken === auth.tokens?.access_token) return { quota: empty('transientFailure') }
+      if (reread?.auth_mode !== 'chatgpt') return { quota: empty('terminalFailure') }
+      auth = reread
       response = await usage(auth, deps, options.signal)
       if (!response) return { quota: empty('transientFailure') }
+      if (response.status === 401) return { quota: empty('transientFailure') }
     }
     if (response.status === 429) {
       const raw = response.headers.get('Retry-After')
@@ -252,7 +243,7 @@ export async function fetchCodexQuota(options: Partial<CodexDeps> & { signal?: A
       return { quota: empty('transientFailure'), retryAfterSeconds: Math.max(Number.isFinite(seconds) ? Math.ceil(seconds) : 300, 60) }
     }
     if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure') }
-    return { quota: decodeCodexUsage(await response.json()) }
+    return { quota: markObserved(decodeCodexUsage(await response.json()), deps.now()) }
   } catch (error) {
     console.warn(`Codex quota unavailable: ${sanitizeError(error)}`)
     return { quota: empty('transientFailure') }

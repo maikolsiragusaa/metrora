@@ -4,12 +4,31 @@ import path from 'node:path'
 import { fetchClaudeQuota } from './claude'
 import { fetchCodexQuota } from './codex'
 import { atomicWriteSecureFile, readSecureFile, sanitizeError } from './security'
-import type { ProviderName, QuotaProvider } from './types'
+import {
+  emptyQuota,
+  hasProviderQuotaFacts,
+  markStale,
+  sanitizeQuotaProvider,
+  type ProviderNameFromQuota,
+  type QuotaProvider,
+} from './types'
 
 export type { QuotaProvider, QuotaWindow } from './types'
+export type {
+  ProviderName,
+  ProviderQuotaCredits,
+  ProviderQuotaRateLimit,
+  ProviderQuotaSnapshot,
+  ProviderQuotaWindow,
+  QuotaAvailability,
+  QuotaAuthority,
+  QuotaConnection,
+  QuotaFreshness,
+} from './types'
+export { hasProviderQuotaFacts } from './types'
 export { sanitizeError } from './security'
 
-type Blocked = Partial<Record<ProviderName, string>>
+type Blocked = Partial<Record<ProviderNameFromQuota, string>>
 type FetchResult = { quota: QuotaProvider; retryAfterSeconds?: number }
 type QuotaDeps = {
   claude: (options: { signal: AbortSignal; allowKeychain: boolean }) => Promise<FetchResult>
@@ -33,21 +52,32 @@ const defaultDeps: QuotaDeps = {
   refreshMs: 5 * 60_000,
 }
 
-function unavailable(provider: ProviderName, connection: QuotaProvider['connection']): QuotaProvider {
-  return { provider, connection, primary: null, details: [], planLabel: null, footerLines: [] }
+function backoffRateLimit(retryAt: string): QuotaProvider['rateLimit'] {
+  return { state: 'backoff', retryAt }
+}
+
+function isFactualSnapshot(quota: QuotaProvider): boolean {
+  return quota.connection === 'connected'
+    && quota.freshness === 'fresh'
+    && quota.authority === 'provider-reported'
+    && hasProviderQuotaFacts(quota)
+    && quota.observedAt !== null
+    && Number.isFinite(Date.parse(quota.observedAt))
 }
 
 export class QuotaService {
   private readonly deps: QuotaDeps
   private cache: { at: number; value: QuotaProvider[] } | null = null
+  /** Last factual value survives cache invalidation so force failures can be honest. */
+  private readonly lastGood: Partial<Record<ProviderNameFromQuota, QuotaProvider>> = {}
   private flight: Promise<QuotaProvider[]> | null = null
-  private generations: Record<ProviderName, number> = { claude: 0, codex: 0 }
-  private controllers: Partial<Record<ProviderName, AbortController>> = {}
+  private generations: Record<ProviderNameFromQuota, number> = { claude: 0, codex: 0 }
+  private controllers: Partial<Record<ProviderNameFromQuota, AbortController>> = {}
 
   constructor(deps: Partial<QuotaDeps> = {}) { this.deps = { ...defaultDeps, ...deps } }
 
-  invalidate(provider?: ProviderName): void {
-    const providers: ProviderName[] = provider ? [provider] : ['claude', 'codex']
+  invalidate(provider?: ProviderNameFromQuota): void {
+    const providers: ProviderNameFromQuota[] = provider ? [provider] : ['claude', 'codex']
     for (const p of providers) {
       this.generations[p] += 1
       this.controllers[p]?.abort()
@@ -83,38 +113,71 @@ export class QuotaService {
     const startingGenerations = { ...this.generations }
     const prior = this.cache?.value ?? []
     const blocked = await this.readBlocked()
-    const run = async (provider: ProviderName): Promise<QuotaProvider> => {
+    const run = async (provider: ProviderNameFromQuota): Promise<QuotaProvider> => {
       const retainOnFailure = (next: QuotaProvider): QuotaProvider => {
-        const previous = prior.find(item => item.provider === provider)
-        if (previous?.connection !== 'connected') return next
-        // Keychain-only credentials are invisible to a background (keychain-less)
-        // poll; keep showing the live connection rather than flapping to
-        // disconnected. A forced refresh re-reads the keychain and reveals truth.
-        if (!allowKeychain && (next.connection === 'disconnected' || next.connection === 'accessDenied')) return previous
-        if (next.connection === 'transientFailure') return { ...previous, connection: 'transientFailure', rateLimited: next.rateLimited }
-        return next
+        const candidate = this.lastGood[provider] ?? prior.find(item => item.provider === provider)
+        const previous = candidate
+          && hasProviderQuotaFacts(candidate)
+          && candidate.observedAt !== null
+          && Number.isFinite(Date.parse(candidate.observedAt))
+          ? candidate
+          : undefined
+        if (!previous) return next
+
+        // Background polls deliberately skip keychain reads. Keep the previous
+        // factual value, but make the unavailable/stale state explicit. A
+        // force refresh does not get this exception for missing credentials.
+        const backgroundCredentialMiss = !allowKeychain && (next.connection === 'disconnected' || next.connection === 'accessDenied')
+        const transient = next.connection === 'transientFailure' || next.connection === 'stale' || backgroundCredentialMiss
+        if (!transient) return next
+        return markStale(previous, next.connection === 'stale' ? 'stale' : 'transientFailure', next.rateLimit)
       }
+
       const until = blocked[provider] ? Date.parse(blocked[provider]!) : NaN
-      if (Number.isFinite(until) && until > this.deps.now()) return retainOnFailure({ ...unavailable(provider, 'transientFailure'), rateLimited: true })
+      if (Number.isFinite(until) && until > this.deps.now()) {
+        return retainOnFailure({
+          ...emptyQuota(provider, 'transientFailure', backoffRateLimit(new Date(until).toISOString())),
+        })
+      }
+
       const generation = this.generations[provider]
       const controller = new AbortController()
       this.controllers[provider] = controller
-      const result = provider === 'claude'
-        ? await this.deps.claude({ signal: controller.signal, allowKeychain })
-        : await this.deps.codex({ signal: controller.signal, allowKeychain })
-      if (generation !== this.generations[provider] || controller.signal.aborted) return unavailable(provider, 'disconnected')
-      if (result.retryAfterSeconds !== undefined) {
-        blocked[provider] = new Date(this.deps.now() + result.retryAfterSeconds * 1000).toISOString()
-        await this.writeBlocked(blocked)
+      try {
+        const result = provider === 'claude'
+          ? await this.deps.claude({ signal: controller.signal, allowKeychain })
+          : await this.deps.codex({ signal: controller.signal, allowKeychain })
+        if (generation !== this.generations[provider] || controller.signal.aborted) return emptyQuota(provider, 'disconnected')
+
+        const quota = sanitizeQuotaProvider(result.quota) ?? emptyQuota(provider, 'transientFailure')
+        if (result.retryAfterSeconds !== undefined) {
+          const seconds = Number.isFinite(result.retryAfterSeconds) ? Math.max(60, Math.ceil(result.retryAfterSeconds)) : 300
+          const retryAt = new Date(this.deps.now() + seconds * 1000).toISOString()
+          blocked[provider] = retryAt
+          await this.writeBlocked(blocked)
+          // A 429 response contains no new quota fact. Do not let an adapter
+          // accidentally mark its placeholder as fresh; only a prior factual
+          // snapshot may supply windows while this backoff is active.
+          return retainOnFailure(emptyQuota(provider, 'transientFailure', backoffRateLimit(retryAt)))
+        }
+
+        if (blocked[provider]) {
+          delete blocked[provider]
+          await this.writeBlocked(blocked)
+        }
+        if (isFactualSnapshot(quota)) this.lastGood[provider] = quota
+        return retainOnFailure(quota)
+      } catch (error) {
+        // Provider adapters normally convert failures to a snapshot. Keep this
+        // final guard so a test/transport adapter cannot turn one provider's
+        // outage into a rejected all-provider request.
+        console.warn(`${provider} quota unavailable: ${sanitizeError(error)}`)
+        return retainOnFailure(emptyQuota(provider, 'transientFailure'))
+      } finally {
         if (this.controllers[provider] === controller) this.controllers[provider] = undefined
-        return retainOnFailure({ ...result.quota, rateLimited: true })
-      } else if (blocked[provider]) {
-        delete blocked[provider]
-        await this.writeBlocked(blocked)
       }
-      if (this.controllers[provider] === controller) this.controllers[provider] = undefined
-      return retainOnFailure(result.quota)
     }
+
     const value = await Promise.all([run('claude'), run('codex')])
     if (startingGenerations.claude === this.generations.claude && startingGenerations.codex === this.generations.codex) {
       this.cache = { at: this.deps.now(), value }
@@ -124,6 +187,7 @@ export class QuotaService {
 }
 
 export const quotaService = new QuotaService()
+
 // Keychain reads can raise a one-time macOS permission dialog, so only attempt
 // them on a user-initiated forced refresh (the Connect / Refresh affordance).
 // Background polls skip the keychain and lean on retainOnFailure to hold a

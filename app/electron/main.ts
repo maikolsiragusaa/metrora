@@ -4,6 +4,7 @@ import path from 'node:path'
 import { CliError, killAll, resolveMetroraPath, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
 import { createApplicationMenuTemplate } from './menu'
 import { getQuota, sanitizeError } from './quota'
+import { sanitizeQuotaProviders } from './quota/types'
 import { createShareBridgeHandlers } from './share-bridge'
 import { initializeDesktopShareRuntime, stopDesktopShareRuntime, type DesktopShareRuntime } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -321,7 +322,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
 
   return {
     'metrora:getQuota': async (force?: boolean) => {
-      try { return { ok: true, value: await deps.getQuota({ force: Boolean(force) }) } }
+      try { return { ok: true, value: sanitizeQuotaProviders(await deps.getQuota({ force: Boolean(force) })) } }
       catch (error) { return { ok: false, error: { kind: 'nonzero', message: sanitizeError(error) } } }
     },
     'metrora:getOverview': getOverview,

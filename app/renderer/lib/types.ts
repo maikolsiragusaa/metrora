@@ -8,6 +8,7 @@ import type { ModelAccounting, ModelPresentation } from './model-projection-type
 import type { ModelReportRow } from './model-report-types'
 import type { ProjectScopePayload } from './project-bridge-types'
 import type { ModelStats, SessionRow } from './usage-projection-types'
+import type { ProviderQuotaSnapshot, ProviderQuotaWindow } from '../../electron/quota/types'
 export type { ProjectScopePayload } from './project-bridge-types'
 
 export type {
@@ -36,22 +37,9 @@ export interface CliError {
 export type AliasRow = { from: string; to: string }
 export type ActionResult = { ok: boolean; stdout: string; stderr: string; code: number | null }
 
-export type QuotaWindow = {
-  label: string
-  percent: number
-  resetsAt: string | null
-}
-
-export type QuotaProvider = {
-  provider: 'claude' | 'codex'
-  connection: 'connected' | 'disconnected' | 'accessDenied' | 'loading' | 'stale' | 'transientFailure' | 'terminalFailure'
-  primary: QuotaWindow | null
-  details: QuotaWindow[]
-  planLabel: string | null
-  footerLines: string[]
-  /** True when the provider is in a 429 backoff window (upstream rate limit). */
-  rateLimited?: boolean
-}
+/** The renderer consumes the same JSON-safe snapshot as Electron. */
+export type QuotaWindow = ProviderQuotaWindow
+export type QuotaProvider = ProviderQuotaSnapshot
 
 // ————— src/menubar-json.ts —————
 

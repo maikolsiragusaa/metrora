@@ -28,9 +28,29 @@ describe('Claude quota', () => {
 
     expect(quota.connection).toBe('connected')
     expect(quota.planLabel).toBe('Max 20x')
-    expect(quota.primary?.label).toBe('Weekly')
-    expect(quota.details.map(row => row.label)).toEqual(['5-hour', 'Weekly', 'Weekly · Opus', 'Weekly · Sonnet', 'Weekly · Haiku'])
-    expect(quota.details.map(row => row.percent)).toEqual([0.25, 0.5, 0.75, 0.9, 0.1])
+    expect(quota.windows.map(row => row.label)).toEqual(['5-hour', 'Weekly', 'Weekly · Opus', 'Weekly · Sonnet', 'Weekly · Haiku'])
+    expect(quota.windows.map(row => row.id)).toEqual(['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet', 'weekly_scoped:Haiku'])
+    expect(quota.windows.map(row => row.usedFraction)).toEqual([0.25, 0.5, 0.75, 0.9, 0.1])
+    expect(quota.credits).toBeNull()
+  })
+
+  it.each([
+    [undefined, null],
+    ['', null],
+    ['ultra_custom', 'Ultra Custom'],
+  ])('does not fabricate a generic plan for tier %s', (tier, expected) => {
+    const quota = decodeClaudeUsage({}, { accessToken: 'hidden', rateLimitTier: tier as string | undefined })
+    expect(quota.planLabel).toBe(expected)
+  })
+
+  it('does not treat an empty successful response with no tier as fresh quota', async () => {
+    const emptyCredential = JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-empty', rateLimitTier: '' } })
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+    const result = await fetchClaudeQuota({ fetch: fetchMock, readFile: vi.fn(async () => emptyCredential), now: () => Date.parse('2026-07-12T00:00:00Z') })
+    expect(result.quota).toMatchObject({
+      connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null,
+      windows: [], credits: null, planLabel: null,
+    })
   })
 
   it('returns disconnected without credentials and never fetches', async () => {

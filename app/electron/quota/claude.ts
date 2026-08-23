@@ -1,9 +1,9 @@
 import os from 'node:os'
 import path from 'node:path'
 
+import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { fraction, quotaRequestSignal, readKeychainPassword, readSecureFile, sanitizeError } from './security'
 import type { KeychainOutcome } from './security'
-import type { QuotaProvider, QuotaWindow } from './types'
 
 const ENDPOINT = 'https://api.anthropic.com/api/oauth/usage'
 const KEYCHAIN_SERVICE = 'Claude Code-credentials'
@@ -25,7 +25,7 @@ const defaults: ClaudeDeps = {
 }
 
 function empty(connection: QuotaProvider['connection']): QuotaProvider {
-  return { provider: 'claude', connection, primary: null, details: [], planLabel: null, footerLines: [] }
+  return emptyQuota('claude', connection)
 }
 
 function parseCredential(raw: string): ClaudeCredential | null {
@@ -52,49 +52,107 @@ export async function readClaudeKeychain(): Promise<KeychainOutcome> {
   return readKeychainPassword(KEYCHAIN_SERVICE, user ? [user, null] : [null])
 }
 
-function windowOf(label: string, value: unknown): QuotaWindow | null {
-  if (!value || typeof value !== 'object') return null
-  const row = value as Record<string, unknown>
-  const percent = fraction(row.utilization)
-  if (percent === null) return null
-  const resetsAt = typeof row.resets_at === 'string' && !Number.isNaN(Date.parse(row.resets_at))
-    ? new Date(row.resets_at).toISOString() : null
-  return { label, percent, resetsAt }
+type CredentialSource = {
+  credential: ClaudeCredential
+  reread: () => Promise<ClaudeCredential | null>
 }
 
-function tierLabel(raw: string | undefined): string {
-  const value = raw?.toLowerCase() ?? ''
-  if (value.includes('max_20x') || value.includes('max20x') || value.includes('max-20x')) return 'Max 20x'
-  if (value.includes('max_5x') || value.includes('max5x') || value.includes('max-5x') || value.includes('max')) return 'Max 5x'
-  if (value.includes('pro')) return 'Pro'
-  if (value.includes('team')) return 'Team'
-  if (value.includes('enterprise')) return 'Enterprise'
-  return 'Subscription'
+async function discoverCredential(deps: ClaudeDeps, allowKeychain: boolean): Promise<CredentialSource | null | 'accessDenied'> {
+  const fromFile = await credentialFromFile(deps)
+  if (fromFile) return { credential: fromFile, reread: () => credentialFromFile(deps) }
+  if (!allowKeychain || process.platform !== 'darwin') return null
+  const outcome = await (deps.keychain ?? readClaudeKeychain)()
+  if (outcome.status === 'accessDenied') return 'accessDenied'
+  if (outcome.status !== 'found') return null
+  const credential = parseCredential(outcome.value)
+  if (!credential) return null
+  return {
+    credential,
+    reread: async () => {
+      const next = await (deps.keychain ?? readClaudeKeychain)()
+      return next.status === 'found' ? parseCredential(next.value) : null
+    },
+  }
+}
+
+function resetAt(value: unknown): string | null {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return null
+  return new Date(value).toISOString()
+}
+
+function evidenceWindowSeconds(row: Record<string, unknown>): number | null {
+  const raw = row.window_seconds ?? row.limit_window_seconds
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : null
+}
+
+function windowOf(id: string, label: string, value: unknown): QuotaWindow | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Record<string, unknown>
+  const usedFraction = fraction(row.utilization ?? row.percent)
+  if (usedFraction === null) return null
+  return {
+    id,
+    label,
+    usedFraction,
+    resetsAt: resetAt(row.resets_at),
+    windowSeconds: evidenceWindowSeconds(row),
+  }
+}
+
+function tierLabel(raw: string | undefined): string | null {
+  const value = raw?.trim() ?? ''
+  if (!value) return null
+  const normalized = value.toLowerCase()
+  if (normalized === 'max_20x' || normalized === 'max20x' || normalized === 'max-20x') return 'Max 20x'
+  if (normalized === 'max_5x' || normalized === 'max5x' || normalized === 'max-5x' || normalized === 'max') return 'Max 5x'
+  if (normalized === 'pro') return 'Pro'
+  if (normalized === 'team') return 'Team'
+  if (normalized === 'enterprise') return 'Enterprise'
+  return value.replace(/(^|[_-])\w/g, match => match.replace(/[_-]/, ' ').toUpperCase())
+}
+
+function stableScopedIdentity(row: Record<string, any>, display: string): string {
+  const candidates = [
+    row.id,
+    row.limit_id,
+    row.scope_id,
+    row.scope?.id,
+    row.scope?.model?.id,
+    row.scope?.model?.name,
+    display,
+  ]
+  const identity = candidates.find(candidate => typeof candidate === 'string' && candidate.trim())
+  return `weekly_scoped:${typeof identity === 'string' ? identity.trim() : display}`
 }
 
 export function decodeClaudeUsage(body: unknown, credential: ClaudeCredential): QuotaProvider {
   const data = body && typeof body === 'object' ? body as Record<string, unknown> : {}
-  const five = windowOf('5-hour', data.five_hour)
-  const weekly = windowOf('Weekly', data.seven_day)
-  const opus = windowOf('Weekly · Opus', data.seven_day_opus)
-  const sonnet = windowOf('Weekly · Sonnet', data.seven_day_sonnet)
-  const scoped: QuotaWindow[] = []
+  const windows: QuotaWindow[] = []
+  const five = windowOf('five_hour', '5-hour', data.five_hour)
+  const weekly = windowOf('seven_day', 'Weekly', data.seven_day)
+  const opus = windowOf('seven_day_opus', 'Weekly · Opus', data.seven_day_opus)
+  const sonnet = windowOf('seven_day_sonnet', 'Weekly · Sonnet', data.seven_day_sonnet)
+  for (const row of [five, weekly, opus, sonnet]) if (row) windows.push(row)
+
   if (Array.isArray(data.limits)) {
     for (const item of data.limits) {
       if (!item || typeof item !== 'object') continue
       const row = item as Record<string, any>
       const display = row.scope?.model?.display_name
-      const percent = fraction(row.percent)
-      if (row.kind !== 'weekly_scoped' || typeof display !== 'string' || percent === null) continue
-      const resetsAt = typeof row.resets_at === 'string' && !Number.isNaN(Date.parse(row.resets_at))
-        ? new Date(row.resets_at).toISOString() : null
-      scoped.push({ label: `Weekly · ${display}`, percent, resetsAt })
+      const candidate = fraction(row.percent)
+      if (row.kind !== 'weekly_scoped' || typeof display !== 'string' || !display.trim() || candidate === null) continue
+      const scoped = windowOf(stableScopedIdentity(row, display), `Weekly · ${display}`, row)
+      if (scoped) windows.push(scoped)
     }
   }
+
+  const decoded = emptyQuota('claude', 'connected')
   return {
-    provider: 'claude', connection: 'connected', primary: weekly,
-    details: [five, weekly, opus, sonnet].filter((row): row is QuotaWindow => row !== null).concat(scoped),
-    planLabel: tierLabel(credential.rateLimitTier), footerLines: [],
+    ...decoded,
+    planLabel: tierLabel(credential.rateLimitTier),
+    windows,
+    // Anthropic's usage response does not report an equivalent credits balance.
+    credits: null,
   }
 }
 
@@ -115,26 +173,27 @@ export type ClaudeResult = { quota: QuotaProvider; retryAfterSeconds?: number }
 export async function fetchClaudeQuota(options: Partial<ClaudeDeps> & { signal?: AbortSignal; allowKeychain?: boolean } = {}): Promise<ClaudeResult> {
   const deps = { ...defaults, ...options }
   try {
-    let credential = await credentialFromFile(deps)
-    if (!credential && options.allowKeychain && process.platform === 'darwin') {
-      const outcome = await (deps.keychain ?? readClaudeKeychain)()
-      if (outcome.status === 'accessDenied') return { quota: empty('accessDenied') }
-      credential = outcome.status === 'found' ? parseCredential(outcome.value) : null
-    }
-    if (!credential) return { quota: empty('disconnected') }
+    const discovered = await discoverCredential(deps, Boolean(options.allowKeychain))
+    if (discovered === 'accessDenied') return { quota: empty('accessDenied') }
+    if (!discovered) return { quota: empty('disconnected') }
+    const source = discovered
+    let credential = source.credential
 
-    let response: Response
+    // Claude's CLI owns token rotation. A near-expiry credential gets one
+    // bounded reread; Metrora never calls a provider refresh endpoint.
     if (credential.expiresAt !== undefined && credential.expiresAt - deps.now() <= 5 * 60_000) {
-      const reread = await credentialFromFile(deps)
+      const reread = await source.reread()
       if (!reread || reread.accessToken === credential.accessToken) return { quota: empty('transientFailure') }
       credential = reread
     }
-    response = await request(credential.accessToken, deps, options.signal)
+
+    let response = await request(credential.accessToken, deps, options.signal)
     if (response.status === 401) {
-      const reread = await credentialFromFile(deps)
+      const reread = await source.reread()
       if (!reread || reread.accessToken === credential.accessToken) return { quota: empty('transientFailure') }
       credential = reread
       response = await request(credential.accessToken, deps, options.signal)
+      if (response.status === 401) return { quota: empty('transientFailure') }
     }
     if (response.status === 429) {
       let hint: unknown
@@ -143,9 +202,10 @@ export async function fetchClaudeQuota(options: Partial<ClaudeDeps> & { signal?:
       return { quota: empty('transientFailure'), retryAfterSeconds: Math.max(Number.isFinite(parsed) ? parsed : 300, 60) }
     }
     if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure') }
-    return { quota: decodeClaudeUsage(await response.json(), credential) }
+    return { quota: markObserved(decodeClaudeUsage(await response.json(), credential), deps.now()) }
   } catch (error) {
-    // Deliberately sanitize before the only diagnostic sink. Tokens are never returned.
+    // Deliberately sanitize before the only diagnostic sink. Tokens and
+    // provider response bodies are never returned or logged.
     console.warn(`Claude quota unavailable: ${sanitizeError(error)}`)
     return { quota: empty('transientFailure') }
   }
