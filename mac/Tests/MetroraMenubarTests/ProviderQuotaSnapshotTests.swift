@@ -93,6 +93,31 @@ struct ProviderQuotaSnapshotTests {
         assertBlankClaudeRawTierIsUnavailable(" \t\n ")
     }
 
+    @Test("a padded nonblank Claude raw tier preserves its canonical plan")
+    func paddedClaudeRawTierPreservesPlan() {
+        let usage = claudeUsage(tier: .pro, rawTier: "  pro \n")
+
+        let snapshot = ProviderQuotaSnapshotAdapter.claude(usage: usage, state: .loaded)
+
+        #expect(snapshot.availability == .available)
+        #expect(snapshot.freshness == .fresh)
+        #expect(snapshot.observedAt == observedAt)
+        #expect(snapshot.planLabel == "Pro")
+    }
+
+    @Test("a blank Claude raw tier never becomes a plan when a window is factual")
+    func blankClaudeRawTierDoesNotOverrideWindowFact() {
+        let usage = claudeUsage(rawTier: " \t\n ", fiveHourPercent: 25)
+
+        let snapshot = ProviderQuotaSnapshotAdapter.claude(usage: usage, state: .loaded)
+
+        #expect(snapshot.availability == .available)
+        #expect(snapshot.freshness == .fresh)
+        #expect(snapshot.observedAt == observedAt)
+        #expect(snapshot.planLabel == nil)
+        #expect(snapshot.windows.map(\.usedFraction) == [0.25])
+    }
+
     @Test("native payload has no credential or account fields")
     func payloadAllowlistExcludesSecrets() throws {
         let usage = CodexUsage(
@@ -128,10 +153,27 @@ struct ProviderQuotaSnapshotTests {
     }
 
     private func assertBlankClaudeRawTierIsUnavailable(_ rawTier: String) {
-        let usage = SubscriptionUsage(
-            tier: .unknown,
+        let usage = claudeUsage(rawTier: rawTier)
+
+        let snapshot = ProviderQuotaSnapshotAdapter.claude(usage: usage, state: .loaded)
+
+        #expect(snapshot.availability == .unavailable)
+        #expect(snapshot.freshness == .unavailable)
+        #expect(snapshot.observedAt == nil)
+        #expect(snapshot.planLabel == nil)
+        #expect(snapshot.windows.isEmpty)
+        #expect(snapshot.credits == nil)
+    }
+
+    private func claudeUsage(
+        tier: SubscriptionUsage.Tier = .unknown,
+        rawTier: String?,
+        fiveHourPercent: Double? = nil
+    ) -> SubscriptionUsage {
+        SubscriptionUsage(
+            tier: tier,
             rawTier: rawTier,
-            fiveHourPercent: nil,
+            fiveHourPercent: fiveHourPercent,
             fiveHourResetsAt: nil,
             sevenDayPercent: nil,
             sevenDayResetsAt: nil,
@@ -142,14 +184,5 @@ struct ProviderQuotaSnapshotTests {
             scopedWeekly: [],
             fetchedAt: observedAt
         )
-
-        let snapshot = ProviderQuotaSnapshotAdapter.claude(usage: usage, state: .loaded)
-
-        #expect(snapshot.availability == .unavailable)
-        #expect(snapshot.freshness == .unavailable)
-        #expect(snapshot.observedAt == nil)
-        #expect(snapshot.planLabel == nil)
-        #expect(snapshot.windows.isEmpty)
-        #expect(snapshot.credits == nil)
     }
 }
