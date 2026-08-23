@@ -342,7 +342,7 @@ function DetectedRow({ quota, onReconnect }: { quota: QuotaProvider; onReconnect
     <span className="tx">{name}</span>
     {quota.connection === 'disconnected' || quota.connection === 'accessDenied'
       ? <div className="r set-status"><ConnectAffordance provider={quota.provider} connection={quota.connection} onRefresh={onReconnect} /></div>
-      : quota.rateLimited
+      : quota.rateLimit.state === 'backoff'
       ? <span className="r set-status"><span className="set-dot" />{rateLimitedNote(quota.provider)}</span>
       : <span className="r set-status"><span className="set-dot ok" />{quota.planLabel ?? 'Connected'}</span>}
   </div>

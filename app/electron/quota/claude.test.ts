@@ -28,9 +28,10 @@ describe('Claude quota', () => {
 
     expect(quota.connection).toBe('connected')
     expect(quota.planLabel).toBe('Max 20x')
-    expect(quota.primary?.label).toBe('Weekly')
-    expect(quota.details.map(row => row.label)).toEqual(['5-hour', 'Weekly', 'Weekly · Opus', 'Weekly · Sonnet', 'Weekly · Haiku'])
-    expect(quota.details.map(row => row.percent)).toEqual([0.25, 0.5, 0.75, 0.9, 0.1])
+    expect(quota.windows.map(row => row.label)).toEqual(['5-hour', 'Weekly', 'Weekly · Opus', 'Weekly · Sonnet', 'Weekly · Haiku'])
+    expect(quota.windows.map(row => row.id)).toEqual(['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet', 'weekly_scoped:Haiku'])
+    expect(quota.windows.map(row => row.usedFraction)).toEqual([0.25, 0.5, 0.75, 0.9, 0.1])
+    expect(quota.credits).toBeNull()
   })
 
   it('returns disconnected without credentials and never fetches', async () => {

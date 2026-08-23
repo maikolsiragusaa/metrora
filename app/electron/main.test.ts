@@ -191,9 +191,25 @@ describe('createBridgeHandlers (IPC wiring)', () => {
   const withQuota = <T extends object>(value: T) => ({ ...value, getQuota: vi.fn(async () => []) })
   it('returns normalized quota through its own IPC channel and sanitizes unexpected failures', async () => {
     const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => null }
-    const value = [{ provider: 'claude' as const, connection: 'connected' as const, primary: null, details: [], planLabel: 'Pro', footerLines: [] }]
+    const value = [{
+      schemaVersion: 1 as const,
+      provider: 'claude' as const,
+      authority: 'provider-reported' as const,
+      availability: 'available' as const,
+      connection: 'connected' as const,
+      freshness: 'fresh' as const,
+      observedAt: '2026-07-12T00:00:00.000Z',
+      planLabel: 'Pro',
+      windows: [{ id: 'seven_day', label: 'Weekly', usedFraction: 0.1, resetsAt: null, windowSeconds: null }],
+      credits: null,
+      rateLimit: { state: 'clear' as const, retryAt: null },
+    }]
     const ok = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => value) })
     expect(await ok['metrora:getQuota']!()).toEqual({ ok: true, value })
+
+    const unsafe = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => [{ ...value[0], tokens: { access_token: 'secret' }, accountId: 'acct_secret', credentialPath: '/Users/me/.codex/auth.json' } as never]) })
+    const safe = await unsafe['metrora:getQuota']!()
+    expect(JSON.stringify(safe)).not.toMatch(/secret|acct_secret|auth\.json|tokens/)
 
     const failed = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => { throw new Error('Bearer secret sk-ant-leak') }) })
     const result = await failed['metrora:getQuota']!()

@@ -75,26 +75,32 @@ const statusWithPlans: StatusJson = {
 function quotaProviders(): QuotaProvider[] {
   const now = Date.now()
   return [
-    {
-      provider: 'claude',
-      connection: 'connected',
-      primary: { label: 'Weekly', percent: 0.92, resetsAt: new Date(now + (3 * 24 + 14) * 60 * 60_000 + 30 * 60_000).toISOString() },
-      details: [
-        { label: '5-hour', percent: 0.25, resetsAt: new Date(now + 2 * 60 * 60_000 + 30 * 60_000).toISOString() },
-        { label: 'Weekly', percent: 0.92, resetsAt: new Date(now + (3 * 24 + 14) * 60 * 60_000 + 30 * 60_000).toISOString() },
-      ],
+    quota('claude', {
       planLabel: 'Max 20x',
-      footerLines: [],
-    },
-    {
-      provider: 'codex',
-      connection: 'disconnected',
-      primary: null,
-      details: [],
-      planLabel: null,
-      footerLines: [],
-    },
+      windows: [
+        { id: 'five_hour', label: '5-hour', usedFraction: 0.25, resetsAt: new Date(now + 2 * 60 * 60_000 + 30 * 60_000).toISOString(), windowSeconds: null },
+        { id: 'seven_day', label: 'Weekly', usedFraction: 0.92, resetsAt: new Date(now + (3 * 24 + 14) * 60 * 60_000 + 30 * 60_000).toISOString(), windowSeconds: null },
+      ],
+    }),
+    quota('codex', { connection: 'disconnected', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
   ]
+}
+
+function quota(provider: 'claude' | 'codex', overrides: Partial<QuotaProvider> = {}): QuotaProvider {
+  return {
+    schemaVersion: 1,
+    provider,
+    authority: 'provider-reported',
+    availability: 'available',
+    connection: 'connected',
+    freshness: 'fresh',
+    observedAt: '2026-07-12T00:00:00.000Z',
+    planLabel: null,
+    windows: [],
+    credits: null,
+    rateLimit: { state: 'clear', retryAt: null },
+    ...overrides,
+  }
 }
 
 describe('Plans', () => {
@@ -113,8 +119,8 @@ describe('Plans', () => {
     expect(await screen.findByText('Max 20x')).toBeInTheDocument()
     expect(screen.getByText('25% used · resets in 2h 29m')).toBeInTheDocument()
     expect(screen.getByText('92% used · resets in 3d 14h')).toBeInTheDocument()
-    expect(container.querySelector('[data-testid="quota-track-5-hour"] i')).toHaveClass('accent')
-    expect(container.querySelector('[data-testid="quota-track-Weekly"] i')).toHaveClass('bad')
+    expect(container.querySelector('[data-testid="quota-track-five_hour"] i')).toHaveClass('accent')
+    expect(container.querySelector('[data-testid="quota-track-seven_day"] i')).toHaveClass('bad')
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { name: 'Budget plans' })).toBeInTheDocument()
@@ -261,8 +267,8 @@ describe('Plans', () => {
   it('renders the honest rate-limited note on a 429 backoff, per provider owner', async () => {
     getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([
-      { provider: 'claude', connection: 'transientFailure', rateLimited: true, primary: null, details: [], planLabel: null, footerLines: [] },
-      { provider: 'codex', connection: 'stale', rateLimited: true, primary: null, details: [], planLabel: null, footerLines: [] },
+      quota('claude', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null, rateLimit: { state: 'backoff', retryAt: '2026-07-12T00:05:00.000Z' } }),
+      quota('codex', { connection: 'stale', availability: 'unavailable', freshness: 'stale', rateLimit: { state: 'backoff', retryAt: '2026-07-12T00:05:00.000Z' } }),
     ])
 
     render(<Plans period="30days" />)
@@ -276,20 +282,20 @@ describe('Plans', () => {
   it('falls back to the generic waiting note when a transient failure is not rate limited', async () => {
     getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([
-      { provider: 'claude', connection: 'transientFailure', rateLimited: false, primary: null, details: [], planLabel: null, footerLines: [] },
+      quota('claude', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
     ])
 
     render(<Plans period="30days" />)
 
-    expect(await screen.findByText('waiting on the CLI…')).toBeInTheDocument()
+    expect(await screen.findByText('Provider quota is temporarily unavailable.')).toBeInTheDocument()
     expect(screen.queryByText(/rate limited the quota endpoint/)).not.toBeInTheDocument()
   })
 
   it('renders the keychain access-denied state with recovery copy and a locked indicator', async () => {
     getPlans.mockResolvedValue(statusWithPlans)
     getQuota.mockResolvedValue([
-      { provider: 'claude', connection: 'accessDenied', primary: null, details: [], planLabel: null, footerLines: [] },
-      { provider: 'codex', connection: 'connected', primary: { label: 'Weekly', percent: 0.1, resetsAt: null }, details: [{ label: 'Weekly', percent: 0.1, resetsAt: null }], planLabel: 'Plus', footerLines: [] },
+      quota('claude', { connection: 'accessDenied', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+      quota('codex', { planLabel: 'Plus', windows: [{ id: 'secondary', label: 'Weekly', usedFraction: 0.1, resetsAt: null, windowSeconds: 604800 }] }),
     ])
 
     render(<Plans period="30days" />)

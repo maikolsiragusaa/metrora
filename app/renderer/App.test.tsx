@@ -134,8 +134,8 @@ function installDefaultMocks() {
   mocks.getSessions.mockResolvedValue([])
   mocks.getCompareModels.mockResolvedValue([])
   mocks.getQuota.mockResolvedValue([
-    { provider: 'claude', connection: 'disconnected', primary: null, details: [], planLabel: null, footerLines: [] },
-    { provider: 'codex', connection: 'disconnected', primary: null, details: [], planLabel: null, footerLines: [] },
+    { schemaVersion: 1, provider: 'claude', authority: 'provider-reported', availability: 'unavailable', connection: 'disconnected', freshness: 'unavailable', observedAt: null, planLabel: null, windows: [], credits: null, rateLimit: { state: 'clear', retryAt: null } },
+    { schemaVersion: 1, provider: 'codex', authority: 'provider-reported', availability: 'unavailable', connection: 'disconnected', freshness: 'unavailable', observedAt: null, planLabel: null, windows: [], credits: null, rateLimit: { state: 'clear', retryAt: null } },
   ])
   mocks.getPlans.mockResolvedValue({})
   mocks.getActReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })

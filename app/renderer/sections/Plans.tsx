@@ -37,6 +37,10 @@ export function rateLimitedNote(provider: QuotaProvider['provider']): string {
   return `${owner} rate limited the quota endpoint, retrying in a few minutes`
 }
 
+function isRateLimited(quota: QuotaProvider): boolean {
+  return quota.rateLimit.state === 'backoff'
+}
+
 function cycleEndDate(plan: JsonPlanSummary): Date | null {
   const date = new Date(plan.periodEnd)
   if (Number.isNaN(date.getTime())) return null
@@ -171,29 +175,40 @@ function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnec
     return <ConnectAffordance provider={quota.provider} connection={quota.connection} onRefresh={onReconnect} />
   }
   if (quota.connection === 'loading') return <p className="quota-connection-note">Loading quota…</p>
-  if (quota.connection === 'stale' || quota.connection === 'transientFailure') {
-    if (quota.rateLimited) return <p className="quota-connection-note">{rateLimitedNote(quota.provider)}</p>
-    return <p className="quota-connection-note">waiting on the CLI…</p>
-  }
   if (quota.connection === 'terminalFailure') {
     return <p className="quota-connection-note quota-terminal">Quota is currently unavailable.</p>
   }
 
+  const hasWindows = quota.windows.length > 0
+  const stale = quota.freshness === 'stale' || quota.connection === 'stale' || quota.connection === 'transientFailure'
+  const note = isRateLimited(quota)
+    ? rateLimitedNote(quota.provider)
+    : stale
+      ? staleQuotaNote(quota)
+      : null
+  if (!hasWindows) {
+    return <p className="quota-connection-note">{note ?? 'The provider did not report quota windows.'}</p>
+  }
+
   return (
     <>
-      <div className="quota-windows">
-        {quota.details.map((window, index) => <QuotaMeter key={`${window.label}-${index}`} window={window} />)}
-      </div>
-      {quota.footerLines.length > 0 ? (
-        <div className="quota-footer">{quota.footerLines.map((line, index) => <span key={`${line}-${index}`}>{line}</span>)}</div>
-      ) : null}
+      {note ? <p className="quota-connection-note">{note}</p> : null}
+      <div className="quota-windows">{quota.windows.map(window => <QuotaMeter key={window.id} window={window} />)}</div>
+      {quota.credits ? <div className="quota-footer"><span>Credits remaining · ${quota.credits.balance.toFixed(2)}</span></div> : null}
     </>
   )
 }
 
+function staleQuotaNote(quota: QuotaProvider): string {
+  if (!quota.observedAt) return 'Provider quota is temporarily unavailable.'
+  const observed = new Date(quota.observedAt)
+  if (Number.isNaN(observed.getTime())) return 'Provider quota is temporarily unavailable.'
+  return `Showing last provider-reported quota from ${new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(observed)}.`
+}
+
 function QuotaMeter({ window }: { window: QuotaWindow }) {
-  const percent = Math.round(window.percent * 100)
-  const severity = window.percent >= 0.9 ? 'bad' : window.percent >= 0.7 ? 'warn' : 'accent'
+  const percent = Math.round(window.usedFraction * 100)
+  const severity = window.usedFraction >= 0.9 ? 'bad' : window.usedFraction >= 0.7 ? 'warn' : 'accent'
   const reset = formatResetTime(window.resetsAt)
   return (
     <div className="quota-window">
@@ -201,7 +216,7 @@ function QuotaMeter({ window }: { window: QuotaWindow }) {
         <span>{window.label}</span>
         <span>{percent}% used{reset ? ` · resets ${reset}` : ''}</span>
       </div>
-      <div className="track" data-testid={`quota-track-${window.label}`}>
+      <div className="track" data-testid={`quota-track-${window.id}`}>
         <i className={severity} style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
       </div>
     </div>

@@ -48,8 +48,8 @@ const devices: CombinedUsage = {
 const scan: DeviceScanResult = { found: [{ name: 'Mac Studio', host: 'mac-studio.local', port: 9732, fingerprint: '7F:2A:19:88:55:44:33:C4', code: 'pair-1', paired: false }] }
 const overview = { current: { providers: { claude: 12.34, codex: 4.5 } } } as unknown as MenubarPayload
 const quotaProviders: QuotaProvider[] = [
-  { provider: 'claude', connection: 'connected', primary: null, details: [], planLabel: 'Max 20x', footerLines: [] },
-  { provider: 'codex', connection: 'disconnected', primary: null, details: [], planLabel: null, footerLines: [] },
+  { schemaVersion: 1, provider: 'claude', authority: 'provider-reported', availability: 'available', connection: 'connected', freshness: 'fresh', observedAt: '2026-07-12T00:00:00.000Z', windows: [], credits: null, planLabel: 'Max 20x', rateLimit: { state: 'clear', retryAt: null } },
+  { schemaVersion: 1, provider: 'codex', authority: 'provider-reported', availability: 'unavailable', connection: 'disconnected', freshness: 'unavailable', observedAt: null, windows: [], credits: null, planLabel: null, rateLimit: { state: 'clear', retryAt: null } },
 ]
 const stored = new Map<string, string>()
 vi.stubGlobal('localStorage', {
