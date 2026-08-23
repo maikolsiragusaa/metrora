@@ -965,7 +965,7 @@ final class AppStore {
         } catch let err as ClaudeSubscriptionService.FetchError {
             applyFetchError(err)
         } catch {
-            subscriptionError = String(describing: error)
+            subscriptionError = sanitizeForUI(String(describing: error))
             subscriptionLoadState = .failed
         }
     }
@@ -1217,22 +1217,7 @@ final class AppStore {
     /// envelopes don't typically echo tokens, but we also surface this in
     /// unified-log paths readable by other local users via `log stream`.
     private func sanitizeForUI(_ s: String?) -> String? {
-        guard let s, !s.isEmpty else { return nil }
-        var cleaned = s.replacingOccurrences(of: "\u{0000}", with: "")
-        // Token-shaped redaction. Apply to all known auth-token formats so
-        // an error body that quotes the request/response token is masked.
-        let patterns: [(pattern: String, replacement: String)] = [
-            (#"sk-ant-[A-Za-z0-9_-]+"#, "sk-ant-***"),
-            (#"sk-[A-Za-z0-9_-]{16,}"#, "sk-***"),
-            (#"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#, "eyJ***"),
-            (#"(?i)Bearer\s+\S+"#, "Bearer ***"),
-        ]
-        for entry in patterns {
-            cleaned = cleaned.replacingOccurrences(of: entry.pattern, with: entry.replacement, options: .regularExpression)
-        }
-        // Cap length so a runaway server body cannot fill stderr.
-        if cleaned.count > 240 { cleaned = String(cleaned.prefix(240)) + "…" }
-        return cleaned
+        ProviderQuotaDiagnostics.sanitize(s)
     }
 
     /// Snapshot of live quota state for a given provider. Returns nil when the user
@@ -1282,6 +1267,23 @@ final class AppStore {
         case .loading, .loaded, .failed, .terminalFailure, .transientFailure:
             return true
         }
+    }
+
+    /// Canonical native quota snapshots for the providers supported by the
+    /// Electron authority. This is a read-only projection of already-fetched
+    /// service values; credentials and account identifiers never cross this
+    /// boundary. Kimi remains outside the shared contract until it has an
+    /// approved provider authority.
+    var providerQuotaSnapshots: [ProviderQuotaSnapshot] {
+        [
+            ProviderQuotaSnapshotAdapter.claude(usage: subscription, state: subscriptionLoadState),
+            ProviderQuotaSnapshotAdapter.codex(usage: codexUsage, state: codexLoadState),
+        ]
+    }
+
+    func providerQuotaSnapshot(for provider: ProviderQuotaSnapshot.Provider) -> ProviderQuotaSnapshot {
+        providerQuotaSnapshots.first { $0.provider == provider }
+            ?? .empty(provider: provider, connection: .disconnected)
     }
 
     func quotaSummary(for filter: ProviderFilter) -> QuotaSummary? {
@@ -1381,7 +1383,7 @@ final class AppStore {
         }
         let plan = codexUsage?.plan.displayName
         var footerLines: [String] = []
-        if let balance = codexUsage?.creditsBalance, balance > 0 {
+        if let balance = codexUsage?.creditsBalance, balance.isFinite {
             // Format as plain dollars; ChatGPT settles in USD regardless of
             // the user's display-currency preference.
             let formatter = NumberFormatter()

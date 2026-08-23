@@ -63,7 +63,7 @@ enum CodexCredentialStore {
             case let .fileWriteFailed(message):
                 return "Could not write to local cache: \(message)"
             case let .refreshHTTPError(code, body):
-                return "Codex token refresh failed (HTTP \(code))\(body.map { ": \($0)" } ?? "")"
+                return "Codex token refresh failed (HTTP \(code))\(body.flatMap { ProviderQuotaDiagnostics.sanitize($0) }.map { ": \($0)" } ?? "")"
             case let .refreshNetworkError(err):
                 return "Codex token refresh network error: \(err.localizedDescription)"
             case .refreshDecodeFailed:

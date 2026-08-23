@@ -28,7 +28,7 @@ enum CodexSubscriptionService {
                 f.unitsStyle = .short
                 return "ChatGPT rate-limited the quota endpoint. Retrying \(f.localizedString(for: retryAt, relativeTo: Date()))."
             case let .usageHTTPError(code, body):
-                return "Codex quota fetch failed (HTTP \(code))\(body.map { ": \($0)" } ?? "")"
+                return "Codex quota fetch failed (HTTP \(code))\(body.flatMap { ProviderQuotaDiagnostics.sanitize($0) }.map { ": \($0)" } ?? "")"
             case .usageDecodeFailed: return "Codex quota response was malformed."
             case let .network(err): return "Network error: \(err.localizedDescription)"
             case let .credential(err): return err.errorDescription

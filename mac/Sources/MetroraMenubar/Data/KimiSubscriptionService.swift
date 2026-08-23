@@ -59,7 +59,7 @@ enum KimiSubscriptionService {
                 f.unitsStyle = .short
                 return "Kimi rate-limited the quota endpoint. Retrying \(f.localizedString(for: retryAt, relativeTo: Date()))."
             case let .usageHTTPError(code, body):
-                return "Kimi quota fetch failed (HTTP \(code))\(body.map { ": \($0)" } ?? "")"
+                return "Kimi quota fetch failed (HTTP \(code))\(body.flatMap { ProviderQuotaDiagnostics.sanitize($0) }.map { ": \($0)" } ?? "")"
             case .usageDecodeFailed: return "Kimi quota response was malformed."
             case let .network(err): return "Network error: \(err.localizedDescription)"
             }

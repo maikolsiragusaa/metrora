@@ -30,7 +30,7 @@ enum ClaudeSubscriptionService {
                 f.unitsStyle = .short
                 return "Anthropic rate-limited the quota endpoint. Retrying \(f.localizedString(for: retryAt, relativeTo: Date()))."
             case let .usageHTTPError(code, body):
-                return "Quota fetch failed (HTTP \(code))\(body.map { ": \($0)" } ?? "")"
+                return "Quota fetch failed (HTTP \(code))\(body.flatMap { ProviderQuotaDiagnostics.sanitize($0) }.map { ": \($0)" } ?? "")"
             case .usageDecodeFailed:
                 return "Quota response was malformed."
             case let .network(err):
