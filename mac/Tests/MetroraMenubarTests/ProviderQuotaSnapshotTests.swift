@@ -78,8 +78,19 @@ struct ProviderQuotaSnapshotTests {
         #expect(snapshot.availability == .unavailable)
         #expect(snapshot.freshness == .unavailable)
         #expect(snapshot.observedAt == nil)
+        #expect(snapshot.planLabel == nil)
         #expect(snapshot.windows.isEmpty)
         #expect(snapshot.credits == nil)
+    }
+
+    @Test("an empty Claude raw tier without quota facts is unavailable")
+    func emptyClaudeRawTierIsNotAProviderFact() {
+        assertBlankClaudeRawTierIsUnavailable("")
+    }
+
+    @Test("a whitespace Claude raw tier without quota facts is unavailable")
+    func whitespaceClaudeRawTierIsNotAProviderFact() {
+        assertBlankClaudeRawTierIsUnavailable(" \t\n ")
     }
 
     @Test("native payload has no credential or account fields")
@@ -114,5 +125,31 @@ struct ProviderQuotaSnapshotTests {
         #expect(!sanitized.contains("refresh-secret"))
         #expect(!sanitized.contains("/Users/alice"))
         #expect(sanitized.contains("[REDACTED]"))
+    }
+
+    private func assertBlankClaudeRawTierIsUnavailable(_ rawTier: String) {
+        let usage = SubscriptionUsage(
+            tier: .unknown,
+            rawTier: rawTier,
+            fiveHourPercent: nil,
+            fiveHourResetsAt: nil,
+            sevenDayPercent: nil,
+            sevenDayResetsAt: nil,
+            sevenDayOpusPercent: nil,
+            sevenDayOpusResetsAt: nil,
+            sevenDaySonnetPercent: nil,
+            sevenDaySonnetResetsAt: nil,
+            scopedWeekly: [],
+            fetchedAt: observedAt
+        )
+
+        let snapshot = ProviderQuotaSnapshotAdapter.claude(usage: usage, state: .loaded)
+
+        #expect(snapshot.availability == .unavailable)
+        #expect(snapshot.freshness == .unavailable)
+        #expect(snapshot.observedAt == nil)
+        #expect(snapshot.planLabel == nil)
+        #expect(snapshot.windows.isEmpty)
+        #expect(snapshot.credits == nil)
     }
 }

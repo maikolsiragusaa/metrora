@@ -190,9 +190,12 @@ enum ProviderQuotaSnapshotAdapter {
             }
             return rows
         } ?? []
-        // rawTier nil means Claude did not report a plan. Do not turn the
-        // UI fallback label Subscription into a provider fact.
-        let plan = usage?.rawTier == nil ? nil : usage?.tier.displayName
+        // A missing or blank rawTier means Claude did not report a plan. Do
+        // not turn the UI fallback label Subscription into a provider fact.
+        let rawTier = usage?.rawTier?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .flatMap { $0.isEmpty ? nil : $0 }
+        let plan = rawTier == nil ? nil : usage?.tier.displayName
         return ProviderQuotaSnapshot(
             provider: .claude,
             connection: connection,
