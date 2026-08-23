@@ -69,7 +69,7 @@ afterEach(async () => {
 
 describe('Copilot daily-cache v19 adoption from v17', () => {
   it('re-derives a surviving Copilot slice and carries an unrelated orphan once', async () => {
-    expect(DAILY_CACHE_VERSION).toBe(19)
+    expect(DAILY_CACHE_VERSION).toBe(20)
     const date = '2026-07-30'
     const staleCopilot = slice(90, 9, { sessions: 1, inputTokens: 900, outputTokens: 90 })
     const orphanClaude = slice(7, 1, { sessions: 1, inputTokens: 70, outputTokens: 7 })
@@ -85,7 +85,7 @@ describe('Copilot daily-cache v19 adoption from v17', () => {
     const migratedDay = migrated.days.find(entry => entry.date === date)!
 
     expect(parses).toBe(1)
-    expect(migrated.version).toBe(19)
+    expect(migrated.version).toBe(20)
     expect(migrated.complete).toBe(true)
     expect(migrated.watermarkTrusted).toBe(true)
     expect(migratedDay.providers.copilot).toEqual(freshCopilot)
@@ -99,7 +99,7 @@ describe('Copilot daily-cache v19 adoption from v17', () => {
     const again = await ensureCacheHydrated(parseSessions, () => [], 'cfg', () => true)
     expect(parses).toBe(1)
     expect(again.days.find(entry => entry.date === date)!.calls).toBe(3)
-    expect(JSON.parse(await readFile(dailyCachePath(), 'utf-8')).version).toBe(19)
+    expect(JSON.parse(await readFile(dailyCachePath(), 'utf-8')).version).toBe(20)
   })
 
   it('carries a sourceless Copilot slice exactly and does not create a historical zero', async () => {

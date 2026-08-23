@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { currentTzKey, dailyCachePath, emptyCache as emptyDailyCache, loadDailyCache, saveDailyCache, type DailyCache } from '../daily-cache.js'
+import { currentTzKey, dailyCachePath, DAILY_CACHE_VERSION, emptyCache as emptyDailyCache, loadDailyCache, saveDailyCache, type DailyCache } from '../daily-cache.js'
 import { readCurrentDailyCacheGenerationV1, readCurrentSessionCacheGenerationV1 } from '../cache-generation.js'
 import { isSnapshotReadMode } from '../read-lifecycle.js'
 import { CACHE_VERSION, emptyCache as emptySessionCache, loadCache, saveCache, sessionCachePath, type CachedCall, type SessionCache } from '../session-cache.js'
@@ -89,7 +89,7 @@ function sessionCache(calls: CachedCall[] = [call()]): SessionCache {
 
 function dailyCache(): DailyCache {
   const cache = emptyDailyCache('test')
-  cache.version = 19
+  cache.version = DAILY_CACHE_VERSION
   cache.complete = true
   cache.lastComputedDate = '2026-08-12'
   cache.tzKey = 'UTC'

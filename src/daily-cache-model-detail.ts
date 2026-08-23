@@ -1,4 +1,4 @@
-import type { DailyEntry, ModelDayStats } from './daily-cache-core.js'
+import type { DailyEntry, ModelDayStats } from './daily-cache-types.js'
 import { combineReasoningSemantics, type ReasoningTokenSemantics } from './token-semantics.js'
 
 function finiteNumber(value: unknown): number {
@@ -19,6 +19,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function setOwn<T>(target: Record<string, T>, key: string, value: T): void {
   Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true })
 }
+
+export { setOwn }
 
 export function sanitizeModels(raw: unknown): DailyEntry['models'] {
   if (!isRecord(raw)) return {}
@@ -55,6 +57,23 @@ export function sanitizeModels(raw: unknown): DailyEntry['models'] {
 
 export function emptyModelStats(): ModelDayStats {
   return { calls: 0, cost: 0, savingsUSD: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+}
+
+export function cloneModelStats(stats: ModelDayStats): ModelDayStats {
+  return {
+    calls: finiteNumber(stats.calls),
+    cost: finiteNumber(stats.cost),
+    savingsUSD: finiteNumber(stats.savingsUSD),
+    inputTokens: finiteNumber(stats.inputTokens),
+    outputTokens: finiteNumber(stats.outputTokens),
+    ...(stats.reasoningTokens !== undefined ? { reasoningTokens: finiteNumber(stats.reasoningTokens) } : {}),
+    ...(stats.additiveReasoningTokens !== undefined ? { additiveReasoningTokens: finiteNumber(stats.additiveReasoningTokens) } : {}),
+    ...(stats.reasoningSemantics ? { reasoningSemantics: stats.reasoningSemantics } : {}),
+    cacheReadTokens: finiteNumber(stats.cacheReadTokens),
+    cacheWriteTokens: finiteNumber(stats.cacheWriteTokens),
+    ...(stats.modelProvider ? { modelProvider: stats.modelProvider } : {}),
+    ...(stats.sourceProviders?.length ? { sourceProviders: [...stats.sourceProviders] } : {}),
+  }
 }
 
 export function mergeModelStats(target: ModelDayStats, source: ModelDayStats): void {
