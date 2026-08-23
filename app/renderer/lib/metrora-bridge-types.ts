@@ -35,6 +35,10 @@ export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
+  advisorProbe(): Promise<{ available: boolean; models: string[]; detail: string }>
+  advisorChat(requestId: string, payload: Record<string, unknown>): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
+  advisorCancel(requestId: string): Promise<boolean>
+  onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
   // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
   getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>

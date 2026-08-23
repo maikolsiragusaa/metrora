@@ -28,18 +28,19 @@ describe('desktop navigation authority', () => {
     }
   })
 
-  it('uses the pre-store task hierarchy without a standalone AI-plan destination', () => {
+  it('keeps Advisor in the Analyze hierarchy without exposing Plans as a shortcut', () => {
     expect(DESKTOP_NAVIGATION_GROUPS).toEqual([
       { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
       { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
-      { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare'] },
+      { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare', 'advisor'] },
       { id: 'control', label: 'Control', placement: 'primary', sections: ['workspace'] },
       { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
     ])
     expect(DESKTOP_NAVIGATION_ORDER).toEqual([
-      'overview', 'sessions', 'pullRequests', 'spend', 'optimize', 'models', 'compare', 'workspace', 'settings',
+      'overview', 'sessions', 'pullRequests', 'spend', 'optimize', 'models', 'compare', 'advisor', 'workspace', 'settings',
     ])
     expect(DESKTOP_NAVIGATION_ITEMS.optimize.label).toBe('Insights')
+    expect(DESKTOP_NAVIGATION_ITEMS.advisor.label).toBe('Advisor')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.shortcut).toBe('')
     expect(DESKTOP_NAVIGATION_ITEMS.workspace.shortcut).toBe('8')
     expect(DESKTOP_NAVIGATION_ITEMS.settings.shortcut).toBe(',')

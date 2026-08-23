@@ -10,6 +10,7 @@ import { initializeDesktopShareRuntime, stopDesktopShareRuntime, type DesktopSha
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createProjectBridgeHandlers, validateProjectScope } from './project-bridge'
+import { createAdvisorRuntimeHandlers } from './advisor-runtime'
 
 export { createApplicationMenuTemplate } from './menu'
 
@@ -327,6 +328,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     },
     'metrora:getOverview': getOverview,
     ...createProjectBridgeHandlers({ spawnCli: deps.spawnCli, spawnCliAction: deps.spawnCliAction, snapshotEnv }),
+    ...createAdvisorRuntimeHandlers(),
     'metrora:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
     'metrora:getActReport': run(() => ['act', 'report', '--json']),
     'metrora:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange, projectScopeId?: string | null) => [
@@ -426,7 +428,15 @@ function registerHandlers(): void {
   })
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
-      ipcMain.handle(alias, (_event, ...args) => handler(...args))
+      ipcMain.handle(alias, (event, ...args) => {
+        if (channel === 'metrora:advisorChat') {
+          const requestId = typeof args[0] === 'string' ? args[0] : ''
+          return handler(...args, (text: string) => {
+            try { event.sender.send('metrora:advisorDelta', { requestId, text }) } catch { /* window closed */ }
+          })
+        }
+        return handler(...args)
+      })
     }
   }
   const chooseDirectory = async () => {

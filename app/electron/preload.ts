@@ -17,6 +17,9 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 // immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
+  advisorProbe: () => invoke('metrora:advisorProbe'),
+  advisorChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorChat', requestId, payload),
+  advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null) => invoke('metrora:getOverview', period, provider, range, configSource, background, fresh, projectScopeId),
   getProjects: () => invoke('metrora:getProjects'),
   createProject: (name: string, icon?: string, color?: string) => invoke('metrora:createProject', name, icon, color),
@@ -85,6 +88,11 @@ const bridge = {
     const listener = (_event: unknown, status: unknown) => cb(status)
     ipcRenderer.on('metrora:update', listener)
     return () => { ipcRenderer.removeListener('metrora:update', listener) }
+  },
+  onAdvisorDelta: (cb: (event: { requestId: string; text: string }) => void) => {
+    const listener = (_event: unknown, event: { requestId: string; text: string }) => cb(event)
+    ipcRenderer.on('metrora:advisorDelta', listener)
+    return () => { ipcRenderer.removeListener('metrora:advisorDelta', listener) }
   },
   platform: process.platform,
   arch: process.arch,

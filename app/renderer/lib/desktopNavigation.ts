@@ -6,6 +6,7 @@ export const SECTION_IDS = [
   'optimize',
   'models',
   'compare',
+  'advisor',
   'plans',
   'workspace',
   'settings',
@@ -35,10 +36,7 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
   optimize: { id: 'optimize', label: 'Insights', title: 'Insights', shortcut: '5' },
   models: { id: 'models', label: 'Models', title: 'Models', shortcut: '6' },
   compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '7' },
-  // Plans remains a routable internal surface for compatibility and Settings
-  // deep-links, but it is intentionally not a first-class sidebar destination.
-  // Provider subscriptions belong in Home + Settings; reserving "plan" in the
-  // main product navigation avoids colliding with future Metrora billing plans.
+  advisor: { id: 'advisor', label: 'Advisor', title: 'Advisor', shortcut: '' },
   plans: { id: 'plans', label: 'Plans', title: 'Provider plans', shortcut: '' },
   workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '8' },
   settings: { id: 'settings', label: 'Settings', title: 'Settings', shortcut: ',' },
@@ -47,19 +45,13 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
 export const DESKTOP_NAVIGATION_GROUPS: readonly DesktopNavigationGroup[] = [
   { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
   { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
-  { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare'] },
+  { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare', 'advisor'] },
   { id: 'control', label: 'Control', placement: 'primary', sections: ['workspace'] },
   { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
 ]
 
 export const DESKTOP_NAVIGATION_ORDER: readonly Section[] = DESKTOP_NAVIGATION_GROUPS.flatMap(group => group.sections)
-
-export const SECTION_TITLES: Record<Section, string> = Object.fromEntries(
-  SECTION_IDS.map(id => [id, DESKTOP_NAVIGATION_ITEMS[id].title]),
-) as Record<Section, string>
-
+export const SECTION_TITLES: Record<Section, string> = Object.fromEntries(SECTION_IDS.map(id => [id, DESKTOP_NAVIGATION_ITEMS[id].title])) as Record<Section, string>
 export const SECTION_BY_SHORTCUT: Readonly<Record<string, Section>> = Object.fromEntries(
-  DESKTOP_NAVIGATION_ORDER
-    .map(id => [DESKTOP_NAVIGATION_ITEMS[id].shortcut, id] as const)
-    .filter(([shortcut]) => shortcut.length > 0),
+  DESKTOP_NAVIGATION_ORDER.map(id => [DESKTOP_NAVIGATION_ITEMS[id].shortcut, id] as const).filter(([shortcut]) => shortcut.length > 0),
 )

@@ -79,6 +79,9 @@ const CHANNELS = [
   'metrora:telemetryOnboarded',
   'metrora:telemetryTrack',
   'metrora:getUpdateStatus',
+  'metrora:advisorProbe',
+  'metrora:advisorChat',
+  'metrora:advisorCancel',
 ] as const
 
 const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = [
