@@ -105,5 +105,23 @@ describe('QuotaService', () => {
     expect(value[0]!.observedAt).toBeNull()
     expect(value[0]!.freshness).toBe('unavailable')
   })
+
+  it('does not retain an empty successful response as a stale factual snapshot', async () => {
+    let healthy = true
+    const claude = vi.fn(async () => healthy
+      ? { quota: quota('claude') }
+      : { quota: quota('claude', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }) })
+    const service = new QuotaService({
+      claude,
+      codex: vi.fn(async () => ({ quota: quota('codex') })),
+      readFile: vi.fn(async () => null), writeFile: vi.fn(async () => undefined),
+    })
+
+    const first = await service.getQuota({ force: true })
+    expect(first[0]).toMatchObject({ connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [] })
+    healthy = false
+    const second = await service.getQuota({ force: true })
+    expect(second[0]).toMatchObject({ connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [] })
+  })
 })
 

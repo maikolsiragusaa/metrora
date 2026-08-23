@@ -135,6 +135,41 @@ describe('Plans', () => {
     expect(screen.queryByText('API usage')).not.toBeInTheDocument()
   })
 
+  it('renders provider credits when no quota windows are present', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } })])
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByText('The provider did not report quota windows.')).toBeInTheDocument()
+    expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
+  })
+
+  it('renders an explicit zero credit balance when no quota windows are present', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', { credits: { balance: 0, currency: 'USD' } })])
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByText('Credits remaining · $0.00')).toBeInTheDocument()
+  })
+
+  it('renders stale credits-only last-good data with its original observation note', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', {
+      connection: 'transientFailure',
+      availability: 'unavailable',
+      freshness: 'stale',
+      observedAt: '2026-07-12T00:00:00.000Z',
+      credits: { balance: 3.5, currency: 'USD' },
+    })])
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByText(/Showing last provider-reported quota from/)).toBeInTheDocument()
+    expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
+  })
+
   it('keeps manual budget overage and clamped-track behavior', async () => {
     getPlans.mockResolvedValue({
       ...baseStatus,

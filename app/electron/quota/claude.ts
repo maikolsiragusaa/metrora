@@ -99,14 +99,16 @@ function windowOf(id: string, label: string, value: unknown): QuotaWindow | null
   }
 }
 
-function tierLabel(raw: string | undefined): string {
-  const value = raw?.toLowerCase() ?? ''
-  if (value.includes('max_20x') || value.includes('max20x') || value.includes('max-20x')) return 'Max 20x'
-  if (value.includes('max_5x') || value.includes('max5x') || value.includes('max-5x') || value.includes('max')) return 'Max 5x'
-  if (value.includes('pro')) return 'Pro'
-  if (value.includes('team')) return 'Team'
-  if (value.includes('enterprise')) return 'Enterprise'
-  return 'Subscription'
+function tierLabel(raw: string | undefined): string | null {
+  const value = raw?.trim() ?? ''
+  if (!value) return null
+  const normalized = value.toLowerCase()
+  if (normalized === 'max_20x' || normalized === 'max20x' || normalized === 'max-20x') return 'Max 20x'
+  if (normalized === 'max_5x' || normalized === 'max5x' || normalized === 'max-5x' || normalized === 'max') return 'Max 5x'
+  if (normalized === 'pro') return 'Pro'
+  if (normalized === 'team') return 'Team'
+  if (normalized === 'enterprise') return 'Enterprise'
+  return value.replace(/(^|[_-])\w/g, match => match.replace(/[_-]/, ' ').toUpperCase())
 }
 
 function stableScopedIdentity(row: Record<string, any>, display: string): string {

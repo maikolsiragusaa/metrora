@@ -211,6 +211,18 @@ describe('createBridgeHandlers (IPC wiring)', () => {
     const safe = await unsafe['metrora:getQuota']!()
     expect(JSON.stringify(safe)).not.toMatch(/secret|acct_secret|auth\.json|tokens/)
 
+    const emptyClaim = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => [{ ...value[0], observedAt: null, windows: [], credits: null, planLabel: null }]) })
+    expect(await emptyClaim['metrora:getQuota']!()).toMatchObject({
+      ok: true,
+      value: [{ connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null }],
+    })
+
+    const invalidFresh = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => [{ ...value[0], observedAt: null }]) })
+    expect(await invalidFresh['metrora:getQuota']!()).toMatchObject({
+      ok: true,
+      value: [{ connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [{ id: 'seven_day' }] }],
+    })
+
     const failed = createBridgeHandlers({ ...base, getQuota: vi.fn(async () => { throw new Error('Bearer secret sk-ant-leak') }) })
     const result = await failed['metrora:getQuota']!()
     expect(result).toMatchObject({ ok: false, error: { kind: 'nonzero' } })

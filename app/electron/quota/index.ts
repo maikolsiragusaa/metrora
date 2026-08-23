@@ -6,6 +6,7 @@ import { fetchCodexQuota } from './codex'
 import { atomicWriteSecureFile, readSecureFile, sanitizeError } from './security'
 import {
   emptyQuota,
+  hasProviderQuotaFacts,
   markStale,
   sanitizeQuotaProvider,
   type ProviderNameFromQuota,
@@ -24,6 +25,7 @@ export type {
   QuotaConnection,
   QuotaFreshness,
 } from './types'
+export { hasProviderQuotaFacts } from './types'
 export { sanitizeError } from './security'
 
 type Blocked = Partial<Record<ProviderNameFromQuota, string>>
@@ -55,7 +57,12 @@ function backoffRateLimit(retryAt: string): QuotaProvider['rateLimit'] {
 }
 
 function isFactualSnapshot(quota: QuotaProvider): boolean {
-  return quota.connection === 'connected' && quota.freshness === 'fresh' && quota.authority === 'provider-reported'
+  return quota.connection === 'connected'
+    && quota.freshness === 'fresh'
+    && quota.authority === 'provider-reported'
+    && hasProviderQuotaFacts(quota)
+    && quota.observedAt !== null
+    && Number.isFinite(Date.parse(quota.observedAt))
 }
 
 export class QuotaService {
@@ -108,7 +115,13 @@ export class QuotaService {
     const blocked = await this.readBlocked()
     const run = async (provider: ProviderNameFromQuota): Promise<QuotaProvider> => {
       const retainOnFailure = (next: QuotaProvider): QuotaProvider => {
-        const previous = this.lastGood[provider] ?? prior.find(item => item.provider === provider)
+        const candidate = this.lastGood[provider] ?? prior.find(item => item.provider === provider)
+        const previous = candidate
+          && hasProviderQuotaFacts(candidate)
+          && candidate.observedAt !== null
+          && Number.isFinite(Date.parse(candidate.observedAt))
+          ? candidate
+          : undefined
         if (!previous) return next
 
         // Background polls deliberately skip keychain reads. Keep the previous

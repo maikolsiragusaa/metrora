@@ -65,24 +65,30 @@ export type ProviderQuotaSnapshot = {
 export type QuotaProvider = ProviderQuotaSnapshot
 export type QuotaWindow = ProviderQuotaWindow
 
+/** At least one provider-reported dimension is required before quota is factual. */
+export function hasProviderQuotaFacts(quota: Pick<QuotaProvider, 'windows' | 'credits' | 'planLabel'>): boolean {
+  return quota.windows.length > 0
+    || quota.credits !== null
+    || (typeof quota.planLabel === 'string' && quota.planLabel.trim().length > 0)
+}
+
 export const CONNECTIONS: readonly QuotaConnection[] = [
   'connected', 'disconnected', 'accessDenied', 'loading', 'stale', 'transientFailure', 'terminalFailure',
 ]
 
+/** Empty snapshots never claim quota evidence, even when transport connected. */
 export function emptyQuota(
   provider: ProviderName,
   connection: QuotaConnection,
   rateLimit: ProviderQuotaRateLimit = { state: 'clear', retryAt: null },
 ): QuotaProvider {
-  const availability: QuotaAvailability = connection === 'connected' ? 'available' : 'unavailable'
-  const freshness: QuotaFreshness = connection === 'connected' ? 'fresh' : 'unavailable'
   return {
     schemaVersion: PROVIDER_QUOTA_SCHEMA_VERSION,
     provider,
     authority: 'provider-reported',
-    availability,
+    availability: 'unavailable',
     connection,
-    freshness,
+    freshness: 'unavailable',
     observedAt: null,
     planLabel: null,
     windows: [],
@@ -92,29 +98,36 @@ export function emptyQuota(
 }
 
 export function markObserved(quota: QuotaProvider, now: number): QuotaProvider {
-  const observedAt = Number.isFinite(now) ? new Date(now).toISOString() : null
+  const factual = hasProviderQuotaFacts(quota)
+  const observedAt = factual ? observationTime(now) : null
   return {
     ...quota,
     schemaVersion: PROVIDER_QUOTA_SCHEMA_VERSION,
     authority: 'provider-reported',
-    availability: 'available',
+    availability: factual && observedAt ? 'available' : 'unavailable',
     connection: 'connected',
-    freshness: 'fresh',
-    observedAt,
+    freshness: factual && observedAt ? 'fresh' : 'unavailable',
+    observedAt: factual && observedAt ? observedAt : null,
+    windows: factual ? quota.windows : [],
+    credits: factual ? quota.credits : null,
+    planLabel: factual ? quota.planLabel : null,
     rateLimit: { state: 'clear', retryAt: null },
   }
 }
 
 /** Retain factual values while making the failed refresh explicit. */
 export function markStale(previous: QuotaProvider, connection: QuotaConnection, rateLimit: ProviderQuotaRateLimit): QuotaProvider {
+  const observedAt = isoOrNull(previous.observedAt)
+  const factual = hasProviderQuotaFacts(previous) && observedAt !== null
   return {
     ...previous,
     schemaVersion: PROVIDER_QUOTA_SCHEMA_VERSION,
     authority: 'provider-reported',
     availability: 'unavailable',
     connection,
-    freshness: 'stale',
+    freshness: factual ? 'stale' : 'unavailable',
     // observedAt intentionally remains the previous provider observation.
+    observedAt: factual ? observedAt : null,
     rateLimit,
   }
 }
@@ -135,14 +148,16 @@ function isFreshness(value: unknown): value is QuotaFreshness {
   return value === 'fresh' || value === 'stale' || value === 'unavailable'
 }
 
-function isAvailability(value: unknown): value is QuotaAvailability {
-  return value === 'available' || value === 'unavailable'
-}
-
 function isoOrNull(value: unknown): string | null {
   if (value === null || value === undefined) return null
   if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return null
   return new Date(value).toISOString()
+}
+
+function observationTime(value: number): string | null {
+  if (!Number.isFinite(value)) return null
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
 
 function finiteOrNull(value: unknown, minimum = 0): number | null {
@@ -188,21 +203,34 @@ export function sanitizeQuotaProvider(value: unknown): QuotaProvider | null {
     state: rateState,
     retryAt: rateState === 'backoff' ? isoOrNull(rawRate.retryAt) : null,
   } as ProviderQuotaRateLimit
-  const fallbackFreshness: QuotaFreshness = connection === 'connected' ? 'fresh' : 'unavailable'
-  const fallbackAvailability: QuotaAvailability = connection === 'connected' ? 'available' : 'unavailable'
-  return {
+  const sanitized: QuotaProvider = {
     schemaVersion: PROVIDER_QUOTA_SCHEMA_VERSION,
     provider: value.provider,
     authority: 'provider-reported',
-    availability: isAvailability(value.availability) ? value.availability : fallbackAvailability,
+    availability: 'unavailable',
     connection,
-    freshness: isFreshness(value.freshness) ? value.freshness : fallbackFreshness,
+    freshness: isFreshness(value.freshness) ? value.freshness : 'unavailable',
     observedAt: isoOrNull(value.observedAt),
     planLabel: typeof value.planLabel === 'string' && value.planLabel.trim() ? value.planLabel : null,
     windows,
     credits,
     rateLimit,
   }
+
+  const factual = hasProviderQuotaFacts(sanitized)
+  if (!factual) {
+    return { ...sanitized, availability: 'unavailable', freshness: 'unavailable', observedAt: null, windows: [], credits: null, planLabel: null }
+  }
+
+  if (sanitized.freshness === 'fresh' && sanitized.connection === 'connected' && sanitized.observedAt !== null) {
+    return { ...sanitized, availability: 'available', freshness: 'fresh' }
+  }
+
+  if (sanitized.freshness === 'stale' && sanitized.observedAt !== null) {
+    return { ...sanitized, availability: 'unavailable', freshness: 'stale' }
+  }
+
+  return { ...sanitized, availability: 'unavailable', freshness: 'unavailable', observedAt: null }
 }
 
 export function sanitizeQuotaProviders(value: unknown): QuotaProvider[] {

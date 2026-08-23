@@ -186,15 +186,14 @@ function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnec
     : stale
       ? staleQuotaNote(quota)
       : null
-  if (!hasWindows) {
-    return <p className="quota-connection-note">{note ?? 'The provider did not report quota windows.'}</p>
-  }
 
   return (
     <>
       {note ? <p className="quota-connection-note">{note}</p> : null}
-      <div className="quota-windows">{quota.windows.map(window => <QuotaMeter key={window.id} window={window} />)}</div>
-      {quota.credits ? <div className="quota-footer"><span>Credits remaining · ${quota.credits.balance.toFixed(2)}</span></div> : null}
+      {hasWindows
+        ? <div className="quota-windows">{quota.windows.map(window => <QuotaMeter key={window.id} window={window} />)}</div>
+        : <p className="quota-connection-note">The provider did not report quota windows.</p>}
+      {quota.credits !== null ? <div className="quota-footer"><span>Credits remaining · ${quota.credits.balance.toFixed(2)}</span></div> : null}
     </>
   )
 }

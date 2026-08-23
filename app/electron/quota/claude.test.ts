@@ -34,6 +34,25 @@ describe('Claude quota', () => {
     expect(quota.credits).toBeNull()
   })
 
+  it.each([
+    [undefined, null],
+    ['', null],
+    ['ultra_custom', 'Ultra Custom'],
+  ])('does not fabricate a generic plan for tier %s', (tier, expected) => {
+    const quota = decodeClaudeUsage({}, { accessToken: 'hidden', rateLimitTier: tier as string | undefined })
+    expect(quota.planLabel).toBe(expected)
+  })
+
+  it('does not treat an empty successful response with no tier as fresh quota', async () => {
+    const emptyCredential = JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-empty', rateLimitTier: '' } })
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+    const result = await fetchClaudeQuota({ fetch: fetchMock, readFile: vi.fn(async () => emptyCredential), now: () => Date.parse('2026-07-12T00:00:00Z') })
+    expect(result.quota).toMatchObject({
+      connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null,
+      windows: [], credits: null, planLabel: null,
+    })
+  })
+
   it('returns disconnected without credentials and never fetches', async () => {
     const fetchMock = vi.fn()
     const result = await fetchClaudeQuota({ fetch: fetchMock, readFile: vi.fn(async () => null) })

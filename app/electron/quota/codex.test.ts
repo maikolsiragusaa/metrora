@@ -44,6 +44,38 @@ describe('Codex quota', () => {
     expect(decodeCodexUsage({}).credits).toBeNull()
   })
 
+  it('does not treat an empty successful response as fresh quota', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+    const result = await fetchCodexQuota({ fetch: fetchMock, readFile: vi.fn(async () => JSON.stringify(auth)), now: () => now })
+    expect(result.quota).toMatchObject({
+      connection: 'connected', availability: 'unavailable', freshness: 'unavailable', observedAt: null,
+      windows: [], credits: null, planLabel: null,
+    })
+  })
+
+  it('treats plan-only provider data as a fresh factual snapshot', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ plan_type: 'pro' }), { status: 200 }))
+    const result = await fetchCodexQuota({ fetch: fetchMock, readFile: vi.fn(async () => JSON.stringify(auth)), now: () => now })
+    expect(result.quota).toMatchObject({ connection: 'connected', availability: 'available', freshness: 'fresh', planLabel: 'Pro', windows: [], credits: null })
+    expect(result.quota.observedAt).toBe(new Date(now).toISOString())
+  })
+
+  it('treats credits-only responses as factual, including explicit zero', async () => {
+    const readFile = vi.fn(async () => JSON.stringify(auth))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ credits: { balance: 3.5 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ credits: { balance: 0 } }), { status: 200 }))
+
+    const positive = await fetchCodexQuota({ fetch: fetchMock, readFile, now: () => now })
+    const zero = await fetchCodexQuota({ fetch: fetchMock, readFile, now: () => now })
+    for (const result of [positive, zero]) {
+      expect(result.quota).toMatchObject({ connection: 'connected', availability: 'available', freshness: 'fresh', windows: [] })
+      expect(result.quota.observedAt).toBe(new Date(now).toISOString())
+    }
+    expect(positive.quota.credits).toEqual({ balance: 3.5, currency: 'USD' })
+    expect(zero.quota.credits).toEqual({ balance: 0, currency: 'USD' })
+  })
+
   it('returns disconnected without credentials', async () => {
     const fetchMock = vi.fn()
     const result = await fetchCodexQuota({ fetch: fetchMock, readFile: vi.fn(async () => null) })
