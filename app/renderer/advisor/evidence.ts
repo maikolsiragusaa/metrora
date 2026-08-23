@@ -291,8 +291,8 @@ export function buildQuotaEvidence(question: string, scope: AdvisorScope, data: 
     nextInvestigations: ['Refresh the provider connection if the snapshot is stale or unavailable.', 'Review Metrora usage separately in Spend before drawing capacity conclusions.'],
     quota: {
       providers,
-      measuredSpendUSD: data && finite(data.current.cost) ? data.current.cost : null,
-      measuredCalls: data && finite(data.current.calls) ? data.current.calls : null,
+      measuredSpendUSD: !scope.model && data && finite(data.current.cost) ? data.current.cost : null,
+      measuredCalls: !scope.model && data && finite(data.current.calls) ? data.current.calls : null,
     },
   }
 }

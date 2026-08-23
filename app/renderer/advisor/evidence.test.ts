@@ -97,4 +97,13 @@ describe('Advisor evidence truth contract', () => {
     const evidence = buildQuotaEvidence('quota', scope, null, [older, newer])
     expect(evidence.quota?.providers.map(item => item.observedAt)).toEqual(['2026-08-22T08:00:00Z', '2026-08-23T12:00:00Z'])
   })
+
+  it('does not expose global measured totals as model-scoped quota context', () => {
+    const payload = {
+      ...emptyOverview,
+      current: { ...emptyOverview.current, cost: 99, calls: 77, sessions: 2, pricingCoverage: 1 },
+    } as unknown as MenubarPayload
+    const evidence = buildQuotaEvidence('quota', { ...scope, model: 'gpt-safe' }, payload, [quota('codex', 'fresh', 'available')])
+    expect(evidence.quota).toMatchObject({ measuredSpendUSD: null, measuredCalls: null })
+  })
 })
