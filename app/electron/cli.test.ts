@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync 
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, isAbsolute, relative, win32, posix } from 'node:path'
 
-import { spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, CliError, nodeManagerDirs, notFoundStage, resolveMetroraPath, resolveTarget } from './cli'
+import { spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, shutdownCli, resetCliShutdownForTests, CliError, nodeManagerDirs, notFoundStage, resolveMetroraPath, resolveTarget } from './cli'
 
 let dir: string
 const originalBin = process.env.METRORA_BIN
@@ -46,12 +46,14 @@ function fakeDevRepoCli(): string {
 }
 
 beforeEach(() => {
+  resetCliShutdownForTests()
   // Keep fixtures on the workspace volume. On Windows, path.relative across
   // drive letters returns an absolute path and invalidates relative-path tests.
   dir = mkdtempSync(join(process.cwd(), '.metrora-cli-'))
 })
 
 afterEach(() => {
+  resetCliShutdownForTests()
   if (originalBin === undefined) delete process.env.METRORA_BIN
   else process.env.METRORA_BIN = originalBin
   if (originalPathDirs === undefined) delete process.env.METRORA_PATH_DIRS
@@ -340,6 +342,109 @@ describe('spawnCli', () => {
   it('rejects with kind "too-large" and kills a binary that floods stdout', async () => {
     fakeBin('flood.js', "const s='x'.repeat(1024*1024); for(let i=0;i<20;i++) process.stdout.write(s); setInterval(()=>{},1000)")
     await expect(spawnCli(['status'])).rejects.toMatchObject({ kind: 'too-large' } satisfies Partial<CliError>)
+  })
+})
+
+describe('bounded process watchdog', () => {
+  function heartbeatScript(lines: string[], intervalMs = 15): string {
+    return [
+      'const lines = ' + JSON.stringify(lines) + ';',
+      'let i = 0;',
+      'const timer = setInterval(() => {',
+      "  if (i < lines.length) process.stderr.write(lines[i++] + '\\n');",
+      '  else { clearInterval(timer); process.stdout.write(JSON.stringify({ ok: 1 })); process.exit(0); }',
+      '}, ' + intervalMs + ');',
+    ].join('\n')
+  }
+
+  it('accepts split valid progress heartbeats without extending the absolute ceiling', async () => {
+    const seen: unknown[] = []
+    const lines = [
+      'METRORA_PROGRESS {"kind":"providers","providers":["claude"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"done","files":3}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"start"}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":1,"total":3}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":2,"total":3}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"done","files":3}',
+    ]
+    fakeBin('valid-heartbeat.cjs', heartbeatScript(lines, 15))
+    const result = await spawnCli(['status'], {
+      timeoutMs: 500,
+      idleTimeoutMs: 70,
+      onProgress: event => seen.push(event),
+    })
+    expect(result).toEqual({ ok: 1 })
+    expect(seen).toHaveLength(5)
+  })
+
+  it('does not treat raw stderr chatter as progress', async () => {
+    fakeBin('raw-chatter.cjs', "setInterval(() => process.stderr.write('raw chatter\\n'), 10)")
+    await expect(spawnCli(['status'], { timeoutMs: 500, idleTimeoutMs: 70 })).rejects.toMatchObject({ kind: 'timeout' })
+  })
+
+  it('does not treat malformed, fake, or decreasing heartbeats as progress', async () => {
+    const lines = [
+      'METRORA_PROGRESS {"kind":"providers","providers":["claude"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"done","files":3}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"start"}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":1,"total":3}',
+      'METRORA_PROGRESS nope',
+      'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":1,"total":3}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":0,"total":3}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"other","done":999,"total":999}',
+    ]
+    const fakeScript = [
+      'const lines = ' + JSON.stringify(lines) + '; let i = 0;',
+      "setInterval(() => { if (i < lines.length) process.stderr.write(lines[i++] + '\\n'); else process.stderr.write('still noisy\\n'); }, 10);",
+    ].join('\n')
+    fakeBin('fake-heartbeat.cjs', fakeScript)
+    await expect(spawnCli(['status'], { timeoutMs: 500, idleTimeoutMs: 70 })).rejects.toMatchObject({ kind: 'timeout' })
+  })
+
+  it('enforces the absolute runtime ceiling even with valid monotonic ticks', async () => {
+    fakeBin('absolute-ceiling.cjs', [
+      "let done = 0;",
+      "process.stderr.write('METRORA_PROGRESS {\"kind\":\"providers\",\"providers\":[\"claude\"]}\\n');",
+      "process.stderr.write('METRORA_PROGRESS {\"kind\":\"provider\",\"provider\":\"claude\",\"state\":\"start\"}\\n');",
+      "setInterval(() => { done += 1; process.stderr.write('METRORA_PROGRESS ' + JSON.stringify({ kind: 'tick', provider: 'claude', done, total: 10000 }) + '\\n'); }, 10);",
+    ].join("\n"))
+    await expect(spawnCli(['status'], { timeoutMs: 170, idleTimeoutMs: 50 })).rejects.toMatchObject({ kind: 'timeout' })
+  })
+
+  it('uses bounded SIGTERM grace and hard-kill fallback for responsive and ignoring children', async () => {
+    fakeBin('term-responsive.cjs', "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)")
+    const responsiveStarted = Date.now()
+    await expect(spawnCli(['status'], { timeoutMs: 60 })).rejects.toMatchObject({ kind: 'timeout' })
+    expect(Date.now() - responsiveStarted).toBeLessThan(1500)
+
+    fakeBin('term-ignoring.cjs', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)")
+    const ignoringStarted = Date.now()
+    await expect(spawnCli(['status'], { timeoutMs: 60 })).rejects.toMatchObject({ kind: 'timeout' })
+    expect(Date.now() - ignoringStarted).toBeLessThan(2000)
+  })
+
+  it('marks timed-out and oversized mutations as indeterminate while bounding returned output', async () => {
+    fakeBin('action-flood.cjs', "const s = 'x'.repeat(1024 * 1024); for (let i = 0; i < 20; i++) process.stdout.write(s); setInterval(() => {}, 1000)")
+    const oversized = await spawnCliAction(['currency', 'EUR'])
+    expect(oversized).toMatchObject({ ok: false, code: null, indeterminate: true })
+    expect(oversized.stdout.length).toBeLessThanOrEqual(16 * 1024 * 1024)
+    expect(oversized.stderr.length).toBeLessThanOrEqual(16 * 1024 * 1024)
+
+    fakeBin('action-timeout.cjs', "setInterval(() => {}, 1000)")
+    const timedOut = await spawnCliAction(['currency', 'EUR'], { timeoutMs: 60 })
+    expect(timedOut).toMatchObject({ ok: false, code: null, indeterminate: true })
+  })
+
+  it('does not resurrect a reserved child after terminal shutdown', async () => {
+    const startedFile = join(dir, 'shutdown-started')
+    fakeBin('shutdown-race.cjs', "require('fs').writeFileSync(" + JSON.stringify(startedFile) + ", 'started'); process.stdout.write(JSON.stringify({ ok: 1 }))")
+    const read = spawnCli(['status'])
+    const action = spawnCliAction(['currency', 'EUR'])
+    shutdownCli()
+
+    await expect(read).rejects.toMatchObject({ kind: 'nonzero' })
+    await expect(action).resolves.toMatchObject({ ok: false, code: null })
+    expect(() => readFileSync(startedFile, 'utf8')).toThrow()
   })
 })
 

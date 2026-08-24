@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import path from 'node:path'
 
-import { CliError, killAll, resolveMetroraPath, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
+import { CliError, resolveMetroraPath, shutdownCli, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
+import type { TrustedProgressEvent } from './cli-watchdog'
 import { createApplicationMenuTemplate } from './menu'
 import { getQuota, sanitizeError } from './quota'
 import { sanitizeQuotaProviders } from './quota/types'
@@ -89,6 +90,8 @@ export type Envelope<T = unknown> = { ok: true; value: T } | { ok: false; error:
 // once it succeeds. Sections gate their own first poll on this one resolving so
 // the cold hydration runs ONCE, not once per section in parallel.
 const WARMUP_TIMEOUT_MS = 10 * 60_000
+// A valid monotonic parser heartbeat may extend idle time, never this ceiling.
+const PROGRESS_IDLE_TIMEOUT_MS = 45_000
 // Wire marker for CLI scan-progress lines (src/parser.ts: PROGRESS_LINE_PREFIX).
 const PROGRESS_LINE_PREFIX = 'METRORA_PROGRESS '
 // IPC channel carrying cold-start scan-progress events to the splash.
@@ -227,7 +230,7 @@ function cliErrorProps(err: unknown, cmd: string | undefined): Record<string, un
 }
 
 type Deps = {
-  spawnCli: (args: string[], opts?: { timeoutMs?: number; onStderr?: (chunk: string) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority }) => Promise<unknown>
+  spawnCli: (args: string[], opts?: { timeoutMs?: number; idleTimeoutMs?: number; onStderr?: (chunk: string) => void; onProgress?: (event: TrustedProgressEvent) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority }) => Promise<unknown>
   spawnCliAction: (args: string[], opts?: { timeoutMs?: number }) => Promise<ActionResult>
   resolveMetroraPath: () => string | null
   getQuota: typeof getQuota
@@ -298,6 +301,8 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
       }
       const value = await deps.spawnCli(args, {
         timeoutMs: WARMUP_TIMEOUT_MS,
+        idleTimeoutMs: PROGRESS_IDLE_TIMEOUT_MS,
+        onProgress: () => {},
         extraEnv: { METRORA_PROGRESS: '1' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
@@ -535,7 +540,7 @@ function bootstrap(): void {
 
   app.on('before-quit', createBeforeQuitHandler({
     getTelemetry: () => telemetryInstance,
-    killAll,
+    killAll: shutdownCli,
     stopShare: stopDesktopShareRuntime,
     quit: () => app.quit(),
   }))

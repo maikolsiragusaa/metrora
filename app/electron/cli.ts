@@ -1,4 +1,9 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import {
+  cancelAllBoundedProcesses,
+  DEFAULT_MAX_OUTPUT_BYTES,
+  runBoundedProcess,
+  type TrustedProgressEvent,
+} from './cli-watchdog'
 import { accessSync, constants, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -13,7 +18,7 @@ import {
 // not import Electron so it remains testable in plain Node.
 
 export type CliErrorKind = 'not-found' | 'nonzero' | 'bad-json' | 'timeout' | 'too-large' | 'bad-args'
-export type ActionResult = { ok: boolean; stdout: string; stderr: string; code: number | null }
+export type ActionResult = { ok: boolean; stdout: string; stderr: string; code: number | null; indeterminate?: boolean }
 export type SpawnPriority = 'interactive' | 'background'
 export type CliTarget = { kind: 'external'; bin: string } | { kind: 'bundled'; entry: string }
 type SpawnSpec = { bin: string; args: string[]; env: NodeJS.ProcessEnv }
@@ -39,31 +44,34 @@ export class CliError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 45_000
-const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+const MAX_OUTPUT_BYTES = DEFAULT_MAX_OUTPUT_BYTES
 const COALESCE_TTL_MS = 5_000
 const MAX_CONCURRENT_CLI = 2
 
-const activeChildren = new Set<ChildProcess>()
 const readInflight = new Map<string, Promise<unknown>>()
 const readCache = new Map<string, { at: number; value: unknown }>()
 
-type SlotWaiter = { resolve: () => void; reject: (err: unknown) => void }
+type SlotWaiter = { resolve: (epoch: number) => void; reject: (err: unknown) => void; epoch: number }
 let running = 0
+let cancellationEpoch = 0
 const interactiveQueue: SlotWaiter[] = []
 const backgroundQueue: SlotWaiter[] = []
+let shutdownRequested = false
 
 function pumpSlots(): void {
   while (running < MAX_CONCURRENT_CLI) {
     const waiter = interactiveQueue.shift() ?? backgroundQueue.shift()
     if (!waiter) return
     running += 1
-    waiter.resolve()
+    waiter.resolve(waiter.epoch)
   }
 }
 
-function acquireSlot(priority: SpawnPriority): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    ;(priority === 'background' ? backgroundQueue : interactiveQueue).push({ resolve, reject })
+function acquireSlot(priority: SpawnPriority): Promise<number> {
+  if (shutdownRequested) return Promise.reject(new CliError('nonzero', 'Metrora is shutting down'))
+  const epoch = cancellationEpoch
+  return new Promise<number>((resolve, reject) => {
+    ;(priority === 'background' ? backgroundQueue : interactiveQueue).push({ resolve, reject, epoch })
     pumpSlots()
   })
 }
@@ -73,16 +81,27 @@ function releaseSlot(): void {
   pumpSlots()
 }
 
-/** Reap running children and reject queued work during desktop shutdown. */
+/** Reap owned children and reject queued work during desktop shutdown. */
 export function killAll(): void {
-  for (const child of activeChildren) child.kill('SIGKILL')
-  activeChildren.clear()
+  cancellationEpoch += 1
+  cancelAllBoundedProcesses()
 
   const waiting = [...interactiveQueue, ...backgroundQueue]
   interactiveQueue.length = 0
   backgroundQueue.length = 0
   running = 0
   for (const waiter of waiting) waiter.reject(new CliError('nonzero', 'Metrora cancelled'))
+}
+
+/** Production before-quit entry point: cancellation is terminal for this app process. */
+export function shutdownCli(): void {
+  shutdownRequested = true
+  killAll()
+}
+
+/** Test-only reset for isolated renderer/main-process fixtures. */
+export function resetCliShutdownForTests(): void {
+  shutdownRequested = false
 }
 
 function isExecutableFile(path: string): boolean {
@@ -246,78 +265,36 @@ function runCli(
   cmdLabel: string,
   timeoutMs: number,
   onStderr?: (chunk: string) => void,
+  idleTimeoutMs?: number,
+  onProgress?: (event: TrustedProgressEvent) => void,
 ): Promise<unknown> {
-  return new Promise<unknown>((resolve, reject) => {
-    const child = spawn(spec.bin, spec.args, {
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: spec.env,
-    })
-    activeChildren.add(child)
-
-    let stdout = ''
-    let stderr = ''
-    let total = 0
-    let settled = false
-
-    const finish = (fn: () => void): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      activeChildren.delete(child)
-      fn()
+  return runBoundedProcess(spec, {
+    absoluteTimeoutMs: timeoutMs,
+    idleTimeoutMs,
+    maxOutputBytes: MAX_OUTPUT_BYTES,
+    onStderr,
+    onProgress,
+  }).then(result => {
+    if (result.reason === 'timeout') {
+      throw new CliError('timeout', `Metrora ${cmdLabel} timed out after ${timeoutMs}ms`)
     }
-
-    const timer = setTimeout(() => {
-      finish(() => {
-        child.kill('SIGKILL')
-        reject(new CliError('timeout', `Metrora ${cmdLabel} timed out after ${timeoutMs}ms`))
-      })
-    }, timeoutMs)
-
-    const bump = (bytes: number): void => {
-      total += bytes
-      if (total > MAX_OUTPUT_BYTES) {
-        finish(() => {
-          child.kill('SIGKILL')
-          reject(new CliError('too-large', `Metrora ${cmdLabel} produced more than ${MAX_OUTPUT_BYTES} bytes`))
-        })
-      }
+    if (result.reason === 'too-large') {
+      throw new CliError('too-large', `Metrora ${cmdLabel} produced more than ${MAX_OUTPUT_BYTES} bytes`)
     }
-
-    child.stdout.on('data', chunk => {
-      stdout += chunk
-      bump(chunk.length)
-    })
-    child.stderr.on('data', chunk => {
-      stderr += chunk
-      bump(chunk.length)
-      if (onStderr) {
-        try {
-          onStderr(chunk.toString())
-        } catch {
-          // A progress listener must never terminate the read.
-        }
-      }
-    })
-
-    child.on('error', error => {
-      finish(() => reject(new CliError('not-found', error.message, 'spawn-error')))
-    })
-
-    child.on('close', code => {
-      finish(() => {
-        if (code !== 0) {
-          reject(new CliError('nonzero', stderr.trim() || `Metrora exited with code ${code}`))
-          return
-        }
-        try {
-          resolve(JSON.parse(stdout))
-        } catch {
-          reject(new CliError('bad-json', 'Metrora produced output that was not valid JSON'))
-        }
-      })
-    })
+    if (result.reason === 'cancelled') {
+      throw new CliError('nonzero', 'Metrora cancelled')
+    }
+    if (result.error) {
+      throw new CliError('not-found', result.error.message, 'spawn-error')
+    }
+    if (result.code !== 0) {
+      throw new CliError('nonzero', result.stderr.trim() || `Metrora exited with code ${result.code ?? 'unknown'}`)
+    }
+    try {
+      return JSON.parse(result.stdout)
+    } catch {
+      throw new CliError('bad-json', 'Metrora produced output that was not valid JSON')
+    }
   })
 }
 
@@ -326,11 +303,16 @@ export function spawnCli(
   args: string[],
   opts: {
     timeoutMs?: number
+    idleTimeoutMs?: number
     onStderr?: (chunk: string) => void
+    onProgress?: (event: TrustedProgressEvent) => void
     extraEnv?: NodeJS.ProcessEnv
     priority?: SpawnPriority
   } = {},
 ): Promise<unknown> {
+  if (shutdownRequested) {
+    return Promise.reject(new CliError('nonzero', 'Metrora is shutting down'))
+  }
   const target = resolveTarget()
   if (!target) {
     return Promise.reject(new CliError('not-found', 'Metrora CLI not found', notFoundStage()))
@@ -346,7 +328,7 @@ export function spawnCli(
   const envKey = Object.entries(opts.extraEnv ?? {})
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
     .sort(([a], [b]) => a.localeCompare(b))
-  const key = JSON.stringify([spec.bin, ...spec.args, envKey])
+  const key = JSON.stringify([spec.bin, ...spec.args, envKey, opts.timeoutMs ?? null, opts.idleTimeoutMs ?? null, Boolean(opts.onStderr), Boolean(opts.onProgress)])
   const cached = readCache.get(key)
   if (cached && Date.now() - cached.at < COALESCE_TTL_MS) return Promise.resolve(cached.value)
 
@@ -355,9 +337,11 @@ export function spawnCli(
 
   const priority = opts.priority ?? 'interactive'
   const flight = (async () => {
-    await acquireSlot(priority)
+    const reservation = await acquireSlot(priority)
     try {
-      return await runCli(spec, args[0] ?? '', opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, opts.onStderr)
+      if (shutdownRequested) throw new CliError('nonzero', 'Metrora is shutting down')
+      if (reservation !== cancellationEpoch) throw new CliError('nonzero', 'Metrora cancelled')
+      return await runCli(spec, args[0] ?? '', opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, opts.onStderr, opts.idleTimeoutMs, opts.onProgress)
     } finally {
       releaseSlot()
     }
@@ -380,6 +364,9 @@ export function spawnCliAction(
   opts: { timeoutMs?: number } = {},
 ): Promise<ActionResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  if (shutdownRequested) {
+    return Promise.resolve({ ok: false, stdout: '', stderr: 'Metrora is shutting down', code: null })
+  }
   const target = resolveTarget()
   if (!target) {
     return Promise.resolve({ ok: false, stdout: '', stderr: 'Metrora CLI not found', code: null })
@@ -387,13 +374,17 @@ export function spawnCliAction(
 
   const spec = spawnSpecFor(target, args)
   return (async () => {
+    let reservation: number
     try {
-      await acquireSlot('interactive')
+      reservation = await acquireSlot('interactive')
     } catch {
       return { ok: false, stdout: '', stderr: 'Metrora cancelled', code: null }
     }
 
     try {
+      if (shutdownRequested || reservation !== cancellationEpoch) {
+        return { ok: false, stdout: '', stderr: shutdownRequested ? 'Metrora is shutting down' : 'Metrora cancelled', code: null }
+      }
       return await runAction(spec, args, timeoutMs)
     } finally {
       releaseSlot()
@@ -402,44 +393,42 @@ export function spawnCliAction(
 }
 
 function runAction(spec: SpawnSpec, args: string[], timeoutMs: number): Promise<ActionResult> {
-  return new Promise<ActionResult>(resolve => {
-    const child = spawn(spec.bin, spec.args, {
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: spec.env,
-    })
-    activeChildren.add(child)
+  return runBoundedProcess(spec, {
+    absoluteTimeoutMs: timeoutMs,
+    maxOutputBytes: MAX_OUTPUT_BYTES,
+  }).then(result => {
+    readCache.clear()
 
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-
-    const finish = (result: ActionResult): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      activeChildren.delete(child)
-      readCache.clear()
-      resolve(result)
-    }
-
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      finish({
+    if (result.reason === 'timeout') {
+      return {
         ok: false,
-        stdout,
+        stdout: result.stdout,
         stderr: `Metrora ${args[0] ?? ''} timed out after ${timeoutMs}ms`,
         code: null,
-      })
-    }, timeoutMs)
-
-    child.stdout.on('data', chunk => {
-      stdout += chunk
-    })
-    child.stderr.on('data', chunk => {
-      stderr += chunk
-    })
-    child.on('error', error => finish({ ok: false, stdout, stderr: error.message, code: null }))
-    child.on('close', code => finish({ ok: code === 0, stdout, stderr, code }))
+        indeterminate: true,
+      }
+    }
+    if (result.reason === 'too-large') {
+      return {
+        ok: false,
+        stdout: result.stdout,
+        stderr: `Metrora ${args[0] ?? ''} exceeded the bounded output limit`,
+        code: null,
+        indeterminate: true,
+      }
+    }
+    if (result.reason === 'cancelled') {
+      return {
+        ok: false,
+        stdout: result.stdout,
+        stderr: `Metrora ${args[0] ?? ''} was cancelled; completion is indeterminate`,
+        code: null,
+        indeterminate: true,
+      }
+    }
+    if (result.error) {
+      return { ok: false, stdout: result.stdout, stderr: result.error.message, code: null }
+    }
+    return { ok: result.code === 0, stdout: result.stdout, stderr: result.stderr, code: result.code }
   })
 }
