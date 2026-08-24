@@ -37,6 +37,8 @@ The implemented local transport targets the official Ollama local HTTP API. Mode
 - cancellation uses an AbortController in main and a request id in the bridge;
 - timeouts, message/content/response byte caps, stream chunk caps, malformed-chunk caps, and bounded redacted errors are enforced.
 
+Metrora owns the final privacy boundary: model narrative is bounded and sanitized before it enters the public Advisor answer, and raw model deltas are not forwarded to the renderer. Unsafe narrative is dropped while deterministic evidence remains available. Tool-facing results stay content-minimal, so a model cannot turn unrestricted paths, source content, prompts, secrets or internal identifiers into an answer through an unreviewed output channel.
+
 Ollama support is model-dependent: a discovered model is not automatically evidence that its tool-calling behavior is capable. The UI says that capability varies by model. The deterministic local runtime remains an explicit offline fallback when no local model is connected; it is not presented as a full free-form chatbot.
 
 No provider SDK or new runtime dependency is required. LM Studio and hosted/cloud BYOK adapters are follow-up work until their Electron boundary, model capability, cancellation, and privacy behavior are proven.

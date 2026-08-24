@@ -74,6 +74,8 @@ metrora compare --provider claude
 metrora optimize --apply --dry-run
 ```
 
+`metrora doctor` is read-only and bounded. It reports source families as explicit states such as `PRESENT`, `PRESENT_EMPTY`, `MISSING`, `INACCESSIBLE`, `MALFORMED`, `UNSUPPORTED_VARIANT` or `UNKNOWN`, with paths redacted. Current root diagnostics include Codebuff/Manicode channel roots (or `CODEBUFF_DATA_DIR`), Gemini `~/.gemini/tmp`, and Mistral Vibe `VIBE_HOME/logs/session` or `~/.vibe/logs/session`; Doctor does not authenticate, refresh credentials, create files or modify provider state.
+
 Experimental commands label heuristic or incomplete methodology explicitly. Their output should not be presented as stronger evidence than the source permits.
 
 ## Bench and local runtime evidence

@@ -53,6 +53,8 @@ Terminal command arguments are exposed as `bashCommands` for Metrora's command b
 
 The shared session cache fingerprints Hermes state DB files. `HERMES_HOME` is included in the provider environment fingerprint so changing the runtime home invalidates stale cached results.
 
+To preserve growth from cumulative sessions across refreshes, Metrora maintains a bounded, Metrora-owned observation sidecar at `<Metrora cache>/hermes/v1/observation-ledger.json`. The JSON state is versioned, atomically published, private, content-digested and replay-safe; it stores bounded counter snapshots and deltas rather than prompts, responses or source code. Counter resets or source replacement start a bounded new epoch and never emit negative usage. If authoritative actual cost arrives after estimated or calculated evidence, the parser emits an explicit correction channel instead of adding actual cost to the earlier estimate.
+
 ## Pricing evidence
 
 `actual_cost_usd` is bound as client-metered evidence when present, including
