@@ -18,7 +18,7 @@ This note records the post-implementation Luna Max review loop for the local-fir
 ## Verification
 
 - npm --prefix app run typecheck — passed.
-- Focused Lane A validation — 11 files, 177 tests passed.
+- Focused Lane A validation — 12 files, 190 tests passed, including the direct 13-test comprehension matrix.
 - Full app validation — 747/748 in two parallel Vitest runs; the single failure is the pre-existing bounded CLI watchdog test under full-suite contention. electron/cli.test.ts passes 48/48 when isolated, including the failing case.
 - git diff --check — passed.
 - No real provider calls, PR, merge, or CI claim was made.
