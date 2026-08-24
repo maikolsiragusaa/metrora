@@ -16,7 +16,7 @@ describe('Hosted Advisor renderer runtime', () => {
       probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
       chat: async (requestId, payload) => {
         requests.push(payload)
-        listener?.({ requestId, kind: 'text-delta', text: 'The pattern is qualitative.' })
+        listener?.({ requestId, kind: 'text-delta', text: 'The pattern is qualitative; key=sk-live-secret.' })
         return { streamed: true, message: { content: 'The pattern is qualitative.' } }
       },
       cancel: async () => true,
@@ -25,7 +25,7 @@ describe('Hosted Advisor renderer runtime', () => {
         return () => { listener = null }
       },
     }
-    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({
+    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport }).generate({
       question: 'What changed in spend?',
       evidence,
       tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
@@ -36,9 +36,11 @@ describe('Hosted Advisor renderer runtime', () => {
     const messages = payload.messages as Array<{ role: string; content: string }>
     expect(payload.tools).toEqual([])
     expect(payload.stream).toBe(true)
+    expect(payload.consent).toBe(true)
     expect(messages.map(message => message.role)).toEqual(['system', 'user', 'system'])
     expect(messages[2]?.content).toContain('measuredCostUSD')
-    expect(deltas).toEqual(['The pattern is qualitative.'])
+    expect(deltas).toEqual([''])
+    await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')
     expect(answer.runtime).toMatchObject({ id: 'hosted-openai', mode: 'hosted-byok' })
     expect(answer.generatedByModel).toBe(true)
     expect(answer.streamed).toBe(true)

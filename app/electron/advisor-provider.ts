@@ -27,7 +27,7 @@ export type AdvisorHostedEvent = {
 }
 export type AdvisorHostedChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCallId?: string; toolName?: string }
 export type AdvisorHostedToolDefinition = { type: 'function'; function: { name: string; description?: string; parameters?: Record<string, unknown> } }
-export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean }
+export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true }
 export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type AdvisorHostedEnvelope = { ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }
 
@@ -238,7 +238,7 @@ function normalizeMessages(value: unknown): AdvisorHostedChatMessage[] {
   })
 }
 function parseChatRequest(requestId: unknown, value: unknown): { requestId: string; request: AdvisorHostedChatRequest } {
-  if (!validRequestId(requestId) || !isRecord(value) || !validProvider(value.provider) || !validModel(value.model)) throw new HostedAdapterError('request-malformed', 'Advisor hosted request is invalid.')
+  if (!validRequestId(requestId) || !isRecord(value) || value.consent !== true || !validProvider(value.provider) || !validModel(value.model)) throw new HostedAdapterError('request-malformed', 'Advisor hosted request is invalid.')
   return {
     requestId,
     request: {
@@ -247,6 +247,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
       messages: normalizeMessages(value.messages),
       tools: normalizeTools(value.tools),
       stream: value.stream === undefined ? true : value.stream === true,
+      consent: true,
     },
   }
 }
@@ -587,21 +588,28 @@ export function createAdvisorHostedHandlers(options: {
     return { ok: false, error: { kind: error instanceof HostedAdapterError ? safe.code : fallback, message: safe.message } }
   }
   return {
-    'metrora:advisorHostedProbe': async (providerValue: unknown): Promise<AdvisorHostedEnvelope> => {
+    'metrora:advisorHostedProbe': async (providerValue: unknown, requestIdValue?: unknown): Promise<AdvisorHostedEnvelope> => {
       if (!validProvider(providerValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor hosted provider is invalid.' } }
+      if (requestIdValue !== undefined && !validRequestId(requestIdValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor request id is invalid.' } }
+      const probeRequestId = typeof requestIdValue === 'string' ? requestIdValue : null
       let status: AdvisorHostedCredentialStatus
       try { status = await options.credentialStatus(providerValue) } catch { status = { provider: providerValue, state: 'locked-unavailable' } }
       if (status.state !== 'ready') return { ok: true, value: { provider: providerValue, available: false, models: [], detail: credentialDetail(status), credentialState: status.state } satisfies AdvisorHostedProbe }
       let secret: string | null
       try { secret = await options.readCredential(providerValue) } catch { secret = null }
       if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
+      const controller = probeRequestId ? new AbortController() : null
+      if (controller && probeRequestId) flights.set(probeRequestId, controller)
       try {
-        const models = await discover(providerValue, secret, fetchImpl)
+        const models = await discover(providerValue, secret, fetchImpl, controller?.signal)
         return { ok: true, value: { provider: providerValue, available: true, models, detail: models.length ? providerDetail(providerValue) : 'The provider is reachable but returned no usable models.', credentialState: 'ready' } satisfies AdvisorHostedProbe }
       } catch (error) {
+        if (controller?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
         const safe = safeError(error)
         const credentialState = error instanceof HostedAdapterError && safe.code === 'credential-invalid' ? 'invalid' : 'ready'
         return { ok: true, value: { provider: providerValue, available: false, models: [], detail: safe.message, credentialState } satisfies AdvisorHostedProbe }
+      } finally {
+        if (controller && probeRequestId && flights.get(probeRequestId) === controller) flights.delete(probeRequestId)
       }
     },
     'metrora:advisorHostedChat': async (requestIdValue: unknown, requestValue: unknown): Promise<AdvisorHostedEnvelope> => {

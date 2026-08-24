@@ -14,7 +14,7 @@ function normalize(question: string): string {
 }
 
 function isBenchQuestion(value: string): boolean {
-  return /\b(?:bench|controlled test|task pack|task-pack|benchmark|run(?:s|ning)?|esecuzione controllata|test controllato|prova controllata)\b/u.test(value)
+  return /\b(?:bench|controlled test|task pack|task-pack|benchmark|run(?:s|ning)?|esecuzione controllata|test controllato|prova controllata|failed tasks?|tasks? failed|which tasks? failed|quali task.*fallit)\b/u.test(value)
 }
 
 function isUnsupportedQuestion(value: string): boolean {

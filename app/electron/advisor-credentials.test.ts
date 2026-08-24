@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AdvisorCredentialStore, type AdvisorCredentialFileSystem, type AdvisorSafeStorage } from './advisor-credentials'
 
-function fixture(options: { platform?: NodeJS.Platform; backend?: string; failWrite?: boolean } = {}) {
+function fixture(options: { platform?: NodeJS.Platform; backend?: string; failWrite?: boolean; failUnlink?: boolean; reEncrypt?: boolean; decryptDelayMs?: number } = {}) {
   const files = new Map<string, string>()
   const fileSystem: AdvisorCredentialFileSystem = {
     readFile: async (path: string) => {
@@ -13,12 +13,15 @@ function fixture(options: { platform?: NodeJS.Platform; backend?: string; failWr
       if (options.failWrite) throw new Error('write failed')
       files.set(path, data)
     },
-    unlink: async path => { files.delete(path) },
+    unlink: async path => { if (options.failUnlink) throw new Error('unlink failed'); files.delete(path) },
   }
   const safeStorage: AdvisorSafeStorage = {
     isAsyncEncryptionAvailable: async () => true,
     encryptStringAsync: async value => Buffer.from('cipher:' + value, 'utf8'),
-    decryptStringAsync: async value => ({ result: value.toString('utf8').replace(/^cipher:/u, ''), shouldReEncrypt: false }),
+    decryptStringAsync: async value => {
+      if (options.decryptDelayMs) await new Promise(resolve => setTimeout(resolve, options.decryptDelayMs))
+      return { result: value.toString('utf8').replace(/^cipher:/u, ''), shouldReEncrypt: options.reEncrypt === true }
+    },
     getSelectedStorageBackend: () => options.backend ?? 'os_crypt',
   }
   return { store: new AdvisorCredentialStore({ userDataPath: 'C:/user-data', platform: options.platform ?? 'win32', safeStorage, fileSystem }), files }
@@ -57,5 +60,20 @@ describe('Advisor BYOK credential store', () => {
     expect(await store.clear('openai')).toEqual({ provider: 'openai', state: 'not-configured' })
     expect(await store.status('openai')).toEqual({ provider: 'openai', state: 'not-configured' })
     expect(await store.readSecret('openai')).toBeNull()
+  })
+  it('fails closed when encrypted credential removal cannot unlink the file', async () => {
+    const { store } = fixture({ failUnlink: true })
+    await store.set('openai', 'secret-value')
+    expect(await store.clear('openai')).toEqual({ provider: 'openai', state: 'needs-reentry' })
+    expect(await store.readSecret('openai')).toBe('secret-value')
+  })
+
+  it('serializes re-encryption with replacement so an old secret cannot resurrect', async () => {
+    const { store } = fixture({ reEncrypt: true, decryptDelayMs: 10 })
+    await store.set('openai', 'old-secret')
+    const read = store.readSecret('openai')
+    const replace = store.set('openai', 'new-secret')
+    await Promise.all([read, replace])
+    expect(await store.readSecret('openai')).toBe('new-secret')
   })
 })

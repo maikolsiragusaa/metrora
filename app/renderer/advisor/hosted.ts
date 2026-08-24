@@ -18,9 +18,16 @@ export type HostedAdvisorTransport = {
   onEvent(callback: (event: { requestId: string; kind: string; text?: string }) => void): () => void
 }
 const bridgeTransport: HostedAdvisorTransport = {
-  probe: (provider, signal) => {
+  probe: async (provider, signal) => {
     if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
-    return metrora.advisorHostedProbe(provider)
+    const id = requestId()
+    const cancel = () => { void metrora.advisorHostedCancel(id).catch(() => {}) }
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      return await metrora.advisorHostedProbe(provider, id)
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   },
   chat: (requestId, payload, signal) => {
     if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
@@ -36,7 +43,7 @@ export async function probeHostedAdvisor(provider: HostedAdvisorProvider, signal
   return result
 }
 function requestId(): string { return 'hosted-advisor-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) }
-function messagePayload(input: AdvisorRuntimeInput): Record<string, unknown> {
+function messagePayload(input: AdvisorRuntimeInput, consent: boolean): Record<string, unknown> {
   const verified = JSON.stringify(contentMinimalEvidence(input.evidence))
   return {
     provider: input.evidence.scope.provider,
@@ -48,6 +55,7 @@ function messagePayload(input: AdvisorRuntimeInput): Record<string, unknown> {
     ],
     tools: [],
     stream: true,
+    consent,
   }
 }
 export class HostedAdvisorRuntime implements AdvisorModelRuntime {
@@ -59,29 +67,32 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
   readonly availability = 'ready' as const
   private readonly provider: HostedAdvisorProvider
   private readonly model: string
+  private readonly consent: boolean
   private readonly transport: HostedAdvisorTransport
-  constructor(options: { provider: HostedAdvisorProvider; model: string; transport?: HostedAdvisorTransport }) {
+  constructor(options: { provider: HostedAdvisorProvider; model: string; consent?: boolean; transport?: HostedAdvisorTransport }) {
     this.provider = options.provider
     this.model = options.model
     this.transport = options.transport ?? bridgeTransport
+    this.consent = options.consent === true
     this.id = 'hosted-' + options.provider
     this.label = options.provider.charAt(0).toUpperCase() + options.provider.slice(1) + ' · ' + options.model.replace(/^models\//u, '')
     this.providerSupport = [options.provider + ' official API']
   }
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
     if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
+    if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
     const id = requestId()
     let preview = ''
     const off = this.transport.onEvent(event => {
       if (event.requestId !== id || event.kind !== 'text-delta' || typeof event.text !== 'string') return
       preview += event.text
       if (preview.length > 8192) preview = preview.slice(0, 8192)
-      input.onDelta?.(preview)
+      input.onDelta?.(sanitizeAdvisorNarrative(preview))
     })
     const cancel = () => { void this.transport.cancel(id).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
-      const payload = messagePayload(input)
+      const payload = messagePayload(input, this.consent)
       payload.provider = this.provider
       payload.model = this.model
       const response = await this.transport.chat(id, payload, signal)

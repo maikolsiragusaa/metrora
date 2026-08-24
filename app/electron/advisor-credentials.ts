@@ -144,11 +144,15 @@ export class AdvisorCredentialStore {
       if (!(await this.secureBackendAvailable())) return { provider, state: 'locked-unavailable' }
       try {
         const previous = await this.readFile()
-        if (previous === null && await this.fileExists()) return { provider, state: 'needs-reentry' }
+        const present = await this.fileExists()
+        if (previous === null && present) return { provider, state: 'needs-reentry' }
         const records = previous?.records ?? {}
         delete records[provider]
         if (Object.keys(records).length) await this.writeFile(records)
-        else await this.fileSystem.unlink(this.filePath).catch(() => undefined)
+        else if (present) {
+          try { await this.fileSystem.unlink(this.filePath) }
+          catch { return { provider, state: 'needs-reentry' } }
+        }
         return { provider, state: 'not-configured' }
       } catch {
         return { provider, state: 'needs-reentry' }
@@ -158,6 +162,7 @@ export class AdvisorCredentialStore {
 
   /** Main-process-only secret access for a provider adapter; never expose this through IPC. */
   async readSecret(provider: AdvisorCredentialProvider): Promise<string | null> {
+    return this.enqueue(async () => {
     if (!(await this.secureBackendAvailable())) return null
     const parsed = await this.readFile()
     const ciphertext = parsed?.records[provider]
@@ -175,6 +180,7 @@ export class AdvisorCredentialStore {
     } catch {
       return null
     }
+    })
   }
 
   private async fileExists(): Promise<boolean> {

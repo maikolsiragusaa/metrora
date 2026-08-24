@@ -8,6 +8,7 @@ const request = (provider: AdvisorHostedProviderId, stream = false) => ({
   model: provider === 'gemini' ? 'models/gemini-2.5-flash' : provider + '-test-model',
   messages: [{ role: 'user', content: 'Return a short evidence-safe answer.' }],
   stream,
+  consent: true,
 })
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
@@ -98,6 +99,13 @@ describe('Advisor hosted provider authority', () => {
     expect(events.some(event => event.kind === 'response.output_text.delta' as never)).toBe(false)
   })
 
+  it('requires explicit evidence-sharing consent in the main process', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(textPayload('openai')))
+    const handlers = readyHandlers(fetchImpl)
+    const result = await handlers['metrora:advisorHostedChat']!('no-consent', { ...request('openai'), consent: false }) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'request-malformed' } })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
   it('rejects provider-native tools and never calls the network', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(textPayload('openai')))
     const handlers = readyHandlers(fetchImpl)
@@ -126,6 +134,20 @@ describe('Advisor hosted provider authority', () => {
     expect(await handlers['metrora:advisorHostedCancel']!('cancel-me')).toEqual({ ok: true, value: true })
     await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
     expect(events.some(event => event.kind === 'cancelled')).toBe(true)
+  })
+  it('cancels an in-flight hosted model probe', async () => {
+    let started!: () => void
+    const fetchStarted = new Promise<void>(resolve => { started = resolve })
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      started()
+      await new Promise<void>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true }))
+      throw new Error('unreachable')
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const pending = handlers['metrora:advisorHostedProbe']!('openai', 'probe-cancel')
+    await fetchStarted
+    expect(await handlers['metrora:advisorHostedCancel']!('probe-cancel')).toEqual({ ok: true, value: true })
+    await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
   })
   it('labels a provider-rejected credential as invalid without exposing the response body', async () => {
     const handlers = readyHandlers((async () => jsonResponse({ error: 'secret-body' }, 401)) as typeof fetch)

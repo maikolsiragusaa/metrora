@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { BenchEvaluation, BenchHistoryReport, BenchComparison } from '../lib/metrora-bridge-types'
-import { buildAdvisorBenchEvidence } from './bench'
+import { buildAdvisorBenchEvidence, readAdvisorBenchEvidence } from './bench'
 
 function evaluation(status: BenchEvaluation['status'] = 'completed'): BenchEvaluation {
   return {
@@ -35,10 +35,21 @@ describe('Advisor Bench evidence projection', () => {
   })
 
   it('preserves unavailable and incompatible states without fabricating comparison facts', () => {
-    expect(buildAdvisorBenchEvidence(history(evaluation('unavailable'))).state).toBe('PARTIAL')
+    const unavailable = buildAdvisorBenchEvidence(history(evaluation('unavailable')))
+    expect(unavailable.state).toBe('UNAVAILABLE')
+    expect(unavailable.latest).toBeNull()
     const comparison: BenchComparison = { schemaVersion: 'metrora.bench-comparison.v1', compatible: false, reason: 'pack-mismatch', left: { runId: 'run-1', model: 'qwen3:8b', endedAt: '2026-08-24T10:00:01.000Z' }, right: { runId: 'run-2', model: 'other', endedAt: '2026-08-23T10:00:01.000Z' }, deltas: null }
     const projected = buildAdvisorBenchEvidence(history(evaluation()), comparison)
     expect(projected.state).toBe('NOT_COMPARABLE')
     expect(projected.comparison).toMatchObject({ compatibility: 'incompatible', reason: 'pack-mismatch', scoreDelta: null })
+  })
+  it('does not use global Bench runs outside the selected scope', async () => {
+    const projected = await readAdvisorBenchEvidence(
+      { getBenchHistory: async () => history(evaluation()), getBenchComparison: async () => { throw new Error('comparison should not be called') } },
+      { period: 'all', range: null, provider: 'all', projectId: 'project-x', projectName: 'Project X', model: null },
+    )
+    expect(projected.state).toBe('NO_DATA')
+    expect(projected.latest).toBeNull()
+    expect(projected.runs).toEqual([])
   })
 })

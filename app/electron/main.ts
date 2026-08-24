@@ -501,9 +501,32 @@ function registerHandlers(): void {
     advisorCredentials,
     advisorHostedHandlers,
   })
+  const advisorProtectedIpcChannels = new Set([
+    'metrora:advisorHostedProbe',
+  'metrora:advisorHostedChat',
+  'metrora:advisorHostedCancel',
+  'metrora:advisorCredentialStatus',
+  'metrora:advisorCredentialSet',
+  'metrora:advisorCredentialClear',
+])
+function isTrustedAdvisorSender(event: { senderFrame?: { url?: string } | null }): boolean {
+  const frameUrl = event.senderFrame?.url
+  if (!frameUrl) return false
+  try {
+    const parsed = new URL(frameUrl)
+    if (parsed.protocol === 'file:') return true
+    const devUrl = process.env.VITE_DEV_SERVER_URL
+    return Boolean(devUrl && new URL(devUrl).origin === parsed.origin)
+  } catch {
+    return false
+  }
+}
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (event, ...args) => {
+        if (advisorProtectedIpcChannels.has(channel) && !isTrustedAdvisorSender(event)) {
+          return { ok: false, error: { kind: 'unauthorized', message: 'Advisor IPC request is not from the trusted renderer.' } }
+        }
         return handler(...args)
       })
     }

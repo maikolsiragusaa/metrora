@@ -88,7 +88,7 @@ export interface MetroraBridge extends ProjectBridge {
   advisorProbe(runtime?: AdvisorLocalRuntimeId): Promise<AdvisorRuntimeProbe>
   advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
   advisorCancel(requestId: string): Promise<boolean>
-  advisorHostedProbe(provider: AdvisorCredentialProvider): Promise<AdvisorHostedProbe>
+  advisorHostedProbe(provider: AdvisorCredentialProvider, requestId?: string): Promise<AdvisorHostedProbe>
   advisorHostedChat(requestId: string, payload: Record<string, unknown>): Promise<AdvisorHostedChatResult>
   advisorHostedCancel(requestId: string): Promise<boolean>
   advisorCredentialStatus(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus>
