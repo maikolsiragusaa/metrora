@@ -1,6 +1,6 @@
 # Metrora Advisor Lane A — remediation review 001
 
-Status: READY_FOR_FOUNDER_REVIEW
+Status: BLOCKED_POST_REVIEW_VERDICT_NOT_RETURNED
 Branch: feat/advisor-local-intelligence-v2
 
 This note records the post-implementation Luna Max review loop for the local-first Advisor, hosted BYOK, and Bench evidence boundary.
