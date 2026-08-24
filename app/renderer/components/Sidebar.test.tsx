@@ -23,10 +23,11 @@ describe('Sidebar', () => {
       'Insights⌘5',
       'Models⌘6',
       'Compare⌘7',
+      'Advisor⌘',
     ])
     expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Workspace⌘8'])
     expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(9)
+    expect(screen.getAllByRole('button')).toHaveLength(10)
   })
 
   it('routes by click and keyboard without changing section ids', async () => {

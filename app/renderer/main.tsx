@@ -8,6 +8,7 @@ import './styles/plain.css'
 import './styles/brand.css'
 import './styles/navigation.css'
 import './styles/overview-home.css'
+import './styles/advisor.css'
 import './styles/workspace.css'
 import './styles/workspace-guidance.css'
 

@@ -33,6 +33,7 @@ import { Plans } from './sections/Plans'
 import { Settings, type SettingsPane } from './sections/Settings'
 import { SpendContent } from './sections/Spend'
 import { WorkspaceContent } from './sections/Workspace'
+import { Advisor } from './sections/Advisor'
 import type { MenubarPayload } from './lib/types'
 
 export { overviewMemoKey } from './hooks/useProviderPrefetch'
@@ -144,9 +145,11 @@ function AppMain() {
       <div className="ct">
         <div className={overview.switching ? 'switch-line on' : 'switch-line'} aria-hidden="true" />
         <UpdateBanner />
-        <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />
+        {section !== 'advisor' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
         <ErrorBoundary key={section}>
-        {section === 'plans' ? (
+        {section === 'advisor' ? (
+          <Advisor period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} detectedProviders={detectedProviders} />
+        ) : section === 'plans' ? (
           <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
         ) : section === 'settings' ? (
           <Settings period={period} refreshToken={refreshToken} onNavigate={navigate} initialPane={settingsPane} claudeConfigs={claudeConfigs} claudeConfigSource={claudeConfigSource} onConfigMutated={onConfigMutated} />
@@ -205,7 +208,7 @@ function AppMain() {
           </>
         )}
         </ErrorBoundary>
-        {section !== 'settings' && (
+        {section !== 'settings' && section !== 'advisor' && (
           <Hint
             items={[
               { k: shortcutRangeLabel('1', '8'), label: 'Navigate' },
