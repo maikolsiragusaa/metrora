@@ -1,4 +1,5 @@
 import type { Provider, SessionSource } from './types.js'
+import { canonicalCollectorForStorageNamespace } from '../provider-parse-authorities.js'
 
 export const PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION = 'metrora.provider-discovery-outcome.v1' as const
 
@@ -60,7 +61,7 @@ function isUnavailableError(error: unknown): boolean {
   return code === 'ENOENT' || code === 'EACCES' || code === 'EPERM' || code === 'ENOTDIR'
 }
 
-function isValidSource(_providerName: string, source: unknown): source is SessionSource {
+function isValidSource(providerName: string, source: unknown): source is SessionSource {
   if (!source || typeof source !== 'object') return false
   const value = source as Record<string, unknown>
   return typeof value.path === 'string'
@@ -68,6 +69,7 @@ function isValidSource(_providerName: string, source: unknown): source is Sessio
     && typeof value.project === 'string'
     && typeof value.provider === 'string'
     && value.provider.length > 0
+    && canonicalCollectorForStorageNamespace(value.provider) === providerName
 }
 
 function validSources(providerName: string, sources: readonly SessionSource[]): SessionSource[] {

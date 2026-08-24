@@ -9,6 +9,11 @@ import {
 } from '../src/providers/index.js'
 import type { Provider, SessionSource } from '../src/providers/types.js'
 
+import {
+  CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE,
+  COPILOT_CANONICAL_COLLECTOR,
+} from '../src/provider-parse-authorities.js'
+
 function source(provider: string, path: string): SessionSource {
   return { provider, path, project: provider + '-project' }
 }
@@ -34,6 +39,28 @@ describe('provider discovery outcome v1', () => {
     expect(classifyProviderDiscoveryOutcome('alpha', { error: new ProviderDiscoveryPartialError([valid]) })).toMatchObject({ status: 'partial', complete: false, sourceCount: 1, diagnostic: { code: 'partial-discovery' } })
     expect(classifyProviderDiscoveryOutcome('alpha', { sources: [valid, { path: '', project: 'bad', provider: 'alpha' } as SessionSource] })).toMatchObject({ status: 'partial', complete: false, sourceCount: 1, diagnostic: { code: 'invalid-source' } })
     expect(classifyProviderDiscoveryOutcome('alpha', { sources: [valid], cancelled: true })).toMatchObject({ status: 'cancelled', complete: false, sourceCount: 1, diagnostic: { code: 'cancelled' } })
+  })
+
+  it('validates source providers against canonical collector authority', () => {
+    const mismatched = classifyProviderDiscoveryOutcome('alpha', { sources: [source('beta', '/beta.jsonl')] })
+    expect(mismatched).toMatchObject({ status: 'failed', complete: false, sourceCount: 0, diagnostic: { code: 'invalid-source' } })
+    expect(mismatched.sources).toEqual([])
+
+    const sameProvider = classifyProviderDiscoveryOutcome('alpha', { sources: [source('alpha', '/same.jsonl')] })
+    expect(sameProvider).toMatchObject({ status: 'success', complete: true, sourceCount: 1 })
+
+    const copilotNamespaces = Object.entries(CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE)
+      .filter(([, canonical]) => canonical === COPILOT_CANONICAL_COLLECTOR)
+      .map(([namespace]) => namespace)
+    expect(copilotNamespaces.length).toBeGreaterThan(0)
+    for (const namespace of copilotNamespaces) {
+      const authorized = classifyProviderDiscoveryOutcome(COPILOT_CANONICAL_COLLECTOR, { sources: [source(namespace, '/' + namespace + '.jsonl')] })
+      expect(authorized).toMatchObject({ status: 'success', complete: true, sourceCount: 1 })
+
+      const nearAlias = classifyProviderDiscoveryOutcome(COPILOT_CANONICAL_COLLECTOR, { sources: [source(namespace + '-alias', '/near-alias.jsonl')] })
+      expect(nearAlias).toMatchObject({ status: 'failed', complete: false, sourceCount: 0, diagnostic: { code: 'invalid-source' } })
+      expect(nearAlias.sources).toEqual([])
+    }
   })
 
   it('preserves known unavailable sources without exposing raw error details', async () => {

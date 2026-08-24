@@ -9,8 +9,6 @@ This index separates user guidance, current product guarantees, public contracts
 - [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — bounded synthetic runtime evidence from an explicitly selected local Ollama model.
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
 - [Provider discovery outcomes v1](PROVIDER_DISCOVERY_OUTCOMES_V1.md) — truthful success/empty/unavailable/failed/partial/cancelled semantics and never-lose cache publication rules.
-- [Advisor Local BYOK V1 design package](ADVISOR_LOCAL_BYOK_V1_IMPLEMENTATION_READY.md) — implementation-ready external-provider boundary; design only, not implemented.
-- [Advisor ↔ Bench evidence integration V1 design package](ADVISOR_BENCH_EVIDENCE_INTEGRATION_V1_IMPLEMENTATION_READY.md) — implementation-ready read-only evidence bridge; design only, not implemented.
 - [Provider documentation](providers/) — source locations, formats, limitations and parser notes for individual integrations.
 
 ## Connect devices locally
