@@ -77,7 +77,7 @@ async function fetchJson(fetchImpl: FetchLike, url: string, init: RequestInit, t
   const timed = timeoutSignal(parent, timeoutMs)
   try {
     throwIfAborted(timed.signal)
-    const response = await fetchImpl(url, { ...init, signal: timed.signal })
+    const response = await fetchImpl(url, { ...init, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new Error('Local LM Studio server returned HTTP ' + response.status + '.')
     const text = await boundedText(response)
@@ -226,7 +226,7 @@ export async function chatLMStudioMain(fetchImpl: FetchLike, payload: ChatPayloa
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)
   try {
     throwIfAborted(timed.signal)
-    const response = await fetchImpl(LOOPBACK_ENDPOINT + '/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: encoded, signal: timed.signal })
+    const response = await fetchImpl(LOOPBACK_ENDPOINT + '/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: encoded, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new Error('Local LM Studio server returned HTTP ' + response.status + '.')
     return payload.stream ? await streamResponse(response) : parseChatResponse(JSON.parse(await boundedText(response)) as unknown)
