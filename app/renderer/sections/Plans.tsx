@@ -100,7 +100,14 @@ export function Plans({ period, refreshToken = 0, onNavigate, ready = true }: { 
       </div>
       <div className={motionClass('body', 'section-fade')}>
         {budgetReport.data && budgetReport.error && <StaleBanner error={budgetReport.error} />}
-        {renderQuota(quota.data, quota.error, reconnect)}
+        <section className="capacity-section" aria-labelledby="capacity-heading">
+          <div className="capacity-section-head">
+            <h2 id="capacity-heading" className="plans-section-heading">Capacity</h2>
+            <span className="capacity-authority">Provider-reported</span>
+          </div>
+          <p className="capacity-intro">Quota and credits from each provider. Metrora usage and local budgets stay separate.</p>
+          {renderQuota(quota.data, quota.error, reconnect)}
+        </section>
         {renderBudgetPlans(budgetReport.data, budgetReport.error, manualPlans)}
       </div>
     </>
@@ -111,8 +118,8 @@ function renderQuota(data: QuotaProvider[] | null, error: ReturnType<typeof useP
   if (!data) {
     if (error) {
       return (
-        <Panel title="Live quota">
-          <p className="quota-connection-note quota-terminal">Live quota is unavailable.</p>
+        <Panel title="Provider capacity">
+          <p className="quota-connection-note quota-terminal">Provider capacity is unavailable.</p>
         </Panel>
       )
     }
@@ -121,8 +128,8 @@ function renderQuota(data: QuotaProvider[] | null, error: ReturnType<typeof useP
 
   if (data.length === 0) {
     return (
-      <Panel title="Live quota">
-        <p className="quota-connection-note">No quota providers available.</p>
+      <Panel title="Provider capacity">
+        <p className="quota-connection-note">No provider capacity is available.</p>
       </Panel>
     )
   }
@@ -172,12 +179,32 @@ function ConnectionIndicator({ connection }: { connection: QuotaProvider['connec
 }
 
 function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnect: () => void }) {
+  const status = <QuotaStatus quota={quota} />
   if (quota.connection === 'disconnected' || quota.connection === 'accessDenied') {
-    return <ConnectAffordance provider={quota.provider} connection={quota.connection} onRefresh={onReconnect} />
+    return (
+      <>
+        {status}
+        <ConnectAffordance provider={quota.provider} connection={quota.connection} onRefresh={onReconnect} />
+        <QuotaDetails quota={quota} />
+      </>
+    )
   }
-  if (quota.connection === 'loading') return <p className="quota-connection-note">Loading quota…</p>
+  if (quota.connection === 'loading') {
+    return (
+      <>
+        {status}
+        <p className="quota-connection-note">Loading quota…</p>
+      </>
+    )
+  }
   if (quota.connection === 'terminalFailure') {
-    return <p className="quota-connection-note quota-terminal">Quota is currently unavailable.</p>
+    return (
+      <>
+        {status}
+        <p className="quota-connection-note quota-terminal">Provider capacity is currently unavailable.</p>
+        <QuotaDetails quota={quota} />
+      </>
+    )
   }
   const stale = quota.freshness === 'stale' || quota.connection === 'stale' || quota.connection === 'transientFailure'
   const note = isRateLimited(quota)
@@ -186,21 +213,79 @@ function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnec
       ? staleQuotaNote(quota)
       : null
   if (quota.freshness === 'unavailable') {
-    return note
-      ? <p className="quota-connection-note">{note}</p>
-      : <p className="quota-connection-note">The provider did not report quota evidence.</p>
+    return (
+      <>
+        {status}
+        {note
+          ? <p className="quota-connection-note">{note}</p>
+          : <p className="quota-connection-note">The provider did not report quota evidence.</p>}
+        <QuotaDetails quota={quota} />
+      </>
+    )
   }
 
   const hasWindows = quota.windows.length > 0
 
   return (
     <>
+      {status}
       {note ? <p className="quota-connection-note">{note}</p> : null}
       {hasWindows
         ? <div className="quota-windows">{quota.windows.map(window => <QuotaMeter key={window.id} window={window} />)}</div>
         : <p className="quota-connection-note">The provider did not report quota windows.</p>}
       {quota.credits !== null ? <div className="quota-footer"><span>Credits remaining · ${quota.credits.balance.toFixed(2)}</span></div> : null}
+      <QuotaDetails quota={quota} />
     </>
+  )
+}
+
+function QuotaStatus({ quota }: { quota: QuotaProvider }) {
+  const state = quotaStatus(quota)
+  const observed = quota.freshness === 'unavailable' ? null : formatObservedAt(quota.observedAt)
+  const observation = observed
+    ? `${quota.freshness === 'stale' ? 'Last observed' : 'Observed'} ${observed}`
+    : null
+  return (
+    <div className={`quota-status quota-status-${state.tone}`} aria-label={`Capacity status: ${state.label}`}>
+      <span className="quota-status-label"><i />{state.label}</span>
+      {observation ? <span className="quota-status-observed">{observation}</span> : null}
+    </div>
+  )
+}
+
+function quotaStatus(quota: QuotaProvider): { label: string; tone: 'fresh' | 'stale' | 'warn' | 'bad' | 'muted' } {
+  if (quota.rateLimit.state === 'backoff') return { label: 'Rate limited', tone: 'warn' }
+  if (quota.connection === 'disconnected') return { label: 'Disconnected', tone: 'muted' }
+  if (quota.connection === 'accessDenied') return { label: 'Access needed', tone: 'warn' }
+  if (quota.connection === 'loading') return { label: 'Loading', tone: 'muted' }
+  if (quota.connection === 'terminalFailure') return { label: 'Unavailable', tone: 'bad' }
+  if (quota.freshness === 'stale' || (quota.connection === 'stale' && quota.freshness !== 'unavailable')) {
+    return { label: 'Stale', tone: 'stale' }
+  }
+  if (quota.freshness === 'fresh' && quota.connection === 'connected') return { label: 'Fresh', tone: 'fresh' }
+  return { label: 'Unavailable', tone: 'muted' }
+}
+
+function freshnessLabel(quota: QuotaProvider): string {
+  if (quota.freshness === 'fresh') return 'Fresh'
+  if (quota.freshness === 'stale') return 'Stale'
+  return 'Unavailable'
+}
+
+function QuotaDetails({ quota }: { quota: QuotaProvider }) {
+  const observed = quota.freshness === 'unavailable' ? null : formatObservedAt(quota.observedAt)
+  const retryAt = quota.rateLimit.state === 'backoff' ? formatObservedAt(quota.rateLimit.retryAt) : null
+  return (
+    <details className="quota-details">
+      <summary>Provider details</summary>
+      <div className="quota-detail-grid">
+        <span>Source</span><span>Provider-reported</span>
+        <span>Status</span><span>{quotaStatus(quota).label}</span>
+        <span>Freshness</span><span>{freshnessLabel(quota)}</span>
+        <span>Observed</span><span>{observed ?? 'Not available'}</span>
+        {retryAt ? <><span>Retry after</span><span>{retryAt}</span></> : null}
+      </div>
+    </details>
   )
 }
 
@@ -211,15 +296,23 @@ function staleQuotaNote(quota: QuotaProvider): string {
   return `Showing last provider-reported quota from ${new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(observed)}.`
 }
 
+function formatObservedAt(value: string | null): string | null {
+  if (!value) return null
+  const observed = new Date(value)
+  if (Number.isNaN(observed.getTime())) return null
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(observed)
+}
+
 function QuotaMeter({ window }: { window: QuotaWindow }) {
-  const percent = Math.round(window.usedFraction * 100)
+  const percent = Math.round(Math.min(1, Math.max(0, window.usedFraction)) * 100)
+  const remaining = 100 - percent
   const severity = window.usedFraction >= 0.9 ? 'bad' : window.usedFraction >= 0.7 ? 'warn' : 'accent'
   const reset = formatResetTime(window.resetsAt)
   return (
     <div className="quota-window">
       <div className="quota-window-labels">
         <span>{window.label}</span>
-        <span>{percent}% used{reset ? ` · resets ${reset}` : ''}</span>
+        <span>{percent}% used · {remaining}% remaining{reset ? ` · ${reset}` : ''}</span>
       </div>
       <div className="track" data-testid={`quota-track-${window.id}`}>
         <i className={severity} style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
@@ -233,13 +326,13 @@ function formatResetTime(resetsAt: string | null): string | null {
   const reset = Date.parse(resetsAt)
   if (!Number.isFinite(reset)) return null
   const remainingMinutes = Math.floor((reset - Date.now()) / 60_000)
-  if (remainingMinutes <= 0) return 'now'
+  if (remainingMinutes <= 0) return 'reset passed'
   const days = Math.floor(remainingMinutes / (24 * 60))
   const hours = Math.floor((remainingMinutes % (24 * 60)) / 60)
   const minutes = remainingMinutes % 60
-  if (days > 0) return `in ${days}d${hours > 0 ? ` ${hours}h` : ''}`
-  if (hours > 0) return `in ${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
-  return `in ${minutes}m`
+  if (days > 0) return `resets in ${days}d${hours > 0 ? ` ${hours}h` : ''}`
+  if (hours > 0) return `resets in ${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
+  return `resets in ${minutes}m`
 }
 
 function PlanPanel({ plan }: { plan: JsonPlanSummary }) {

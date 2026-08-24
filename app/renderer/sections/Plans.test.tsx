@@ -117,8 +117,10 @@ describe('Plans', () => {
     const { container } = render(<Plans period="30days" />)
 
     expect(await screen.findByText('Max 20x')).toBeInTheDocument()
-    expect(screen.getByText('25% used · resets in 2h 29m')).toBeInTheDocument()
-    expect(screen.getByText('92% used · resets in 3d 14h')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Fresh')).toBeInTheDocument()
+    expect(screen.getByText('25% used · 75% remaining · resets in 2h 29m')).toBeInTheDocument()
+    expect(screen.getByText('92% used · 8% remaining · resets in 3d 14h')).toBeInTheDocument()
     expect(container.querySelector('[data-testid="quota-track-five_hour"] i')).toHaveClass('accent')
     expect(container.querySelector('[data-testid="quota-track-seven_day"] i')).toHaveClass('bad')
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
@@ -133,6 +135,22 @@ describe('Plans', () => {
     expect(screen.getByText('On track')).toHaveClass('pace', 'ok')
     expect(screen.queryByText('Claude Max')).not.toBeInTheDocument()
     expect(screen.queryByText('API usage')).not.toBeInTheDocument()
+  })
+
+  it('keeps provider provenance in a progressive details disclosure', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } })])
+
+    const { container } = render(<Plans period="30days" />)
+
+    await screen.findByText('Credits remaining · $3.50')
+    const details = container.querySelector('details.quota-details')
+    expect(details).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Provider details'))
+    expect(details).toHaveAttribute('open')
+    expect(details).toHaveTextContent('Source')
+    expect(details).toHaveTextContent('Provider-reported')
+    expect(details).toHaveTextContent('Observed')
   })
 
   it('renders provider credits when no quota windows are present', async () => {
@@ -154,6 +172,23 @@ describe('Plans', () => {
     expect(await screen.findByText('Credits remaining · $0.00')).toBeInTheDocument()
   })
 
+  it('labels a passed reset boundary without fabricating unavailable capacity', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([
+      quota('claude', {
+        planLabel: 'Pro',
+        windows: [{ id: 'primary', label: 'Primary', usedFraction: 1, resetsAt: '2026-07-11T00:00:00.000Z', windowSeconds: null }],
+      }),
+      quota('codex', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+    ])
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByText('100% used · 0% remaining · reset passed')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Unavailable')).toBeInTheDocument()
+    expect(screen.queryAllByTestId(/^quota-track-/)).toHaveLength(1)
+  })
+
   it('renders stale credits-only last-good data with its original observation note', async () => {
     getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([quota('codex', {
@@ -167,6 +202,7 @@ describe('Plans', () => {
     render(<Plans period="30days" />)
 
     expect(await screen.findByText(/Showing last provider-reported quota from/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Stale')).toBeInTheDocument()
     expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
   })
 
