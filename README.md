@@ -127,6 +127,7 @@ The root npm package is intentionally private and is not an official distributio
 | `metrora audit` | Compare provider evidence with displayed token and cost totals. |
 | `metrora doctor` | Diagnose provider discovery and parsing health. |
 | `metrora export` | Export usage as CSV or JSON. |
+| `metrora bench local --model <model>` | Run bounded synthetic runtime evidence against a local Ollama model; no quality or ranking score. |
 
 Most analytical commands support provider, project and date filters. The [CLI reference](docs/CLI_REFERENCE.md) groups the public commands by task and explains compatibility boundaries.
 
@@ -197,6 +198,7 @@ Start from the [documentation index](docs/README.md):
 
 - [Getting started](docs/GETTING_STARTED.md)
 - [CLI reference](docs/CLI_REFERENCE.md)
+- [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)
 - [Product principles](docs/PRODUCT_PRINCIPLES.md)
 - [Pricing history](docs/PRICING_HISTORY.md)

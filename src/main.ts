@@ -33,7 +33,7 @@ import { formatDateRangeLabel, parseDateRangeFlags, parseDayFlag, parseDaysFlag,
 import { runOptimize } from './optimize.js'
 import { registerActCommands } from './act/cli.js'
 import { registerGuardCommands } from './guard/cli.js'
-import { registerSyncCommands } from './sync/cli.js'
+import { registerSyncCommands } from './sync/cli.js'; import { registerBenchCommands } from './bench/cli.js'
 import { runContextCommand } from './context-tree.js'
 import { renderCompare } from './compare.js'
 import { computeBudgetStatus, daysInMonth, diffCalendarDays, type BudgetStatus, type BudgetTier } from './budget.js'
@@ -2322,6 +2322,6 @@ program
 
 registerActCommands(program)
 registerGuardCommands(program)
-registerSyncCommands(program); registerProjectCommands(program)
+registerSyncCommands(program); registerProjectCommands(program); registerBenchCommands(program)
 
 program.parse()

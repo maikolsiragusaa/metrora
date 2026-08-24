@@ -76,6 +76,17 @@ metrora optimize --apply --dry-run
 
 Experimental commands label heuristic or incomplete methodology explicitly. Their output should not be presented as stronger evidence than the source permits.
 
+## Bench and local runtime evidence
+
+| Command | Purpose |
+| --- | --- |
+| `metrora bench local --model <model>` | Run one warmup plus five measured requests against the fixed local Ollama loopback endpoint using the versioned synthetic BenchRunV1 fixture. |
+
+The Bench command records runtime/performance evidence only. It does not read
+user prompts or source repositories, score quality, rank models, calculate cost
+or quota, or connect to hosted inference. Use `--format json --output <path>`
+to export the bounded local artifact. See [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md).
+
 ## Cost and plan configuration
 
 | Command | Purpose |
