@@ -7,7 +7,7 @@ import { billableOutputTokens } from './token-semantics.js'
 import { buildReasoningMix, reasoningLevelFromModelLabel, type ReasoningMixInput } from './reasoning-level.js'
 import { resolveSubagentAttribution, sessionIdentity } from './sessions-report.js'
 import { normalizeContentBlocks } from './content-utils.js'
-import { discoverAllSessions, getProvider } from './providers/index.js'
+import { discoverAllSessionsWithOutcomes, getProvider } from './providers/index.js'
 import { flushCodexCache } from './codex-cache.js'
 import { antigravityCascadeIdFromPath, flushAntigravityCache, shouldReparseAntigravitySource } from './providers/antigravity.js'
 import { getDesktopSessionsDirs } from './providers/claude.js'
@@ -61,6 +61,7 @@ import { classifyTurn, BASH_TOOLS, EDIT_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
 import { isSnapshotReadMode } from './read-lifecycle.js'
 import { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'
+import { CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE } from './provider-parse-authorities.js'
 import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
 import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
@@ -1944,6 +1945,7 @@ async function scanProjectDirs(
   // mid-scan then resumes from a warm cache instead of re-parsing from zero.
   onFileParsed?: () => Promise<void>,
   readOnly = false,
+  allowMissingSourceReconciliation = false,
 ): Promise<ProjectSummary[]> {
   const section = getOrCreateProviderSection(diskCache, 'claude')
   const allDiscoveredFiles = new Set<string>()
@@ -1990,7 +1992,7 @@ async function scanProjectDirs(
   // same set so `section.files` still holds them when summaries are built.
   for (const [filePath, cached] of Object.entries(section.files)) {
     if (allDiscoveredFiles.has(filePath)) continue
-    if (!readOnly && !cached.prLinks?.length) continue
+    if (!readOnly && allowMissingSourceReconciliation && !cached.prLinks?.length) continue
     const dirName = cached.canonicalProjectName
       ?? cached.turns[0]?.calls[0]?.project
       ?? basename(dirname(filePath))
@@ -2164,7 +2166,7 @@ async function scanProjectDirs(
   }
   parseProgress.finish()
 
-  if (!readOnly && dirs.length > 0) {
+  if (!readOnly && allowMissingSourceReconciliation) {
     for (const cachedPath of Object.keys(section.files)) {
       if (allDiscoveredFiles.has(cachedPath)) continue
       // Keep PR-bearing orphans: their transcript is gone and can never re-parse,
@@ -2916,6 +2918,7 @@ async function parseProviderSources(
   diskCache: SessionCache,
   dateRange?: DateRange,
   readOnly = false,
+  allowMissingSourceReconciliation = false,
 ): Promise<ProjectSummary[]> {
   const provider = await getProvider(providerName)
   const previousSection = diskCache.providers[providerName]
@@ -2971,7 +2974,7 @@ async function parseProviderSources(
     }
   }
 
-  if (readOnly) {
+  if (readOnly || !allowMissingSourceReconciliation) {
     for (const [path, cached] of Object.entries(section.files)) {
       if (allDiscoveredFiles.has(path)) continue
       servedSources.push({
@@ -3106,7 +3109,7 @@ async function parseProviderSources(
     ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
-  if (!readOnly && !provider.durableSources && shouldReconcileMissingProviderSources(providerName, sources.length)) {
+  if (!readOnly && !provider.durableSources && shouldReconcileMissingProviderSources(providerName, sources.length, allowMissingSourceReconciliation)) {
     reconcileMissingProviderSources(providerName, section, allDiscoveredFiles, diskCache)
   }
 
@@ -3729,7 +3732,14 @@ async function runParse(
 ): Promise<ProjectSummary[]> {
   const { isCold = false, readOnly = false, cachedOnly = false, refreshLock } = options
   const seenKeys = new Set<string>()
-  const allSources = cachedOnly ? [] : await discoverAllSessions(providerFilter)
+  const discovery = cachedOnly ? null : await discoverAllSessionsWithOutcomes(providerFilter)
+  const allSources = discovery?.sources ?? []
+  const discoveryComplete = cachedOnly || discovery?.complete === true
+  const discoveryByProvider = new Map((discovery?.outcomes ?? []).map(outcome => [outcome.provider, outcome.complete]))
+  const providerDiscoveryComplete = (providerName: string): boolean => {
+    const canonicalProvider = CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE[providerName] ?? providerName
+    return discoveryByProvider.get(canonicalProvider) === true
+  }
 
   const claudeSources = allSources.filter(s => s.provider === 'claude')
   const nonClaudeSources = allSources.filter(s => s.provider !== 'claude')
@@ -3771,7 +3781,7 @@ async function runParse(
   if (includeClaude) {
     if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'start' })
     try {
-      claudeProjects = await scanProjectDirs(claudeDirs, diskCache, dateRange, saveProgress, readOnly)
+      claudeProjects = await scanProjectDirs(claudeDirs, diskCache, dateRange, saveProgress, readOnly, providerDiscoveryComplete('claude'))
       if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
     } catch (err) {
       if (!isPermissionError(err)) throw err
@@ -3784,7 +3794,7 @@ async function runParse(
   for (const [providerName, sources] of providerGroups) {
     emitScanProgress({ kind: 'provider', provider: providerName, state: 'start' })
     try {
-      const projects = await parseProviderSources(providerName, sources, seenKeys, diskCache, dateRange, readOnly)
+      const projects = await parseProviderSources(providerName, sources, seenKeys, diskCache, dateRange, readOnly, providerDiscoveryComplete(providerName))
       emitScanProgress({ kind: 'provider', provider: providerName, state: 'done', files: sources.length })
       otherProjects.push(...projects)
     } catch (err) {
@@ -3813,12 +3823,12 @@ async function runParse(
     // processes a durableSources provider) OR the static DURABLE_PROVIDER_NAMES
     // constant — both checks are O(1) and avoid a getProvider() dynamic-import
     // round-trip for every unprocessed provider in the disk cache.
-    if (!cachedOnly && !section.durable && !DURABLE_PROVIDER_NAMES.has(providerName)) continue
-    const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly)
+    if (!cachedOnly && !section.durable && !DURABLE_PROVIDER_NAMES.has(providerName) && !providerDiscoveryComplete(providerName)) continue
+    const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly, providerDiscoveryComplete(providerName))
     otherProjects.push(...projects)
   }
 
-  if (!readOnly) await flushCopilotChatJournalInvalidations()
+  if (!readOnly && discoveryComplete) await flushCopilotChatJournalInvalidations()
 
   // Every published v8 call carries an explicit valuation basis. This also
   // settles carried v7 PR/durable orphans that can no longer be re-parsed.
@@ -3826,15 +3836,17 @@ async function runParse(
     ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
-  // The full scan reached the end: this cache is now complete. Mark it and
-  // persist even when nothing else is dirty, so a pre-marker cache (or a partial
-  // that happened to already hold every current file) stops being re-read as cold
-  // on every launch, and the completeness marker the daily backfill + splash rely
-  // on is durable. A run killed before here never reaches this, so its throttled
-  // partial saves keep `complete: false` and the next launch resumes cold.
+  // The parse reached its local end. Only a complete discovery outcome may
+  // publish the cache as complete; an unavailable, failed, partial, or cancelled
+  // discovery keeps the marker false so retained evidence is not treated as a
+  // factual zero and the next launch resumes with a cold completeness check.
   const wasComplete = isCacheComplete(diskCache)
-  if (!readOnly && !wasComplete) diskCache.complete = true
-  if (!readOnly && ((diskCache as { _dirty?: boolean })._dirty || !wasComplete)) {
+  if (!readOnly && discoveryComplete && !wasComplete) diskCache.complete = true
+  if (!readOnly && !discoveryComplete && wasComplete) {
+    diskCache.complete = false
+    ;(diskCache as { _dirty?: boolean })._dirty = true
+  }
+  if (!readOnly && ((diskCache as { _dirty?: boolean })._dirty || (discoveryComplete && !wasComplete) || (!discoveryComplete && wasComplete))) {
     try {
       const published = await saveCache(diskCache, refreshLock?.verifyStillOwner)
       if (!published) throw new RefreshFenceLostError()
@@ -3843,7 +3855,10 @@ async function runParse(
       if (refreshLock) throw new RefreshPublicationUnavailableError()
     }
   }
-  sessionHydrationComplete = true; if (!readOnly) setLatestCompletedSessionCacheV1(diskCache)
+  if (!readOnly) {
+    sessionHydrationComplete = discoveryComplete
+    if (discoveryComplete) setLatestCompletedSessionCacheV1(diskCache)
+  }
 
   // Merge across providers by normalised project path so the same repository
   // is not double-counted when it was worked on with more than one tool

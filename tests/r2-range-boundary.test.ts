@@ -18,6 +18,25 @@ vi.mock('../src/providers/index.js', async (importOriginal) => {
       if (filter === 'r2-range') return sources
       return actual.discoverAllSessions(filter)
     },
+    async discoverAllSessionsWithOutcomes(filter?: string) {
+      if (filter === 'r2-range') {
+        return {
+          schemaVersion: 'metrora.provider-discovery-outcome.v1' as const,
+          complete: true,
+          outcomes: [{
+            schemaVersion: 'metrora.provider-discovery-outcome.v1' as const,
+            provider: 'r2-range',
+            status: sources.length > 0 ? 'success' as const : 'empty' as const,
+            complete: true,
+            sourceCount: sources.length,
+            sources,
+            diagnostic: null,
+          }],
+          sources,
+        }
+      }
+      return actual.discoverAllSessionsWithOutcomes(filter)
+    },
     async getProvider(name: string) {
       if (name === 'r2-range') {
         return {
