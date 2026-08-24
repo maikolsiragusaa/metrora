@@ -1,3 +1,4 @@
+import { chatLMStudioMain, probeLMStudioMain } from './lmstudio-runtime'
 const LOOPBACK_ENDPOINT = 'http://127.0.0.1:11434'
 const PROBE_TIMEOUT_MS = 1500
 const CHAT_TIMEOUT_MS = 120_000
@@ -5,7 +6,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_STREAM_CHUNKS = 512
 const MAX_MALFORMED_CHUNKS = 16
 
-export type AdvisorRuntimeProbe = { available: boolean; models: string[]; detail: string }
+export type AdvisorRuntimeProbe = { runtime?: 'ollama' | 'lmstudio'; available: boolean; models: string[]; detail: string; discoveryState?: 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'; capabilities?: Array<Record<string, unknown>> }
 export type AdvisorRuntimeChatPayload = {
   model: string
   messages: Array<Record<string, unknown>>
@@ -268,19 +269,32 @@ export async function chatOllamaMain(fetchImpl: FetchLike, payload: AdvisorRunti
 function validRequestId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value)
 }
+type AdvisorRuntimeId = 'ollama' | 'lmstudio'
+function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' }
+function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
+  const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
+  return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState }
+}
 export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>> {
   const flights = new Map<string, AbortController>()
   const fail = (error: unknown, kind = 'runtime') => ({ ok: false as const, error: { kind, message: boundedError(error).message } })
   return {
-    'metrora:advisorProbe': async () => {
-      try { return { ok: true, value: await probeOllamaMain(fetchImpl) } } catch (error) { return fail(error) }
+    'metrora:advisorProbe': async (runtime: AdvisorRuntimeId = 'ollama') => {
+      if (!validRuntime(runtime)) return fail(new Error('Advisor runtime is invalid.'), 'validation')
+      try {
+        const value = runtime === 'lmstudio' ? await probeLMStudioMain(fetchImpl) : ollamaProbeEnvelope(await probeOllamaMain(fetchImpl))
+        return { ok: true, value }
+      } catch (error) { return fail(error) }
     },
-    'metrora:advisorChat': async (requestId: string, payload: AdvisorRuntimeChatPayload) => {
-      if (!validRequestId(requestId)) return fail(new Error('Advisor request id is invalid.'), 'validation')
+    'metrora:advisorChat': async (requestId: string, payload: AdvisorRuntimeChatPayload, runtime: AdvisorRuntimeId | ((text: string) => void) = 'ollama') => {
+      const selectedRuntime = typeof runtime === 'function' ? 'ollama' : runtime
+      if (!validRequestId(requestId) || !validRuntime(selectedRuntime)) return fail(new Error('Advisor request is invalid.'), 'validation')
       const controller = new AbortController()
       flights.set(requestId, controller)
       try {
-        const value = await chatOllamaMain(fetchImpl, payload, controller.signal)
+        const value = selectedRuntime === 'lmstudio'
+          ? await chatLMStudioMain(fetchImpl, payload, controller.signal)
+          : await chatOllamaMain(fetchImpl, payload, controller.signal)
         return { ok: true, value }
       } catch (error) {
         return controller.signal.aborted ? fail(new Error('Advisor request cancelled.'), 'cancelled') : fail(error)

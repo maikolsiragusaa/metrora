@@ -17,8 +17,8 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 // immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  advisorProbe: () => invoke('metrora:advisorProbe'),
-  advisorChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorChat', requestId, payload),
+  advisorProbe: (runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorProbe', runtime),
+  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
   advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
