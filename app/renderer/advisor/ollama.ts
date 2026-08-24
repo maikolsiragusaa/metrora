@@ -1,14 +1,15 @@
 import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
+import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
 
-type OllamaToolCall = { function?: { name?: string; arguments?: Record<string, unknown> | string } }
+type OllamaToolCall = { function?: { name?: string; arguments?: unknown } }
 type OllamaChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: OllamaToolCall[]; tool_name?: string }
 type OllamaResponse = { message?: { content?: string; tool_calls?: OllamaToolCall[] }; streamed?: boolean }
 export type OllamaProbeResult = { available: boolean; models: string[]; detail: string }
 export type OllamaTransport = {
   probe: (signal?: AbortSignal) => Promise<OllamaProbeResult>
-  chat: (requestId: string, payload: Record<string, unknown>) => Promise<OllamaResponse>
+  chat: (requestId: string, payload: Record<string, unknown>, signal?: AbortSignal) => Promise<OllamaResponse>
   cancel: (requestId: string) => Promise<boolean>
   onDelta: (callback: (event: { requestId: string; text: string }) => void) => () => void
 }
@@ -17,7 +18,10 @@ const bridgeTransport: OllamaTransport = {
     if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
     return metrora.advisorProbe()
   },
-  chat: (requestId, payload) => metrora.advisorChat(requestId, payload),
+  chat: (requestId, payload, signal) => {
+    if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
+    return metrora.advisorChat(requestId, payload)
+  },
   cancel: requestId => metrora.advisorCancel(requestId),
   onDelta: callback => metrora.onAdvisorDelta(callback),
 }
@@ -28,16 +32,6 @@ export async function probeOllama(signal?: AbortSignal, transport: OllamaTranspo
     if (signal?.aborted) throw error
     return { available: false, models: [], detail: 'Local Ollama is unavailable.' }
   }
-}
-function parseArguments(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object') return value as Record<string, unknown>
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value)
-      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
-    } catch { return {} }
-  }
-  return {}
 }
 function extractNarrative(value: string): string {
   const trimmed = value.trim().replace(/^\s*\x60\x60\x60(?:json|text)?\s*/i, '').replace(/\s*\x60\x60\x60$/, '').trim()
@@ -135,8 +129,12 @@ function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidence): Adv
 function toolCallName(call: OllamaToolCall): string {
   return typeof call.function?.name === 'string' ? call.function.name : ''
 }
-function toolCallArgs(call: OllamaToolCall): Record<string, unknown> {
-  return parseArguments(call.function?.arguments)
+function boundedToolContent(content: string): string {
+  if (new TextEncoder().encode(content).byteLength > ADVISOR_TOOL_OUTPUT_MAX_BYTES) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
+  return content
+}
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
 }
 function safeConversation(input: AdvisorRuntimeInput): OllamaChatMessage[] {
   const currentScopeFingerprint = advisorScopeFingerprint(input.evidence.scope)
@@ -162,6 +160,7 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
   }
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
     if (this.availability !== 'ready') throw new Error('Local Ollama model is not available.')
+    throwIfAborted(signal)
     const requestId = 'advisor-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
     const messages: OllamaChatMessage[] = [{ role: 'system', content: systemPrompt() }, ...safeConversation(input)]
     messages.push({ role: 'user', content: input.question.trim().slice(0, 4000) })
@@ -178,14 +177,15 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
     const cancel = () => { void this.transport.cancel(requestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
-      if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
-      const definitions = input.tools ? [...input.tools] : []
+      throwIfAborted(signal)
+      const definitions = input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : []
       const planning = await this.transport.chat(requestId, {
         model: this.model,
         messages,
         tools: definitions,
         stream: definitions.length === 0,
-      })
+      }, signal)
+      throwIfAborted(signal)
       const planningMessage = planning.message ?? {}
       const calls = Array.isArray(planningMessage.tool_calls) ? planningMessage.tool_calls.slice(0, 8) : []
       messages.push({ role: 'assistant', content: typeof planningMessage.content === 'string' ? planningMessage.content : '', tool_calls: calls })
@@ -193,20 +193,22 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
         finalContent = typeof planningMessage.content === 'string' ? planningMessage.content : ''
       } else {
         for (const call of calls) {
-          if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
-          const name = toolCallName(call)
-          if (!name) continue
-          input.onToolEvent?.({ name, status: 'started' })
-          const result: AdvisorToolExecution = input.executeTool
-            ? await input.executeTool(name, toolCallArgs(call), signal)
-            : { content: 'Tool execution is unavailable.', evidence: input.evidence }
+          throwIfAborted(signal)
+          if (!call || typeof call !== 'object') throw new AdvisorToolContractError('invalid-arguments', 'Malformed Advisor runtime tool call.')
+          const normalized = input.toolContract
+            ? normalizeAdvisorToolCall(toolCallName(call), call.function?.arguments)
+            : normalizeAdvisorRuntimeToolCall(toolCallName(call), call.function?.arguments, definitions)
+          input.onToolEvent?.({ name: normalized.name, status: 'started' })
+          if (!input.executeTool) throw new AdvisorToolContractError('authority-unavailable', 'Advisor tool execution is unavailable.')
+          const result: AdvisorToolExecution = await input.executeTool(normalized.name, normalized.arguments, signal)
+          throwIfAborted(signal)
           evidences.push(result.evidence)
-          messages.push({ role: 'tool', content: result.content.slice(0, 32_000), tool_name: name })
-          input.onToolEvent?.({ name, status: 'completed' })
+          messages.push({ role: 'tool', content: boundedToolContent(result.content), tool_name: normalized.name })
+          input.onToolEvent?.({ name: normalized.name, status: 'completed' })
         }
         const validToolEvidence = !hasMixedEvidenceScopes(evidences)
           && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
-        if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
+        throwIfAborted(signal)
         if (validToolEvidence) {
           allowDelta = true
           const finalResponse = await this.transport.chat(requestId, {
@@ -214,7 +216,8 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
             messages,
             tools: [],
             stream: true,
-          })
+          }, signal)
+          throwIfAborted(signal)
           streamed = streamed || Boolean(finalResponse.streamed)
           finalContent = typeof finalResponse.message?.content === 'string' ? finalResponse.message.content : ''
         }
@@ -223,12 +226,14 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
       signal?.removeEventListener('abort', cancel)
       offDelta()
     }
+    throwIfAborted(signal)
     const evidenceItems = evidences.length ? evidences : [input.evidence]
     const evidence = mergeEvidence(evidenceItems, input.evidence)
     const homogeneous = !hasMixedEvidenceScopes(evidenceItems)
     const deterministicItems = homogeneous ? evidenceItems : [evidence]
     const deterministicAnswers = await Promise.all(deterministicItems.map(item => new DeterministicAdvisorRuntime().generate({ question: input.question, evidence: item }, signal)))
     const fallback = await new DeterministicAdvisorRuntime().generate({ question: input.question, evidence }, signal)
+    throwIfAborted(signal)
     const verifiedConclusions = Array.from(new Set(deterministicAnswers.map(answer => answer.conclusion).filter(Boolean)))
     const verifiedConclusion = verifiedConclusions.length ? verifiedConclusions.join(' ') : fallback.conclusion
     const hasValidEvidence = evidences.length > 0 && homogeneous && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)

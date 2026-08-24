@@ -1,27 +1,89 @@
 import type { MenubarPayload, ModelReportRow, QuotaProvider } from '../lib/types'
+import {
+  ADVISOR_TOOL_CONTRACT,
+  ADVISOR_TOOL_DEFINITIONS,
+  AdvisorToolContractError,
+  boundedAdvisorJson,
+  createAdvisorToolResultEnvelope,
+  snapshotAdvisorScope,
+  validateAdvisorToolArguments,
+} from './contract'
 import { buildModelEfficiencyEvidence, buildQuotaEvidence, buildSpendEvidence } from './evidence'
-import type { AdvisorDataSource, AdvisorEvidence, AdvisorScope, AdvisorToolDefinition, AdvisorToolExecution, AdvisorToolExecutor } from './types'
+import type {
+  AdvisorDataSource,
+  AdvisorEvidence,
+  AdvisorJsonObject,
+  AdvisorScope,
+  AdvisorToolContract,
+  AdvisorToolDefinition,
+  AdvisorToolExecution,
+  AdvisorToolExecutor,
+  AdvisorToolName,
+} from './types'
 
-export const ADVISOR_TOOL_DEFINITIONS: readonly AdvisorToolDefinition[] = [
-  { type: 'function', function: { name: 'get_spend_snapshot', description: 'Read Metrora measured spend, daily trend, model and Project drivers, and coverage for the selected scope.', parameters: { type: 'object', properties: { model: { type: 'string', description: 'Optional exact model filter' } }, additionalProperties: false } } },
-  { type: 'function', function: { name: 'get_model_efficiency', description: 'Read canonical Metrora model rows and observed cost per call. Do not infer quality or comparable work.', parameters: { type: 'object', properties: { model: { type: 'string', description: 'Optional exact model filter' } }, additionalProperties: false } } },
-  { type: 'function', function: { name: 'get_quota_snapshot', description: 'Read provider-reported quota windows, reset timestamps, freshness, and credits. Never estimate quota from Metrora spend.', parameters: { type: 'object', properties: { provider: { type: 'string', enum: ['all', 'claude', 'codex'] } }, additionalProperties: false } } },
-  { type: 'function', function: { name: 'get_overview_snapshot', description: 'Read the current canonical Metrora overview for the selected period, Project, provider, and model context.', parameters: { type: 'object', properties: { model: { type: 'string', description: 'Optional exact model filter' } }, additionalProperties: false } } },
-  { type: 'function', function: { name: 'get_project_drivers', description: 'Read descriptive Project spend drivers from the canonical Metrora overview. Do not infer causality.', parameters: { type: 'object', properties: {}, additionalProperties: false } } },
-  { type: 'function', function: { name: 'get_session_highlights', description: 'Read content-minimal highest-cost session summaries from the canonical Metrora overview. No raw session content is exposed.', parameters: { type: 'object', properties: {}, additionalProperties: false } } },
-  { type: 'function', function: { name: 'get_coverage_report', description: 'Read Metrora evidence coverage, assumptions, and unknowns for the selected scope.', parameters: { type: 'object', properties: {}, additionalProperties: false } } },
-]
-function toolScope(scope: AdvisorScope, args: Record<string, unknown>): AdvisorScope {
-  const model = typeof args.model === 'string' && args.model.trim() ? args.model.trim() : scope.model
-  const provider = typeof args.provider === 'string' && ['all', 'claude', 'codex'].includes(args.provider) ? args.provider : scope.provider
-  return { ...scope, model, provider }
+export { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_DEFINITIONS }
+
+const PATH_LIKE_TEXT = /^(?:[a-z]:[\\/]|\\\\|\/(?:users|home|private|var|tmp|mnt)(?:\/|$))/i
+const SECRET_LIKE_TEXT = /(?:bearer\s+|api[_-]?key\s*[=:]|secret\s*[=:]|password\s*[=:]|token\s*[=:]|(?:sk|gh[pousr])-[a-z0-9_-]{12,})/i
+
+function contentMinimalText(value: string, fallback = '[redacted]'): string {
+  const trimmed = value.trim()
+  if (!trimmed || PATH_LIKE_TEXT.test(trimmed) || SECRET_LIKE_TEXT.test(trimmed)) return fallback
+  return trimmed.length > 160 ? trimmed.slice(0, 157) + '…' : trimmed
 }
-function safeJson(value: unknown): string {
-  return JSON.stringify(value, (_key, item) => typeof item === 'number' && !Number.isFinite(item) ? null : item)
+
+function contentMinimalScope(scope: AdvisorScope): AdvisorJsonObject {
+  return {
+    period: scope.period,
+    range: scope.range,
+    provider: contentMinimalText(scope.provider),
+    projectId: contentMinimalText(scope.projectId),
+    projectName: contentMinimalText(scope.projectName),
+    model: scope.model === null ? null : contentMinimalText(scope.model),
+  }
 }
-function compactEvidence(evidence: AdvisorEvidence): string {
-  return safeJson({ intent: evidence.intent, scope: evidence.scope, coverage: evidence.coverage, refs: evidence.refs, spend: evidence.spend, modelEfficiency: evidence.modelEfficiency, quota: evidence.quota, assumptions: evidence.assumptions, unknown: evidence.unknown })
+
+function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonObject {
+  return {
+    intent: evidence.intent,
+    scope: contentMinimalScope(evidence.scope),
+    coverage: evidence.coverage,
+    refs: evidence.refs.map(ref => ({ id: ref.id, label: contentMinimalText(ref.label), source: ref.source })),
+    spend: evidence.spend
+      ? {
+          ...evidence.spend,
+          models: evidence.spend.models.map(row => ({ ...row, name: contentMinimalText(row.name) })),
+          projects: evidence.spend.projects.map(row => ({ ...row, name: contentMinimalText(row.name) })),
+          sessionsByCost: evidence.spend.sessionsByCost.map(row => ({ ...row, name: contentMinimalText(row.name) })),
+        }
+      : null,
+    modelEfficiency: evidence.modelEfficiency
+      ? {
+          ...evidence.modelEfficiency,
+          selectedModel: evidence.modelEfficiency.selectedModel === null ? null : contentMinimalText(evidence.modelEfficiency.selectedModel),
+          rows: evidence.modelEfficiency.rows.map(row => ({ ...row, model: contentMinimalText(row.model), provider: contentMinimalText(row.provider) })),
+        }
+      : null,
+    quota: evidence.quota
+      ? {
+          ...evidence.quota,
+          providers: evidence.quota.providers.map(provider => ({
+            ...provider,
+            planLabel: provider.planLabel === null ? null : contentMinimalText(provider.planLabel),
+            windows: provider.windows.map(window => ({ ...window, label: contentMinimalText(window.label) })),
+          })),
+        }
+      : null,
+    assumptions: evidence.assumptions,
+    unknown: evidence.unknown,
+  }
 }
+
+function compactEvidence(evidence: AdvisorEvidence): { content: string; output: AdvisorJsonObject } {
+  const content = boundedAdvisorJson(contentMinimalEvidence(evidence))
+  return { content, output: JSON.parse(content) as AdvisorJsonObject }
+}
+
 function sameScope(left: AdvisorScope, right: AdvisorScope): boolean {
   return left.period === right.period
     && left.provider === right.provider
@@ -31,31 +93,109 @@ function sameScope(left: AdvisorScope, right: AdvisorScope): boolean {
     && left.range?.from === right.range?.from
     && left.range?.to === right.range?.to
 }
-export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: AdvisorScope, suppliedOverview: MenubarPayload | null): { definitions: readonly AdvisorToolDefinition[]; execute: AdvisorToolExecutor } {
-  const execute: AdvisorToolExecutor = async (name, args, signal): Promise<AdvisorToolExecution> => {
-    if (signal?.aborted) throw new DOMException('Advisor tool call cancelled', 'AbortError')
-    const nextScope = toolScope(scope, args)
-    if (name === 'get_overview_snapshot' || name === 'get_spend_snapshot' || name === 'get_project_drivers' || name === 'get_session_highlights' || name === 'get_coverage_report') {
-      const overview = suppliedOverview && sameScope(nextScope, scope) ? suppliedOverview : await source.getOverview(nextScope)
-      const label = name === 'get_project_drivers' ? 'tool: Project drivers' : name === 'get_session_highlights' ? 'tool: session highlights' : name === 'get_coverage_report' ? 'tool: coverage report' : name === 'get_overview_snapshot' ? 'tool: overview snapshot' : 'tool: spend snapshot'
-      const evidence = buildSpendEvidence(label, nextScope, overview)
-      return { content: compactEvidence(evidence), evidence }
-    }
-    if (name === 'get_model_efficiency') {
-      const overview = suppliedOverview && sameScope(nextScope, scope) ? suppliedOverview : await source.getOverview(nextScope)
-      let rows: ModelReportRow[] = []
-      try { rows = await source.getModels(nextScope) } catch { /* Overview fallback remains honest. */ }
-      const evidence = buildModelEfficiencyEvidence('tool: model efficiency', nextScope, overview, rows)
-      return { content: compactEvidence(evidence), evidence }
-    }
-    if (name === 'get_quota_snapshot') {
-      const overview = suppliedOverview && sameScope(nextScope, scope) ? suppliedOverview : await source.getOverview(nextScope)
-      let quota: QuotaProvider[] = []
-      try { quota = await source.getQuota() } catch { /* unavailable is factual, not zero. */ }
-      const evidence = buildQuotaEvidence('tool: quota snapshot', nextScope, overview, quota)
-      return { content: compactEvidence(evidence), evidence }
-    }
-    throw new Error('Unknown Advisor tool: ' + name)
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('Advisor tool call cancelled', 'AbortError')
+}
+
+function cancellationLike(error: unknown): boolean {
+  if (error instanceof Error) return error.name === 'AbortError' || /cancel|abort/i.test(error.message)
+  return Boolean(error && typeof error === 'object' && 'name' in error && (error as { name?: unknown }).name === 'AbortError')
+}
+
+function rethrowCancellation(error: unknown, signal?: AbortSignal): void {
+  if (signal?.aborted || cancellationLike(error)) throw error
+}
+
+function nextToolScope(scope: AdvisorScope, name: AdvisorToolName, args: AdvisorJsonObject): AdvisorScope {
+  const next = { ...scope, range: scope.range ? { ...scope.range } : null }
+  if (name === 'get_spend_snapshot' || name === 'get_model_efficiency' || name === 'get_overview_snapshot') {
+    if (Object.prototype.hasOwnProperty.call(args, 'model')) next.model = String(args.model)
   }
-  return { definitions: ADVISOR_TOOL_DEFINITIONS, execute }
+  if (name === 'get_quota_snapshot' && Object.prototype.hasOwnProperty.call(args, 'provider')) next.provider = String(args.provider)
+  return snapshotAdvisorScope(next)
+}
+
+function resultFor(name: AdvisorToolName, scope: AdvisorScope, args: AdvisorJsonObject, evidence: AdvisorEvidence): AdvisorToolExecution {
+  const compact = compactEvidence(evidence)
+  return {
+    content: compact.content,
+    evidence,
+    envelope: createAdvisorToolResultEnvelope(name, scope, args, evidence, compact.output),
+  }
+}
+
+async function optionalModels(source: AdvisorDataSource, scope: AdvisorScope, signal?: AbortSignal): Promise<ModelReportRow[]> {
+  try {
+    const rows = signal ? await source.getModels(scope, signal) : await source.getModels(scope)
+    throwIfAborted(signal)
+    return Array.isArray(rows) ? rows : []
+  } catch (error) {
+    rethrowCancellation(error, signal)
+    return []
+  }
+}
+
+async function optionalQuota(source: AdvisorDataSource, signal?: AbortSignal): Promise<QuotaProvider[]> {
+  try {
+    const rows = signal ? await source.getQuota(signal) : await source.getQuota()
+    throwIfAborted(signal)
+    return Array.isArray(rows) ? rows : []
+  } catch (error) {
+    rethrowCancellation(error, signal)
+    return []
+  }
+}
+
+export type AdvisorToolRegistry = {
+  contract: AdvisorToolContract
+  definitions: readonly AdvisorToolDefinition[]
+  scope: AdvisorScope
+  execute: AdvisorToolExecutor
+}
+
+export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: AdvisorScope, suppliedOverview: MenubarPayload | null): AdvisorToolRegistry {
+  const invocationScope = snapshotAdvisorScope(scope)
+  const execute: AdvisorToolExecutor = async (name, args, signal): Promise<AdvisorToolExecution> => {
+    throwIfAborted(signal)
+    const normalizedName = typeof name === 'string' ? name : String(name)
+    const normalizedArgs = validateAdvisorToolArguments(normalizedName, args)
+    const nextScope = nextToolScope(invocationScope, normalizedName as AdvisorToolName, normalizedArgs)
+    throwIfAborted(signal)
+
+    if (normalizedName === 'get_overview_snapshot' || normalizedName === 'get_spend_snapshot' || normalizedName === 'get_project_drivers' || normalizedName === 'get_session_highlights' || normalizedName === 'get_coverage_report') {
+      const overview = suppliedOverview && sameScope(nextScope, invocationScope)
+        ? suppliedOverview
+        : signal ? await source.getOverview(nextScope, signal) : await source.getOverview(nextScope)
+      throwIfAborted(signal)
+      const label = normalizedName === 'get_project_drivers'
+        ? 'tool: Project drivers'
+        : normalizedName === 'get_session_highlights'
+          ? 'tool: session highlights'
+          : normalizedName === 'get_coverage_report'
+            ? 'tool: coverage report'
+            : normalizedName === 'get_overview_snapshot'
+              ? 'tool: overview snapshot'
+              : 'tool: spend snapshot'
+      return resultFor(normalizedName, nextScope, normalizedArgs, buildSpendEvidence(label, nextScope, overview))
+    }
+    if (normalizedName === 'get_model_efficiency') {
+      const overview = suppliedOverview && sameScope(nextScope, invocationScope)
+        ? suppliedOverview
+        : signal ? await source.getOverview(nextScope, signal) : await source.getOverview(nextScope)
+      throwIfAborted(signal)
+      const evidence = buildModelEfficiencyEvidence('tool: model efficiency', nextScope, overview, await optionalModels(source, nextScope, signal))
+      return resultFor(normalizedName, nextScope, normalizedArgs, evidence)
+    }
+    if (normalizedName === 'get_quota_snapshot') {
+      const overview = suppliedOverview && sameScope(nextScope, invocationScope)
+        ? suppliedOverview
+        : signal ? await source.getOverview(nextScope, signal) : await source.getOverview(nextScope)
+      throwIfAborted(signal)
+      const evidence = buildQuotaEvidence('tool: quota snapshot', nextScope, overview, await optionalQuota(source, signal))
+      return resultFor(normalizedName, nextScope, normalizedArgs, evidence)
+    }
+    throw new AdvisorToolContractError('unknown-tool', 'Unknown Advisor tool: ' + normalizedName)
+  }
+  return { contract: ADVISOR_TOOL_CONTRACT, definitions: ADVISOR_TOOL_DEFINITIONS, scope: invocationScope, execute }
 }
