@@ -1,18 +1,20 @@
 import { createRequire } from 'node:module'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { collectDoctorReport, renderDoctorJson, renderDoctorTable } from '../src/doctor.js'
-import { classifyDoctorError, DOCTOR_SOURCE_STATES, redactOverridePath, redactText } from '../src/doctor-source-diagnostics.js'
+import { classifyDoctorError, DOCTOR_SOURCE_STATES, inspectPath, redactOverridePath, redactText } from '../src/doctor-source-diagnostics.js'
 import { getCopilotDoctorProbeRoots } from '../src/providers/copilot-paths.js'
+import { createCodebuffProvider } from '../src/providers/codebuff.js'
+import { createMistralVibeProvider } from '../src/providers/mistral-vibe.js'
 import { createCopilotProvider } from '../src/providers/copilot.js'
 import { getCursorDoctorProbeRoots, getCursorWorkspaceStorageDir } from '../src/providers/cursor-paths.js'
 import { createCursorProvider } from '../src/providers/cursor.js'
 import { getKiroDoctorProbeRoots } from '../src/providers/kiro-paths.js'
 import { createKiroProvider } from '../src/providers/kiro.js'
-import { PROVIDER_ENV_VARS, emptyCache } from '../src/session-cache.js'
+import { PROVIDER_ENV_VARS, emptyCache, sessionCachePath } from '../src/session-cache.js'
 import type { Provider } from '../src/providers/types.js'
 
 const requireForTest = createRequire(import.meta.url)
@@ -67,6 +69,35 @@ describe('bounded source diagnostic primitive', () => {
     const row = only(await collectDoctorReport('codex', { providers: [provider], cache: emptyCache() }), 'codex')
     expect(row.families.map(family => family.state)).toEqual(['MISSING', 'PRESENT_EMPTY'])
     expect(row.families.every(family => family.root === '<redacted-path>')).toBe(true)
+  })
+
+  it('caps generic directory evidence at the bounded entry limit', async () => {
+    const largeRoot = join(root, 'large-root')
+    await mkdir(largeRoot, { recursive: true })
+    await Promise.all(Array.from({ length: 140 }, (_, index) => writeFile(join(largeRoot, `entry-${index}`), 'x')))
+    const probe = await inspectPath(largeRoot)
+    expect(probe.state).toBe('PRESENT')
+    expect(probe.entries).toHaveLength(128)
+  })
+
+  it('does not migrate a legacy cache while loading a read-only Doctor report', async () => {
+    const cacheDir = join(root, 'cache')
+    const legacyPath = join(cacheDir, 'session-cache.json')
+    vi.stubEnv('METRORA_CACHE_DIR', cacheDir)
+    await mkdir(cacheDir, { recursive: true })
+    await writeFile(legacyPath, JSON.stringify(emptyCache()))
+    const provider: Provider = {
+      name: 'codex',
+      displayName: 'Codex',
+      modelDisplayName: model => model,
+      toolDisplayName: tool => tool,
+      discoverSessions: async () => [],
+      createSessionParser: () => ({ async *parse() {} }),
+    }
+
+    await collectDoctorReport('codex', { providers: [provider], sampleLimit: 0 })
+    await expect(stat(legacyPath)).resolves.toBeTruthy()
+    await expect(stat(sessionCachePath())).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('redacts override values and source paths in both output modes', async () => {
@@ -152,6 +183,59 @@ describe('bounded source diagnostic primitive', () => {
     expect(json).not.toContain(secretValue)
     expect(table).not.toContain(secretValue)
     expect(json).toContain('<override-path>')
+  })
+})
+
+describe('Codebuff and Mistral Vibe Doctor families', () => {
+  it('distinguishes a Codebuff override as missing, empty, and present without leaking the path', async () => {
+    const codebuffRoot = join(root, 'private-codebuff-root')
+    vi.stubEnv('CODEBUFF_DATA_DIR', codebuffRoot)
+    const provider = createCodebuffProvider()
+
+    let row = only(await collectDoctorReport('codebuff', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'codebuff')
+    expect(row.families[0]).toMatchObject({
+      family: 'data',
+      state: 'MISSING',
+      root: '<override-path>',
+      override: 'CODEBUFF_DATA_DIR',
+    })
+    expect(row.verdict).toContain('source is missing')
+
+    await mkdir(codebuffRoot, { recursive: true })
+    row = only(await collectDoctorReport('codebuff', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'codebuff')
+    expect(row.families[0]?.state).toBe('PRESENT_EMPTY')
+
+    await writeFile(join(codebuffRoot, 'read-only-marker'), 'present')
+    row = only(await collectDoctorReport('codebuff', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'codebuff')
+    expect(row.families[0]?.state).toBe('PRESENT')
+
+    const json = renderDoctorJson({ generatedAt: new Date().toISOString(), providers: [row] })
+    const table = renderDoctorTable({ generatedAt: new Date().toISOString(), providers: [row] }, { color: false })
+    expect(json).not.toContain(codebuffRoot)
+    expect(table).not.toContain(codebuffRoot)
+  })
+
+  it('distinguishes a Mistral Vibe VIBE_HOME root as missing, empty, and present', async () => {
+    const vibeHome = join(root, 'private-vibe-home')
+    const sessionsRoot = join(vibeHome, 'logs', 'session')
+    vi.stubEnv('VIBE_HOME', vibeHome)
+    const provider = createMistralVibeProvider()
+
+    let row = only(await collectDoctorReport('mistral-vibe', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'mistral-vibe')
+    expect(row.families[0]).toMatchObject({
+      family: 'session',
+      state: 'MISSING',
+      root: '<override-path>',
+      override: 'VIBE_HOME',
+    })
+
+    await mkdir(sessionsRoot, { recursive: true })
+    row = only(await collectDoctorReport('mistral-vibe', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'mistral-vibe')
+    expect(row.families[0]?.state).toBe('PRESENT_EMPTY')
+
+    await writeFile(join(sessionsRoot, 'read-only-marker'), 'present')
+    row = only(await collectDoctorReport('mistral-vibe', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'mistral-vibe')
+    expect(row.families[0]?.state).toBe('PRESENT')
   })
 })
 

@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { tmpdir } from 'os'
+import { homedir, tmpdir } from 'os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createGeminiProvider } from '../../src/providers/gemini.js'
@@ -33,6 +33,11 @@ async function parseFixture(messages: unknown[]): Promise<ParsedProviderCall[]> 
 }
 
 describe('gemini provider', () => {
+  it('reports the authoritative ~/.gemini/tmp root for Doctor', async () => {
+    expect(await createGeminiProvider().probeRoots!()).toEqual([
+      { path: join(homedir(), '.gemini', 'tmp'), label: 'tmp' },
+    ])
+  })
   it('emits one provider call per Gemini message with token usage', async () => {
     const calls = await parseFixture([
       {
