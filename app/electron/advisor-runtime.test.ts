@@ -14,6 +14,9 @@ function streamedResponse(lines: string[]): Response {
   })
   return new Response(body, { status: 200, headers: { 'content-type': 'application/x-ndjson' } })
 }
+function textOnlyResponse(text: string): Response {
+  return { ok: true, body: null, text: async () => text } as unknown as Response
+}
 
 describe('Electron Advisor local runtime', () => {
   it('probes the fixed loopback endpoint and reports discovered models', async () => {
@@ -42,6 +45,36 @@ describe('Electron Advisor local runtime', () => {
     expect(result.streamed).toBe(true)
     expect(result.message.content).toBe('Measured evidence.')
     expect(deltas).toEqual(['Measured ', 'Measured evidence.'])
+  })
+
+  it('fails closed when one valid reader-backed NDJSON record exceeds the content cap', async () => {
+    const response = streamedResponse([JSON.stringify({ message: { content: 'x'.repeat(32_001) } }) + '\n'])
+
+    await expect(chatOllamaMain(async () => response, payload)).rejects.toThrow('content limit')
+  })
+
+  it('fails closed when valid fallback NDJSON records cumulatively exceed the content cap', async () => {
+    const response = textOnlyResponse([
+      JSON.stringify({ message: { content: 'x'.repeat(20_000) } }),
+      JSON.stringify({ message: { content: 'y'.repeat(12_001) } }),
+    ].join('\n'))
+
+    await expect(chatOllamaMain(async () => response, payload)).rejects.toThrow('content limit')
+  })
+
+  it('tolerates malformed NDJSON up to the intended bound, then fails closed', async () => {
+    const valid = JSON.stringify({ message: { content: 'valid' } }) + '\n'
+    const tolerated = streamedResponse([...Array.from({ length: 16 }, () => '{broken\n'), valid])
+    await expect(chatOllamaMain(async () => tolerated, payload)).resolves.toMatchObject({ message: { content: 'valid' } })
+
+    const exceeded = streamedResponse([...Array.from({ length: 17 }, () => '{broken\n'), valid])
+    await expect(chatOllamaMain(async () => exceeded, payload)).rejects.toThrow('malformed chunks')
+  })
+
+  it('enforces the response byte cap on the non-reader fallback path', async () => {
+    const response = textOnlyResponse('x'.repeat(2 * 1024 * 1024 + 1))
+
+    await expect(chatOllamaMain(async () => response, payload)).rejects.toThrow('response exceeded the safety limit')
   })
 
   it('returns a bounded cancellation envelope and never exposes the local endpoint', async () => {

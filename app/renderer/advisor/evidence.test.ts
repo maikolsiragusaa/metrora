@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { MenubarPayload } from '../lib/types'
 import type { QuotaProvider } from '../../electron/quota/types'
-import { buildModelEfficiencyEvidence, buildQuotaEvidence, buildSpendEvidence } from './evidence'
+import { buildModelEfficiencyEvidence, buildQuotaEvidence, buildSpendEvidence, classifyAdvisorQuestion } from './evidence'
 import type { AdvisorScope } from './types'
 
 const scope: AdvisorScope = { period: 'week', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }
@@ -36,6 +36,29 @@ function quota(provider: 'claude' | 'codex', freshness: 'fresh' | 'stale' | 'una
 }
 
 describe('Advisor evidence truth contract', () => {
+  it.each([
+    'Why did spend increase?',
+    'What caused the spike?',
+    'Which Project drove spend?',
+    'Which sessions were unusually expensive?',
+    'Which model drove the spend increase?',
+    'What changed versus the selected period?',
+  ])('routes spend/change investigation to measured spend evidence: %s', question => {
+    expect(classifyAdvisorQuestion(question)).toBe('spend-change')
+  })
+
+  it.each([
+    'Which model has lower observed cost per call?',
+    'Which model is cheaper per observed call?',
+    'Compare observed model cost efficiency.',
+  ])('routes explicit model efficiency questions to model evidence: %s', question => {
+    expect(classifyAdvisorQuestion(question)).toBe('model-efficiency')
+  })
+
+  it('does not let a generic model mention override a spend/change driver question', () => {
+    expect(classifyAdvisorQuestion('Which model drove the spend increase?')).toBe('spend-change')
+  })
+
   it('keeps missing spend totals unavailable instead of inventing zeroes', () => {
     const evidence = buildSpendEvidence('missing totals', scope, emptyOverview)
     expect(evidence.coverage.level).toBe('unavailable')

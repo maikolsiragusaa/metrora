@@ -9,10 +9,10 @@ import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
 import { OllamaAdvisorRuntime, probeOllama, type OllamaProbeResult } from '../advisor/ollama'
 import { scopeLabel } from '../advisor/evidence'
-import type { AdvisorAnswer, AdvisorConversationTurn, AdvisorScope } from '../advisor/types'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorScope } from '../advisor/types'
 
 type DetectedProvider = { id: string; label: string }
-type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer }
+type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 type RuntimeState = { status: 'checking' | 'ready' | 'unavailable'; detail: string; models: string[] }
@@ -158,9 +158,12 @@ export function Advisor({
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
-    const history: AdvisorConversationTurn[] = retryRequest?.conversation ?? targetConversation.messages.map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '' }))
+    const requestedScopeFingerprint = advisorScopeFingerprint(requestedScope)
+    const history: AdvisorConversationTurn[] = retryRequest?.conversation ?? targetConversation.messages
+      .map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '', scopeFingerprint: message.scopeFingerprint }))
+      .filter(turn => turn.scopeFingerprint === requestedScopeFingerprint)
     if (!retryRequest) {
-      const userMessage: AdvisorMessage = { id: makeId('user'), role: 'user', text: question }
+      const userMessage: AdvisorMessage = { id: makeId('user'), role: 'user', text: question, scopeFingerprint: requestedScopeFingerprint }
       updateConversation(conversationId, conversation => ({
         ...conversation,
         title: conversation.messages.length === 0 ? question.slice(0, 42) : conversation.title,
@@ -192,7 +195,7 @@ export function Advisor({
         onDelta: text => setStreamPreview(text),
       })
       if (controller.signal.aborted) return
-      const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer }
+      const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint }
       updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {

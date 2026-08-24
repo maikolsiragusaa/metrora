@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
-import type { AdvisorEvidence, AdvisorScope } from './types'
+import { advisorScopeFingerprint, type AdvisorEvidence, type AdvisorScope } from './types'
 
 const scope: AdvisorScope = {
   period: 'week',
@@ -87,6 +87,38 @@ function noToolTransport(content: string): OllamaTransport {
   }
 }
 describe('Ollama Advisor renderer state machine', () => {
+  it('sends only same-scope conversation context to the local model', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const currentFingerprint = advisorScopeFingerprint(scope)
+    const otherFingerprint = advisorScopeFingerprint({ ...scope, provider: 'codex' })
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: () => () => {},
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        return { streamed: false, message: { content: 'done', tool_calls: [] } }
+      },
+    }
+
+    await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'Follow up',
+      evidence: spendEvidence,
+      conversation: [
+        { role: 'user', content: 'same scope', scopeFingerprint: currentFingerprint },
+        { role: 'assistant', content: 'same factual answer', scopeFingerprint: currentFingerprint },
+        { role: 'assistant', content: 'different factual answer', scopeFingerprint: otherFingerprint },
+      ],
+      tools: [],
+    })
+
+    const contents = (requests[0]?.messages as Array<{ content: string }>).map(message => message.content)
+    expect(contents).toContain('same factual answer')
+    expect(contents).toContain('Follow up')
+    expect(contents.some(content => content.includes('same scope'))).toBe(true)
+    expect(contents).not.toContain('different factual answer')
+  })
+
   it('runs one tool-planning request, one streamed final request, and retains all evidence domains', async () => {
     const events: string[] = []
     const transport = transportFor(events, [[

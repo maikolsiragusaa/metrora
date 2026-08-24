@@ -31,7 +31,11 @@ function timeoutSignal(parent?: AbortSignal, timeoutMs = CHAT_TIMEOUT_MS): { sig
 }
 async function boundedText(response: Response): Promise<string> {
   const reader = response.body?.getReader()
-  if (!reader) return (await response.text()).slice(0, MAX_RESPONSE_BYTES)
+  if (!reader) {
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) throw new Error('Local runtime response exceeded the safety limit.')
+    return text
+  }
   const decoder = new TextDecoder()
   let bytes = 0
   let text = ''
@@ -89,23 +93,27 @@ function parseNdjsonText(text: string, onDelta?: (text: string) => void): Adviso
   for (const line of text.split(/\r?\n/).filter(Boolean)) {
     chunks += 1
     if (chunks > MAX_STREAM_CHUNKS) throw new Error('Local runtime stream exceeded the chunk limit.')
-    try {
-      const value = JSON.parse(line) as unknown
-      if (!value || typeof value !== 'object') throw new Error('not an object')
-      const message = (value as { message?: unknown }).message
-      if (!message || typeof message !== 'object') continue
-      const row = message as Record<string, unknown>
-      if (typeof row.content === 'string') {
-        content += row.content
-        if (content.length > 32_000) throw new Error('Local runtime message exceeded the content limit.')
-        onDelta?.(content)
-      }
-      const calls = parseToolCalls(row.tool_calls)
-      if (calls.length) toolCalls.push(...calls)
-    } catch {
+    let value: unknown
+    try { value = JSON.parse(line) as unknown } catch {
       malformed += 1
       if (malformed > MAX_MALFORMED_CHUNKS) throw new Error('Local runtime stream contained too many malformed chunks.')
+      continue
     }
+    if (!value || typeof value !== 'object') {
+      malformed += 1
+      if (malformed > MAX_MALFORMED_CHUNKS) throw new Error('Local runtime stream contained too many malformed chunks.')
+      continue
+    }
+    const message = (value as { message?: unknown }).message
+    if (!message || typeof message !== 'object') continue
+    const row = message as Record<string, unknown>
+    if (typeof row.content === 'string') {
+      content += row.content
+      if (content.length > 32_000) throw new Error('Local runtime message exceeded the content limit.')
+      onDelta?.(content)
+    }
+    const calls = parseToolCalls(row.tool_calls)
+    if (calls.length) toolCalls.push(...calls)
   }
   return { message: { content, tool_calls: toolCalls.slice(0, 16) }, streamed: true }
 }
@@ -123,23 +131,27 @@ async function streamNdjsonResponse(response: Response, onDelta?: (text: string)
     if (!line.trim()) return
     chunks += 1
     if (chunks > MAX_STREAM_CHUNKS) throw new Error('Local runtime stream exceeded the chunk limit.')
-    try {
-      const value = JSON.parse(line) as unknown
-      if (!value || typeof value !== 'object') throw new Error('not an object')
-      const message = (value as { message?: unknown }).message
-      if (!message || typeof message !== 'object') return
-      const row = message as Record<string, unknown>
-      if (typeof row.content === 'string') {
-        content += row.content
-        if (content.length > 32_000) throw new Error('Local runtime message exceeded the content limit.')
-        onDelta?.(content)
-      }
-      const calls = parseToolCalls(row.tool_calls)
-      if (calls.length) toolCalls.push(...calls)
-    } catch {
+    let value: unknown
+    try { value = JSON.parse(line) as unknown } catch {
       malformed += 1
       if (malformed > MAX_MALFORMED_CHUNKS) throw new Error('Local runtime stream contained too many malformed chunks.')
+      return
     }
+    if (!value || typeof value !== 'object') {
+      malformed += 1
+      if (malformed > MAX_MALFORMED_CHUNKS) throw new Error('Local runtime stream contained too many malformed chunks.')
+      return
+    }
+    const message = (value as { message?: unknown }).message
+    if (!message || typeof message !== 'object') return
+    const row = message as Record<string, unknown>
+    if (typeof row.content === 'string') {
+      content += row.content
+      if (content.length > 32_000) throw new Error('Local runtime message exceeded the content limit.')
+      onDelta?.(content)
+    }
+    const calls = parseToolCalls(row.tool_calls)
+    if (calls.length) toolCalls.push(...calls)
   }
   while (true) {
     const part = await reader.read()

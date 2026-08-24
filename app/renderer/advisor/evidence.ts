@@ -58,8 +58,8 @@ function normalize(question: string): string {
 export function classifyAdvisorQuestion(question: string): AdvisorIntent {
   const value = normalize(question)
   if (/(quota|capacity|limit|reset|remaining|exhaust|rate.?limit|credit|disponibil|limite|esaur)/.test(value)) return 'quota-capacity'
-  if (/(model|efficient|efficien|cheaper|cheap|expensive|cost per|per call|retry|retries|econom|modello)/.test(value)) return 'model-efficiency'
-  if (/(spend|cost|spent|increase|increas|change|changed|spike|driver|cause|why|costo|spesa|aument|picco|perche|perché)/.test(value)) return 'spend-change'
+  if (/(why did|what caused|cause|driver|drove|spend|spent|increase|increas|change|changed|spike|which project|which sessions?|unusually expensive|expensive sessions?|versus|vs\b|costo|spesa|aument|picco|perche|perché)/.test(value)) return 'spend-change'
+  if (/(model efficiency|lower observed cost per call|cheaper per observed call|cost per call|per observed call|which model.*(?:lower|cheaper)|compare.*model.*(?:cost|efficien)|efficien|efficient|econom|modello)/.test(value)) return 'model-efficiency'
   return 'unknown'
 }
 function modelDrivers(data: MenubarPayload): AdvisorSpendDriver[] {

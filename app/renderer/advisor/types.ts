@@ -3,6 +3,16 @@ import type { DateRange, MenubarPayload, ModelReportRow, Period, QuotaProvider }
 
 export type AdvisorIntent = 'spend-change' | 'model-efficiency' | 'quota-capacity' | 'unknown'
 export type AdvisorScope = { period: Period; range: DateRange | null; provider: string; projectId: string; projectName: string; model: string | null }
+export type AdvisorScopeIdentity = Pick<AdvisorScope, 'period' | 'range' | 'projectId' | 'provider' | 'model'>
+export function advisorScopeFingerprint(scope: AdvisorScopeIdentity): string {
+  return JSON.stringify({
+    period: scope.period,
+    range: scope.range ? { from: scope.range.from, to: scope.range.to } : null,
+    projectId: scope.projectId,
+    provider: scope.provider,
+    model: scope.model,
+  })
+}
 export type AdvisorCoverageLevel = 'high' | 'partial' | 'unavailable'
 export type AdvisorCoverage = { level: AdvisorCoverageLevel; label: string; detail: string }
 export type AdvisorEvidenceSource = 'overview' | 'history' | 'models' | 'quota'
@@ -20,7 +30,7 @@ export type AdvisorAnswer = { conclusion: string; scopeLabel: string; periodLabe
 export type AdvisorToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }
 export type AdvisorToolExecution = { content: string; evidence: AdvisorEvidence }
 export type AdvisorToolExecutor = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<AdvisorToolExecution>
-export type AdvisorConversationTurn = { role: 'user' | 'assistant'; content: string }
+export type AdvisorConversationTurn = { role: 'user' | 'assistant'; content: string; scopeFingerprint: string }
 export type AdvisorRuntimeInput = { question: string; evidence: AdvisorEvidence; conversation?: AdvisorConversationTurn[]; tools?: readonly AdvisorToolDefinition[]; executeTool?: AdvisorToolExecutor; onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void; onDelta?: (text: string) => void }
 export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'deterministic-local' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> }
 export type AdvisorDataSource = { getOverview(context: AdvisorScope): Promise<MenubarPayload>; getModels(context: AdvisorScope): Promise<ModelReportRow[]>; getQuota(): Promise<QuotaProvider[]> }

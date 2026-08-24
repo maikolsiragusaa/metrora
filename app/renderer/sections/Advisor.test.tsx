@@ -35,11 +35,25 @@ const overview = {
   refresh: vi.fn(),
   refreshFresh: vi.fn(),
 } as unknown as Polled<MenubarPayload>
+const overviewWithOptions = {
+  ...overview,
+  data: {
+    current: { modelAccounting: { rows: [{ name: 'gpt-safe' }] }, topModels: [{ name: 'gpt-safe' }] },
+    projectScope: { options: [{ id: 'project-a', name: 'Project A' }] },
+  },
+} as unknown as Polled<MenubarPayload>
 const answer = {
   conclusion: 'Verified RESPONSE needle.', scopeLabel: 'Last 7 days · All projects · All providers', periodLabel: 'Last 7 days',
   evidence: [], coverage: { level: 'partial', label: 'Partial', detail: 'Test evidence.' }, assumptions: [], unknown: [], nextInvestigations: [], details: [],
   runtime: { id: 'test', label: 'Test', mode: 'deterministic-local' },
 } satisfies AdvisorAnswer
+
+async function submitQuestion(question: string): Promise<void> {
+  const previousCalls = investigate.mock.calls.length
+  fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
+  fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+  await waitFor(() => expect(investigate.mock.calls).toHaveLength(previousCalls + 1))
+}
 
 describe('Advisor workspace', () => {
   beforeEach(() => {
@@ -73,6 +87,63 @@ describe('Advisor workspace', () => {
     expect(investigate).toHaveBeenCalledTimes(2)
     expect(investigate.mock.calls[1]?.[0]).toMatchObject({ question, scope: { provider: 'all', period: 'week' }, conversation: [] })
     expect(container.querySelectorAll('.user-message')).toHaveLength(1)
+  })
+
+  it('retains useful same-scope context for a follow-up', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('First scope question')
+    await submitQuestion('Same scope follow-up')
+
+    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([
+      { role: 'user', content: 'First scope question', scopeFingerprint: expect.any(String) },
+      { role: 'assistant', content: answer.conclusion, scopeFingerprint: expect.any(String) },
+    ])
+    expect(investigate.mock.calls[1]?.[0].conversation[0].scopeFingerprint).toBe(investigate.mock.calls[1]?.[0].conversation[1].scopeFingerprint)
+  })
+
+  it('keeps old messages visible but excludes factual context after a Project change', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overviewWithOptions} detectedProviders={[]} />)
+    await submitQuestion('Project A question')
+    fireEvent.change(screen.getByLabelText('Advisor Project'), { target: { value: 'project-a' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor Project')).toHaveValue('project-a'))
+    await submitQuestion('Project B question')
+
+    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
+    expect(screen.getAllByText('Project A question').length).toBeGreaterThan(0)
+  })
+
+  it('excludes factual context after a period change', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('Weekly question')
+    fireEvent.change(screen.getByLabelText('Advisor period'), { target: { value: '30days' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor period')).toHaveValue('30days'))
+    await submitQuestion('Thirty day question')
+
+    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
+  })
+
+  it('excludes factual context after an explicit range change', async () => {
+    const view = render(<Advisor period="week" provider="all" projectScopeId="all" range={{ from: '2026-08-01', to: '2026-08-07' }} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('First range question')
+    view.rerender(<Advisor period="week" provider="all" projectScopeId="all" range={{ from: '2026-08-08', to: '2026-08-14' }} overview={overview} detectedProviders={[]} />)
+    await waitFor(() => expect(screen.getByText(/Aug 8/)).toBeInTheDocument())
+    await submitQuestion('Second range question')
+
+    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
+  })
+
+  it('excludes factual context after provider and model changes', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overviewWithOptions} detectedProviders={[{ id: 'codex', label: 'Codex' }]} />)
+    await submitQuestion('All provider question')
+    fireEvent.change(screen.getByLabelText('Advisor provider'), { target: { value: 'codex' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor provider')).toHaveValue('codex'))
+    await submitQuestion('Codex question')
+    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
+
+    fireEvent.change(screen.getByLabelText('Advisor model'), { target: { value: 'gpt-safe' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor model')).toHaveValue('gpt-safe'))
+    await submitQuestion('Model question')
+    expect(investigate.mock.calls[2]?.[0].conversation).toEqual([])
   })
 
   it('searches conversation titles, questions, and answers case-insensitively and can clear the query', async () => {

@@ -1,6 +1,6 @@
 import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
-import type { AdvisorAnswer, AdvisorCoverageLevel, AdvisorEvidence, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolExecution } from './types'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
 
 type OllamaToolCall = { function?: { name?: string; arguments?: Record<string, unknown> | string } }
 type OllamaChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: OllamaToolCall[]; tool_name?: string }
@@ -139,7 +139,8 @@ function toolCallArgs(call: OllamaToolCall): Record<string, unknown> {
   return parseArguments(call.function?.arguments)
 }
 function safeConversation(input: AdvisorRuntimeInput): OllamaChatMessage[] {
-  return (input.conversation ?? []).slice(-12).flatMap(turn => {
+  const currentScopeFingerprint = advisorScopeFingerprint(input.evidence.scope)
+  return (input.conversation ?? []).filter(turn => turn.scopeFingerprint === currentScopeFingerprint).slice(-12).flatMap(turn => {
     const content = turn.content.trim().slice(0, 4000)
     return content ? [{ role: turn.role, content }] : []
   })
