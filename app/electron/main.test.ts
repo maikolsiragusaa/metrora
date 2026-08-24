@@ -82,11 +82,16 @@ const CHANNELS = [
   'metrora:advisorProbe',
   'metrora:advisorChat',
   'metrora:advisorCancel',
+  'metrora:getBenchHistory',
+  'metrora:getBenchComparison',
+  'metrora:runBenchTaskPack',
 ] as const
 
 const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = [
   { channel: 'metrora:getOverview', args: ['30days', 'claude'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--provider', 'claude'] },
   { channel: 'metrora:getOverview', args: ['30days', 'all'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline'] },
+  { channel: 'metrora:getBenchHistory', args: [], argv: ['bench', 'history', '--format', 'json', '--limit', '50'] },
+  { channel: 'metrora:getBenchComparison', args: ['left-run', 'right-run'], argv: ['bench', 'compare', 'left-run', 'right-run', '--format', 'json'] },
   { channel: 'metrora:getPlans', args: ['week'], argv: ['status', '--format', 'json', '--period', 'week'] },
   { channel: 'metrora:getActReport', args: [], argv: ['act', 'report', '--json'] },
   { channel: 'metrora:getModels', args: ['week', 'claude', true], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'] },
@@ -147,6 +152,15 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
     const handlers = createBridgeHandlers(deps({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
     const res = await handlers[channel]!(...args)
     expect(calls[0]).toEqual(argv)
+    expect(res).toMatchObject({ ok: true })
+  })
+
+  it('runs the Bench task pack through a bounded, generated-run-id argv', async () => {
+    const { spawnCli, spawnCliAction, calls } = fakeSpawn({ schemaVersion: 'metrora.bench-evaluation.v1' })
+    const handlers = createBridgeHandlers(deps({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
+    const res = await handlers['metrora:runBenchTaskPack']!('qwen3:8b', 'core-v1')
+    expect(calls[0]?.slice(0, 9)).toEqual(['bench', 'task-pack', '--model', 'qwen3:8b', '--pack', 'core-v1', '--format', 'json', '--run-id'])
+    expect(calls[0]?.[9]).toMatch(/^[0-9a-f-]{36}$/)
     expect(res).toMatchObject({ ok: true })
   })
 

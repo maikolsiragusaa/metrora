@@ -82,4 +82,4 @@ licenses and operator review.
 An output artifact is written only when the user supplies `--output`; the
 write is local, bounded and atomic. There is no upload, publication, managed
 compute path, cloud credential, persistent Bench database or Desktop Bench
-navigation in V1.
+navigation for `bench local` in V1. The separate [Bench task pack v1](BENCH_TASK_PACK_V1.md) surface adds its own versioned assertions, bounded private history and Desktop Bench route without changing the BenchRunV1 contract.
