@@ -53,8 +53,8 @@ const CORE_TASKS: readonly BenchTaskV1[] = [
   },
   {
     id: 'schema-object',
-    prompt: 'Return a JSON object with answer as the number 42 and unit as the string items. Extra keys are unnecessary.',
-    scoring: { kind: 'json-shape', required: { answer: 'number', unit: 'string' } },
+    prompt: 'Return exactly this JSON object and no markdown: {"answer":42,"unit":"items"}',
+    scoring: { kind: 'exact-json', expected: { answer: 42, unit: 'items' } },
   },
   {
     id: 'normalized-confirmation',

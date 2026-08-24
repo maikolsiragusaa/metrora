@@ -1,8 +1,17 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BENCH_HISTORY_MAX_RECORDS, benchHistoryDirectoryV1, saveBenchEvaluationV1, scanBenchHistoryV1 } from '../src/bench/history-v1.js'
+import {
+  BENCH_HISTORY_MAX_CANDIDATE_FILES,
+  BENCH_HISTORY_MAX_FILE_BYTES,
+  BENCH_HISTORY_MAX_INVALID_DIAGNOSTICS,
+  BENCH_HISTORY_MAX_INVALID_FILES,
+  BENCH_HISTORY_MAX_RECORDS,
+  benchHistoryDirectoryV1,
+  saveBenchEvaluationV1,
+  scanBenchHistoryV1,
+} from '../src/bench/history-v1.js'
 import type { BenchEvaluationV1 } from '../src/bench/task-pack-run-v1.js'
 
 const dirs: string[] = []
@@ -28,6 +37,57 @@ describe('Bench history v1', () => {
     expect(scan.invalid).toHaveLength(1)
     expect(JSON.stringify(scan.records)).not.toContain('single lowercase word')
     expect(JSON.stringify(scan.records)).not.toContain('model response body')
+  })
+
+  it('bounds oversized corrupt files before parsing', async () => {
+    const dir = dataDir()
+    const file = 'b'.repeat(64) + '.json'
+    mkdirSync(benchHistoryDirectoryV1(dir), { recursive: true })
+    writeFileSync(join(benchHistoryDirectoryV1(dir), file), Buffer.alloc(BENCH_HISTORY_MAX_FILE_BYTES + 1, 0x78))
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records).toHaveLength(0)
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('bounded byte limit') }])
+  })
+
+  it('bounds corrupt candidate scanning and diagnostic accumulation', async () => {
+    const dir = dataDir()
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    for (let index = 0; index < BENCH_HISTORY_MAX_CANDIDATE_FILES + 20; index++) {
+      const file = index.toString(16).padStart(64, '0') + '.json'
+      writeFileSync(join(recordsDir, file), '{not-json}')
+    }
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records).toHaveLength(0)
+    expect(scan.invalid.length).toBeLessThanOrEqual(BENCH_HISTORY_MAX_INVALID_DIAGNOSTICS)
+    expect(scan.invalid.some(item => item.file === '<bounded-diagnostics>' || item.file === '<candidate-scan>')).toBe(true)
+  })
+
+  it('keeps valid recent records usable among corruption', async () => {
+    const dir = dataDir()
+    const record = evaluation('recent', '2026-08-24T12:00:00.000Z')
+    await saveBenchEvaluationV1(record, { dataDir: dir })
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    for (let index = 0; index < BENCH_HISTORY_MAX_INVALID_FILES + 4; index++) {
+      const file = (index + 100).toString(16).padStart(64, '0') + '.json'
+      writeFileSync(join(recordsDir, file), '{corrupt}')
+    }
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records.map(item => item.runId)).toContain('recent')
+  })
+
+  it('retains invalid files under a deterministic bounded budget without evicting valid history', async () => {
+    const dir = dataDir()
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    for (let index = 0; index < BENCH_HISTORY_MAX_INVALID_FILES + 4; index++) {
+      const file = (index + 200).toString(16).padStart(64, '0') + '.json'
+      writeFileSync(join(recordsDir, file), '{corrupt}')
+    }
+    await saveBenchEvaluationV1(evaluation('retained', '2026-08-24T13:00:00.000Z'), { dataDir: dir })
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records.map(item => item.runId)).toEqual(['retained'])
+    expect(scan.invalid.length).toBeLessThanOrEqual(BENCH_HISTORY_MAX_INVALID_FILES)
   })
 
   it('retains at most the bounded record count', async () => {

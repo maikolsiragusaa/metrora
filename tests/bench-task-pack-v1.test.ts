@@ -11,7 +11,7 @@ function stream(output: string, model = 'qwen3:8b'): Response {
 function passingOutput(prompt: string): string {
   if (prompt.includes('single lowercase word')) return 'blue'
   if (prompt.includes('17 + 25')) return '42'
-  if (prompt.includes('answer as the number')) return '{"answer":42,"unit":"items"}'
+  if (prompt.includes('"answer":42')) return '{"answer":42,"unit":"items"}'
   if (prompt.includes('JSON object')) return '{"kind":"fixture","count":3}'
   if (prompt.includes('JSON array')) return '["alpha","beta","gamma"]'
   return 'READY'
@@ -33,7 +33,12 @@ describe('deterministic Bench task pack v1', () => {
     expect(scoreBenchTaskV1(CORE_TASK_PACK_V1.tasks[0]!, ' blue ' + NL).status).toBe('passed')
     expect(scoreBenchTaskV1(CORE_TASK_PACK_V1.tasks[1]!, '41').status).toBe('failed')
     expect(scoreBenchTaskV1(CORE_TASK_PACK_V1.tasks[2]!, '{bad').status).toBe('malformed')
-    expect(scoreBenchTaskV1(CORE_TASK_PACK_V1.tasks[4]!, '{"answer":"42","unit":"items"}').status).toBe('failed')
+    const schemaObject = CORE_TASK_PACK_V1.tasks[4]!
+    expect(scoreBenchTaskV1(schemaObject, '{"answer":42,"unit":"items"}').status).toBe('passed')
+    expect(scoreBenchTaskV1(schemaObject, '{"answer":999,"unit":"banana"}').status).toBe('failed')
+    expect(scoreBenchTaskV1(schemaObject, '{"answer":42,"unit":"banana"}').status).toBe('failed')
+    expect(scoreBenchTaskV1(schemaObject, '{"answer":999,"unit":"items"}').status).toBe('failed')
+    expect(scoreBenchTaskV1(schemaObject, '{"answer":"42","unit":"items"}').status).toBe('failed')
     expect(scoreBenchTaskV1(CORE_TASK_PACK_V1.tasks[5]!, 'ready').status).toBe('passed')
   })
 
