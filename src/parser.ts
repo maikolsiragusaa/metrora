@@ -2397,8 +2397,9 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
     ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
     ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
     usage,
-    costUSD: settlement.runtimeCostUSD,
+    costUSD: settlement.runtimeCostUSD + (call.costCorrectionUSD ?? 0),
     costAssignment: settlement.runtimeAssignment,
+    ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
     tools,
     mcpTools: extractMcpTools(tools),
     skills: call.skills ?? [],
@@ -2460,6 +2461,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
     usage,
     ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
     costAssignment: settlement.storedAssignment,
+    ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
     ...(settlement.storedLegacyCostUSD !== undefined ? { legacyCostUSD: settlement.storedLegacyCostUSD } : {}),
     isEstimated: call.costIsEstimated ?? undefined,
     speed: call.speed,
@@ -2501,7 +2503,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
   // is the API-equivalent amount that must be historically assigned in cache.
   const legacyApiEquivalentCost = call.isLocalSavings
     ? (call.savingsUSD ?? 0)
-    : call.costUSD
+    : call.costUSD - (call.costCorrectionUSD ?? 0)
   const usage = { ...call.usage, cacheCreationOneHourTokens: call.cacheCreationOneHourTokens ?? 0 }
   const settlement = assignRuntimeCostV1({
     provider: call.provider,
@@ -2528,6 +2530,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
     usage,
     ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
     costAssignment: settlement.storedAssignment,
+    ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
     ...(settlement.storedLegacyCostUSD !== undefined ? { legacyCostUSD: settlement.storedLegacyCostUSD } : {}),
     isEstimated: call.isEstimated ?? undefined,
     speed: call.speed,
@@ -2647,8 +2650,9 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
       reasoningTokens: u.reasoningTokens,
       webSearchRequests: u.webSearchRequests,
     },
-    costUSD: settlement.runtimeCostUSD,
+    costUSD: settlement.runtimeCostUSD + (call.costCorrectionUSD ?? 0),
     costAssignment: settlement.runtimeAssignment,
+    ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
     isEstimated: call.isEstimated,
     tools: call.tools,
     mcpTools: extractMcpTools(call.tools),

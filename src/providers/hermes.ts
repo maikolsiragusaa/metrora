@@ -7,7 +7,10 @@ import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { isSqliteAvailable, getSqliteLoadError, openDatabase, isSqliteBusyError, type SqliteDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 import { sourceMeteredCostAssignment } from './cost-evidence.js'
+import { observeHermesSessionV1, type HermesObservationEmissionV1 } from './hermes-observation-ledger.js'
 import type { ToolCall } from '../types.js'
+
+const MAX_API_CALL_ROWS_PER_OBSERVATION = 128
 
 type HermesSessionRow = {
   id: string
@@ -48,6 +51,11 @@ type HermesToolCall = {
 type ProfileDb = {
   dbPath: string
   profile: string
+}
+
+export type HermesProviderOptions = {
+  ledgerDir?: string
+  now?: () => Date
 }
 
 type TableInfoRow = {
@@ -167,13 +175,22 @@ function usageExpression(columns: Set<string>): string {
     'cache_read_tokens',
     'cache_write_tokens',
     'reasoning_tokens',
+    'api_call_count',
+    'tool_call_count',
     'actual_cost_usd',
     'estimated_cost_usd',
   ]
   const parts = usageColumns
     .filter(name => columns.has(name))
-    .map(name => `coalesce(${name}, 0)`)
+    .map(name => name === 'actual_cost_usd' || name === 'estimated_cost_usd'
+      ? `CASE WHEN ${name} IS NOT NULL THEN 1 ELSE 0 END`
+      : `coalesce(${name}, 0)`)
   return parts.length > 0 ? parts.join(' + ') : '0'
+}
+async function sourceSignature(dbPath: string): Promise<string> {
+  const info = await stat(dbPath).catch(() => null)
+  if (!info) return 'missing'
+  return [info.dev, info.ino, info.birthtimeMs, info.mode].map(value => String(value)).join(':')
 }
 
 function parseTimestamp(raw: number | null): string {
@@ -307,7 +324,7 @@ async function discoverFromDb(dbPath: string, profile: string): Promise<SessionS
   }
 }
 
-function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: string): SessionParser {
+function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: string, ledgerDir?: string, now: () => Date = () => new Date()): SessionParser {
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
       if (!isSqliteAvailable()) {
@@ -318,6 +335,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
       const decoded = decodeSourcePath(source.path)
       if (!decoded) return
       const profile = parseProfileName(decoded.dbPath, hermesHome)
+      const sourceIdentity = await sourceSignature(decoded.dbPath)
 
       let db: SqliteDatabase
       try {
@@ -327,7 +345,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         return
       }
 
-      let result: ParsedProviderCall | undefined
+      let results: ParsedProviderCall[] = []
       try {
         if (!validateSchema(db)) return
         const columns = getSessionColumns(db)
@@ -380,7 +398,8 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         const hasRecordedCost =
           (typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd) && row.actual_cost_usd >= 0) ||
           (typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd) && row.estimated_cost_usd >= 0)
-        if (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens + reasoningTokens === 0 && !hasRecordedCost) return
+        if (inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens + reasoningTokens
+          + (row.api_call_count ?? 0) + (row.tool_call_count ?? 0) === 0 && !hasRecordedCost) return
 
         const model = row.model ?? 'unknown'
         const modelProvider = normalizeExplicitModelProvider(row.billing_provider)
@@ -392,14 +411,11 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         const projectInfo = cwd
           ? { project: sanitizeProject(cwd), projectPath: cwd }
           : inferProject(messages, sanitizeProject(profile))
-        const timestamp = parseTimestamp(row.started_at)
-        const dedupKey = `hermes:${profile}:${row.id}`
-        if (seenKeys.has(dedupKey)) return
-        seenKeys.add(dedupKey)
+        const startedAt = parseTimestamp(row.started_at)
 
         // Hermes bills reasoning tokens at the output rate (same as Gemini).
-        // The LiteLLM model table is used as a fallback when Hermes has not
-        // stored an actual or estimated cost for the session.
+        // The LiteLLM model table is used only when Hermes has not stored a
+        // cost, and the ledger keeps that calculated channel separate.
         const calculatedCost = calculateCost(
           model,
           inputTokens,
@@ -410,42 +426,72 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         )
         const hasActualCost = typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd) && row.actual_cost_usd >= 0
         const hasEstimatedCost = typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd) && row.estimated_cost_usd >= 0
-        const recordedCost = hasActualCost
-          ? row.actual_cost_usd
-          : hasEstimatedCost ? row.estimated_cost_usd : null
-        // When Hermes stored no cost (e.g. subscription-billed sessions), the
-        // figure is our LiteLLM-priced estimate from the session token totals.
-        const costUSD = recordedCost ?? calculatedCost
-        const costIsEstimated = !hasActualCost
-
-        result = {
-          provider: 'hermes',
-          model,
-          ...(modelProvider ? { modelProvider } : {}),
-          ...(modelProvider ? { pricingContext: { inferenceProvider: modelProvider } } : {}),
+        const actualCostUSD = hasActualCost ? row.actual_cost_usd : null
+        const estimatedCostUSD = hasEstimatedCost ? row.estimated_cost_usd : null
+        const emissions: HermesObservationEmissionV1[] = await observeHermesSessionV1({
+          profile,
+          sourcePath: decoded.dbPath,
+          sourceSignature: sourceIdentity,
+          sessionId: row.id,
+          observedAt: now(),
+          ...(startedAt ? { sessionStartedAt: startedAt } : {}),
           inputTokens,
           outputTokens,
-          cacheCreationInputTokens: cacheWriteTokens,
-          cacheReadInputTokens: cacheReadTokens,
-          cachedInputTokens: cacheReadTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
           reasoningTokens,
-          webSearchRequests: 0,
-          costUSD,
-          costIsEstimated,
-          ...(hasActualCost ? { costAssignment: sourceMeteredCostAssignment(costUSD, 'client') } : {}),
-          tools,
-          bashCommands,
-          timestamp,
-          speed: 'standard',
-          deduplicationKey: dedupKey,
-          turnId: `${row.id}:session`,
-          toolSequence: toolSequence.length > 0 ? toolSequence : undefined,
-          userMessage: firstUserMessage(messages),
-          sessionId: row.id,
-          project: projectInfo.project,
-          projectPath: projectInfo.projectPath,
-        }
-      } catch (err) {
+          apiCalls: row.api_call_count ?? 0,
+          toolCalls: row.tool_call_count ?? 0,
+          actualCostUSD,
+          estimatedCostUSD,
+          calculatedCostUSD: calculatedCost,
+          ...(ledgerDir ? { ledgerDir } : {}),
+        })
+
+results = emissions.flatMap(emission => {
+          const observationKey = `hermes-observation:${profile}:${row.id}:${emission.epoch}:${emission.sequence}`
+          const costCorrectionUSD = emission.costTransition === 'actual-correction' ? emission.costUSD : 0
+          const costUSD = costCorrectionUSD !== 0 ? 0 : emission.costUSD
+          const costIsEstimated = emission.costBasis !== 'actual'
+          const initialObservation = emission.sequence === 1
+          const callCount = Math.min(MAX_API_CALL_ROWS_PER_OBSERVATION, Math.max(1, Math.floor(emission.apiCalls)))
+          const rows: ParsedProviderCall[] = []
+          for (let callIndex = 0; callIndex < callCount; callIndex += 1) {
+            const deduplicationKey = callIndex === 0 ? observationKey : `${observationKey}:api-${callIndex + 1}`
+            if (seenKeys.has(deduplicationKey)) continue
+            seenKeys.add(deduplicationKey)
+            const primary = callIndex === 0
+            rows.push({
+              provider: 'hermes',
+              model,
+              ...(modelProvider ? { modelProvider } : {}),
+              ...(modelProvider ? { pricingContext: { inferenceProvider: modelProvider } } : {}),
+              inputTokens: primary ? emission.inputTokens : 0,
+              outputTokens: primary ? emission.outputTokens : 0,
+              cacheCreationInputTokens: primary ? emission.cacheWriteTokens : 0,
+              cacheReadInputTokens: primary ? emission.cacheReadTokens : 0,
+              cachedInputTokens: primary ? emission.cacheReadTokens : 0,
+              reasoningTokens: primary ? emission.reasoningTokens : 0,
+              webSearchRequests: 0,
+              costUSD: primary ? costUSD : 0,
+              costIsEstimated,
+              ...(primary && costCorrectionUSD !== 0 ? { costCorrectionUSD } : {}),
+              ...(primary && (!costIsEstimated && costCorrectionUSD === 0) ? { costAssignment: sourceMeteredCostAssignment(costUSD, 'client') } : {}),
+              tools: primary && initialObservation ? tools : [],
+              bashCommands: primary && initialObservation ? bashCommands : [],
+              timestamp: emission.timestamp,
+              speed: 'standard',
+              deduplicationKey,
+              turnId: `${row.id}:observation-${emission.epoch}-${emission.sequence}`,
+              toolSequence: primary && initialObservation && toolSequence.length > 0 ? toolSequence : undefined,
+              userMessage: firstUserMessage(messages),
+              sessionId: row.id,
+              project: projectInfo.project,
+              projectPath: projectInfo.projectPath,
+            })
+          }
+          return rows
+        })      } catch (err) {
         // A transient lock on the live state.db must propagate so the caller
         // retries, not get swallowed into an empty (negatively cached) result.
         if (isSqliteBusyError(err)) throw err
@@ -455,16 +501,16 @@ function createParser(source: SessionSource, seenKeys: Set<string>, hermesHome: 
         db.close()
       }
 
-      if (result) yield result
+      for (const result of results) yield result
     },
   }
 }
-
-export function createHermesProvider(hermesHomeOverride?: string): Provider {
+export function createHermesProvider(hermesHomeOverride?: string, options: HermesProviderOptions = {}): Provider {
   const hermesHome = getHermesHome(hermesHomeOverride)
   return {
     name: 'hermes',
     displayName: 'Hermes Agent',
+    durableSources: true,
 
     modelDisplayName(model: string): string {
       return getShortModelName(model)
@@ -485,7 +531,7 @@ export function createHermesProvider(hermesHomeOverride?: string): Provider {
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
-      return createParser(source, seenKeys, hermesHome)
+      return createParser(source, seenKeys, hermesHome, options.ledgerDir, options.now)
     },
   }
 }

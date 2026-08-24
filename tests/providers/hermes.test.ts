@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, rm } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { basename, dirname, join } from 'path'
 import { tmpdir } from 'os'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { calculateCost } from '../../src/models.js'
 import { createHermesProvider } from '../../src/providers/hermes.js'
+import { hermesObservationLedgerFileV1, observeHermesSessionV1, readHermesObservationLedgerV1 } from '../../src/providers/hermes-observation-ledger.js'
 import { cachedCallToApiCall, providerCallToCachedCall } from '../../src/parser.js'
 import { isSqliteAvailable } from '../../src/sqlite.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
@@ -187,15 +189,14 @@ async function loadParserWithHermesHome(hermesHome: string, metroraCacheDir: str
   return parser
 }
 
-async function collectCalls(hermesHome: string, sourcePath: string): Promise<ParsedProviderCall[]> {
-  const provider = createHermesProvider(hermesHome)
+async function collectCalls(hermesHome: string, sourcePath: string, seenKeys = new Set<string>(), observedAt = new Date()): Promise<ParsedProviderCall[]> {
+  const provider = createHermesProvider(hermesHome, { ledgerDir: cacheDir, now: () => observedAt })
   const calls: ParsedProviderCall[] = []
-  for await (const call of provider.createSessionParser({ path: sourcePath, project: 'hermes', provider: 'hermes' }, new Set()).parse()) {
+  for await (const call of provider.createSessionParser({ path: sourcePath, project: 'hermes', provider: 'hermes' }, seenKeys).parse()) {
     calls.push(call)
   }
   return calls
 }
-
 const skipUnlessSqlite = isSqliteAvailable() ? describe : describe.skip
 
 skipUnlessSqlite('hermes provider', () => {
@@ -216,13 +217,19 @@ skipUnlessSqlite('hermes provider', () => {
         `INSERT INTO sessions (id, source, model, input_tokens, output_tokens, started_at, title)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ).run('empty', 'cli', 'gpt-5.5', 0, 0, 1779549300, 'Empty')
+      insertSession(db, { id: 'explicit-zero', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0, estimatedCost: 0, startedAt: 1779549400 })
+      insertSession(db, { id: 'api-tool-only', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0, apiCalls: 2, toolCalls: 3, startedAt: 1779549500 })
     })
 
     const provider = createHermesProvider(tmpDir)
     const sessions = await provider.discoverSessions()
-    expect(sessions).toHaveLength(1)
+    expect(sessions).toHaveLength(3)
     expect(sessions[0]!.provider).toBe('hermes')
-    expect(sessions[0]!.path).toBe(`${dbPath}#hermes-session=session-1`)
+    expect(sessions.map(session => session.path)).toContain(dbPath + '#hermes-session=session-1')
+    expect(sessions.map(session => session.path)).toContain(dbPath + '#hermes-session=explicit-zero')
+    expect(sessions.map(session => session.path)).toContain(dbPath + '#hermes-session=api-tool-only')
+    const apiToolCalls = await collectCalls(tmpDir, dbPath + '#hermes-session=api-tool-only')
+    expect(apiToolCalls).toHaveLength(2)
     expect(sessions[0]!.project).toBe('default')
   })
 
@@ -259,7 +266,7 @@ skipUnlessSqlite('hermes provider', () => {
     })
 
     const calls = await collectCalls(tmpDir, `${dbPath}#hermes-session=session-1`)
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(3)
     expect(calls[0]!).toMatchObject({
       provider: 'hermes',
       model: 'gpt-5.5',
@@ -274,7 +281,7 @@ skipUnlessSqlite('hermes provider', () => {
       costUSD: 0.12,
       userMessage: 'Add Hermes support',
       sessionId: 'session-1',
-      deduplicationKey: 'hermes:default:session-1',
+      deduplicationKey: 'hermes-observation:default:session-1:1:1',
     })
     expect(calls[0]!.tools).toEqual(['Read', 'Bash'])
     expect(calls[0]!.bashCommands).toEqual(['npm test'])
@@ -480,7 +487,7 @@ skipUnlessSqlite('hermes provider', () => {
 
     const calls = await collectCalls(tmpDir, `${dbPath}#hermes-session=sibling-session`)
     expect(calls[0]).toMatchObject({
-      deduplicationKey: 'hermes:default:sibling-session',
+      deduplicationKey: 'hermes-observation:default:sibling-session:1:1',
       project: 'default',
     })
   })
@@ -600,5 +607,256 @@ skipUnlessSqlite('hermes provider', () => {
 
     const calls = await collectCalls(tmpDir, `${dbPath}#hermes-session=tool-result-session`)
     expect(calls[0]!.tools).toContain('Read')
+  })
+  it('emits monotonic observation deltas across growth, shrink, reset, restart, and multi-day attribution', async () => {
+    const dbPath = createHermesDb(tmpDir)
+    withTestDb(dbPath, db => {
+      insertSession(db, {
+        id: 'ledger-session',
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheReadTokens: 1,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        estimatedCost: 0.4,
+        apiCalls: 1,
+        startedAt: 1779494400,
+      })
+    })
+
+    const seen = new Set<string>()
+    const first = await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-23T09:00:00Z'))
+    expect(first).toHaveLength(1)
+    expect(first[0]).toMatchObject({ inputTokens: 10, outputTokens: 2, costUSD: 0.4, costIsEstimated: true })
+
+    const unchanged = await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-23T10:00:00Z'))
+    expect(unchanged).toHaveLength(0)
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, estimated_cost_usd = ?, api_call_count = ? WHERE id = ?')
+        .run(15, 3, 2, 0.6, 2, 'ledger-session')
+    })
+    const growth = await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-24T09:00:00Z'))
+    expect(growth).toHaveLength(1)
+    expect(growth[0]).toMatchObject({ inputTokens: 5, outputTokens: 1, cacheReadInputTokens: 1, timestamp: '2026-05-24T09:00:00.000Z' })
+    expect(growth[0]!.costUSD).toBeCloseTo(0.2)
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, estimated_cost_usd = ?, api_call_count = ? WHERE id = ?')
+        .run(3, 1, 1, 0.1, 1, 'ledger-session')
+    })
+    const partialShrink = await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-25T09:00:00Z'))
+    expect(partialShrink).toHaveLength(1)
+    expect(partialShrink[0]).toMatchObject({ inputTokens: 3, outputTokens: 1, costUSD: 0.1 })
+    expect(partialShrink[0]!.deduplicationKey).toContain(':2:3')
+    expect(partialShrink[0]!.inputTokens).toBeGreaterThanOrEqual(0)
+    expect(partialShrink[0]!.costUSD).toBeGreaterThanOrEqual(0)
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = 0, output_tokens = 0, cache_read_tokens = 0, estimated_cost_usd = 0, api_call_count = 0 WHERE id = ?')
+        .run('ledger-session')
+    })
+    expect(await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-26T09:00:00Z'))).toHaveLength(0)
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = ?, output_tokens = ?, estimated_cost_usd = ?, api_call_count = ? WHERE id = ?')
+        .run(4, 2, 0.2, 1, 'ledger-session')
+    })
+    const regrowth = await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-27T09:00:00Z'))
+    expect(regrowth).toHaveLength(1)
+    expect(regrowth[0]).toMatchObject({ inputTokens: 4, outputTokens: 2, costUSD: 0.2, timestamp: '2026-05-27T09:00:00.000Z' })
+    expect(regrowth[0]!.deduplicationKey).toContain(':3:5')
+
+    const afterRestart = await collectCalls(tmpDir, `${dbPath}#hermes-session=ledger-session`, seen, new Date('2026-05-28T09:00:00Z'))
+    expect(afterRestart).toHaveLength(0)
+  })
+
+  it('keeps actual, estimated, calculated, and explicit-zero cost channels separate', async () => {
+    const dbPath = createHermesDb(tmpDir)
+    withTestDb(dbPath, db => {
+      insertSession(db, {
+        id: 'cost-transition-session',
+        inputTokens: 10,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        estimatedCost: 0.4,
+        startedAt: 1779494400,
+      })
+    })
+    const seen = new Set<string>()
+    const estimated = await collectCalls(tmpDir, `${dbPath}#hermes-session=cost-transition-session`, seen, new Date('2026-05-23T09:00:00Z'))
+    expect(estimated[0]).toMatchObject({ costUSD: 0.4, costIsEstimated: true })
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = ?, actual_cost_usd = ?, estimated_cost_usd = ? WHERE id = ?')
+        .run(12, 0.6, 0.4, 'cost-transition-session')
+    })
+    const actual = await collectCalls(tmpDir, `${dbPath}#hermes-session=cost-transition-session`, seen, new Date('2026-05-24T09:00:00Z'))
+    expect(actual).toHaveLength(1)
+    expect(actual[0]).toMatchObject({ inputTokens: 2, costIsEstimated: false, costAssignment: { kind: 'metered', source: 'client' } })
+    expect(actual[0]!.costUSD).toBeCloseTo(0.2)
+    expect(actual[0]!.costUSD + estimated[0]!.costUSD).toBeCloseTo(0.6)
+    expect(actual[0]!.costUSD).toBeGreaterThanOrEqual(0)
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = ?, actual_cost_usd = ?, estimated_cost_usd = ? WHERE id = ?')
+        .run(13, 0, 0, 'cost-transition-session')
+    })
+    const explicitZero = await collectCalls(tmpDir, `${dbPath}#hermes-session=cost-transition-session`, seen, new Date('2026-05-25T09:00:00Z'))
+    expect(explicitZero).toHaveLength(1)
+    expect(explicitZero[0]).toMatchObject({ inputTokens: 1, costUSD: 0, costIsEstimated: false })
+  })
+
+it('emits append-only signed corrections when actual cost revises an estimate downward', async () => {
+    const dbPath = createHermesDb(tmpDir)
+    withTestDb(dbPath, db => {
+      insertSession(db, {
+        id: 'downward-correction-session',
+        inputTokens: 10,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        estimatedCost: 0.4,
+        startedAt: 1779494400,
+      })
+    })
+    const sourcePath = dbPath + '#hermes-session=downward-correction-session'
+    expect(await collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-23T09:00:00Z'))).toHaveLength(1)
+
+    withTestDb(dbPath, db => {
+      db.prepare('UPDATE sessions SET input_tokens = ?, actual_cost_usd = ?, estimated_cost_usd = ? WHERE id = ?')
+        .run(11, 0.2, 0.4, 'downward-correction-session')
+    })
+    const replay = await collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-24T09:00:00Z'))
+    expect(replay).toHaveLength(2)
+    const correction = replay.find(call => call.costCorrectionUSD !== undefined)
+    expect(correction).toMatchObject({ costUSD: 0, costCorrectionUSD: -0.2, costIsEstimated: false })
+    expect(replay.reduce((sum, call) => sum + call.costUSD + (call.costCorrectionUSD ?? 0), 0)).toBeCloseTo(0.2)
+  })
+  it('treats source replacement, corruption, missing state, and concurrent replay safely', async () => {
+    const dbPath = createHermesDb(tmpDir)
+    withTestDb(dbPath, db => {
+      insertSession(db, {
+        id: 'replacement-session',
+        inputTokens: 8,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        estimatedCost: 0.2,
+        startedAt: 1779494400,
+      })
+    })
+    const sourcePath = `${dbPath}#hermes-session=replacement-session`
+    const first = await collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-23T09:00:00Z'))
+    expect(first).toHaveLength(1)
+
+    const ledgerFile = hermesObservationLedgerFileV1(cacheDir)
+    await writeFile(ledgerFile, '{broken', 'utf8')
+    await expect(readHermesObservationLedgerV1(cacheDir)).rejects.toThrow('corrupt')
+    expect(await collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-24T09:00:00Z'))).toHaveLength(0)
+    await rm(ledgerFile, { force: true })
+    const recovered = await collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-24T09:00:00Z'))
+    expect(recovered).toHaveLength(1)
+
+    await rm(dbPath, { force: true })
+    const replacementDb = createHermesDb(tmpDir)
+    withTestDb(replacementDb, db => {
+      insertSession(db, {
+        id: 'replacement-session',
+        inputTokens: 2,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        estimatedCost: 0.1,
+        startedAt: 1779494400,
+      })
+    })
+    const replacement = await collectCalls(tmpDir, sourcePath, new Set(first.map(call => call.deduplicationKey)), new Date('2026-05-25T09:00:00Z'))
+    expect(replacement).toHaveLength(1)
+    expect(replacement[0]!.inputTokens).toBeGreaterThanOrEqual(0)
+    expect(replacement[0]!.deduplicationKey).toContain(':2:2')
+
+    const replayResults = await Promise.all([
+      collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-26T09:00:00Z')),
+      collectCalls(tmpDir, sourcePath, new Set(), new Date('2026-05-26T09:00:00Z')),
+    ])
+    expect(replayResults[0]).toHaveLength(replayResults[1]!.length)
+  })
+})
+describe('Hermes observation ledger', () => {
+  it('applies the retained cost baseline after bounded observation trimming', async () => {
+    const ledgerFile = hermesObservationLedgerFileV1(cacheDir)
+    await observeHermesSessionV1({
+      profile: 'default',
+      sourcePath: join(tmpDir, 'state.db'),
+      sourceSignature: 'stable-signature',
+      sessionId: 'bounded-ledger-session',
+      observedAt: new Date('2026-05-23T09:00:00.000Z'),
+      inputTokens: 1,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      apiCalls: 1,
+      toolCalls: 0,
+      actualCostUSD: null,
+      estimatedCostUSD: 0.4,
+      calculatedCostUSD: 0.4,
+      ledgerDir: cacheDir,
+    })
+
+    const wrapper = JSON.parse((await readFile(ledgerFile)).toString('utf8')) as {
+      state: { sessions: Array<Record<string, unknown>> }
+      stateSha256: string
+    }
+    const session = wrapper.state.sessions[0]!
+    const seed = (session['observations'] as Array<Record<string, unknown>>)[0]!
+    const stableJson = (value: unknown): string => {
+      if (value === null) return 'null'
+      if (typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return JSON.stringify(value)
+      if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']'
+      const record = value as Record<string, unknown>
+      return '{' + Object.keys(record).sort().map(key => JSON.stringify(key) + ':' + stableJson(record[key])).join(',') + '}'
+    }
+    const seedDelta = seed['delta'] as Record<string, unknown>
+    const seedSnapshot = seed['snapshot'] as Record<string, unknown>
+    session['materializedCostUSD'] = 0.4
+    session['observations'] = Array.from({ length: 2048 }, (_, index) => ({
+      ...seed,
+      sequence: index + 2,
+      costTransition: 'none',
+      delta: { ...seedDelta, inputTokens: index === 0 ? 1 : 0, costUSD: 0 },
+      snapshot: { ...seedSnapshot, inputTokens: index + 2 },
+    }))
+    session['lastSnapshot'] = { ...seedSnapshot, inputTokens: 2049 }
+    session['nextSequence'] = 2050
+    wrapper.stateSha256 = 'sha256:' + createHash('sha256').update(stableJson(wrapper.state), 'utf8').digest('hex')
+    await writeFile(ledgerFile, JSON.stringify(wrapper), 'utf8')
+
+    const replay = await observeHermesSessionV1({
+      profile: 'default',
+      sourcePath: join(tmpDir, 'state.db'),
+      sourceSignature: 'stable-signature',
+      sessionId: 'bounded-ledger-session',
+      observedAt: new Date('2026-05-23T10:00:00.000Z'),
+      inputTokens: 2050,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      apiCalls: 1,
+      toolCalls: 0,
+      actualCostUSD: 0.2,
+      estimatedCostUSD: 0.4,
+      calculatedCostUSD: 0.4,
+      ledgerDir: cacheDir,
+    })
+    const correction = replay.find(observation => observation.costTransition === 'actual-correction')
+    expect(correction?.costUSD).toBeCloseTo(-0.2)
   })
 })

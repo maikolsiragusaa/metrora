@@ -31,6 +31,8 @@ export type CachedCall = {
   reasoningLevelSource?: ReasoningLevelSource
   usage: CachedUsage
   costUSD?: number
+  /// Append-only signed cost correction emitted when authoritative source cost revises prior observations.
+  costCorrectionUSD?: number
   /// Immutable basis for `costUSD`. `unavailable` carries no stored numeric
   /// amount; the query layer may still display 0 while preserving that it is not
   /// an intentional free route.
