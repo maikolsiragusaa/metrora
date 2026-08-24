@@ -340,11 +340,11 @@ export async function collectDoctorReport(
     const cache = opts.cache ?? await loadCache()
     const sampleLimit = opts.sampleLimit ?? DEFAULT_SAMPLE_LIMIT
 
-  // Doctor promises to be strictly read-only, but sample-parsing drives real
-  // provider parsers, and cursor's writes its results cache to disk before its
-  // first yield. The flag tells cache writers to stand down for this process
-  // while doctor collects; restored afterwards so long-lived embedders (tests,
-  // MCP) keep normal behavior.
+    // Doctor promises to be strictly read-only, but sample-parsing drives real
+    // provider parsers, and cursor's writes its results cache to disk before its
+    // first yield. The flag tells cache writers to stand down for this process
+    // while doctor collects; restored afterwards so long-lived embedders (tests,
+    // MCP) keep normal behavior.
     const providers: DoctorProviderReport[] = []
     for (const provider of filtered) {
       providers.push(await collectOneProvider(provider, cache, sampleLimit))
