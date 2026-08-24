@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
@@ -13,6 +13,8 @@ import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createProjectBridgeHandlers, validateProjectScope } from './project-bridge'
 import { createAdvisorRuntimeHandlers } from './advisor-runtime'
+import { AdvisorCredentialStore, type AdvisorCredentialProvider } from './advisor-credentials'
+import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
 
 export { createApplicationMenuTemplate } from './menu'
 
@@ -132,6 +134,13 @@ function broadcastUpdateStatus(status: UpdateStatus): void {
 }
 
 const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
+export const ADVISOR_HOSTED_EVENT_CHANNEL = 'metrora:advisorHostedEvent'
+function broadcastAdvisorHostedEvent(event: AdvisorHostedEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.webContents.send(ADVISOR_HOSTED_EVENT_CHANNEL, event)
+  }
+}
 
 function providerArgs(provider: string | undefined): string[] {
   return provider && provider !== 'all' ? ['--provider', provider] : []
@@ -242,6 +251,8 @@ type Deps = {
   /** Cached update-availability status; absent under tests unless injected. */
   getUpdateStatus?: () => Promise<UpdateStatus>
   share?: DesktopShareRuntime | null
+  advisorCredentials?: Pick<AdvisorCredentialStore, 'status' | 'set' | 'clear'>
+  advisorHostedHandlers?: Record<string, Handler>
 }
 
 type Handler = (...args: any[]) => Promise<Envelope>
@@ -327,6 +338,31 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     }
   }
 
+  const credentialProvider = (value: unknown): AdvisorCredentialProvider | null => {
+    return value === 'openai' || value === 'anthropic' || value === 'gemini' ? value : null
+  }
+  const credentialStatus = async (value: unknown): Promise<Envelope> => {
+    const provider = credentialProvider(value)
+    if (!provider) return { ok: false, error: { kind: 'bad-args', message: 'invalid Advisor credential provider' } }
+    if (!deps.advisorCredentials) return { ok: true, value: { provider, state: 'locked-unavailable' } }
+    try { return { ok: true, value: await deps.advisorCredentials.status(provider) } }
+    catch { return { ok: true, value: { provider, state: 'locked-unavailable' } } }
+  }
+  const credentialSet = async (value: unknown, secret: unknown): Promise<Envelope> => {
+    const provider = credentialProvider(value)
+    if (!provider) return { ok: false, error: { kind: 'bad-args', message: 'invalid Advisor credential provider' } }
+    if (!deps.advisorCredentials) return { ok: true, value: { provider, state: 'locked-unavailable' } }
+    if (typeof secret !== 'string' || secret.length === 0 || secret.length > 16 * 1024) return { ok: true, value: { provider, state: 'invalid' } }
+    try { return { ok: true, value: await deps.advisorCredentials.set(provider, secret) } }
+    catch { return { ok: true, value: { provider, state: 'needs-reentry' } } }
+  }
+  const credentialClear = async (value: unknown): Promise<Envelope> => {
+    const provider = credentialProvider(value)
+    if (!provider) return { ok: false, error: { kind: 'bad-args', message: 'invalid Advisor credential provider' } }
+    if (!deps.advisorCredentials) return { ok: true, value: { provider, state: 'locked-unavailable' } }
+    try { return { ok: true, value: await deps.advisorCredentials.clear(provider) } }
+    catch { return { ok: true, value: { provider, state: 'needs-reentry' } } }
+  }
   return {
     'metrora:getQuota': async (force?: boolean) => {
       try { return { ok: true, value: sanitizeQuotaProviders(await deps.getQuota({ force: Boolean(force) })) } }
@@ -335,6 +371,12 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     'metrora:getOverview': getOverview,
     ...createProjectBridgeHandlers({ spawnCli: deps.spawnCli, spawnCliAction: deps.spawnCliAction, snapshotEnv }),
     ...createAdvisorRuntimeHandlers(),
+    ...(deps.advisorHostedHandlers ?? {}),
+    ...(deps.advisorCredentials ? {
+      'metrora:advisorCredentialStatus': credentialStatus,
+      'metrora:advisorCredentialSet': credentialSet,
+      'metrora:advisorCredentialClear': credentialClear,
+    } : {}),
     'metrora:getBenchHistory': run(() => ['bench', 'history', '--format', 'json', '--limit', '50']),
     'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
     'metrora:runBenchTaskPack': async (model: string, pack = 'core-v1') => {
@@ -432,6 +474,21 @@ function registerHandlers(): void {
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
   })
+  const advisorCredentials = new AdvisorCredentialStore({
+    userDataPath: app.getPath('userData'),
+    platform: process.platform,
+    safeStorage: {
+      isAsyncEncryptionAvailable: async () => safeStorage.isEncryptionAvailable(),
+      encryptStringAsync: plaintext => safeStorage.encryptStringAsync(plaintext),
+      decryptStringAsync: ciphertext => safeStorage.decryptStringAsync(ciphertext),
+      getSelectedStorageBackend: () => safeStorage.getSelectedStorageBackend(),
+    },
+  })
+  const advisorHostedHandlers = createAdvisorHostedHandlers({
+    credentialStatus: provider => advisorCredentials.status(provider),
+    readCredential: provider => advisorCredentials.readSecret(provider),
+    emitEvent: broadcastAdvisorHostedEvent,
+  })
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
@@ -441,6 +498,8 @@ function registerHandlers(): void {
     telemetry: telemetryInstance,
     getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS),
     share,
+    advisorCredentials,
+    advisorHostedHandlers,
   })
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {

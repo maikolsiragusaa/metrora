@@ -154,7 +154,7 @@
 .advisor-kicker { margin: 0 0 7px; color: var(--advisor-accent); font-size: 9px; font-weight: 800; letter-spacing: .16em; }
 .advisor-main-head h1 { margin: 0; font-size: 25px; letter-spacing: -.045em; }
 .advisor-subtitle { margin: 6px 0 0; color: var(--advisor-muted); font-size: 11px; }
-.advisor-runtime-status { display: flex; align-items: center; gap: 9px; max-width: 360px; color: var(--advisor-muted); }
+.advisor-runtime-status { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; max-width: 520px; color: var(--advisor-muted); }
 .advisor-runtime-status strong { display: block; color: var(--advisor-ink); font-size: 11px; }
 .advisor-runtime-status small { display: block; margin-top: 3px; font-size: 9px; line-height: 1.3; }
 .advisor-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--advisor-muted); }
@@ -182,6 +182,14 @@
   font: inherit;
   font-size: 9px;
 }
+.advisor-hosted-controls { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 8px 0 0 16px; border-top: 1px solid var(--advisor-line); }
+.advisor-hosted-controls .advisor-runtime-picker select { max-width: 160px; }
+.advisor-credential-status { align-self: center; color: var(--advisor-muted); font-size: 9px; }
+.advisor-credential-entry { display: flex; align-items: center; gap: 6px; }
+.advisor-credential-entry input { width: 165px; border: 1px solid var(--advisor-line); border-radius: 5px; padding: 5px 6px; color: var(--advisor-ink); background: var(--advisor-tint); font: inherit; font-size: 9px; }
+.advisor-hosted-consent { flex: 1 0 100%; display: flex; align-items: flex-start; gap: 6px; max-width: 480px; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
+.advisor-hosted-consent input { flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--advisor-accent); }
+.advisor-quiet-button:disabled { opacity: .45; cursor: not-allowed; }
 .advisor-scope-bar {
   display: flex;
   align-items: center;

@@ -69,7 +69,7 @@ async function fetchJson(fetchImpl: FetchLike, url: string, init: RequestInit, t
   const timed = timeoutSignal(parent, timeoutMs)
   try {
     throwIfAborted(timed.signal)
-    const response = await fetchImpl(url, { ...init, signal: timed.signal })
+    const response = await fetchImpl(url, { ...init, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new Error('Local runtime returned HTTP ' + response.status + '.')
     const text = await boundedText(response)
@@ -246,6 +246,7 @@ async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      redirect: 'error',
       signal: timed.signal,
     })
     throwIfAborted(timed.signal)
@@ -298,7 +299,7 @@ export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Reco
         return { ok: true, value }
       } catch (error) {
         return controller.signal.aborted ? fail(new Error('Advisor request cancelled.'), 'cancelled') : fail(error)
-      } finally { flights.delete(requestId) }
+      } finally { if (flights.get(requestId) === controller) flights.delete(requestId) }
     },
     'metrora:advisorCancel': async (requestId: string) => {
       if (!validRequestId(requestId)) return { ok: false as const, error: { kind: 'validation', message: 'Advisor request id is invalid.' } }

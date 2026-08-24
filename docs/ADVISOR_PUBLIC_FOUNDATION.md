@@ -50,7 +50,7 @@ Both adapters use a bounded two-stage flow: a planning request may return multip
 
 Cancellation uses an AbortController in main and a request id in the bridge. Request/model/message/content/response byte caps, stream chunk caps, malformed-event caps, timeouts, and bounded redacted errors are enforced. Raw model deltas are not forwarded to the renderer; only the completed bounded response is eligible for the existing narrative sanitizer. Unsafe narrative is dropped while deterministic evidence remains available.
 
-The deterministic local runtime remains an explicit offline evidence fallback when no local model is connected; it is not presented as a full free-form chatbot. No provider SDK or new runtime dependency is required. Hosted/cloud BYOK, arbitrary OpenAI-compatible endpoints, and managed inference remain out of scope.
+The deterministic local runtime remains an explicit offline evidence fallback when no local model is connected; it is not presented as a full free-form chatbot. The optional Local BYOK path calls the selected OpenAI, Anthropic, or Gemini origin directly from Electron main, with fixed descriptors, protected local credentials, bounded responses, and no Metrora inference proxy. Arbitrary OpenAI-compatible endpoints and managed inference remain out of scope. See [ADVISOR_LOCAL_BYOK_V1_IMPLEMENTATION_READY.md](ADVISOR_LOCAL_BYOK_V1_IMPLEMENTATION_READY.md).
 
 Official provenance references: [Ollama Chat API](https://docs.ollama.com/api/chat), [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [LM Studio REST API](https://lmstudio.ai/docs/developer/rest), [LM Studio model listing](https://lmstudio.ai/docs/developer/rest/list), [LM Studio OpenAI-compatible endpoints](https://lmstudio.ai/docs/developer/openai-compat), and [LM Studio tool use](https://lmstudio.ai/docs/developer/openai-compat/tools).
 
@@ -64,9 +64,9 @@ Trend language is deliberately descriptive: latest returned day versus the avera
 
 ## Privacy and storage
 
-Conversation history is session-local in the renderer and is not synced or persisted by this foundation. The local model receives only the bounded conversation, the current question, tool schemas, and compact evidence-tool results through the local loopback boundary. Raw source content, prompts, paths, secrets, and hidden reasoning are excluded from the public contract.
+Conversation history is session-local in the renderer and is not synced or persisted by this foundation. A local model receives only bounded conversation, the current question, tool schemas, and compact evidence-tool results through the fixed loopback boundary. A hosted BYOK runtime receives the question plus the minimum content-minimal evidence only after explicit consent. Raw source content, prompts, paths, secrets, and hidden reasoning are excluded from the public contract.
 
-There is no Metrora gateway, managed inference service, cloud billing path, secret storage requirement, or hosted BYOK in this tranche. If a future provider adapter needs a credential, it must live behind the existing Electron main-process/OS secure-storage boundary and never in renderer JavaScript.
+There is no Metrora gateway, managed inference service, or cloud billing path. Direct Local BYOK calls use the user’s selected provider account; provider terms, privacy, and retention apply. Credentials live behind the Electron main-process/OS secure-storage boundary and never in renderer JavaScript. See [ADVISOR_BENCH_EVIDENCE_INTEGRATION_V1_IMPLEMENTATION_READY.md](ADVISOR_BENCH_EVIDENCE_INTEGRATION_V1_IMPLEMENTATION_READY.md) for the separate read-only Bench projection.
 
 ## Public/private boundary
 

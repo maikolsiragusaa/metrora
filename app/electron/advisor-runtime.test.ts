@@ -32,6 +32,7 @@ describe('Electron Advisor local runtime', () => {
       detail: 'Local Ollama is reachable.',
     })
     expect(calls[0]?.url).toBe('http://127.0.0.1:11434/api/tags')
+    expect(calls[0]?.init?.redirect).toBe('error')
   })
 
   it('reads NDJSON incrementally and caps content without exposing raw deltas', async () => {
@@ -115,5 +116,21 @@ describe('Electron Advisor local runtime', () => {
     const result = await handlers['metrora:advisorChat']('request-raw-boundary', payload, (text: string) => deltas.push(text))
     expect(result).toMatchObject({ ok: true })
     expect(deltas).toEqual([])
+  })
+  it('keeps a newer request flight when an older request completes first', async () => {
+    const requests: Array<{ resolve: (response: Response) => void }> = []
+    const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      requests.push({ resolve })
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true })
+    })) as typeof fetch
+    const handlers = createAdvisorRuntimeHandlers(fetchImpl)
+    const first = handlers['metrora:advisorChat']('collision', payload)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    const second = handlers['metrora:advisorChat']('collision', payload)
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    requests[0]!.resolve(textOnlyResponse(JSON.stringify({ message: { content: 'first' } }) + '\n'))
+    await expect(first).resolves.toMatchObject({ ok: true })
+    await expect(handlers['metrora:advisorCancel']('collision')).resolves.toEqual({ ok: true, value: true })
+    await expect(second).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
   })
 })

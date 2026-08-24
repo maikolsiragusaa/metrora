@@ -107,7 +107,7 @@ export function buildAdvisorBenchEvidence(history: BenchHistoryReport, compariso
       ? 'NOT_COMPARABLE' as const
       : history.invalidCount > 0 || runs.some(run => run.status !== 'completed')
         ? 'PARTIAL' as const
-        : 'NO_DATA' as const
+        : 'PARTIAL' as const
   return { state, runs, latest: runs[0] ?? null, comparison: mappedComparison }
 }
 

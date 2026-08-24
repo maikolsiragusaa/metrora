@@ -9,6 +9,7 @@ import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
 import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
 import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
+import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { scopeLabel } from '../advisor/evidence'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
 
@@ -95,11 +96,16 @@ export function Advisor({
   const source = useMemo(() => createAdvisorDataSource(metrora), [])
   const fallbackRuntime = useMemo(() => createAdvisorRuntime(), [])
   const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
+  const [runtimeChoice, setRuntimeChoice] = useState<RuntimeChoice>('ollama')
+  const [hostedProvider, setHostedProvider] = useState<'openai' | 'anthropic' | 'gemini'>('openai')
+  const [hostedProbe, setHostedProbe] = useState<Awaited<ReturnType<typeof probeHostedAdvisor>> | null>(null)
+  const [hostedModel, setHostedModel] = useState<string | null>(null)
+  const [hostedRuntime, setHostedRuntime] = useState<HostedAdvisorRuntime | null>(null)
   const [runtimeState, setRuntimeState] = useState<RuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], toolCall: 'unknown' })
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
   const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
   const [lmStudioRuntime, setLMStudioRuntime] = useState<LMStudioAdvisorRuntime | null>(null)
-  const activeRuntime = (runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime) ?? fallbackRuntime
+  const activeRuntime = runtimeChoice === 'hosted' ? hostedRuntime ?? fallbackRuntime : (runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime) ?? fallbackRuntime
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
   const probeController = useRef<AbortController | null>(null)
 
@@ -140,11 +146,45 @@ export function Advisor({
     return () => probeController.current?.abort()
   }, [checkLocalRuntime])
 
+  const hostedProbeController = useRef<AbortController | null>(null)
+  const checkHostedRuntime = useCallback(async (requestedProvider: 'openai' | 'anthropic' | 'gemini' = hostedProvider) => {
+    hostedProbeController.current?.abort()
+    const controller = new AbortController()
+    hostedProbeController.current = controller
+    try {
+      const result = await probeHostedAdvisor(requestedProvider, controller.signal)
+      if (controller.signal.aborted) return
+      setHostedProbe(result)
+      const selectable = result.models.find(model => model.state !== 'unsupported') ?? result.models[0]
+      if (result.available && selectable) {
+        setHostedModel(current => current && result.models.some(model => model.id === current) ? current : selectable.id)
+        setHostedRuntime(current => current && current.label.endsWith(selectable.id.replace(/^models\//u, '')) ? current : new HostedAdvisorRuntime({ provider: requestedProvider, model: selectable.id }))
+      } else {
+        setHostedModel(null)
+        setHostedRuntime(null)
+      }
+    } catch (caught) {
+      if (!isCancelled(caught)) {
+        setHostedProbe({ provider: requestedProvider, available: false, models: [], detail: 'Hosted provider probe failed.', credentialState: 'ready' })
+        setHostedRuntime(null)
+      }
+    }
+  }, [hostedProvider])
+  useEffect(() => {
+    if (runtimeChoice !== 'hosted') return
+    void checkHostedRuntime()
+    return () => hostedProbeController.current?.abort()
+  }, [checkHostedRuntime, runtimeChoice])
   const [conversations, setConversations] = useState<AdvisorConversation[]>(() => [{ id: makeId('chat'), title: 'New investigation', messages: [] }])
   const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]!.id)
   const [historyQuery, setHistoryQuery] = useState('')
   const [composer, setComposer] = useState('')
   const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
+  const [credentialEntry, setCredentialEntry] = useState('')
+  const [credentialSaving, setCredentialSaving] = useState(false)
+  const [hostedConsent, setHostedConsent] = useState(false)
+  const hostedConfigRef = useRef({ runtimeChoice, hostedRuntime, hostedConsent })
+  hostedConfigRef.current = { runtimeChoice, hostedRuntime, hostedConsent }
   const [streamPreview, setStreamPreview] = useState('')
   const [toolStatus, setToolStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -168,6 +208,11 @@ export function Advisor({
     const conversationId = retryRequest?.conversationId ?? activeConversationId
     const targetConversation = conversations.find(conversation => conversation.id === conversationId)
     if (!targetConversation) return
+    const currentHosted = hostedConfigRef.current
+    if (currentHosted.runtimeChoice === 'hosted' && (!currentHosted.hostedRuntime || !currentHosted.hostedConsent)) {
+      setNotice(currentHosted.hostedRuntime ? 'Confirm the hosted-provider evidence sharing notice before investigating.' : 'Connect a hosted provider credential before investigating.')
+      return
+    }
     requestController.current?.abort()
     const controller = new AbortController()
     requestController.current = controller
@@ -252,16 +297,58 @@ export function Advisor({
     setError(null)
     setNotice(null)
   }
+  const activateHosted = () => {
+    setRuntimeChoice('hosted')
+    setHostedConsent(false)
+    void checkHostedRuntime()
+  }
+  const activateLocal = () => {
+    setRuntimeChoice(runtimeId)
+    setHostedConsent(false)
+  }
+  const saveHostedCredential = async () => {
+    if (!credentialEntry.trim() || credentialSaving) return
+    setCredentialSaving(true)
+    try {
+      const status = await metrora.advisorCredentialSet(hostedProvider, credentialEntry)
+      setNotice(status.state === 'ready' ? 'Provider credential saved in protected local storage.' : 'Provider credential was not saved: ' + status.state + '.')
+      await checkHostedRuntime(hostedProvider)
+    } catch {
+      setNotice('Provider credential could not be saved. Enter it again.')
+    } finally {
+      setCredentialEntry('')
+      setCredentialSaving(false)
+    }
+  }
+  const clearHostedCredential = async () => {
+    try {
+      await metrora.advisorCredentialClear(hostedProvider)
+      setHostedConsent(false)
+      setNotice('Provider credential removed from this device.')
+      await checkHostedRuntime(hostedProvider)
+    } catch {
+      setNotice('Provider credential could not be removed.')
+    }
+  }
   const normalizedHistoryQuery = historyQuery.trim().toLowerCase()
   const filteredConversations = conversations.filter(conversation => !normalizedHistoryQuery || [
     conversation.title,
     ...conversation.messages.map(message => message.text ?? message.answer?.conclusion ?? ''),
   ].some(value => value.toLowerCase().includes(normalizedHistoryQuery)))
   const selectedModelRuntime = runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime
-  const runtimeLabel = runtimeState.status === 'ready' && selectedModelRuntime ? selectedModelRuntime.label : 'Offline evidence fallback'
-  const runtimeDescription = runtimeState.status === 'ready' && selectedModelRuntime
-    ? (runtimeId === 'lmstudio' ? 'Local LM Studio model' : 'Local Ollama model') + ' · read-only evidence tools · tool support varies by model'
-    : 'Deterministic evidence fallback · no model connected'
+  const displayedRuntime = runtimeChoice === 'hosted' ? hostedRuntime : selectedModelRuntime
+  const displayedReady = runtimeChoice === 'hosted'
+    ? Boolean(hostedProbe?.available && hostedRuntime)
+    : runtimeState.status === 'ready' && Boolean(selectedModelRuntime)
+  const runtimeLabel = displayedReady && displayedRuntime ? displayedRuntime.label : 'Offline evidence fallback'
+  const runtimeDescription = runtimeChoice === 'hosted'
+    ? 'Hosted provider account · minimum evidence sent directly · no Metrora proxy'
+    : runtimeState.status === 'ready' && selectedModelRuntime
+      ? (runtimeId === 'lmstudio' ? 'Local LM Studio model' : 'Local Ollama model') + ' · read-only evidence tools · tool support varies by model'
+      : 'Deterministic evidence fallback · no model connected'
+  const runtimeDetail = runtimeChoice === 'hosted'
+    ? hostedProbe?.detail ?? 'Choose a hosted provider and connect a credential.'
+    : runtimeState.detail
   const latestAnswer = selectedAnswer ?? answerForMessage(messages, null)
   const suppliedOverviewMatchesScope = scope.period === period
     && scope.provider === provider
@@ -294,11 +381,25 @@ export function Advisor({
         <header className="advisor-main-head">
           <div><p className="advisor-kicker">ADVISE · READ ONLY</p><h1>Ask Metrora</h1><p className="advisor-subtitle">Investigate measured usage, model efficiency, Projects, and provider capacity.</p></div>
           <div className="advisor-runtime-status">
-            <span className={runtimeState.status === 'ready' ? 'advisor-status-dot ready' : 'advisor-status-dot'} />
-            <div><strong>{runtimeLabel}</strong><small>{runtimeDescription} · {runtimeState.detail}</small></div>
-            <button type="button" className="advisor-quiet-button" onClick={() => void checkLocalRuntime()}>{runtimeState.status === 'checking' ? 'Checking…' : 'Check local model'}</button>
-            <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor runtime" value={runtimeId} onChange={event => { const next = event.target.value as AdvisorLocalRuntimeId; setRuntimeId(next); setRuntimeModel(null); void checkLocalRuntime(next) }}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
-            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => { const model = event.target.value; setRuntimeModel(model); if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' })); else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' })) }}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+            <span className={displayedReady ? 'advisor-status-dot ready' : 'advisor-status-dot'} />
+            <div><strong>{runtimeLabel}</strong><small>{runtimeDescription} · {runtimeDetail}</small></div>
+            {runtimeChoice === 'hosted'
+              ? <button type="button" className="advisor-quiet-button" onClick={() => void checkHostedRuntime()}>{hostedProbe?.available ? 'Refresh hosted models' : 'Check hosted provider'}</button>
+              : <button type="button" className="advisor-quiet-button" onClick={() => void checkLocalRuntime()}>{runtimeState.status === 'checking' ? 'Checking…' : 'Check local model'}</button>}
+            {runtimeChoice === 'hosted' ? <>
+              <button type="button" className="advisor-quiet-button" onClick={activateLocal}>Use local runtime</button>
+              <div className="advisor-hosted-controls">
+                <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => { const next = event.target.value as 'openai' | 'anthropic' | 'gemini'; setHostedProvider(next); setHostedProbe(null); setHostedModel(null); setHostedRuntime(null); setHostedConsent(false); void checkHostedRuntime(next) }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
+                {hostedProbe?.models.filter(model => model.state !== 'unsupported').length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? hostedProbe.models.find(model => model.state !== 'unsupported')?.id ?? ''} onChange={event => { const model = event.target.value; setHostedModel(model); setHostedRuntime(new HostedAdvisorRuntime({ provider: hostedProvider, model })); setHostedConsent(false) }}>{hostedProbe.models.filter(model => model.state !== 'unsupported').map(model => <option key={model.id} value={model.id}>{model.label} · {model.state}</option>)}</select></label> : null}
+                <span className="advisor-credential-status">Credential: {hostedProbe?.credentialState ?? 'not-configured'}</span>
+                {hostedProbe?.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Advisor provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => setCredentialEntry(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={() => void saveHostedCredential()} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={() => void clearHostedCredential()}>Remove key</button>}
+                {hostedRuntime ? <label className="advisor-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => setHostedConsent(event.target.checked)} /> Before the first hosted investigation, send this question and minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</label> : null}
+              </div>
+            </> : <>
+              <button type="button" className="advisor-quiet-button" onClick={activateHosted}>Use hosted provider</button>
+              <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor runtime" value={runtimeId} onChange={event => { const next = event.target.value as AdvisorLocalRuntimeId; setRuntimeId(next); setRuntimeModel(null); setHostedConsent(false); void checkLocalRuntime(next) }}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
+              {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => { const model = event.target.value; setRuntimeModel(model); if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' })); else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' })) }}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+            </>}
           </div>
         </header>
         <div className="advisor-scope-bar" aria-label="Advisor context">
@@ -309,7 +410,7 @@ export function Advisor({
           <label>Model<select aria-label="Advisor model" value={scope.model ?? ''} onChange={event => setScope(current => ({ ...current, model: event.target.value || null }))}><option value="">All models</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
           <span className="advisor-read-only">Read-only · {scopeLabel(scope)}</span>
         </div>
-        {runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form model conversation and tool calls. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
+        {runtimeChoice !== 'hosted' && runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form model conversation and tool calls. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
         {overview.error && !overview.data ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overview.error.message}</div> : null}
         <div className="advisor-thread" aria-live="polite">
           {messages.length === 0 ? (
@@ -343,3 +444,4 @@ export function Advisor({
     </section>
   )
 }
+type RuntimeChoice = AdvisorLocalRuntimeId | 'hosted'

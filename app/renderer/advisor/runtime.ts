@@ -173,7 +173,7 @@ export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
     return sanitizeAdvisorAnswer({
       ...answer,
       conclusion: 'I can investigate measured spend, observed model cost per call, provider quota, and controlled Bench results.',
-      materialLimits: ['This local foundation does not send your question or Metrora data to a hosted model.'],
+      materialLimits: ['The deterministic Metrora evidence answer remains authoritative; any runtime context is supplementary and qualitative.'],
     })
   }
 }

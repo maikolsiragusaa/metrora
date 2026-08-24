@@ -4,7 +4,7 @@ function coverageForBench(state: AdvisorBenchEvidence['state']): AdvisorCoverage
   if (state === 'NO_DATA') return { level: 'unavailable', state, label: 'No controlled result yet', detail: 'Metrora has no completed controlled Bench result for this request.' }
   if (state === 'UNAVAILABLE') return { level: 'unavailable', state, label: 'Controlled result unavailable', detail: 'Bench history did not provide a usable controlled result.' }
   if (state === 'NOT_COMPARABLE') return { level: 'partial', state, label: 'Runs are not comparable', detail: 'The selected runs differ in pack, runner, scoring, or generation policy.' }
-  if (state === 'PARTIAL') return { level: 'partial', state, label: 'Partial controlled result', detail: 'A controlled result exists, but one or more tasks or history records are incomplete.' }
+  if (state === 'PARTIAL') return { level: 'partial', state, label: 'Bounded controlled result', detail: 'A controlled result exists, but its task-pack evidence and comparable history remain limited.' }
   return { level: 'partial', state, label: 'Controlled evidence is limited', detail: 'This result describes one bounded task pack and is not a universal model-quality claim.' }
 }
 
@@ -46,7 +46,7 @@ export function buildBenchEvidence(question: string, scope: AdvisorScope, bench:
       : bench.state === 'NOT_COMPARABLE'
         ? ['The selected runs cannot be compared because their canonical identities differ.']
         : bench.state === 'PARTIAL'
-          ? ['Some tasks or history records are unavailable, so the result is incomplete.']
+          ? ['The controlled result is bounded; task or comparable-history coverage may be incomplete.']
           : ['A controlled task pack does not establish universal model quality or a recommendation.']
   return {
     intent: 'bench-result',

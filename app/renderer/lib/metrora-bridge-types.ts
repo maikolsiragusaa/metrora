@@ -28,6 +28,17 @@ import type {
 import type { ProjectBridge } from './project-bridge-types'
 import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
 
+export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini'
+export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
+export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
+export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
+export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null }
+export type AdvisorHostedProbe = { provider: AdvisorCredentialProvider; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
+export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
+export type AdvisorHostedToolCall = { id: string; name: string; arguments: string }
+export type AdvisorHostedEventKind = 'started' | 'text-delta' | 'tool-call-start' | 'tool-call-delta' | 'tool-call-complete' | 'usage' | 'completed' | 'failed' | 'cancelled'
+export type AdvisorHostedEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; text?: string; callId?: string; name?: string; delta?: string; arguments?: string; usage?: AdvisorHostedUsage | null; streamed?: boolean; toolCalls?: AdvisorHostedToolCall[]; code?: string; message?: string }
+export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type BenchTaskResult = {
   taskId: string
   attempted: boolean
@@ -77,6 +88,12 @@ export interface MetroraBridge extends ProjectBridge {
   advisorProbe(runtime?: AdvisorLocalRuntimeId): Promise<AdvisorRuntimeProbe>
   advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
   advisorCancel(requestId: string): Promise<boolean>
+  advisorHostedProbe(provider: AdvisorCredentialProvider): Promise<AdvisorHostedProbe>
+  advisorHostedChat(requestId: string, payload: Record<string, unknown>): Promise<AdvisorHostedChatResult>
+  advisorHostedCancel(requestId: string): Promise<boolean>
+  advisorCredentialStatus(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus>
+  advisorCredentialSet(provider: AdvisorCredentialProvider, secret: string): Promise<AdvisorCredentialStatus>
+  advisorCredentialClear(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus>
   getBenchHistory(): Promise<BenchHistoryReport>
   getBenchComparison(leftRunId: string, rightRunId: string): Promise<BenchComparison>
   runBenchTaskPack(model: string, pack?: string): Promise<BenchEvaluation>
@@ -121,5 +138,6 @@ export interface MetroraBridge extends ProjectBridge {
   setTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus | null>
   completeOnboarding(enabled: boolean): Promise<TelemetryStatus | null>
   telemetryTrack(name: string, props?: Record<string, unknown>): Promise<boolean>
+  onAdvisorHostedEvent(cb: (event: AdvisorHostedEvent) => void): () => void
   openExternal(url: string): Promise<void>
 }

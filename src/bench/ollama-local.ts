@@ -288,6 +288,7 @@ export async function fetchOllamaVersion(options: {
     const response = await boundary.race(request(OLLAMA_VERSION_URL, {
       method: 'GET',
       headers: { accept: 'application/json' },
+      redirect: 'error',
       signal: boundary.controller.signal,
     }))
     if (!response.ok) return null
@@ -361,6 +362,7 @@ export async function runOllamaGenerate(options: {
           num_predict: FIXED_GENERATION_PARAMETERS.numPredict,
         },
       }),
+      redirect: 'error',
       signal: boundary.controller.signal,
     }))
 
