@@ -37,6 +37,7 @@ export const DESKTOP_SECTION_CAPABILITIES: Record<Section, DesktopSectionCapabil
   models: FULL_ANALYTICS_SCOPE,
   compare: FULL_ANALYTICS_SCOPE,
   advisor: FULL_ANALYTICS_SCOPE,
+  bench: { period: false, customRange: false, provider: false, claudeConfig: false, globalRefresh: false },
   plans: {
     period: false,
     customRange: false,

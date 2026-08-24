@@ -34,6 +34,8 @@ export class BenchOllamaError extends Error {
 
 export type OllamaGenerateEvidence = {
   reportedModel: string | null
+  /** Transient task output. Callers must score it immediately and never persist it. */
+  output?: string
   observed: {
     requestLatencyMs: number
     timeToFirstContentMs: number | null
@@ -310,6 +312,8 @@ export async function fetchOllamaVersion(options: {
 
 export async function runOllamaGenerate(options: {
   model: string
+  prompt?: string
+  includeOutput?: boolean
   fetchImpl?: BenchFetch
   signal?: AbortSignal
   timeoutMs?: number
@@ -348,7 +352,7 @@ export async function runOllamaGenerate(options: {
       headers: { accept: 'application/x-ndjson', 'content-type': 'application/json' },
       body: JSON.stringify({
         model,
-        prompt: SYNTHETIC_FIXTURE_PACK.prompt,
+        prompt: options.prompt ?? SYNTHETIC_FIXTURE_PACK.prompt,
         stream: true,
         keep_alive: '5m',
         options: {
@@ -414,6 +418,7 @@ export async function runOllamaGenerate(options: {
     const outputDigest = sha256Text(state.output)
     return {
       reportedModel: state.reportedModel,
+      ...(options.includeOutput ? { output: state.output } : {}),
       observed: {
         requestLatencyMs: Math.max(0, monotonicNow() - startedAt),
         timeToFirstContentMs: state.firstContentAt === null ? null : Math.max(0, state.firstContentAt),
