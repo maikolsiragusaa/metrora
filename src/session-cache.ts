@@ -417,11 +417,7 @@ async function adoptLegacyCache(): Promise<SessionCache> {
     const raw = await readFile(getLegacyCachePath(), 'utf-8')
     const parsed = JSON.parse(raw)
     if (!isValidCache(parsed)) return emptyCache()
-    // Doctor may load a legacy cache only to report provider health. Preserve
-    // the read-only contract by returning the validated payload without minting
-    // the current versioned file during that diagnostic pass.
-    if (process.env['METRORA_SUPPRESS_CACHE_WRITES']) return parsed
-    await saveCache(parsed).catch(() => {})
+    if (!process.env['METRORA_SUPPRESS_CACHE_WRITES']) await saveCache(parsed).catch(() => {})
     return parsed
   } catch {
     return emptyCache()
