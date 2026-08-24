@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs'
-import { lstat, open, readdir, readFile } from 'node:fs/promises'
+import { lstat, open, opendir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter as pathDelimiter, join } from 'node:path'
 
@@ -160,11 +160,26 @@ export function redactText(value: string): string {
     .replace(/(^|[\s("'])\/[^"'\n]*/g, '$1<redacted-path>')
 }
 
+async function readBoundedDirectoryEntries(path: string): Promise<string[]> {
+  const directory = await opendir(path)
+  const entries: string[] = []
+  try {
+    while (entries.length < MAX_DIRECTORY_ENTRIES) {
+      const entry = await directory.read()
+      if (!entry) break
+      entries.push(entry.name)
+    }
+    return entries
+  } finally {
+    await directory.close().catch(() => {})
+  }
+}
+
 export async function inspectPath(path: string): Promise<DoctorPathProbe> {
   try {
     const info = await lstat(path)
     if (info.isDirectory()) {
-      const entries = await readdir(path)
+      const entries = await readBoundedDirectoryEntries(path)
       return entries.length === 0
         ? { state: 'PRESENT_EMPTY', reason: 'directory is readable but has no entries', entries }
         : { state: 'PRESENT', reason: 'directory is readable', entries: entries.slice(0, MAX_DIRECTORY_ENTRIES) }
@@ -184,7 +199,7 @@ async function readDirectory(path: string): Promise<DoctorPathProbe> {
   try {
     const info = await lstat(path)
     if (!info.isDirectory()) return { state: 'UNSUPPORTED_VARIANT', reason: 'expected a directory' }
-    const entries = await readdir(path)
+    const entries = await readBoundedDirectoryEntries(path)
     return entries.length === 0
       ? { state: 'PRESENT_EMPTY', reason: 'directory is readable but has no supported sources', entries }
       : { state: 'PRESENT', reason: 'directory is readable', entries: entries.slice(0, MAX_DIRECTORY_ENTRIES) }

@@ -330,21 +330,21 @@ export async function collectDoctorReport(
   providerFilter?: string,
   opts: CollectDoctorOptions = {},
 ): Promise<DoctorReport> {
-  const all = opts.providers ?? await getAllProviders()
-  const filtered = providerFilter && providerFilter !== 'all'
-    ? all.filter(p => p.name === providerFilter)
-    : all
-  const cache = opts.cache ?? await loadCache()
-  const sampleLimit = opts.sampleLimit ?? DEFAULT_SAMPLE_LIMIT
+  const prevSuppress = process.env['METRORA_SUPPRESS_CACHE_WRITES']
+  process.env['METRORA_SUPPRESS_CACHE_WRITES'] = '1'
+  try {
+    const all = opts.providers ?? await getAllProviders()
+    const filtered = providerFilter && providerFilter !== 'all'
+      ? all.filter(p => p.name === providerFilter)
+      : all
+    const cache = opts.cache ?? await loadCache()
+    const sampleLimit = opts.sampleLimit ?? DEFAULT_SAMPLE_LIMIT
 
   // Doctor promises to be strictly read-only, but sample-parsing drives real
   // provider parsers, and cursor's writes its results cache to disk before its
   // first yield. The flag tells cache writers to stand down for this process
   // while doctor collects; restored afterwards so long-lived embedders (tests,
   // MCP) keep normal behavior.
-  const prevSuppress = process.env['METRORA_SUPPRESS_CACHE_WRITES']
-  process.env['METRORA_SUPPRESS_CACHE_WRITES'] = '1'
-  try {
     const providers: DoctorProviderReport[] = []
     for (const provider of filtered) {
       providers.push(await collectOneProvider(provider, cache, sampleLimit))
