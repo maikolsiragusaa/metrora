@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
 import { CliError, resolveMetroraPath, shutdownCli, spawnCli, spawnCliAction, type ActionResult, type SpawnPriority } from './cli'
@@ -334,6 +335,16 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
     'metrora:getOverview': getOverview,
     ...createProjectBridgeHandlers({ spawnCli: deps.spawnCli, spawnCliAction: deps.spawnCliAction, snapshotEnv }),
     ...createAdvisorRuntimeHandlers(),
+    'metrora:getBenchHistory': run(() => ['bench', 'history', '--format', 'json', '--limit', '50']),
+    'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
+    'metrora:runBenchTaskPack': async (model: string, pack = 'core-v1') => {
+      try {
+        const value = await deps.spawnCli(['bench', 'task-pack', '--model', vToken(model), '--pack', vToken(pack), '--format', 'json', '--run-id', randomUUID()], { timeoutMs: 10 * 60_000, extraEnv: snapshotEnv })
+        return { ok: true, value }
+      } catch (err) {
+        return { ok: false, error: toEnvelopeError(err) }
+      }
+    },
     'metrora:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
     'metrora:getActReport': run(() => ['act', 'report', '--json']),
     'metrora:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange, projectScopeId?: string | null) => [

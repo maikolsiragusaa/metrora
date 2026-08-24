@@ -2,6 +2,9 @@ import { resolve } from 'node:path'
 import { Command } from 'commander'
 import { atomicWritePrivateFile } from '../local-state/atomic-file.js'
 import { BENCH_RUNNER_ID, type BenchRunV1, type NumericSummaryV1 } from './contract-v1.js'
+import { compareBenchEvaluationsV1 } from './compare-v1.js'
+import { saveBenchEvaluationV1, scanBenchHistoryV1 } from './history-v1.js'
+import { runBenchTaskPackV1, type BenchEvaluationV1 } from './task-pack-run-v1.js'
 import { runBenchRunV1, validateBenchTimeoutMs } from './run-v1.js'
 
 function parseTimeout(value: string): number {
@@ -40,6 +43,30 @@ export function renderBenchRunV1(result: BenchRunV1): string {
     lines.push(`  exclusions: ${result.exclusions.length} planned run(s) not started`)
   }
   return lines.join('\n') + '\n'
+}
+
+function parseHistoryLimit(value: string): number {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 50) throw new Error('limit must be an integer from 1 to 50')
+  return parsed
+}
+
+function renderBenchEvaluation(result: BenchEvaluationV1): string {
+  const score = result.aggregate.score.value === null ? 'unavailable' : (result.aggregate.score.value * 100).toFixed(0) + '%'
+  return [
+    'Bench task pack ' + result.status,
+    '  runner: ' + result.runner.id + '@' + result.runner.version,
+    '  model: ' + result.model.selected,
+    '  pack: ' + result.pack.packId + '@' + result.pack.version,
+    '  tasks: ' + result.aggregate.passed + '/' + result.aggregate.planned + ' passed; deterministic pass rate ' + score,
+    '  runtime: ' + (result.runtime.version ?? 'unavailable'),
+    '  result digest: ' + result.resultDigest,
+  ].join('\n') + '\n'
+}
+
+function renderBenchHistory(records: BenchEvaluationV1[]): string {
+  if (records.length === 0) return 'No Bench task-pack history.\n'
+  return records.map(record => record.runId + '  ' + record.model.selected + '  ' + record.status + '  ' + record.aggregate.passed + '/' + record.aggregate.planned + ' passed  ' + record.endedAt).join('\n') + '\n'
 }
 
 export function registerBenchCommands(program: Command): void {
@@ -97,5 +124,67 @@ export function registerBenchCommands(program: Command): void {
       else process.stdout.write(renderBenchRunV1(result))
       if (outputPath) process.stderr.write(`BenchRunV1 evidence artifact: ${outputPath}\n`)
       if (result.status !== 'completed') process.exitCode = 1
+    })
+
+  bench
+    .command('task-pack')
+    .description('Run the deterministic local task pack; no ranking, cost, or general quality claim')
+    .requiredOption('--model <model>', 'Explicit local Ollama model name')
+    .option('--pack <pack>', 'Task pack: core-v1', 'core-v1')
+    .option('--format <format>', 'Output format: table, json', 'table')
+    .option('--no-save', 'Do not persist the bounded result in local Bench history')
+    .option('--run-id <id>', 'Stable run id for automation and desktop calls')
+    .option('--timeout-ms <ms>', 'Bound each local request (50-120000 ms)', parseTimeout, 30_000)
+    .action(async (options: { model: string; pack: string; format: string; save: boolean; runId?: string; timeoutMs: number }) => {
+      const format = options.format.toLowerCase()
+      if (format !== 'table' && format !== 'json') { process.stderr.write('metrora bench task-pack: --format must be table or json.\n'); process.exitCode = 2; return }
+      const controller = new AbortController()
+      const onSigint = () => controller.abort()
+      process.once('SIGINT', onSigint)
+      let result: BenchEvaluationV1
+      try {
+        result = await runBenchTaskPackV1({ model: options.model, packId: options.pack, signal: controller.signal, timeoutMs: options.timeoutMs, runId: options.runId })
+        if (options.save) await saveBenchEvaluationV1(result)
+      } catch (error) {
+        process.stderr.write('metrora bench task-pack: ' + (error instanceof Error ? error.message : String(error)) + '\n')
+        process.exitCode = 2
+        return
+      } finally { process.removeListener('SIGINT', onSigint) }
+      if (format === 'json') process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+      else process.stdout.write(renderBenchEvaluation(result))
+      if (result.status !== 'completed') process.exitCode = 1
+    })
+
+  bench
+    .command('history')
+    .description('Read bounded local Bench task-pack history')
+    .option('--format <format>', 'Output format: table, json', 'table')
+    .option('--limit <n>', 'Maximum records to return (1-50)', parseHistoryLimit, 20)
+    .action(async (options: { format: string; limit: number }) => {
+      try {
+        const scan = await scanBenchHistoryV1()
+        const records = scan.records.slice(0, options.limit)
+        if (options.format.toLowerCase() === 'json') process.stdout.write(JSON.stringify({ schemaVersion: 'metrora.bench-history-report.v1', records, invalidCount: scan.invalid.length }, null, 2) + '\n')
+        else process.stdout.write(renderBenchHistory(records))
+      } catch (error) { process.stderr.write('metrora bench history: ' + (error instanceof Error ? error.message : String(error)) + '\n'); process.exitCode = 1 }
+    })
+
+  bench
+    .command('compare')
+    .description('Compare two compatible local Bench task-pack results')
+    .argument('<leftRunId>', 'Earlier or reference run id')
+    .argument('<rightRunId>', 'Later or comparison run id')
+    .option('--format <format>', 'Output format: json, table', 'table')
+    .action(async (leftRunId: string, rightRunId: string, options: { format: string }) => {
+      try {
+        const scan = await scanBenchHistoryV1()
+        const left = scan.records.find(record => record.runId === leftRunId)
+        const right = scan.records.find(record => record.runId === rightRunId)
+        if (!left || !right) throw new Error('both run ids must exist in local Bench history')
+        const comparison = compareBenchEvaluationsV1(left, right)
+        if (options.format.toLowerCase() === 'json') process.stdout.write(JSON.stringify(comparison, null, 2) + '\n')
+        else process.stdout.write(comparison.compatible ? 'Bench comparison compatible\n  score delta: ' + (comparison.deltas?.score === null ? 'unavailable' : comparison.deltas?.score.toFixed(3)) + '\n  passed delta: ' + comparison.deltas?.passed + '\n' : 'Bench comparison incompatible: ' + comparison.reason + '\n')
+        if (!comparison.compatible) process.exitCode = 1
+      } catch (error) { process.stderr.write('metrora bench compare: ' + (error instanceof Error ? error.message : String(error)) + '\n'); process.exitCode = 2 }
     })
 }
