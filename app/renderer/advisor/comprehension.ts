@@ -18,7 +18,7 @@ function isBenchQuestion(value: string): boolean {
 }
 
 function isUnsupportedQuestion(value: string): boolean {
-  if (/(?:how do i|come faccio|what is|cos'e|cos e|news|weather|meteo|write code|scrivi codice|forecast|predict|preved|recommend|consigli|should i buy|cosa dovrei comprare)/u.test(value)) return true
+  if (/(?:how do i|come faccio|news|weather|meteo|write code|scrivi codice|forecast|predict|preved|recommend|consigli|should i buy|cosa dovrei comprare)/u.test(value)) return true
   return /\b(?:best|smartest|better overall|best coding|which model should|modello migliore|modello piu intelligente|migliore in assoluto|quale modello comprare)\b/u.test(value)
 }
 
@@ -41,8 +41,8 @@ function isEfficiencyQuestion(value: string): boolean {
 
 function explicitIntent(value: string): AdvisorIntent {
   if (isBenchQuestion(value)) return 'bench-result'
-  if (isUnsupportedQuestion(value)) return 'unsupported'
   if (isBareLimitAmbiguity(value)) return 'clarification'
+  if (isUnsupportedQuestion(value)) return 'unsupported'
   if (isQuotaQuestion(value)) return 'quota-capacity'
   // "What model cost me the most?" is a spend question, not a quality or
   // efficiency recommendation. Explicit observed cost-per-call language is
