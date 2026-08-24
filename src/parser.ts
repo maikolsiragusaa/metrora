@@ -61,7 +61,8 @@ import { classifyTurn, BASH_TOOLS, EDIT_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
 import { isSnapshotReadMode } from './read-lifecycle.js'
 import { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'
-import { CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE } from './provider-parse-authorities.js'
+import { resolveParserDiscovery } from './parser-discovery-state.js'
+import { applySessionCacheDiscoveryCompleteness } from './session-cache-completeness.js'
 import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
 import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
@@ -3732,15 +3733,8 @@ async function runParse(
 ): Promise<ProjectSummary[]> {
   const { isCold = false, readOnly = false, cachedOnly = false, refreshLock } = options
   const seenKeys = new Set<string>()
-  const discovery = cachedOnly ? null : await discoverAllSessionsWithOutcomes(providerFilter)
-  const allSources = discovery?.sources ?? []
-  const discoveryComplete = cachedOnly || discovery?.complete === true
-  const discoveryByProvider = new Map((discovery?.outcomes ?? []).map(outcome => [outcome.provider, outcome.complete]))
-  const providerDiscoveryComplete = (providerName: string): boolean => {
-    const canonicalProvider = CANONICAL_COLLECTOR_BY_STORAGE_NAMESPACE[providerName] ?? providerName
-    return discoveryByProvider.get(canonicalProvider) === true
-  }
-
+  const { sources: allSources, complete: discoveryComplete, providerComplete: providerDiscoveryComplete } =
+    await resolveParserDiscovery(providerFilter, cachedOnly)
   const claudeSources = allSources.filter(s => s.provider === 'claude')
   const nonClaudeSources = allSources.filter(s => s.provider !== 'claude')
 
@@ -3836,17 +3830,8 @@ async function runParse(
     ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
-  // The parse reached its local end. Only a complete discovery outcome may
-  // publish the cache as complete; an unavailable, failed, partial, or cancelled
-  // discovery keeps the marker false so retained evidence is not treated as a
-  // factual zero and the next launch resumes with a cold completeness check.
-  const wasComplete = isCacheComplete(diskCache)
-  if (!readOnly && discoveryComplete && !wasComplete) diskCache.complete = true
-  if (!readOnly && !discoveryComplete && wasComplete) {
-    diskCache.complete = false
-    ;(diskCache as { _dirty?: boolean })._dirty = true
-  }
-  if (!readOnly && ((diskCache as { _dirty?: boolean })._dirty || (discoveryComplete && !wasComplete) || (!discoveryComplete && wasComplete))) {
+  const shouldPublishCompleteness = !readOnly && applySessionCacheDiscoveryCompleteness(diskCache, discoveryComplete)
+  if (shouldPublishCompleteness) {
     try {
       const published = await saveCache(diskCache, refreshLock?.verifyStillOwner)
       if (!published) throw new RefreshFenceLostError()
