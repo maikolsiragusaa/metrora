@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 
+import { LMStudioAdvisorRuntime } from './lmstudio'
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
 import { advisorScopeFingerprint, type AdvisorEvidence, type AdvisorScope } from './types'
 
@@ -188,6 +189,21 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.conclusion).not.toContain('Local model context')
   })
 
+  it('does not append contradictory qualitative prose in Ollama or LM Studio', async () => {
+    const narrative = 'Claude was not the main driver.'
+    const runtimes = [
+      new OllamaAdvisorRuntime({ model: 'llama3.2', transport: noToolTransport(narrative) }),
+      new LMStudioAdvisorRuntime({ model: 'qwen/qwen3-8b', transport: noToolTransport(narrative) }),
+    ]
+    for (const runtime of runtimes) {
+      const answer = await runtime.generate({
+        question: 'What changed in spend?', evidence: spendEvidence, tools: [],
+      })
+      expect(answer.conclusion).toContain('Metrora measured')
+      expect(answer.conclusion).not.toContain(narrative)
+      expect(answer.streamed).toBe(false)
+    }
+  })
   it('does not expose numeric streamed deltas before final narrative validation', async () => {
     const deltas: string[] = []
     const transport = transportFor([], [[{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]], 'A qualitative observation.', 'Planning found 99 calls.')

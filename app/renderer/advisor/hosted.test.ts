@@ -32,12 +32,14 @@ describe('Hosted Advisor renderer runtime', () => {
     const payload = requests[0]!
     const messages = (payload.messages as Array<{ role: string; content: string }>).slice(0, 3)
     expect(payload.tools).toHaveLength(1)
+    expect(payload.model).toBe('gpt-test')
     expect(payload.stream).toBe(false)
     expect(payload.consent).toBe(true)
     expect(messages.map(message => message.role)).toEqual(['system', 'user', 'system'])
     expect(messages[2]?.content).toContain('measuredCostUSD')
     const finalPayload = requests[1]!
     expect(finalPayload.tools).toEqual([])
+    expect(finalPayload.model).toBe('gpt-test')
     expect(finalPayload.stream).toBe(false)
     const finalMessages = finalPayload.messages as Array<Record<string, unknown>>
     expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'system', 'assistant', 'tool'])
@@ -51,5 +53,22 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.conclusion).not.toContain('Claude was not the main driver.')
     expect(answer.conclusion).not.toContain('Codex appears to be the main driver.')
+  })
+  it.each(['openai', 'anthropic', 'gemini'] as const)('does not append contradictory qualitative prose for hosted %s', async provider => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const narrative = 'Codex appears to be the main driver.'
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider, available: true, models: [{ id: provider + '-model', label: provider + '-model', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async () => ({ streamed: false, message: { content: narrative } }),
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const answer = await new HostedAdvisorRuntime({ provider, model: provider + '-model', consent: true, transport }).generate({
+      question: 'What changed in spend?', evidence,
+    })
+    expect(answer.conclusion).toContain('Metrora measured')
+    expect(answer.conclusion).not.toContain(narrative)
+    expect(answer.streamed).toBe(false)
   })
 })
