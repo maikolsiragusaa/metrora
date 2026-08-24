@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -73,6 +73,15 @@ async function writeChat(
 }
 
 describe('codebuff provider - session discovery', () => {
+  it('reports all authoritative channel roots by default and one explicit override root when configured', async () => {
+    vi.stubEnv('CODEBUFF_DATA_DIR', '')
+    const defaultRoots = await createCodebuffProvider().probeRoots!()
+    expect(defaultRoots.map(root => root.label)).toEqual(['manicode', 'manicode-dev', 'manicode-staging'])
+
+    const override = join(tmpDir, 'private-codebuff-root')
+    const overrideRoots = await createCodebuffProvider(override).probeRoots!()
+    expect(overrideRoots).toEqual([{ path: override, label: 'data' }])
+  })
   it('discovers sessions under projects/<name>/chats/<chatId>/', async () => {
     await writeChat(
       tmpDir,

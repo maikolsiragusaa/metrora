@@ -6,7 +6,7 @@ import { readSessionFile, readSessionLines } from '../fs-utils.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
-import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import type { Provider, SessionSource, SessionParser, ParsedProviderCall, ProbeRoot } from './types.js'
 import { safeNumber } from '../parser.js'
 
 const METADATA_FILENAME = 'meta.json'
@@ -433,6 +433,10 @@ export function createMistralVibeProvider(sessionsDir?: string): Provider {
       }
 
       return sources
+    },
+
+    async probeRoots(): Promise<ProbeRoot[]> {
+      return [{ path: dir, label: 'session' }]
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {

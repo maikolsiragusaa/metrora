@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { collectDoctorReport, renderDoctorJson, renderDoctorTable } from '../src/doctor.js'
 import { classifyDoctorError, DOCTOR_SOURCE_STATES, redactOverridePath, redactText } from '../src/doctor-source-diagnostics.js'
 import { getCopilotDoctorProbeRoots } from '../src/providers/copilot-paths.js'
+import { createCodebuffProvider } from '../src/providers/codebuff.js'
+import { createMistralVibeProvider } from '../src/providers/mistral-vibe.js'
 import { createCopilotProvider } from '../src/providers/copilot.js'
 import { getCursorDoctorProbeRoots, getCursorWorkspaceStorageDir } from '../src/providers/cursor-paths.js'
 import { createCursorProvider } from '../src/providers/cursor.js'
@@ -152,6 +154,59 @@ describe('bounded source diagnostic primitive', () => {
     expect(json).not.toContain(secretValue)
     expect(table).not.toContain(secretValue)
     expect(json).toContain('<override-path>')
+  })
+})
+
+describe('Codebuff and Mistral Vibe Doctor families', () => {
+  it('distinguishes a Codebuff override as missing, empty, and present without leaking the path', async () => {
+    const codebuffRoot = join(root, 'private-codebuff-root')
+    vi.stubEnv('CODEBUFF_DATA_DIR', codebuffRoot)
+    const provider = createCodebuffProvider()
+
+    let row = only(await collectDoctorReport('codebuff', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'codebuff')
+    expect(row.families[0]).toMatchObject({
+      family: 'data',
+      state: 'MISSING',
+      root: '<override-path>',
+      override: 'CODEBUFF_DATA_DIR',
+    })
+    expect(row.verdict).toContain('source is missing')
+
+    await mkdir(codebuffRoot, { recursive: true })
+    row = only(await collectDoctorReport('codebuff', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'codebuff')
+    expect(row.families[0]?.state).toBe('PRESENT_EMPTY')
+
+    await writeFile(join(codebuffRoot, 'read-only-marker'), 'present')
+    row = only(await collectDoctorReport('codebuff', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'codebuff')
+    expect(row.families[0]?.state).toBe('PRESENT')
+
+    const json = renderDoctorJson({ generatedAt: new Date().toISOString(), providers: [row] })
+    const table = renderDoctorTable({ generatedAt: new Date().toISOString(), providers: [row] }, { color: false })
+    expect(json).not.toContain(codebuffRoot)
+    expect(table).not.toContain(codebuffRoot)
+  })
+
+  it('distinguishes a Mistral Vibe VIBE_HOME root as missing, empty, and present', async () => {
+    const vibeHome = join(root, 'private-vibe-home')
+    const sessionsRoot = join(vibeHome, 'logs', 'session')
+    vi.stubEnv('VIBE_HOME', vibeHome)
+    const provider = createMistralVibeProvider()
+
+    let row = only(await collectDoctorReport('mistral-vibe', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'mistral-vibe')
+    expect(row.families[0]).toMatchObject({
+      family: 'session',
+      state: 'MISSING',
+      root: '<override-path>',
+      override: 'VIBE_HOME',
+    })
+
+    await mkdir(sessionsRoot, { recursive: true })
+    row = only(await collectDoctorReport('mistral-vibe', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'mistral-vibe')
+    expect(row.families[0]?.state).toBe('PRESENT_EMPTY')
+
+    await writeFile(join(sessionsRoot, 'read-only-marker'), 'present')
+    row = only(await collectDoctorReport('mistral-vibe', { providers: [provider], cache: emptyCache(), sampleLimit: 0 }), 'mistral-vibe')
+    expect(row.families[0]?.state).toBe('PRESENT')
   })
 })
 

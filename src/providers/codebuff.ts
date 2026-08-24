@@ -4,7 +4,7 @@ import { homedir } from 'os'
 
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
-import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import type { Provider, SessionSource, SessionParser, ParsedProviderCall, ProbeRoot } from './types.js'
 
 // Codebuff (formerly Manicode) uses a credit-based billing system. The local
 // chat-messages.json doesn't record per-call token counts the way Claude Code
@@ -432,6 +432,16 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
   }
 }
 
+function codebuffProbeRoots(baseDir: string): ProbeRoot[] {
+  const defaultBaseDir = join(homedir(), '.config', 'manicode')
+  if (process.env['CODEBUFF_DATA_DIR'] || baseDir !== defaultBaseDir) {
+    return [{ path: baseDir, label: 'data' }]
+  }
+
+  const configDir = join(homedir(), '.config')
+  return CHANNELS.map(channel => ({ path: join(configDir, channel), label: channel }))
+}
+
 export function createCodebuffProvider(baseDir?: string): Provider {
   const dir = getCodebuffBaseDir(baseDir)
 
@@ -449,6 +459,10 @@ export function createCodebuffProvider(baseDir?: string): Provider {
 
     async discoverSessions(): Promise<SessionSource[]> {
       return discoverSessionsInBase(dir)
+    },
+
+    async probeRoots(): Promise<ProbeRoot[]> {
+      return codebuffProbeRoots(dir)
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {

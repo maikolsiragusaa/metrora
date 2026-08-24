@@ -5,7 +5,7 @@ import { homedir } from 'os'
 import { readSessionFile } from '../fs-utils.js'
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
-import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
+import type { Provider, SessionSource, SessionParser, ParsedProviderCall, ProbeRoot } from './types.js'
 
 /** Bump whenever unchanged Gemini session files must be re-reviewed for sharing. */
 export const GEMINI_PARSER_VERSION = 'message-token-ledger-v1'
@@ -277,6 +277,10 @@ export function createGeminiProvider(): Provider {
 
     async discoverSessions(): Promise<SessionSource[]> {
       return discoverSessions()
+    },
+
+    async probeRoots(): Promise<ProbeRoot[]> {
+      return [{ path: getGeminiTmpDir(), label: 'tmp' }]
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {

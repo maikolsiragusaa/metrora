@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -114,6 +114,13 @@ async function collect(sourcePath: string, provider = createMistralVibeProvider(
 }
 
 describe('mistral-vibe provider - session discovery', () => {
+  it('reports the authoritative logs/session root and honors VIBE_HOME', async () => {
+    const vibeHome = join(tmpDir, 'private-vibe-home')
+    vi.stubEnv('VIBE_HOME', vibeHome)
+    expect(await createMistralVibeProvider().probeRoots!()).toEqual([
+      { path: join(vibeHome, 'logs', 'session'), label: 'session' },
+    ])
+  })
   it('discovers Vibe session folders and derives project from metadata cwd', async () => {
     const sessionDir = await writeSession('session_20260511_100000_sessiona', metadata({
       sessionId: 'session-a',
