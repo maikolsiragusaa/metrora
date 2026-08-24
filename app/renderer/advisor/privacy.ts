@@ -1,5 +1,6 @@
 import type {
   AdvisorAnswer,
+  AdvisorBenchRun,
   AdvisorCoverage,
   AdvisorEvidence,
   AdvisorEvidenceRef,
@@ -29,7 +30,7 @@ const KEY_PREFIX_PATTERN = /\b(?:sk|rk|pk|gh[pousr]|xox[baprs]-)[-_A-Za-z0-9]{12
 const RAW_CONTENT_MARKER_PATTERN = /(?<![\p{L}\p{N}])(?:raw[_ -]?(?:prompt|response|source)(?:[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak))*|(?:prompt|response|source)[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak)(?:[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak))*|source[_ -]?(?:code|snippet|content|snippets?)(?:[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak))*)(?![\p{L}\p{N}])/giu
 const NUMERIC_CHARACTER_PATTERN = /\p{N}/u
 const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million|billion|first|second|third|uno|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|primo|secondo|terzo)\b/iu
-const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota'] as const
+const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
 const CONTENT_MINIMAL_PROVIDER_NAMES = ['all', 'claude', 'codex'] as const
 const SAFE_ANSWER_EVIDENCE_ID_PATTERN = /^(?:spend|quota|spend-(?:claude|codex)|overview\.(?:current|history\.daily|models|projects|sessions|modelAccounting)|models\.report|quota\.(?:claude|codex))$/u
 
@@ -145,6 +146,34 @@ export function contentMinimalCoverage(coverage: AdvisorCoverage): AdvisorCovera
     level: coverage.level,
     label: sanitizeAdvisorDisplayText(coverage.label),
     detail: sanitizeAdvisorDisplayText(coverage.detail),
+    ...(coverage.state ? { state: coverage.state } : {}),
+  }
+}
+
+function safeBenchIdentifier(value: string, digest = false): string {
+  const pattern = digest ? /^[0-9a-f]{64}$/u : /^[A-Za-z0-9._:/-]{1,200}$/u
+  return pattern.test(value) ? value : REDACTION
+}
+
+function contentMinimalBenchRun(run: AdvisorBenchRun): AdvisorJsonObject {
+  return {
+    runId: safeBenchIdentifier(run.runId),
+    pack: { id: safeBenchIdentifier(run.pack.id), version: safeBenchIdentifier(run.pack.version), digest: safeBenchIdentifier(run.pack.digest, true) },
+    scorer: { id: safeBenchIdentifier(run.scorer.id), version: safeBenchIdentifier(run.scorer.version) },
+    runner: { id: safeBenchIdentifier(run.runner.id), version: safeBenchIdentifier(run.runner.version) },
+    runtime: { id: safeBenchIdentifier(run.runtime.id), version: safeBenchIdentifier(run.runtime.version) },
+    model: { selected: safeBenchIdentifier(run.model.selected), reported: run.model.reported === null ? null : safeBenchIdentifier(run.model.reported) },
+    generationPolicy: safeBenchIdentifier(run.generationPolicy),
+    status: run.status,
+    aggregate: run.aggregate,
+    tasks: run.tasks.slice(0, 64).map(task => ({
+      taskId: safeBenchIdentifier(task.taskId),
+      status: task.status,
+      score: task.score,
+      requestLatencyMs: task.requestLatencyMs,
+      timeToFirstContentMs: task.timeToFirstContentMs,
+    })),
+    resultDigest: safeBenchIdentifier(run.resultDigest, true),
   }
 }
 
@@ -182,6 +211,14 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     unknown: answer.unknown.map(safeText),
     nextInvestigations: answer.nextInvestigations.map(safeText),
     details: answer.details.map(safeText),
+    why: (answer.why ?? []).map(safeText),
+    materialLimits: (answer.materialLimits ?? []).map(safeText),
+    understanding: answer.understanding ? {
+      ...answer.understanding,
+      summary: safeText(answer.understanding.summary),
+      clarification: answer.understanding.clarification === null ? null : safeText(answer.understanding.clarification),
+      boundary: answer.understanding.boundary === null ? null : safeText(answer.understanding.boundary),
+    } : undefined,
   }
 }
 
@@ -245,6 +282,14 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
         })),
       }
     : null
+  const bench = evidence.bench
+    ? {
+        state: evidence.bench.state,
+        latest: evidence.bench.latest === null ? null : contentMinimalBenchRun(evidence.bench.latest),
+        runs: evidence.bench.runs.slice(0, 10).map(contentMinimalBenchRun),
+        comparison: evidence.bench.comparison === null ? null : { ...evidence.bench.comparison, comparedRunIds: evidence.bench.comparison.comparedRunIds.map(value => safeBenchIdentifier(value)) },
+      }
+    : null
   return {
     intent: evidence.intent,
     scope: contentMinimalScope(evidence.scope),
@@ -253,6 +298,7 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
     spend,
     modelEfficiency,
     quota,
+    bench,
     assumptions: evidence.assumptions.map(value => sanitizeAdvisorDisplayText(value)),
     unknown: evidence.unknown.map(value => sanitizeAdvisorDisplayText(value)),
     nextInvestigations: evidence.nextInvestigations.map(value => sanitizeAdvisorDisplayText(value)),

@@ -312,7 +312,7 @@ export function createAdvisorToolResultEnvelope(
 ): AdvisorToolResultEnvelope {
   return createContentMinimalAdvisorToolResultEnvelope(name, scope, args, evidence, output)
 }
-const CONTENT_MINIMAL_SOURCE_VALUES = new Set(['overview', 'history', 'models', 'quota'])
+const CONTENT_MINIMAL_SOURCE_VALUES = new Set(['overview', 'history', 'models', 'quota', 'bench'])
 const CONTENT_MINIMAL_PROVIDER_VALUES = new Set(['all', 'claude', 'codex', '[provider]'])
 
 function containsUnsafeAdvisorToolContent(value: unknown, key = ''): boolean {
@@ -361,6 +361,7 @@ export function createContentMinimalAdvisorToolResultEnvelope(
   const safeOutput = JSON.parse(boundedAdvisorJson(contentMinimalEvidence(evidence), ADVISOR_TOOL_OUTPUT_MAX_BYTES)) as AdvisorJsonObject
   const envelope: AdvisorToolResultEnvelope = {
     contractVersion: ADVISOR_TOOL_CONTRACT_VERSION,
+    schemaVersion: ADVISOR_TOOL_SCHEMA_VERSION,
     tool: name,
     scope: safeScope,
     arguments: safeArguments,

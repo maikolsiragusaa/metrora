@@ -1,9 +1,11 @@
 import { formatUsd } from '../lib/format'
 import type { MenubarPayload, ModelReportRow, Period, QuotaProvider } from '../lib/types'
 import type {
+  AdvisorBenchEvidence,
   AdvisorCoverage,
   AdvisorEvidence,
   AdvisorEvidenceRef,
+  AdvisorEvidenceState,
   AdvisorIntent,
   AdvisorModelEvidenceRow,
   AdvisorQuotaProvider,
@@ -57,8 +59,11 @@ function normalize(question: string): string {
 }
 export function classifyAdvisorQuestion(question: string): AdvisorIntent {
   const value = normalize(question)
+  if (/\b(?:bench|controlled test|task pack|benchmark|test controllato|prova controllata)\b/u.test(value)) return 'bench-result'
+  if (/\b(?:best|smartest|better overall|which model should|which model to buy|modello migliore|piu intelligente|migliore in assoluto|consigli|recommend)\b/u.test(value)) return 'unsupported'
+  if (/\blimit(?:s)?\b|\blimite\b/u.test(value) && !/(?:quota|capacity|reset|remaining|credit|provider|codex|claude|usage|spend|spent|cost|costo|spesa)/u.test(value)) return 'clarification'
   if (/(quota|capacity|limit|reset|remaining|exhaust|rate.?limit|credit|disponibil|limite|esaur)/.test(value)) return 'quota-capacity'
-  if (/(why did|what caused|cause|driver|drove|spend|spent|increase|increas|change|changed|spike|which project|which sessions?|unusually expensive|expensive sessions?|versus|vs\b|costo|spesa|aument|picco|perche|perché)/.test(value)) return 'spend-change'
+  if (/(why did|what caused|cause|driver|drove|spend|spent|cost me the most|most expensive|increase|increas|change|changed|spike|which project|which sessions?|unusually expensive|expensive sessions?|versus|vs\b|costo|spesa|aument|picco|perche|perché)/.test(value)) return 'spend-change'
   if (/(model efficiency|lower observed cost per call|cheaper per observed call|cost per call|per observed call|which model.*(?:lower|cheaper)|compare.*model.*(?:cost|efficien)|efficien|efficient|econom|modello)/.test(value)) return 'model-efficiency'
   return 'unknown'
 }
@@ -89,24 +94,27 @@ function trendFromHistory(data: MenubarPayload): AdvisorTrend | null {
   }
 }
 function spendCoverage(data: MenubarPayload): AdvisorCoverage {
-  const hasCalls = finite(data.current.calls) && data.current.calls > 0
-  const hasCost = finite(data.current.cost) && data.current.cost > 0
-  if (!hasCalls && !hasCost) return { level: 'unavailable', label: 'No measured usage', detail: 'The selected scope has no measured spend or calls.' }
+  const calls = finite(data.current.calls) ? data.current.calls : null
+  const cost = finite(data.current.cost) ? data.current.cost : null
+  const hasMeasuredField = calls !== null || cost !== null || finite(data.current.sessions)
+  if (!hasMeasuredField) return { level: 'unavailable', state: 'UNAVAILABLE', label: 'Usage unavailable', detail: 'Metrora did not return a measured cost or call total for the selected scope.' }
+  if (calls === 0 && (cost === null || cost === 0)) return { level: 'high', state: 'NO_DATA', label: 'No measured activity', detail: 'Metrora measured zero calls and zero spend in the selected scope.' }
   const coverage = finite(data.current.pricingCoverage)
     ? clamp(data.current.pricingCoverage)
     : data.current.modelAccounting && finite(data.current.modelAccounting.coverage.cost)
       ? clamp(data.current.modelAccounting.coverage.cost)
       : null
-  if (coverage === null) return { level: 'partial', label: 'Measured, coverage not reported', detail: 'Metrora reported totals, but complete pricing/accounting coverage is not exposed.' }
+  if (coverage === null) return { level: 'partial', state: 'PARTIAL', label: 'Measured, coverage not reported', detail: 'Metrora reported totals, but complete pricing/accounting coverage is not exposed.' }
   return coverage >= 0.95
-    ? { level: 'high', label: formatAdvisorPercent(coverage) + ' priced coverage', detail: 'The canonical payload reports near-complete pricing coverage.' }
-    : { level: 'partial', label: formatAdvisorPercent(coverage) + ' priced coverage', detail: 'Some cost-bearing calls lack complete pricing/accounting detail.' }
+    ? { level: 'high', state: 'PARTIAL', label: formatAdvisorPercent(coverage) + ' priced coverage', detail: 'The canonical payload reports near-complete pricing coverage.' }
+    : { level: 'partial', state: 'PARTIAL', label: formatAdvisorPercent(coverage) + ' priced coverage', detail: 'Some cost-bearing calls lack complete pricing/accounting detail.' }
 }
 function reconciliationCoverage(data: MenubarPayload, coverage: AdvisorCoverage): AdvisorCoverage {
   const state = data.freshness?.reconciliation
   if ((state !== 'degraded' && state !== 'targeted') || coverage.level !== 'high') return coverage
   return {
     level: 'partial',
+    state: 'PARTIAL',
     label: state === 'degraded' ? 'Degraded source reconciliation' : 'Targeted source reconciliation',
     detail: state === 'degraded'
       ? 'Canonical last-good data is usable, but source reconciliation is incomplete.'
@@ -210,9 +218,9 @@ export function buildModelEfficiencyEvidence(question: string, scope: AdvisorSco
   canonicalRows.sort((a, b) => (a.costPerCallUSD ?? Number.POSITIVE_INFINITY) - (b.costPerCallUSD ?? Number.POSITIVE_INFINITY))
   const rowsLimited = canonicalRows.slice(0, 12)
   const modelCoverage: AdvisorCoverage = !rowsLimited.length
-    ? { level: 'unavailable', label: 'Model detail unavailable', detail: 'No model rows were returned for this scope.' }
+    ? { level: 'unavailable', state: 'UNAVAILABLE', label: 'Model detail unavailable', detail: 'No model rows were returned for this scope.' }
     : rowsLimited.some(row => row.pricingState !== 'priced')
-      ? { level: 'partial', label: 'Partial model coverage', detail: 'One or more rows lack complete pricing or route detail.' }
+      ? { level: 'partial', state: 'PARTIAL', label: 'Partial model coverage', detail: 'One or more rows lack complete pricing or route detail.' }
       : { level: 'high', label: 'Model rows available', detail: 'The selected scope returned canonical model usage rows.' }
   const coverage = reconciliationCoverage(data, modelCoverage)
   return {
@@ -258,14 +266,16 @@ function quotaProvider(quota: QuotaProvider): AdvisorQuotaProvider {
   }
 }
 function quotaCoverage(providers: AdvisorQuotaProvider[]): AdvisorCoverage {
-  if (!providers.length) return { level: 'unavailable', label: 'Provider quota unavailable', detail: 'No matching provider quota snapshot was returned.' }
+  if (!providers.length) return { level: 'unavailable', state: 'UNAVAILABLE', label: 'Provider quota unavailable', detail: 'No matching provider quota snapshot was returned.' }
   const hasFacts = (row: AdvisorQuotaProvider) => row.windows.length > 0 || row.planLabel !== null || row.creditsUSD !== null
   const factual = providers.filter(hasFacts)
   const fresh = factual.filter(row => row.freshness === 'fresh' && row.availability === 'available' && typeof row.observedAt === 'string' && Number.isFinite(Date.parse(row.observedAt))).length
   const stale = factual.filter(row => row.freshness === 'stale' && typeof row.observedAt === 'string' && Number.isFinite(Date.parse(row.observedAt))).length
   if (factual.length === providers.length && fresh === providers.length) return { level: 'high', label: 'Fresh provider-reported quota', detail: 'Every matching provider returned a fresh factual snapshot.' }
-  if (fresh || stale) return { level: 'partial', label: fresh ? 'Mixed provider quota freshness' : 'Last provider snapshot is stale', detail: fresh ? 'Some matching providers are fresh while another is stale or unavailable.' : 'Values are retained from the last observation; the refresh did not produce a fresh provider response.' }
-  return { level: 'unavailable', label: 'Provider quota unavailable', detail: 'The provider did not return usable quota facts.' }
+  if (fresh && stale) return { level: 'partial', state: 'PARTIAL', label: 'Mixed provider quota freshness', detail: 'Some matching providers are fresh while another is stale.' }
+  if (stale) return { level: 'partial', state: 'STALE', label: 'Last provider snapshot is stale', detail: 'Values are retained from the last observation; the refresh did not produce a fresh provider response.' }
+  if (fresh) return { level: 'partial', state: 'PARTIAL', label: 'Partial provider quota', detail: 'At least one matching provider returned facts, but coverage across the selected providers is incomplete.' }
+  return { level: 'unavailable', state: 'UNAVAILABLE', label: 'Provider quota unavailable', detail: 'The provider did not return usable quota facts.' }
 }
 export function buildQuotaEvidence(question: string, scope: AdvisorScope, data: MenubarPayload | null, quota: QuotaProvider[]): AdvisorEvidence {
   const matching = scope.provider === 'all' ? quota : quota.filter(row => row.provider === scope.provider)
@@ -302,9 +312,9 @@ export function buildUnknownEvidence(question: string, scope: AdvisorScope): Adv
     question,
     scope,
     refs: [],
-    coverage: { level: 'unavailable', label: 'Question outside this foundation', detail: 'Advisor currently answers spend, model efficiency, and provider quota questions.' },
+    coverage: { level: 'unavailable', state: 'UNSUPPORTED', label: 'Question needs a supported category', detail: 'Advisor currently answers measured spend, observed cost per call, provider quota, and controlled Bench questions.' },
     assumptions: [],
     unknown: ['No deterministic Metrora evidence tool is mapped to this question yet.'],
-    nextInvestigations: ['Ask about a spend change or cost driver.', 'Ask which model has the lowest observed cost per call.', 'Ask what provider quota remains or when it resets.'],
+    nextInvestigations: ['Ask about a spend change or cost driver.', 'Ask which model has the lowest observed cost per call.', 'Ask what provider quota remains or when it resets.', 'Ask how a controlled Bench run performed.'],
   }
 }

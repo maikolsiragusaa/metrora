@@ -32,6 +32,9 @@ function baseAnswer(evidence: AdvisorEvidence, runtime: AdvisorModelRuntime): Ad
     unknown: evidence.unknown,
     nextInvestigations: evidence.nextInvestigations,
     details: [],
+    why: [],
+    materialLimits: [],
+    understanding: evidence.understanding,
     runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
   }
 }
@@ -40,9 +43,19 @@ function modelRow(row: AdvisorModelEvidenceRow): string {
 }
 function spendAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
   const spend = evidence.spend
-  if (!spend || evidence.coverage.level === 'unavailable') return { ...answer, conclusion: 'I could not find measured spend for this scope yet.', details: ['No cost or call total was available from the canonical Overview payload.'] }
+  if (!spend || evidence.coverage.level === 'unavailable') return {
+    ...answer,
+    conclusion: 'I do not have measured spend for this scope yet.',
+    materialLimits: ['No measured cost or call total was available for the selected scope.'],
+    details: ['No measured usage total was returned.'],
+  }
+  if (evidence.coverage.state === 'NO_DATA' && (spend.calls === 0 || spend.calls === null) && (spend.measuredCostUSD === 0 || spend.measuredCostUSD === null)) return {
+    ...answer,
+    conclusion: 'Metrora measured no spend or calls in this scope.',
+    materialLimits: ['This is an explicit zero in the selected scope, not an unavailable result.'],
+    details: ['Measured spend · $0.00', 'Measured calls · 0'],
+  }
   const trend = spend.trend
-  const trendText = trend ? ' The latest returned day was ' + formatAdvisorUsd(trend.latestCostUSD) + ', ' + (trend.direction === 'up' ? 'above' : trend.direction === 'down' ? 'below' : 'near') + ' the ' + trend.comparisonLabel + ' (' + formatAdvisorUsd(trend.comparisonCostUSD) + ').' : ''
   const driver = spend.models[0]
   const facts = [
     spend.measuredCostUSD === null ? null : 'Metrora measured ' + formatAdvisorUsd(spend.measuredCostUSD),
@@ -52,7 +65,15 @@ function spendAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorA
   const intro = facts.length ? facts.join(' across ') + ' in this scope.' : 'Metrora returned no usable measured totals for this scope.'
   return {
     ...answer,
-    conclusion: intro + trendText + (driver ? ' Largest represented model driver: ' + driver.name + ' at ' + formatAdvisorUsd(driver.costUSD) + '.' : ''),
+    conclusion: intro + (driver ? ' Largest represented model driver: ' + driver.name + '.' : ''),
+    why: [
+      ...(trend ? ['The latest returned day was ' + formatAdvisorUsd(trend.latestCostUSD) + ', ' + (trend.direction === 'up' ? 'above' : trend.direction === 'down' ? 'below' : 'near') + ' the ' + trend.comparisonLabel + ' (' + formatAdvisorUsd(trend.comparisonCostUSD) + ').'] : []),
+      ...(driver ? ['The largest represented model driver was ' + driver.name + ' at ' + formatAdvisorUsd(driver.costUSD) + '.'] : []),
+    ],
+    materialLimits: [
+      'The driver list describes measured patterns; it does not prove causality.',
+      ...evidence.unknown.slice(0, 2),
+    ],
     details: [
       ...spend.models.slice(0, 4).map(row => 'Model · ' + row.name + ' · ' + formatAdvisorUsd(row.costUSD) + ' · ' + row.calls.toLocaleString('en-US') + ' calls'),
       ...spend.projects.slice(0, 4).map(row => 'Project · ' + row.name + ' · ' + formatAdvisorUsd(row.costUSD) + ' · ' + row.calls.toLocaleString('en-US') + ' sessions'),
@@ -62,17 +83,27 @@ function spendAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorA
 }
 function modelAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
   const model = evidence.modelEfficiency
-  if (!model || !model.rows.length) return { ...answer, conclusion: 'I could not find model detail for this scope yet.', details: ['The canonical model report returned no rows for the selected context.'] }
-  const best = model.rows[0]!
+  if (!model || !model.rows.length) return {
+    ...answer,
+    conclusion: 'I do not have model cost detail for this scope yet.',
+    materialLimits: ['No model rows were available for the selected context.'],
+    details: ['No model usage detail was returned.'],
+  }
+  const lowest = model.rows[0]!
   return {
     ...answer,
-    conclusion: 'The lowest observed cost per call' + (model.selectedModel ? ' for ' + model.selectedModel : '') + ' is ' + (best.costPerCallUSD === null ? 'not available' : formatAdvisorUsd(best.costPerCallUSD)) + ' on ' + best.model + '. This is a descriptive cost signal, not proof that the model is better for comparable work.',
+    conclusion: 'The lowest observed cost per call' + (model.selectedModel ? ' for ' + model.selectedModel : '') + ' is ' + (lowest.costPerCallUSD === null ? 'not available' : formatAdvisorUsd(lowest.costPerCallUSD)) + ' on ' + lowest.model + '.',
+    why: ['This is an observed cost signal from the selected scope.'],
+    materialLimits: [
+      'The comparison does not measure task quality, complexity, output quality, or which model is better overall.',
+      ...evidence.unknown.slice(0, 2),
+    ],
     details: model.rows.slice(0, 8).map(modelRow),
   }
 }
 function quotaAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
   const quota = evidence.quota
-  if (!quota || !quota.providers.length || evidence.coverage.level === 'unavailable') return { ...answer, conclusion: 'No usable provider-reported quota is available for this scope.', details: ['Quota is unavailable, so no remaining percentage, reset, plan, or credit number is shown.'] }
+  if (!quota || !quota.providers.length || evidence.coverage.level === 'unavailable') return { ...answer, conclusion: 'No provider-reported quota is available for this scope.', materialLimits: ['No quota number is shown because the provider response is unavailable; Metrora usage is a separate source.'], details: ['No remaining percentage, reset, plan, or credit number is shown.'] }
   const summaries: string[] = []
   const details: string[] = []
   for (const provider of quota.providers) {
@@ -91,7 +122,36 @@ function quotaAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorA
     if (provider.creditsUSD !== null) details.push(name + ' · provider credits remaining · ' + formatAdvisorCreditsUsd(provider.creditsUSD))
   }
   if (quota.measuredSpendUSD !== null) details.push('Metrora usage context · ' + formatAdvisorUsd(quota.measuredSpendUSD) + ' measured spend · separate from provider quota authority.')
-  return { ...answer, conclusion: summaries.join(' '), details }
+  return { ...answer, conclusion: summaries.join(' '), why: ['These figures come from provider-reported quota, not a forecast from Metrora usage.'], materialLimits: ['Provider quota can be stale or incomplete; Metrora does not estimate a reset or remaining balance.'], details }
+}
+function benchAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
+  const bench = evidence.bench
+  const latest = bench?.latest
+  if (!latest) return {
+    ...answer,
+    conclusion: bench?.state === 'NO_DATA' ? 'I do not have a completed controlled Bench result for this scope yet.' : 'The controlled Bench result is unavailable or incomplete.',
+    materialLimits: ['No score or task outcome is inferred when the controlled result is unavailable.', 'Ask Metrora to compare only canonical runs with matching identities.'],
+    details: [],
+  }
+  if (bench?.comparison?.compatibility === 'incompatible') return {
+    ...answer,
+    conclusion: 'These controlled runs cannot be compared because their test setup is different.',
+    why: ['Metrora kept the comparison blocked rather than treating different packs or policies as equivalent.'],
+    materialLimits: ['A controlled test result does not establish universal model quality or a recommendation.'],
+    details: latest.tasks.slice(0, 12).map(task => task.taskId + ' · ' + task.status),
+  }
+  const score = latest.aggregate.scoreValue === null ? 'no score' : formatAdvisorPercent(latest.aggregate.scoreValue) + ' score'
+  const comparison = bench?.comparison
+  return {
+    ...answer,
+    conclusion: 'In the latest controlled test, ' + latest.model.selected + ' passed ' + latest.aggregate.passed + ' of ' + latest.aggregate.planned + ' planned tasks with ' + score + '.',
+    why: [
+      ...(comparison?.compatibility === 'compatible' && comparison.passedDelta !== null ? ['Compared with the prior compatible run, passed tasks changed by ' + comparison.passedDelta + '.'] : []),
+      ...(comparison?.compatibility === 'compatible' && comparison.medianLatencyDeltaMs !== null ? ['Median request latency changed by ' + comparison.medianLatencyDeltaMs + ' ms.'] : []),
+    ],
+    materialLimits: ['This is evidence for one bounded task pack; it is not a universal ranking, quality claim, or buying recommendation.'],
+    details: latest.tasks.slice(0, 12).map(task => task.taskId + ' · ' + task.status + (task.requestLatencyMs === null ? '' : ' · ' + task.requestLatencyMs + ' ms')),
+  }
 }
 export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
   readonly id = 'metrora-deterministic-local'
@@ -104,7 +164,17 @@ export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
     if (input.evidence.intent === 'spend-change') return sanitizeAdvisorAnswer(spendAnswer(input.evidence, answer))
     if (input.evidence.intent === 'model-efficiency') return sanitizeAdvisorAnswer(modelAnswer(input.evidence, answer))
     if (input.evidence.intent === 'quota-capacity') return sanitizeAdvisorAnswer(quotaAnswer(input.evidence, answer))
-    return { ...answer, conclusion: 'I can investigate spend changes, observed model efficiency, and provider quota. Try one of the suggested questions.', details: ['This local foundation does not send your question or Metrora data to a hosted model.'] }
+    if (input.evidence.intent === 'bench-result') return sanitizeAdvisorAnswer(benchAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'clarification' || input.evidence.intent === 'unsupported') return sanitizeAdvisorAnswer({
+      ...answer,
+      conclusion: input.evidence.understanding?.clarification ?? input.evidence.understanding?.boundary ?? 'Choose a supported Metrora evidence question.',
+      materialLimits: ['No evidence was read until the question had a single supported meaning.'],
+    })
+    return sanitizeAdvisorAnswer({
+      ...answer,
+      conclusion: 'I can investigate measured spend, observed model cost per call, provider quota, and controlled Bench results.',
+      materialLimits: ['This local foundation does not send your question or Metrora data to a hosted model.'],
+    })
   }
 }
 /** Explicit placeholder for future verified local/BYOK adapters; it never pretends to support a provider. */

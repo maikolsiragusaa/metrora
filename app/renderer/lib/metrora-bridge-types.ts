@@ -47,6 +47,7 @@ export type BenchEvaluation = {
   pack: { packId: string; version: string; digest: string }
   model: { selected: string; reported: string | null }
   runtime: { id: string; endpoint: string; version: string | null }
+  generation?: { parameters: Record<string, number>; policy: string }
   startedAt: string
   endedAt: string
   status: 'completed' | 'unavailable' | 'cancelled'

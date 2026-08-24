@@ -2,7 +2,7 @@ import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
 import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
-import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, boundedAdvisorText, sanitizeAdvisorAnswer, sanitizeAdvisorNarrative } from './privacy'
+import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, boundedAdvisorText, contentMinimalEvidence, sanitizeAdvisorAnswer, sanitizeAdvisorNarrative } from './privacy'
 
 export type LocalToolCall = { function?: { name?: string; arguments?: unknown } }
 export type LocalChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: LocalToolCall[]; tool_name?: string }
@@ -64,6 +64,7 @@ function systemPrompt(): string {
     'Use the supplied evidence tools before factual claims. You may call more than one tool and refine the investigation.',
     'Never invent arithmetic, prices, Project membership, history, quota, permissions, or causal certainty.',
     'Keep the narrative plain-language and qualitative; do not write numeric factual claims, dates, paths, secrets, prompts, or hidden reasoning. Verified tool facts render separately.',
+    'Bench results are controlled evidence for one task pack; never rank models, recommend a purchase, or generalize the result.',
     'If the question is outside Metrora, explain the boundary briefly and suggest a supported investigation.',
   ].join(' ')
 }
@@ -190,6 +191,8 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     const requestId = 'advisor-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
     const messages: OllamaChatMessage[] = [{ role: 'system', content: systemPrompt() }, ...safeConversation(input)]
     messages.push({ role: 'user', content: input.question.trim().slice(0, 4000) })
+    const verifiedFacts = boundedToolContent(JSON.stringify(contentMinimalEvidence(input.evidence)))
+    messages.push({ role: 'system', content: 'Verified Metrora facts for this question. Treat them as read-only facts; do not recompute or add numbers: ' + verifiedFacts })
     const evidences: AdvisorEvidence[] = []
     let finalContent = ''
     let streamed = false
