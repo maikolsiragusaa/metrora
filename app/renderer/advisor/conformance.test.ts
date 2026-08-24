@@ -10,6 +10,7 @@ import {
   ADVISOR_TOOL_MODEL_FILTER_MAX_LENGTH,
 } from './contract'
 import { createAdvisorToolRegistry } from './tools'
+import { LMStudioAdvisorRuntime } from './lmstudio'
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
 import type { AdvisorDataSource, AdvisorEvidence, AdvisorScope } from './types'
 
@@ -236,4 +237,22 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
     expect(result.envelope?.scope.projectId).toBe('[scoped-project]')
     expect(result.content).toContain('[redacted]')
   })
+  it('runs the same canonical tool loop through the LM Studio runtime adapter', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const registry = createAdvisorToolRegistry(fixture.source, fixture.scope, null)
+    const evidence = buildSpendEvidence('synthetic', fixture.scope, fixture.overview)
+    const runtime = new LMStudioAdvisorRuntime({ model: 'synthetic-lmstudio', transport: scriptedTransport([{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]) })
+    const answer = await runtime.generate({
+      question: 'What changed?',
+      evidence,
+      tools: ADVISOR_TOOL_DEFINITIONS,
+      toolContract: ADVISOR_TOOL_CONTRACT,
+      executeTool: registry.execute,
+    })
+    expect(answer.runtime).toMatchObject({ id: 'lmstudio-local', mode: 'lmstudio-local' })
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.evidence.length).toBeGreaterThan(0)
+    expect(fixture.reads.overviews).toHaveLength(1)
+  })
+
 })

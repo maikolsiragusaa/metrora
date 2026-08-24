@@ -4,15 +4,20 @@ import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, assertStrictBo
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, boundedAdvisorText, sanitizeAdvisorAnswer, sanitizeAdvisorNarrative } from './privacy'
 
-type OllamaToolCall = { function?: { name?: string; arguments?: unknown } }
-type OllamaChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: OllamaToolCall[]; tool_name?: string }
-type OllamaResponse = { message?: { content?: string; tool_calls?: OllamaToolCall[] }; streamed?: boolean }
+export type LocalToolCall = { function?: { name?: string; arguments?: unknown } }
+export type LocalChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: LocalToolCall[]; tool_name?: string }
+export type LocalChatResponse = { message?: { content?: string; tool_calls?: LocalToolCall[] }; streamed?: boolean }
+type OllamaToolCall = LocalToolCall
+type OllamaChatMessage = LocalChatMessage
+type OllamaResponse = LocalChatResponse
 export type OllamaProbeResult = { available: boolean; models: string[]; detail: string }
-export type OllamaTransport = {
-  probe: (signal?: AbortSignal) => Promise<OllamaProbeResult>
-  chat: (requestId: string, payload: Record<string, unknown>, signal?: AbortSignal) => Promise<OllamaResponse>
+export type LocalAdvisorTransport = {
+  chat: (requestId: string, payload: Record<string, unknown>, signal?: AbortSignal) => Promise<LocalChatResponse>
   cancel: (requestId: string) => Promise<boolean>
   onDelta: (callback: (event: { requestId: string; text: string }) => void) => () => void
+}
+export type OllamaTransport = LocalAdvisorTransport & {
+  probe: (signal?: AbortSignal) => Promise<OllamaProbeResult>
 }
 const bridgeTransport: OllamaTransport = {
   probe: signal => {
@@ -149,23 +154,38 @@ function safeConversation(input: AdvisorRuntimeInput): OllamaChatMessage[] {
     return content ? [{ role: turn.role, content }] : []
   })
 }
-export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
-  readonly id = 'ollama-local'
-  readonly mode = 'ollama-local' as const
-  readonly providerSupport = ['Ollama official local API'] as const
+export type LocalAdvisorRuntimeOptions = {
+  id: string
+  label: string
+  mode: AdvisorAnswer['runtime']['mode']
+  providerSupport: readonly string[]
+  model: string
+  transport: LocalAdvisorTransport
+  availability?: 'ready' | 'checking' | 'unavailable'
+  unavailableMessage?: string
+}
+export class LocalAdvisorRuntime implements AdvisorModelRuntime {
+  readonly id: string
+  readonly mode: AdvisorAnswer['runtime']['mode']
+  readonly providerSupport: readonly string[]
   readonly supportsStreaming = true
   readonly label: string
   readonly availability: 'ready' | 'checking' | 'unavailable'
   private readonly model: string
-  private readonly transport: OllamaTransport
-  constructor(options: { model: string; transport?: OllamaTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+  private readonly transport: LocalAdvisorTransport
+  private readonly unavailableMessage: string
+  constructor(options: LocalAdvisorRuntimeOptions) {
+    this.id = options.id
+    this.mode = options.mode
+    this.providerSupport = options.providerSupport
     this.model = options.model
-    this.transport = options.transport ?? bridgeTransport
+    this.transport = options.transport
     this.availability = options.availability ?? 'ready'
-    this.label = 'Ollama · ' + options.model
+    this.label = options.label
+    this.unavailableMessage = options.unavailableMessage ?? 'Local Advisor model is not available.'
   }
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
-    if (this.availability !== 'ready') throw new Error('Local Ollama model is not available.')
+    if (this.availability !== 'ready') throw new Error(this.unavailableMessage)
     throwIfAborted(signal)
     const requestId = 'advisor-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
     const messages: OllamaChatMessage[] = [{ role: 'system', content: systemPrompt() }, ...safeConversation(input)]
@@ -271,6 +291,21 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
       runtime: { id: this.id, label: this.label, mode: this.mode },
       generatedByModel: true,
       streamed: Boolean(insight && streamed),
+    })
+  }
+}
+
+export class OllamaAdvisorRuntime extends LocalAdvisorRuntime {
+  constructor(options: { model: string; transport?: OllamaTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+    super({
+      id: 'ollama-local',
+      label: 'Ollama · ' + options.model,
+      mode: 'ollama-local',
+      providerSupport: ['Ollama official local API'],
+      model: options.model,
+      transport: options.transport ?? bridgeTransport,
+      availability: options.availability,
+      unavailableMessage: 'Local Ollama model is not available.',
     })
   }
 }

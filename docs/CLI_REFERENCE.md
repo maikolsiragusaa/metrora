@@ -83,11 +83,11 @@ Experimental commands label heuristic or incomplete methodology explicitly. Thei
 | Command | Purpose |
 | --- | --- |
 | `metrora bench local --model <model>` | Run one warmup plus five measured requests against the fixed local Ollama loopback endpoint using the versioned synthetic BenchRunV1 fixture. |
+| `metrora bench task-pack --model <model>` | Run the six-task deterministic local task pack and optionally save its bounded evaluation to private history. |
+| `metrora bench history` / `metrora bench compare <left> <right>` | Read private task-pack history or compare compatible results using factual deltas only. |
 
-The Bench command records runtime/performance evidence only. It does not read
-user prompts or source repositories, score quality, rank models, calculate cost
-or quota, or connect to hosted inference. Use `--format json --output <path>`
-to export the bounded local artifact. See [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md).
+The Bench commands record bounded local runtime or synthetic-task evidence only.
+They do not read user prompts or source repositories, make general quality claims, rank models, calculate cost or quota, or connect to hosted inference. Use `--format json --output <path>` with `bench local`, or `--format json` with `bench task-pack`; see [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) and [Bench task pack v1](BENCH_TASK_PACK_V1.md).
 
 ## Cost and plan configuration
 

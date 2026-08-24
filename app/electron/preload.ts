@@ -17,9 +17,12 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 // immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  advisorProbe: () => invoke('metrora:advisorProbe'),
-  advisorChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorChat', requestId, payload),
+  advisorProbe: (runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorProbe', runtime),
+  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
   advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
+  getBenchHistory: () => invoke('metrora:getBenchHistory'),
+  getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
+  runBenchTaskPack: (model: string, pack?: string) => invoke('metrora:runBenchTaskPack', model, pack),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null) => invoke('metrora:getOverview', period, provider, range, configSource, background, fresh, projectScopeId),
   getProjects: () => invoke('metrora:getProjects'),
   createProject: (name: string, icon?: string, color?: string) => invoke('metrora:createProject', name, icon, color),

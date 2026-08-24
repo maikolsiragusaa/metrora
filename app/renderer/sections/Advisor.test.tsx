@@ -8,7 +8,9 @@ import type { AdvisorAnswer } from '../advisor/types'
 import { Advisor } from './Advisor'
 
 const { advisorProbe, investigate } = vi.hoisted(() => ({
-  advisorProbe: vi.fn(async () => ({ available: false, models: [], detail: 'Ollama is not running.' })),
+  advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama') => runtime === 'lmstudio'
+    ? { runtime: 'lmstudio' as const, available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered' as const, capabilities: [{ schemaVersion: 1 as const, runtime: 'lmstudio' as const, modelId: 'qwen/qwen3-8b', discovery: 'discovered' as const, conversational: 'available' as const, toolCall: 'unknown' as const, streaming: 'supported' as const, limitation: 'Tool support varies by model.' }] }
+    : { available: false, models: [], detail: 'Ollama is not running.' }),
   investigate: vi.fn(),
 }))
 vi.mock('../advisor/kernel', () => ({ createAdvisorKernel: () => ({ investigate }) }))
@@ -71,6 +73,15 @@ describe('Advisor workspace', () => {
     expect(screen.getByRole('complementary', { name: 'Advisor evidence' })).toHaveTextContent('Ask a question to pin its evidence')
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
     expect(advisorProbe).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches between supported local runtimes and discovers its models factually', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Advisor runtime'), { target: { value: 'lmstudio' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor local runtime model')).toHaveValue('qwen/qwen3-8b'))
+    expect(screen.getByText(/LM Studio · qwen\/qwen3-8b/)).toBeInTheDocument()
+    expect(screen.getByText(/tool support varies by model/)).toBeInTheDocument()
   })
 
   it('retries the exact failed request in its original conversation and scope without duplicating the user message', async () => {
