@@ -37,6 +37,13 @@ import { grok } from './grok.js'
 import { ensureProviderEnvFingerprintAuthorities } from '../provider-parse-authorities.js'
 import type { Provider, SessionSource } from './types.js'
 import { discoverCodexSessionPathsForFreshness } from './freshness-discovery.js'
+import {
+  classifyProviderDiscoveryOutcome,
+  PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION,
+  providerDiscoveryIsComplete,
+  providerDiscoveryProviderOrder,
+  type ProviderDiscoveryOutcome,
+} from './discovery-outcome.js'
 
 // Install deterministic source/profile env inputs before parser code computes a
 // session-cache fingerprint. The installer is idempotent and intentionally does
@@ -253,48 +260,85 @@ export async function getAllProviders(): Promise<Provider[]> {
 
 export const providers = coreProviders
 
-// Isolate one provider's discovery. A provider that throws (a crafted/corrupt
-// file reaching a string op, an unexpected on-disk shape) must never take down
-// the whole scan and blank every other provider's usage. Warn once per
-// provider per run, then skip it. Mirrors the parse-failure isolation already
-// used per-file in parser.ts.
+// Isolate one provider's discovery. A non-complete outcome is retained as
+// diagnostic state instead of being collapsed into an empty provider.
 const warnedDiscoveryFailures = new Set<string>()
-export async function safeDiscoverSessions(provider: Provider): Promise<SessionSource[]> {
+
+function warnDiscoveryOutcome(outcome: ProviderDiscoveryOutcome): void {
+  if (outcome.complete || warnedDiscoveryFailures.has(outcome.provider)) return
+  warnedDiscoveryFailures.add(outcome.provider)
+  process.stderr.write('metrora: ' + outcome.provider + ' discovery ' + outcome.status + '; retained evidence was not reconciled' + String.fromCharCode(10))
+}
+
+function cancelled<T>(signal: AbortSignal): Promise<T> {
+  return new Promise<T>((_, reject) => {
+    const rejectCancelled = () => reject(new Error('provider discovery cancelled'))
+    if (signal.aborted) rejectCancelled()
+    else signal.addEventListener('abort', rejectCancelled, { once: true })
+  })
+}
+
+export async function discoverProviderWithOutcome(provider: Provider, signal?: AbortSignal): Promise<ProviderDiscoveryOutcome> {
+  if (signal?.aborted) return classifyProviderDiscoveryOutcome(provider.name, { cancelled: true })
   try {
-    return await provider.discoverSessions()
-  } catch (err) {
-    if (!warnedDiscoveryFailures.has(provider.name)) {
-      warnedDiscoveryFailures.add(provider.name)
-      const msg = err instanceof Error ? err.message : String(err)
-      process.stderr.write(
-        `metrora: skipped ${provider.name} discovery after an error: ${msg}\n`
-      )
-    }
-    return []
+    const discovered: unknown = signal
+      ? await Promise.race([provider.discoverSessions(), cancelled<SessionSource[]>(signal)])
+      : await provider.discoverSessions()
+    return Array.isArray(discovered)
+      ? classifyProviderDiscoveryOutcome(provider.name, { sources: discovered, cancelled: signal?.aborted === true })
+      : classifyProviderDiscoveryOutcome(provider.name, { error: new Error('provider returned an invalid source list') })
+  } catch (error) {
+    return classifyProviderDiscoveryOutcome(provider.name, { error, cancelled: signal?.aborted === true })
   }
+}
+
+export type ProviderDiscoveryRun = {
+  schemaVersion: typeof PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION
+  complete: boolean
+  outcomes: ProviderDiscoveryOutcome[]
+  sources: SessionSource[]
+}
+
+export async function discoverAllSessionsWithOutcomes(
+  providerFilter?: string,
+  providerList?: Provider[],
+  signal?: AbortSignal,
+): Promise<ProviderDiscoveryRun> {
+  const allProviders = providerList ?? await getAllProviders()
+  const filtered = providerDiscoveryProviderOrder(allProviders.filter(provider => !providerFilter || providerFilter === 'all' || provider.name === providerFilter))
+  const outcomes: ProviderDiscoveryOutcome[] = []
+  for (const provider of filtered) {
+    const outcome = await discoverProviderWithOutcome(provider, signal)
+    outcomes.push(outcome)
+    warnDiscoveryOutcome(outcome)
+  }
+  return {
+    schemaVersion: PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION,
+    complete: outcomes.every(providerDiscoveryIsComplete),
+    outcomes,
+    sources: outcomes.flatMap(outcome => [...outcome.sources]),
+  }
+}
+
+export async function safeDiscoverSessions(provider: Provider, signal?: AbortSignal): Promise<SessionSource[]> {
+  const outcome = await discoverProviderWithOutcome(provider, signal)
+  warnDiscoveryOutcome(outcome)
+  return [...outcome.sources]
 }
 
 export async function discoverAllSessions(
   providerFilter?: string,
-  // Injectable for tests so the isolation loop itself is exercised, not just
-  // the helper. Defaults to the real registry.
   providerList?: Provider[],
+  signal?: AbortSignal,
 ): Promise<SessionSource[]> {
-  const allProviders = providerList ?? await getAllProviders()
-  const filtered = providerFilter && providerFilter !== 'all'
-    ? allProviders.filter(p => p.name === providerFilter)
-    : allProviders
-  const all: SessionSource[] = []
-  for (const provider of filtered) {
-    const sessions = await safeDiscoverSessions(provider)
-    all.push(...sessions)
-  }
-  return all
+  return (await discoverAllSessionsWithOutcomes(providerFilter, providerList, signal)).sources
 }
 
 export type FreshnessDiscoveryResult = {
   sources: SessionSource[]
   fastProviders: ReadonlySet<string>
+  outcomes: ProviderDiscoveryOutcome[]
+  complete: boolean
 }
 
 /**
@@ -308,26 +352,31 @@ export async function discoverAllSessionsForFreshness(
   providerList?: Provider[],
 ): Promise<FreshnessDiscoveryResult> {
   const allProviders = providerList ?? await getAllProviders()
-  const filtered = providerFilter && providerFilter !== 'all'
-    ? allProviders.filter(p => p.name === providerFilter)
-    : allProviders
-  const discovered = await Promise.all(filtered.map(async provider => {
-    if (provider.name !== 'codex' || !provider.probeRoots) {
-      return { provider: provider.name, fast: false, sources: await safeDiscoverSessions(provider) }
-    }
-    try {
-      return {
-        provider: provider.name,
-        fast: true,
-        sources: await discoverCodexSessionPathsForFreshness(await provider.probeRoots()),
+  const filtered = providerDiscoveryProviderOrder(allProviders.filter(provider => !providerFilter || providerFilter === 'all' || provider.name === providerFilter))
+  const discovered: Array<{ provider: string; fast: boolean; sources: SessionSource[]; outcome: ProviderDiscoveryOutcome }> = []
+  for (const provider of filtered) {
+    if (provider.name === 'codex' && provider.probeRoots) {
+      try {
+        const sources = await discoverCodexSessionPathsForFreshness(await provider.probeRoots())
+        const outcome = classifyProviderDiscoveryOutcome(provider.name, { sources })
+        discovered.push({ provider: provider.name, fast: outcome.complete, sources, outcome })
+        warnDiscoveryOutcome(outcome)
+        continue
+      } catch {
+        // Fall back to the provider's full discovery path so the failure is
+        // represented as a real outcome instead of an empty fast scan.
       }
-    } catch {
-      return { provider: provider.name, fast: false, sources: await safeDiscoverSessions(provider) }
     }
-  }))
+    const outcome = await discoverProviderWithOutcome(provider)
+    discovered.push({ provider: provider.name, fast: false, sources: [...outcome.sources], outcome })
+    warnDiscoveryOutcome(outcome)
+  }
+  const outcomes = discovered.map(value => value.outcome)
   return {
     sources: discovered.flatMap(value => value.sources),
     fastProviders: new Set(discovered.filter(value => value.fast).map(value => value.provider)),
+    outcomes,
+    complete: outcomes.every(providerDiscoveryIsComplete),
   }
 }
 

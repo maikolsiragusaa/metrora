@@ -41,6 +41,29 @@ vi.mock('../src/providers/index.js', async (importOriginal) => {
         : await actual.discoverAllSessions(filter)
       return [..._synthSources, ...base]
     },
+    async discoverAllSessionsWithOutcomes(filter?: string) {
+      if (filter && filter !== 'all' && filter !== 'test-synthetic') {
+        return actual.discoverAllSessionsWithOutcomes(filter)
+      }
+      const base = filter === 'test-synthetic'
+        ? { schemaVersion: 'metrora.provider-discovery-outcome.v1' as const, complete: true, outcomes: [], sources: [] }
+        : await actual.discoverAllSessionsWithOutcomes(filter)
+      const status = _synthSources.length > 0 ? 'success' as const : 'empty' as const
+      const syntheticOutcome = {
+        schemaVersion: 'metrora.provider-discovery-outcome.v1' as const,
+        provider: 'test-synthetic',
+        status,
+        complete: true,
+        sourceCount: _synthSources.length,
+        sources: _synthSources,
+        diagnostic: null,
+      }
+      return {
+        ...base,
+        outcomes: [syntheticOutcome, ...base.outcomes],
+        sources: [..._synthSources, ...base.sources],
+      }
+    },
     async getProvider(name: string) {
       if (name === 'test-synthetic') {
         return {

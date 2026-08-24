@@ -2,8 +2,8 @@ import type { ProviderSection, SessionCache } from './session-cache.js'
 import { recordCopilotChatJournalSourceEviction } from './copilot-chat-journal-reconciliation.js'
 import { COPILOT_CHAT_JOURNAL_PROVIDER } from './provider-parse-authorities.js'
 
-export function shouldReconcileMissingProviderSources(providerName: string, sourceCount: number): boolean {
-  return sourceCount > 0 || providerName === COPILOT_CHAT_JOURNAL_PROVIDER
+export function shouldReconcileMissingProviderSources(providerName: string, sourceCount: number, discoveryComplete?: boolean): boolean {
+  return discoveryComplete === true || (discoveryComplete === undefined && (sourceCount > 0 || providerName === COPILOT_CHAT_JOURNAL_PROVIDER))
 }
 
 /** Remove source files that disappeared from discovery and notify source-specific authorities. */

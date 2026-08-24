@@ -1,5 +1,5 @@
 import { collectJsonlFiles } from './parser.js'
-import { discoverAllSessions, discoverAllSessionsForFreshness, getProvider } from './providers/index.js'
+import { discoverAllSessionsForFreshness, discoverAllSessionsWithOutcomes, getProvider } from './providers/index.js'
 import type { SessionSource } from './providers/types.js'
 import {
   sessionGenerationSourcePathSha256V1,
@@ -135,6 +135,7 @@ export async function currentSessionSnapshotGenerationCompletenessV1(
   providerFilter = 'all',
 ): Promise<SessionSnapshotCompleteness> {
   const fast = await discoverAllSessionsForFreshness(providerFilter)
+  if (!fast.complete) return 'degraded'
   const sourcePaths = new Map(generation.providers.map(section => [
     section.provider,
     new Set(section.files.map(file => file.pathSha256)),
@@ -150,9 +151,10 @@ export async function currentSessionSnapshotGenerationCompletenessV1(
 export async function currentSessionSnapshotCompleteness(
   providerFilter: string = 'all',
 ): Promise<SessionSnapshotCompleteness> {
-  const [cache, sources] = await Promise.all([
+  const [cache, discovery] = await Promise.all([
     loadCache(),
-    discoverAllSessions(providerFilter),
+    discoverAllSessionsWithOutcomes(providerFilter),
   ])
-  return assessSessionSnapshotCompleteness(cache, sources)
+  if (!discovery.complete) return 'degraded'
+  return assessSessionSnapshotCompleteness(cache, discovery.sources)
 }

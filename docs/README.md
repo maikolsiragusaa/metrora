@@ -9,6 +9,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — bounded synthetic runtime evidence from an explicitly selected local Ollama model.
 - [Bench task pack v1](BENCH_TASK_PACK_V1.md) — deterministic local task assertions, private history and factual comparison for an explicitly selected Ollama model.
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
+- [Provider discovery outcomes v1](PROVIDER_DISCOVERY_OUTCOMES_V1.md) — truthful success/empty/unavailable/failed/partial/cancelled semantics and never-lose cache publication rules.
 - [Provider documentation](providers/) — source locations, formats, limitations and parser notes for individual integrations.
 
 ## Connect devices locally
