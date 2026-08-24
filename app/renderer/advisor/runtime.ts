@@ -1,5 +1,6 @@
 import { formatAdvisorCreditsUsd, formatAdvisorPercent, formatAdvisorUsd, periodLabel, scopeLabel } from './evidence'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelEvidenceRow, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
+import { sanitizeAdvisorAnswer } from './privacy'
 
 export class AdvisorRuntimeUnavailableError extends Error {
   constructor() {
@@ -100,9 +101,9 @@ export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
     throwIfAborted(signal)
     const answer = baseAnswer(input.evidence, this)
-    if (input.evidence.intent === 'spend-change') return spendAnswer(input.evidence, answer)
-    if (input.evidence.intent === 'model-efficiency') return modelAnswer(input.evidence, answer)
-    if (input.evidence.intent === 'quota-capacity') return quotaAnswer(input.evidence, answer)
+    if (input.evidence.intent === 'spend-change') return sanitizeAdvisorAnswer(spendAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'model-efficiency') return sanitizeAdvisorAnswer(modelAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'quota-capacity') return sanitizeAdvisorAnswer(quotaAnswer(input.evidence, answer))
     return { ...answer, conclusion: 'I can investigate spend changes, observed model efficiency, and provider quota. Try one of the suggested questions.', details: ['This local foundation does not send your question or Metrora data to a hosted model.'] }
   }
 }

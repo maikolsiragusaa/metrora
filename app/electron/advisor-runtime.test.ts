@@ -34,19 +34,16 @@ describe('Electron Advisor local runtime', () => {
     expect(calls[0]?.url).toBe('http://127.0.0.1:11434/api/tags')
   })
 
-  it('reads NDJSON incrementally, caps content, and exposes deltas without waiting for text()', async () => {
+  it('reads NDJSON incrementally and caps content without exposing raw deltas', async () => {
     const fetchImpl = (async () => streamedResponse([
       '{"message":{"content":"Measured "}}',
       '\n{"message":{"content":"evidence."},"done":true}\n',
     ])) as typeof fetch
-    const deltas: string[] = []
-    const result = await chatOllamaMain(fetchImpl, payload, undefined, text => deltas.push(text))
+    const result = await chatOllamaMain(fetchImpl, payload)
 
     expect(result.streamed).toBe(true)
     expect(result.message.content).toBe('Measured evidence.')
-    expect(deltas).toEqual(['Measured ', 'Measured evidence.'])
   })
-
   it('fails closed when one valid reader-backed NDJSON record exceeds the content cap', async () => {
     const response = streamedResponse([JSON.stringify({ message: { content: 'x'.repeat(32_001) } }) + '\n'])
 
@@ -90,5 +87,33 @@ describe('Electron Advisor local runtime', () => {
     const result = await pending
     expect(result).toEqual({ ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } })
     expect(rejectRequest).not.toBeNull()
+  })
+  it('fails closed before fetch when the parent signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    let calls = 0
+    const fetchImpl = (async () => { calls += 1; return textOnlyResponse('{}') }) as typeof fetch
+    await expect(chatOllamaMain(fetchImpl, payload, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(probeOllamaMain(fetchImpl, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(calls).toBe(0)
+  })
+  it('uses UTF-8 byte bounds for streamed content and model requests', async () => {
+    const unicode = '€'.repeat(11_000)
+    const response = streamedResponse([JSON.stringify({ message: { content: unicode } }) + '\n'])
+    await expect(chatOllamaMain(async () => response, payload)).rejects.toThrow('content limit')
+
+    const oversizedPayload = { ...payload, tools: [{ type: 'function', function: { name: 'x', parameters: { blob: 'x'.repeat(2 * 1024 * 1024) } } }] }
+    await expect(chatOllamaMain(async () => textOnlyResponse('{}'), oversizedPayload)).rejects.toThrow('request exceeded')
+  })
+
+  it('does not forward raw model deltas from the production IPC handler', async () => {
+    const fetchImpl = (async () => streamedResponse([
+      '{"message":{"content":"token=supersecretvalue"}}\n',
+    ])) as typeof fetch
+    const deltas: string[] = []
+    const handlers = createAdvisorRuntimeHandlers(fetchImpl)
+    const result = await handlers['metrora:advisorChat']('request-raw-boundary', payload, (text: string) => deltas.push(text))
+    expect(result).toMatchObject({ ok: true })
+    expect(deltas).toEqual([])
   })
 })

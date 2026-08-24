@@ -15,6 +15,16 @@ The public path is deliberately replaceable:
 
 The deterministic tools own facts, arithmetic, coverage, currency formatting, and provider-quota freshness. A model can choose among the exposed read-only tools and write qualitative context, but its prose never replaces verified evidence. The UI renders the verified evidence rail and details beside the model context.
 
+## Shipped AdvisorToolV1 Community contract
+
+The public tool boundary is versioned as `advisor-tool-v1` with schema version `1`. The contract keeps these seven identities stable: `get_spend_snapshot`, `get_model_efficiency`, `get_quota_snapshot`, `get_overview_snapshot`, `get_project_drivers`, `get_session_highlights`, and `get_coverage_report`.
+
+Metrora captures an immutable invocation scope before a runtime sees a tool call. Period, custom date range, Project, provider authority, and model context cannot be replaced by a model-supplied scope object. The only bounded filters are an exact model identifier on the applicable usage tools and a factual `all`/`claude`/`codex` provider filter on provider quota. Unknown tools, malformed or additional arguments, unsupported providers, and pathological identifiers fail closed before an evidence read.
+
+Each result is bounded JSON and carries the tool identity, invocation scope, canonical authority, freshness, coverage, observed/derived/unknown semantics, evidence references, explicit unavailable state, and a `content-minimal` privacy classification. Metrora usage remains canonical measured/derived evidence; quota remains provider-reported evidence. Explicit zero remains zero, stale evidence remains labelled stale, and unavailable evidence is never converted into zero. The serialized tool payload is capped at 32 KiB and excludes raw prompts, responses, source, patches, secrets, credentials, account identifiers, and unrestricted local paths.
+
+The reusable synthetic conformance fixtures and suite live beside the Advisor contract in `app/renderer/advisor/conformance.ts` and `conformance.test.ts`. They run without a model, network, provider SDK, or Ollama installation and are also used to exercise the current Ollama adapter. Cancellation is checked before reads, after asynchronous reads, before the final runtime envelope, and on the local runtime boundary.
+
 The first tool set covers:
 
 - overview and measured spend;

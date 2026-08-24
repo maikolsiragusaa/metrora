@@ -429,12 +429,6 @@ function registerHandlers(): void {
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (event, ...args) => {
-        if (channel === 'metrora:advisorChat') {
-          const requestId = typeof args[0] === 'string' ? args[0] : ''
-          return handler(...args, (text: string) => {
-            try { event.sender.send('metrora:advisorDelta', { requestId, text }) } catch { /* window closed */ }
-          })
-        }
         return handler(...args)
       })
     }

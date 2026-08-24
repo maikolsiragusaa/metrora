@@ -9,6 +9,9 @@ export class AdvisorCancelledError extends Error {
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new AdvisorCancelledError()
 }
+function rethrowCancellation(error: unknown, signal?: AbortSignal): void {
+  if (signal?.aborted || (error instanceof Error && (error.name === 'AbortError' || /cancel|abort/i.test(error.message)))) throw error
+}
 export type AdvisorKernel = {
   investigate(input: { question: string; scope: AdvisorScope; overview?: MenubarPayload | null; conversation?: AdvisorConversationTurn[]; signal?: AbortSignal; onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void; onDelta?: (text: string) => void }): Promise<AdvisorAnswer>
 }
@@ -16,12 +19,12 @@ async function deterministicEvidence(source: AdvisorDataSource, intent: ReturnTy
   if (intent === 'spend-change') return buildSpendEvidence(question, scope, overview)
   if (intent === 'model-efficiency') {
     let rows: ModelReportRow[] = []
-    try { rows = await source.getModels(scope) } catch { /* Overview fallback. */ }
+    try { rows = await source.getModels(scope, signal) } catch (error) { rethrowCancellation(error, signal) /* Overview fallback. */ }
     throwIfAborted(signal)
     return buildModelEfficiencyEvidence(question, scope, overview, rows)
   }
   let quota: QuotaProvider[] = []
-  try { quota = await source.getQuota() } catch { /* unavailable != zero */ }
+  try { quota = await source.getQuota(signal) } catch (error) { rethrowCancellation(error, signal) /* unavailable != zero */ }
   throwIfAborted(signal)
   return buildQuotaEvidence(question, scope, overview, quota)
 }
@@ -33,11 +36,11 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
       const intent = classifyAdvisorQuestion(question)
       let evidence = buildUnknownEvidence(question, scope)
       if (intent !== 'unknown') {
-        const overview = suppliedOverview ?? await source.getOverview(scope)
+        const overview = suppliedOverview ?? (signal ? await source.getOverview(scope, signal) : await source.getOverview(scope))
         throwIfAborted(signal)
         evidence = await deterministicEvidence(source, intent, question, scope, overview, signal)
       }
-      return runtime.generate({ question, evidence, conversation, tools: toolRegistry.definitions, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+      return runtime.generate({ question, evidence, conversation, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
     },
   }
 }
