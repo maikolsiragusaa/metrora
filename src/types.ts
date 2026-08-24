@@ -127,6 +127,8 @@ export type ParsedApiCall = {
   reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage
   costUSD: number
+  /// Append-only signed cost correction; usage counters and normal cost remain nonnegative.
+  costCorrectionUSD?: number
   /// Immutable evidence for this call's API-equivalent valuation. An
   /// `unavailable` assignment deliberately coexists with display cost 0 without
   /// claiming that zero is intentional.

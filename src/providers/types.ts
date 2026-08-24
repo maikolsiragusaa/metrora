@@ -50,6 +50,8 @@ export type ParsedProviderCall = {
   reasoningTokens: number
   webSearchRequests: number
   costUSD: number
+  /// Append-only signed cost correction; usage counters and normal cost remain nonnegative.
+  costCorrectionUSD?: number
   costIsEstimated?: boolean
   /// Optional source-bound valuation evidence. Existing collectors may omit it;
   /// the runtime boundary then classifies exact metered sources conservatively.

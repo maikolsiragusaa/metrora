@@ -208,6 +208,12 @@ describe('persisted cost assignment validation', () => {
     expect(isValidCache(cacheWithCalls([call({ costAssignment: assignment as CachedCall['costAssignment'], costUSD })]))).toBe(false)
   })
 
+  it('validates signed cost corrections as finite numbers', () => {
+    expect(isValidCache(cacheWithCalls([call({ costUSD: 0, costCorrectionUSD: -0.2 })]))).toBe(true)
+    expect(isValidCache(cacheWithCalls([call({ costUSD: 0, costCorrectionUSD: Number.NaN })]))).toBe(false)
+    expect(isValidCache(cacheWithCalls([call({ costUSD: 0, costCorrectionUSD: Number.POSITIVE_INFINITY })]))).toBe(false)
+  })
+
   it('parses each persisted assignment exactly once', () => {
     const assignments = Array.from({ length: 250 }, (_, index) => call({
       deduplicationKey: `single-pass-${index}`,

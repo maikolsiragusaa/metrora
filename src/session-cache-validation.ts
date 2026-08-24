@@ -113,6 +113,7 @@ function validateCall(value: unknown): value is CachedCall {
     && typeof call['timestamp'] === 'string'
     && (call['speed'] === 'standard' || call['speed'] === 'fast')
     && isOptionalNum(call['costUSD'])
+    && isOptionalNum(call['costCorrectionUSD'])
     && isOptionalNum(call['legacyCostUSD'])
     && validateCachedCostAssignment(call['costAssignment'], call['costUSD'])
     && isOptionalBool(call['isEstimated'])
