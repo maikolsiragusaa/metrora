@@ -155,4 +155,95 @@ describe('Advisor hosted provider authority', () => {
     expect(result).toMatchObject({ ok: true, value: { credentialState: 'invalid', detail: 'The provider rejected the saved credential.' } })
     expect(JSON.stringify(result)).not.toContain('secret-body')
   })
+  it.each(providers)('maps %s canonical tool rounds into the provider-native request body', async provider => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return jsonResponse(textPayload(provider))
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const tool = { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }
+    const toolArguments = '{"provider":"all"}'
+    const result = await handlers['metrora:advisorHostedChat']!('native-' + provider, {
+      ...request(provider),
+      messages: [
+        { role: 'system', content: 'Use canonical facts.' },
+        { role: 'user', content: 'What changed?' },
+        { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'get_spend_snapshot', arguments: toolArguments }] },
+        { role: 'tool', content: '{"measured":true}', toolCallId: 'call-1', toolName: 'get_spend_snapshot' },
+      ],
+      tools: [tool],
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { provider } })
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
+    expect(body).not.toHaveProperty('conversation')
+    expect(body).not.toHaveProperty('previous_response_id')
+    if (provider === 'openai') {
+      expect(body.store).toBe(false)
+      expect(body.tools).toEqual([{ type: 'function', name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } }])
+      expect(body.input).toContainEqual({ type: 'function_call', id: 'call-1', call_id: 'call-1', name: 'get_spend_snapshot', arguments: toolArguments })
+      expect(body.input).toContainEqual({ type: 'function_call_output', call_id: 'call-1', output: '{"measured":true}' })
+    } else if (provider === 'anthropic') {
+      expect(body.system).toBe('Use canonical facts.')
+      expect(body.tools).toEqual([{ name: 'get_spend_snapshot', description: 'Measured spend', input_schema: { type: 'object' } }])
+      expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'call-1', name: 'get_spend_snapshot', input: { provider: 'all' } }] })
+      expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call-1', content: '{"measured":true}' }] })
+    } else {
+      expect(body.systemInstruction).toEqual({ parts: [{ text: 'Use canonical facts.' }] })
+      expect(body.tools).toEqual([{ functionDeclarations: [{ name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } }] }])
+      expect(body.contents[1]).toEqual({ role: 'model', parts: [{ functionCall: { name: 'get_spend_snapshot', args: { provider: 'all' } } }] })
+      expect(body.contents[2]).toEqual({ role: 'user', parts: [{ functionResponse: { name: 'get_spend_snapshot', response: { content: '{"measured":true}' } } }] })
+    }
+  })
+
+  it.each(['anthropic', 'gemini'] as const)('collects bounded multi-page %s model discovery without duplicate records', async provider => {
+    const urls: string[] = []
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      urls.push(String(url))
+      if (provider === 'anthropic') {
+        return jsonResponse(urls.length === 1
+          ? { data: [{ id: 'claude-page-1', display_name: 'Claude page one' }], has_more: true, last_id: 'claude-page-2' }
+          : { data: [{ id: 'claude-page-1' }, { id: 'claude-page-2', display_name: 'Claude page two' }], has_more: false })
+      }
+      return jsonResponse(urls.length === 1
+        ? { models: [{ name: 'models/gemini-page-1', displayName: 'Gemini page one', supportedGenerationMethods: ['generateContent'] }], nextPageToken: 'gemini-page-2' }
+        : { models: [{ name: 'models/gemini-page-1' }, { name: 'models/gemini-page-2', displayName: 'Gemini page two', supportedGenerationMethods: ['generateContent'] }] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const result = await handlers['metrora:advisorHostedProbe']!(provider) as { ok: boolean; value: any }
+    expect(result.value.models.map((model: { id: string }) => model.id)).toEqual(provider === 'anthropic'
+      ? ['claude-page-1', 'claude-page-2']
+      : ['models/gemini-page-1', 'models/gemini-page-2'])
+    expect(urls).toHaveLength(2)
+    expect(urls[1]).toContain(provider === 'anthropic' ? 'after_id=claude-page-2' : 'pageToken=gemini-page-2')
+  })
+
+  it('stops repeated model pagination tokens and deduplicates usable records', async () => {
+    const urls: string[] = []
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      urls.push(String(url))
+      return jsonResponse({ data: [{ id: 'claude-cycle' }], has_more: true, last_id: 'same-token' })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const result = await handlers['metrora:advisorHostedProbe']!('anthropic') as { ok: boolean; value: any }
+    expect(result.value.models.map((model: { id: string }) => model.id)).toEqual(['claude-cycle'])
+    expect(urls).toHaveLength(2)
+  })
+
+  it('maps an OpenAI Responses output item id to its canonical call id across argument deltas', async () => {
+    const events: AdvisorHostedEvent[] = []
+    const streamPayloads = [
+      { type: 'response.output_item.added', item: { type: 'function_call', id: 'item-1', call_id: 'call-1', name: 'get_spend_snapshot' } },
+      { type: 'response.function_call_arguments.delta', item_id: 'item-1', delta: '{"provider":' },
+      { type: 'response.function_call_arguments.delta', item_id: 'item-1', delta: '"all"}' },
+      { type: 'response.function_call_arguments.done', item_id: 'item-1', name: 'get_spend_snapshot', arguments: '{"provider":"all"}' },
+      { type: 'response.completed', response: { usage: { input_tokens: 2, output_tokens: 2, total_tokens: 4 } } },
+    ]
+    const handlers = readyHandlers((async () => sseResponse(streamPayloads)) as typeof fetch, events)
+    const result = await handlers['metrora:advisorHostedChat']!('item-call-fixture', request('openai', true)) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { message: { tool_calls: [{ id: 'call-1', name: 'get_spend_snapshot', arguments: '{"provider":"all"}' }] } } })
+    expect(events.find(event => event.kind === 'tool-call-start')).toMatchObject({ callId: 'call-1', name: 'get_spend_snapshot' })
+    expect(events.find(event => event.kind === 'tool-call-delta')).toMatchObject({ callId: 'call-1' })
+    expect(events.find(event => event.kind === 'tool-call-complete')).toMatchObject({ callId: 'call-1', arguments: '{"provider":"all"}' })
+  })
 })

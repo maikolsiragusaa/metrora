@@ -23,7 +23,7 @@ function isUnsupportedQuestion(value: string): boolean {
 }
 
 function isQuotaQuestion(value: string): boolean {
-  return /\b(?:quota|capacity|reset|remaining|rate[ -]?limit|credits?|disponibil|limite|esaur|codex|claude)\b/u.test(value)
+  return /\b(?:quota|capacity|reset|remaining|rate[ -]?limit|credits?|disponibil|limite|esaur)\b/u.test(value)
 }
 
 function isBareLimitAmbiguity(value: string): boolean {
@@ -32,7 +32,8 @@ function isBareLimitAmbiguity(value: string): boolean {
 }
 
 function isSpendQuestion(value: string): boolean {
-  return /(?:why did|what caused|cause|driver|drove|spend|spent|cost me the most|most expensive|which project|which sessions?|unusually expensive|expensive sessions?|versus|\bvs\b|costo|spesa|aument|picco|perche|perché|quanto ho speso)/u.test(value)
+  if (isEfficiencyQuestion(value)) return false
+  return /(?:why did|what caused|cause|driver|drove|spend|spent|\bcost(?:s|ed|ing)?\b|cost me the most|most expensive|which project|which sessions?|unusually expensive|expensive sessions?|versus|\bvs\b|costa|costo|spesa|aument|picco|perche|perché|quanto ho speso)/u.test(value)
 }
 
 function isEfficiencyQuestion(value: string): boolean {

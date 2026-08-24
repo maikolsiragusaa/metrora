@@ -25,7 +25,13 @@ export type AdvisorHostedEvent = {
   code?: string
   message?: string
 }
-export type AdvisorHostedChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; toolCallId?: string; toolName?: string }
+export type AdvisorHostedChatMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  toolCallId?: string
+  toolName?: string
+  toolCalls?: AdvisorHostedToolCall[]
+}
 export type AdvisorHostedToolDefinition = { type: 'function'; function: { name: string; description?: string; parameters?: Record<string, unknown> } }
 export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true }
 export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
@@ -43,6 +49,9 @@ const MAX_TOOL_ARGUMENT_BYTES = 8 * 1024
 const MAX_MESSAGES = 32
 const MAX_TOOLS = 7
 const MAX_TOOL_CALLS = 8
+const MAX_MODEL_PAGES = 8
+const MAX_MODEL_PAGE_SIZE = 64
+const MAX_PAGE_TOKEN_BYTES = 256
 const MAX_MODELS = 128
 const MAX_SSE_EVENTS = 512
 const REQUEST_TIMEOUT_MS = 120_000
@@ -225,16 +234,28 @@ function normalizeTools(tools: unknown): AdvisorHostedToolDefinition[] {
     return { type: 'function', function: { name, ...(description ? { description } : {}), ...(parameters ? { parameters } : {}) } }
   })
 }
+function normalizeAssistantToolCalls(value: unknown): AdvisorHostedToolCall[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length > MAX_TOOL_CALLS) throw new HostedAdapterError('request-malformed', 'Advisor assistant tool calls are malformed.')
+  return value.map(item => {
+    if (!isRecord(item)) throw new HostedAdapterError('request-malformed', 'Advisor assistant tool calls are malformed.')
+    return normalizeToolCall(item.id, item.name, item.arguments)
+  })
+}
 function normalizeMessages(value: unknown): AdvisorHostedChatMessage[] {
   if (!Array.isArray(value) || value.length > MAX_MESSAGES) throw new HostedAdapterError('request-malformed', 'Advisor messages are malformed.')
   return value.map(item => {
     if (!isRecord(item) || !['system', 'user', 'assistant', 'tool'].includes(String(item.role))) throw new HostedAdapterError('request-malformed', 'Advisor messages are malformed.')
     const role = item.role as AdvisorHostedChatMessage['role']
-    const content = boundedString(item.content, 32_000, 'Advisor message content is too large.')
+    const toolCalls = normalizeAssistantToolCalls(item.toolCalls)
+    if (toolCalls !== undefined && role !== 'assistant') throw new HostedAdapterError('request-malformed', 'Only assistant messages may contain tool calls.')
+    const content = toolCalls !== undefined && typeof item.content === 'string' && byteLength(item.content) <= MAX_TEXT_BYTES
+      ? item.content
+      : boundedString(item.content, 32_000, 'Advisor message content is too large.')
     const toolCallId = item.toolCallId === undefined ? undefined : boundedString(item.toolCallId, 128, 'Advisor tool call id is invalid.')
     const toolNameValue = item.toolName === undefined ? undefined : boundedString(item.toolName, 96, 'Advisor tool name is invalid.')
     if (role === 'tool' && !toolCallId) throw new HostedAdapterError('request-malformed', 'Advisor tool results require a call id.')
-    return { role, content, ...(toolCallId ? { toolCallId } : {}), ...(toolNameValue ? { toolName: toolNameValue } : {}) }
+    return { role, content, ...(toolCallId ? { toolCallId } : {}), ...(toolNameValue ? { toolName: toolNameValue } : {}), ...(toolCalls ? { toolCalls } : {}) }
   })
 }
 function parseChatRequest(requestId: unknown, value: unknown): { requestId: string; request: AdvisorHostedChatRequest } {
@@ -260,25 +281,62 @@ function anthropicTools(tools: AdvisorHostedToolDefinition[]): Array<Record<stri
 function geminiTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
   return tools.length ? [{ functionDeclarations: tools.map(tool => ({ name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), parameters: tool.function.parameters ?? { type: 'object', properties: {}, additionalProperties: false } })) }] : []
 }
+function parsedToolArguments(call: AdvisorHostedToolCall): Record<string, unknown> {
+  let parsed: unknown
+  try { parsed = JSON.parse(call.arguments) } catch { throw new HostedAdapterError('request-malformed', 'Advisor assistant tool arguments are malformed.') }
+  if (!isRecord(parsed)) throw new HostedAdapterError('request-malformed', 'Advisor assistant tool arguments are malformed.')
+  return parsed
+}
 function openAiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const input = request.messages.filter(message => message.role !== 'system').map(message => message.role === 'tool'
-    ? { type: 'function_call_output', call_id: message.toolCallId, output: message.content }
-    : { role: message.role, content: message.content })
-  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), stream: request.stream === true }
+  const input: Array<Record<string, unknown>> = []
+  for (const message of request.messages) {
+    if (message.role === 'system') continue
+    if (message.role === 'tool') {
+      input.push({ type: 'function_call_output', call_id: message.toolCallId, output: message.content })
+      continue
+    }
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      if (message.content.trim()) input.push({ role: 'assistant', content: message.content })
+      for (const call of message.toolCalls) input.push({ type: 'function_call', id: call.id, call_id: call.id, name: call.name, arguments: call.arguments })
+      continue
+    }
+    input.push({ role: message.role, content: message.content })
+  }
+  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), stream: request.stream === true, store: false }
 }
 function anthropicBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const messages = request.messages.filter(message => message.role !== 'system').map(message => message.role === 'tool'
-    ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: message.toolCallId, content: message.content }] }
-    : { role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })
+  const messages: Array<Record<string, unknown>> = []
+  for (const message of request.messages.filter(message => message.role !== 'system')) {
+    if (message.role === 'tool') {
+      messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: message.toolCallId, content: message.content }] })
+    } else if (message.role === 'assistant' && message.toolCalls?.length) {
+      const content: Array<Record<string, unknown>> = []
+      if (message.content.trim()) content.push({ type: 'text', text: message.content })
+      for (const call of message.toolCalls) content.push({ type: 'tool_use', id: call.id, name: call.name, input: parsedToolArguments(call) })
+      messages.push({ role: 'assistant', content })
+    } else {
+      messages.push({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })
+    }
+  }
   return { model: request.model, max_tokens: 2048, ...(system ? { system } : {}), messages, ...(request.tools?.length ? { tools: anthropicTools(request.tools) } : {}), stream: request.stream === true }
 }
 function geminiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const contents = request.messages.filter(message => message.role !== 'system').map(message => message.role === 'tool'
-    ? { role: 'user', parts: [{ functionResponse: { name: message.toolName ?? message.toolCallId, response: { content: message.content } } }] }
-    : { role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })
+  const contents: Array<Record<string, unknown>> = []
+  for (const message of request.messages.filter(message => message.role !== 'system')) {
+    if (message.role === 'tool') {
+      contents.push({ role: 'user', parts: [{ functionResponse: { name: message.toolName ?? message.toolCallId, response: { content: message.content } } }] })
+    } else if (message.role === 'assistant' && message.toolCalls?.length) {
+      const parts: Array<Record<string, unknown>> = []
+      if (message.content.trim()) parts.push({ text: message.content })
+      for (const call of message.toolCalls) parts.push({ functionCall: { name: call.name, args: parsedToolArguments(call) } })
+      contents.push({ role: 'model', parts })
+    } else {
+      contents.push({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })
+    }
+  }
   return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(request.tools?.length ? { tools: geminiTools(request.tools) } : {}) }
 }
 function bodyFor(provider: AdvisorHostedProviderId, request: AdvisorHostedChatRequest): Record<string, unknown> {
@@ -288,11 +346,9 @@ function bodyFor(provider: AdvisorHostedProviderId, request: AdvisorHostedChatRe
 }
 
 
-function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, unknown>): AdvisorHostedModel[] {
+function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, unknown>, models: AdvisorHostedModel[], seen: Set<string>): string | null {
   const rows = provider === 'gemini' ? payload.models : payload.data
   if (!Array.isArray(rows)) throw new HostedAdapterError('response-malformed', 'The provider model listing was malformed.')
-  const models: AdvisorHostedModel[] = []
-  const seen = new Set<string>()
   for (const row of rows) {
     if (!isRecord(row)) continue
     const id = provider === 'gemini' ? row.name : row.id
@@ -312,7 +368,14 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
     seen.add(id)
     if (models.length >= MAX_MODELS) break
   }
-  return models
+  if (provider === 'openai') return null
+  if (provider === 'anthropic') {
+    if (payload.has_more !== true) return null
+    if (typeof payload.last_id !== 'string' || !payload.last_id.trim()) throw new HostedAdapterError('response-malformed', 'The provider model listing pagination was malformed.')
+    return boundedString(payload.last_id, MAX_PAGE_TOKEN_BYTES, 'The provider model listing pagination token is too large.')
+  }
+  if (typeof payload.nextPageToken !== 'string' || !payload.nextPageToken.trim()) return null
+  return boundedString(payload.nextPageToken, MAX_PAGE_TOKEN_BYTES, 'The provider model listing pagination token is too large.')
 }
 function providerDetail(provider: AdvisorHostedProviderId): string {
   return provider === 'openai' ? 'OpenAI is reachable.' : provider === 'anthropic' ? 'Anthropic is reachable.' : 'Google Gemini is reachable.'
@@ -434,12 +497,13 @@ function parseJsonByProvider(provider: AdvisorHostedProviderId, payload: Record<
 function parseOpenAiStream(payload: Record<string, unknown>, state: StreamState, requestId: string, model: string, emit: EventEmitter): void {
   if (payload.type === 'response.output_text.delta') appendText(state, requestId, 'openai', model, payload.delta, emit)
   else if (payload.type === 'response.output_item.added' && isRecord(payload.item) && payload.item.type === 'function_call') {
-    const id = boundedString(typeof payload.item.call_id === 'string' ? payload.item.call_id : payload.item.id, 128, 'The provider returned an invalid tool call id.')
+    const itemId = boundedString(payload.item.id, 128, 'The provider returned an invalid tool call item id.')
+    const id = boundedString(payload.item.call_id, 128, 'The provider returned an invalid tool call id.')
     const name = toolName(payload.item.name)
     if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
     if (state.openCalls.has(id)) throw new HostedAdapterError('tool-malformed', 'The provider returned a duplicate tool call.')
     state.openCalls.set(id, { id, name, arguments: '' })
-    state.openCallKeys.set(id, id)
+    state.openCallKeys.set(itemId, id)
     emit({ requestId, provider: 'openai', model, kind: 'tool-call-start', callId: id, name })
   } else if (payload.type === 'response.function_call_arguments.delta') {
     appendToolDelta(state, requestId, 'openai', model, boundedString(payload.item_id, 128, 'The provider returned an invalid tool call id.'), payload.delta, emit)
@@ -532,11 +596,28 @@ async function readSse(response: Response, onPayload: (payload: Record<string, u
 }
 async function discover(provider: AdvisorHostedProviderId, secret: string, fetchImpl: FetchLike, parent?: AbortSignal): Promise<AdvisorHostedModel[]> {
   const descriptor = DESCRIPTORS[provider]
-  const request = await fetchResponse(fetchImpl, providerUrl(provider, descriptor.modelsPath), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
-  try {
-    statusCheck(request.response)
-    return modelRows(provider, await readJson(request.response))
-  } finally { request.dispose() }
+  const models: AdvisorHostedModel[] = []
+  const seen = new Set<string>()
+  const seenTokens = new Set<string>()
+  let nextToken: string | null = null
+  for (let page = 0; page < MAX_MODEL_PAGES && models.length < MAX_MODELS; page += 1) {
+    const url = new URL(descriptor.modelsPath, descriptor.origin)
+    if (provider === 'anthropic') {
+      url.searchParams.set('limit', String(MAX_MODEL_PAGE_SIZE))
+      if (nextToken) url.searchParams.set('after_id', nextToken)
+    } else if (provider === 'gemini') {
+      url.searchParams.set('pageSize', String(MAX_MODEL_PAGE_SIZE))
+      if (nextToken) url.searchParams.set('pageToken', nextToken)
+    }
+    const request = await fetchResponse(fetchImpl, providerUrl(provider, url.pathname + url.search), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
+    try {
+      statusCheck(request.response)
+      nextToken = modelRows(provider, await readJson(request.response), models, seen)
+    } finally { request.dispose() }
+    if (!nextToken || seenTokens.has(nextToken)) break
+    seenTokens.add(nextToken)
+  }
+  return models
 }
 async function hostedChat(provider: AdvisorHostedProviderId, secret: string, requestId: string, request: AdvisorHostedChatRequest, fetchImpl: FetchLike, emit: EventEmitter, parent?: AbortSignal): Promise<AdvisorHostedChatResult> {
   const stream = request.stream === true

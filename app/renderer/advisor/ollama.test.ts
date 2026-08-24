@@ -119,7 +119,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(contents).not.toContain('different factual answer')
   })
 
-  it('runs one tool-planning request, one streamed final request, and retains all evidence domains', async () => {
+  it('runs one tool-planning request, one final request, and retains all evidence domains', async () => {
     const events: string[] = []
     const transport = transportFor(events, [[
       { function: { name: 'get_spend_snapshot', arguments: '{}' } },
@@ -141,16 +141,16 @@ describe('Ollama Advisor renderer state machine', () => {
       onDelta: text => deltas.push(text),
     })
 
-    expect(JSON.parse(events[0]!).stream).toBe(true)
+    expect(JSON.parse(events[0]!).stream).toBe(false)
     expect(JSON.parse(events[0]!).tools).toEqual([])
     expect(answer.generatedByModel).toBe(true)
-    expect(answer.streamed).toBe(true)
+    expect(answer.streamed).toBe(false)
     expect(answer.evidence.map(ref => ref.id)).toEqual(['spend', 'quota'])
     expect(answer.details.some(detail => detail.includes('provider credits remaining'))).toBe(true)
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.conclusion).not.toContain('99 calls')
-    expect(answer.conclusion).toContain('Local model context')
-    expect(deltas).toEqual(['The observed pattern is worth investigating further.'])
+    expect(answer.conclusion).not.toContain('Local model context')
+    expect(deltas).toEqual([])
   })
 
   it('keeps model identifiers while rejecting an unverified numeric model claim', async () => {

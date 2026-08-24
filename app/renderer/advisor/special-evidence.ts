@@ -5,7 +5,8 @@ function coverageForBench(state: AdvisorBenchEvidence['state']): AdvisorCoverage
   if (state === 'UNAVAILABLE') return { level: 'unavailable', state, label: 'Controlled result unavailable', detail: 'Bench history did not provide a usable controlled result.' }
   if (state === 'NOT_COMPARABLE') return { level: 'partial', state, label: 'Runs are not comparable', detail: 'The selected runs differ in pack, runner, scoring, or generation policy.' }
   if (state === 'PARTIAL') return { level: 'partial', state, label: 'Bounded controlled result', detail: 'A controlled result exists, but its task-pack evidence and comparable history remain limited.' }
-  return { level: 'partial', state, label: 'Controlled evidence is limited', detail: 'This result describes one bounded task pack and is not a universal model-quality claim.' }
+  if (state === 'AVAILABLE') return { level: 'high', state, label: 'Controlled result available', detail: 'The declared controlled task pack completed; it remains bounded evidence, not a universal model-quality claim.' }
+  return { level: 'unavailable', state, label: 'Controlled result unavailable', detail: 'Bench evidence is not in a usable state for this request.' }
 }
 
 export function buildClarificationEvidence(question: string, scope: AdvisorScope, prompt: string): AdvisorEvidence {

@@ -1,5 +1,6 @@
-import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { atomicWriteSecureFile, readSecureFile } from './quota/security'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
@@ -13,20 +14,21 @@ export type AdvisorSafeStorage = {
 }
 
 export type AdvisorCredentialFileSystem = {
-  readFile(path: string, encoding: 'utf8'): Promise<string>
-  writeFile(path: string, data: string, options?: { mode?: number }): Promise<void>
+  readSecureFile(path: string, maxBytes: number): Promise<string | null>
+  atomicWriteSecureFile(path: string, data: string): Promise<void>
   unlink(path: string): Promise<void>
 }
 
 const FILE_VERSION = 1 as const
 const MAX_SECRET_BYTES = 16 * 1024
+const MAX_CREDENTIAL_FILE_BYTES = 64 * 1024
 const PROVIDERS: readonly AdvisorCredentialProvider[] = ['openai', 'anthropic', 'gemini']
 
 type CredentialFile = { version: typeof FILE_VERSION; records: Partial<Record<AdvisorCredentialProvider, string>> }
 
 const defaultFileSystem: AdvisorCredentialFileSystem = {
-  readFile: (path, encoding) => readFile(path, { encoding }),
-  writeFile: (path, data, options) => writeFile(path, data, options),
+  readSecureFile: (path, maxBytes) => readSecureFile(path, maxBytes),
+  atomicWriteSecureFile: (path, data) => atomicWriteSecureFile(path, data),
   unlink: path => unlink(path),
 }
 
@@ -82,14 +84,15 @@ export class AdvisorCredentialStore {
 
   private async readFile(): Promise<CredentialFile | null> {
     try {
-      return parseFile(await this.fileSystem.readFile(this.filePath, 'utf8'))
+      const file = await this.fileSystem.readSecureFile(this.filePath, MAX_CREDENTIAL_FILE_BYTES)
+      return file === null ? null : parseFile(file)
     } catch {
       return null
     }
   }
 
   private async writeFile(records: Partial<Record<AdvisorCredentialProvider, string>>): Promise<void> {
-    await this.fileSystem.writeFile(this.filePath, JSON.stringify({ version: FILE_VERSION, records }), { mode: 0o600 })
+    await this.fileSystem.atomicWriteSecureFile(this.filePath, JSON.stringify({ version: FILE_VERSION, records }))
   }
 
   private async enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -103,21 +106,17 @@ export class AdvisorCredentialStore {
   async status(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus> {
     if (!(await this.secureBackendAvailable())) return { provider, state: 'locked-unavailable' }
     try {
-      const file = await this.fileSystem.readFile(this.filePath, 'utf8')
+      const file = await this.fileSystem.readSecureFile(this.filePath, MAX_CREDENTIAL_FILE_BYTES)
+      if (file === null) return { provider, state: 'not-configured' }
       const parsed = parseFile(file)
-      const ciphertext = parsed?.records[provider]
       if (!parsed) return { provider, state: 'needs-reentry' }
+      const ciphertext = parsed.records[provider]
       if (!ciphertext) return { provider, state: 'not-configured' }
       const decrypted = await this.safeStorage.decryptStringAsync(Buffer.from(ciphertext, 'base64'))
       if (!decrypted.result || byteLength(decrypted.result) > MAX_SECRET_BYTES) return { provider, state: 'invalid' }
       return { provider, state: 'ready' }
     } catch {
-      try {
-        const exists = await this.fileSystem.readFile(this.filePath, 'utf8')
-        return exists ? { provider, state: 'needs-reentry' } : { provider, state: 'not-configured' }
-      } catch {
-        return { provider, state: 'not-configured' }
-      }
+      return { provider, state: 'needs-reentry' }
     }
   }
 
@@ -184,6 +183,6 @@ export class AdvisorCredentialStore {
   }
 
   private async fileExists(): Promise<boolean> {
-    try { await this.fileSystem.readFile(this.filePath, 'utf8'); return true } catch { return false }
+    try { return (await this.fileSystem.readSecureFile(this.filePath, MAX_CREDENTIAL_FILE_BYTES)) !== null } catch { return true }
   }
 }

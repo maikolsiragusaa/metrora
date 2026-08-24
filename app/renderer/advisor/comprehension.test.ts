@@ -15,7 +15,12 @@ const scope: AdvisorScope = {
 describe('Advisor deterministic comprehension', () => {
   it.each([
     ['Why did I spend more this week?', 'spend-change'],
+    ['How much did I spend with Claude?', 'spend-change'],
+    ['Why did Codex cost more this week?', 'spend-change'],
+    ['Quanto ho speso con Claude?', 'spend-change'],
+    ['Perché Codex mi è costato di più questa settimana?', 'spend-change'],
     ['Am I close to my Codex limit?', 'quota-capacity'],
+    ['How much Codex quota remains?', 'quota-capacity'],
     ['What is my limit?', 'clarification'],
     ['What model cost me the most?', 'spend-change'],
     ['What is the observed cost per call?', 'model-efficiency'],
@@ -26,6 +31,10 @@ describe('Advisor deterministic comprehension', () => {
     ['What changed?', 'spend-change'],
   ] as const)('resolves %s as %s', (question, intent) => {
     expect(resolveAdvisorQuestion(question, scope).intent).toBe(intent)
+  })
+
+  it.each(['Claude', 'Codex'])('does not infer quota from a provider name alone: %s', question => {
+    expect(resolveAdvisorQuestion(question, scope).intent).toBe('unknown')
   })
 
   it('continues an unambiguous follow-up only within the same scope', () => {

@@ -229,6 +229,11 @@
   font-size: 10px;
   line-height: 1.45;
 }
+.advisor-answer-section { display: grid; gap: 4px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--advisor-line); }
+.advisor-answer-section h4 { margin: 0; color: var(--advisor-muted); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.advisor-answer-section p { margin: 0; color: var(--advisor-ink); font-size: 10px; line-height: 1.45; }
+.advisor-answer-limit { color: var(--advisor-muted); }
+.advisor-answer-limit p { color: var(--advisor-muted); }
 .advisor-runtime-note strong { color: var(--advisor-ink); }
 .advisor-runtime-note button,
 .advisor-followups button,

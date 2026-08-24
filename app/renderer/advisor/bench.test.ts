@@ -27,11 +27,17 @@ function history(record: BenchEvaluation, invalidCount = 0): BenchHistoryReport 
 }
 
 describe('Advisor Bench evidence projection', () => {
-  it('keeps a completed bounded run as usable controlled evidence instead of no data', () => {
+  it('marks one clean completed run as available bounded evidence', () => {
     const projected = buildAdvisorBenchEvidence(history(evaluation()))
-    expect(projected.state).toBe('PARTIAL')
+    expect(projected.state).toBe('AVAILABLE')
     expect(projected.latest).toMatchObject({ runId: 'run-1', model: { selected: 'qwen3:8b' }, aggregate: { passed: 1, scoreValue: 1 } })
     expect(projected.latest?.tasks).toEqual([{ taskId: 'task-1', status: 'passed', score: 1, requestLatencyMs: 10, timeToFirstContentMs: 3 }])
+  })
+
+  it('keeps multiple clean compatible runs available and marks incomplete history partial', () => {
+    const second = { ...evaluation(), runId: 'run-2', startedAt: '2026-08-23T10:00:00.000Z', endedAt: '2026-08-23T10:00:01.000Z' }
+    expect(buildAdvisorBenchEvidence({ ...history(evaluation()), records: [evaluation(), second] }).state).toBe('AVAILABLE')
+    expect(buildAdvisorBenchEvidence({ ...history(evaluation()), records: [evaluation(), evaluation('unavailable')] }).state).toBe('PARTIAL')
   })
 
   it('preserves unavailable and incompatible states without fabricating comparison facts', () => {

@@ -147,9 +147,14 @@ export function buildAdvisorBenchEvidence(history: BenchHistoryReport, compariso
       ? 'UNAVAILABLE' as const
       : mappedComparison?.compatibility === 'incompatible'
       ? 'NOT_COMPARABLE' as const
-      : history.invalidCount > 0 || runs.some(run => run.status !== 'completed')
+      : history.invalidCount > 0
+        || runs.some(run => run.status !== 'completed')
+        || runs.some(run => run.tasks.some(task => task.status === 'malformed' || task.status === 'unavailable' || task.status === 'timeout' || task.status === 'cancelled'))
+        || latest.aggregate.attempted < latest.aggregate.planned
+        || latest.aggregate.unavailable > 0
+        || latest.aggregate.cancelled > 0
         ? 'PARTIAL' as const
-        : 'PARTIAL' as const
+        : 'AVAILABLE' as const
   return { state, runs, latest, comparison: mappedComparison }
 }
 

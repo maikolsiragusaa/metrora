@@ -10,7 +10,7 @@ export type AdvisorIntent =
   | 'unsupported'
   | 'unknown'
 
-export type AdvisorEvidenceState = 'NO_DATA' | 'UNAVAILABLE' | 'PARTIAL' | 'STALE' | 'NOT_COMPARABLE' | 'UNSUPPORTED' | 'RUNTIME_UNAVAILABLE'
+export type AdvisorEvidenceState = 'NO_DATA' | 'UNAVAILABLE' | 'AVAILABLE' | 'PARTIAL' | 'STALE' | 'NOT_COMPARABLE' | 'UNSUPPORTED' | 'RUNTIME_UNAVAILABLE'
 export type AdvisorScope = { period: Period; range: DateRange | null; provider: string; projectId: string; projectName: string; model: string | null }
 export type AdvisorScopeIdentity = Pick<AdvisorScope, 'period' | 'range' | 'projectId' | 'provider' | 'model'>
 export function advisorScopeFingerprint(scope: AdvisorScopeIdentity): string {

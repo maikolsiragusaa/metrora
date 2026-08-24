@@ -72,7 +72,6 @@ function spendAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorA
     ],
     materialLimits: [
       'The driver list describes measured patterns; it does not prove causality.',
-      ...evidence.unknown.slice(0, 2),
     ],
     details: [
       ...spend.models.slice(0, 4).map(row => 'Model · ' + row.name + ' · ' + formatAdvisorUsd(row.costUSD) + ' · ' + row.calls.toLocaleString('en-US') + ' calls'),
@@ -96,7 +95,6 @@ function modelAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorA
     why: ['This is an observed cost signal from the selected scope.'],
     materialLimits: [
       'The comparison does not measure task quality, complexity, output quality, or which model is better overall.',
-      ...evidence.unknown.slice(0, 2),
     ],
     details: model.rows.slice(0, 8).map(modelRow),
   }

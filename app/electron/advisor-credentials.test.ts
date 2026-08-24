@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { AdvisorCredentialStore, type AdvisorCredentialFileSystem, type AdvisorSafeStorage } from './advisor-credentials'
 
-function fixture(options: { platform?: NodeJS.Platform; backend?: string; failWrite?: boolean; failUnlink?: boolean; reEncrypt?: boolean; decryptDelayMs?: number } = {}) {
+function fixture(options: { platform?: NodeJS.Platform; backend?: string; failWrite?: boolean; failUnlink?: boolean; reEncrypt?: boolean; decryptDelayMs?: number; secureReadError?: string } = {}) {
   const files = new Map<string, string>()
+  const writes: string[] = []
   const fileSystem: AdvisorCredentialFileSystem = {
-    readFile: async (path: string) => {
+    readSecureFile: async (path: string, maxBytes: number) => {
+      if (options.secureReadError) throw new Error(options.secureReadError)
       const value = files.get(path)
-      if (value === undefined) throw new Error('missing')
+      if (value === undefined) return null
+      if (new TextEncoder().encode(value).byteLength > maxBytes) throw new Error('too large')
       return value
     },
-    writeFile: async (path, data) => {
+    atomicWriteSecureFile: async (path, data) => {
       if (options.failWrite) throw new Error('write failed')
+      writes.push(data)
       files.set(path, data)
     },
     unlink: async path => { if (options.failUnlink) throw new Error('unlink failed'); files.delete(path) },
@@ -24,7 +28,7 @@ function fixture(options: { platform?: NodeJS.Platform; backend?: string; failWr
     },
     getSelectedStorageBackend: () => options.backend ?? 'os_crypt',
   }
-  return { store: new AdvisorCredentialStore({ userDataPath: 'C:/user-data', platform: options.platform ?? 'win32', safeStorage, fileSystem }), files }
+  return { store: new AdvisorCredentialStore({ userDataPath: 'C:/user-data', platform: options.platform ?? 'win32', safeStorage, fileSystem }), files, writes }
 }
 
 describe('Advisor BYOK credential store', () => {
@@ -75,5 +79,29 @@ describe('Advisor BYOK credential store', () => {
     const replace = store.set('openai', 'new-secret')
     await Promise.all([read, replace])
     expect(await store.readSecret('openai')).toBe('new-secret')
+  })
+  it.each(['Refusing symbolic link', 'Credential file permissions are too broad'])('fails closed when the secure-file primitive rejects unsafe credential storage: %s', async secureReadError => {
+    const { store } = fixture({ secureReadError })
+    expect(await store.status('openai')).toEqual({ provider: 'openai', state: 'needs-reentry' })
+    expect(await store.readSecret('openai')).toBeNull()
+  })
+
+  it('fails closed for corrupt and oversized credential state', async () => {
+    const corrupt = fixture()
+    corrupt.files.set(corrupt.store.filePath, JSON.stringify({ version: 1, records: { openai: '%%%not-ciphertext%%%' } }))
+    expect(await corrupt.store.status('openai')).toEqual({ provider: 'openai', state: 'needs-reentry' })
+
+    const oversized = fixture()
+    oversized.files.set(oversized.store.filePath, 'x'.repeat(64 * 1024 + 1))
+    expect(await oversized.store.status('openai')).toEqual({ provider: 'openai', state: 'needs-reentry' })
+  })
+
+  it('rewrites re-encrypted ciphertext through the atomic writer', async () => {
+    const { store, writes } = fixture({ reEncrypt: true })
+    await store.set('openai', 'secret-value')
+    const initialWrites = writes.length
+    expect(await store.readSecret('openai')).toBe('secret-value')
+    expect(writes).toHaveLength(initialWrites + 1)
+    expect(writes.at(-1)).not.toContain('secret-value')
   })
 })

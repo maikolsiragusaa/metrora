@@ -13,7 +13,7 @@ The public path is deliberately replaceable:
           -> verified local runtime (Ollama or LM Studio)
           -> session-local Advisor UI
 
-The deterministic tools own facts, arithmetic, coverage, currency formatting, and provider-quota freshness. A model can choose among the exposed read-only tools and write qualitative context, but its prose never replaces verified evidence. The UI renders the verified evidence rail and details beside the model context.
+The deterministic tools own facts, arithmetic, coverage, currency formatting, and provider-quota freshness. A model may choose or refine a bounded investigation through the exposed read-only tools, but the deterministic runtime constructs the displayed factual answer. Unverified model prose is not streamed or appended to that answer; the connected path is labelled “model-assisted investigation” and verified evidence remains the authority.
 
 ## Shipped AdvisorToolV1 Community contract
 
@@ -48,9 +48,9 @@ The LM Studio adapter reads language-model identifiers factually from the local 
 
 Both adapters use a bounded two-stage flow: a planning request may return multiple tool calls, Metrora executes canonical read-only tools locally, and a final request runs with tools disabled. Ollama uses bounded NDJSON parsing; LM Studio uses bounded OpenAI-compatible SSE parsing. A discovered model is not treated as verified Advisor tool support: each discovered model receives a session-local `ModelCapabilityProfileV1` with conversational availability and streaming support facts, while tool support remains `unknown` until a bounded synthetic conformance check establishes more.
 
-Cancellation uses an AbortController in main and a request id in the bridge. Request/model/message/content/response byte caps, stream chunk caps, malformed-event caps, timeouts, and bounded redacted errors are enforced. Raw model deltas are not forwarded to the renderer; only the completed bounded response is eligible for the existing narrative sanitizer. Unsafe narrative is dropped while deterministic evidence remains available.
+Cancellation uses an AbortController in main and a request id in the bridge. Request/model/message/content/response byte caps, stream chunk caps, malformed-event caps, timeouts, and bounded redacted errors are enforced. Raw model deltas and final free-form model prose are not forwarded or displayed as facts; deterministic evidence remains the sole answer authority.
 
-The deterministic local runtime remains an explicit offline evidence fallback when no local model is connected; it is not presented as a full free-form chatbot. The optional Local BYOK path calls the selected OpenAI, Anthropic, or Gemini origin directly from Electron main, with fixed descriptors, protected local credentials, bounded responses, and no Metrora inference proxy. Arbitrary OpenAI-compatible endpoints and managed inference remain out of scope. See [ADVISOR_LOCAL_BYOK_V1_IMPLEMENTATION_READY.md](ADVISOR_LOCAL_BYOK_V1_IMPLEMENTATION_READY.md).
+The deterministic local runtime remains an explicit offline evidence fallback when no local model is connected; it is not presented as a full free-form chatbot. Local BYOK supports OpenAI, Anthropic, and Gemini through fixed provider descriptors, protected local credentials, bounded responses, and direct provider traffic from Electron main; Metrora is not an inference proxy. Conversation state remains client-managed, OpenAI Responses requests explicitly send `store: false`, and the runtime permits only the existing bounded read-only Advisor tools for one planning round and one final round. Arbitrary OpenAI-compatible endpoints and managed inference remain out of scope.
 
 Official provenance references: [Ollama Chat API](https://docs.ollama.com/api/chat), [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [LM Studio REST API](https://lmstudio.ai/docs/developer/rest), [LM Studio model listing](https://lmstudio.ai/docs/developer/rest/list), [LM Studio OpenAI-compatible endpoints](https://lmstudio.ai/docs/developer/openai-compat), and [LM Studio tool use](https://lmstudio.ai/docs/developer/openai-compat/tools).
 
@@ -62,11 +62,15 @@ Fresh and connected provider snapshots may show values. A stale snapshot is the 
 
 Trend language is deliberately descriptive: latest returned day versus the average of earlier returned days. It does not claim previous-period causality.
 
+## Bench evidence
+
+Bench results are controlled evidence for a declared task pack. A clean completed run is available for that pack; incomplete, corrupt, or unavailable records remain partial or unavailable, and incompatible canonical comparisons remain not comparable. Even available Bench evidence does not establish universal model quality, ranking, or a purchase recommendation.
+
 ## Privacy and storage
 
 Conversation history is session-local in the renderer and is not synced or persisted by this foundation. A local model receives only bounded conversation, the current question, tool schemas, and compact evidence-tool results through the fixed loopback boundary. A hosted BYOK runtime receives the question plus the minimum content-minimal evidence only after explicit consent. Raw source content, prompts, paths, secrets, and hidden reasoning are excluded from the public contract.
 
-There is no Metrora gateway, managed inference service, or cloud billing path. Direct Local BYOK calls use the user’s selected provider account; provider terms, privacy, and retention apply. Credentials live behind the Electron main-process/OS secure-storage boundary and never in renderer JavaScript. See [ADVISOR_BENCH_EVIDENCE_INTEGRATION_V1_IMPLEMENTATION_READY.md](ADVISOR_BENCH_EVIDENCE_INTEGRATION_V1_IMPLEMENTATION_READY.md) for the separate read-only Bench projection.
+There is no Metrora gateway, managed inference service, or cloud billing path. Direct Local BYOK calls use the user’s selected provider account; provider terms, privacy, abuse-monitoring, and retention policies still apply, including when OpenAI `store: false` is used. Credentials live behind the Electron main-process/OS secure-storage boundary and never in renderer JavaScript.
 
 ## Public/private boundary
 

@@ -52,6 +52,30 @@ function answerForMessage(messages: AdvisorMessage[], id: string | null): Adviso
   }
   return [...messages].reverse().find(message => message.answer)?.answer ?? null
 }
+function AnswerCard({ answer, selected, onSelect, onFollowUp }: {
+  answer: AdvisorAnswer
+  selected: boolean
+  onSelect: () => void
+  onFollowUp: (next: string) => void
+}) {
+  const why = answer.why ?? []
+  const limits = answer.materialLimits ?? []
+  return (
+    <article className={selected ? 'advisor-message assistant-message selected' : 'advisor-message assistant-message'} onClick={onSelect}>
+      <div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor <small>{answer.generatedByModel ? 'model-assisted investigation' : 'offline evidence'}</small></div>
+      <p className="advisor-conclusion">{displayAnswer(answer)}</p>
+      <div className="advisor-answer-meta"><span className={'advisor-coverage ' + answer.coverage.level}>{answer.coverage.label}</span><span>{answer.scopeLabel}</span></div>
+      {why.length ? <section className="advisor-answer-section"><h4>Why</h4>{why.slice(0, 2).map((item, index) => <p key={index}>{item}</p>)}</section> : null}
+      {limits.length ? <section className="advisor-answer-section advisor-answer-limit"><h4>Important limit</h4>{limits.slice(0, 2).map((item, index) => <p key={index}>{item}</p>)}</section> : null}
+      {answer.nextInvestigations.length ? <div className="advisor-followups"><span>Next step</span>{answer.nextInvestigations.map(next => <button type="button" key={next} onClick={event => { event.stopPropagation(); onFollowUp(next) }}>{next}</button>)}</div> : null}
+      <details onClick={event => event.stopPropagation()}>
+        <summary>Evidence & details</summary>
+        <div className="advisor-details">{answer.details.map((detail, index) => <div key={index}>{detail}</div>)}</div>
+        <div className="advisor-limits"><strong>Unknown</strong>{answer.unknown.map((item, index) => <div key={index}>{item}</div>)}</div>
+      </details>
+    </article>
+  )
+}
 
 export function Advisor({
   period,
@@ -100,7 +124,10 @@ export function Advisor({
   const [hostedProvider, setHostedProvider] = useState<'openai' | 'anthropic' | 'gemini'>('openai')
   const [hostedProbe, setHostedProbe] = useState<Awaited<ReturnType<typeof probeHostedAdvisor>> | null>(null)
   const [hostedModel, setHostedModel] = useState<string | null>(null)
-  const [hostedRuntime, setHostedRuntime] = useState<HostedAdvisorRuntime | null>(null)
+  const hostedModelRef = useRef<string | null>(null)
+  hostedModelRef.current = hostedModel
+  const [hostedConsent, setHostedConsent] = useState(false)
+  const hostedRuntime = useMemo(() => hostedModel ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModel, consent: hostedConsent }) : null, [hostedConsent, hostedModel, hostedProvider])
   const [runtimeState, setRuntimeState] = useState<RuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], toolCall: 'unknown' })
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
   const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
@@ -147,7 +174,7 @@ export function Advisor({
   }, [checkLocalRuntime])
 
   const hostedProbeController = useRef<AbortController | null>(null)
-  const checkHostedRuntime = useCallback(async (requestedProvider: 'openai' | 'anthropic' | 'gemini' = hostedProvider) => {
+  const checkHostedRuntime = useCallback(async (requestedProvider: 'openai' | 'anthropic' | 'gemini' = hostedProvider, resetSelection = false) => {
     hostedProbeController.current?.abort()
     const controller = new AbortController()
     hostedProbeController.current = controller
@@ -157,16 +184,19 @@ export function Advisor({
       setHostedProbe(result)
       const selectable = result.models.find(model => model.state !== 'unsupported')
       if (result.available && selectable) {
-        setHostedModel(current => current && result.models.some(model => model.id === current && model.state !== 'unsupported') ? current : selectable.id)
-        setHostedRuntime(current => current && current.label.endsWith(selectable.id.replace(/^models\//u, '')) ? current : new HostedAdvisorRuntime({ provider: requestedProvider, model: selectable.id, consent: false }))
+        const currentModel = resetSelection ? null : hostedModelRef.current
+        const next = currentModel && result.models.some(model => model.id === currentModel && model.state !== 'unsupported') ? currentModel : selectable.id
+        setHostedModel(next)
+        if (next !== currentModel) setHostedConsent(false)
       } else {
         setHostedModel(null)
-        setHostedRuntime(null)
+        setHostedConsent(false)
       }
     } catch (caught) {
       if (!isCancelled(caught)) {
+        setHostedModel(null)
+        setHostedConsent(false)
         setHostedProbe({ provider: requestedProvider, available: false, models: [], detail: 'Hosted provider probe failed.', credentialState: 'ready' })
-        setHostedRuntime(null)
       }
     }
   }, [hostedProvider])
@@ -182,7 +212,6 @@ export function Advisor({
   const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
   const [credentialEntry, setCredentialEntry] = useState('')
   const [credentialSaving, setCredentialSaving] = useState(false)
-  const [hostedConsent, setHostedConsent] = useState(false)
   const hostedConfigRef = useRef({ runtimeChoice, hostedRuntime, hostedConsent })
   hostedConfigRef.current = { runtimeChoice, hostedRuntime, hostedConsent }
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
@@ -309,7 +338,6 @@ export function Advisor({
   }
   const updateHostedConsent = (consent: boolean) => {
     setHostedConsent(consent)
-    setHostedRuntime(current => current && hostedModel ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModel, consent }) : current)
   }
   const saveHostedCredential = async () => {
     if (!credentialEntry.trim() || credentialSaving) return
@@ -394,8 +422,8 @@ export function Advisor({
             {runtimeChoice === 'hosted' ? <>
               <button type="button" className="advisor-quiet-button" onClick={activateLocal}>Use local runtime</button>
               <div className="advisor-hosted-controls">
-                <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => { const next = event.target.value as 'openai' | 'anthropic' | 'gemini'; setHostedProvider(next); setHostedProbe(null); setHostedModel(null); setHostedRuntime(null); setHostedConsent(false); void checkHostedRuntime(next) }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
-                {hostedProbe?.models.filter(model => model.state !== 'unsupported').length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? hostedProbe.models.find(model => model.state !== 'unsupported')?.id ?? ''} onChange={event => { const model = event.target.value; setHostedModel(model); setHostedRuntime(new HostedAdvisorRuntime({ provider: hostedProvider, model })); setHostedConsent(false) }}>{hostedProbe.models.filter(model => model.state !== 'unsupported').map(model => <option key={model.id} value={model.id}>{model.label} · {model.state}</option>)}</select></label> : null}
+                <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => { const next = event.target.value as 'openai' | 'anthropic' | 'gemini'; setHostedProvider(next); setHostedProbe(null); setHostedModel(null); setHostedConsent(false); void checkHostedRuntime(next, true) }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
+                {hostedProbe?.models.filter(model => model.state !== 'unsupported').length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? hostedProbe.models.find(model => model.state !== 'unsupported')?.id ?? ''} onChange={event => { const model = event.target.value; setHostedModel(model); setHostedConsent(false) }}>{hostedProbe.models.filter(model => model.state !== 'unsupported').map(model => <option key={model.id} value={model.id}>{model.label} · {model.state}</option>)}</select></label> : null}
                 <span className="advisor-credential-status">Credential: {hostedProbe?.credentialState ?? 'not-configured'}</span>
                 {hostedProbe?.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Advisor provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => setCredentialEntry(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={() => void saveHostedCredential()} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={() => void clearHostedCredential()}>Remove key</button>}
                 {hostedRuntime ? <label className="advisor-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => updateHostedConsent(event.target.checked)} /> Before the first hosted investigation, send this question and minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</label> : null}
@@ -429,7 +457,7 @@ export function Advisor({
           ) : (
             messages.map(message => message.role === 'user'
               ? <article key={message.id} className="advisor-message user-message"><div className="advisor-message-label">You</div><p>{message.text}</p></article>
-              : <article key={message.id} className={selectedAnswerId === message.id ? 'advisor-message assistant-message selected' : 'advisor-message assistant-message'} onClick={() => setSelectedAnswerId(message.id)}><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor <small>{message.answer?.generatedByModel ? (message.answer.runtime.mode === 'hosted-byok' ? 'hosted provider' : 'local model') : 'offline evidence'}</small></div><p className="advisor-conclusion">{displayAnswer(message.answer!)}</p><div className="advisor-answer-meta"><span className={'advisor-coverage ' + message.answer?.coverage.level}>{message.answer?.coverage.label}</span><span>{message.answer?.scopeLabel}</span></div><details onClick={event => event.stopPropagation()}><summary>Evidence & limits</summary><div className="advisor-details">{message.answer?.details.map((detail, index) => <div key={index}>{detail}</div>)}</div><div className="advisor-limits"><strong>Unknown / limits</strong>{message.answer?.unknown.map((item, index) => <div key={index}>{item}</div>)}</div></details>{message.answer?.nextInvestigations.length ? <div className="advisor-followups"><span>Continue with</span>{message.answer.nextInvestigations.map(next => <button type="button" key={next} onClick={event => { event.stopPropagation(); void ask(next) }}>{next}</button>)}</div> : null}</article>
+              : <AnswerCard key={message.id} answer={message.answer!} selected={selectedAnswerId === message.id} onSelect={() => setSelectedAnswerId(message.id)} onFollowUp={next => void ask(next)} />
             )
           )}
           {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor</div><p className="advisor-tool-progress">{toolStatus ?? 'Thinking with local evidence…'}</p>{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button></article> : null}

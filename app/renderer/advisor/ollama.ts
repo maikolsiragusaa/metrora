@@ -2,7 +2,7 @@ import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
 import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
-import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, boundedAdvisorText, contentMinimalEvidence, sanitizeAdvisorAnswer, sanitizeAdvisorNarrative } from './privacy'
+import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, contentMinimalEvidence, sanitizeAdvisorAnswer } from './privacy'
 
 export type LocalToolCall = { function?: { name?: string; arguments?: unknown } }
 export type LocalChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: LocalToolCall[]; tool_name?: string }
@@ -39,17 +39,6 @@ export async function probeOllama(signal?: AbortSignal, transport: OllamaTranspo
     return { available: false, models: [], detail: 'Local Ollama is unavailable.' }
   }
 }
-function extractNarrative(value: string): string {
-  const trimmed = value.trim().replace(/^\s*\x60\x60\x60(?:json|text)?\s*/i, '').replace(/\s*\x60\x60\x60$/, '').trim()
-  try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>
-    for (const key of ['conclusion', 'answer', 'message']) if (typeof parsed[key] === 'string') return parsed[key] as string
-  } catch { /* Plain text is valid. */ }
-  return trimmed
-}
-function sanitizeNarrative(value: string): string {
-  return sanitizeAdvisorNarrative(extractNarrative(value))
-}
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength
 }
@@ -68,7 +57,7 @@ function systemPrompt(): string {
     'If the question is outside Metrora, explain the boundary briefly and suggest a supported investigation.',
   ].join(' ')
 }
-function sameEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
+export function sameEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
   return left.period === right.period
     && left.provider === right.provider
     && left.projectId === right.projectId
@@ -77,10 +66,10 @@ function sameEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidenc
     && left.range?.from === right.range?.from
     && left.range?.to === right.range?.to
 }
-function hasMixedEvidenceScopes(items: AdvisorEvidence[]): boolean {
+export function hasMixedEvidenceScopes(items: AdvisorEvidence[]): boolean {
   return items.length > 1 && items.some(item => !sameEvidenceScope(item.scope, items[0]!.scope))
 }
-function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidence): AdvisorEvidence {
+export function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidence): AdvisorEvidence {
   if (hasMixedEvidenceScopes(items)) {
     return {
       intent: 'unknown',
@@ -194,21 +183,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     const verifiedFacts = boundedToolContent(JSON.stringify(contentMinimalEvidence(input.evidence)))
     messages.push({ role: 'system', content: 'Verified Metrora facts for this question. Treat them as read-only facts; do not recompute or add numbers: ' + verifiedFacts })
     const evidences: AdvisorEvidence[] = []
-    let finalContent = ''
-    let streamed = false
-    let allowDelta = false
-    let streamBuffer = ''
-    let streamOverflow = false
-    const offDelta = this.transport.onDelta(event => {
-      if (event.requestId !== requestId || !allowDelta) return
-      const nextBytes = byteLength(streamBuffer) + byteLength(event.text)
-      if (nextBytes > ADVISOR_MODEL_NARRATIVE_MAX_BYTES) {
-        streamOverflow = true
-        return
-      }
-      streamBuffer += event.text
-      streamed = true
-    })
     const cancel = () => { void this.transport.cancel(requestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
@@ -226,7 +200,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       const planningContent = boundedModelText(planningMessage.content)
       if (!calls.length) {
         messages.push({ role: 'assistant', content: planningContent, tool_calls: [] })
-        finalContent = planningContent
       } else {
         const assistantMessage: OllamaChatMessage = { role: 'assistant', content: planningContent, tool_calls: [] }
         messages.push(assistantMessage)
@@ -251,21 +224,17 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
           && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
         throwIfAborted(signal)
         if (validToolEvidence) {
-          allowDelta = true
-          const finalResponse = await this.transport.chat(requestId, {
+          await this.transport.chat(requestId, {
             model: this.model,
             messages,
             tools: [],
-            stream: true,
+            stream: false,
           }, signal)
           throwIfAborted(signal)
-          streamed = streamed || Boolean(finalResponse.streamed)
-          finalContent = boundedModelText(finalResponse.message?.content)
         }
       }
     } finally {
       signal?.removeEventListener('abort', cancel)
-      offDelta()
     }
     throwIfAborted(signal)
     const evidenceItems = evidences.length ? evidences : [input.evidence]
@@ -277,23 +246,18 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     throwIfAborted(signal)
     const verifiedConclusions = Array.from(new Set(deterministicAnswers.map(answer => answer.conclusion).filter(Boolean)))
     const verifiedConclusion = verifiedConclusions.length ? verifiedConclusions.join(' ') : fallback.conclusion
-    const hasValidEvidence = evidences.length > 0 && homogeneous && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
-    const narrativeSource = streamOverflow ? '' : (streamBuffer ? streamBuffer : finalContent)
-    const insight = hasValidEvidence ? sanitizeNarrative(narrativeSource) : ''
-    const conclusion = verifiedConclusion + (insight ? ' Local model context: ' + insight : '')
     const details = Array.from(new Set([
       ...deterministicAnswers.flatMap(answer => answer.details),
       ...fallback.details,
       ...(homogeneous ? evidences.flatMap(item => item.refs.map(ref => 'Evidence · ' + ref.label)) : []),
     ]))
-    if (insight && hasValidEvidence) input.onDelta?.(insight)
     return sanitizeAdvisorAnswer({
       ...fallback,
-      conclusion: boundedAdvisorText(conclusion),
+      conclusion: verifiedConclusion,
       details,
       runtime: { id: this.id, label: this.label, mode: this.mode },
       generatedByModel: true,
-      streamed: Boolean(insight && streamed),
+      streamed: false,
     })
   }
 }
