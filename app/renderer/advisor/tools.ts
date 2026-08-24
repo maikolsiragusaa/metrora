@@ -4,7 +4,7 @@ import {
   ADVISOR_TOOL_DEFINITIONS,
   AdvisorToolContractError,
   boundedAdvisorJson,
-  createAdvisorToolResultEnvelope,
+  createContentMinimalAdvisorToolResultEnvelope,
   snapshotAdvisorScope,
   validateAdvisorToolArguments,
 } from './contract'
@@ -20,67 +20,12 @@ import type {
   AdvisorToolExecutor,
   AdvisorToolName,
 } from './types'
+import * as advisorPrivacy from './privacy'
 
 export { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_DEFINITIONS }
 
-const PATH_LIKE_TEXT = /^(?:[a-z]:[\\/]|\\\\|\/(?:users|home|private|var|tmp|mnt)(?:\/|$))/i
-const SECRET_LIKE_TEXT = /(?:bearer\s+|api[_-]?key\s*[=:]|secret\s*[=:]|password\s*[=:]|token\s*[=:]|(?:sk|gh[pousr])-[a-z0-9_-]{12,})/i
-
-function contentMinimalText(value: string, fallback = '[redacted]'): string {
-  const trimmed = value.trim()
-  if (!trimmed || PATH_LIKE_TEXT.test(trimmed) || SECRET_LIKE_TEXT.test(trimmed)) return fallback
-  return trimmed.length > 160 ? trimmed.slice(0, 157) + '…' : trimmed
-}
-
-function contentMinimalScope(scope: AdvisorScope): AdvisorJsonObject {
-  return {
-    period: scope.period,
-    range: scope.range,
-    provider: contentMinimalText(scope.provider),
-    projectId: contentMinimalText(scope.projectId),
-    projectName: contentMinimalText(scope.projectName),
-    model: scope.model === null ? null : contentMinimalText(scope.model),
-  }
-}
-
-function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonObject {
-  return {
-    intent: evidence.intent,
-    scope: contentMinimalScope(evidence.scope),
-    coverage: evidence.coverage,
-    refs: evidence.refs.map(ref => ({ id: ref.id, label: contentMinimalText(ref.label), source: ref.source })),
-    spend: evidence.spend
-      ? {
-          ...evidence.spend,
-          models: evidence.spend.models.map(row => ({ ...row, name: contentMinimalText(row.name) })),
-          projects: evidence.spend.projects.map(row => ({ ...row, name: contentMinimalText(row.name) })),
-          sessionsByCost: evidence.spend.sessionsByCost.map(row => ({ ...row, name: contentMinimalText(row.name) })),
-        }
-      : null,
-    modelEfficiency: evidence.modelEfficiency
-      ? {
-          ...evidence.modelEfficiency,
-          selectedModel: evidence.modelEfficiency.selectedModel === null ? null : contentMinimalText(evidence.modelEfficiency.selectedModel),
-          rows: evidence.modelEfficiency.rows.map(row => ({ ...row, model: contentMinimalText(row.model), provider: contentMinimalText(row.provider) })),
-        }
-      : null,
-    quota: evidence.quota
-      ? {
-          ...evidence.quota,
-          providers: evidence.quota.providers.map(provider => ({
-            ...provider,
-            planLabel: provider.planLabel === null ? null : contentMinimalText(provider.planLabel),
-            windows: provider.windows.map(window => ({ ...window, label: contentMinimalText(window.label) })),
-          })),
-        }
-      : null,
-    assumptions: evidence.assumptions,
-    unknown: evidence.unknown,
-  }
-}
-
 function compactEvidence(evidence: AdvisorEvidence): { content: string; output: AdvisorJsonObject } {
-  const content = boundedAdvisorJson(contentMinimalEvidence(evidence))
+  const content = boundedAdvisorJson(advisorPrivacy.contentMinimalEvidence(evidence))
   return { content, output: JSON.parse(content) as AdvisorJsonObject }
 }
 
@@ -121,7 +66,7 @@ function resultFor(name: AdvisorToolName, scope: AdvisorScope, args: AdvisorJson
   return {
     content: compact.content,
     evidence,
-    envelope: createAdvisorToolResultEnvelope(name, scope, args, evidence, compact.output),
+    envelope: createContentMinimalAdvisorToolResultEnvelope(name, scope, args, evidence, compact.output),
   }
 }
 

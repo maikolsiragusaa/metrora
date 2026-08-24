@@ -210,4 +210,30 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
     expect(answer.evidence.length).toBeGreaterThan(0)
     expect(fixture.reads.overviews).toHaveLength(1)
   })
+
+  it('keeps content-minimal evidence safe for no-digit secrets, paths, and internal identifiers', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const sensitiveOverview = {
+      ...fixture.overview,
+      current: {
+        ...fixture.overview.current,
+        topModels: [{ name: 'token=supersecretvalue', cost: 8, calls: 2 }],
+        topProjects: [
+          { name: 'project/alpha', cost: 6, sessions: 1 },
+          { name: '/home/alice/private/project', cost: 6, sessions: 1 },
+        ],
+        topSessions: [{ project: 'raw prompt marker text', cost: 12, calls: 1 }],
+      },
+    } as unknown as typeof fixture.overview
+    const scope = { ...fixture.scope, projectId: 'account-secret', projectName: 'project/alpha' }
+    const registry = createAdvisorToolRegistry(fixture.source, scope, sensitiveOverview)
+    const result = await registry.execute('get_spend_snapshot', {})
+    const serialized = result.content + JSON.stringify(result.envelope)
+    for (const value of ['supersecretvalue', '/home/alice/private/project', 'raw prompt marker text', 'account-secret']) {
+      expect(serialized).not.toContain(value)
+    }
+    expect(serialized).toContain('project/alpha')
+    expect(result.envelope?.scope.projectId).toBe('[scoped-project]')
+    expect(result.content).toContain('[redacted]')
+  })
 })

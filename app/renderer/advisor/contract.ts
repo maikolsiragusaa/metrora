@@ -13,6 +13,7 @@ import type {
   AdvisorToolResultEnvelope,
 } from './types'
 import { ADVISOR_TOOL_CONTRACT_VERSION, ADVISOR_TOOL_SCHEMA_VERSION } from './types'
+import { containsAdvisorSensitiveText, contentMinimalCoverage, contentMinimalEvidence, contentMinimalEvidenceRefs, contentMinimalScope, sanitizeAdvisorDisplayText } from './privacy'
 
 /** Maximum untrusted argument content accepted from a model/runtime call. */
 export const ADVISOR_TOOL_ARGUMENT_MAX_BYTES = 8 * 1024
@@ -226,12 +227,8 @@ export function normalizeAdvisorRuntimeToolCall(name: unknown, value: unknown, s
 }
 
 export function assertBoundedAdvisorToolContent(value: unknown): string {
-  if (typeof value !== 'string') throw new AdvisorToolContractError('invalid-output', 'Advisor tool content must be a string.')
-  const parsed = JSON.parse(boundedAdvisorJson(JSON.parse(value), ADVISOR_TOOL_OUTPUT_MAX_BYTES))
-  if (!isPlainObject(parsed)) throw new AdvisorToolContractError('invalid-output', 'Advisor tool content must be a JSON object.')
-  return boundedAdvisorJson(parsed, ADVISOR_TOOL_OUTPUT_MAX_BYTES)
+  return assertStrictBoundedAdvisorToolContent(value)
 }
-
 function validDate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const parsed = new Date(value + 'T00:00:00Z')
@@ -313,19 +310,69 @@ export function createAdvisorToolResultEnvelope(
   evidence: AdvisorEvidence,
   output: AdvisorJsonObject,
 ): AdvisorToolResultEnvelope {
-  const coverage: AdvisorCoverage = evidence.coverage
-  return {
+  return createContentMinimalAdvisorToolResultEnvelope(name, scope, args, evidence, output)
+}
+const CONTENT_MINIMAL_SOURCE_VALUES = new Set(['overview', 'history', 'models', 'quota'])
+const CONTENT_MINIMAL_PROVIDER_VALUES = new Set(['all', 'claude', 'codex', '[provider]'])
+
+function containsUnsafeAdvisorToolContent(value: unknown, key = ''): boolean {
+  const normalizedKey = key.replace(/[^a-z0-9]/giu, '').toLowerCase()
+  if (/(?:token|password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|sessionid|internalid)/u.test(normalizedKey)) return true
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return false
+  if (typeof value === 'string') return containsAdvisorSensitiveText(value)
+  if (Array.isArray(value)) return value.some(item => containsUnsafeAdvisorToolContent(item, key))
+  if (!isPlainObject(value)) return true
+  for (const [childKey, child] of Object.entries(value)) {
+    const normalizedChildKey = childKey.replace(/[^a-z0-9]/giu, '').toLowerCase()
+    if (normalizedChildKey === 'source' && (typeof child !== 'string' || !CONTENT_MINIMAL_SOURCE_VALUES.has(child))) return true
+    if (normalizedChildKey === 'provider' && (typeof child !== 'string' || !CONTENT_MINIMAL_PROVIDER_VALUES.has(child))) return true
+    if (normalizedChildKey === 'id' && (typeof child !== 'string' || !/^evidence-\d+$/u.test(child))) return true
+    if (normalizedChildKey === 'projectid' && (typeof child !== 'string' || (child !== 'all' && child !== '[scoped-project]'))) return true
+    if (containsUnsafeAdvisorToolContent(child, childKey)) return true
+  }
+  return false
+}/** Strict model-facing tool content parser. */
+export function assertStrictBoundedAdvisorToolContent(value: unknown): string {
+  if (typeof value !== 'string') throw new AdvisorToolContractError('invalid-output', 'Advisor tool content must be a string.')
+  if (byteLength(value) > ADVISOR_TOOL_OUTPUT_MAX_BYTES) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
+  let parsed: unknown
+  try { parsed = JSON.parse(value) } catch { throw new AdvisorToolContractError('invalid-output', 'Advisor tool content must be valid JSON.') }
+  if (!isPlainObject(parsed)) throw new AdvisorToolContractError('invalid-output', 'Advisor tool content must be a JSON object.')
+  const serialized = boundedAdvisorJson(parsed, ADVISOR_TOOL_OUTPUT_MAX_BYTES)
+  if (containsUnsafeAdvisorToolContent(parsed)) throw new AdvisorToolContractError('invalid-output', 'Advisor tool content failed the privacy boundary.')
+  if (containsAdvisorSensitiveText(serialized)) throw new AdvisorToolContractError('invalid-output', 'Advisor tool content failed the privacy boundary.')
+  return serialized
+}
+
+/** Result envelope boundary: only content-minimal scope/evidence crosses to a model. */
+export function createContentMinimalAdvisorToolResultEnvelope(
+  name: AdvisorToolName,
+  scope: AdvisorScope,
+  args: AdvisorJsonObject,
+  evidence: AdvisorEvidence,
+  output: AdvisorJsonObject,
+): AdvisorToolResultEnvelope {
+  const safeScope = snapshotAdvisorScope(contentMinimalScope(scope))
+  void output
+  const safeArguments: AdvisorJsonObject = {}
+  if (typeof args.model === 'string') safeArguments.model = sanitizeAdvisorDisplayText(args.model)
+  if (args.provider === 'claude' || args.provider === 'codex') safeArguments.provider = args.provider
+  const safeCoverage = contentMinimalCoverage(evidence.coverage)
+  const safeOutput = JSON.parse(boundedAdvisorJson(contentMinimalEvidence(evidence), ADVISOR_TOOL_OUTPUT_MAX_BYTES)) as AdvisorJsonObject
+  const envelope: AdvisorToolResultEnvelope = {
     contractVersion: ADVISOR_TOOL_CONTRACT_VERSION,
     tool: name,
-    scope: snapshotAdvisorScope(scope),
-    arguments: args,
+    scope: safeScope,
+    arguments: safeArguments,
     authority: authorityForTool(name, evidence),
     freshness: freshnessForTool(name, evidence),
-    coverage,
+    coverage: safeCoverage,
     semantics: semanticsForTool(name, evidence),
-    evidenceRefs: evidence.refs,
-    unavailable: coverage.level === 'unavailable',
+    evidenceRefs: contentMinimalEvidenceRefs(evidence.refs),
+    unavailable: safeCoverage.level === 'unavailable',
     privacy: 'content-minimal',
-    output,
+    output: safeOutput,
   }
+  boundedAdvisorJson(envelope, ADVISOR_TOOL_OUTPUT_MAX_BYTES)
+  return envelope
 }

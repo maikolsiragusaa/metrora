@@ -248,4 +248,66 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.details.join(' ')).not.toMatch(/41|73|claude spend|codex spend/i)
     expect(finalRequests).toEqual([])
   })
+
+  it('buffers split sensitive streaming content and emits no raw or post-hoc narrative', async () => {
+    const deltas: string[] = []
+    let listener: ((event: { requestId: string; text: string }) => void) | null = null
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: callback => {
+        listener = callback
+        return () => { listener = null }
+      },
+      chat: async (requestId, payload) => {
+        const tools = Array.isArray(payload.tools) ? payload.tools : []
+        if (tools.length > 0) {
+          return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+        }
+        listener?.({ requestId, text: 'safe qualitative context ' })
+        listener?.({ requestId, text: 'token=supersecretvalue' })
+        return { streamed: true, message: { content: 'safe final context' } }
+      },
+    }
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'What changed in spend?',
+      evidence: spendEvidence,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async () => ({ content: '{"safe":true}', evidence: spendEvidence }),
+      onDelta: text => deltas.push(text),
+    })
+    expect(deltas).toEqual([])
+    expect(answer.conclusion).not.toContain('supersecretvalue')
+    expect(answer.conclusion).not.toContain('Local model context')
+    expect(answer.streamed).toBe(false)
+  })
+  it('fails closed on buffered stream overflow even when the final response is safe', async () => {
+    const deltas: string[] = []
+    let listener: ((event: { requestId: string; text: string }) => void) | null = null
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: callback => {
+        listener = callback
+        return () => { listener = null }
+      },
+      chat: async (requestId, payload) => {
+        if (Array.isArray(payload.tools) && payload.tools.length > 0) {
+          return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+        }
+        listener?.({ requestId, text: 'x'.repeat(9 * 1024) })
+        return { streamed: true, message: { content: 'safe final response' } }
+      },
+    }
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'What changed in spend?',
+      evidence: spendEvidence,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async () => ({ content: '{"safe":true}', evidence: spendEvidence }),
+      onDelta: text => deltas.push(text),
+    })
+    expect(deltas).toEqual([])
+    expect(answer.conclusion).not.toContain('Local model context')
+    expect(answer.streamed).toBe(false)
+  })
 })

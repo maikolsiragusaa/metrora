@@ -1,7 +1,8 @@
 import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
-import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
+import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
+import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, boundedAdvisorText, sanitizeAdvisorAnswer, sanitizeAdvisorNarrative } from './privacy'
 
 type OllamaToolCall = { function?: { name?: string; arguments?: unknown } }
 type OllamaChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: OllamaToolCall[]; tool_name?: string }
@@ -42,10 +43,14 @@ function extractNarrative(value: string): string {
   return trimmed
 }
 function sanitizeNarrative(value: string): string {
-  const original = extractNarrative(value)
-  if (/\d/.test(original)) return ''
-  const text = original.trim()
-  return text.length > 800 ? text.slice(0, 797) + '…' : text
+  return sanitizeAdvisorNarrative(extractNarrative(value))
+}
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+function boundedModelText(value: unknown): string {
+  if (typeof value !== 'string' || byteLength(value) > ADVISOR_MODEL_NARRATIVE_MAX_BYTES) return ''
+  return value
 }
 function systemPrompt(): string {
   return [
@@ -129,8 +134,9 @@ function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidence): Adv
 function toolCallName(call: OllamaToolCall): string {
   return typeof call.function?.name === 'string' ? call.function.name : ''
 }
-function boundedToolContent(content: string): string {
-  if (new TextEncoder().encode(content).byteLength > ADVISOR_TOOL_OUTPUT_MAX_BYTES) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
+function boundedToolContent(content: string, strict = false): string {
+  if (strict) return assertStrictBoundedAdvisorToolContent(content)
+  if (byteLength(content) > ADVISOR_TOOL_OUTPUT_MAX_BYTES) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
   return content
 }
 function throwIfAborted(signal?: AbortSignal): void {
@@ -168,11 +174,17 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
     let finalContent = ''
     let streamed = false
     let allowDelta = false
+    let streamBuffer = ''
+    let streamOverflow = false
     const offDelta = this.transport.onDelta(event => {
-      if (event.requestId === requestId && allowDelta && !/\d/.test(event.text)) {
-        streamed = true
-        input.onDelta?.(event.text)
+      if (event.requestId !== requestId || !allowDelta) return
+      const nextBytes = byteLength(streamBuffer) + byteLength(event.text)
+      if (nextBytes > ADVISOR_MODEL_NARRATIVE_MAX_BYTES) {
+        streamOverflow = true
+        return
       }
+      streamBuffer += event.text
+      streamed = true
     })
     const cancel = () => { void this.transport.cancel(requestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
@@ -188,24 +200,30 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
       throwIfAborted(signal)
       const planningMessage = planning.message ?? {}
       const calls = Array.isArray(planningMessage.tool_calls) ? planningMessage.tool_calls.slice(0, 8) : []
-      messages.push({ role: 'assistant', content: typeof planningMessage.content === 'string' ? planningMessage.content : '', tool_calls: calls })
+      const planningContent = boundedModelText(planningMessage.content)
       if (!calls.length) {
-        finalContent = typeof planningMessage.content === 'string' ? planningMessage.content : ''
+        messages.push({ role: 'assistant', content: planningContent, tool_calls: [] })
+        finalContent = planningContent
       } else {
+        const assistantMessage: OllamaChatMessage = { role: 'assistant', content: planningContent, tool_calls: [] }
+        messages.push(assistantMessage)
+        const normalizedCalls: OllamaToolCall[] = []
         for (const call of calls) {
           throwIfAborted(signal)
           if (!call || typeof call !== 'object') throw new AdvisorToolContractError('invalid-arguments', 'Malformed Advisor runtime tool call.')
           const normalized = input.toolContract
             ? normalizeAdvisorToolCall(toolCallName(call), call.function?.arguments)
             : normalizeAdvisorRuntimeToolCall(toolCallName(call), call.function?.arguments, definitions)
+          normalizedCalls.push({ function: { name: normalized.name, arguments: JSON.stringify(normalized.arguments) } })
           input.onToolEvent?.({ name: normalized.name, status: 'started' })
           if (!input.executeTool) throw new AdvisorToolContractError('authority-unavailable', 'Advisor tool execution is unavailable.')
           const result: AdvisorToolExecution = await input.executeTool(normalized.name, normalized.arguments, signal)
           throwIfAborted(signal)
           evidences.push(result.evidence)
-          messages.push({ role: 'tool', content: boundedToolContent(result.content), tool_name: normalized.name })
+          messages.push({ role: 'tool', content: boundedToolContent(result.content, Boolean(input.toolContract)), tool_name: normalized.name })
           input.onToolEvent?.({ name: normalized.name, status: 'completed' })
         }
+        assistantMessage.tool_calls = normalizedCalls
         const validToolEvidence = !hasMixedEvidenceScopes(evidences)
           && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
         throwIfAborted(signal)
@@ -219,7 +237,7 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
           }, signal)
           throwIfAborted(signal)
           streamed = streamed || Boolean(finalResponse.streamed)
-          finalContent = typeof finalResponse.message?.content === 'string' ? finalResponse.message.content : ''
+          finalContent = boundedModelText(finalResponse.message?.content)
         }
       }
     } finally {
@@ -237,20 +255,22 @@ export class OllamaAdvisorRuntime implements AdvisorModelRuntime {
     const verifiedConclusions = Array.from(new Set(deterministicAnswers.map(answer => answer.conclusion).filter(Boolean)))
     const verifiedConclusion = verifiedConclusions.length ? verifiedConclusions.join(' ') : fallback.conclusion
     const hasValidEvidence = evidences.length > 0 && homogeneous && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
-    const insight = hasValidEvidence ? sanitizeNarrative(finalContent) : ''
+    const narrativeSource = streamOverflow ? '' : (streamBuffer ? streamBuffer : finalContent)
+    const insight = hasValidEvidence ? sanitizeNarrative(narrativeSource) : ''
     const conclusion = verifiedConclusion + (insight ? ' Local model context: ' + insight : '')
     const details = Array.from(new Set([
       ...deterministicAnswers.flatMap(answer => answer.details),
       ...fallback.details,
       ...(homogeneous ? evidences.flatMap(item => item.refs.map(ref => 'Evidence · ' + ref.label)) : []),
     ]))
-    return {
+    if (insight && hasValidEvidence) input.onDelta?.(insight)
+    return sanitizeAdvisorAnswer({
       ...fallback,
-      conclusion: conclusion.slice(0, 1600),
+      conclusion: boundedAdvisorText(conclusion),
       details,
       runtime: { id: this.id, label: this.label, mode: this.mode },
       generatedByModel: true,
-      streamed,
-    }
+      streamed: Boolean(insight && streamed),
+    })
   }
 }
