@@ -7,15 +7,16 @@ import { PERIOD_OPTIONS } from '../components/TopBar'
 import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
-import { OllamaAdvisorRuntime, probeOllama, type OllamaProbeResult } from '../advisor/ollama'
+import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
+import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
 import { scopeLabel } from '../advisor/evidence'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorScope } from '../advisor/types'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
 
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
-type RuntimeState = { status: 'checking' | 'ready' | 'unavailable'; detail: string; models: string[] }
+type RuntimeState = { runtime: AdvisorLocalRuntimeId; status: 'checking' | 'ready' | 'unavailable'; detail: string; models: string[]; toolCall: 'unknown' | 'supported' | 'unsupported' | 'failed-conformance' }
 
 const PERIODS: Array<{ value: Period; label: string }> = PERIOD_OPTIONS.map(option => ({ value: option.value as Period, label: option.label }))
 const PROMPTS = [
@@ -93,35 +94,47 @@ export function Advisor({
 
   const source = useMemo(() => createAdvisorDataSource(metrora), [])
   const fallbackRuntime = useMemo(() => createAdvisorRuntime(), [])
-  const [runtimeState, setRuntimeState] = useState<RuntimeState>({ status: 'checking', detail: 'Checking for a local Ollama model…', models: [] })
+  const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
+  const [runtimeState, setRuntimeState] = useState<RuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], toolCall: 'unknown' })
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
   const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
-  const activeRuntime = ollamaRuntime ?? fallbackRuntime
+  const [lmStudioRuntime, setLMStudioRuntime] = useState<LMStudioAdvisorRuntime | null>(null)
+  const activeRuntime = (runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime) ?? fallbackRuntime
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
   const probeController = useRef<AbortController | null>(null)
 
-  const checkLocalRuntime = useCallback(async () => {
+  const checkLocalRuntime = useCallback(async (requestedRuntime: AdvisorLocalRuntimeId = runtimeId) => {
     probeController.current?.abort()
     const controller = new AbortController()
     probeController.current = controller
-    setRuntimeState({ status: 'checking', detail: 'Checking for a local Ollama model…', models: [] })
+    const runtimeName = requestedRuntime === 'lmstudio' ? 'LM Studio' : 'Ollama'
+    setRuntimeState({ runtime: requestedRuntime, status: 'checking', detail: 'Checking for a local ' + runtimeName + ' model…', models: [], toolCall: 'unknown' })
     try {
-      const result: OllamaProbeResult = await probeOllama(controller.signal)
+      const result = requestedRuntime === 'lmstudio' ? await probeLMStudio(controller.signal) : await probeOllama(controller.signal)
       if (controller.signal.aborted) return
       if (result.available && result.models[0]) {
         const selected = runtimeModel && result.models.includes(runtimeModel) ? runtimeModel : result.models[0]
         setRuntimeModel(selected)
-        setOllamaRuntime(new OllamaAdvisorRuntime({ model: selected, availability: 'ready' }))
-        setRuntimeState({ status: 'ready', detail: result.detail, models: result.models })
+        if (requestedRuntime === 'lmstudio') {
+          setLMStudioRuntime(new LMStudioAdvisorRuntime({ model: selected, availability: 'ready' }))
+          setOllamaRuntime(null)
+        } else {
+          setOllamaRuntime(new OllamaAdvisorRuntime({ model: selected, availability: 'ready' }))
+          setLMStudioRuntime(null)
+        }
+        const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: RuntimeState['toolCall'] }> }).capabilities ?? []
+        const capability = capabilityProfiles.find(profile => profile.modelId === selected)
+        setRuntimeState({ runtime: requestedRuntime, status: 'ready', detail: result.detail, models: result.models, toolCall: capability?.toolCall ?? 'unknown' })
       } else {
         setRuntimeModel(null)
-        setOllamaRuntime(null)
-        setRuntimeState({ status: 'unavailable', detail: result.detail, models: [] })
+        if (requestedRuntime === 'lmstudio') setLMStudioRuntime(null)
+        else setOllamaRuntime(null)
+        setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: result.detail, models: [], toolCall: 'unknown' })
       }
     } catch (error) {
-      if (!isCancelled(error)) setRuntimeState({ status: 'unavailable', detail: 'Local runtime probe was cancelled or failed.', models: [] })
+      if (!isCancelled(error)) setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: 'Local runtime probe was cancelled or failed.', models: [], toolCall: 'unknown' })
     }
-  }, [runtimeModel])
+  }, [runtimeId, runtimeModel])
   useEffect(() => {
     void checkLocalRuntime()
     return () => probeController.current?.abort()
@@ -244,9 +257,10 @@ export function Advisor({
     conversation.title,
     ...conversation.messages.map(message => message.text ?? message.answer?.conclusion ?? ''),
   ].some(value => value.toLowerCase().includes(normalizedHistoryQuery)))
-  const runtimeLabel = runtimeState.status === 'ready' && ollamaRuntime ? ollamaRuntime.label : 'Offline evidence fallback'
-  const runtimeDescription = runtimeState.status === 'ready' && ollamaRuntime
-    ? 'Local Ollama model · read-only evidence tools · capability varies by model'
+  const selectedModelRuntime = runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime
+  const runtimeLabel = runtimeState.status === 'ready' && selectedModelRuntime ? selectedModelRuntime.label : 'Offline evidence fallback'
+  const runtimeDescription = runtimeState.status === 'ready' && selectedModelRuntime
+    ? (runtimeId === 'lmstudio' ? 'Local LM Studio model' : 'Local Ollama model') + ' · read-only evidence tools · tool support varies by model'
     : 'Deterministic evidence fallback · no model connected'
   const latestAnswer = selectedAnswer ?? answerForMessage(messages, null)
   const suppliedOverviewMatchesScope = scope.period === period
@@ -283,7 +297,8 @@ export function Advisor({
             <span className={runtimeState.status === 'ready' ? 'advisor-status-dot ready' : 'advisor-status-dot'} />
             <div><strong>{runtimeLabel}</strong><small>{runtimeDescription} · {runtimeState.detail}</small></div>
             <button type="button" className="advisor-quiet-button" onClick={() => void checkLocalRuntime()}>{runtimeState.status === 'checking' ? 'Checking…' : 'Check local model'}</button>
-            {runtimeState.models.length ? <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => { const model = event.target.value; setRuntimeModel(model); setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' })) }}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+            <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor runtime" value={runtimeId} onChange={event => { const next = event.target.value as AdvisorLocalRuntimeId; setRuntimeId(next); setRuntimeModel(null); void checkLocalRuntime(next) }}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
+            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => { const model = event.target.value; setRuntimeModel(model); if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' })); else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' })) }}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
           </div>
         </header>
         <div className="advisor-scope-bar" aria-label="Advisor context">
@@ -294,7 +309,7 @@ export function Advisor({
           <label>Model<select aria-label="Advisor model" value={scope.model ?? ''} onChange={event => setScope(current => ({ ...current, model: event.target.value || null }))}><option value="">All models</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
           <span className="advisor-read-only">Read-only · {scopeLabel(scope)}</span>
         </div>
-        {runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect Ollama to unlock free-form model conversation and tool calls. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
+        {runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form model conversation and tool calls. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
         {overview.error && !overview.data ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overview.error.message}</div> : null}
         <div className="advisor-thread" aria-live="polite">
           {messages.length === 0 ? (

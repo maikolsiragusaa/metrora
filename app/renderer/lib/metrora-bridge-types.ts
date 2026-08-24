@@ -26,6 +26,7 @@ import type {
   YieldJsonReport,
 } from './types'
 import type { ProjectBridge } from './project-bridge-types'
+import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
 
 export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to cold-start scan progress; returns an unsubscribe fn. */
@@ -35,8 +36,8 @@ export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
-  advisorProbe(): Promise<{ available: boolean; models: string[]; detail: string }>
-  advisorChat(requestId: string, payload: Record<string, unknown>): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
+  advisorProbe(runtime?: AdvisorLocalRuntimeId): Promise<AdvisorRuntimeProbe>
+  advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
   advisorCancel(requestId: string): Promise<boolean>
   onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
   // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.

@@ -10,7 +10,7 @@ The public path is deliberately replaceable:
           -> deterministic evidence tools
           -> Advisor Kernel
           -> AdvisorModelRuntime
-          -> verified local runtime (Ollama first)
+          -> verified local runtime (Ollama or LM Studio)
           -> session-local Advisor UI
 
 The deterministic tools own facts, arithmetic, coverage, currency formatting, and provider-quota freshness. A model can choose among the exposed read-only tools and write qualitative context, but its prose never replaces verified evidence. The UI renders the verified evidence rail and details beside the model context.
@@ -37,23 +37,22 @@ Tool outputs are compact JSON contracts. They do not include raw source content,
 
 ## Runtime boundary
 
-The implemented local transport targets the official Ollama local HTTP API. Model capability remains unverified until an operator selects and uses a local model:
+The implemented local transport supports two selectable runtimes: Ollama and LM Studio. Both use the same Advisor Kernel, immutable evidence scope, seven-tool contract, deterministic fact precedence, privacy projection, cancellation, and bounded output rules. The runtime/model selector is session-local and keeps the primary UX to “Runtime”, “Local model”, “Ready”, “Unavailable”, and “Tool support varies”.
 
-- Electron main is the only process allowed to call http://127.0.0.1:11434;
-- the renderer receives an allowlisted IPC bridge with probe, chat, cancellation, and bounded delta events;
-- the endpoint is fixed to loopback; arbitrary URLs are not accepted;
-- model names are discovered from /api/tags and selected explicitly in the Advisor header;
-- a planning request may return multiple tool calls; tools execute locally; one final request streams with tools disabled;
-- cancellation uses an AbortController in main and a request id in the bridge;
-- timeouts, message/content/response byte caps, stream chunk caps, malformed-chunk caps, and bounded redacted errors are enforced.
+Electron main is the only process allowed to call either fixed loopback boundary:
 
-Metrora owns the final privacy boundary: model narrative is bounded and sanitized before it enters the public Advisor answer, and raw model deltas are not forwarded to the renderer. Unsafe narrative is dropped while deterministic evidence remains available. Tool-facing results stay content-minimal, so a model cannot turn unrestricted paths, source content, prompts, secrets or internal identifiers into an answer through an unreviewed output channel.
+- Ollama: `http://127.0.0.1:11434/api/tags` for model discovery and `/api/chat` for chat;
+- LM Studio: `http://127.0.0.1:1234/api/v1/models` for model discovery and `/v1/chat/completions` for OpenAI-compatible chat and tool calls.
 
-Ollama support is model-dependent: a discovered model is not automatically evidence that its tool-calling behavior is capable. The UI says that capability varies by model. The deterministic local runtime remains an explicit offline fallback when no local model is connected; it is not presented as a full free-form chatbot.
+The LM Studio adapter reads language-model identifiers factually from the local `models` response and ignores embedding models. The default local server does not require a token; configurations that require authentication are unavailable in this Community V1 path because Metrora does not add credential management. Tokens are never logged, stored in renderer state, or synchronized. The endpoint, protocol, and port are not renderer-configurable: arbitrary URLs, LAN binding, remote OpenAI-compatible servers, and cloud fallback are not accepted.
 
-No provider SDK or new runtime dependency is required. LM Studio and hosted/cloud BYOK adapters are follow-up work until their Electron boundary, model capability, cancellation, and privacy behavior are proven.
+Both adapters use a bounded two-stage flow: a planning request may return multiple tool calls, Metrora executes canonical read-only tools locally, and a final request runs with tools disabled. Ollama uses bounded NDJSON parsing; LM Studio uses bounded OpenAI-compatible SSE parsing. A discovered model is not treated as verified Advisor tool support: each discovered model receives a session-local `ModelCapabilityProfileV1` with conversational availability and streaming support facts, while tool support remains `unknown` until a bounded synthetic conformance check establishes more.
 
-Official provenance references: [Ollama Chat API](https://docs.ollama.com/api/chat), [tool calling](https://docs.ollama.com/capabilities/tool-calling), [streaming](https://docs.ollama.com/capabilities/streaming), and the [Ollama core license](https://github.com/ollama/ollama/blob/main/LICENSE).
+Cancellation uses an AbortController in main and a request id in the bridge. Request/model/message/content/response byte caps, stream chunk caps, malformed-event caps, timeouts, and bounded redacted errors are enforced. Raw model deltas are not forwarded to the renderer; only the completed bounded response is eligible for the existing narrative sanitizer. Unsafe narrative is dropped while deterministic evidence remains available.
+
+The deterministic local runtime remains an explicit offline evidence fallback when no local model is connected; it is not presented as a full free-form chatbot. No provider SDK or new runtime dependency is required. Hosted/cloud BYOK, arbitrary OpenAI-compatible endpoints, and managed inference remain out of scope.
+
+Official provenance references: [Ollama Chat API](https://docs.ollama.com/api/chat), [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling), [LM Studio REST API](https://lmstudio.ai/docs/developer/rest), [LM Studio model listing](https://lmstudio.ai/docs/developer/rest/list), [LM Studio OpenAI-compatible endpoints](https://lmstudio.ai/docs/developer/openai-compat), and [LM Studio tool use](https://lmstudio.ai/docs/developer/openai-compat/tools).
 
 ## Evidence and truth rules
 
