@@ -46,7 +46,7 @@ Metrora reads supported usage records already stored on your machine and builds 
 - Which tools, models and projects are driving cost and token usage?
 - How much usage is covered by cache, subscriptions or local models?
 - Which sessions were efficient, retried, abandoned, reverted or unusually expensive?
-- Which models work best for the kinds of tasks you actually perform?
+- Which observed model cost-per-call signals are lower in the selected scope, with task quality kept explicit as unknown?
 - Which optimization findings are supported by observed data, and which values remain estimated or unknown?
 
 No wrapper or proxy is required, and AI traffic does not pass through Metrora.

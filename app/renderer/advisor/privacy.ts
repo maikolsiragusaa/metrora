@@ -1,10 +1,14 @@
 import type {
   AdvisorAnswer,
   AdvisorBenchRun,
+  AdvisorClaimV1,
   AdvisorCoverage,
   AdvisorEvidence,
   AdvisorEvidenceRef,
   AdvisorJsonObject,
+  AdvisorJsonValue,
+  AdvisorPresentationBlockV1,
+  AdvisorPresentationIntent,
   AdvisorScope,
 } from './types'
 
@@ -194,18 +198,73 @@ export function contentMinimalEvidenceRefs(refs: AdvisorEvidenceRef[]): AdvisorE
 export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
   const coverage = contentMinimalCoverage(answer.coverage)
   const safeText = (value: string) => boundedAdvisorText(sanitizeAdvisorDisplayText(value, Number.MAX_SAFE_INTEGER))
+  const evidenceIdMap = new Map<string, string>()
+  const evidence = answer.evidence.flatMap((ref, index) => {
+    const source = contentMinimalSource(ref.source)
+    if (!source) return []
+    const candidate = sanitizeAdvisorDisplayText(ref.id, 64)
+    const id = SAFE_ANSWER_EVIDENCE_ID_PATTERN.test(candidate) ? candidate : 'evidence-' + (index + 1)
+    evidenceIdMap.set(ref.id, id)
+    return [{ id, label: sanitizeAdvisorDisplayText(ref.label), source }]
+  })
+  const safeEvidenceRefs = (refs: AdvisorEvidenceRef[]): AdvisorEvidenceRef[] => refs.flatMap(ref => {
+    const id = evidenceIdMap.get(ref.id) ?? (evidence.some(item => item.id === ref.id) ? ref.id : null)
+    const source = contentMinimalSource(ref.source)
+    return id && source ? [{ id, label: sanitizeAdvisorDisplayText(ref.label), source }] : []
+  })
+  const safeJsonValue = (value: AdvisorJsonValue, depth = 0): AdvisorJsonValue => {
+    if (depth > 4) return null
+    if (typeof value === 'string') return safeText(value)
+    if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+    if (Array.isArray(value)) return value.slice(0, 32).map(item => safeJsonValue(item, depth + 1))
+    return Object.fromEntries(Object.entries(value).slice(0, 32).map(([key, child]) => [sanitizeAdvisorDisplayText(key, 80), safeJsonValue(child, depth + 1)]))
+  }
+  const safeClaims = (claims: AdvisorClaimV1[] | undefined): AdvisorClaimV1[] | undefined => {
+    if (!claims) return undefined
+    return claims.flatMap(claim => {
+      if (claim.status !== 'verified' || claim.class === 'causal' || claim.class === 'forecast' || claim.class === 'recommendation') return []
+      const evidenceRefs = claim.evidenceRefs.map(ref => evidenceIdMap.get(ref) ?? ref).filter(ref => evidence.some(item => item.id === ref))
+      if (!evidenceRefs.length && claim.class !== 'qualitative') return []
+      return [{
+        ...claim,
+        text: safeText(claim.text),
+        value: safeJsonValue(claim.value),
+        evidenceRefs,
+        evidencePaths: claim.evidencePaths.filter(path => /^[A-Za-z][A-Za-z0-9_.-]{0,160}$/u.test(path)).slice(0, 8),
+        status: 'verified' as const,
+        ...(claim.reason ? { reason: safeText(claim.reason) } : {}),
+      }]
+    }).slice(0, 24)
+  }
+  const presentationKinds: readonly AdvisorPresentationIntent[] = ['text', 'metric-cards', 'line-chart', 'bar-chart', 'comparison-table', 'quota-card', 'bench-summary', 'warning', 'evidence-disclosure']
+  const safePresentation = (blocks: AdvisorPresentationBlockV1[] | undefined): AdvisorPresentationBlockV1[] | undefined => blocks ? blocks.flatMap((block): AdvisorPresentationBlockV1[] => {
+    if (!presentationKinds.includes(block.kind)) return []
+    if (block.kind === 'text') return [{ ...block, text: safeText(block.text), claimIds: block.claimIds.slice(0, 24) }]
+    if (block.kind === 'metric-cards') return [{ ...block, title: safeText(block.title), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), cards: block.cards.slice(0, 8).map(card => ({ ...card, label: safeText(card.label), value: safeText(card.value), unit: safeText(card.unit), detail: safeText(card.detail), claimIds: card.claimIds.slice(0, 24) })) }]
+    if (block.kind === 'line-chart' || block.kind === 'bar-chart') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), unit: safeText(block.unit), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), accessibilityLabel: safeText(block.accessibilityLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), series: block.series.slice(0, 8).map(series => ({ ...series, id: safeText(series.id), label: safeText(series.label), points: series.points.slice(-30).map(point => ({ label: safeText(point.label), value: point.value === null || Number.isFinite(point.value) ? point.value : null })) })) }]
+    if (block.kind === 'comparison-table') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), table: { columns: block.table.columns.slice(0, 12).map(safeText), rows: block.table.rows.slice(0, 32).map(row => row.slice(0, 12).map(safeText)) } }]
+    if (block.kind === 'quota-card') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), providers: block.providers.slice(0, 4).map(provider => ({ ...provider, planLabel: provider.planLabel === null ? null : safeText(provider.planLabel), observedAt: provider.observedAt === null ? null : safeText(provider.observedAt), windows: provider.windows.slice(0, 8).map((window, index) => ({ ...window, id: 'window-' + (index + 1), label: safeText(window.label), resetsAt: window.resetsAt === null ? null : safeText(window.resetsAt) })) })) }]
+    if (block.kind === 'bench-summary') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), run: block.run === null ? null : contentMinimalBenchRun(block.run) as unknown as AdvisorBenchRun }]
+    if (block.kind === 'warning' || block.kind === 'evidence-disclosure') return [{ ...block, title: safeText(block.title), text: safeText(block.text), evidenceRefs: safeEvidenceRefs(block.evidenceRefs) }]
+    return []
+  }) : undefined
+  const claims = safeClaims(answer.claims)
+  const synthesisClaims = safeClaims(answer.synthesis?.claims)
+  const synthesis = answer.synthesis ? {
+    ...answer.synthesis,
+    conclusion: safeText(answer.synthesis.conclusion),
+    why: answer.synthesis.why.map(safeText).slice(0, 6),
+    details: answer.synthesis.details.map(safeText).slice(0, 12),
+    claims: synthesisClaims ?? [],
+    presentationRequests: answer.synthesis.presentationRequests.filter(request => presentationKinds.includes(request.kind)).slice(0, 8).map(request => ({ ...request, ...(request.title ? { title: safeText(request.title) } : {}), ...(request.evidenceRefs ? { evidenceRefs: request.evidenceRefs.map(ref => evidenceIdMap.get(ref) ?? ref).filter(ref => evidence.some(item => item.id === ref)) } : {}) })),
+    ...(answer.synthesis.expertDetail ? { expertDetail: answer.synthesis.expertDetail.map(safeText).slice(0, 8) } : {}),
+  } : undefined
   return {
     ...answer,
     conclusion: safeText(answer.conclusion),
     scopeLabel: safeText(answer.scopeLabel),
     periodLabel: safeText(answer.periodLabel),
-    evidence: answer.evidence.flatMap((ref, index) => {
-      const source = contentMinimalSource(ref.source)
-      if (!source) return []
-      const candidate = sanitizeAdvisorDisplayText(ref.id, 64)
-      const id = SAFE_ANSWER_EVIDENCE_ID_PATTERN.test(candidate) ? candidate : 'evidence-' + (index + 1)
-      return [{ id, label: sanitizeAdvisorDisplayText(ref.label), source }]
-    }),
+    evidence,
     coverage,
     assumptions: answer.assumptions.map(safeText),
     unknown: answer.unknown.map(safeText),
@@ -219,6 +278,22 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
       clarification: answer.understanding.clarification === null ? null : safeText(answer.understanding.clarification),
       boundary: answer.understanding.boundary === null ? null : safeText(answer.understanding.boundary),
     } : undefined,
+    plan: answer.plan ? {
+      ...answer.plan,
+      clarification: answer.plan.clarification === null ? null : safeText(answer.plan.clarification),
+      requestedEvidenceDomains: answer.plan.requestedEvidenceDomains.slice(0, 16),
+    } : undefined,
+    actionProposal: answer.actionProposal ? {
+      ...answer.actionProposal,
+      summary: safeText(answer.actionProposal.summary),
+      target: safeText(answer.actionProposal.target),
+      scope: contentMinimalScope(answer.actionProposal.scope),
+      permissions: answer.actionProposal.permissions.map(safeText).slice(0, 8),
+      allowedReadTools: answer.actionProposal.allowedReadTools.slice(0, 8),
+    } : undefined,
+    claims,
+    synthesis,
+    presentation: safePresentation(answer.presentation),
   }
 }
 
@@ -229,6 +304,10 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
         measuredCostUSD: evidence.spend.measuredCostUSD,
         calls: evidence.spend.calls,
         sessions: evidence.spend.sessions,
+        inputTokens: evidence.spend.inputTokens ?? null,
+        outputTokens: evidence.spend.outputTokens ?? null,
+        cacheReadTokens: evidence.spend.cacheReadTokens ?? null,
+        cacheWriteTokens: evidence.spend.cacheWriteTokens ?? null,
         pricingCoverage: evidence.spend.pricingCoverage,
         models: evidence.spend.models.map(row => ({ name: sanitizeAdvisorDisplayText(row.name), costUSD: row.costUSD, calls: row.calls })),
         projects: evidence.spend.projects.map(row => ({ name: sanitizeAdvisorDisplayText(row.name), costUSD: row.costUSD, calls: row.calls })),
@@ -243,7 +322,20 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
               latestDate: evidence.spend.trend.latestDate,
               comparisonLabel: sanitizeAdvisorDisplayText(evidence.spend.trend.comparisonLabel),
             }
-          : null,
+            : null,
+        history: evidence.spend.history.slice(-30).map(point => ({
+          date: contentMinimalTimestamp(point.date) ?? sanitizeAdvisorDisplayText(point.date),
+          costUSD: point.costUSD,
+          calls: point.calls,
+          inputTokens: point.inputTokens,
+          outputTokens: point.outputTokens,
+          cacheReadTokens: point.cacheReadTokens,
+          cacheWriteTokens: point.cacheWriteTokens,
+        })),
+        modelHistory: evidence.spend.modelHistory.slice(0, 8).map(series => ({
+          model: sanitizeAdvisorDisplayText(series.model),
+          points: series.points.slice(-30).map(point => ({ date: sanitizeAdvisorDisplayText(point.date), costUSD: point.costUSD, calls: point.calls })),
+        })),
       }
     : null
   const modelEfficiency = evidence.modelEfficiency
@@ -255,7 +347,13 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
           provider: contentMinimalProvider(row.provider) ?? '[provider]',
           calls: row.calls,
           costUSD: row.costUSD,
+          inputTokens: row.inputTokens ?? null,
           outputTokens: row.outputTokens,
+          totalTokens: row.totalTokens ?? null,
+          cacheReadTokens: row.cacheReadTokens ?? null,
+          cacheWriteTokens: row.cacheWriteTokens ?? null,
+          reasoningTokens: row.reasoningTokens ?? null,
+          additiveReasoningTokens: row.additiveReasoningTokens ?? null,
           costPerCallUSD: row.costPerCallUSD,
           pricingState: row.pricingState,
         })),
@@ -302,5 +400,11 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
     assumptions: evidence.assumptions.map(value => sanitizeAdvisorDisplayText(value)),
     unknown: evidence.unknown.map(value => sanitizeAdvisorDisplayText(value)),
     nextInvestigations: evidence.nextInvestigations.map(value => sanitizeAdvisorDisplayText(value)),
+    domainCoverage: (evidence.domainCoverage ?? []).map(item => ({
+      domain: item.domain,
+      state: item.state,
+      detail: sanitizeAdvisorDisplayText(item.detail),
+      evidenceRefs: contentMinimalEvidenceRefs(item.evidenceRefs),
+    })),
   }
 }

@@ -1,6 +1,7 @@
 import { formatAdvisorCreditsUsd, formatAdvisorPercent, formatAdvisorUsd, periodLabel, scopeLabel } from './evidence'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelEvidenceRow, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
 import { sanitizeAdvisorAnswer } from './privacy'
+import { buildAdvisorPresentationBlocks } from './presentation'
 
 export class AdvisorRuntimeUnavailableError extends Error {
   constructor() {
@@ -35,7 +36,29 @@ function baseAnswer(evidence: AdvisorEvidence, runtime: AdvisorModelRuntime): Ad
     why: [],
     materialLimits: [],
     understanding: evidence.understanding,
+    plan: evidence.plan,
+    actionProposal: evidence.actionProposal,
     runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
+  }
+}
+
+function socialAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
+  const value = evidence.question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/^(?:grazie|grazie mille|thanks|thank you|thankyou|much appreciated)[!.?,\s]*$/u.test(value)) {
+    return { ...answer, conclusion: 'Di nulla. Quando vuoi, possiamo guardare un altro periodo o confronto.' }
+  }
+  if (/^(?:come stai|how are you)[!?.,\s]*$/u.test(value)) {
+    return { ...answer, conclusion: 'Bene, grazie. Sono qui per aiutarti a leggere i dati di Metrora.' }
+  }
+  return { ...answer, conclusion: 'Buongiorno. Posso aiutarti a capire spesa, modelli, Projects, sessioni, quota e risultati Bench.' }
+}
+
+function actionProposalAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
+  return {
+    ...answer,
+    conclusion: evidence.understanding?.boundary ?? 'This request needs a separately authorized action proposal; no action was executed.',
+    materialLimits: ['Advisor can read and explain existing Metrora evidence here. It does not execute Bench runs, launch agents, change routing, or apply policy from conversation text.'],
+    details: ['Action state · proposal only', 'Execution · not requested from an authorized action surface'],
   }
 }
 function modelRow(row: AdvisorModelEvidenceRow): string {
@@ -159,16 +182,24 @@ export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
     throwIfAborted(signal)
     const answer = baseAnswer(input.evidence, this)
-    if (input.evidence.intent === 'spend-change') return sanitizeAdvisorAnswer(spendAnswer(input.evidence, answer))
-    if (input.evidence.intent === 'model-efficiency') return sanitizeAdvisorAnswer(modelAnswer(input.evidence, answer))
-    if (input.evidence.intent === 'quota-capacity') return sanitizeAdvisorAnswer(quotaAnswer(input.evidence, answer))
-    if (input.evidence.intent === 'bench-result') return sanitizeAdvisorAnswer(benchAnswer(input.evidence, answer))
-    if (input.evidence.intent === 'clarification' || input.evidence.intent === 'unsupported') return sanitizeAdvisorAnswer({
+    const plan = input.plan ?? input.evidence.plan
+    const finalize = (next: AdvisorAnswer): AdvisorAnswer => sanitizeAdvisorAnswer({
+      ...next,
+      plan,
+      presentation: plan ? buildAdvisorPresentationBlocks(input.evidence, plan, input.question, next.synthesis ?? null) : next.presentation,
+    })
+    if (input.evidence.intent === 'social') return finalize(socialAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'action-proposal') return finalize(actionProposalAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'spend-change') return finalize(spendAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'model-efficiency') return finalize(modelAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'quota-capacity') return finalize(quotaAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'bench-result') return finalize(benchAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'clarification' || input.evidence.intent === 'unsupported') return finalize({
       ...answer,
       conclusion: input.evidence.understanding?.clarification ?? input.evidence.understanding?.boundary ?? 'Choose a supported Metrora evidence question.',
       materialLimits: ['No evidence was read until the question had a single supported meaning.'],
     })
-    return sanitizeAdvisorAnswer({
+    return finalize({
       ...answer,
       conclusion: 'I can investigate measured spend, observed model cost per call, provider quota, and controlled Bench results.',
       materialLimits: ['The deterministic Metrora evidence answer remains authoritative; any runtime context is supplementary and qualitative.'],

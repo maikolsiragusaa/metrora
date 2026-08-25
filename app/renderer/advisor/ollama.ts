@@ -1,8 +1,10 @@
 import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
-import { ADVISOR_TOOL_OUTPUT_MAX_BYTES, AdvisorToolContractError, assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
+import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall, normalizeAdvisorToolCall } from './contract'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorCoverageLevel, type AdvisorEvidence, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorToolExecution } from './types'
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES, contentMinimalEvidence, sanitizeAdvisorAnswer } from './privacy'
+import { buildAdvisorPresentationBlocks } from './presentation'
+import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 
 export type LocalToolCall = { function?: { name?: string; arguments?: unknown } }
 export type LocalChatMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: LocalToolCall[]; tool_name?: string }
@@ -52,10 +54,14 @@ function systemPrompt(): string {
     'Answer natural-language questions freely inside Metrora usage, Projects, models, sessions, spend, pricing coverage, and provider quota.',
     'Use the supplied evidence tools before factual claims. You may call more than one tool and refine the investigation.',
     'Never invent arithmetic, prices, Project membership, history, quota, permissions, or causal certainty.',
-    'Keep the narrative plain-language and qualitative; do not write numeric factual claims, dates, paths, secrets, prompts, or hidden reasoning. Verified tool facts render separately.',
+    'Use natural plain language. For factual numbers, dates, provider/model identity, scope, trends, quota, or Bench claims, return a claim with evidenceRefs and evidencePaths; never invent a value.',
     'Bench results are controlled evidence for one task pack; never rank models, recommend a purchase, or generalize the result.',
     'If the question is outside Metrora, explain the boundary briefly and suggest a supported investigation.',
   ].join(' ')
+}
+
+function synthesisContractPrompt(): string {
+  return 'After the evidence is available, return only a JSON object with contractVersion "advisor-synthesis-draft-v1", schemaVersion 1, conclusion, why, details, claims, and presentationRequests. Each material claim must include class, text, value, evidenceRefs, and evidencePaths pointing into the verified evidence object. Causal, forecast, and recommendation claims are unsupported. presentationRequests may request only text, metric-cards, line-chart, bar-chart, comparison-table, quota-card, bench-summary, warning, or evidence-disclosure; do not include chart values.'
 }
 export function sameEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
   return left.period === right.period
@@ -121,18 +127,23 @@ export function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidenc
     assumptions: unique(items.flatMap(item => item.assumptions)),
     unknown: unique(items.flatMap(item => item.unknown)),
     nextInvestigations: unique(items.flatMap(item => item.nextInvestigations)),
-    ...(spend ? { spend } : {}),
     ...(modelEfficiency ? { modelEfficiency } : {}),
     ...(quota ? { quota } : {}),
+    ...(spend ? {
+      spend: {
+        ...spend,
+        history: spendRows.flatMap(item => item.history).slice(-30),
+        modelHistory: spendRows.flatMap(item => item.modelHistory).slice(-8),
+      },
+    } : {}),
+    domainCoverage: Array.from(new Map(items.flatMap(item => item.domainCoverage ?? []).map(item => [item.domain, item])).values()),
   }
 }
 function toolCallName(call: OllamaToolCall): string {
   return typeof call.function?.name === 'string' ? call.function.name : ''
 }
-function boundedToolContent(content: string, strict = false): string {
-  if (strict) return assertStrictBoundedAdvisorToolContent(content)
-  if (byteLength(content) > ADVISOR_TOOL_OUTPUT_MAX_BYTES) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
-  return content
+function boundedToolContent(content: string): string {
+  return assertStrictBoundedAdvisorToolContent(content)
 }
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
@@ -183,6 +194,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     const verifiedFacts = boundedToolContent(JSON.stringify(contentMinimalEvidence(input.evidence)))
     messages.push({ role: 'system', content: 'Verified Metrora facts for this question. Treat them as read-only facts; do not recompute or add numbers: ' + verifiedFacts })
     const evidences: AdvisorEvidence[] = []
+    let finalContent = ''
     const cancel = () => { void this.transport.cancel(requestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
@@ -198,6 +210,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       const planningMessage = planning.message ?? {}
       const calls = Array.isArray(planningMessage.tool_calls) ? planningMessage.tool_calls.slice(0, 8) : []
       const planningContent = boundedModelText(planningMessage.content)
+      finalContent = planningContent
       if (!calls.length) {
         messages.push({ role: 'assistant', content: planningContent, tool_calls: [] })
       } else {
@@ -216,7 +229,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
           const result: AdvisorToolExecution = await input.executeTool(normalized.name, normalized.arguments, signal)
           throwIfAborted(signal)
           evidences.push(result.evidence)
-          messages.push({ role: 'tool', content: boundedToolContent(result.content, Boolean(input.toolContract)), tool_name: normalized.name })
+          messages.push({ role: 'tool', content: boundedToolContent(result.content), tool_name: normalized.name })
           input.onToolEvent?.({ name: normalized.name, status: 'completed' })
         }
         assistantMessage.tool_calls = normalizedCalls
@@ -224,13 +237,15 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
           && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
         throwIfAborted(signal)
         if (validToolEvidence) {
-          await this.transport.chat(requestId, {
+          messages.push({ role: 'system', content: synthesisContractPrompt() })
+          const final = await this.transport.chat(requestId, {
             model: this.model,
             messages,
             tools: [],
             stream: false,
           }, signal)
           throwIfAborted(signal)
+          finalContent = boundedModelText(final.message?.content)
         }
       }
     } finally {
@@ -251,10 +266,29 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       ...fallback.details,
       ...(homogeneous ? evidences.flatMap(item => item.refs.map(ref => 'Evidence · ' + ref.label)) : []),
     ]))
+    const draft = parseAdvisorSynthesisDraft(finalContent)
+    const verification = draft ? verifyAdvisorSynthesis(draft, evidence) : null
+    const plan = input.plan ?? input.evidence.plan
+    if (draft && verification?.valid && plan) {
+      return sanitizeAdvisorAnswer({
+        ...fallback,
+        conclusion: draft.conclusion,
+        why: draft.why,
+        details: draft.details,
+        claims: verification.claims.filter(claim => claim.status === 'verified'),
+        synthesis: { ...draft, claims: verification.claims },
+        presentation: buildAdvisorPresentationBlocks(evidence, plan, input.question, draft),
+        runtime: { id: this.id, label: this.label, mode: this.mode },
+        generatedByModel: true,
+        streamed: false,
+      })
+    }
     return sanitizeAdvisorAnswer({
       ...fallback,
       conclusion: verifiedConclusion,
       details,
+      materialLimits: [...(fallback.materialLimits ?? []), ...(draft ? ['The model explanation did not pass Metrora claim verification; verified facts are shown instead.'] : [])],
+      presentation: plan ? buildAdvisorPresentationBlocks(evidence, plan, input.question) : undefined,
       runtime: { id: this.id, label: this.label, mode: this.mode },
       generatedByModel: true,
       streamed: false,

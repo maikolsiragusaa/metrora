@@ -30,6 +30,10 @@ describe('Electron Advisor local runtime', () => {
       available: true,
       models: ['llama3.2', 'qwen2.5'],
       detail: 'Local Ollama is reachable.',
+      capabilities: [
+        { schemaVersion: 1, runtime: 'ollama', modelId: 'llama3.2', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool-call support is unknown until this model passes a bounded Advisor conformance check.' },
+        { schemaVersion: 1, runtime: 'ollama', modelId: 'qwen2.5', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool-call support is unknown until this model passes a bounded Advisor conformance check.' },
+      ],
     })
     expect(calls[0]?.url).toBe('http://127.0.0.1:11434/api/tags')
     expect(calls[0]?.init?.redirect).toBe('error')

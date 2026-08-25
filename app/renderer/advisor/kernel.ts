@@ -1,5 +1,5 @@
 import { buildModelEfficiencyEvidence, buildQuotaEvidence, buildSpendEvidence, buildUnknownEvidence } from './evidence'
-import { buildBenchEvidence, buildClarificationEvidence, buildUnsupportedEvidence } from './special-evidence'
+import { buildActionProposalEvidence, buildBenchEvidence, buildClarificationEvidence, buildSocialEvidence, buildUnsupportedEvidence } from './special-evidence'
 import { resolveAdvisorQuestion } from './comprehension'
 import { createAdvisorToolRegistry } from './tools'
 import { DeterministicAdvisorRuntime } from './runtime'
@@ -39,7 +39,11 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
       throwIfAborted(signal)
       const plan = resolveAdvisorQuestion(question, scope, conversation)
       let evidence: AdvisorEvidence
-      if (plan.intent === 'clarification') {
+      if (plan.intent === 'social') {
+        evidence = buildSocialEvidence(question, scope)
+      } else if (plan.intent === 'action-proposal') {
+        evidence = buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Advisor is read-only for this conversation.')
+      } else if (plan.intent === 'clarification') {
         evidence = buildClarificationEvidence(question, scope, plan.understanding.clarification ?? 'Choose the intended evidence source.')
       } else if (plan.intent === 'unsupported') {
         evidence = buildUnsupportedEvidence(question, scope, plan.understanding.boundary ?? 'This question is outside Metrora evidence.')
@@ -60,19 +64,20 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
       const withUnderstanding: AdvisorEvidence = {
         ...evidence,
         understanding: plan.understanding,
+        plan: plan.plan,
         assumptions: plan.usedDefaultScope
           ? ['I used the current scope selected in Metrora. Use the scope controls above to change it.', ...evidence.assumptions]
           : evidence.assumptions,
       }
       if (!plan.needsEvidence && plan.intent !== 'unknown') {
-        return new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation }, signal)
+        return new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan }, signal)
       }
       const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
       try {
-        return await runtime.generate({ question, evidence: withUnderstanding, conversation, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+        return await runtime.generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
       } catch (error) {
         rethrowCancellation(error, signal)
-        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation }, signal)
+        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan }, signal)
         return {
           ...fallback,
           materialLimits: [...(fallback.materialLimits ?? []), 'The explanatory model was unavailable, so this answer uses Metrora deterministic evidence.'],

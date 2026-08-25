@@ -31,6 +31,8 @@ const spendEvidence: AdvisorEvidence = {
     sessionsByCost: [],
     trend: null,
     pricingCoverage: 1,
+    history: [],
+    modelHistory: [],
   },
 }
 const quotaEvidence: AdvisorEvidence = {
@@ -138,7 +140,7 @@ describe('Ollama Advisor renderer state machine', () => {
         type: 'function',
         function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } },
       }],
-      executeTool: async name => ({ content: name === 'get_spend_snapshot' ? 'spend' : 'quota', evidence: name === 'get_spend_snapshot' ? spendEvidence : quotaEvidence }),
+      executeTool: async name => ({ content: JSON.stringify({ tool: name === 'get_spend_snapshot' ? 'spend' : 'quota' }), evidence: name === 'get_spend_snapshot' ? spendEvidence : quotaEvidence }),
       onDelta: text => deltas.push(text),
     })
 
@@ -173,7 +175,7 @@ describe('Ollama Advisor renderer state machine', () => {
         question: 'What changed in spend?',
         evidence: spendEvidence,
         tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
-        executeTool: async () => ({ content: 'spend', evidence: spendEvidence }),
+        executeTool: async () => ({ content: '{"tool":"spend"}', evidence: spendEvidence }),
       })
       expect(answer.conclusion).not.toContain('Local model context')
       expect(answer.conclusion).not.toContain(narrative)
@@ -210,7 +212,7 @@ describe('Ollama Advisor renderer state machine', () => {
     await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
       question: 'What changed in spend?', evidence: spendEvidence,
       tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
-      executeTool: async () => ({ content: 'spend', evidence: spendEvidence }),
+      executeTool: async () => ({ content: '{"tool":"spend"}', evidence: spendEvidence }),
       onDelta: text => deltas.push(text),
     })
     expect(deltas).toEqual([])
@@ -253,7 +255,7 @@ describe('Ollama Advisor renderer state machine', () => {
           refs: [{ id: 'spend-' + provider, label: provider + ' spend', source: 'overview' }],
           spend: { ...spendEvidence.spend!, measuredCostUSD: provider === 'claude' ? 41 : 73 },
         }
-        return { content: provider, evidence }
+        return { content: JSON.stringify({ provider }), evidence }
       },
     })
 

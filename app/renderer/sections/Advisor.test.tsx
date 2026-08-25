@@ -101,6 +101,25 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Evidence & details')).toBeInTheDocument()
   })
 
+  it('renders Metrora-owned presentation blocks inside the direct answer hierarchy', async () => {
+    investigate.mockResolvedValueOnce({
+      ...answer,
+      presentation: [{
+        kind: 'metric-cards',
+        title: 'At a glance',
+        scopeLabel: 'Last 7 days · All projects · All providers',
+        periodLabel: 'Last 7 days',
+        evidenceRefs: [],
+        cards: [{ label: 'Measured spend', value: '$12.00', unit: 'USD', detail: 'Canonical measured cost.', claimIds: [] }],
+      }],
+    })
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('Show a spend summary')
+    expect(screen.getByText('At a glance')).toBeInTheDocument()
+    expect(screen.getByText('Measured spend')).toBeInTheDocument()
+    expect(screen.getByText('$12.00')).toBeInTheDocument()
+  })
+
 
   it('switches between supported local runtimes and discovers its models factually', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)

@@ -13,7 +13,7 @@ The public path is deliberately replaceable:
           -> verified local runtime (Ollama or LM Studio)
           -> session-local Advisor UI
 
-The deterministic tools own facts, arithmetic, coverage, currency formatting, and provider-quota freshness. A model may choose or refine a bounded investigation through the exposed read-only tools, but the deterministic runtime constructs the displayed factual answer. Unverified model prose is not streamed or appended to that answer; the connected path is labelled “model-assisted investigation” and verified evidence remains the authority.
+The deterministic tools own facts, arithmetic, coverage, currency formatting, provider-quota freshness, claims, and rich presentation values. A model may choose or refine a bounded investigation through the exposed read-only tools and may propose a plain-language synthesis after evidence is available. Metrora verifies material claims against canonical evidence paths before display; chart/table values are resolved by Metrora, never supplied by model prose. Unverified model prose is not displayed as an answer, and the connected path is labelled “model-assisted investigation”.
 
 ## Shipped AdvisorToolV1 Community contract
 
@@ -46,7 +46,7 @@ Electron main is the only process allowed to call either fixed loopback boundary
 
 The LM Studio adapter reads language-model identifiers factually from the local `models` response and ignores embedding models. The default local server does not require a token; configurations that require authentication are unavailable in this Community V1 path because Metrora does not add credential management. Tokens are never logged, stored in renderer state, or synchronized. The endpoint, protocol, and port are not renderer-configurable: arbitrary URLs, LAN binding, remote OpenAI-compatible servers, and cloud fallback are not accepted.
 
-Both adapters use a bounded two-stage flow: a planning request may return multiple tool calls, Metrora executes canonical read-only tools locally, and a final request runs with tools disabled. Ollama uses bounded NDJSON parsing; LM Studio uses bounded OpenAI-compatible SSE parsing. A discovered model is not treated as verified Advisor tool support: each discovered model receives a session-local `ModelCapabilityProfileV1` with conversational availability and streaming support facts, while tool support remains `unknown` until a bounded synthetic conformance check establishes more.
+Both adapters use a bounded two-stage flow: a planning request may return multiple tool calls, Metrora executes canonical read-only tools locally, and a final request runs with tools disabled. Ollama uses bounded NDJSON parsing; LM Studio uses bounded OpenAI-compatible SSE parsing. A discovered model is not treated as verified Advisor tool support: each discovered model receives a session-local `ModelCapabilityProfileV1` with conversational availability and streaming support facts, while tool support remains `unknown` until a bounded synthetic conformance check establishes more. Conversation turns are classified into social, clarify, investigate, and boundary turns; follow-ups inherit only a matching session scope and action language stays proposal-only.
 
 Cancellation uses an AbortController in main and a request id in the bridge. Request/model/message/content/response byte caps, stream chunk caps, malformed-event caps, timeouts, and bounded redacted errors are enforced. Raw model deltas and final free-form model prose are not forwarded or displayed as facts; deterministic evidence remains the sole answer authority.
 
@@ -68,9 +68,15 @@ Bench results are controlled evidence for a declared task pack. A clean complete
 
 ## Privacy and storage
 
-Conversation history is session-local in the renderer and is not synced or persisted by this foundation. A local model receives only bounded conversation, the current question, tool schemas, and compact evidence-tool results through the fixed loopback boundary. A hosted BYOK runtime receives the question plus the minimum content-minimal evidence only after explicit consent. Raw source content, prompts, paths, secrets, and hidden reasoning are excluded from the public contract.
+Conversation history is session-local in the renderer and is not synced or persisted by this foundation. A local model receives only bounded conversation, the current question, tool schemas, and compact evidence-tool results through the fixed loopback boundary. A hosted BYOK runtime receives the question plus the minimum content-minimal evidence only after explicit consent. Raw source content, prompts, paths, secrets, and hidden reasoning are excluded from the public contract. Hosted lifecycle events exposed to the renderer contain only safe status metadata; provider text, tool-call arguments, and raw deltas stay in the main-process boundary.
 
-There is no Metrora gateway, managed inference service, or cloud billing path. Direct Local BYOK calls use the user’s selected provider account; provider terms, privacy, abuse-monitoring, and retention policies still apply, including when OpenAI `store: false` is used. Credentials live behind the Electron main-process/OS secure-storage boundary and never in renderer JavaScript.
+There is no Metrora gateway, managed inference service, or cloud billing path. Direct Local BYOK calls use the user’s selected provider account; provider terms, privacy, abuse-monitoring, and retention policies still apply, including when OpenAI `store: false` is used. A credential is entered into a transient password field, sent immediately to the Electron main process, cleared from renderer state, and never returned to renderer code or persisted there; durable custody uses Electron `safeStorage` when available.
+
+## Conversation, synthesis, and presentation
+
+Each turn is represented by a versioned `AdvisorTurnPlanV1`. It records the question family, requested evidence domains, scope intent, presentation intent, expert-detail preference, and authorization intent. Social turns do not read evidence. Clarification turns stop before an ambiguous source is queried. Read/investigate turns may use the fixed seven-tool contract. Requests such as “run this benchmark”, “launch agents”, “change routing”, or “apply policy” resolve to a read-only boundary message and a future `advisor-action-proposal-v1` shape; no action executor is exposed by Advisor.
+
+When a connected model supplies a synthesis draft, `AdvisorSynthesisDraftV1` claims must reference a Metrora evidence item and deterministic evidence path. Metrora rejects unsupported causal, forecast, recommendation, invented, or sensitive claims. `AdvisorPresentationBlockV1` values are then built from canonical evidence for metric cards, native SVG charts, comparison tables, quota cards, Bench summaries, warnings, and evidence disclosure. Missing values remain unavailable rather than being zero-filled.
 
 ## Public/private boundary
 
@@ -80,6 +86,6 @@ It does not publish proprietary ranking or recommendation systems, private evalu
 
 ## Provenance and licenses
 
-The repository is MIT-licensed. This foundation adds no package dependency. Ollama core is MIT-licensed (see the official license link above); this branch incorporates no Ollama code or package, so THIRD_PARTY_NOTICES.md does not change. The Ollama service/API are separate from each model's weights. Model weights may carry independent licenses and must be reviewed by the operator before use. The Advisor interaction pattern is an original Metrora implementation.
+The repository is MIT-licensed. This foundation adds no package dependency. Ollama core is MIT-licensed (see the official license link above); this branch incorporates no Ollama code or package, so THIRD_PARTY_NOTICES.md does not change. The optional assistant-ui, Vercel AI SDK/Gateway, Recharts, and AG-UI spike paths remain outside the shipped dependency graph; the current path uses Metrora-owned adapters, contracts, and native SVG presentation. The Ollama service/API are separate from each model's weights. Model weights may carry independent licenses and must be reviewed by the operator before use. The Advisor interaction pattern is an original Metrora implementation.
 
 Synthetic conformance tests cover the fixed loopback endpoint, incremental NDJSON, cancellation, bounded errors, nullable evidence, mixed quota freshness, unavailable-provider privacy, multi-tool aggregation, deterministic fact authority, and the session-local welcome surface.

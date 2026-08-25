@@ -84,7 +84,8 @@ export async function probeOllamaMain(fetchImpl: FetchLike = fetch, parent?: Abo
     const payload = await fetchJson(fetchImpl, LOOPBACK_ENDPOINT + '/api/tags', {}, PROBE_TIMEOUT_MS, parent)
     const rows = Array.isArray(payload.models) ? payload.models : []
     const models = rows.flatMap(row => row && typeof row === 'object' && typeof (row as { name?: unknown }).name === 'string' ? [(row as { name: string }).name] : [])
-    return models.length ? { available: true, models, detail: 'Local Ollama is reachable.' } : { available: false, models: [], detail: 'Ollama is reachable but has no local models.' }
+    const capabilities = models.map(modelId => ({ schemaVersion: 1, runtime: 'ollama', modelId, discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool-call support is unknown until this model passes a bounded Advisor conformance check.' }))
+    return models.length ? { available: true, models, detail: 'Local Ollama is reachable.', capabilities } : { available: false, models: [], detail: 'Ollama is reachable but has no local models.', capabilities: [] }
   } catch (error) {
     if (parent?.aborted) throw error
     return { available: false, models: [], detail: boundedError(error).message }
@@ -274,7 +275,7 @@ type AdvisorRuntimeId = 'ollama' | 'lmstudio'
 function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' }
 function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
   const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
-  return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState }
+  return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState, capabilities: value.capabilities }
 }
 export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>> {
   const flights = new Map<string, AbortController>()

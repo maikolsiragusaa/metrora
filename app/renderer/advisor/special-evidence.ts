@@ -1,4 +1,37 @@
 import type { AdvisorBenchEvidence, AdvisorCoverage, AdvisorEvidence, AdvisorEvidenceRef, AdvisorScope } from './types'
+import { createAdvisorActionProposalV1 } from './action'
+
+export function buildSocialEvidence(question: string, scope: AdvisorScope): AdvisorEvidence {
+  return {
+    intent: 'social',
+    question,
+    scope,
+    refs: [],
+    coverage: { level: 'high', state: 'UNSUPPORTED', label: 'Conversation', detail: 'No Metrora evidence was needed for this conversational turn.' },
+    assumptions: [],
+    unknown: [],
+    nextInvestigations: ['Ask about spend, models, Projects, sessions, quota, or a controlled Bench result.'],
+  }
+}
+
+export function buildActionProposalEvidence(question: string, scope: AdvisorScope, boundary: string): AdvisorEvidence {
+  const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const kind = /\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value) ? 'run-bench' as const
+    : /\b(?:agent|agents|agenti|orchestrat)/u.test(value) ? 'launch-agents' as const
+      : /\b(?:routing|route|routing policy)\b/u.test(value) ? 'change-routing' as const
+        : 'apply-policy' as const
+  return {
+    intent: 'action-proposal',
+    question,
+    scope,
+    refs: [],
+    coverage: { level: 'unavailable', state: 'UNSUPPORTED', label: 'Approval required', detail: boundary },
+    assumptions: ['Advisor read/investigate access is separate from action/execute authority.'],
+    unknown: ['No action was prepared or executed from this conversation.'],
+    nextInvestigations: ['Ask Advisor to inspect an existing result, or use the dedicated authorized product surface for execution.'],
+    actionProposal: createAdvisorActionProposalV1({ kind, summary: boundary, target: kind === 'run-bench' ? 'selected Bench task pack' : kind === 'launch-agents' ? 'requested agent set' : 'selected Metrora policy surface', scope }),
+  }
+}
 
 function coverageForBench(state: AdvisorBenchEvidence['state']): AdvisorCoverage {
   if (state === 'NO_DATA') return { level: 'unavailable', state, label: 'No controlled result yet', detail: 'Metrora has no completed controlled Bench result for this request.' }

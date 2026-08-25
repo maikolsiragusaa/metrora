@@ -1,8 +1,10 @@
 import { metrora } from '../lib/ipc'
 import { DeterministicAdvisorRuntime } from './runtime'
-import { normalizeAdvisorToolCall, AdvisorToolContractError, assertStrictBoundedAdvisorToolContent, ADVISOR_TOOL_OUTPUT_MAX_BYTES } from './contract'
+import { normalizeAdvisorToolCall, AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
 import { hasMixedEvidenceScopes, mergeEvidence } from './ollama'
 import { contentMinimalEvidence, sanitizeAdvisorAnswer } from './privacy'
+import { buildAdvisorPresentationBlocks } from './presentation'
+import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
@@ -17,7 +19,7 @@ export type HostedAdvisorTransport = {
   probe(provider: HostedAdvisorProvider, signal?: AbortSignal): Promise<HostedAdvisorProbeResult>
   chat(requestId: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
   cancel(requestId: string): Promise<boolean>
-  onEvent(callback: (event: { requestId: string; kind: string; text?: string }) => void): () => void
+  onEvent(callback: (event: { requestId: string; kind: string; provider: string; model: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }) => void): () => void
 }
 const bridgeTransport: HostedAdvisorTransport = {
   probe: async (provider, signal) => {
@@ -51,7 +53,7 @@ function messagePayload(input: AdvisorRuntimeInput, consent: boolean, tools: rea
     provider: input.evidence.scope.provider,
     model: '',
     messages: [
-      { role: 'system', content: 'You are Metrora Advisor. Use the supplied Metrora evidence as read-only facts. Do not invent numbers, dates, causes, rankings, recommendations, secrets, paths, prompts, or hidden reasoning. Answer in plain language and keep factual claims tied to the evidence.' },
+      { role: 'system', content: 'You are Metrora Advisor. Use the supplied Metrora evidence as read-only facts. Do not invent numbers, dates, causes, rankings, recommendations, secrets, paths, prompts, or hidden reasoning. Answer in plain language and keep factual claims tied to the evidence. After read-only evidence is available, return only a JSON object with contractVersion "advisor-synthesis-draft-v1", schemaVersion 1, conclusion, why, details, claims, and presentationRequests. Material claims must include evidenceRefs and evidencePaths into the verified evidence object. Causal, forecast, and recommendation claims are unsupported. Do not include chart values.' },
       { role: 'user', content: input.question.trim().slice(0, 4000) },
       { role: 'system', content: 'Verified Metrora facts for this question. Treat them as authoritative and do not recompute them: ' + verified },
     ],
@@ -70,10 +72,8 @@ function toolCallArguments(call: Record<string, unknown>): unknown {
   const fn = call.function
   return fn && typeof fn === 'object' && !Array.isArray(fn) ? (fn as Record<string, unknown>).arguments : undefined
 }
-function boundedHostedToolContent(content: string, strict: boolean): string {
-  if (strict) return assertStrictBoundedAdvisorToolContent(content)
-  if (new TextEncoder().encode(content).byteLength > ADVISOR_TOOL_OUTPUT_MAX_BYTES) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
-  return content
+function boundedHostedToolContent(content: string): string {
+  return assertStrictBoundedAdvisorToolContent(content)
 }
 function toolCallId(call: Record<string, unknown>): string {
   const direct = call.id
@@ -112,11 +112,13 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     planningPayload.model = this.model
     const messages = planningPayload.messages as Array<Record<string, unknown>>
     const evidences: AdvisorEvidence[] = []
+    let finalContent = ''
     const cancel = () => { void this.transport.cancel(id).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const planning = await this.transport.chat(id, planningPayload, signal)
       if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
+      finalContent = planning.message?.content ?? ''
       const rawCalls = Array.isArray(planning.message?.tool_calls) ? planning.message.tool_calls.slice(0, 8) : []
       if (rawCalls.length) {
         const calls = rawCalls.map(call => {
@@ -133,14 +135,15 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           const result = await input.executeTool(call.name, call.normalizedArguments, signal)
           if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
           evidences.push(result.evidence)
-          messages.push({ role: 'tool', content: boundedHostedToolContent(result.content, Boolean(input.toolContract)), toolCallId: call.id, toolName: call.name })
+          messages.push({ role: 'tool', content: boundedHostedToolContent(result.content), toolCallId: call.id, toolName: call.name })
           input.onToolEvent?.({ name: call.name, status: 'completed' })
         }
         const validToolEvidence = !hasMixedEvidenceScopes(evidences)
           && evidences.some(item => item.intent !== 'unknown' && item.coverage.level !== 'unavailable' && item.refs.length > 0)
         if (validToolEvidence) {
-          await this.transport.chat(id, { ...planningPayload, messages, tools: [], stream: false }, signal)
+          const final = await this.transport.chat(id, { ...planningPayload, messages, tools: [], stream: false }, signal)
           if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
+          finalContent = final.message?.content ?? ''
         }
       }
     } finally {
@@ -160,10 +163,29 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       ...fallback.details,
       ...(homogeneous ? evidences.flatMap(item => item.refs.map(ref => 'Evidence · ' + ref.label)) : []),
     ]))
+    const draft = parseAdvisorSynthesisDraft(finalContent)
+    const verification = draft ? verifyAdvisorSynthesis(draft, evidence) : null
+    const plan = input.plan ?? input.evidence.plan
+    if (draft && verification?.valid && plan) {
+      return sanitizeAdvisorAnswer({
+        ...fallback,
+        conclusion: draft.conclusion,
+        why: draft.why,
+        details: draft.details,
+        claims: verification.claims.filter(claim => claim.status === 'verified'),
+        synthesis: { ...draft, claims: verification.claims },
+        presentation: buildAdvisorPresentationBlocks(evidence, plan, input.question, draft),
+        runtime: { id: this.id, label: this.label, mode: this.mode },
+        generatedByModel: true,
+        streamed: false,
+      })
+    }
     return sanitizeAdvisorAnswer({
       ...fallback,
       conclusion: verifiedConclusion,
       details,
+      materialLimits: [...(fallback.materialLimits ?? []), ...(draft ? ['The model explanation did not pass Metrora claim verification; verified facts are shown instead.'] : [])],
+      presentation: plan ? buildAdvisorPresentationBlocks(evidence, plan, input.question) : undefined,
       runtime: { id: this.id, label: this.label, mode: this.mode },
       generatedByModel: true,
       streamed: false,

@@ -38,6 +38,8 @@ export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: num
 export type AdvisorHostedToolCall = { id: string; name: string; arguments: string }
 export type AdvisorHostedEventKind = 'started' | 'text-delta' | 'tool-call-start' | 'tool-call-delta' | 'tool-call-complete' | 'usage' | 'completed' | 'failed' | 'cancelled'
 export type AdvisorHostedEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; text?: string; callId?: string; name?: string; delta?: string; arguments?: string; usage?: AdvisorHostedUsage | null; streamed?: boolean; toolCalls?: AdvisorHostedToolCall[]; code?: string; message?: string }
+/** Renderer-safe lifecycle projection; provider text and tool arguments never cross into renderer event listeners. */
+export type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; usage?: AdvisorHostedUsage | null; streamed?: boolean; code?: string }
 export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type BenchTaskResult = {
   taskId: string
@@ -138,6 +140,6 @@ export interface MetroraBridge extends ProjectBridge {
   setTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus | null>
   completeOnboarding(enabled: boolean): Promise<TelemetryStatus | null>
   telemetryTrack(name: string, props?: Record<string, unknown>): Promise<boolean>
-  onAdvisorHostedEvent(cb: (event: AdvisorHostedEvent) => void): () => void
+  onAdvisorHostedEvent(cb: (event: AdvisorHostedRendererEvent) => void): () => void
   openExternal(url: string): Promise<void>
 }

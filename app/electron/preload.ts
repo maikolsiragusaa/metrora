@@ -5,6 +5,7 @@ import type { Envelope } from './main'
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
+type AdvisorHostedRendererEvent = { requestId: string; provider: 'openai' | 'anthropic' | 'gemini'; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
@@ -103,8 +104,8 @@ const bridge = {
     ipcRenderer.on('metrora:advisorDelta', listener)
     return () => { ipcRenderer.removeListener('metrora:advisorDelta', listener) }
   },
-  onAdvisorHostedEvent: (cb: (event: Record<string, unknown>) => void) => {
-    const listener = (_event: unknown, event: Record<string, unknown>) => cb(event)
+  onAdvisorHostedEvent: (cb: (event: AdvisorHostedRendererEvent) => void) => {
+    const listener = (_event: unknown, event: AdvisorHostedRendererEvent) => cb(event)
     ipcRenderer.on('metrora:advisorHostedEvent', listener)
     return () => { ipcRenderer.removeListener('metrora:advisorHostedEvent', listener) }
   },

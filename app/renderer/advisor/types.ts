@@ -2,13 +2,34 @@ import type { MetroraBridge } from '../lib/metrora-bridge-types'
 import type { DateRange, MenubarPayload, ModelReportRow, Period, QuotaProvider } from '../lib/types'
 
 export type AdvisorIntent =
+  | 'social'
   | 'spend-change'
   | 'model-efficiency'
   | 'quota-capacity'
   | 'bench-result'
+  | 'action-proposal'
   | 'clarification'
   | 'unsupported'
   | 'unknown'
+
+export type AdvisorTurnKind = 'social' | 'investigate' | 'clarify' | 'boundary'
+export type AdvisorQuestionFamily = 'usage' | 'spend' | 'tokens' | 'cache' | 'reasoning' | 'models' | 'providers' | 'projects' | 'sessions' | 'pricing' | 'quota' | 'bench' | 'evidence' | 'action' | 'unknown'
+export type AdvisorScopeIntent = 'current' | 'explicit' | 'follow-up' | 'ambiguous'
+export type AdvisorPresentationIntent = 'text' | 'metric-cards' | 'line-chart' | 'bar-chart' | 'comparison-table' | 'quota-card' | 'bench-summary' | 'warning' | 'evidence-disclosure'
+export type AdvisorEvidenceDomain = 'usage-totals' | 'usage-time-series' | 'cost' | 'tokens' | 'cache' | 'reasoning' | 'models' | 'providers' | 'projects' | 'sessions' | 'pricing' | 'freshness' | 'provider-capacity' | 'bench-history'
+export type AdvisorAuthorizationIntent = 'read-only' | 'proposal-required'
+export type AdvisorTurnPlanV1 = {
+  contractVersion: 'advisor-turn-plan-v1'
+  schemaVersion: 1
+  turnKind: AdvisorTurnKind
+  questionFamily: AdvisorQuestionFamily
+  scopeIntent: AdvisorScopeIntent
+  requestedEvidenceDomains: readonly AdvisorEvidenceDomain[]
+  clarification: string | null
+  presentationIntent: AdvisorPresentationIntent
+  expertDetailRequested: boolean
+  authorization: AdvisorAuthorizationIntent
+}
 
 export type AdvisorEvidenceState = 'NO_DATA' | 'UNAVAILABLE' | 'AVAILABLE' | 'PARTIAL' | 'STALE' | 'NOT_COMPARABLE' | 'UNSUPPORTED' | 'RUNTIME_UNAVAILABLE'
 export type AdvisorScope = { period: Period; range: DateRange | null; provider: string; projectId: string; projectName: string; model: string | null }
@@ -28,7 +49,11 @@ export type AdvisorEvidenceSource = 'overview' | 'history' | 'models' | 'quota' 
 export type AdvisorEvidenceRef = { id: string; label: string; source: AdvisorEvidenceSource }
 export type AdvisorJsonValue = null | string | number | boolean | { [key: string]: AdvisorJsonValue } | AdvisorJsonValue[]
 export type AdvisorJsonObject = { [key: string]: AdvisorJsonValue }
+export type AdvisorDomainCoverageState = 'available' | 'partial' | 'unavailable' | 'not-authorized'
+export type AdvisorDomainCoverageV1 = { domain: AdvisorEvidenceDomain; state: AdvisorDomainCoverageState; detail: string; evidenceRefs: AdvisorEvidenceRef[] }
 export type AdvisorToolName = 'get_spend_snapshot' | 'get_model_efficiency' | 'get_quota_snapshot' | 'get_overview_snapshot' | 'get_project_drivers' | 'get_session_highlights' | 'get_coverage_report'
+export type AdvisorActionKindV1 = 'run-bench' | 'launch-agents' | 'change-routing' | 'apply-policy'
+export type AdvisorActionProposalV1 = { contractVersion: 'advisor-action-proposal-v1'; schemaVersion: 1; kind: AdvisorActionKindV1; status: 'proposal-only'; summary: string; target: string; scope: AdvisorScope; allowedReadTools: readonly AdvisorToolName[]; permissions: readonly string[]; budget: { maxCalls: number; maxCostUSD: number | null }; timeoutMs: number; cancellation: 'required' }
 export type AdvisorToolArgumentName = 'model' | 'provider'
 export type AdvisorToolAuthority = 'metrora-canonical' | 'provider-reported' | 'mixed' | 'unknown'
 export type AdvisorToolFreshness = 'fresh' | 'stale' | 'mixed' | 'unavailable' | 'unknown'
@@ -38,8 +63,10 @@ export const ADVISOR_TOOL_CONTRACT_VERSION = 'advisor-tool-v1' as const
 export const ADVISOR_TOOL_SCHEMA_VERSION = 1 as const
 export type AdvisorSpendDriver = { name: string; costUSD: number; calls: number }
 export type AdvisorTrend = { direction: 'up' | 'down' | 'flat'; latestCostUSD: number; comparisonCostUSD: number; deltaUSD: number; deltaPercent: number | null; latestDate: string; comparisonLabel: string }
-export type AdvisorSpendEvidence = { measuredCostUSD: number | null; calls: number | null; sessions: number | null; models: AdvisorSpendDriver[]; projects: AdvisorSpendDriver[]; sessionsByCost: AdvisorSpendDriver[]; trend: AdvisorTrend | null; pricingCoverage: number | null }
-export type AdvisorModelEvidenceRow = { model: string; provider: string; calls: number; costUSD: number; outputTokens: number | null; costPerCallUSD: number | null; pricingState: 'priced' | 'partial' | 'unavailable' | 'unknown' }
+export type AdvisorUsagePoint = { date: string; costUSD: number | null; calls: number | null; inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null; cacheWriteTokens: number | null }
+export type AdvisorModelUsageSeries = { model: string; points: Array<{ date: string; costUSD: number | null; calls: number | null }> }
+export type AdvisorSpendEvidence = { measuredCostUSD: number | null; calls: number | null; sessions: number | null; inputTokens?: number | null; outputTokens?: number | null; cacheReadTokens?: number | null; cacheWriteTokens?: number | null; models: AdvisorSpendDriver[]; projects: AdvisorSpendDriver[]; sessionsByCost: AdvisorSpendDriver[]; trend: AdvisorTrend | null; pricingCoverage: number | null; history: AdvisorUsagePoint[]; modelHistory: AdvisorModelUsageSeries[] }
+export type AdvisorModelEvidenceRow = { model: string; provider: string; calls: number; costUSD: number; inputTokens?: number | null; outputTokens: number | null; totalTokens?: number | null; cacheReadTokens?: number | null; cacheWriteTokens?: number | null; reasoningTokens?: number | null; additiveReasoningTokens?: number | null; costPerCallUSD: number | null; pricingState: 'priced' | 'partial' | 'unavailable' | 'unknown' }
 export type AdvisorModelEvidence = { rows: AdvisorModelEvidenceRow[]; selectedModel: string | null; comparableWorkWarning: boolean }
 export type AdvisorQuotaWindow = { id: string; label: string; usedPercent: number; remainingPercent: number; resetsAt: string | null }
 export type AdvisorQuotaProvider = { provider: QuotaProvider['provider']; planLabel: string | null; availability: QuotaProvider['availability']; connection: QuotaProvider['connection']; freshness: QuotaProvider['freshness']; observedAt: string | null; windows: AdvisorQuotaWindow[]; creditsUSD: number | null }
@@ -49,8 +76,24 @@ export type AdvisorBenchRun = { runId: string; pack: { id: string; version: stri
 export type AdvisorBenchComparison = { compatibility: 'compatible' | 'incompatible'; reason: 'compatible' | 'pack-mismatch' | 'runner-mismatch' | 'scoring-mismatch' | 'generation-mismatch' | 'missing-run'; comparedRunIds: string[]; scoreDelta: number | null; passedDelta: number | null; failedDelta: number | null; unavailableDelta: number | null; cancelledDelta: number | null; medianLatencyDeltaMs: number | null; timeToFirstContentDeltaMs: number | null }
 export type AdvisorBenchEvidence = { state: AdvisorEvidenceState; runs: AdvisorBenchRun[]; latest: AdvisorBenchRun | null; comparison: AdvisorBenchComparison | null }
 export type AdvisorQuestionUnderstanding = { intent: AdvisorIntent; summary: string; usedDefaultScope: boolean; clarification: string | null; boundary: string | null }
-export type AdvisorEvidence = { intent: AdvisorIntent; question: string; scope: AdvisorScope; refs: AdvisorEvidenceRef[]; coverage: AdvisorCoverage; assumptions: string[]; unknown: string[]; nextInvestigations: string[]; understanding?: AdvisorQuestionUnderstanding; spend?: AdvisorSpendEvidence; modelEfficiency?: AdvisorModelEvidence; quota?: AdvisorQuotaEvidence; bench?: AdvisorBenchEvidence }
-export type AdvisorAnswer = { conclusion: string; scopeLabel: string; periodLabel: string; evidence: AdvisorEvidenceRef[]; coverage: AdvisorCoverage; assumptions: string[]; unknown: string[]; nextInvestigations: string[]; details: string[]; why?: string[]; materialLimits?: string[]; understanding?: AdvisorQuestionUnderstanding; runtime: { id: string; label: string; mode: 'ollama-local' | 'lmstudio-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported' }; generatedByModel?: boolean; streamed?: boolean }
+export type AdvisorClaimClass = 'numeric' | 'date' | 'period' | 'provider' | 'model' | 'project' | 'trend' | 'status' | 'qualitative' | 'causal' | 'forecast' | 'recommendation'
+export type AdvisorClaimStatus = 'verified' | 'rejected' | 'unsupported'
+export type AdvisorClaimV1 = { contractVersion: 'advisor-claim-v1'; schemaVersion: 1; id: string; class: AdvisorClaimClass; text: string; value: AdvisorJsonValue; evidenceRefs: string[]; evidencePaths: string[]; status: AdvisorClaimStatus; reason?: string }
+export type AdvisorPresentationRequestV1 = { kind: AdvisorPresentationIntent; title?: string; evidenceRefs?: string[] }
+export type AdvisorSynthesisDraftV1 = { contractVersion: 'advisor-synthesis-draft-v1'; schemaVersion: 1; conclusion: string; why: string[]; details: string[]; claims: AdvisorClaimV1[]; presentationRequests: AdvisorPresentationRequestV1[]; expertDetail?: string[] }
+export type AdvisorPresentationMetricCard = { label: string; value: string; unit: string; detail: string; claimIds: string[] }
+export type AdvisorPresentationTable = { columns: string[]; rows: string[][] }
+export type AdvisorPresentationChartSeries = { id: string; label: string; points: Array<{ label: string; value: number | null }> }
+export type AdvisorPresentationBlockV1 =
+  | { kind: 'text'; text: string; claimIds: string[] }
+  | { kind: 'metric-cards'; title: string; cards: AdvisorPresentationMetricCard[]; scopeLabel: string; periodLabel: string; evidenceRefs: AdvisorEvidenceRef[] }
+  | { kind: 'line-chart' | 'bar-chart'; title: string; summary: string; unit: string; scopeLabel: string; periodLabel: string; series: AdvisorPresentationChartSeries[]; evidenceRefs: AdvisorEvidenceRef[]; accessibilityLabel: string }
+  | { kind: 'comparison-table'; title: string; summary: string; table: AdvisorPresentationTable; scopeLabel: string; periodLabel: string; evidenceRefs: AdvisorEvidenceRef[] }
+  | { kind: 'quota-card'; title: string; summary: string; providers: AdvisorQuotaProvider[]; scopeLabel: string; periodLabel: string; evidenceRefs: AdvisorEvidenceRef[] }
+  | { kind: 'bench-summary'; title: string; summary: string; run: AdvisorBenchRun | null; comparison: AdvisorBenchComparison | null; scopeLabel: string; periodLabel: string; evidenceRefs: AdvisorEvidenceRef[] }
+  | { kind: 'warning' | 'evidence-disclosure'; title: string; text: string; evidenceRefs: AdvisorEvidenceRef[] }
+export type AdvisorEvidence = { intent: AdvisorIntent; question: string; scope: AdvisorScope; refs: AdvisorEvidenceRef[]; coverage: AdvisorCoverage; assumptions: string[]; unknown: string[]; nextInvestigations: string[]; domainCoverage?: AdvisorDomainCoverageV1[]; understanding?: AdvisorQuestionUnderstanding; plan?: AdvisorTurnPlanV1; actionProposal?: AdvisorActionProposalV1; spend?: AdvisorSpendEvidence; modelEfficiency?: AdvisorModelEvidence; quota?: AdvisorQuotaEvidence; bench?: AdvisorBenchEvidence }
+export type AdvisorAnswer = { conclusion: string; scopeLabel: string; periodLabel: string; evidence: AdvisorEvidenceRef[]; coverage: AdvisorCoverage; assumptions: string[]; unknown: string[]; nextInvestigations: string[]; details: string[]; why?: string[]; materialLimits?: string[]; understanding?: AdvisorQuestionUnderstanding; plan?: AdvisorTurnPlanV1; actionProposal?: AdvisorActionProposalV1; claims?: AdvisorClaimV1[]; synthesis?: AdvisorSynthesisDraftV1; presentation?: AdvisorPresentationBlockV1[]; runtime: { id: string; label: string; mode: 'ollama-local' | 'lmstudio-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported' }; generatedByModel?: boolean; streamed?: boolean }
 export type AdvisorLocalRuntimeId = 'ollama' | 'lmstudio'
 export type AdvisorHostedProviderId = 'openai' | 'anthropic' | 'gemini'
 export type AdvisorCredentialProvider = AdvisorHostedProviderId
@@ -106,7 +149,7 @@ export type AdvisorToolContract = {
 export type AdvisorToolExecution = { content: string; evidence: AdvisorEvidence; envelope?: AdvisorToolResultEnvelope }
 export type AdvisorToolExecutor = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<AdvisorToolExecution>
 export type AdvisorConversationTurn = { role: 'user' | 'assistant'; content: string; scopeFingerprint: string }
-export type AdvisorRuntimeInput = { question: string; evidence: AdvisorEvidence; conversation?: AdvisorConversationTurn[]; tools?: readonly AdvisorToolDefinition[]; toolContract?: AdvisorToolContract; executeTool?: AdvisorToolExecutor; onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void; onDelta?: (text: string) => void }
+export type AdvisorRuntimeInput = { question: string; evidence: AdvisorEvidence; conversation?: AdvisorConversationTurn[]; plan?: AdvisorTurnPlanV1; tools?: readonly AdvisorToolDefinition[]; toolContract?: AdvisorToolContract; executeTool?: AdvisorToolExecutor; onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void; onDelta?: (text: string) => void }
 export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> }
 export type AdvisorDataSource = { getOverview(context: AdvisorScope, signal?: AbortSignal): Promise<MenubarPayload>; getModels(context: AdvisorScope, signal?: AbortSignal): Promise<ModelReportRow[]>; getQuota(signal?: AbortSignal): Promise<QuotaProvider[]>; getBenchEvidence?(context: AdvisorScope, signal?: AbortSignal): Promise<AdvisorBenchEvidence> }
 export type AdvisorBridge = Pick<MetroraBridge, 'getOverview' | 'getModels' | 'getQuota' | 'getBenchHistory' | 'getBenchComparison'>

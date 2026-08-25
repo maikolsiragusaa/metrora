@@ -286,6 +286,48 @@
 .advisor-coverage.unavailable { color: #a23a34; background: rgba(194,56,47,.12); }
 .advisor-message details { margin-top: 13px; border-top: 1px solid var(--advisor-line); padding-top: 9px; color: var(--advisor-muted); font-size: 10px; }
 .advisor-message summary { cursor: pointer; color: var(--advisor-ink); font-weight: 700; }
+.advisor-presentation { display: grid; gap: 9px; margin-top: 13px; }
+.advisor-presentation-block { padding: 10px; border: 1px solid var(--advisor-line); border-radius: 8px; background: color-mix(in srgb, var(--advisor-surface-strong) 82%, var(--advisor-tint)); }
+.advisor-presentation-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.advisor-presentation-head h4 { margin: 0; color: var(--advisor-ink); font-size: 10px; }
+.advisor-presentation-head span { color: var(--advisor-muted); font-size: 8px; text-align: right; }
+.advisor-presentation-summary,
+.advisor-presentation-text { margin: 5px 0 0; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
+.advisor-metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.advisor-metric-card { display: grid; gap: 2px; padding: 7px; border-radius: 6px; background: var(--advisor-tint); }
+.advisor-metric-card span,
+.advisor-metric-card small { color: var(--advisor-muted); font-size: 8px; }
+.advisor-metric-card strong { color: var(--advisor-ink); font-size: 13px; letter-spacing: -.02em; }
+.advisor-metric-card p { margin: 2px 0 0; color: var(--advisor-muted); font-size: 8px; line-height: 1.35; }
+.advisor-chart { display: block; width: 100%; height: auto; min-height: 150px; margin-top: 8px; overflow: visible; }
+.advisor-chart line { stroke: var(--advisor-line); stroke-width: 1; }
+.advisor-chart-series polyline { fill: none; stroke: var(--advisor-accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.advisor-chart-series circle { fill: var(--advisor-surface-strong); stroke: var(--advisor-accent); stroke-width: 2; }
+.advisor-chart-series.series-1 polyline { stroke: var(--advisor-blue); }
+.advisor-chart-series.series-1 circle { stroke: var(--advisor-blue); }
+.advisor-chart-series.series-2 polyline { stroke: #7d5bd6; }
+.advisor-chart-series.series-2 circle { stroke: #7d5bd6; }
+.advisor-chart rect { fill: var(--advisor-accent); opacity: .82; }
+.advisor-chart-legend { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; color: var(--advisor-muted); font-size: 8px; }
+.advisor-chart-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.advisor-chart-legend i { width: 7px; height: 7px; border-radius: 2px; background: var(--advisor-accent); }
+.advisor-chart-legend i.series-1 { background: var(--advisor-blue); }
+.advisor-chart-legend i.series-2 { background: #7d5bd6; }
+.advisor-chart-data { display: grid; gap: 2px; margin-top: 7px; color: var(--advisor-muted); font-size: 8px; line-height: 1.35; }
+.advisor-table-wrap { overflow-x: auto; margin-top: 8px; }
+.advisor-table-wrap table { width: 100%; border-collapse: collapse; color: var(--advisor-ink); font-size: 8px; }
+.advisor-table-wrap th,
+.advisor-table-wrap td { padding: 5px 4px; border-bottom: 1px solid var(--advisor-line); text-align: left; white-space: nowrap; }
+.advisor-table-wrap th { color: var(--advisor-muted); font-size: 8px; font-weight: 750; }
+.advisor-quota-grid { display: grid; gap: 6px; margin-top: 8px; }
+.advisor-quota-item { display: grid; gap: 3px; padding: 7px; border-radius: 6px; background: var(--advisor-tint); color: var(--advisor-muted); font-size: 8px; }
+.advisor-quota-item strong { color: var(--advisor-ink); font-size: 10px; }
+.advisor-bench-summary { display: grid; gap: 3px; margin-top: 8px; color: var(--advisor-muted); font-size: 9px; }
+.advisor-bench-summary strong { color: var(--advisor-ink); font-size: 11px; }
+.advisor-presentation-warning { border-color: rgba(210,145,0,.32); background: rgba(210,145,0,.08); }
+.advisor-presentation-warning h4 { margin: 0; color: var(--advisor-ink); font-size: 9px; }
+.advisor-presentation-warning p { margin: 4px 0 0; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .advisor-details,
 .advisor-limits { display: grid; gap: 5px; margin-top: 9px; line-height: 1.45; }
 .advisor-limits { padding-top: 8px; border-top: 1px dashed var(--advisor-line); }

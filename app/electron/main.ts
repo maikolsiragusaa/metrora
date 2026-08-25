@@ -135,10 +135,22 @@ function broadcastUpdateStatus(status: UpdateStatus): void {
 
 const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
 export const ADVISOR_HOSTED_EVENT_CHANNEL = 'metrora:advisorHostedEvent'
+type AdvisorHostedRendererEvent = Pick<AdvisorHostedEvent, 'requestId' | 'provider' | 'model' | 'kind' | 'usage' | 'streamed' | 'code'>
+export function projectAdvisorHostedEvent(event: AdvisorHostedEvent): AdvisorHostedRendererEvent {
+  return {
+    requestId: event.requestId.slice(0, 120),
+    provider: event.provider,
+    model: event.model.replace(/[^A-Za-z0-9._:/-]/gu, '').slice(0, 160),
+    kind: event.kind,
+    ...(event.usage ? { usage: { inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens, totalTokens: event.usage.totalTokens } } : {}),
+    ...(event.streamed !== undefined ? { streamed: event.streamed } : {}),
+    ...(event.code ? { code: event.code.replace(/[^A-Za-z0-9._:-]/gu, '').slice(0, 80) } : {}),
+  }
+}
 function broadcastAdvisorHostedEvent(event: AdvisorHostedEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
-    win.webContents.send(ADVISOR_HOSTED_EVENT_CHANNEL, event)
+    win.webContents.send(ADVISOR_HOSTED_EVENT_CHANNEL, projectAdvisorHostedEvent(event))
   }
 }
 
