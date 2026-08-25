@@ -64,6 +64,27 @@ describe('ShareCardV1 projection', () => {
     expect(card.dataState).toBe('partial')
     expect(shareCardPeriodLabel('week')).toBe('Last 7 days')
   })
+
+  it('fails closed instead of exporting non-finite or negative evidence', () => {
+    expect(() => buildShareCardV1({
+      payload: payload({ calls: Number.NaN }),
+      period: 'week',
+      providerLabel: 'All providers',
+    })).toThrow(/call-count evidence is invalid/u)
+
+    expect(() => buildShareCardV1({
+      payload: payload({ cost: Number.POSITIVE_INFINITY }),
+      period: 'week',
+      providerLabel: 'All providers',
+      includeCost: true,
+    })).toThrow(/cost evidence is invalid/u)
+
+    expect(() => buildShareCardV1({
+      payload: payload({ sessions: -1 }),
+      period: 'week',
+      providerLabel: 'All providers',
+    })).toThrow(/session-count evidence is invalid/u)
+  })
 })
 
 describe('ShareCardV1 SVG renderer', () => {
@@ -84,6 +105,7 @@ describe('ShareCardV1 SVG renderer', () => {
     expect(svg).toContain('&lt;model&gt;&amp;&quot;')
     expect(svg).not.toContain('<unsafe>')
     expect(svg).toContain('Metrora · metrora.eu')
+    expect(svg).toContain('Spend (USD)')
     expect(svg).toContain('82% of cost-bearing calls priced')
   })
 })
