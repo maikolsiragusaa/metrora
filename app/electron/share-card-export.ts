@@ -33,7 +33,9 @@ export function decodeShareCardPngDataUrl(dataUrl: string): Uint8Array {
 }
 
 export function sanitizeShareCardFilename(input: string): string {
-  const raw = typeof input === 'string' ? input : ''
+  // Bound before splitting so an untrusted renderer cannot turn a harmless
+  // suggested filename into unbounded main-process string work.
+  const raw = (typeof input === 'string' ? input : '').slice(-512)
   // Treat both path separators as untrusted renderer input regardless of the
   // host OS. The renderer may suggest a leaf name; it never chooses a path.
   const leaf = raw.split(/[\\/]/u).at(-1) ?? ''
