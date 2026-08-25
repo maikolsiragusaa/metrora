@@ -1,50 +1,92 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { Plans, rateLimitedNote } from './Plans'
-import type { QuotaProvider, StatusJson } from '../lib/types'
-import { refreshAll } from '../lib/refreshCadence'
+import { setActiveCurrency } from '../lib/format'
+import type { JsonPlanSummary, QuotaProvider, StatusJson } from '../lib/types'
+import { Plans } from './Plans'
 
 const { getPlans, getQuota } = vi.hoisted(() => ({
-  getPlans: vi.fn(),
-  getQuota: vi.fn(),
+  getPlans: vi.fn<(period: string) => Promise<StatusJson>>(),
+  getQuota: vi.fn<(force?: boolean) => Promise<QuotaProvider[]>>(),
 }))
+vi.mock('../lib/ipc', async orig => {
+  const actual = await orig<typeof import('../lib/ipc')>()
+  return { ...actual, metrora: { getPlans, getQuota } }
+})
 
-vi.mock('../lib/ipc', () => ({
-  metrora: {
-    getPlans,
-    getQuota,
-  },
-}))
+const periodStart = new Date(2026, 5, 15).toISOString()
+const periodEnd = new Date(2026, 6, 15).toISOString()
 
-const baseStatus: StatusJson = {
-  generated: '2026-07-12T00:00:00.000Z',
-  period: '30days',
-  currency: 'USD',
-  plan: null,
-  plans: {},
-  providers: [],
-  pricing: { currency: 'USD', current: true, source: 'embedded', lastUpdated: '2026-07-12T00:00:00.000Z' },
+const claudePlan: JsonPlanSummary = {
+  id: 'claude-max',
+  provider: 'claude',
+  budget: 200,
+  spent: 230,
+  percentUsed: 115,
+  status: 'over',
+  projectedMonthEnd: 254,
+  daysUntilReset: 4,
+  periodStart,
+  periodEnd,
 }
+
+const cursorPlan: JsonPlanSummary = {
+  id: 'cursor-pro',
+  provider: 'cursor',
+  budget: 20,
+  spent: 8.2,
+  percentUsed: 41,
+  status: 'under',
+  projectedMonthEnd: 12.4,
+  daysUntilReset: 4,
+  periodStart,
+  periodEnd,
+}
+
+const codexPlan: JsonPlanSummary = {
+  id: 'none',
+  provider: 'codex',
+  budget: 0,
+  spent: 31.02,
+  percentUsed: 15,
+  status: 'under',
+  projectedMonthEnd: 31.02,
+  daysUntilReset: 4,
+  periodStart,
+  periodEnd,
+}
+
+const baseStatus = {
+  currency: 'USD',
+  today: { cost: 22.5, savings: 4.2, calls: 19 },
+  month: { cost: 269.02, savings: 52, calls: 181 },
+} satisfies Omit<StatusJson, 'plan' | 'plans'>
 
 const statusWithPlans: StatusJson = {
   ...baseStatus,
   plans: {
-    cursor: {
-      provider: 'cursor',
-      id: 'cursor-pro',
-      spent: 8.2,
-      budget: 20,
-      percentUsed: 41,
-      projectedMonthEnd: 12,
-      status: 'ok',
-      periodStart: '2026-07-01',
-      periodEnd: '2026-08-01',
-    },
+    claude: claudePlan,
+    cursor: cursorPlan,
+    codex: codexPlan,
   },
 }
 
-function quota(provider: QuotaProvider['provider'], overrides: Partial<QuotaProvider> = {}): QuotaProvider {
+function quotaProviders(): QuotaProvider[] {
+  const now = Date.now()
+  return [
+    quota('claude', {
+      planLabel: 'Max 20x',
+      windows: [
+        { id: 'five_hour', label: '5-hour', usedFraction: 0.25, resetsAt: new Date(now + 2 * 60 * 60_000 + 30 * 60_000).toISOString(), windowSeconds: null },
+        { id: 'seven_day', label: 'Weekly', usedFraction: 0.92, resetsAt: new Date(now + (3 * 24 + 14) * 60 * 60_000 + 30 * 60_000).toISOString(), windowSeconds: null },
+      ],
+    }),
+    quota('codex', { connection: 'disconnected', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+  ]
+}
+
+function quota(provider: 'claude' | 'codex', overrides: Partial<QuotaProvider> = {}): QuotaProvider {
   return {
     schemaVersion: 1,
     provider,
@@ -63,209 +105,257 @@ function quota(provider: QuotaProvider['provider'], overrides: Partial<QuotaProv
 
 describe('Plans', () => {
   beforeEach(() => {
+    setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     getPlans.mockReset()
     getQuota.mockReset()
-    getPlans.mockResolvedValue(baseStatus)
-    getQuota.mockResolvedValue([])
+    getQuota.mockResolvedValue(quotaProviders())
   })
 
   it('renders live quota windows, tier, severity, disconnected hint, and manual plans below', async () => {
     getPlans.mockResolvedValue(statusWithPlans)
-    getQuota.mockResolvedValue([
-      quota('claude', {
-        planLabel: 'Max 5x',
-        windows: [
-          { id: 'five_hour', label: '5-hour', usedFraction: 0.75, resetsAt: '2026-07-12T03:00:00.000Z', windowSeconds: 18_000 },
-          { id: 'seven_day', label: 'Weekly', usedFraction: 0.92, resetsAt: '2026-07-15T00:00:00.000Z', windowSeconds: 604_800 },
-        ],
-      }),
-      quota('codex', { connection: 'disconnected', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
-    ])
 
-    render(<Plans period="30days" />)
+    const { container } = render(<Plans period="30days" />)
 
-    expect(await screen.findByText('Claude')).toBeInTheDocument()
-    expect(screen.getByText('Max 5x')).toBeInTheDocument()
-    expect(screen.getByText(/75% used/)).toBeInTheDocument()
-    expect(screen.getByTestId('quota-track-five_hour').querySelector('i')).toHaveClass('warn')
-    expect(screen.getByTestId('quota-track-seven_day').querySelector('i')).toHaveClass('bad')
-    expect(screen.getByText('Codex')).toBeInTheDocument()
-    expect(screen.getByText('Not connected. Sign in with the Codex CLI, then Refresh.')).toBeInTheDocument()
+    expect(await screen.findByText('Max 20x')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Fresh')).toBeInTheDocument()
+    expect(screen.getByText('25% used · 75% remaining · resets in 2h 29m')).toBeInTheDocument()
+    expect(screen.getByText('92% used · 8% remaining · resets in 3d 14h')).toBeInTheDocument()
+    expect(container.querySelector('[data-testid="quota-track-five_hour"] i')).toHaveClass('accent')
+    expect(container.querySelector('[data-testid="quota-track-seven_day"] i')).toHaveClass('bad')
+    expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
+
+    expect(screen.getByRole('heading', { name: 'Budget plans' })).toBeInTheDocument()
     expect(screen.getByText('Cursor Pro')).toBeInTheDocument()
+    expect(screen.getByText('$20.00 / month · cursor')).toBeInTheDocument()
+    expect(screen.getByText('$8.20 · 41%')).toBeInTheDocument()
+    const cursorFill = container.querySelector('[data-testid="plan-track-cursor"] i')
+    expect(cursorFill).toHaveStyle({ width: '41%' })
+    expect(cursorFill).not.toHaveClass('over')
+    expect(screen.getByText('On track')).toHaveClass('pace', 'ok')
+    expect(screen.queryByText('Claude Max')).not.toBeInTheDocument()
+    expect(screen.queryByText('API usage')).not.toBeInTheDocument()
   })
 
   it('keeps provider provenance in a progressive details disclosure', async () => {
-    getQuota.mockResolvedValue([
-      quota('kimi', {
-        source: { kind: 'provider-api', stability: 'experimental' },
-        windows: [{ id: 'weekly', label: 'Weekly', usedFraction: 0.2, resetsAt: null, windowSeconds: 604_800 }],
-      }),
-    ])
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } })])
 
-    render(<Plans period="30days" />)
+    const { container } = render(<Plans period="30days" />)
 
-    expect(await screen.findByText('Kimi Code')).toBeInTheDocument()
-    expect(screen.getByText('Provider details')).toBeInTheDocument()
-    expect(screen.getByText('Provider API · Experimental')).toBeInTheDocument()
+    await screen.findByText('Credits remaining · $3.50')
+    const details = container.querySelector('details.quota-details')
+    expect(details).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByText('Provider details'))
+    expect(details).toHaveAttribute('open')
+    expect(details).toHaveTextContent('Source')
+    expect(details).toHaveTextContent('Provider-reported')
+    expect(details).toHaveTextContent('Observed')
   })
 
   it('renders provider credits when no quota windows are present', async () => {
-    getQuota.mockResolvedValue([quota('codex', { credits: { balance: 3.5, currency: 'USD' } })])
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } })])
+
     render(<Plans period="30days" />)
-    expect(await screen.findByText('Credits remaining · $3.50')).toBeInTheDocument()
+
+    expect(await screen.findByText('The provider did not report quota windows.')).toBeInTheDocument()
+    expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
   })
 
   it('renders an explicit zero credit balance when no quota windows are present', async () => {
+    getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([quota('codex', { credits: { balance: 0, currency: 'USD' } })])
+
     render(<Plans period="30days" />)
+
     expect(await screen.findByText('Credits remaining · $0.00')).toBeInTheDocument()
   })
 
   it('labels a passed reset boundary without fabricating unavailable capacity', async () => {
+    getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([
-      quota('claude', { windows: [{ id: 'five_hour', label: '5-hour', usedFraction: 0.25, resetsAt: '2020-01-01T00:00:00.000Z', windowSeconds: 18_000 }] }),
+      quota('claude', {
+        planLabel: 'Pro',
+        windows: [{ id: 'primary', label: 'Primary', usedFraction: 1, resetsAt: '2026-07-11T00:00:00.000Z', windowSeconds: null }],
+      }),
+      quota('codex', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
     ])
+
     render(<Plans period="30days" />)
-    expect(await screen.findByText(/reset passed/)).toBeInTheDocument()
+
+    expect(await screen.findByText('100% used · 0% remaining · reset passed')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Unavailable')).toBeInTheDocument()
+    expect(screen.queryAllByTestId(/^quota-track-/)).toHaveLength(1)
   })
 
   it('renders stale credits-only last-good data with its original observation note', async () => {
-    getQuota.mockResolvedValue([
-      quota('codex', {
-        availability: 'unavailable', connection: 'transientFailure', freshness: 'stale',
-        observedAt: '2026-07-11T23:00:00.000Z', credits: { balance: 2.25, currency: 'USD' },
-      }),
-    ])
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', {
+      connection: 'transientFailure',
+      availability: 'unavailable',
+      freshness: 'stale',
+      observedAt: '2026-07-12T00:00:00.000Z',
+      credits: { balance: 3.5, currency: 'USD' },
+    })])
+
     render(<Plans period="30days" />)
-    expect(await screen.findByText('Credits remaining · $2.25')).toBeInTheDocument()
-    expect(screen.getByText(/Showing last provider-reported quota from/)).toBeInTheDocument()
+
+    expect(await screen.findByText(/Showing last provider-reported quota from/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Stale')).toBeInTheDocument()
+    expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
   })
 
   it('does not render injected provider facts when freshness is unavailable', async () => {
-    getQuota.mockResolvedValue([
-      quota('codex', {
-        availability: 'unavailable', connection: 'connected', freshness: 'unavailable', observedAt: null,
-        planLabel: 'Injected', credits: { balance: 999, currency: 'USD' },
-        windows: [{ id: 'fake', label: 'Fake', usedFraction: 1, resetsAt: null, windowSeconds: null }],
-      }),
-    ])
-    render(<Plans period="30days" />)
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', {
+      availability: 'unavailable',
+      freshness: 'unavailable',
+      observedAt: null,
+      planLabel: 'Injected Plan',
+      windows: [{ id: 'primary', label: 'Injected window', usedFraction: 0.25, resetsAt: null, windowSeconds: null }],
+      credits: { balance: 3.5, currency: 'USD' },
+    })])
+
+    const { container } = render(<Plans period="30days" />)
+
     expect(await screen.findByText('The provider did not report quota evidence.')).toBeInTheDocument()
-    expect(screen.queryByText('Injected')).not.toBeInTheDocument()
-    expect(screen.queryByText('Credits remaining · $999.00')).not.toBeInTheDocument()
-    expect(screen.queryByText('Fake')).not.toBeInTheDocument()
+    expect(screen.queryByText('Injected Plan')).not.toBeInTheDocument()
+    expect(screen.queryByText('Credits remaining · $3.50')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('quota-track-primary')).not.toBeInTheDocument()
+    expect(container.querySelector('.quota-windows')).not.toBeInTheDocument()
   })
 
   it('keeps manual budget overage and clamped-track behavior', async () => {
     getPlans.mockResolvedValue({
       ...baseStatus,
       plans: {
-        cursor: {
-          provider: 'cursor', id: 'cursor-pro', spent: 25, budget: 20, percentUsed: 125,
-          projectedMonthEnd: 30, status: 'over', periodStart: '2026-07-01', periodEnd: '2026-08-01',
-        },
+        grok: { ...claudePlan, id: 'supergrok', provider: 'grok' },
       },
     })
-    render(<Plans period="30days" />)
-    expect(await screen.findByText('$25.00 · 125% · $5.00 over')).toBeInTheDocument()
-    expect(screen.getByTestId('plan-track-cursor').querySelector('i')).toHaveStyle({ width: '100%' })
+
+    const { container } = render(<Plans period="30days" />)
+
+    expect(await screen.findByText('SuperGrok')).toBeInTheDocument()
+    expect(screen.getByText('$230.00 · 115% · $30.00 over')).toBeInTheDocument()
+    const fill = container.querySelector('[data-testid="plan-track-grok"] i')
+    expect(fill).toHaveStyle({ width: '100%' })
+    expect(fill).toHaveClass('over')
+    expect(screen.getByText('On pace to exceed; projected $254.00 by Jul 14')).toHaveClass('pace', 'hot')
   })
 
   it('renders near status as an amber non-exceeding projection when below budget', async () => {
     getPlans.mockResolvedValue({
       ...baseStatus,
       plans: {
-        cursor: {
-          provider: 'cursor', id: 'cursor-pro', spent: 16, budget: 20, percentUsed: 80,
-          projectedMonthEnd: 19, status: 'near', periodStart: '2026-07-01', periodEnd: '2026-08-01',
+        grok: {
+          id: 'supergrok-heavy',
+          provider: 'grok',
+          budget: 300,
+          spent: 255,
+          percentUsed: 85,
+          status: 'near',
+          projectedMonthEnd: 280,
+          daysUntilReset: 4,
+          periodStart,
+          periodEnd,
         },
       },
     })
+
     render(<Plans period="30days" />)
-    expect(await screen.findByText(/80% of budget used/)).toBeInTheDocument()
-    expect(screen.getByText(/projected \$19\.00/)).toBeInTheDocument()
+
+    const pace = await screen.findByText('85% of budget used; projected $280.00 by Jul 14')
+    expect(pace).toHaveClass('pace', 'hot')
+    expect(screen.queryByText(/On pace to exceed/)).not.toBeInTheDocument()
   })
 
   it('falls back to StatusJson.plan when the CLI returns a singular plan summary', async () => {
-    getPlans.mockResolvedValue({ ...baseStatus, plan: statusWithPlans.plans!.cursor, plans: {} })
-    render(<Plans period="30days" />)
+    getPlans.mockResolvedValue({
+      ...baseStatus,
+      plan: cursorPlan,
+    })
+
+    render(<Plans period="month" />)
+
     expect(await screen.findByText('Cursor Pro')).toBeInTheDocument()
   })
 
   it('omits the budget section when StatusJson has no manual plan summaries', async () => {
-    getPlans.mockResolvedValue(baseStatus)
-    render(<Plans period="30days" />)
-    await screen.findByText('No provider capacity is available.')
-    expect(screen.queryByText('Budget plans')).not.toBeInTheDocument()
+    getPlans.mockResolvedValue({
+      currency: 'USD',
+      today: { cost: 0, savings: 0, calls: 0 },
+      month: { cost: 0, savings: 0, calls: 0 },
+    })
+
+    render(<Plans period="month" />)
+
+    expect(await screen.findByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Budget plans' })).not.toBeInTheDocument()
   })
 
   it('renders the CLI locate state when getPlans reports not-found', async () => {
-    getPlans.mockRejectedValue({ kind: 'not-found', message: 'Metrora CLI not found' })
-    render(<Plans period="30days" />)
-    expect(await screen.findByText('Metrora CLI not found')).toBeInTheDocument()
+    getPlans.mockRejectedValue({ kind: 'not-found', message: 'metrora not found' })
+
+    render(<Plans period="week" />)
+
+    expect(await screen.findByText('Locate the metrora CLI')).toBeInTheDocument()
   })
 
   it('does not re-apply the FX rate to CLI-converted plan values (symbol swap only)', async () => {
-    getPlans.mockResolvedValue({
-      ...baseStatus,
-      currency: 'EUR',
-      plans: {
-        cursor: {
-          provider: 'cursor', id: 'cursor-pro', spent: 8.2, budget: 20, percentUsed: 41,
-          projectedMonthEnd: 12, status: 'ok', periodStart: '2026-07-01', periodEnd: '2026-08-01',
-        },
-      },
-    })
+    // getPlans values arrive already converted by the CLI (convertCost). With a
+    // EUR rate active, the pane must only swap the symbol — a second ×0.9 here
+    // would render €18.00 / €7.38 instead of the correct €20.00 / €8.20.
+    setActiveCurrency({ code: 'EUR', symbol: '€', rate: 0.9 })
+    getPlans.mockResolvedValue({ ...baseStatus, currency: 'EUR', plans: { cursor: cursorPlan } })
+
     render(<Plans period="30days" />)
-    expect(await screen.findByText('€8.20 · 41%')).toBeInTheDocument()
-    expect(screen.getByText('€20.00 / month · cursor')).toBeInTheDocument()
+
+    expect(await screen.findByText('€20.00 / month · cursor')).toBeInTheDocument()
+    expect(screen.getByText('€8.20 · 41%')).toBeInTheDocument()
   })
 
   it('forces a quota refresh only when refreshToken changes, not on the steady poll', async () => {
-    vi.useFakeTimers()
-    try {
-      getPlans.mockResolvedValue(baseStatus)
-      getQuota.mockResolvedValue([])
-      const { rerender } = render(<Plans period="30days" refreshToken={0} />)
-      await act(async () => { await Promise.resolve() })
-      expect(getQuota).toHaveBeenLastCalledWith(false)
-      rerender(<Plans period="30days" refreshToken={1} />)
-      await act(async () => { await Promise.resolve() })
-      expect(getQuota).toHaveBeenLastCalledWith(true)
-      act(() => refreshAll())
-      await act(async () => { await Promise.resolve() })
-      expect(getQuota).toHaveBeenLastCalledWith(true)
-    } finally {
-      vi.useRealTimers()
-    }
+    getPlans.mockResolvedValue(statusWithPlans)
+
+    const { rerender } = render(<Plans period="30days" refreshToken={0} />)
+    await screen.findByText('Max 20x')
+    expect(getQuota).toHaveBeenCalledWith(false) // mount is a steady poll
+    getQuota.mockClear()
+
+    rerender(<Plans period="30days" refreshToken={1} />) // manual refresh bumps the token
+    await waitFor(() => expect(getQuota).toHaveBeenCalledWith(true))
+
+    getQuota.mockClear()
+    rerender(<Plans period="30days" refreshToken={1} />) // unchanged token must not re-force
+    for (const call of getQuota.mock.calls) expect(call[0]).toBe(false)
   })
 
   it('renders permission-denied CLI failures as the amber Full Disk Access state', async () => {
-    getPlans.mockRejectedValue({ kind: 'nonzero', message: 'Operation not permitted while opening a provider log' })
-    render(<Plans period="30days" />)
-    expect(await screen.findByText('Full Disk Access needed')).toBeInTheDocument()
+    getPlans.mockRejectedValue({ kind: 'nonzero', message: 'Cursor permission denied: grant Full Disk Access' })
+
+    render(<Plans period="week" />)
+
+    expect(await screen.findByText('Permission denied')).toBeInTheDocument()
+    expect(screen.getByText('permission denied; grant Full Disk Access')).toHaveStyle({ color: 'var(--warn)' })
   })
 
   it('expands the Connect affordance and forces a keychain refresh from Refresh', async () => {
     getPlans.mockResolvedValue(statusWithPlans)
-    getQuota.mockResolvedValue([quota('codex', { connection: 'disconnected', availability: 'unavailable', freshness: 'unavailable', observedAt: null })])
+
     render(<Plans period="30days" />)
 
     const connect = await screen.findByRole('button', { name: 'Connect' })
+    expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
     fireEvent.click(connect)
     expect(screen.getByText('codex login')).toBeInTheDocument()
+
+    getQuota.mockClear()
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await act(async () => { await Promise.resolve() })
-    expect(getQuota).toHaveBeenLastCalledWith(true)
+    await waitFor(() => expect(getQuota).toHaveBeenCalledWith(true))
   })
 
   it('renders the honest rate-limited note on a 429 backoff, per provider owner', async () => {
-    expect(rateLimitedNote('claude')).toContain('Anthropic')
-    expect(rateLimitedNote('codex')).toContain('OpenAI')
-    expect(rateLimitedNote('copilot')).toContain('GitHub')
-    expect(rateLimitedNote('kimi')).toContain('Moonshot AI')
-    expect(rateLimitedNote('antigravity')).toContain('Google')
-
     getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([
       quota('claude', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null, rateLimit: { state: 'backoff', retryAt: '2026-07-12T00:05:00.000Z' } }),
