@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { formatDateRangeLabel, formatDayRangeLabel, parseDateRangeFlags, parseDayFlag, shiftDay } from '../src/cli-date.js'
+import { formatDateRangeLabel, formatDayRangeLabel, getDateRange, parseDateRangeFlags, parseDayFlag, shiftDay } from '../src/cli-date.js'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -30,19 +30,48 @@ describe('parseDateRangeFlags', () => {
     expect(range!.end.getHours()).toBe(23)
   })
 
-  it('accepts --to alone with a 6-month default start', () => {
-    // Previously the missing --from defaulted to epoch (1970), opening a
-    // 55-year scan window that was almost never what the user meant. The
-    // default is now 6 months back from now, matching the dashboard's
-    // "6 Months" period boundary.
+  it('accepts --to alone with the same six-calendar-month window anchored to --to', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 25, 12, 0, 0))
+
     const range = parseDateRangeFlags(undefined, '2026-04-10')
+
     expect(range).not.toBeNull()
-    expect(range!.start.getTime()).toBeGreaterThan(new Date(0).getTime())
-    const sixMonthsMs = 6 * 31 * 24 * 60 * 60 * 1000
-    const ageMs = Date.now() - range!.start.getTime()
-    expect(ageMs).toBeLessThanOrEqual(sixMonthsMs + 1000)
-    expect(ageMs).toBeGreaterThanOrEqual(sixMonthsMs - 1000)
+    expect(range!.start.getFullYear()).toBe(2025)
+    expect(range!.start.getMonth()).toBe(10) // November
+    expect(range!.start.getDate()).toBe(1)
+    expect(range!.start.getHours()).toBe(0)
+    expect(range!.end.getFullYear()).toBe(2026)
+    expect(range!.end.getMonth()).toBe(3) // April
     expect(range!.end.getDate()).toBe(10)
+    expect(range!.end.getHours()).toBe(23)
+  })
+
+  it('matches the named six-month boundary when --to is today', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 25, 12, 0, 0))
+
+    const explicitEnd = parseDateRangeFlags(undefined, '2026-08-25')
+    const named = getDateRange('all').range
+
+    expect(explicitEnd).not.toBeNull()
+    expect(explicitEnd!.start.getTime()).toBe(named.start.getTime())
+    expect(explicitEnd!.end.getTime()).toBe(named.end.getTime())
+  })
+
+  it('allows a historical --to without deriving the start from the current date', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 25, 12, 0, 0))
+
+    const range = parseDateRangeFlags(undefined, '2024-01-15')
+
+    expect(range).not.toBeNull()
+    expect(range!.start.getFullYear()).toBe(2023)
+    expect(range!.start.getMonth()).toBe(7) // August
+    expect(range!.start.getDate()).toBe(1)
+    expect(range!.end.getFullYear()).toBe(2024)
+    expect(range!.end.getMonth()).toBe(0)
+    expect(range!.end.getDate()).toBe(15)
   })
 
   it('throws when --from > --to', () => {
@@ -61,9 +90,6 @@ describe('parseDateRangeFlags', () => {
   })
 
   it('rejects month/day overflow instead of silently rolling forward', () => {
-    // Without overflow validation, JS Date silently turns Feb 31 into Mar 3
-    // and 13/32 into 02/01 of the following year. That made `--from
-    // 2026-02-31 --to 2026-03-15` quietly drop sessions on Feb 28 - Mar 2.
     expect(() => parseDateRangeFlags('2026-02-31', '2026-03-15'))
       .toThrow('Invalid date "2026-02-31"')
     expect(() => parseDateRangeFlags('2026-13-01', undefined))
@@ -72,7 +98,6 @@ describe('parseDateRangeFlags', () => {
       .toThrow('Invalid date "2026-04-31"')
     expect(() => parseDateRangeFlags(undefined, '2026-02-30'))
       .toThrow('Invalid date "2026-02-30"')
-    // Leap-day check: 2024 is a leap year, 2025 is not.
     expect(parseDateRangeFlags('2024-02-29', '2024-03-01')).not.toBeNull()
     expect(() => parseDateRangeFlags('2025-02-29', undefined))
       .toThrow('Invalid date "2025-02-29"')
