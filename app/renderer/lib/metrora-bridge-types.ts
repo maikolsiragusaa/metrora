@@ -134,6 +134,7 @@ export interface MetroraBridge extends ProjectBridge {
   setPlan(id: string, provider: string): Promise<ActionResult>
   resetPlan(provider: string): Promise<ActionResult>
   exportData(format: string, provider: string, outPath: string): Promise<ActionResult>
+  saveShareCardPng(suggestedName: string, pngDataUrl: string): Promise<boolean>
   chooseDirectory(): Promise<string | null>
   cliStatus(): Promise<{ found: boolean; path: string | null; error?: string }>
   telemetryStatus(): Promise<TelemetryStatus | null>
