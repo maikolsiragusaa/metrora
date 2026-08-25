@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell } from 'electron'
+import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { resolveMetroraPath, shutdownCli, spawnCli, spawnCliAction } from './cli'
 import { createApplicationMenuTemplate } from './menu'
 import { getQuota } from './quota'
+import { saveShareCardPng } from './share-card-export'
 import { initializeDesktopShareRuntime, stopDesktopShareRuntime } from './share-runtime'
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
@@ -156,36 +158,50 @@ function registerHandlers(): void {
     advisorCredentials,
     advisorHostedHandlers,
   })
-  const advisorProtectedIpcChannels = new Set([
+  const trustedRendererIpcChannels = new Set([
     'metrora:advisorHostedProbe',
-  'metrora:advisorHostedChat',
-  'metrora:advisorHostedCancel',
-  'metrora:advisorCredentialStatus',
-  'metrora:advisorCredentialSet',
-  'metrora:advisorCredentialClear',
-])
-function isTrustedAdvisorSender(event: { senderFrame?: { url?: string } | null }): boolean {
-  const frameUrl = event.senderFrame?.url
-  if (!frameUrl) return false
-  try {
-    const parsed = new URL(frameUrl)
-    if (parsed.protocol === 'file:') return true
-    const devUrl = process.env.VITE_DEV_SERVER_URL
-    return Boolean(devUrl && new URL(devUrl).origin === parsed.origin)
-  } catch {
-    return false
+    'metrora:advisorHostedChat',
+    'metrora:advisorHostedCancel',
+    'metrora:advisorCredentialStatus',
+    'metrora:advisorCredentialSet',
+    'metrora:advisorCredentialClear',
+  ])
+  function isTrustedRendererSender(event: { senderFrame?: { url?: string } | null }): boolean {
+    const frameUrl = event.senderFrame?.url
+    if (!frameUrl) return false
+    try {
+      const parsed = new URL(frameUrl)
+      if (parsed.protocol === 'file:') return true
+      const devUrl = process.env.VITE_DEV_SERVER_URL
+      return Boolean(devUrl && new URL(devUrl).origin === parsed.origin)
+    } catch {
+      return false
+    }
   }
-}
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (event, ...args) => {
-        if (advisorProtectedIpcChannels.has(channel) && !isTrustedAdvisorSender(event)) {
+        if (trustedRendererIpcChannels.has(channel) && !isTrustedRendererSender(event)) {
           return { ok: false, error: { kind: 'unauthorized', message: 'Advisor IPC request is not from the trusted renderer.' } }
         }
         return handler(...args)
       })
     }
   }
+  ipcMain.handle('metrora:saveShareCardPng', async (event, suggestedName: string, pngDataUrl: string) => {
+    if (!isTrustedRendererSender(event)) {
+      return { ok: false, error: { kind: 'unauthorized', message: 'Share card export request is not from the trusted renderer.' } }
+    }
+    try {
+      const value = await saveShareCardPng(suggestedName, pngDataUrl, {
+        showSaveDialog: options => dialog.showSaveDialog(options),
+        writeFile: (filePath, data) => writeFile(filePath, data),
+      })
+      return { ok: true, value }
+    } catch {
+      return { ok: false, error: { kind: 'bad-args', message: 'Share card PNG could not be saved.' } }
+    }
+  })
   const chooseDirectory = async () => {
     const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }

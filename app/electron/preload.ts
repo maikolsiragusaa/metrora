@@ -67,6 +67,7 @@ const bridge = {
   setPlan: (id: string, provider: string) => invoke('metrora:setPlan', id, provider),
   resetPlan: (provider: string) => invoke('metrora:resetPlan', provider),
   exportData: (format: string, provider: string, outPath: string) => invoke('metrora:exportData', format, provider, outPath),
+  saveShareCardPng: (suggestedName: string, pngDataUrl: string) => invoke('metrora:saveShareCardPng', suggestedName, pngDataUrl),
   chooseDirectory: () => invoke('metrora:chooseDirectory'),
   cliStatus: () => invoke('metrora:cliStatus'),
 
