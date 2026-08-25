@@ -299,6 +299,32 @@ export type ProviderDiscoveryRun = {
   sources: SessionSource[]
 }
 
+export const PROVIDER_DISCOVERY_CONCURRENCY = 2 as const
+
+async function discoverProvidersBounded(providers: readonly Provider[], signal?: AbortSignal): Promise<ProviderDiscoveryOutcome[]> {
+  const outcomes: Array<ProviderDiscoveryOutcome | undefined> = new Array(providers.length)
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = cursor++
+      if (index >= providers.length) return
+      const provider = providers[index]!
+      if (signal?.aborted) {
+        outcomes[index] = classifyProviderDiscoveryOutcome(provider.name, { cancelled: true })
+        continue
+      }
+      try {
+        outcomes[index] = await discoverProviderWithOutcome(provider, signal)
+      } catch (error) {
+        outcomes[index] = classifyProviderDiscoveryOutcome(provider.name, { error, cancelled: signal?.aborted === true })
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(PROVIDER_DISCOVERY_CONCURRENCY, providers.length) }, () => worker())
+  await Promise.all(workers)
+  return outcomes.map((outcome, index) => outcome ?? classifyProviderDiscoveryOutcome(providers[index]!.name, { cancelled: true }))
+}
+
 export async function discoverAllSessionsWithOutcomes(
   providerFilter?: string,
   providerList?: Provider[],
@@ -306,12 +332,8 @@ export async function discoverAllSessionsWithOutcomes(
 ): Promise<ProviderDiscoveryRun> {
   const allProviders = providerList ?? await getAllProviders()
   const filtered = providerDiscoveryProviderOrder(allProviders.filter(provider => !providerFilter || providerFilter === 'all' || provider.name === providerFilter))
-  const outcomes: ProviderDiscoveryOutcome[] = []
-  for (const provider of filtered) {
-    const outcome = await discoverProviderWithOutcome(provider, signal)
-    outcomes.push(outcome)
-    warnDiscoveryOutcome(outcome)
-  }
+  const outcomes = await discoverProvidersBounded(filtered, signal)
+  for (const outcome of outcomes) warnDiscoveryOutcome(outcome)
   return {
     schemaVersion: PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION,
     complete: outcomes.every(providerDiscoveryIsComplete),

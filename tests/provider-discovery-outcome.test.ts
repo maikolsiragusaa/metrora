@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   ProviderDiscoveryPartialError,
   classifyProviderDiscoveryOutcome,
@@ -89,5 +89,48 @@ describe('provider discovery outcome v1', () => {
     expect(result.sources.map(item => item.path)).toEqual(['/alpha.jsonl', '/zeta.jsonl'])
     expect(result.complete).toBe(false)
     expect(result.outcomes.find(item => item.provider === 'broken')).toMatchObject({ status: 'failed', complete: false })
+  })
+  it('bounds provider discovery at two workers while retaining deterministic order', async () => {
+    const started: string[] = []
+    const releases: Array<() => void> = []
+    let active = 0
+    let maximumActive = 0
+    const provider = (name: string) => fakeProvider(name, async () => {
+      started.push(name)
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      await new Promise<void>(resolve => releases.push(resolve))
+      active -= 1
+      return [source(name, '/' + name + '.jsonl')]
+    })
+    const pending = discoverAllSessionsWithOutcomes('all', [provider('zeta'), provider('alpha'), provider('beta'), provider('gamma')])
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    expect(maximumActive).toBe(2)
+    releases.splice(0, 2).forEach(resolve => resolve())
+    await vi.waitFor(() => expect(started).toHaveLength(4))
+    releases.splice(0, 2).forEach(resolve => resolve())
+    const result = await pending
+    expect(maximumActive).toBe(2)
+    expect(result.outcomes.map(item => item.provider)).toEqual(['alpha', 'beta', 'gamma', 'zeta'])
+    expect(result.sources.map(item => item.path)).toEqual(['/alpha.jsonl', '/beta.jsonl', '/gamma.jsonl', '/zeta.jsonl'])
+  })
+
+  it('stops launching providers after cancellation and preserves cancelled outcomes', async () => {
+    const started: string[] = []
+    const controller = new AbortController()
+    let releaseGate!: () => void
+    const gate = new Promise<void>(resolve => { releaseGate = resolve })
+    const provider = (name: string) => fakeProvider(name, async () => {
+      started.push(name)
+      await gate
+      return [source(name, '/' + name + '.jsonl')]
+    })
+    const pending = discoverAllSessionsWithOutcomes('all', [provider('alpha'), provider('beta'), provider('gamma'), provider('delta')], controller.signal)
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    controller.abort()
+    const result = await pending
+    releaseGate()
+    expect(started).toHaveLength(2)
+    expect(result.outcomes.every(item => item.status === 'cancelled')).toBe(true)
   })
 })
