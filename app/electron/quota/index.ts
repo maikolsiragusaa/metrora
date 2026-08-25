@@ -56,7 +56,7 @@ const defaultDeps: QuotaDeps = {
   codex: options => fetchCodexQuota(options),
   copilot: options => fetchCopilotQuota(options),
   kimi: options => fetchKimiQuota(options),
-  antigravity: () => fetchAntigravityQuota(),
+  antigravity: options => fetchAntigravityQuota(options),
   statePath: path.join(os.homedir(), '.metrora', 'quota-backoff.json'),
   readFile: readSecureFile,
   writeFile: atomicWriteSecureFile,
