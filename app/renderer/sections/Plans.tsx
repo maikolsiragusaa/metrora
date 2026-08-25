@@ -10,6 +10,7 @@ import { usePolled } from '../hooks/usePolled'
 import { formatConverted } from '../lib/format'
 import { metrora } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
+import { quotaProviderName, quotaProviderOwner, quotaSourceLabel } from '../lib/quota-providers'
 import type { JsonPlanSummary, Period, PlanId, PlanProvider, QuotaProvider, QuotaWindow, StatusJson } from '../lib/types'
 import type { SettingsPane } from './Settings'
 
@@ -33,8 +34,7 @@ function fmtPct(n: number): string {
 /** Honest copy for a 429 backoff window (the upstream quota endpoint rate
  *  limited us), replacing the generic "waiting" note. */
 export function rateLimitedNote(provider: QuotaProvider['provider']): string {
-  const owner = provider === 'claude' ? 'Anthropic' : 'OpenAI'
-  return `${owner} rate limited the quota endpoint, retrying in a few minutes`
+  return `${quotaProviderOwner(provider)} rate limited the quota endpoint, retrying in a few minutes`
 }
 
 function isRateLimited(quota: QuotaProvider): boolean {
@@ -157,7 +157,7 @@ function renderBudgetPlans(data: StatusJson | null, error: ReturnType<typeof use
 }
 
 function QuotaPanel({ quota, onReconnect }: { quota: QuotaProvider; onReconnect: () => void }) {
-  const providerName = quota.provider === 'claude' ? 'Claude' : 'Codex'
+  const providerName = quotaProviderName(quota.provider)
   const planLabel = quota.freshness === 'unavailable' ? null : quota.planLabel
   return (
     <Panel
@@ -279,7 +279,7 @@ function QuotaDetails({ quota }: { quota: QuotaProvider }) {
     <details className="quota-details">
       <summary>Provider details</summary>
       <div className="quota-detail-grid">
-        <span>Source</span><span>Provider-reported</span>
+        <span>Source</span><span>{quotaSourceLabel(quota.source)}</span>
         <span>Status</span><span>{quotaStatus(quota).label}</span>
         <span>Freshness</span><span>{freshnessLabel(quota)}</span>
         <span>Observed</span><span>{observed ?? 'Not available'}</span>
