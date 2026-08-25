@@ -32,7 +32,8 @@ describe('Advisor model planning boundary', () => {
 
     expect(data.getOverview).not.toHaveBeenCalled()
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'unknown', coverage: { level: 'unavailable' }, refs: [] })
-    expect(inputs[0]?.guardIntent).toBe('spend-change')
+    expect(inputs[0]?.guard?.intent).toBe('unknown')
+    expect(inputs[0]?.plan?.questionFamily).toBe('spend')
   })
 
   it('does not fetch or manufacture evidence for an unrecognized no-tool question', async () => {

@@ -5,7 +5,7 @@ import { createAdvisorConformanceFixture } from './conformance'
 import { HostedAdvisorRuntime, type HostedAdvisorTransport } from './hosted'
 import { LMStudioAdvisorRuntime } from './lmstudio'
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
-import { buildSpendEvidence } from './evidence'
+import { buildQuotaEvidence, buildSpendEvidence } from './evidence'
 import type { AdvisorScope } from './types'
 
 const scope: AdvisorScope = {
@@ -32,19 +32,10 @@ const planningContent = JSON.stringify({
 const synthesisContent = JSON.stringify({
   contractVersion: 'advisor-synthesis-draft-v1',
   schemaVersion: 1,
-  conclusion: { text: 'Metrora measured 12.', claimIds: ['claim-1'] },
-  why: [{ text: 'The selected evidence contains the measured total.', claimIds: ['claim-1'] }],
-  details: [{ text: 'The canonical spend total is 12.', claimIds: ['claim-1'] }],
-  claims: [{
-    contractVersion: 'advisor-claim-v1',
-    schemaVersion: 1,
-    id: 'claim-1',
-    class: 'numeric',
-    text: 'Metrora measured 12.',
-    value: 12,
-    evidenceRefs: ['overview.current'],
-    evidencePaths: ['spend.measuredCostUSD'],
-  }],
+  conclusion: { claimIds: ['measured-total-cost'] },
+  why: [{ claimIds: ['observed-calls'] }],
+  details: [{ claimIds: ['observed-sessions'] }],
+  claims: [{ id: 'measured-total-cost' }, { id: 'observed-calls' }, { id: 'observed-sessions' }],
   presentationRequests: [],
 })
 
@@ -101,6 +92,36 @@ describe('Advisor independent planning and synthesis phases', () => {
   const evidence = buildSpendEvidence('What changed in spend?', scope, fixture.overview)
   const tool = { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }
 
+  it('executes the model-selected family when it differs from the deterministic fallback', async () => {
+    const payloads: Array<Record<string, unknown>> = []
+    let calls = 0
+    const quotaPlanning = JSON.stringify({ ...JSON.parse(planningContent) as Record<string, unknown>, questionFamily: 'quota', requestedEvidenceDomains: ['provider-capacity', 'freshness'], toolRequests: [{ tool: 'get_quota_snapshot', arguments: {} }], presentationIntent: 'quota-card' })
+    const quotaSynthesis = JSON.stringify({ contractVersion: 'advisor-synthesis-draft-v1', schemaVersion: 1, conclusion: { claimIds: ['quota-remaining-claude-0'] }, why: [], details: [], claims: [{ id: 'quota-remaining-claude-0' }], presentationRequests: [{ kind: 'quota-card' }] })
+    const fixture = createAdvisorConformanceFixture()
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'fixture-override',
+      transport: {
+        probe: async () => ({ available: true, models: ['fixture-override'], detail: 'fixture' }),
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          calls += 1
+          return { streamed: false, message: { content: calls === 1 ? quotaPlanning : quotaSynthesis, tool_calls: [] } }
+        },
+        cancel: async () => true,
+        onDelta: () => () => {},
+      },
+    })
+    const answer = await runtime.generate({
+      question: 'What changed in spend?',
+      evidence,
+      tools: [tool, { type: 'function', function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } } }],
+      executeTool: async name => ({ content: JSON.stringify({ tool: name }), evidence: buildQuotaEvidence('What changed in spend?', scope, fixture.overview, fixture.quota) }),
+    })
+    expect(payloads).toHaveLength(2)
+    expect(answer.plan?.questionFamily).toBe('quota')
+    expect(answer.conclusion).toContain('quota remaining')
+  })
+
   it.each([
     ['Ollama', (transport: OllamaTransport) => new OllamaAdvisorRuntime({ model: 'fixture-ollama', transport })],
     ['LM Studio', (transport: OllamaTransport) => new LMStudioAdvisorRuntime({ model: 'fixture-lmstudio', transport })],
@@ -121,7 +142,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
     expectFreshPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
-    expect(answer.conclusion).toBe('Metrora measured 12.')
+    expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
   })
 
   it.each([
@@ -163,7 +184,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
     expectFreshPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
-    expect(answer.conclusion).toBe('Metrora measured 12.')
+    expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
   })
 
   it.each(['openai', 'anthropic', 'gemini'] as const)('%s cancels before a third call when evidence execution aborts', async provider => {

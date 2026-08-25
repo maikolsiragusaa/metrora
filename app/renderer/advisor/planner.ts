@@ -3,6 +3,7 @@ import { sanitizeAdvisorDisplayText } from './privacy'
 import { createAdvisorTurnPlanV1 } from './turn-plan'
 import type {
   AdvisorEvidenceDomain,
+  AdvisorGuardPlanV1,
   AdvisorIntent,
   AdvisorJsonObject,
   AdvisorPlanningDraftV1,
@@ -126,11 +127,19 @@ export function planningDraftFromNativeToolCalls(calls: readonly Record<string, 
     const normalized = normalizeAdvisorToolCall(nativeToolName(call), nativeToolArguments(call))
     toolRequests.push({ tool: normalized.name, arguments: normalized.arguments })
   }
+  const selectedTools = new Set(toolRequests.map(request => request.tool))
+  const questionFamily: AdvisorQuestionFamily = selectedTools.size === 1 && selectedTools.has('get_quota_snapshot')
+    ? 'quota'
+    : selectedTools.size === 1 && selectedTools.has('get_model_efficiency')
+      ? 'models'
+      : selectedTools.size === 1 && selectedTools.has('get_coverage_report')
+        ? 'evidence'
+        : guardPlan.questionFamily
   return {
     contractVersion: 'advisor-planning-draft-v1',
     schemaVersion: 1,
     turnKind: 'investigate',
-    questionFamily: guardPlan.questionFamily,
+    questionFamily,
     requestedEvidenceDomains: [...guardPlan.requestedEvidenceDomains],
     toolRequests,
     presentationIntent: guardPlan.presentationIntent,
@@ -159,48 +168,59 @@ function requestMatchesScope(request: AdvisorToolRequestV1, scope: AdvisorScope)
   return true
 }
 
-function requiredToolForGuard(plan: AdvisorTurnPlanV1, guardIntent: AdvisorIntent | undefined): AdvisorToolName | null {
-  if (guardIntent === 'spend-change' || plan.questionFamily === 'spend' || plan.questionFamily === 'usage' || plan.questionFamily === 'projects' || plan.questionFamily === 'sessions') return 'get_spend_snapshot'
-  if (guardIntent === 'model-efficiency' || plan.questionFamily === 'models') return 'get_model_efficiency'
-  if (guardIntent === 'quota-capacity' || plan.questionFamily === 'quota' || plan.questionFamily === 'providers') return 'get_quota_snapshot'
-  if (plan.questionFamily === 'evidence') return 'get_coverage_report'
-  return null
+function guardFromFallbackPlan(plan: AdvisorTurnPlanV1, intent: AdvisorIntent = 'unknown', usedDefaultScope = false): AdvisorGuardPlanV1 {
+  const boundaryIntent: AdvisorIntent = plan.turnKind === 'social' ? 'social' : plan.turnKind === 'clarify' ? 'clarification' : plan.authorization === 'proposal-required' ? 'action-proposal' : plan.turnKind === 'boundary' && intent === 'unsupported' ? 'unsupported' : 'unknown'
+  return {
+    contractVersion: 'advisor-guard-plan-v1',
+    schemaVersion: 1,
+    turnKind: plan.turnKind,
+    scopeIntent: plan.scopeIntent,
+    clarification: plan.clarification,
+    authorization: plan.authorization,
+    intent: boundaryIntent,
+    usedDefaultScope,
+  }
 }
 
-function planWithGuard(draft: AdvisorPlanningDraftV1, guardPlan: AdvisorTurnPlanV1): AdvisorTurnPlanV1 {
-  const fixedFamily = guardPlan.questionFamily !== 'unknown' ? guardPlan.questionFamily : draft.questionFamily === 'action' ? 'unknown' : draft.questionFamily
-  const requestedDomains = draft.requestedEvidenceDomains.length ? draft.requestedEvidenceDomains : [...guardPlan.requestedEvidenceDomains]
+function asGuardPlan(plan: AdvisorGuardPlanV1 | AdvisorTurnPlanV1): AdvisorGuardPlanV1 {
+  if (plan.contractVersion === 'advisor-guard-plan-v1') return plan
+  return guardFromFallbackPlan(plan)
+}
+
+function planWithGuard(draft: AdvisorPlanningDraftV1, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1): AdvisorTurnPlanV1 {
+  const requestedDomains = draft.requestedEvidenceDomains.length ? draft.requestedEvidenceDomains : [...fallbackPlan.requestedEvidenceDomains]
   return {
-    ...guardPlan,
-    turnKind: guardPlan.turnKind,
-    questionFamily: fixedFamily,
+    ...fallbackPlan,
+    turnKind: guard.turnKind === 'investigate' ? 'investigate' : fallbackPlan.turnKind,
+    questionFamily: draft.questionFamily,
     requestedEvidenceDomains: requestedDomains,
     presentationIntent: draft.presentationIntent,
-    expertDetailRequested: guardPlan.expertDetailRequested || draft.expertDetailRequested,
-    clarification: guardPlan.clarification,
-    authorization: guardPlan.authorization,
-    scopeIntent: guardPlan.scopeIntent,
+    expertDetailRequested: draft.expertDetailRequested,
+    clarification: guard.clarification,
+    authorization: guard.authorization,
+    scopeIntent: guard.scopeIntent,
   }
 }
 
 export type AdvisorPlanningValidation = { plan: AdvisorTurnPlanV1; toolRequests: AdvisorToolRequestV1[]; modelAssisted: boolean }
 
-export function runtimeGuardPlan(input: AdvisorRuntimeInput): { plan: AdvisorTurnPlanV1; intent: AdvisorIntent } {
-  if (input.plan) return { plan: input.plan, intent: input.guardIntent ?? input.evidence.intent }
-  if (input.evidence.plan) return { plan: input.evidence.plan, intent: input.guardIntent ?? input.evidence.intent }
+export function runtimeGuardPlan(input: AdvisorRuntimeInput): { fallbackPlan: AdvisorTurnPlanV1; guard: AdvisorGuardPlanV1 } {
+  if (input.plan) return { fallbackPlan: input.plan, guard: input.guard ?? guardFromFallbackPlan(input.plan) }
+  if (input.evidence.plan) return { fallbackPlan: input.evidence.plan, guard: input.guard ?? guardFromFallbackPlan(input.evidence.plan) }
   const resolved = createAdvisorTurnPlanV1(input.question, input.evidence.scope)
-  return { plan: resolved, intent: input.guardIntent ?? (input.evidence.intent !== 'unknown' ? input.evidence.intent : resolved.intent) }
+  return { fallbackPlan: resolved, guard: input.guard ?? guardFromFallbackPlan(resolved, resolved.intent, resolved.usedDefaultScope) }
 }
 
 export function validateAdvisorPlanningDraft(
   draft: AdvisorPlanningDraftV1,
-  guardPlan: AdvisorTurnPlanV1,
+  guardPlan: AdvisorGuardPlanV1 | AdvisorTurnPlanV1,
   scope: AdvisorScope,
   definitions: readonly AdvisorToolDefinition[],
-  guardIntent?: AdvisorIntent,
 ): AdvisorPlanningValidation | null {
+  const guard = asGuardPlan(guardPlan)
+  const fallbackPlan = guardPlan.contractVersion === 'advisor-turn-plan-v1' ? guardPlan : createAdvisorTurnPlanV1('', scope)
   // The deterministic guard owns all action and clarification boundaries.
-  if (guardPlan.authorization !== 'read-only' || guardPlan.turnKind !== 'investigate') return null
+  if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') return null
   if (draft.turnKind !== 'investigate' || draft.questionFamily === 'action' || draft.clarification !== null) return null
   const names = definitionNames(definitions)
   const requests: AdvisorToolRequestV1[] = []
@@ -209,20 +229,18 @@ export function validateAdvisorPlanningDraft(
     const normalized = normalizeAdvisorToolCall(request.tool, request.arguments)
     requests.push({ tool: normalized.name, arguments: normalized.arguments })
   }
-  const required = requiredToolForGuard(guardPlan, guardIntent)
-  if (required && names.has(required) && !requests.some(request => request.tool === required)) {
-    requests.push({ tool: required, arguments: {} })
-  }
-  if (!requests.length && required && names.has(required)) requests.push({ tool: required, arguments: {} })
-  return { plan: planWithGuard(draft, guardPlan), toolRequests: requests.slice(0, MAX_TOOL_REQUESTS), modelAssisted: true }
+  // A normal model plan must explicitly select at least one bounded read
+  // tool. The fallback may choose a deterministic tool, but the guard never
+  // injects one into an otherwise valid model plan.
+  if (!requests.length) return null
+  return { plan: planWithGuard(draft, fallbackPlan, guard), toolRequests: requests.slice(0, MAX_TOOL_REQUESTS), modelAssisted: true }
 }
 
 export function deterministicPlanningFallback(
   guardPlan: AdvisorTurnPlanV1,
   definitions: readonly AdvisorToolDefinition[],
-  guardIntent?: AdvisorIntent,
 ): AdvisorPlanningValidation {
-  const required = requiredToolForGuard(guardPlan, guardIntent) ?? defaultToolForFamily(guardPlan.questionFamily)
+  const required = defaultToolForFamily(guardPlan.questionFamily)
   const names = definitionNames(definitions)
   const toolRequests = required && names.has(required) ? [{ tool: required, arguments: {} }] : []
   return { plan: guardPlan, toolRequests, modelAssisted: false }

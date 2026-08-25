@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildSpendEvidence } from './evidence'
+import { buildAdvisorVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis, renderAdvisorVerifiedClaimAtom, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
 import { createAdvisorConformanceFixture } from './conformance'
 import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import type { AdvisorEvidence, AdvisorScope } from './types'
@@ -14,101 +15,103 @@ const scope: AdvisorScope = {
   model: null,
 }
 
-function claim(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
-  return {
-    contractVersion: 'advisor-claim-v1',
-    schemaVersion: 1,
-    id: 'claim-1',
-    class: 'numeric',
-    text: 'Metrora measured 12.',
-    value: 12,
-    evidenceRefs: ['overview.current'],
-    evidencePaths: ['spend.measuredCostUSD'],
-    ...overrides,
-  }
-}
-
 function parsedDraft(options: {
-  claims?: Record<string, unknown>[]
+  claims?: string[]
   conclusionClaimIds?: string[]
   whyClaimIds?: string[][]
   detailsClaimIds?: string[][]
+  conclusion?: Record<string, unknown>
 } = {}) {
   return parseAdvisorSynthesisDraft(JSON.stringify({
     contractVersion: 'advisor-synthesis-draft-v1',
     schemaVersion: 1,
-    conclusion: { text: 'Metrora measured 12.', claimIds: options.conclusionClaimIds ?? ['claim-1'] },
-    why: (options.whyClaimIds ?? [['claim-1']]).map((claimIds, index) => ({ text: index ? 'The returned evidence supports the scope.' : 'The selected evidence contains the measured total.', claimIds })),
-    details: (options.detailsClaimIds ?? [['claim-1']]).map((claimIds, index) => ({ text: index ? 'The evidence remains bounded to this scope.' : 'Measured spend is the canonical total.', claimIds })),
-    claims: options.claims ?? [claim()],
+    conclusion: options.conclusion ?? { claimIds: options.conclusionClaimIds ?? ['measured-total-cost'] },
+    why: (options.whyClaimIds ?? [['observed-calls']]).map(claimIds => ({ claimIds })),
+    details: (options.detailsClaimIds ?? [['observed-sessions']]).map(claimIds => ({ claimIds })),
+    claims: (options.claims ?? ['measured-total-cost', 'observed-calls', 'observed-sessions']).map(id => ({ id })),
     presentationRequests: [],
   }))
 }
 
-describe('Advisor synthesis claim completeness', () => {
+describe('Advisor typed verified claim atoms', () => {
   const fixture = createAdvisorConformanceFixture()
   const evidence = buildSpendEvidence('What changed in spend?', scope, fixture.overview)
 
-  it('rejects factual conclusion prose with no claims', () => {
+  it('rejects a material block with no selected claim atom', () => {
     const draft = parsedDraft({ claims: [], conclusionClaimIds: [], whyClaimIds: [[]], detailsClaimIds: [[]] })
     expect(draft).not.toBeNull()
     expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(false)
   })
 
-  it('rejects factual WHY prose with no claim reference', () => {
-    const draft = parsedDraft({ whyClaimIds: [[]] })
+  it('rejects a block that points at an atom that was not selected', () => {
+    const draft = parsedDraft({ detailsClaimIds: [['missing-atom']] })
     expect(draft).not.toBeNull()
-    expect(verifyAdvisorSynthesis(draft!, evidence).reason).toContain('no claim references')
+    expect(verifyAdvisorSynthesis(draft!, evidence).reason).toContain('unselected claim atom')
   })
 
-  it('rejects DETAILS that point at an invalid claim ID', () => {
-    const draft = parsedDraft({ detailsClaimIds: [['missing-claim']] })
-    expect(draft).not.toBeNull()
-    expect(verifyAdvisorSynthesis(draft!, evidence).reason).toContain('unknown claim ID')
+  it('rejects legacy or arbitrary factual block prose before verification', () => {
+    expect(parseAdvisorSynthesisDraft(JSON.stringify({
+      contractVersion: 'advisor-synthesis-draft-v1',
+      schemaVersion: 1,
+      conclusion: { text: 'Metrora measured $12 and Claude caused the increase.', claimIds: ['measured-total-cost'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'measured-total-cost' }],
+      presentationRequests: [],
+    }))).toBeNull()
   })
 
-  it('rejects qualitative hallucinations without exact evidence support', () => {
-    const qualitative = parsedDraft({
-      claims: [claim({ class: 'qualitative', text: 'Claude was the main driver.', value: 'Claude', evidenceRefs: [], evidencePaths: [] })],
-    })
-    expect(qualitative).not.toBeNull()
-    expect(verifyAdvisorSynthesis(qualitative!, evidence).valid).toBe(false)
+  it.each(['Claude is the cheapest model.', 'Claude is more efficient.'])('does not accept true model identity as unsupported semantic prose: %s', text => {
+    const draft = parseAdvisorSynthesisDraft(JSON.stringify({
+      contractVersion: 'advisor-synthesis-draft-v1',
+      schemaVersion: 1,
+      conclusion: { text, claimIds: ['model-identity-0'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'model-identity-0' }],
+      presentationRequests: [],
+    }))
+    expect(draft).toBeNull()
   })
 
-  it('rejects invented drivers and trends even when they cite a real evidence item', () => {
-    const inventedDriver = parsedDraft({
-      claims: [claim({ class: 'qualitative', text: 'Claude was the main driver.', value: 'Claude', evidencePaths: ['spend.models.0.name'] })],
-    })
-    expect(verifyAdvisorSynthesis(inventedDriver!, evidence).valid).toBe(false)
-
-    const inventedTrend = parsedDraft({
-      claims: [claim({ class: 'trend', text: 'Spend fell.', value: 'down', evidenceRefs: ['overview.history.daily'], evidencePaths: ['spend.trend.direction'] })],
-    })
-    expect(verifyAdvisorSynthesis(inventedTrend!, evidence).valid).toBe(false)
+  it('rejects a claim-kind/path mismatch even when the value is real', () => {
+    const atom = buildAdvisorVerifiedClaimAtoms(evidence).find(item => item.id === 'model-identity-0')!
+    expect(verifyAdvisorVerifiedClaimAtom({ ...atom, claimKind: 'model_measured_cost', metric: 'cost', evidencePath: 'spend.models.0.costUSD', value: atom.value }, evidence)).toBe(false)
   })
 
-  it('accepts a block graph whose claims resolve to exact evidence paths', () => {
-    const draft = parsedDraft()
-    expect(verifyAdvisorSynthesis(draft!, evidence)).toMatchObject({ valid: true, claims: [{ id: 'claim-1', status: 'verified' }] })
+  it('rejects an evidence reference that does not own the typed path', () => {
+    const atom = buildAdvisorVerifiedClaimAtoms(evidence).find(item => item.id === 'measured-total-cost')!
+    expect(verifyAdvisorVerifiedClaimAtom({ ...atom, evidenceRef: 'overview.projects' }, evidence)).toBe(false)
   })
 
-  it('accepts an exact path into a bounded canonical evidence row', () => {
+  it('verifies and renders a measured-cost atom without model-authored factual prose', () => {
+    const draft = parsedDraft({ claims: ['model-measured-cost-0'], conclusionClaimIds: ['model-measured-cost-0'], whyClaimIds: [], detailsClaimIds: [] })
+    const atom = buildAdvisorVerifiedClaimAtoms(evidence).find(item => item.id === 'model-measured-cost-0')!
+    expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(true)
+    expect(verifyAdvisorVerifiedClaimAtom(atom, evidence)).toBe(true)
+    expect(renderAdvisorVerifiedClaimAtom(atom, 'en')).toContain('Observed spend for gpt-safe')
+    expect(renderAdvisorVerifiedClaimAtom(atom, 'it')).toContain('spesa osservata')
+  })
+
+  it('renders multiple verified atoms in the model-selected order', () => {
     const draft = parsedDraft({
-      claims: [claim({ class: 'model', text: 'The leading model is gpt-safe.', value: 'gpt-safe', evidencePaths: ['spend.models.0.name'] })],
+      claims: ['model-measured-cost-1', 'model-measured-cost-0'],
+      conclusionClaimIds: ['model-measured-cost-1', 'model-measured-cost-0'],
+      whyClaimIds: [],
+      detailsClaimIds: [],
     })
-    expect(verifyAdvisorSynthesis(draft!, evidence)).toMatchObject({ valid: true, claims: [{ status: 'verified' }] })
+    const verification = verifyAdvisorSynthesis(draft!, evidence)
+    expect(verification.valid).toBe(true)
+    expect(verification.claims.map(atom => atom.id)).toEqual(['model-measured-cost-1', 'model-measured-cost-0'])
+    const rendered = renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'Which model cost more?')
+    expect(rendered.conclusion.indexOf('local-safe')).toBeLessThan(rendered.conclusion.indexOf('gpt-safe'))
   })
 
-  it('accepts an unavailable factual state only when the unavailable status is itself evidenced', () => {
-    const unavailable: AdvisorEvidence = { ...evidence, coverage: { ...evidence.coverage, level: 'unavailable', state: 'UNAVAILABLE' } }
-    const draft = parsedDraft({
-      claims: [claim({ class: 'status', text: 'Measured spend is unavailable for this scope.', value: 'unavailable', evidencePaths: ['coverage.level'] })],
-    })
-    expect(verifyAdvisorSynthesis(draft!, unavailable)).toMatchObject({ valid: true, claims: [{ status: 'verified' }] })
-  })
-
-  it('does not silently normalize a claim reference to another evidence item', () => {
-    const draft = parsedDraft({ claims: [claim({ evidenceRefs: ['evidence-1'] })] })
-    expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(false)
+  it('renders the canonical measured total in both supported languages', () => {
+    const draft = parsedDraft({ claims: ['measured-total-cost'], conclusionClaimIds: ['measured-total-cost'], whyClaimIds: [], detailsClaimIds: [] })
+    const verification = verifyAdvisorSynthesis(draft!, evidence)
+    expect(verification.valid).toBe(true)
+    expect(renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'What changed in spend?').conclusion).toContain('Metrora measured')
+    expect(renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'Quanto ho speso?').conclusion).toContain('Hai speso')
   })
 })

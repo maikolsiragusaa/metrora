@@ -79,7 +79,7 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
       }
       const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
       try {
-        return await runtime.generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, guardIntent: plan.intent, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+        return await runtime.generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, guard: plan.guard, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
       } catch (error) {
         rethrowCancellation(error, signal)
         let fallbackEvidence = withUnderstanding

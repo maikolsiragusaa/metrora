@@ -164,7 +164,7 @@ describe('Ollama Advisor renderer state machine', () => {
       tools: [],
       onDelta: () => {},
     })
-    expect(answer.conclusion).toContain('GPT-5.6')
+    expect(answer.details.some(detail => detail.includes('GPT-5.6'))).toBe(true)
   })
 
   it.each(['Spend rose by 12.', 'The scope contains 12 calls.'])(

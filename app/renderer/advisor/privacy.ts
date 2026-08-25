@@ -1,7 +1,6 @@
 import type {
   AdvisorAnswer,
   AdvisorBenchRun,
-  AdvisorClaimV1,
   AdvisorCoverage,
   AdvisorEvidence,
   AdvisorEvidenceRef,
@@ -11,6 +10,8 @@ import type {
   AdvisorPresentationIntent,
   AdvisorScope,
   AdvisorSynthesisBlockV1,
+  AdvisorSynthesisDraftV1,
+  AdvisorVerifiedClaimAtomV1,
 } from './types'
 
 /**
@@ -38,6 +39,7 @@ const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|n
 const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
 const CONTENT_MINIMAL_PROVIDER_NAMES = ['all', 'claude', 'codex'] as const
 const SAFE_ANSWER_EVIDENCE_ID_PATTERN = /^(?:spend|quota|spend-(?:claude|codex)|overview\.(?:current|history\.daily|models|projects|sessions|modelAccounting)|models\.report|quota\.(?:claude|codex)|bench\.(?:latest|history|comparison))$/u
+const CLAIM_ID_PATTERN = /^[A-Za-z0-9._:-]{1,80}$/u
 
 function contentMinimalSource(value: unknown): typeof CONTENT_MINIMAL_EVIDENCE_SOURCES[number] | null {
   return typeof value === 'string' && (CONTENT_MINIMAL_EVIDENCE_SOURCES as readonly string[]).includes(value) ? value as typeof CONTENT_MINIMAL_EVIDENCE_SOURCES[number] : null
@@ -220,23 +222,27 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     if (Array.isArray(value)) return value.slice(0, 32).map(item => safeJsonValue(item, depth + 1))
     return Object.fromEntries(Object.entries(value).slice(0, 32).map(([key, child]) => [sanitizeAdvisorDisplayText(key, 80), safeJsonValue(child, depth + 1)]))
   }
-  const safeClaims = (claims: AdvisorClaimV1[] | undefined): AdvisorClaimV1[] | undefined => {
+  const claimKinds = ['measured_total', 'observed_count', 'provider_quota_remaining', 'provider_quota_reset', 'model_identity', 'model_measured_cost', 'project_measured_cost', 'session_measured_cost', 'trend_direction', 'coverage_state', 'freshness_state', 'bench_score', 'bench_status', 'bench_comparability'] as const
+  const safeClaims = (claims: AdvisorVerifiedClaimAtomV1[] | undefined): AdvisorVerifiedClaimAtomV1[] | undefined => {
     if (!claims) return undefined
     return claims.flatMap(claim => {
-      if (claim.status !== 'verified' || claim.class === 'causal' || claim.class === 'forecast' || claim.class === 'recommendation') return []
-      const evidenceRefs = claim.evidenceRefs.map(ref => evidenceIdMap.get(ref) ?? ref).filter(ref => evidence.some(item => item.id === ref))
-      if (!evidenceRefs.length) return []
+      if (claim.contractVersion !== 'advisor-verified-claim-atom-v1' || claim.schemaVersion !== 1 || claim.operator !== 'equals' || !claimKinds.includes(claim.claimKind) || !CLAIM_ID_PATTERN.test(claim.id)) return []
+      const evidenceRef = evidenceIdMap.get(claim.evidenceRef) ?? claim.evidenceRef
+      if (!evidence.some(item => item.id === evidenceRef)) return []
       return [{
         ...claim,
-        text: safeText(claim.text),
         value: safeJsonValue(claim.value),
-        evidenceRefs,
-        evidencePaths: claim.evidencePaths.filter(path => /^[A-Za-z][A-Za-z0-9_.-]{0,160}$/u.test(path)).slice(0, 8),
-        status: 'verified' as const,
-        ...(claim.reason ? { reason: safeText(claim.reason) } : {}),
+        subject: claim.subject === null ? null : safeText(claim.subject),
+        unit: claim.unit === null ? null : safeText(claim.unit),
+        evidenceRef,
+        evidencePath: /^[A-Za-z][A-Za-z0-9_.-]{0,160}$/u.test(claim.evidencePath) ? claim.evidencePath : 'invalid-path',
+        scope: contentMinimalScope(claim.scope),
       }]
     }).slice(0, 24)
   }
+  const safeClaimSelections = (claims: AdvisorSynthesisDraftV1['claims'] | undefined): AdvisorSynthesisDraftV1['claims'] | undefined => claims
+    ? claims.flatMap(claim => CLAIM_ID_PATTERN.test(claim.id) ? [{ contractVersion: 'advisor-claim-selection-v1' as const, schemaVersion: 1 as const, id: claim.id }] : []).slice(0, 24)
+    : undefined
   const presentationKinds: readonly AdvisorPresentationIntent[] = ['text', 'metric-cards', 'line-chart', 'bar-chart', 'comparison-table', 'quota-card', 'bench-summary', 'warning', 'evidence-disclosure']
   const safePresentation = (blocks: AdvisorPresentationBlockV1[] | undefined): AdvisorPresentationBlockV1[] | undefined => blocks ? blocks.flatMap((block): AdvisorPresentationBlockV1[] => {
     if (!presentationKinds.includes(block.kind)) return []
@@ -250,10 +256,10 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     return []
   }) : undefined
   const claims = safeClaims(answer.claims)
-  const synthesisClaims = safeClaims(answer.synthesis?.claims)
+  const synthesisClaims = safeClaimSelections(answer.synthesis?.claims)
   const safeSynthesisBlock = (block: AdvisorSynthesisBlockV1): AdvisorSynthesisBlockV1 => ({
-    text: safeText(block.text),
     claimIds: block.claimIds.slice(0, 24),
+    ...(block.emphasis ? { emphasis: block.emphasis } : {}),
   })
   const synthesis = answer.synthesis ? {
     ...answer.synthesis,

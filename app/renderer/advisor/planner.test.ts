@@ -4,6 +4,7 @@ import { ADVISOR_TOOL_DEFINITIONS } from './contract'
 import {
   deterministicPlanningFallback,
   parseAdvisorPlanningDraft,
+  planningDraftFromNativeToolCalls,
   validateAdvisorPlanningDraft,
 } from './planner'
 import { createAdvisorTurnPlanV1 } from './turn-plan'
@@ -34,6 +35,25 @@ function planningDraft(overrides: Partial<AdvisorPlanningDraftV1> = {}): Advisor
 }
 
 describe('Advisor bounded model planning contract', () => {
+  it('lets a valid model plan correct a known deterministic semantic fallback', () => {
+    const question = 'What changed in spend?'
+    const fallbackPlan = createAdvisorTurnPlanV1(question, scope)
+    expect(fallbackPlan.questionFamily).toBe('spend')
+    const draft = parseAdvisorPlanningDraft(JSON.stringify(planningDraft({
+      questionFamily: 'quota',
+      requestedEvidenceDomains: ['provider-capacity', 'freshness'],
+      toolRequests: [{ tool: 'get_quota_snapshot', arguments: {} }],
+      presentationIntent: 'quota-card',
+    })))
+    const validated = validateAdvisorPlanningDraft(draft!, fallbackPlan, scope, ADVISOR_TOOL_DEFINITIONS)
+    expect(validated).toMatchObject({
+      modelAssisted: true,
+      plan: { questionFamily: 'quota', requestedEvidenceDomains: ['provider-capacity', 'freshness'], presentationIntent: 'quota-card', authorization: 'read-only' },
+      toolRequests: [{ tool: 'get_quota_snapshot', arguments: {} }],
+    })
+    expect(validated?.toolRequests).not.toContainEqual({ tool: 'get_spend_snapshot', arguments: {} })
+  })
+
   it('accepts a paraphrase through the model planning fixture without requiring a regex phrase', () => {
     const question = 'Explain the largest recent shift in my account.'
     const guardPlan = createAdvisorTurnPlanV1(question, scope)
@@ -45,7 +65,7 @@ describe('Advisor bounded model planning contract', () => {
     })))
 
     expect(draft).not.toBeNull()
-    const validated = validateAdvisorPlanningDraft(draft!, guardPlan, scope, ADVISOR_TOOL_DEFINITIONS, guardPlan.intent)
+    const validated = validateAdvisorPlanningDraft(draft!, guardPlan, scope, ADVISOR_TOOL_DEFINITIONS)
     expect(validated).toMatchObject({
       modelAssisted: true,
       plan: { questionFamily: 'spend', authorization: 'read-only', turnKind: 'investigate' },
@@ -68,10 +88,17 @@ describe('Advisor bounded model planning contract', () => {
     })
   })
 
+  it('treats a native model-selected quota tool as the semantic family', () => {
+    const fallbackPlan = createAdvisorTurnPlanV1('What changed in spend?', scope)
+    const draft = planningDraftFromNativeToolCalls([{ function: { name: 'get_quota_snapshot', arguments: '{}' } }], fallbackPlan)
+    expect(draft?.questionFamily).toBe('quota')
+    expect(validateAdvisorPlanningDraft(draft!, fallbackPlan, scope, ADVISOR_TOOL_DEFINITIONS)).toMatchObject({ plan: { questionFamily: 'quota' } })
+  })
+
   it('does not let planning turn an action boundary into read-only execution', () => {
     const guardPlan = createAdvisorTurnPlanV1('Run this benchmark', scope)
     const draft = planningDraft({ questionFamily: 'action' })
-    expect(validateAdvisorPlanningDraft(draft, guardPlan, scope, ADVISOR_TOOL_DEFINITIONS, guardPlan.intent)).toBeNull()
+    expect(validateAdvisorPlanningDraft(draft, guardPlan, scope, ADVISOR_TOOL_DEFINITIONS)).toBeNull()
   })
 
   it('rejects requests that widen the guarded model or provider scope', () => {
@@ -82,7 +109,6 @@ describe('Advisor bounded model planning contract', () => {
       modelGuard,
       modelScope,
       ADVISOR_TOOL_DEFINITIONS,
-      modelGuard.intent,
     )).toBeNull()
 
     const providerScope = { ...scope, provider: 'claude' }
@@ -95,7 +121,6 @@ describe('Advisor bounded model planning contract', () => {
       providerGuard,
       providerScope,
       ADVISOR_TOOL_DEFINITIONS,
-      providerGuard.intent,
     )).toBeNull()
   })
 
@@ -105,6 +130,6 @@ describe('Advisor bounded model planning contract', () => {
       toolRequests: [{ tool: 'write_file', arguments: {} } as never],
     })))
     expect(draft).not.toBeNull()
-    expect(validateAdvisorPlanningDraft(draft!, guardPlan, scope, ADVISOR_TOOL_DEFINITIONS, guardPlan.intent)).toBeNull()
+    expect(validateAdvisorPlanningDraft(draft!, guardPlan, scope, ADVISOR_TOOL_DEFINITIONS)).toBeNull()
   })
 })

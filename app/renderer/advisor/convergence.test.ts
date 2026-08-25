@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createAdvisorActionProposalV1 } from './action'
 import { buildSpendEvidence } from './evidence'
+import { buildAdvisorVerifiedClaimAtoms } from './claim-atoms'
 import { createAdvisorConformanceFixture } from './conformance'
 import { resolveAdvisorQuestion } from './comprehension'
 import { buildAdvisorPresentationBlocks } from './presentation'
@@ -63,23 +64,24 @@ describe('Advisor mainstream convergence contracts', () => {
     expect(proposal.budget.maxCalls).toBe(0)
   })
 
-  it('verifies factual synthesis claims against deterministic evidence paths', () => {
+  it('verifies factual synthesis selections against typed semantic atoms', () => {
     const fixture = createAdvisorConformanceFixture()
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
     const draft = parseAdvisorSynthesisDraft(JSON.stringify({
       contractVersion: 'advisor-synthesis-draft-v1',
       schemaVersion: 1,
-      conclusion: { text: 'Metrora measured the selected spend.', claimIds: ['claim-1'] },
-      why: [{ text: 'The selected evidence includes the spend total.', claimIds: ['claim-1'] }],
-      details: [{ text: 'Measured spend is the canonical total.', claimIds: ['claim-1'] }],
-      claims: [{ contractVersion: 'advisor-claim-v1', schemaVersion: 1, id: 'claim-1', class: 'numeric', text: 'Measured spend is 12.', value: 12, evidenceRefs: ['overview.current'], evidencePaths: ['spend.measuredCostUSD'] }],
+      conclusion: { claimIds: ['measured-total-cost'] },
+      why: [{ claimIds: ['observed-calls'] }],
+      details: [{ claimIds: ['observed-sessions'] }],
+      claims: [{ id: 'measured-total-cost' }, { id: 'observed-calls' }, { id: 'observed-sessions' }],
       presentationRequests: [{ kind: 'metric-cards' }],
     }))
     expect(draft).not.toBeNull()
-    expect(verifyAdvisorSynthesis(draft!, evidence)).toMatchObject({ valid: true, claims: [{ status: 'verified' }] })
+    expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(true)
+    expect(verifyAdvisorSynthesis(draft!, evidence).claims[0]?.id).toBe('measured-total-cost')
 
-    const invented = parseAdvisorSynthesisDraft(JSON.stringify({ ...draft, claims: [{ ...draft!.claims[0], value: 999 }] }))!
-    expect(verifyAdvisorSynthesis(invented, evidence).valid).toBe(false)
+    const atoms = buildAdvisorVerifiedClaimAtoms(evidence)
+    expect(atoms.find(atom => atom.id === 'measured-total-cost')?.value).toBe(12)
   })
 
   it('builds chart values from evidence rather than model-authored chart data', () => {

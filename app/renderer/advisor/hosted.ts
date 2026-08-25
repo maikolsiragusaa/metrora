@@ -60,14 +60,14 @@ function toolDefinitions(input: AdvisorRuntimeInput): readonly AdvisorToolDefini
 }
 
 function planningValidation(input: AdvisorRuntimeInput, response: { message: { content: string; tool_calls?: Array<Record<string, unknown>> } }): AdvisorPlanningValidation | null {
-  const { plan: guardPlan, intent } = runtimeGuardPlan(input)
+  const { fallbackPlan, guard } = runtimeGuardPlan(input)
   let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
   if (!draft && Array.isArray(response.message?.tool_calls)) {
-    draft = planningDraftFromNativeToolCalls(response.message.tool_calls, guardPlan)
+    draft = planningDraftFromNativeToolCalls(response.message.tool_calls, fallbackPlan)
   }
   if (!draft) return null
   try {
-    return validateAdvisorPlanningDraft(draft, guardPlan, input.evidence.scope, input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : [], intent)
+    return validateAdvisorPlanningDraft(draft, guard, input.evidence.scope, input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : [])
   } catch {
     return null
   }
@@ -117,8 +117,8 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
     if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
     const definitions = toolDefinitions(input)
-    const { plan: guardPlan, intent: guardIntent } = runtimeGuardPlan(input)
-    if (guardPlan.authorization !== 'read-only' || guardPlan.turnKind !== 'investigate') {
+    const { fallbackPlan, guard } = runtimeGuardPlan(input)
+    if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') {
       return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
     }
     let activeRequestId: string | null = null
@@ -126,13 +126,13 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
-        const deterministic = deterministicPlanningFallback(guardPlan, definitions, guardIntent)
+        const deterministic = deterministicPlanningFallback(fallbackPlan, definitions)
         let evidenceItems: AdvisorEvidence[] = []
         try { evidenceItems = await executeRequests(input, deterministic.toolRequests, signal) } catch (error) {
           if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
         }
         throwIfAborted(signal)
-        return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: note }, signal)
+        return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: note }, signal)
       }
 
       let planningResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
@@ -141,7 +141,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         planningResponse = await this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
-          messages: buildAdvisorPlanningMessages(input, guardPlan),
+          messages: buildAdvisorPlanningMessages(input, fallbackPlan, guard),
           tools: definitions,
           stream: false,
           consent: true,
@@ -156,7 +156,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
 
       const validation = planningValidation(input, planningResponse)
       if (!validation) return fallback('The hosted model planning output was malformed or outside the bounded Advisor contract.')
-      const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guardIntent }
+      const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
       let evidenceItems: AdvisorEvidence[] = []
       try { evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal) } catch (error) {
         if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error

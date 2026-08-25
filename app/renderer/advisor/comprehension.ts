@@ -1,10 +1,11 @@
-import type { AdvisorConversationTurn, AdvisorIntent, AdvisorQuestionUnderstanding, AdvisorScope, AdvisorTurnPlanV1 } from './types'
+import type { AdvisorConversationTurn, AdvisorGuardPlanV1, AdvisorIntent, AdvisorQuestionUnderstanding, AdvisorScope, AdvisorTurnPlanV1 } from './types'
 import { advisorCopyLanguage, createAdvisorTurnPlanV1 } from './turn-plan'
 
 export type AdvisorQuestionPlan = {
   intent: AdvisorIntent
   understanding: AdvisorQuestionUnderstanding
   plan: AdvisorTurnPlanV1
+  guard: AdvisorGuardPlanV1
   needsEvidence: boolean
   usedDefaultScope: boolean
 }
@@ -57,6 +58,16 @@ export function resolveAdvisorQuestion(
   return {
     intent,
     plan,
+    guard: {
+      contractVersion: 'advisor-guard-plan-v1',
+      schemaVersion: 1,
+      turnKind: plan.turnKind,
+      scopeIntent: plan.scopeIntent,
+      clarification: plan.clarification,
+      authorization: plan.authorization,
+      intent: intent === 'social' || intent === 'action-proposal' || intent === 'clarification' || intent === 'unsupported' ? intent : 'unknown',
+      usedDefaultScope,
+    },
     understanding: understanding(intent, usedDefaultScope, plan.clarification, boundary),
     // Unknown but otherwise safe investigations are deliberately eligible for
     // model planning; malformed planning falls back to the supported answer.
