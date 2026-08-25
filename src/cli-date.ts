@@ -8,12 +8,15 @@ const END_OF_DAY_MINUTES = 59
 const END_OF_DAY_SECONDS = 59
 const END_OF_DAY_MS = 999
 
-// The "all" period is intentionally bounded to the last 6 months. Older data
-// is rarely actionable for a cost tracker, and capping the range keeps the
-// parse path bounded so providers like Codex/Cursor with sparse multi-year
-// history still load in seconds. Users who need an unbounded window can use
-// the explicit `lifetime` period or `--from` / `--to`.
+// The "all" period is intentionally bounded to six calendar months, including
+// the anchor month. Older data is rarely actionable for a cost tracker, and
+// capping the range keeps the parse path bounded so providers like
+// Codex/Cursor with sparse multi-year history still load in seconds. Users who
+// need an unbounded window can use the explicit `lifetime` period or
+// `--from` / `--to`.
 const ALL_TIME_MONTHS = 6
+const WEEK_WINDOW_DAYS = 7
+const RECENT_WINDOW_DAYS = 30
 
 export type Period = 'today' | 'week' | '30days' | 'month' | 'all' | 'lifetime'
 
@@ -86,6 +89,22 @@ function endOfLocalDay(date: Date): Date {
   )
 }
 
+function startOfRecentInclusiveWindow(anchor: Date, dayCount: number): Date {
+  return new Date(
+    anchor.getFullYear(),
+    anchor.getMonth(),
+    anchor.getDate() - (dayCount - 1),
+  )
+}
+
+function startOfCalendarMonthWindow(anchor: Date, monthCount: number): Date {
+  return new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() - (monthCount - 1),
+    1,
+  )
+}
+
 export function dayRangeForDate(date: Date): DateRange {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   return { start, end: endOfLocalDay(start) }
@@ -121,16 +140,18 @@ export function parseDateRangeFlags(from: string | undefined, to: string | undef
   if (from === undefined && to === undefined) return null
 
   const now = new Date()
-  // When --from is omitted, default to 6 months back (the same window the
-  // dashboard's "all" period uses) instead of epoch. Previously a bare
-  // `--to 2026-01-01` opened a 55-year scan from 1970 which is rarely what
-  // the user meant and is expensive on machines with many session files.
-  const ALL_TIME_FALLBACK_MS = 6 * 31 * 24 * 60 * 60 * 1000
+  const endDate = to !== undefined
+    ? parseLocalDate(to)
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  // When --from is omitted, use the same bounded six-calendar-month window as
+  // the dashboard's "6 Months" period, anchored to the requested end date.
+  // Anchoring to `to` keeps historical `--to` queries bounded and meaningful
+  // instead of deriving their start from the machine's current date.
   const start = from !== undefined
     ? parseLocalDate(from)
-    : new Date(now.getTime() - ALL_TIME_FALLBACK_MS)
+    : startOfCalendarMonthWindow(endDate, ALL_TIME_MONTHS)
 
-  const endDate = to !== undefined ? parseLocalDate(to) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const end = endOfLocalDay(endDate)
 
   if (start > end) {
@@ -144,10 +165,10 @@ export function parseDateRangeFlags(from: string | undefined, to: string | undef
  *
  * Accepts a string (rather than the strict `Period` type) because the CLI
  * surfaces a few extra inputs not exposed in the dashboard tab strip
- * (e.g. `'yesterday'`). Unknown values fall back to `'week'`.
+ * (e.g. `'yesterday'`). Unknown values fail loudly.
  *
- * Note: `'all'` is bounded to the last 6 months. Use `'lifetime'` or
- * `--from`/`--to` for an unbounded historical window.
+ * Note: `'all'` is bounded to six calendar months including the current month.
+ * Use `'lifetime'` or `--from`/`--to` for an unbounded historical window.
  */
 export function getDateRange(period: string): { range: DateRange; label: string } {
   const now = new Date()
@@ -171,7 +192,7 @@ export function getDateRange(period: string): { range: DateRange; label: string 
       return { range: dayRangeForDate(start), label: `Yesterday (${toDateString(start)})` }
     }
     case 'week': {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+      const start = startOfRecentInclusiveWindow(now, WEEK_WINDOW_DAYS)
       return { range: { start, end }, label: 'Last 7 Days' }
     }
     case 'month': {
@@ -179,11 +200,11 @@ export function getDateRange(period: string): { range: DateRange; label: string 
       return { range: { start, end }, label: `${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}` }
     }
     case '30days': {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+      const start = startOfRecentInclusiveWindow(now, RECENT_WINDOW_DAYS)
       return { range: { start, end }, label: 'Last 30 Days' }
     }
     case 'all': {
-      const start = new Date(now.getFullYear(), now.getMonth() - ALL_TIME_MONTHS, 1)
+      const start = startOfCalendarMonthWindow(now, ALL_TIME_MONTHS)
       return { range: { start, end }, label: 'Last 6 months' }
     }
     case 'lifetime': {
