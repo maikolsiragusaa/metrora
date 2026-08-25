@@ -2,7 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
-import { fraction, quotaRequestSignal, readSecureFile, sanitizeError } from './security'
+import { quotaRequestSignal, readSecureFile, sanitizeError } from './security'
 
 const USAGE_ENDPOINT = 'https://api.github.com/copilot_internal/user'
 const SOURCE = { kind: 'provider-internal-api', stability: 'experimental' } as const
@@ -15,6 +15,7 @@ const HEADERS = {
 } as const
 
 type HostRecord = Record<string, unknown> & { oauth_token?: unknown }
+type JsonRecord = Record<string, unknown>
 
 export type CopilotDeps = {
   fetch: typeof fetch
@@ -36,40 +37,130 @@ function empty(connection: QuotaProvider['connection']): QuotaProvider {
   return { ...emptyQuota('copilot', connection), source: SOURCE }
 }
 
-function tokenFromMap(raw: string): string | null {
-  const parsed = JSON.parse(raw) as Record<string, HostRecord>
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-  const preferred = parsed['github.com'] ?? Object.values(parsed)[0]
-  const token = preferred?.oauth_token
-  return typeof token === 'string' && token.trim() ? token : null
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null
+}
+
+function tokenValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function credentialCandidates(raw: string): { preferred: string[]; all: string[] } {
+  const parsed = asRecord(JSON.parse(raw)) as Record<string, HostRecord> | null
+  if (!parsed) return { preferred: [], all: [] }
+
+  const entries = Object.entries(parsed).flatMap(([key, record]) => {
+    const token = tokenValue(record?.oauth_token)
+    return token ? [{ key, token }] : []
+  })
+  const preferred = entries.filter(({ key }) => /^github\.com(?::|$)/iu.test(key)).map(({ token }) => token)
+  return {
+    preferred: [...new Set(preferred)],
+    all: [...new Set(entries.map(({ token }) => token))],
+  }
 }
 
 async function credentialFromFiles(deps: CopilotDeps): Promise<string | null> {
+  const preferred = new Set<string>()
+  const all = new Set<string>()
   for (const filePath of [deps.hostsPath, deps.appsPath]) {
     try {
       const raw = await deps.readFile(filePath, 64 * 1024)
       if (!raw) continue
-      const token = tokenFromMap(raw)
-      if (token) return token
+      const candidates = credentialCandidates(raw)
+      for (const token of candidates.preferred) preferred.add(token)
+      for (const token of candidates.all) all.add(token)
     } catch {
       // A malformed or unreadable provider-owned file does not authorize a
       // wider search. Try the other known Copilot-owned credential document.
     }
   }
+
+  // A github.com (or github.com:<app-id>) key is the provider's own account
+  // selector. If more than one distinct provider-owned token is visible, there
+  // is no safe way for this read-only adapter to choose the active account.
+  if (preferred.size === 1) return preferred.values().next().value ?? null
+  if (preferred.size > 1) return null
+  return all.size === 1 ? all.values().next().value ?? null : null
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
   return null
 }
 
-function windowOf(id: string, label: string, snapshot: unknown): QuotaWindow | null {
-  if (!snapshot || typeof snapshot !== 'object') return null
-  const row = snapshot as Record<string, unknown>
-  const rawRemaining = row.percent_remaining ?? row.percentRemaining
-  const remainingFraction = fraction(rawRemaining)
-  if (remainingFraction === null) return null
+function numericField(row: JsonRecord, names: string[]): number | null {
+  for (const name of names) {
+    const value = finiteNumber(row[name])
+    if (value !== null) return value
+  }
+  return null
+}
+
+function presentField(row: JsonRecord, names: string[]): unknown {
+  for (const name of names) {
+    if (row[name] !== undefined && row[name] !== null) return row[name]
+  }
+  return undefined
+}
+
+function booleanMarker(value: unknown): 'true' | 'false' | 'unknown' | 'absent' {
+  if (value === undefined || value === null) return 'absent'
+  if (value === true || (typeof value === 'string' && value.trim().toLowerCase() === 'true')) return 'true'
+  if (value === false || (typeof value === 'string' && value.trim().toLowerCase() === 'false')) return 'false'
+  return 'unknown'
+}
+
+function hasTokenBillingMarker(data: JsonRecord, row: JsonRecord): boolean {
+  const values = [
+    data.token_based_billing,
+    data.tokenBasedBilling,
+    row.token_based_billing,
+    row.tokenBasedBilling,
+    row.unmetered,
+    row.is_unmetered,
+  ]
+  return values.some(value => booleanMarker(value) === 'true' || booleanMarker(value) === 'unknown')
+    || [data.billing_type, data.billingType, row.billing_type, row.billingType]
+      .some(value => typeof value === 'string' && ['token', 'token-based', 'token_based_billing', 'usage-based', 'usage_based', 'ai-credit', 'ai-credits', 'ai_credits', 'unmetered'].includes(value.trim().toLowerCase()))
+}
+
+function isUnlimited(data: JsonRecord, row: JsonRecord, entitlement: number | null): boolean {
+  return [data.unlimited, row.unlimited, row.isUnlimitedEntitlement]
+    .some(value => booleanMarker(value) === 'true' || booleanMarker(value) === 'unknown')
+    || entitlement === -1
+}
+
+function resetAt(value: unknown): string | null {
+  const numeric = finiteNumber(value)
+  if (numeric !== null) {
+    const date = new Date(Math.abs(numeric) > 1e12 ? numeric : numeric * 1000)
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null
+  }
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Date.parse(value))) return new Date(value).toISOString()
+  return null
+}
+
+function windowOf(id: string, label: string, snapshot: unknown, data: JsonRecord): QuotaWindow | null {
+  const row = asRecord(snapshot)
+  if (!row) return null
+  const entitlement = numericField(row, ['entitlement', 'entitlementRequests'])
+  const rawRemaining = numericField(row, ['percent_remaining', 'percentRemaining', 'remainingPercentage'])
+  if (entitlement === null || entitlement <= 0 || entitlement === -1 || rawRemaining === null || rawRemaining < 0 || rawRemaining > 100) return null
+  if (isUnlimited(data, row, entitlement) || hasTokenBillingMarker(data, row)) return null
+
+  const remainingFraction = rawRemaining / 100
+  const reset = resetAt(presentField(row, ['quota_reset_at', 'quotaResetAt', 'reset_at', 'resetAt', 'resetDate', 'reset_date']))
+    ?? resetAt(presentField(data, ['quota_reset_date_utc', 'quota_reset_date', 'quotaResetDateUtc', 'quotaResetDate']))
   return {
     id,
     label,
     usedFraction: Number((1 - remainingFraction).toFixed(6)),
-    resetsAt: null,
+    resetsAt: reset,
     windowSeconds: null,
   }
 }
@@ -90,10 +181,10 @@ function planLabel(value: unknown): string | null {
 }
 
 export function decodeCopilotUsage(body: unknown): QuotaProvider {
-  const data = body && typeof body === 'object' ? body as Record<string, any> : {}
-  const snapshots = data.quota_snapshots ?? data.quotaSnapshots
-  const premium = windowOf('premium_interactions', 'Premium requests', snapshots?.premium_interactions ?? snapshots?.premiumInteractions)
-  const chat = windowOf('chat', 'Chat', snapshots?.chat)
+  const data = asRecord(body) ?? {}
+  const snapshots = asRecord(data.quota_snapshots) ?? asRecord(data.quotaSnapshots) ?? {}
+  const premium = windowOf('premium_interactions', 'Premium requests', snapshots.premium_interactions ?? snapshots.premiumInteractions, data)
+  const chat = windowOf('chat', 'Chat', snapshots.chat, data)
   const windows = [premium, chat].filter((row): row is QuotaWindow => row !== null)
   return {
     ...empty('connected'),

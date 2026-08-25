@@ -265,7 +265,11 @@ export async function fetchAntigravityQuota(options: Partial<AntigravityDeps> & 
         if (quota) return { quota: markObserved(quota, deps.now()) }
       }
     }
-    return { quota: empty('disconnected') }
+    // An absent eligible process is a normal disconnected state. Once an
+    // eligible provider-owned authority was observed, however, a failed port
+    // or protocol probe is a transport failure and may legitimately retain a
+    // prior factual snapshot as stale in QuotaService.
+    return { quota: empty(candidates.length > 0 ? 'transientFailure' : 'disconnected') }
   } catch (error) {
     if (options.signal?.aborted) return { quota: empty('disconnected') }
     console.warn(`Antigravity capacity unavailable: ${sanitizeError(error)}`)

@@ -10,11 +10,13 @@ Current desktop capacity observation covers:
 
 - **Codex** — read-only provider-owned ChatGPT/Codex OAuth usage;
 - **Claude** — read-only Claude Code OAuth usage;
-- **GitHub Copilot** — existing local Copilot credential state with a bounded provider-client usage endpoint, marked experimental;
+- **GitHub Copilot** — Provider client/internal API · Experimental, using existing provider-owned credential state;
 - **Kimi Code** — existing Kimi Code CLI credential state with the fixed coding usage endpoint, marked experimental;
 - **Antigravity** — an already-running local Antigravity service discovered through bounded platform-specific process/port inspection, marked experimental.
 
 Quota reads are observational. Metrora does not refresh or rewrite provider credentials in this path. Provider-owned credential rotation may be observed through one bounded reread after authentication failure where the adapter supports it. Antigravity V1 does not spawn or manage the provider CLI and does not add Google OAuth. Copilot V1 does not create a GitHub device-flow login, import browser cookies, or store a new GitHub token. Kimi V1 does not spend its refresh token. Metrora-owned backoff state may still be persisted.
+
+Copilot's internal API response is compatibility/observational evidence, not a stronger authority than a supported documented provider source. Unlimited, unmetered, token-billed, placeholder, or otherwise insufficient Copilot quota states remain unavailable rather than being represented as zero usage. A future documented provider source may supersede this experimental transport without changing the canonical quota contract.
 
 Renderer IPC applies a product-field allowlist so tokens, account identifiers, credential JSON, credential paths, local process command lines, local ports, and CSRF values cannot cross the bridge. Provider source details expose only the bounded source class and stability label.
 
