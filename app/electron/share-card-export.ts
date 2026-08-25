@@ -1,5 +1,3 @@
-import path from 'node:path'
-
 export const SHARE_CARD_MAX_PNG_BYTES = 5 * 1024 * 1024
 
 export type ShareCardSaveDialogOptions = {
@@ -35,7 +33,10 @@ export function decodeShareCardPngDataUrl(dataUrl: string): Uint8Array {
 }
 
 export function sanitizeShareCardFilename(input: string): string {
-  const leaf = path.basename(typeof input === 'string' ? input : '')
+  const raw = typeof input === 'string' ? input : ''
+  // Treat both path separators as untrusted renderer input regardless of the
+  // host OS. The renderer may suggest a leaf name; it never chooses a path.
+  const leaf = raw.split(/[\\/]/u).at(-1) ?? ''
   const normalized = leaf
     .replace(/\.png$/iu, '')
     .replace(/[^A-Za-z0-9._-]+/gu, '-')
