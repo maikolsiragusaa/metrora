@@ -47,6 +47,16 @@ function boundedText(value: string, max = 80): string {
   return value.replace(/[\u0000-\u001f\u007f]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, max)
 }
 
+function finiteNonNegative(value: number): number | null {
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function requiredCount(value: number, label: string): number {
+  const safe = finiteNonNegative(value)
+  if (safe === null) throw new Error(`Share card ${label} evidence is invalid.`)
+  return safe
+}
+
 function xml(value: string): string {
   return value
     .replace(/&/gu, '&amp;')
@@ -80,6 +90,11 @@ export function buildShareCardV1(input: BuildShareCardV1Input): ShareCardV1 {
   const disclosedProject = projectActive && input.includeProjectName && input.projectScopeName
     ? boundedText(input.projectScopeName)
     : null
+  const cost = includeCost ? finiteNonNegative(current.cost) : null
+  if (includeCost && cost === null) throw new Error('Share card cost evidence is invalid.')
+  const coverage = includeCost && typeof current.pricingCoverage === 'number'
+    ? finiteNonNegative(current.pricingCoverage)
+    : null
 
   return {
     schemaVersion: SHARE_CARD_V1_SCHEMA,
@@ -91,17 +106,15 @@ export function buildShareCardV1(input: BuildShareCardV1Input): ShareCardV1 {
       name: disclosedProject,
     },
     metrics: {
-      calls: Math.max(0, current.calls),
-      sessions: Math.max(0, current.sessions),
-      costUSD: includeCost ? Math.max(0, current.cost) : null,
+      calls: requiredCount(current.calls, 'call-count'),
+      sessions: requiredCount(current.sessions, 'session-count'),
+      costUSD: cost,
     },
     topModel: topModel ? {
       name: boundedText(topModel.name, 96),
-      calls: Math.max(0, topModel.calls),
+      calls: requiredCount(topModel.calls, 'top-model call-count'),
     } : null,
-    pricingCoverage: includeCost && typeof current.pricingCoverage === 'number'
-      ? Math.max(0, Math.min(1, current.pricingCoverage))
-      : null,
+    pricingCoverage: coverage === null ? null : Math.min(1, coverage),
     dataState,
     attribution: 'Metrora · metrora.eu',
   }
@@ -148,7 +161,6 @@ export function renderShareCardSvg(card: ShareCardV1): string {
   const coverageNote = card.metrics.costUSD !== null && card.pricingCoverage !== null && card.pricingCoverage < 1
     ? `${Math.round(card.pricingCoverage * 100)}% of cost-bearing calls priced`
     : ''
-  const notice = [stateNote, coverageNote].filter(Boolean).join(' · ')
   const thirdMetric = card.metrics.costUSD === null
     ? metricBlock(828, 'Top model', topModel, card.topModel ? `${formatInteger(card.topModel.calls)} calls` : '')
     : metricBlock(828, 'Spend', formatCost(card.metrics.costUSD), coverageNote)
@@ -181,7 +193,7 @@ export function renderShareCardSvg(card: ShareCardV1): string {
     <text x="54" y="442" fill="#7f909a" font-size="16" font-weight="600">SCOPE</text>
     <text x="54" y="477" fill="#dbe5ea" font-size="22">${xml(displayText(card.providerScope, 34))} · ${xml(projectScope)}</text>
     ${card.metrics.costUSD !== null && card.topModel ? `<text x="54" y="515" fill="#91a0aa" font-size="18">Top model: ${xml(topModel)} · ${formatInteger(card.topModel.calls)} calls</text>` : ''}
-    ${notice ? `<text x="54" y="552" fill="#f0b86e" font-size="16">${xml(displayText(notice, 90))}</text>` : ''}
+    ${stateNote ? `<text x="54" y="552" fill="#f0b86e" font-size="16">${xml(displayText(stateNote, 90))}</text>` : ''}
     <line x1="54" x2="1146" y1="578" y2="578" stroke="#26313a"/>
     <text x="54" y="608" fill="#82929c" font-size="16">${xml(card.attribution)}</text>
     <text x="1146" y="608" text-anchor="end" fill="#586872" font-size="14">Measured locally · shared by you</text>
