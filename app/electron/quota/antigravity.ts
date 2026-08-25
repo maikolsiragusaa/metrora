@@ -20,6 +20,7 @@ export type LocalRequestFn = (
   tls: boolean,
   pathName: string,
   csrf: string,
+  signal?: AbortSignal,
 ) => Promise<{ status: number; text: string } | null>
 
 export type AntigravityDeps = {
@@ -33,16 +34,20 @@ const execFileAsync: ExecFileFn = async (file, args) => promisify(execFile)(file
   encoding: 'utf8', timeout: 5_000, maxBuffer: 1024 * 1024,
 }) as Promise<{ stdout: string }>
 
-function postLocal(port: number, tls: boolean, pathName: string, csrf: string): Promise<{ status: number; text: string } | null> {
+function postLocal(port: number, tls: boolean, pathName: string, csrf: string, signal?: AbortSignal): Promise<{ status: number; text: string } | null> {
   return new Promise(resolve => {
+    if (signal?.aborted) { resolve(null); return }
     let settled = false
+    let request: ReturnType<typeof http.request> | ReturnType<typeof https.request> | null = null
+    const onAbort = () => { request?.destroy(); finish(null) }
     const finish = (value: { status: number; text: string } | null) => {
       if (settled) return
       settled = true
+      signal?.removeEventListener('abort', onAbort)
       resolve(value)
     }
     const client = tls ? https : http
-    const request = client.request({
+    request = client.request({
       host: '127.0.0.1',
       port,
       method: 'POST',
@@ -71,7 +76,8 @@ function postLocal(port: number, tls: boolean, pathName: string, csrf: string): 
       response.on('end', () => finish({ status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }))
       response.on('error', () => finish(null))
     })
-    request.on('timeout', () => { request.destroy(); finish(null) })
+    signal?.addEventListener('abort', onAbort, { once: true })
+    request.on('timeout', () => { request?.destroy(); finish(null) })
     request.on('error', () => finish(null))
     request.end('{}')
   })
@@ -226,14 +232,16 @@ export function decodeAntigravityStatus(body: unknown): { windows: QuotaWindow[]
   return { windows, planLabel: typeof rawPlan === 'string' && rawPlan.trim() ? rawPlan.trim() : null }
 }
 
-async function probe(deps: AntigravityDeps, candidate: Candidate, port: number): Promise<QuotaProvider | null> {
+async function probe(deps: AntigravityDeps, candidate: Candidate, port: number, signal?: AbortSignal): Promise<QuotaProvider | null> {
   for (const tls of [true, false]) {
-    const summary = await deps.request(port, tls, SUMMARY_PATH, candidate.csrf)
+    if (signal?.aborted) return null
+    const summary = await deps.request(port, tls, SUMMARY_PATH, candidate.csrf, signal)
     if (summary?.status === 200) {
       const windows = decodeAntigravitySummary(parseJson(summary.text))
       if (windows.length > 0) return { ...empty('connected'), windows }
     }
-    const status = await deps.request(port, tls, STATUS_PATH, candidate.csrf)
+    if (signal?.aborted) return null
+    const status = await deps.request(port, tls, STATUS_PATH, candidate.csrf, signal)
     if (status?.status === 200) {
       const decoded = decodeAntigravityStatus(parseJson(status.text))
       if (decoded.windows.length > 0 || decoded.planLabel) return { ...empty('connected'), ...decoded }
@@ -242,19 +250,24 @@ async function probe(deps: AntigravityDeps, candidate: Candidate, port: number):
   return null
 }
 
-export async function fetchAntigravityQuota(options: Partial<AntigravityDeps> = {}): Promise<{ quota: QuotaProvider }> {
+export async function fetchAntigravityQuota(options: Partial<AntigravityDeps> & { signal?: AbortSignal } = {}): Promise<{ quota: QuotaProvider }> {
   const deps = { ...defaults, ...options }
   try {
+    if (options.signal?.aborted) return { quota: empty('disconnected') }
     const candidates = await processCandidates(deps)
+    if (options.signal?.aborted) return { quota: empty('disconnected') }
     for (const candidate of candidates) {
+      if (options.signal?.aborted) return { quota: empty('disconnected') }
       const ports = candidate.port ? [candidate.port] : await listeningPorts(deps, candidate.pid)
       for (const port of ports) {
-        const quota = await probe(deps, candidate, port)
+        if (options.signal?.aborted) return { quota: empty('disconnected') }
+        const quota = await probe(deps, candidate, port, options.signal)
         if (quota) return { quota: markObserved(quota, deps.now()) }
       }
     }
     return { quota: empty('disconnected') }
   } catch (error) {
+    if (options.signal?.aborted) return { quota: empty('disconnected') }
     console.warn(`Antigravity capacity unavailable: ${sanitizeError(error)}`)
     return { quota: empty('transientFailure') }
   }
