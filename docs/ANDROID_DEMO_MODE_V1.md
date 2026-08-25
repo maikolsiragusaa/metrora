@@ -25,9 +25,11 @@ lifetime history. A deterministic automation launch may use the
 allowlisted Android intent extras `metrora.demo=true`,
 `metrora.demo.dataset=v1`, `metrora.demo.now=YYYY-MM-DD`, and
 `metrora.demo.destination` with one of `home`, `activity`, `analyze`,
-`workspace` or `settings`. Invalid values fail closed and normal launches are
-unchanged. Demo dates are session-local, so the same date and fixture version
-produce the same domain values.
+`workspace` or `settings`. The hint is honored only when the real local store
+is empty; an existing pairing or cached real state remains authoritative and
+the requested demo destination is ignored. Invalid values fail closed and
+normal launches are unchanged. Demo dates are session-local, so the same date
+and fixture version produce the same domain values.
 
 Demo values are for exploration and visual QA only. They never become real
 Metrora evidence; pairing a Desktop remains the normal path for real usage.

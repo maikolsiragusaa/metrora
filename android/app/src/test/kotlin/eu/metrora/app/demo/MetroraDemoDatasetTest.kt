@@ -88,4 +88,18 @@ class MetroraDemoDatasetTest {
         assertNotNull(atlas.projectCatalog.projectOption("mp_atlas"))
         assertNotNull(atlas.projectCatalog.projectOption("mp_nova"))
     }
+
+    @Test
+    fun activity_pull_requests_are_bounded_to_the_selected_period() {
+        val today = LocalDate.of(2026, 8, 25)
+        val source = MetroraDemoDatasetV1.source(today)
+        val todayPullRequests = source.load(period = "today").activity.pullRequests
+        val weekPullRequests = source.load(period = "week").activity.pullRequests
+
+        assertEquals(1, todayPullRequests.size)
+        assertEquals(2, weekPullRequests.size)
+        assertTrue(todayPullRequests.all { it.dateFrom.startsWith(today.toString()) && it.dateTo.startsWith(today.toString()) })
+        assertTrue(todayPullRequests.sumOf { it.costMicrosUsd } < weekPullRequests.sumOf { it.costMicrosUsd })
+        assertTrue(todayPullRequests.all { it.linkedSessionCount <= 1L })
+    }
 }

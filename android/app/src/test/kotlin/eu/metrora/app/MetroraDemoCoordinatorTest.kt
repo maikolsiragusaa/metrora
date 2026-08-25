@@ -115,6 +115,30 @@ class MetroraDemoCoordinatorTest {
         coordinator.close()
     }
 
+    @Test
+    fun deterministic_demo_launch_does_not_override_existing_real_pairing() = runTest {
+        val store = CountingStore(credentials = testCredentials())
+        val api = CountingApi(identityMatches = true)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val spec = MetroraDemoLaunchSpec.parse(true, "v1", "2026-08-25", "settings")
+            ?: error("valid test spec")
+        val coordinator = MetroraCoordinator(
+            store = store,
+            api = api,
+            scope = CoroutineScope(SupervisorJob() + dispatcher),
+            deviceName = "Demo test",
+            demoLaunchSpec = spec,
+        )
+        advanceUntilIdle()
+
+        assertFalse(coordinator.state.value.isDemo)
+        assertEquals(MetroraDataMode.REAL, coordinator.state.value.dataMode)
+        assertTrue(coordinator.state.value.paired)
+        assertEquals(MetroraConnectionState.RESTORED, coordinator.state.value.status)
+        assertEquals(0, store.writes)
+        coordinator.close()
+    }
+
     private fun coordinator(
         store: CountingStore,
         api: CountingApi,
@@ -128,11 +152,13 @@ class MetroraDemoCoordinatorTest {
         )
 }
 
-private class CountingStore : MetroraStore {
+private class CountingStore(
+    private val credentials: PairingCredentials? = null,
+) : MetroraStore {
     var writes: Int = 0
     var clears: Int = 0
 
-    override suspend fun loadCredentials(): StorageRead<PairingCredentials> = StorageRead.Missing
+    override suspend fun loadCredentials(): StorageRead<PairingCredentials> = credentials?.let { StorageRead.Present(it) } ?: StorageRead.Missing
     override suspend fun saveCredentials(credentials: PairingCredentials) { writes += 1 }
     override suspend fun loadSnapshot(): StorageRead<UsageSnapshot> = StorageRead.Missing
     override suspend fun saveSnapshot(snapshot: UsageSnapshot) { writes += 1 }
@@ -155,7 +181,9 @@ private class CountingStore : MetroraStore {
     override suspend fun clearPairing() { clears += 1 }
 }
 
-private class CountingApi : MetroraApi {
+private class CountingApi(
+    private val identityMatches: Boolean? = null,
+) : MetroraApi {
     val calls = AtomicInteger(0)
 
     private fun network(): Nothing {
@@ -175,5 +203,5 @@ private class CountingApi : MetroraApi {
     override suspend fun fetchActivitySessionDetail(credentials: PairingCredentials, query: ActivityQuery, id: String): ActivitySessionDetail = network()
     override suspend fun fetchActivityPullRequests(credentials: PairingCredentials, query: ActivityQuery, cursor: String?): ActivityPullRequestsPage = network()
     override suspend fun revoke(credentials: PairingCredentials) { network() }
-    override fun localIdentityMatches(credentials: PairingCredentials): Boolean = network()
+    override fun localIdentityMatches(credentials: PairingCredentials): Boolean = identityMatches ?: network()
 }

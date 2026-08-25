@@ -131,7 +131,7 @@ fun MetroraApp(coordinator: MetroraCoordinator, initialDemoDestination: String? 
                 onRevoke = { confirmation = ConfirmAction.REVOKE },
                 onForget = { confirmation = ConfirmAction.FORGET },
                 onExitDemo = coordinator::exitDemo,
-                initialDestination = initialDemoDestination,
+                initialDestination = initialDemoDestination.takeIf { state.isDemo },
             )
         }
     }

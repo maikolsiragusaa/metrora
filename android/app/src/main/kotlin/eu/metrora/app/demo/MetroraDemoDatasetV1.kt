@@ -218,7 +218,7 @@ class MetroraDemoDataSource internal constructor(
         val filteredPullRequests = pullRequests
             .filter { pullRequestMatchesQuery(it, query) }
             .take(query.limit)
-            .map { it.toActivityPullRequest() }
+            .map { it.toActivityPullRequest(query.period) }
         val sessionsMeta = ActivityPageMeta(
             desktopId = DEMO_ID,
             generatedAt = generatedAtText,
@@ -325,11 +325,20 @@ class MetroraDemoDataSource internal constructor(
             (query.source == null || query.source == record.sourceProjectId)
 
     private fun pullRequestMatchesQuery(request: DemoPullRequest, query: ActivityQuery): Boolean =
-        (query.projectScopeId == ALL_PROJECTS || query.projectScopeId == request.projectId) &&
-            (query.provider == null || request.sourceIds.contains(query.provider)) &&
-            (query.route == null || request.routes.contains(query.route)) &&
-            (query.model == null || request.models.contains(query.model)) &&
-            (query.source == null || request.sourceProjectIds.contains(query.source))
+        if (query.projectScopeId != ALL_PROJECTS && query.projectScopeId != request.projectId) {
+            false
+        } else {
+            val rows = records.filter {
+                it.projectId == request.projectId &&
+                    it.offset in request.offsets &&
+                    it.offset < periodDays(query.period)
+            }
+            rows.isNotEmpty() &&
+                (query.provider == null || rows.any { query.provider in it.sourceIds }) &&
+                (query.route == null || rows.any { query.route == it.route }) &&
+                (query.model == null || rows.any { query.model == it.model }) &&
+                (query.source == null || rows.any { query.source == it.sourceProjectId })
+        }
 
     private fun buildProjectCatalog(): ProjectCatalogSnapshot = ProjectCatalogSnapshot(
         desktopId = DEMO_ID,
@@ -425,24 +434,13 @@ class MetroraDemoDataSource internal constructor(
     private fun buildPullRequests(): List<DemoPullRequest> {
         fun request(id: String, reference: String, projectId: String, offsets: IntRange): DemoPullRequest {
             val rows = records.filter { it.projectId == projectId && it.offset in offsets }
-            val cost = rows.sumOf { it.costMicrosUsd }
             return DemoPullRequest(
                 id = id,
                 reference = reference,
                 projectId = projectId,
-                sourceProjectIds = rows.map { it.sourceProjectId }.distinct(),
-                sourceIds = rows.flatMap { it.sourceIds }.distinct(),
-                routes = rows.map { it.route }.distinct(),
-                models = rows.map { it.model }.distinct(),
+                offsets = offsets,
                 dateFrom = rows.minOfOrNull { it.startedAt } ?: "${today}T09:00:00Z",
                 dateTo = rows.maxOfOrNull { it.endedAt } ?: "${today}T09:32:00Z",
-                costMicrosUsd = cost,
-                calls = rows.sumOf { it.calls },
-                linkedSessionCount = rows.size.toLong(),
-                categories = listOf(
-                    eu.metrora.app.data.ActivityCategory("Review", cost * 6L / 10L),
-                    eu.metrora.app.data.ActivityCategory("Changes", cost - cost * 6L / 10L),
-                ),
             )
         }
         return listOf(
@@ -490,20 +488,31 @@ class MetroraDemoDataSource internal constructor(
         endedAt = endedAt,
     )
 
-    private fun DemoPullRequest.toActivityPullRequest(): ActivityPullRequest = ActivityPullRequest(
-        id = id,
-        reference = reference,
-        url = null,
-        dateFrom = dateFrom,
-        dateTo = dateTo,
-        costMicrosUsd = costMicrosUsd,
-        calls = calls,
-        linkedSessionCount = linkedSessionCount,
-        models = models,
-        approximate = false,
-        categoryCoverage = DetailCoverage.COMPLETE,
-        categories = categories,
-    )
+    private fun DemoPullRequest.toActivityPullRequest(period: String): ActivityPullRequest {
+        val rows = records.filter {
+            it.projectId == projectId &&
+                it.offset in offsets &&
+                it.offset < periodDays(period)
+        }
+        val cost = rows.sumOf { it.costMicrosUsd }
+        return ActivityPullRequest(
+            id = id,
+            reference = reference,
+            url = null,
+            dateFrom = rows.minOfOrNull { it.startedAt } ?: dateFrom,
+            dateTo = rows.maxOfOrNull { it.endedAt } ?: dateTo,
+            costMicrosUsd = cost,
+            calls = rows.sumOf { it.calls },
+            linkedSessionCount = rows.size.toLong(),
+            models = rows.map { it.model }.distinct(),
+            approximate = false,
+            categoryCoverage = DetailCoverage.COMPLETE,
+            categories = listOf(
+                eu.metrora.app.data.ActivityCategory("Review", cost * 6L / 10L),
+                eu.metrora.app.data.ActivityCategory("Changes", cost - cost * 6L / 10L),
+            ),
+        )
+    }
 
     private data class DemoRecord(
         val id: String,
@@ -530,16 +539,9 @@ class MetroraDemoDataSource internal constructor(
         val id: String,
         val reference: String,
         val projectId: String,
-        val sourceProjectIds: List<String>,
-        val sourceIds: List<String>,
-        val routes: List<String>,
-        val models: List<String>,
+        val offsets: IntRange,
         val dateFrom: String,
         val dateTo: String,
-        val costMicrosUsd: Long,
-        val calls: Long,
-        val linkedSessionCount: Long,
-        val categories: List<eu.metrora.app.data.ActivityCategory>,
     )
 
     private data class ModelKey(val name: String, val route: String, val brand: String)

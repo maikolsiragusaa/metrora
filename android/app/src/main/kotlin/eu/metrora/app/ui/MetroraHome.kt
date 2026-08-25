@@ -111,11 +111,8 @@ internal fun HomeState(
     onExitDemo: () -> Unit,
     initialDestination: String? = null,
 ) {
-    val requestedInitialDestination = HomeDestination.entries
-        .firstOrNull { it.name.equals(initialDestination, ignoreCase = true) }
-        ?.name
-        ?: HomeDestination.HOME.name
-    var destinationName by rememberSaveable(initialDestination) { mutableStateOf(requestedInitialDestination) }
+    val requestedInitialDestination = initialDestinationFor(state, initialDestination)
+    var destinationName by rememberSaveable(state.isDemo, initialDestination) { mutableStateOf(requestedInitialDestination) }
     val destination = HomeDestination.entries.firstOrNull { it.name == destinationName } ?: HomeDestination.HOME
     val scrollState = remember(destination) { androidx.compose.foundation.ScrollState(0) }
 
@@ -159,6 +156,14 @@ internal fun HomeState(
             }
         }
     }
+}
+
+internal fun initialDestinationFor(state: MetroraUiState, requested: String?): String {
+    if (!state.isDemo) return HomeDestination.HOME.name
+    return HomeDestination.entries
+        .firstOrNull { it.name.equals(requested, ignoreCase = true) }
+        ?.name
+        ?: HomeDestination.HOME.name
 }
 
 @Composable
