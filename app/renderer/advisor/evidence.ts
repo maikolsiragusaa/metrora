@@ -1,4 +1,5 @@
 import { formatUsd } from '../lib/format'
+import { quotaProviderDisplayName } from '../lib/quota-providers'
 import type { MenubarPayload, ModelReportRow, Period, QuotaProvider } from '../lib/types'
 import type {
   AdvisorBenchEvidence,
@@ -52,7 +53,7 @@ export function periodLabel(scope: Pick<AdvisorScope, 'period' | 'range'>): stri
   return left === right ? left : left + ' – ' + right
 }
 export function scopeLabel(scope: AdvisorScope): string {
-  const parts = [periodLabel(scope), scope.projectName || 'All projects', scope.provider === 'all' ? 'All providers' : scope.provider]
+  const parts = [periodLabel(scope), scope.projectName || 'All projects', scope.provider === 'all' ? 'All providers' : quotaProviderDisplayName(scope.provider)]
   if (scope.model) parts.push(scope.model)
   return parts.join(' · ')
 }
@@ -366,7 +367,7 @@ function quotaCoverage(providers: AdvisorQuotaProvider[]): AdvisorCoverage {
 export function buildQuotaEvidence(question: string, scope: AdvisorScope, data: MenubarPayload | null, quota: QuotaProvider[]): AdvisorEvidence {
   const matching = scope.provider === 'all' ? quota : quota.filter(row => row.provider === scope.provider)
   const providers = matching.map(quotaProvider)
-  const refs: AdvisorEvidenceRef[] = providers.map(row => ({ id: 'quota.' + row.provider, label: (row.provider === 'claude' ? 'Claude' : 'Codex') + ' provider quota snapshot', source: 'quota' }))
+  const refs: AdvisorEvidenceRef[] = providers.map(row => ({ id: 'quota.' + row.provider, label: quotaProviderDisplayName(row.provider) + ' provider quota snapshot', source: 'quota' }))
   if (data) refs.push({ id: 'overview.current', label: 'Metrora-measured usage context', source: 'overview' })
   const coverage = quotaCoverage(providers)
   return {
