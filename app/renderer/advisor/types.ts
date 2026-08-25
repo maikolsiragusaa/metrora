@@ -79,8 +79,21 @@ export type AdvisorQuestionUnderstanding = { intent: AdvisorIntent; summary: str
 export type AdvisorClaimClass = 'numeric' | 'date' | 'period' | 'provider' | 'model' | 'project' | 'trend' | 'status' | 'qualitative' | 'causal' | 'forecast' | 'recommendation'
 export type AdvisorClaimStatus = 'verified' | 'rejected' | 'unsupported'
 export type AdvisorClaimV1 = { contractVersion: 'advisor-claim-v1'; schemaVersion: 1; id: string; class: AdvisorClaimClass; text: string; value: AdvisorJsonValue; evidenceRefs: string[]; evidencePaths: string[]; status: AdvisorClaimStatus; reason?: string }
+export type AdvisorSynthesisBlockV1 = { text: string; claimIds: string[] }
 export type AdvisorPresentationRequestV1 = { kind: AdvisorPresentationIntent; title?: string; evidenceRefs?: string[] }
-export type AdvisorSynthesisDraftV1 = { contractVersion: 'advisor-synthesis-draft-v1'; schemaVersion: 1; conclusion: string; why: string[]; details: string[]; claims: AdvisorClaimV1[]; presentationRequests: AdvisorPresentationRequestV1[]; expertDetail?: string[] }
+export type AdvisorSynthesisDraftV1 = { contractVersion: 'advisor-synthesis-draft-v1'; schemaVersion: 1; conclusion: AdvisorSynthesisBlockV1; why: AdvisorSynthesisBlockV1[]; details: AdvisorSynthesisBlockV1[]; claims: AdvisorClaimV1[]; presentationRequests: AdvisorPresentationRequestV1[]; expertDetail?: string[] }
+export type AdvisorToolRequestV1 = { tool: AdvisorToolName; arguments: AdvisorJsonObject }
+export type AdvisorPlanningDraftV1 = {
+  contractVersion: 'advisor-planning-draft-v1'
+  schemaVersion: 1
+  turnKind: 'investigate' | 'clarify'
+  questionFamily: AdvisorQuestionFamily
+  requestedEvidenceDomains: AdvisorEvidenceDomain[]
+  toolRequests: AdvisorToolRequestV1[]
+  presentationIntent: AdvisorPresentationIntent
+  expertDetailRequested: boolean
+  clarification: string | null
+}
 export type AdvisorPresentationMetricCard = { label: string; value: string; unit: string; detail: string; claimIds: string[] }
 export type AdvisorPresentationTable = { columns: string[]; rows: string[][] }
 export type AdvisorPresentationChartSeries = { id: string; label: string; points: Array<{ label: string; value: number | null }> }
@@ -149,7 +162,7 @@ export type AdvisorToolContract = {
 export type AdvisorToolExecution = { content: string; evidence: AdvisorEvidence; envelope?: AdvisorToolResultEnvelope }
 export type AdvisorToolExecutor = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<AdvisorToolExecution>
 export type AdvisorConversationTurn = { role: 'user' | 'assistant'; content: string; scopeFingerprint: string }
-export type AdvisorRuntimeInput = { question: string; evidence: AdvisorEvidence; conversation?: AdvisorConversationTurn[]; plan?: AdvisorTurnPlanV1; tools?: readonly AdvisorToolDefinition[]; toolContract?: AdvisorToolContract; executeTool?: AdvisorToolExecutor; onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void; onDelta?: (text: string) => void }
+export type AdvisorRuntimeInput = { question: string; evidence: AdvisorEvidence; conversation?: AdvisorConversationTurn[]; plan?: AdvisorTurnPlanV1; guardIntent?: AdvisorIntent; tools?: readonly AdvisorToolDefinition[]; toolContract?: AdvisorToolContract; executeTool?: AdvisorToolExecutor; onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void; onDelta?: (text: string) => void }
 export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> }
 export type AdvisorDataSource = { getOverview(context: AdvisorScope, signal?: AbortSignal): Promise<MenubarPayload>; getModels(context: AdvisorScope, signal?: AbortSignal): Promise<ModelReportRow[]>; getQuota(signal?: AbortSignal): Promise<QuotaProvider[]>; getBenchEvidence?(context: AdvisorScope, signal?: AbortSignal): Promise<AdvisorBenchEvidence> }
 export type AdvisorBridge = Pick<MetroraBridge, 'getOverview' | 'getModels' | 'getQuota' | 'getBenchHistory' | 'getBenchComparison'>

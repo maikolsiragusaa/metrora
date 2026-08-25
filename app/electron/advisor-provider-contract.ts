@@ -26,11 +26,8 @@ export type AdvisorHostedEvent = {
   message?: string
 }
 export type AdvisorHostedChatMessage = {
-  role: 'system' | 'user' | 'assistant' | 'tool'
+  role: 'system' | 'user' | 'assistant'
   content: string
-  toolCallId?: string
-  toolName?: string
-  toolCalls?: AdvisorHostedToolCall[]
 }
 export type AdvisorHostedToolDefinition = { type: 'function'; function: { name: string; description?: string; parameters?: Record<string, unknown> } }
 export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true }

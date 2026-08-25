@@ -82,28 +82,15 @@ const {
 const { HostedAdapterError } = contract
 export { HostedAdapterError }
 
-function normalizeAssistantToolCalls(value: unknown): AdvisorHostedToolCall[] | undefined {
-  if (value === undefined) return undefined
-  if (!Array.isArray(value) || value.length > MAX_TOOL_CALLS) throw new HostedAdapterError('request-malformed', 'Advisor assistant tool calls are malformed.')
-  return value.map(item => {
-    if (!isRecord(item)) throw new HostedAdapterError('request-malformed', 'Advisor assistant tool calls are malformed.')
-    return normalizeToolCall(item.id, item.name, item.arguments)
-  })
-}
 function normalizeMessages(value: unknown): AdvisorHostedChatMessage[] {
   if (!Array.isArray(value) || value.length > MAX_MESSAGES) throw new HostedAdapterError('request-malformed', 'Advisor messages are malformed.')
   return value.map(item => {
-    if (!isRecord(item) || !['system', 'user', 'assistant', 'tool'].includes(String(item.role))) throw new HostedAdapterError('request-malformed', 'Advisor messages are malformed.')
+    if (!isRecord(item) || !['system', 'user', 'assistant'].includes(String(item.role))) throw new HostedAdapterError('request-malformed', 'Advisor messages are malformed.')
     const role = item.role as AdvisorHostedChatMessage['role']
-    const toolCalls = normalizeAssistantToolCalls(item.toolCalls)
-    if (toolCalls !== undefined && role !== 'assistant') throw new HostedAdapterError('request-malformed', 'Only assistant messages may contain tool calls.')
-    const content = toolCalls !== undefined && typeof item.content === 'string' && byteLength(item.content) <= MAX_TEXT_BYTES
-      ? item.content
-      : boundedString(item.content, 32_000, 'Advisor message content is too large.')
-    const toolCallId = item.toolCallId === undefined ? undefined : boundedString(item.toolCallId, 128, 'Advisor tool call id is invalid.')
-    const toolNameValue = item.toolName === undefined ? undefined : boundedString(item.toolName, 96, 'Advisor tool name is invalid.')
-    if (role === 'tool' && !toolCallId) throw new HostedAdapterError('request-malformed', 'Advisor tool results require a call id.')
-    return { role, content, ...(toolCallId ? { toolCallId } : {}), ...(toolNameValue ? { toolName: toolNameValue } : {}), ...(toolCalls ? { toolCalls } : {}) }
+    if (Object.prototype.hasOwnProperty.call(item, 'toolCalls') || Object.prototype.hasOwnProperty.call(item, 'toolCallId') || Object.prototype.hasOwnProperty.call(item, 'toolName')) {
+      throw new HostedAdapterError('request-malformed', 'Provider-native tool continuation is not supported by Advisor.')
+    }
+    return { role, content: boundedString(item.content, 32_000, 'Advisor message content is too large.') }
   })
 }
 function parseChatRequest(requestId: unknown, value: unknown): { requestId: string; request: AdvisorHostedChatRequest } {
@@ -129,62 +116,23 @@ function anthropicTools(tools: AdvisorHostedToolDefinition[]): Array<Record<stri
 function geminiTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
   return tools.length ? [{ functionDeclarations: tools.map(tool => ({ name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), parameters: tool.function.parameters ?? { type: 'object', properties: {}, additionalProperties: false } })) }] : []
 }
-function parsedToolArguments(call: AdvisorHostedToolCall): Record<string, unknown> {
-  let parsed: unknown
-  try { parsed = JSON.parse(call.arguments) } catch { throw new HostedAdapterError('request-malformed', 'Advisor assistant tool arguments are malformed.') }
-  if (!isRecord(parsed)) throw new HostedAdapterError('request-malformed', 'Advisor assistant tool arguments are malformed.')
-  return parsed
-}
 function openAiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
   const input: Array<Record<string, unknown>> = []
   for (const message of request.messages) {
     if (message.role === 'system') continue
-    if (message.role === 'tool') {
-      input.push({ type: 'function_call_output', call_id: message.toolCallId, output: message.content })
-      continue
-    }
-    if (message.role === 'assistant' && message.toolCalls?.length) {
-      if (message.content.trim()) input.push({ role: 'assistant', content: message.content })
-      for (const call of message.toolCalls) input.push({ type: 'function_call', id: call.id, call_id: call.id, name: call.name, arguments: call.arguments })
-      continue
-    }
     input.push({ role: message.role, content: message.content })
   }
   return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), stream: request.stream === true, store: false }
 }
 function anthropicBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const messages: Array<Record<string, unknown>> = []
-  for (const message of request.messages.filter(message => message.role !== 'system')) {
-    if (message.role === 'tool') {
-      messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: message.toolCallId, content: message.content }] })
-    } else if (message.role === 'assistant' && message.toolCalls?.length) {
-      const content: Array<Record<string, unknown>> = []
-      if (message.content.trim()) content.push({ type: 'text', text: message.content })
-      for (const call of message.toolCalls) content.push({ type: 'tool_use', id: call.id, name: call.name, input: parsedToolArguments(call) })
-      messages.push({ role: 'assistant', content })
-    } else {
-      messages.push({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })
-    }
-  }
+  const messages = request.messages.filter(message => message.role !== 'system').map(message => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }))
   return { model: request.model, max_tokens: 2048, ...(system ? { system } : {}), messages, ...(request.tools?.length ? { tools: anthropicTools(request.tools) } : {}), stream: request.stream === true }
 }
 function geminiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const contents: Array<Record<string, unknown>> = []
-  for (const message of request.messages.filter(message => message.role !== 'system')) {
-    if (message.role === 'tool') {
-      contents.push({ role: 'user', parts: [{ functionResponse: { name: message.toolName ?? message.toolCallId, response: { content: message.content } } }] })
-    } else if (message.role === 'assistant' && message.toolCalls?.length) {
-      const parts: Array<Record<string, unknown>> = []
-      if (message.content.trim()) parts.push({ text: message.content })
-      for (const call of message.toolCalls) parts.push({ functionCall: { name: call.name, args: parsedToolArguments(call) } })
-      contents.push({ role: 'model', parts })
-    } else {
-      contents.push({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })
-    }
-  }
+  const contents = request.messages.filter(message => message.role !== 'system').map(message => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }))
   return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(request.tools?.length ? { tools: geminiTools(request.tools) } : {}) }
 }
 function bodyFor(provider: AdvisorHostedProviderId, request: AdvisorHostedChatRequest): Record<string, unknown> {

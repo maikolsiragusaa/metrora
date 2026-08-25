@@ -7,6 +7,14 @@ function normalize(question: string): string {
   return question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 }
 
+export function advisorCopyLanguage(question: string): 'en' | 'it' {
+  const value = normalize(question)
+  return /^(?:ciao|salve|buongiorno|buonasera|buon giorno|come stai|grazie|grazie mille|esegui|avvia|lancia|cambia|applica|programma|quanto|perche|perché|qual|quale|quali|mostrami|confronta|spesa|speso|costo|quota|limite|disponibilita|disponibilità)\b/u.test(value)
+    || /\b(?:prima del reset|dopo il reset|quanto ho speso|perche la spesa|perché la spesa|fornitore|modello|progetto|sessione|andamento|consumi)\b/u.test(value)
+    ? 'it'
+    : 'en'
+}
+
 function isGreeting(value: string): boolean {
   return /^(?:ciao|salve|buongiorno|buonasera|buon giorno|hello|hi|hey|good morning|good evening)[!.?,\s]*$/u.test(value)
 }
@@ -44,6 +52,22 @@ function isEfficiencyQuestion(value: string): boolean {
   return /(?:model efficiency|lower observed cost per call|cheaper per observed call|cost per call|per observed call|which model.*(?:lower|cheaper)|compare.*model.*(?:cost|efficien)|efficien|efficient|econom|costo per chiamata|costo per call)/u.test(value)
 }
 
+function hasMeasuredSpendFocus(value: string): boolean {
+  const spendMarkers = /(?:\bspend\b|\bspent\b|\bcost\b|\bcost me\b|\bexpense\w*\b|\bspes[ao]\b|\bcost[ao]\b|\bpagat[oa]\b)/u
+  const quotaMarkers = /(?:\bquota\b|\bcapacity\b|\breset\b|\bremaining\b|\brate[ -]?limit\b|\bcredits?\b|\blimite\b|\bdisponibil\w*\b|\besaur\w*\b)/u
+  if (!spendMarkers.test(value)) return false
+  const directSpendQuestion = /(?:\bhow much did\b[^?.!]{0,48}\b(?:spend|spent)\b|\bwhy did\b[^?.!]{0,48}\b(?:spend|spent|cost)\b|\bwhat did\b[^?.!]{0,48}\bcost\b|\bquanto ho speso\b|\bperche\b[^?.!]{0,48}\b(?:spesa|speso|costo|costato)\b|\bperché\b[^?.!]{0,48}\b(?:spesa|speso|costo|costato)\b)/u.test(value)
+  const quotaPrimaryQuestion = /(?:\b(?:how much|what|when|which|quanto|quanta|quando|quale|quali)\b[^?.!]{0,32}\b(?:quota|capacity|limit|remaining|credits?|limite|disponibil\w*)\b|\b(?:quota|capacity|limit|limite)\b[^?.!]{0,48}\b(?:left|remain|remaining|reset|resetta|resetto|rimane|resta|si azzera)\b)/u.test(value)
+  if (quotaPrimaryQuestion && !directSpendQuestion) return false
+  // A spend noun used as the object of a quota question still asks about
+  // quota. Otherwise, a spend verb/noun is the requested fact and quota/reset
+  // language is contextual scope (for example “before the reset”).
+  const spendIsQuotaObject = quotaMarkers.test(value) && /(?:\b(?:spend|spent|spesa|speso|costo|cost)\b)\s+(?:quota|capacity|limit|limite|remaining|disponibil)/u.test(value)
+  if (spendIsQuotaObject) return false
+  if (directSpendQuestion || /(?:\b(?:what|how much|why|quanto|perche|perché)\b[^?.!]{0,80}\b(?:spend|spent|cost|spesa|speso|costo)\b)/u.test(value)) return true
+  return /(?:\b(?:spend|spent|cost|spesa|speso|costo)\b[^?.!]{0,80}\b(?:before|after|when|prima|dopo|reset|quota)\b)/u.test(value) || spendMarkers.test(value)
+}
+
 function isSpendQuestion(value: string): boolean {
   if (isEfficiencyQuestion(value)) return false
   return /(?:why did|what caused|cause|driver|drove|spend|spent|cost me the most|most expensive|increase|increas|change|changed|spike|which project|which sessions?|unusually expensive|expensive sessions?|versus|\bvs\b|costa|costo|spesa|aument|picco|perche|perché|quanto ho speso|quanto spend)/u.test(value)
@@ -53,9 +77,12 @@ function explicitIntent(value: string): AdvisorIntent {
   if (isBenchQuestion(value)) return 'bench-result'
   if (isBareLimitAmbiguity(value)) return 'clarification'
   if (isUnsupportedQuestion(value)) return 'unsupported'
-  if (isQuotaQuestion(value)) return 'quota-capacity'
-  if (isSpendQuestion(value)) return 'spend-change'
   if (isEfficiencyQuestion(value)) return 'model-efficiency'
+  // Resolve semantic focus before contextual quota/reset markers. This is a
+  // generalized precedence rule for the requested fact, not a phrase list for
+  // individual regression strings.
+  if (hasMeasuredSpendFocus(value) || (isSpendQuestion(value) && !isQuotaQuestion(value))) return 'spend-change'
+  if (isQuotaQuestion(value)) return 'quota-capacity'
   return classifyAdvisorQuestion(value)
 }
 
@@ -138,7 +165,9 @@ export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, c
   if (!social && !action && isBareLimitAmbiguity(value)) {
     intent = 'clarification'
     scopeIntent = 'ambiguous'
-    clarification = 'Do you mean provider-reported quota, or your Metrora-measured usage?'
+    clarification = advisorCopyLanguage(value) === 'it'
+      ? 'Intendi la quota riportata dal provider oppure l’utilizzo misurato da Metrora?'
+      : 'Do you mean provider-reported quota, or your Metrora-measured usage?'
   } else if (followUp) {
     const distinct = [...new Set(priorIntents(scope, conversation))]
     if (distinct.length === 1) {
@@ -147,7 +176,9 @@ export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, c
     } else if (distinct.length > 1) {
       intent = 'clarification'
       scopeIntent = 'ambiguous'
-      clarification = 'Which should I continue with: measured spend, provider quota, or the controlled test result?'
+      clarification = advisorCopyLanguage(value) === 'it'
+        ? 'Su cosa devo continuare: spesa misurata, quota del provider o risultato del test controllato?'
+        : 'Which should I continue with: measured spend, provider quota, or the controlled test result?'
     }
   }
   const family = social ? 'unknown' : questionFamily(value, intent)

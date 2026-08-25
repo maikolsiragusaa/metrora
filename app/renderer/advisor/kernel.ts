@@ -56,10 +56,15 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
         }
         throwIfAborted(signal)
         evidence = buildBenchEvidence(question, scope, bench)
-      } else {
+      } else if (runtime.mode === 'deterministic-local' || runtime.availability === 'unavailable' || runtime.mode === 'unsupported') {
         const overview = suppliedOverview ?? (signal ? await source.getOverview(scope, signal) : await source.getOverview(scope))
         throwIfAborted(signal)
         evidence = await deterministicEvidence(source, plan.intent, question, scope, overview, signal)
+      } else {
+        // Model-assisted runtimes receive only the guarded question/scope at
+        // this point. They must plan before the registry performs a canonical
+        // read. The deterministic path above remains the offline fallback.
+        evidence = buildUnknownEvidence(question, scope)
       }
       const withUnderstanding: AdvisorEvidence = {
         ...evidence,
@@ -69,15 +74,25 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           ? ['I used the current scope selected in Metrora. Use the scope controls above to change it.', ...evidence.assumptions]
           : evidence.assumptions,
       }
-      if (!plan.needsEvidence && plan.intent !== 'unknown') {
+      if (!plan.needsEvidence || runtime.mode === 'deterministic-local' || runtime.availability === 'unavailable' || runtime.mode === 'unsupported') {
         return new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan }, signal)
       }
       const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
       try {
-        return await runtime.generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+        return await runtime.generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, guardIntent: plan.intent, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
       } catch (error) {
         rethrowCancellation(error, signal)
-        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan }, signal)
+        let fallbackEvidence = withUnderstanding
+        if (fallbackEvidence.intent === 'unknown' && plan.intent !== 'unknown') {
+          const overview = suppliedOverview ?? (signal ? await source.getOverview(scope, signal) : await source.getOverview(scope))
+          throwIfAborted(signal)
+          fallbackEvidence = {
+            ...(await deterministicEvidence(source, plan.intent, question, scope, overview, signal)),
+            understanding: plan.understanding,
+            plan: plan.plan,
+          }
+        }
+        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: fallbackEvidence, conversation, plan: plan.plan }, signal)
         return {
           ...fallback,
           materialLimits: [...(fallback.materialLimits ?? []), 'The explanatory model was unavailable, so this answer uses Metrora deterministic evidence.'],

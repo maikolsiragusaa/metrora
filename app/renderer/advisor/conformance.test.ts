@@ -186,7 +186,7 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
     ]) })
     const answer = await runtime.generate({
       question: 'Compare provider quota',
-      evidence: claude.evidence,
+      evidence: { ...claude.evidence, scope: fixture.scope },
       tools: ADVISOR_TOOL_DEFINITIONS,
       toolContract: ADVISOR_TOOL_CONTRACT,
       executeTool: registry.execute,

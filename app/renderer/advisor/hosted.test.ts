@@ -30,21 +30,21 @@ describe('Hosted Advisor renderer runtime', () => {
     })
 
     const payload = requests[0]!
-    const messages = (payload.messages as Array<{ role: string; content: string }>).slice(0, 3)
+    const messages = (payload.messages as Array<{ role: string; content: string }>).slice(0, 2)
     expect(payload.tools).toHaveLength(1)
     expect(payload.model).toBe('gpt-test')
     expect(payload.stream).toBe(false)
     expect(payload.consent).toBe(true)
-    expect(messages.map(message => message.role)).toEqual(['system', 'user', 'system'])
-    expect(messages[2]?.content).toContain('measuredCostUSD')
+    expect(messages.map(message => message.role)).toEqual(['system', 'user'])
+    expect(messages.some(message => message.content.includes('measuredCostUSD'))).toBe(false)
     const finalPayload = requests[1]!
     expect(finalPayload.tools).toEqual([])
     expect(finalPayload.model).toBe('gpt-test')
     expect(finalPayload.stream).toBe(false)
     const finalMessages = finalPayload.messages as Array<Record<string, unknown>>
-    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'system', 'assistant', 'tool'])
-    expect(finalMessages[3]).toMatchObject({ role: 'assistant', content: '', toolCalls: [{ id: 'call-spend', name: 'get_spend_snapshot' }] })
-    expect(finalMessages[4]).toMatchObject({ role: 'tool', toolCallId: 'call-spend', toolName: 'get_spend_snapshot' })
+    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'system'])
+    expect(finalMessages[2]?.content).toContain('measuredCostUSD')
+    expect(finalMessages.some(message => message.role === 'tool')).toBe(false)
     expect(deltas).toEqual([])
     await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')
     expect(answer.runtime).toMatchObject({ id: 'hosted-openai', mode: 'hosted-byok' })

@@ -29,6 +29,31 @@ describe('Advisor mainstream convergence contracts', () => {
     expect(answer.evidence).toEqual([])
   })
 
+  it.each(['Hello', 'How are you?'])('keeps English social fallback in English: %s', async question => {
+    const resolved = resolveAdvisorQuestion(question, scope)
+    const answer = await new DeterministicAdvisorRuntime().generate({ question, evidence: { ...buildSocialEvidence(question, scope), plan: resolved.plan, understanding: resolved.understanding }, plan: resolved.plan })
+    expect(resolved.intent).toBe('social')
+    expect(answer.conclusion).toMatch(/\b(?:Hello|I’m|help|well)\b/u)
+    expect(answer.conclusion).not.toContain('Buongiorno')
+    expect(answer.evidence).toEqual([])
+  })
+
+  it('keeps Italian boundary and clarification copy coherent', () => {
+    const action = resolveAdvisorQuestion('Avvia questo benchmark', scope)
+    expect(action.understanding.boundary).toContain('Ho capito')
+    const clarification = resolveAdvisorQuestion('Qual è il mio limite?', scope)
+    expect(clarification.intent).toBe('clarification')
+    expect(clarification.understanding.clarification).toContain('Intendi')
+  })
+
+  it('keeps English boundary and clarification copy coherent', () => {
+    const action = resolveAdvisorQuestion('Run this benchmark', scope)
+    expect(action.understanding.boundary).toContain('I understand')
+    const clarification = resolveAdvisorQuestion('What is my limit?', scope)
+    expect(clarification.intent).toBe('clarification')
+    expect(clarification.understanding.clarification).toContain('Do you mean')
+  })
+
   it('keeps operational requests at the proposal-only boundary', () => {
     const resolved = resolveAdvisorQuestion('Run this benchmark', scope)
     expect(resolved.intent).toBe('action-proposal')
@@ -44,9 +69,9 @@ describe('Advisor mainstream convergence contracts', () => {
     const draft = parseAdvisorSynthesisDraft(JSON.stringify({
       contractVersion: 'advisor-synthesis-draft-v1',
       schemaVersion: 1,
-      conclusion: 'Metrora measured the selected spend.',
-      why: ['The selected evidence includes the spend total.'],
-      details: ['Measured spend is the canonical total.'],
+      conclusion: { text: 'Metrora measured the selected spend.', claimIds: ['claim-1'] },
+      why: [{ text: 'The selected evidence includes the spend total.', claimIds: ['claim-1'] }],
+      details: [{ text: 'Measured spend is the canonical total.', claimIds: ['claim-1'] }],
       claims: [{ contractVersion: 'advisor-claim-v1', schemaVersion: 1, id: 'claim-1', class: 'numeric', text: 'Measured spend is 12.', value: 12, evidenceRefs: ['overview.current'], evidencePaths: ['spend.measuredCostUSD'] }],
       presentationRequests: [{ kind: 'metric-cards' }],
     }))

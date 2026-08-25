@@ -218,7 +218,7 @@ async function streamNdjsonResponse(response: Response): Promise<AdvisorRuntimeC
   if (validMessages === 0) throw new Error('Local runtime stream contained no valid messages.')
   return { message: { content, tool_calls: toolCalls.slice(0, 16) }, streamed: true }
 }
-const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant', 'tool'])
+const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant'])
 
 function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeChatPayload {
   if (!isRecord(value) || typeof value.model !== 'string' || !validModel(value.model)) throw new Error('Local runtime model is invalid.')
@@ -230,7 +230,7 @@ function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeCha
     if (!isRecord(message) || typeof message.role !== 'string' || !ADVISOR_MESSAGE_ROLES.has(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
     boundedMessageContent(message.content)
-    if (message.tool_calls !== undefined) parseToolCalls(message.tool_calls)
+    if (message.tool_calls !== undefined || message.tool_name !== undefined) throw new Error('Local runtime provider-native tool continuation is not supported.')
   }
   for (const tool of value.tools) {
     if (!isRecord(tool) || tool.type !== 'function' || !isRecord(tool.function) || typeof tool.function.name !== 'string' || !tool.function.name.trim()) {

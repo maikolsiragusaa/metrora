@@ -24,14 +24,15 @@ function capturingRuntime(inputs: AdvisorRuntimeInput[]): AdvisorModelRuntime {
   }
 }
 
-describe('Advisor evidence prefetch', () => {
-  it('prefetches deterministic evidence for a recognized intent before an Ollama runtime can return without tools', async () => {
+describe('Advisor model planning boundary', () => {
+  it('defers canonical evidence reads until after an investigative runtime plans', async () => {
     const data = source()
     const inputs: AdvisorRuntimeInput[] = []
     await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'What changed in spend?', scope })
 
-    expect(data.getOverview).toHaveBeenCalledWith(scope)
-    expect(inputs[0]?.evidence).toMatchObject({ intent: 'spend-change', coverage: { level: 'high' }, spend: { measuredCostUSD: 12 } })
+    expect(data.getOverview).not.toHaveBeenCalled()
+    expect(inputs[0]?.evidence).toMatchObject({ intent: 'unknown', coverage: { level: 'unavailable' }, refs: [] })
+    expect(inputs[0]?.guardIntent).toBe('spend-change')
   })
 
   it('does not fetch or manufacture evidence for an unrecognized no-tool question', async () => {

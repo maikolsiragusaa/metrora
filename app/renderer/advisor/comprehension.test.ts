@@ -29,6 +29,14 @@ describe('Advisor deterministic comprehension', () => {
     ['Which model is best?', 'unsupported'],
     ['What is the weather today?', 'unsupported'],
     ['What changed?', 'spend-change'],
+    ['How much did I spend before my quota reset?', 'spend-change'],
+    ['Why did Codex spend increase before the reset?', 'spend-change'],
+    ['Quanto ho speso prima del reset della quota?', 'spend-change'],
+    ['Perché la spesa Codex è aumentata prima del reset?', 'spend-change'],
+    ['How much quota remains?', 'quota-capacity'],
+    ['When does my quota reset?', 'quota-capacity'],
+    ['Quanta quota mi rimane?', 'quota-capacity'],
+    ['Quando si resetta la quota?', 'quota-capacity'],
   ] as const)('resolves %s as %s', (question, intent) => {
     expect(resolveAdvisorQuestion(question, scope).intent).toBe(intent)
   })

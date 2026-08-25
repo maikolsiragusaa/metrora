@@ -1,5 +1,5 @@
 import type { AdvisorConversationTurn, AdvisorIntent, AdvisorQuestionUnderstanding, AdvisorScope, AdvisorTurnPlanV1 } from './types'
-import { createAdvisorTurnPlanV1 } from './turn-plan'
+import { advisorCopyLanguage, createAdvisorTurnPlanV1 } from './turn-plan'
 
 export type AdvisorQuestionPlan = {
   intent: AdvisorIntent
@@ -23,6 +23,11 @@ function intentSummary(intent: AdvisorIntent): string {
 
 function actionBoundary(question: string): string {
   const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (advisorCopyLanguage(value) === 'it') {
+    if (/\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value)) return 'Ho capito che vuoi avviare un benchmark. Advisor può leggere e spiegare risultati Bench esistenti, ma non può avviare un test da questa conversazione.'
+    if (/\b(?:agent|agents|agenti|orchestrat)/u.test(value)) return 'Ho capito che vuoi avviare agenti. Advisor può analizzare le evidenze Metrora, ma l’orchestrazione richiede una proposta autorizzata separatamente.'
+    return 'Ho capito che si tratta di un’operazione. Advisor è in sola lettura; l’esecuzione richiede una proposta e un’autorizzazione esplicita.'
+  }
   if (/\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value)) return 'I understand you want to run a benchmark. Advisor can read and explain existing Bench results, but starting a run is not an authorized conversational action yet.'
   if (/\b(?:agent|agents|agenti|orchestrat)/u.test(value)) return 'I understand you want to launch agents. Advisor can investigate existing Metrora evidence, but orchestration requires a separately approved action proposal and is not executable here.'
   return 'I understand this is an operational request. Advisor is read-only in this conversation; a future action proposal will require explicit user and policy authorization before execution.'
@@ -42,13 +47,20 @@ export function resolveAdvisorQuestion(
   const boundary = intent === 'action-proposal'
     ? actionBoundary(question)
     : intent === 'unsupported'
-      ? 'I can explain Metrora-measured usage, provider-reported quota, observed model cost, and controlled Bench results, but I cannot make a universal model ranking or recommendation.'
+      ? advisorCopyLanguage(question) === 'it'
+        ? 'Posso spiegare utilizzo misurato da Metrora, quota riportata dal provider, costo osservato dei modelli e risultati Bench controllati, ma non posso creare una classifica universale o una raccomandazione.'
+        : 'I can explain Metrora-measured usage, provider-reported quota, observed model cost, and controlled Bench results, but I cannot make a universal model ranking or recommendation.'
       : null
+  const orphanedFollowUp = intent === 'unknown'
+    && plan.scopeIntent === 'current'
+    && /^(?:and|also|what about|how about|that|it|this|quello|e|invece|quanto a|fammi vedere meglio|show me more)\b/u.test(question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim())
   return {
     intent,
     plan,
     understanding: understanding(intent, usedDefaultScope, plan.clarification, boundary),
-    needsEvidence: plan.turnKind === 'investigate' && intent !== 'unknown',
+    // Unknown but otherwise safe investigations are deliberately eligible for
+    // model planning; malformed planning falls back to the supported answer.
+    needsEvidence: plan.turnKind === 'investigate' && !orphanedFollowUp,
     usedDefaultScope,
   }
 }

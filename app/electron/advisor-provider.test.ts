@@ -155,7 +155,7 @@ describe('Advisor hosted provider authority', () => {
     expect(result).toMatchObject({ ok: true, value: { credentialState: 'invalid', detail: 'The provider rejected the saved credential.' } })
     expect(JSON.stringify(result)).not.toContain('secret-body')
   })
-  it.each(providers)('maps %s canonical tool rounds into the provider-native request body', async provider => {
+  it.each(providers)('maps %s independent planning/synthesis payloads without provider-native continuation', async provider => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(url), init })
@@ -163,14 +163,11 @@ describe('Advisor hosted provider authority', () => {
     }) as typeof fetch
     const handlers = readyHandlers(fetchImpl)
     const tool = { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }
-    const toolArguments = '{"provider":"all"}'
     const result = await handlers['metrora:advisorHostedChat']!('native-' + provider, {
       ...request(provider),
       messages: [
         { role: 'system', content: 'Use canonical facts.' },
         { role: 'user', content: 'What changed?' },
-        { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'get_spend_snapshot', arguments: toolArguments }] },
-        { role: 'tool', content: '{"measured":true}', toolCallId: 'call-1', toolName: 'get_spend_snapshot' },
       ],
       tools: [tool],
     }) as { ok: boolean; value: any }
@@ -178,21 +175,22 @@ describe('Advisor hosted provider authority', () => {
     const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
     expect(body).not.toHaveProperty('conversation')
     expect(body).not.toHaveProperty('previous_response_id')
+    expect(body).not.toHaveProperty('background')
+    expect(JSON.stringify(body)).not.toContain('function_call_output')
+    expect(JSON.stringify(body)).not.toContain('tool_result')
+    expect(JSON.stringify(body)).not.toContain('functionResponse')
     if (provider === 'openai') {
       expect(body.store).toBe(false)
       expect(body.tools).toEqual([{ type: 'function', name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } }])
-      expect(body.input).toContainEqual({ type: 'function_call', id: 'call-1', call_id: 'call-1', name: 'get_spend_snapshot', arguments: toolArguments })
-      expect(body.input).toContainEqual({ type: 'function_call_output', call_id: 'call-1', output: '{"measured":true}' })
+      expect(body.input).toEqual([{ role: 'user', content: 'What changed?' }])
     } else if (provider === 'anthropic') {
       expect(body.system).toBe('Use canonical facts.')
       expect(body.tools).toEqual([{ name: 'get_spend_snapshot', description: 'Measured spend', input_schema: { type: 'object' } }])
-      expect(body.messages[1]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'call-1', name: 'get_spend_snapshot', input: { provider: 'all' } }] })
-      expect(body.messages[2]).toEqual({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call-1', content: '{"measured":true}' }] })
+      expect(body.messages).toEqual([{ role: 'user', content: 'What changed?' }])
     } else {
       expect(body.systemInstruction).toEqual({ parts: [{ text: 'Use canonical facts.' }] })
       expect(body.tools).toEqual([{ functionDeclarations: [{ name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } }] }])
-      expect(body.contents[1]).toEqual({ role: 'model', parts: [{ functionCall: { name: 'get_spend_snapshot', args: { provider: 'all' } } }] })
-      expect(body.contents[2]).toEqual({ role: 'user', parts: [{ functionResponse: { name: 'get_spend_snapshot', response: { content: '{"measured":true}' } } }] })
+      expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'What changed?' }] }])
     }
   })
 

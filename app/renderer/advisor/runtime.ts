@@ -2,6 +2,7 @@ import { formatAdvisorCreditsUsd, formatAdvisorPercent, formatAdvisorUsd, period
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelEvidenceRow, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
 import { sanitizeAdvisorAnswer } from './privacy'
 import { buildAdvisorPresentationBlocks } from './presentation'
+import { advisorCopyLanguage } from './turn-plan'
 
 export class AdvisorRuntimeUnavailableError extends Error {
   constructor() {
@@ -44,13 +45,14 @@ function baseAnswer(evidence: AdvisorEvidence, runtime: AdvisorModelRuntime): Ad
 
 function socialAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
   const value = evidence.question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const italian = advisorCopyLanguage(value) === 'it'
   if (/^(?:grazie|grazie mille|thanks|thank you|thankyou|much appreciated)[!.?,\s]*$/u.test(value)) {
-    return { ...answer, conclusion: 'Di nulla. Quando vuoi, possiamo guardare un altro periodo o confronto.' }
+    return { ...answer, conclusion: italian ? 'Di nulla. Quando vuoi, possiamo guardare un altro periodo o confronto.' : 'You’re welcome. Whenever you like, we can look at another period or comparison.' }
   }
   if (/^(?:come stai|how are you)[!?.,\s]*$/u.test(value)) {
-    return { ...answer, conclusion: 'Bene, grazie. Sono qui per aiutarti a leggere i dati di Metrora.' }
+    return { ...answer, conclusion: italian ? 'Bene, grazie. Sono qui per aiutarti a leggere i dati di Metrora.' : 'I’m well, thanks. I’m here to help you read your Metrora data.' }
   }
-  return { ...answer, conclusion: 'Buongiorno. Posso aiutarti a capire spesa, modelli, Projects, sessioni, quota e risultati Bench.' }
+  return { ...answer, conclusion: italian ? 'Buongiorno. Posso aiutarti a capire spesa, modelli, Projects, sessioni, quota e risultati Bench.' : 'Hello. I can help you understand spend, models, Projects, sessions, quota, and Bench results.' }
 }
 
 function actionProposalAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {

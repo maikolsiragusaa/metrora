@@ -10,6 +10,7 @@ import type {
   AdvisorPresentationBlockV1,
   AdvisorPresentationIntent,
   AdvisorScope,
+  AdvisorSynthesisBlockV1,
 } from './types'
 
 /**
@@ -36,7 +37,7 @@ const NUMERIC_CHARACTER_PATTERN = /\p{N}/u
 const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million|billion|first|second|third|uno|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|primo|secondo|terzo)\b/iu
 const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
 const CONTENT_MINIMAL_PROVIDER_NAMES = ['all', 'claude', 'codex'] as const
-const SAFE_ANSWER_EVIDENCE_ID_PATTERN = /^(?:spend|quota|spend-(?:claude|codex)|overview\.(?:current|history\.daily|models|projects|sessions|modelAccounting)|models\.report|quota\.(?:claude|codex))$/u
+const SAFE_ANSWER_EVIDENCE_ID_PATTERN = /^(?:spend|quota|spend-(?:claude|codex)|overview\.(?:current|history\.daily|models|projects|sessions|modelAccounting)|models\.report|quota\.(?:claude|codex)|bench\.(?:latest|history|comparison))$/u
 
 function contentMinimalSource(value: unknown): typeof CONTENT_MINIMAL_EVIDENCE_SOURCES[number] | null {
   return typeof value === 'string' && (CONTENT_MINIMAL_EVIDENCE_SOURCES as readonly string[]).includes(value) ? value as typeof CONTENT_MINIMAL_EVIDENCE_SOURCES[number] : null
@@ -181,14 +182,14 @@ function contentMinimalBenchRun(run: AdvisorBenchRun): AdvisorJsonObject {
   }
 }
 
-export function contentMinimalEvidenceRefs(refs: AdvisorEvidenceRef[]): AdvisorEvidenceRef[] {
+export function contentMinimalEvidenceRefs(refs: AdvisorEvidenceRef[], options: { preserveIds?: boolean } = {}): AdvisorEvidenceRef[] {
   return refs.flatMap((ref, index) => {
     const source = contentMinimalSource(ref.source)
     if (!source) return []
     return [{
       // Evidence IDs are internal correlation keys. A stable local ordinal is
       // sufficient for the model and avoids exposing provider/account IDs.
-      id: 'evidence-' + (index + 1),
+      id: options.preserveIds && SAFE_ANSWER_EVIDENCE_ID_PATTERN.test(ref.id) ? ref.id : 'evidence-' + (index + 1),
       label: sanitizeAdvisorDisplayText(ref.label),
       source,
     }]
@@ -224,7 +225,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     return claims.flatMap(claim => {
       if (claim.status !== 'verified' || claim.class === 'causal' || claim.class === 'forecast' || claim.class === 'recommendation') return []
       const evidenceRefs = claim.evidenceRefs.map(ref => evidenceIdMap.get(ref) ?? ref).filter(ref => evidence.some(item => item.id === ref))
-      if (!evidenceRefs.length && claim.class !== 'qualitative') return []
+      if (!evidenceRefs.length) return []
       return [{
         ...claim,
         text: safeText(claim.text),
@@ -250,11 +251,15 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
   }) : undefined
   const claims = safeClaims(answer.claims)
   const synthesisClaims = safeClaims(answer.synthesis?.claims)
+  const safeSynthesisBlock = (block: AdvisorSynthesisBlockV1): AdvisorSynthesisBlockV1 => ({
+    text: safeText(block.text),
+    claimIds: block.claimIds.slice(0, 24),
+  })
   const synthesis = answer.synthesis ? {
     ...answer.synthesis,
-    conclusion: safeText(answer.synthesis.conclusion),
-    why: answer.synthesis.why.map(safeText).slice(0, 6),
-    details: answer.synthesis.details.map(safeText).slice(0, 12),
+    conclusion: safeSynthesisBlock(answer.synthesis.conclusion),
+    why: answer.synthesis.why.map(safeSynthesisBlock).slice(0, 6),
+    details: answer.synthesis.details.map(safeSynthesisBlock).slice(0, 12),
     claims: synthesisClaims ?? [],
     presentationRequests: answer.synthesis.presentationRequests.filter(request => presentationKinds.includes(request.kind)).slice(0, 8).map(request => ({ ...request, ...(request.title ? { title: safeText(request.title) } : {}), ...(request.evidenceRefs ? { evidenceRefs: request.evidenceRefs.map(ref => evidenceIdMap.get(ref) ?? ref).filter(ref => evidence.some(item => item.id === ref)) } : {}) })),
     ...(answer.synthesis.expertDetail ? { expertDetail: answer.synthesis.expertDetail.map(safeText).slice(0, 8) } : {}),
@@ -298,7 +303,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
 }
 
 /** Explicitly allowlisted model-facing evidence projection. */
-export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonObject {
+export function contentMinimalEvidence(evidence: AdvisorEvidence, options: { preserveEvidenceIds?: boolean } = {}): AdvisorJsonObject {
   const spend = evidence.spend
     ? {
         measuredCostUSD: evidence.spend.measuredCostUSD,
@@ -392,7 +397,7 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence): AdvisorJsonOb
     intent: evidence.intent,
     scope: contentMinimalScope(evidence.scope),
     coverage: contentMinimalCoverage(evidence.coverage),
-    refs: contentMinimalEvidenceRefs(evidence.refs),
+    refs: contentMinimalEvidenceRefs(evidence.refs, { preserveIds: options.preserveEvidenceIds }),
     spend,
     modelEfficiency,
     quota,

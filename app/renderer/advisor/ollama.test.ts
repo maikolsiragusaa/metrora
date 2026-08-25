@@ -240,20 +240,20 @@ describe('Ollama Advisor renderer state machine', () => {
   ])('rejects mixed-scope tool evidence without cross-scope contamination (%s then %s)', async (first, second) => {
     const finalRequests: string[] = []
     const transport = transportFor(finalRequests, [[
-      { function: { name: 'get_spend_snapshot', arguments: { provider: first } } },
-      { function: { name: 'get_spend_snapshot', arguments: { provider: second } } },
+      { function: { name: 'get_quota_snapshot', arguments: { provider: first } } },
+      { function: { name: 'get_quota_snapshot', arguments: { provider: second } } },
     ]])
     const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
       question: 'Compare spend',
       evidence: spendEvidence,
-      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      tools: [{ type: 'function', function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } } }],
       executeTool: async (_name, args) => {
-        const provider = String(args.provider)
+        const provider = String(args.provider) as 'claude' | 'codex'
         const evidence: AdvisorEvidence = {
-          ...spendEvidence,
+          ...quotaEvidence,
           scope: { ...scope, provider },
-          refs: [{ id: 'spend-' + provider, label: provider + ' spend', source: 'overview' }],
-          spend: { ...spendEvidence.spend!, measuredCostUSD: provider === 'claude' ? 41 : 73 },
+          refs: [{ id: 'quota-' + provider, label: provider + ' quota', source: 'quota' }],
+          quota: { ...quotaEvidence.quota!, providers: quotaEvidence.quota!.providers.map(row => ({ ...row, provider })) },
         }
         return { content: JSON.stringify({ provider }), evidence }
       },
