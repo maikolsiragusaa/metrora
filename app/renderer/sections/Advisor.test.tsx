@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload } from '../lib/types'
+import { createAdvisorContextualLaunch } from '../advisor/context'
 import type { AdvisorAnswer } from '../advisor/types'
 import { Advisor } from './Advisor'
 
@@ -86,6 +87,71 @@ describe('Advisor workspace', () => {
     expect(screen.getByRole('complementary', { name: 'Advisor evidence' })).toHaveTextContent('Ask a question to pin its evidence')
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
     expect(advisorProbe).toHaveBeenCalledTimes(1)
+  })
+  it('loads a contextual scope and suggested investigation without auto-executing it', async () => {
+    const contextualLaunch = createAdvisorContextualLaunch({
+      originatingSection: 'spend',
+      period: '30days',
+      range: { from: '2026-08-01', to: '2026-08-25' },
+      provider: 'codex',
+      projectId: 'project-a',
+      projectName: 'Project A',
+      model: 'gpt-safe',
+    })
+
+    render(
+      <Advisor
+        period="week"
+        provider="all"
+        projectScopeId="all"
+        range={null}
+        overview={overviewWithOptions}
+        detectedProviders={[{ id: 'codex', label: 'Codex' }]}
+        contextualLaunch={contextualLaunch}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue('What changed in measured spend in this scope, and which drivers are visible?')
+      expect(screen.getByLabelText('Advisor period')).toHaveValue('30days')
+      expect(screen.getByLabelText('Advisor provider')).toHaveValue('codex')
+      expect(screen.getByLabelText('Advisor Project')).toHaveValue('project-a')
+      expect(screen.getByLabelText('Advisor model')).toHaveValue('gpt-safe')
+    })
+    expect(screen.getByText('From Spend')).toBeInTheDocument()
+    expect(investigate).not.toHaveBeenCalled()
+  })
+  it('shows Capacity as current provider authority without exposing hidden Desktop scope', async () => {
+    const contextualLaunch = createAdvisorContextualLaunch({
+      originatingSection: 'plans',
+      period: '30days',
+      range: { from: '2026-08-01', to: '2026-08-25' },
+      provider: 'codex',
+      projectId: 'project-a',
+      projectName: 'Project A',
+      model: 'gpt-safe',
+    })
+
+    render(
+      <Advisor
+        period="week"
+        provider="codex"
+        projectScopeId="project-a"
+        range={{ from: '2026-08-01', to: '2026-08-25' }}
+        overview={overviewWithOptions}
+        detectedProviders={[{ id: 'codex', label: 'Codex' }]}
+        contextualLaunch={contextualLaunch}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue('What current provider-reported capacity and reset windows are available across the connected providers?'))
+    expect(screen.getByText('From Plans')).toBeInTheDocument()
+    expect(screen.getByText(/Provider-reported now · All providers; Project and history do not scope Capacity/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor period')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor Project')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor provider')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor model')).not.toBeInTheDocument()
+    expect(investigate).not.toHaveBeenCalled()
   })
   it('renders direct answer hierarchy while keeping deeper evidence in progressive disclosure', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)

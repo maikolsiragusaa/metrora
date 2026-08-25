@@ -36,6 +36,7 @@ import { WorkspaceContent } from './sections/Workspace'
 import { Advisor } from './sections/Advisor'
 import { Bench } from './sections/Bench'
 import type { MenubarPayload } from './lib/types'
+import { createAdvisorContextualLaunch, type AdvisorContextualLaunchV1 } from './advisor/context'
 
 export { overviewMemoKey } from './hooks/useProviderPrefetch'
 export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTelemetry'
@@ -72,6 +73,7 @@ export function App() {
 function AppMain() {
   const [section, setSection] = useState<Section>('overview')
   const [settingsPane, setSettingsPane] = useState<SettingsPane>('general')
+  const [advisorLaunch, setAdvisorLaunch] = useState<AdvisorContextualLaunchV1 | null>(null)
   const [detectedProviders, setDetectedProviders] = useState<Array<{ id: string; label: string }>>([])
   const {
     period,
@@ -120,8 +122,16 @@ function AppMain() {
 
   const navigate = useCallback((next: Section, pane: SettingsPane = 'general') => {
     setSettingsPane(pane)
+    setAdvisorLaunch(null)
     setSection(next)
     trackEvent('section_view', { section: next })
+  }, [trackEvent])
+
+  const openAdvisor = useCallback((launch: AdvisorContextualLaunchV1) => {
+    setSettingsPane('general')
+    setAdvisorLaunch(launch)
+    setSection('advisor')
+    trackEvent('section_view', { section: 'advisor' })
   }, [trackEvent])
 
   useDesktopShortcuts({ navigate, refresh: refreshVisible })
@@ -132,6 +142,17 @@ function AppMain() {
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
   const projectScope = overview.data?.projectScope
+  const projectName = metroraProjectId === 'all'
+    ? 'All projects'
+    : projectScope?.options.find(option => option.id === metroraProjectId)?.name ?? null
+  const contextualAdvisorLaunch = createAdvisorContextualLaunch({
+    originatingSection: section,
+    period,
+    range: customRange,
+    provider,
+    projectId: metroraProjectId,
+    projectName,
+  })
   useEffect(() => {
     if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
     onProjectScopeSelect('all')
@@ -151,9 +172,9 @@ function AppMain() {
         {section === 'bench' ? (
           <Bench />
         ) : section === 'advisor' ? (
-          <Advisor period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} detectedProviders={detectedProviders} />
+          <Advisor period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} detectedProviders={detectedProviders} contextualLaunch={advisorLaunch} />
         ) : section === 'plans' ? (
-          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
+          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined} ready={ready} />
         ) : section === 'settings' ? (
           <Settings period={period} refreshToken={refreshToken} onNavigate={navigate} initialPane={settingsPane} claudeConfigs={claudeConfigs} claudeConfigSource={claudeConfigSource} onConfigMutated={onConfigMutated} />
         ) : (
@@ -176,6 +197,7 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
+              onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
