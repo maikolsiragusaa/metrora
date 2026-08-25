@@ -13,6 +13,7 @@ import eu.metrora.app.data.StorageIssue
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.data.ActivitySnapshot
+import eu.metrora.app.data.CapacitySnapshot
 import java.security.KeyStore
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -68,6 +69,13 @@ class SecureStore(context: Context) : MetroraStore {
         dataStore.edit { preferences -> preferences[FOUNDATION_KEY] = encrypt(foundation.toJson()) }
     }
 
+    override suspend fun loadCapacity(): StorageRead<CapacitySnapshot> =
+        read(CAPACITY_KEY) { raw -> CapacitySnapshot.fromJson(raw) }
+
+    override suspend fun saveCapacity(snapshot: CapacitySnapshot) {
+        dataStore.edit { preferences -> preferences[CAPACITY_KEY] = encrypt(snapshot.toJson()) }
+    }
+
     override suspend fun clearCredentials() {
         dataStore.edit { preferences -> preferences.remove(CREDENTIALS_KEY) }
     }
@@ -78,6 +86,10 @@ class SecureStore(context: Context) : MetroraStore {
 
     override suspend fun clearFoundation() {
         dataStore.edit { preferences -> preferences.remove(FOUNDATION_KEY) }
+    }
+
+    override suspend fun clearCapacity() {
+        dataStore.edit { preferences -> preferences.remove(CAPACITY_KEY) }
     }
 
     override suspend fun loadProjectCatalog(): StorageRead<ProjectCatalogSnapshot> =
@@ -107,6 +119,7 @@ class SecureStore(context: Context) : MetroraStore {
             preferences.remove(CREDENTIALS_KEY)
             preferences.remove(SNAPSHOT_KEY)
             preferences.remove(FOUNDATION_KEY)
+            preferences.remove(CAPACITY_KEY)
             preferences.remove(PROJECT_CATALOG_KEY)
             preferences.remove(ACTIVITY_KEY)
         }
@@ -163,6 +176,7 @@ class SecureStore(context: Context) : MetroraStore {
         val CREDENTIALS_KEY = stringPreferencesKey("encrypted_pairing_credentials_v1")
         val SNAPSHOT_KEY = stringPreferencesKey("encrypted_usage_snapshot_v1")
         val FOUNDATION_KEY = stringPreferencesKey("encrypted_mobile_foundation_v1")
+        val CAPACITY_KEY = stringPreferencesKey("encrypted_capacity_snapshot_v1")
         val PROJECT_CATALOG_KEY = stringPreferencesKey("encrypted_project_catalog_v1")
         val ACTIVITY_KEY = stringPreferencesKey("encrypted_activity_cache_v1")
     }

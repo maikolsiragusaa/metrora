@@ -36,9 +36,19 @@ describe('desktop Activity share runtime', () => {
     await createDesktopShareRuntime(7777)
 
     const args = mocks.constructorArgs[0]
-    expect(args).toHaveLength(8)
+    expect(args).toHaveLength(9)
     expect(typeof args?.[5]).toBe('function')
     expect(typeof args?.[6]).toBe('function')
     expect(typeof args?.[7]).toBe('function')
+    expect(args?.[8]).toBeUndefined()
+  })
+
+  it('passes the Desktop Capacity authority as the final bounded callback', async () => {
+    const getCapacity = async () => []
+    const { createDesktopShareRuntime } = await import('./desktop-share-runtime-entry.js')
+
+    await createDesktopShareRuntime(7777, { getCapacity })
+
+    expect(typeof mocks.constructorArgs[0]?.[8]).toBe('function')
   })
 })

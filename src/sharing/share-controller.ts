@@ -53,6 +53,7 @@ export class ShareController {
     private readonly getActivitySessions?: (q: ActivityQuery) => Promise<unknown>,
     private readonly getActivitySessionDetail?: (q: ActivityQuery, id: string) => Promise<unknown | null>,
     private readonly getActivityPullRequests?: (q: ActivityQuery) => Promise<unknown>,
+    private readonly getCapacity?: () => Promise<unknown>,
   ) {}
 
   private async getIdentity(): Promise<Identity> {
@@ -78,6 +79,7 @@ export class ShareController {
       getUsage: this.getUsage,
       getCapabilities: this.getCapabilities,
       getFoundation: this.getFoundation,
+      getCapacity: this.getCapacity,
       getProjectCatalog: this.getProjectCatalog,
       getActivitySessions: this.getActivitySessions,
       getActivitySessionDetail: this.getActivitySessionDetail,

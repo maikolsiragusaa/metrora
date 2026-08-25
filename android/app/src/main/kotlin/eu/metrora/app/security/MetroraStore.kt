@@ -6,6 +6,7 @@ import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.data.ActivitySnapshot
+import eu.metrora.app.data.CapacitySnapshot
 
 interface MetroraStore {
     suspend fun loadCredentials(): StorageRead<PairingCredentials>
@@ -42,11 +43,18 @@ interface MetroraStore {
 
     suspend fun saveFoundation(foundation: MobileFoundationSnapshot) = Unit
 
+    /** Additive encrypted provider Capacity projection; older stores remain compatible. */
+    suspend fun loadCapacity(): StorageRead<CapacitySnapshot> = StorageRead.Missing
+
+    suspend fun saveCapacity(snapshot: CapacitySnapshot) = Unit
+
     suspend fun clearCredentials()
 
     suspend fun clearSnapshot()
 
     suspend fun clearFoundation() = Unit
+
+    suspend fun clearCapacity() = Unit
 
     /** Additive encrypted Project authority cache; old stores remain compatible. */
     suspend fun loadProjectCatalog(): StorageRead<ProjectCatalogSnapshot> = StorageRead.Missing

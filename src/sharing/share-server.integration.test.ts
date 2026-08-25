@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   companionHello,
   fetchCompanionCapabilities,
+  fetchCompanionCapacity,
   fetchCompanionFoundation,
   companionPairRequest,
   fetchCompanionUsage,
@@ -227,7 +228,28 @@ describe('secure companion lifecycle', () => {
       identity: desktop,
       peers,
       getUsage: async () => internalPayload,
-      getCapabilities: async () => ({ kind: 'metrora.companion.capabilities', version: 1, capabilities: [] }),
+      getCapabilities: () => buildCompanionCapabilities(true),
+      getCapacity: async () => ({
+        kind: 'metrora.companion.capacity',
+        version: 1,
+        desktopId: '00'.repeat(32),
+        generatedAt: '2026-07-31T10:30:00.000Z',
+        scope: { id: 'desktop-provider-capacity' },
+        observationId: '11'.repeat(32),
+        freshness: 'fresh',
+        available: true,
+        providers: [{
+          provider: 'claude',
+          displayName: 'Claude',
+          availability: 'available',
+          connection: 'connected',
+          freshness: 'fresh',
+          observedAt: '2026-07-31T10:30:00.000Z',
+          planLabel: 'Pro',
+          windows: [{ id: 'primary', label: '5 hour', usedPercent: 25, remainingPercent: 75, resetsAt: null }],
+          credits: null,
+        }],
+      }),
       getFoundation: async (query) => ({ kind: 'metrora.companion.foundation', version: 1, projectScopeId: query.projectScopeId ?? 'all' }),
       getProjectCatalog: async () => ({
         kind: 'metrora.companion.projects',
@@ -287,6 +309,16 @@ describe('secure companion lifecycle', () => {
       const capabilities = await fetchCompanionCapabilities(endpoint, token)
       expect(capabilities.status).toBe(200)
       expect(capabilities.json).toMatchObject({ kind: 'metrora.companion.capabilities', version: 1 })
+
+      const capacity = await fetchCompanionCapacity(endpoint, token)
+      expect(capacity.status).toBe(200)
+      expect(capacity.json).toMatchObject({
+        kind: 'metrora.companion.capacity',
+        version: 1,
+        desktopId: desktop.fingerprint,
+        scope: { id: 'desktop-provider-capacity' },
+        providers: [{ provider: 'claude', displayName: 'Claude', windows: [{ usedPercent: 25, remainingPercent: 75 }] }],
+      })
 
       const foundation = await fetchCompanionFoundation(endpoint, token, { period: 'month', projectScopeId: 'mp_demo' })
       expect(foundation.status).toBe(200)

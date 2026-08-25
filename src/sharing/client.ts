@@ -124,6 +124,10 @@ export function fetchCompanionCapabilities(ep: PeerEndpoint, token: string): Pro
   return call(ep, 'GET', '/api/v1/capabilities', { authorization: `Bearer ${token}` })
 }
 
+export function fetchCompanionCapacity(ep: PeerEndpoint, token: string): Promise<Response> {
+  return call(ep, 'GET', '/api/v1/capacity', { authorization: `Bearer ${token}` })
+}
+
 export function fetchCompanionFoundation(ep: PeerEndpoint, token: string, query: UsageQuery = {}): Promise<Response> {
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries(query)) if (v) params.set(k, v)

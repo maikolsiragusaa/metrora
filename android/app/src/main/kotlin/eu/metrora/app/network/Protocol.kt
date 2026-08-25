@@ -11,12 +11,14 @@ object MetroraProtocol {
     const val REVOKE_PATH = "/api/v1/peer/revoke"
     const val USAGE_PATH = "/api/v1/usage"
     const val CAPABILITIES_PATH = "/api/v1/capabilities"
+    const val CAPACITY_PATH = "/api/v1/capacity"
     const val FOUNDATION_PATH = "/api/v1/foundation"
     const val PROJECTS_PATH = "/api/v1/projects"
     const val ACTIVITY_SESSIONS_PATH = "/api/v1/activity/sessions"
     const val ACTIVITY_PULL_REQUESTS_PATH = "/api/v1/activity/pull-requests"
     const val USAGE_KIND = "metrora.companion.usage"
     const val CAPABILITIES_KIND = "metrora.companion.capabilities"
+    const val CAPACITY_KIND = "metrora.companion.capacity"
     const val FOUNDATION_KIND = "metrora.companion.foundation"
 
     private val allowedPeriods = setOf("today", "week", "30days", "month", "all", "lifetime")

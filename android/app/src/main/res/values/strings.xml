@@ -137,6 +137,24 @@
     <string name="refresh">Refresh from Desktop</string>
     <string name="refresh_demo">Refresh demo data</string>
 
+    <string name="capacity_title">Capacity &amp; limits</string>
+    <string name="capacity_authority">Provider-reported · from Desktop</string>
+    <string name="capacity_connected">Current</string>
+    <string name="capacity_partial">Some providers are unavailable</string>
+    <string name="capacity_stale">Saved observation</string>
+    <string name="capacity_unavailable">Capacity is unavailable</string>
+    <string name="capacity_tap_details">Tap for provider details</string>
+    <string name="capacity_used_remaining">%1$s used · %2$s remaining</string>
+    <string name="capacity_resets">Resets %1$s</string>
+    <string name="capacity_credits">Credits %1$s</string>
+    <string name="capacity_details_title">Capacity &amp; limits details</string>
+    <string name="capacity_status">Status: %1$s</string>
+    <string name="capacity_projection_generated">Desktop projection: %1$s</string>
+    <string name="capacity_provider_observed">Provider observation: %1$s</string>
+    <string name="capacity_source">Source: %1$s · %2$s</string>
+    <string name="capacity_plan">Plan label: %1$s</string>
+    <string name="capacity_unknown_time">Unknown time</string>
+
     <string name="nav_home">Home</string>
     <string name="nav_activity">Activity</string>
     <string name="nav_analyze">Analyze</string>

@@ -274,13 +274,20 @@ private fun periodLabel(value: String): String = androidx.compose.ui.res.stringR
 @Composable
 private fun OverviewSurface(state: MetroraUiState, onRefresh: () -> Unit, onSelectTrendGranularity: (String) -> Unit, onViewAllModels: () -> Unit) {
     var metric by rememberSaveable { mutableStateOf("Cost") }
+    var capacityDetailsVisible by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        CapacityModule(state.capacity) { capacityDetailsVisible = true }
         state.snapshot?.let { snapshot ->
             HomeMetricHero(snapshot, metric, { metric = it }, onSelectTrendGranularity)
             HomeMetricTiles(snapshot)
             TopModels(snapshot.models.ifEmpty { snapshot.topModels }, snapshot.modelCoverage, snapshot.modelAccountingGap, onViewAllModels)
             FreshnessFooter(state)
         } ?: EmptyHomeSnapshot(state, onRefresh)
+    }
+    if (capacityDetailsVisible) {
+        state.capacity?.let { snapshot ->
+            CapacityDetailsDialog(snapshot, onDismiss = { capacityDetailsVisible = false })
+        }
     }
 }
 

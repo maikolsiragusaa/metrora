@@ -12,6 +12,7 @@ import type { MenubarPayload } from '../menubar-json.js'
 import { buildPairingBootstrap } from './pairing-bootstrap.js'
 import { getLanAddresses } from './network-address.js'
 import { buildCompanionCapabilitiesV1 } from './capability-contract.js'
+import { toCompanionCapacityV1, unavailableCompanionCapacityV1 } from './capacity-contract.js'
 import { buildCompanionProjectCatalogProjection } from './project-catalog.js'
 import {
   activityPeriodQuery,
@@ -33,6 +34,7 @@ export type CompanionUsageAggregator = (
 ) => Promise<MenubarPayload>
 
 export type CompanionActivityAggregator = CompanionUsageAggregator
+export type CompanionCapacityReader = () => Promise<unknown>
 
 /**
  * Canonical authorities used by the production Activity projection. Keeping
@@ -69,13 +71,14 @@ export async function buildCompanionUsage(
   }))
 }
 
-export async function buildCompanionCapabilities(): Promise<ReturnType<typeof buildCompanionCapabilitiesV1>> {
-  return buildCompanionCapabilitiesV1()
+export async function buildCompanionCapabilities(capacityAvailable = false): Promise<ReturnType<typeof buildCompanionCapabilitiesV1>> {
+  return buildCompanionCapabilitiesV1(undefined, { capacityAvailable })
 }
 
 export async function buildCompanionFoundation(
   query: UsageQuery,
   aggregate: CompanionUsageAggregator = buildMenubarPayloadForRange,
+  capacityAvailable = false,
 ): Promise<unknown> {
   const canonical = canonicalCompanionQuery(query)
   const periodInfo = periodInfoFromQuery(canonical, 'month')
@@ -86,7 +89,16 @@ export async function buildCompanionFoundation(
     metroraProjectId: canonical.projectScopeId,
     trendGranularity: canonical.granularity,
   })
-  return payload.mobileFoundation ?? {
+  if (payload.mobileFoundation) {
+    return {
+      ...payload.mobileFoundation,
+      // Foundation remains the period-scoped compatibility surface, but its
+      // capability matrix must advertise the same Desktop authority that the
+      // live capability route exposes.
+      capabilities: buildCompanionCapabilitiesV1(payload.mobileFoundation.generatedAt, { capacityAvailable }),
+    }
+  }
+  return {
     kind: 'metrora.companion.foundation',
     version: 1,
     generatedAt: payload.generated,
@@ -94,7 +106,7 @@ export async function buildCompanionFoundation(
     ...(canonical.granularity === 'day' || canonical.granularity === 'week' || canonical.granularity === 'month'
       ? { trendGranularity: canonical.granularity }
       : {}),
-    capabilities: buildCompanionCapabilitiesV1(payload.generated),
+    capabilities: buildCompanionCapabilitiesV1(payload.generated, { capacityAvailable }),
     projectScope: payload.projectScope,
     activity: { available: true, freshness: 'unknown', coverage: 'unavailable', sessions: [] },
     analyze: {
@@ -111,6 +123,18 @@ export async function buildCompanionFoundation(
     },
     workspace: { available: false, reason: 'no-authority' },
   }
+}
+
+/**
+ * Project the already-sanitized Electron ProviderQuotaSnapshot authority for
+ * the authenticated companion. The CLI share path does not have that
+ * authority, so it returns an explicit unavailable envelope instead.
+ */
+export async function buildCompanionCapacity(
+  readCapacity?: CompanionCapacityReader,
+): Promise<ReturnType<typeof toCompanionCapacityV1>> {
+  if (!readCapacity) return unavailableCompanionCapacityV1()
+  return toCompanionCapacityV1(await readCapacity())
 }
 
 async function buildActivityInput(
@@ -183,8 +207,8 @@ export async function runShareServer(opts: { port: number; pair: boolean; always
     identity,
     peers,
     getUsage: (q) => buildCompanionUsage(q),
-    getCapabilities: () => buildCompanionCapabilities(),
-    getFoundation: (q) => buildCompanionFoundation(q),
+    getCapabilities: () => buildCompanionCapabilities(false),
+    getFoundation: (q) => buildCompanionFoundation(q, buildMenubarPayloadForRange, false),
     getProjectCatalog: () => buildCompanionProjectCatalog(),
     getActivitySessions: (q) => buildCompanionActivitySessions(q),
     getActivitySessionDetail: (q, id) => buildCompanionActivitySessionDetail(q, id),
