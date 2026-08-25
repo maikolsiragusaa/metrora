@@ -1,6 +1,7 @@
 package eu.metrora.app.ui
 
 import eu.metrora.app.MetroraConnectionState
+import eu.metrora.app.MetroraDataMode
 import eu.metrora.app.MetroraFailure
 import eu.metrora.app.MetroraFailureCategory
 import eu.metrora.app.MetroraFailureReason
@@ -134,6 +135,23 @@ class MetroraPresentationModelTest {
 
         assertEquals(FreshnessKind.FRESH, freshnessPresentation(state).kind)
         assertEquals(R.string.data_fresh, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun demo_presentation_is_explicit_and_not_paired_or_cached() {
+        val state = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.DEMO,
+            dataMode = MetroraDataMode.DEMO,
+            demoDatasetVersion = "v1",
+            demoToday = "2026-08-25",
+            snapshot = testSnapshot(),
+        )
+
+        assertFalse(state.paired)
+        assertFalse(state.showingCachedData)
+        assertEquals(R.string.status_demo, statusCopy(state.status).title)
+        assertEquals(R.string.data_demo, freshnessPresentation(state).label)
     }
 
     @Test

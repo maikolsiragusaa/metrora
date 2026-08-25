@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -241,6 +242,33 @@ internal fun MetroraStatusPill(
                 text = label,
                 style = MaterialTheme.typography.labelMedium.copy(fontSize = 8.sp, lineHeight = 11.sp, letterSpacing = 0.sp),
                 color = if (connected) MetroraPalette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun DemoDataBadge(modifier: Modifier = Modifier) {
+    val label = androidx.compose.ui.res.stringResource(R.string.demo_data_label)
+    val a11y = androidx.compose.ui.res.stringResource(R.string.demo_data_a11y)
+    Surface(
+        modifier = modifier.semantics { contentDescription = a11y },
+        shape = RoundedCornerShape(12.dp),
+        color = MetroraPalette.cyan.copy(alpha = 0.10f),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, MetroraPalette.cyan.copy(alpha = 0.56f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Surface(modifier = Modifier.size(6.dp), shape = RoundedCornerShape(50), color = MetroraPalette.cyan) {}
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 8.sp, lineHeight = 11.sp, letterSpacing = 0.sp),
+                color = MetroraPalette.cyan,
                 maxLines = 1,
                 softWrap = false,
             )

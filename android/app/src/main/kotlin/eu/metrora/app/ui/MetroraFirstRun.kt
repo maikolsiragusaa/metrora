@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DesktopWindows
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Security
@@ -83,6 +84,7 @@ internal fun ConnectScreen(
     coordinator: MetroraCoordinator,
     onOpenScanner: () -> Unit,
     onOpenManual: () -> Unit,
+    onExploreDemo: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -128,6 +130,7 @@ internal fun ConnectScreen(
                 Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        DemoExploreCard(enabled = !state.busy, onClick = onExploreDemo)
         LocalPrivateCard(modifier = Modifier.padding(top = 3.dp))
         HowItWorksCard(modifier = Modifier.padding(top = 3.dp))
         Text(
@@ -137,6 +140,41 @@ internal fun ConnectScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+@Composable
+private fun DemoExploreCard(enabled: Boolean, onClick: () -> Unit) {
+    val actionDescription = androidx.compose.ui.res.stringResource(R.string.explore_demo_action)
+    MetroraPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = actionDescription },
+        color = MetroraPalette.surface.copy(alpha = 0.68f),
+        borderColor = MetroraPalette.cyan.copy(alpha = 0.34f),
+        radius = 16,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            MetroraIconBadge(Icons.Outlined.Info, tint = MetroraPalette.cyan, size = 24.dp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    androidx.compose.ui.res.stringResource(R.string.explore_demo_action),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    androidx.compose.ui.res.stringResource(R.string.explore_demo_body),
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp, lineHeight = 12.sp, letterSpacing = 0.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

@@ -636,8 +636,8 @@ internal fun WorkspaceSurface(state: MetroraUiState) {
         MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MetroraPalette.surfaceRaised, radius = 18) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 MetroraIconBadge(Icons.Outlined.Layers, tint = MetroraPalette.cyan, modifier = Modifier.size(48.dp))
-                Text(androidx.compose.ui.res.stringResource(R.string.workspace_unavailable_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-                Text(androidx.compose.ui.res.stringResource(R.string.workspace_unavailable_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                Text(androidx.compose.ui.res.stringResource(if (state.isDemo) R.string.demo_workspace_title else R.string.workspace_unavailable_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                Text(androidx.compose.ui.res.stringResource(if (state.isDemo) R.string.demo_workspace_body else R.string.workspace_unavailable_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                 Text(androidx.compose.ui.res.stringResource(R.string.workspace_read_only_label), style = MaterialTheme.typography.labelMedium, color = MetroraPalette.cyan)
             }
         }

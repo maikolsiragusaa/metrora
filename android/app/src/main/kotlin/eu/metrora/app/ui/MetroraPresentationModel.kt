@@ -5,6 +5,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Security
@@ -55,6 +56,10 @@ internal data class FreshnessPresentation(
 )
 
 internal fun freshnessPresentation(state: MetroraUiState): FreshnessPresentation = when {
+    state.isDemo -> FreshnessPresentation(
+        R.string.data_demo,
+        FreshnessKind.FRESH,
+    )
     state.status == MetroraConnectionState.REFRESHING -> FreshnessPresentation(
         R.string.data_refreshing,
         FreshnessKind.CHECKING,
@@ -129,6 +134,13 @@ internal fun statusCopy(status: MetroraConnectionState): StatusCopy = when (stat
         Icons.Outlined.Refresh,
         R.string.online_icon,
         StatusTone.PROGRESS,
+    )
+    MetroraConnectionState.DEMO -> StatusCopy(
+        R.string.status_demo,
+        R.string.status_demo_body,
+        Icons.Outlined.Info,
+        R.string.demo_data_a11y,
+        StatusTone.POSITIVE,
     )
     MetroraConnectionState.OFFLINE_WITH_SNAPSHOT -> StatusCopy(
         R.string.status_desktop_unavailable,
