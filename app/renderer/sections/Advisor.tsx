@@ -11,6 +11,7 @@ import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
 import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { scopeLabel } from '../advisor/evidence'
+import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1 } from '../advisor/context'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorLocalRuntimeId, type AdvisorPresentationBlockV1, type AdvisorPresentationChartSeries, type AdvisorScope } from '../advisor/types'
 
 type DetectedProvider = { id: string; label: string }
@@ -160,6 +161,7 @@ export function Advisor({
   range = null,
   overview,
   detectedProviders,
+  contextualLaunch = null,
 }: {
   period: Period
   provider: string
@@ -167,6 +169,7 @@ export function Advisor({
   range?: DateRange | null
   overview: Polled<MenubarPayload>
   detectedProviders: DetectedProvider[]
+  contextualLaunch?: AdvisorContextualLaunchV1 | null
 }) {
   const projectOptions = overview.data?.projectScope?.options ?? []
   const projectName = projectScopeId === 'all'
@@ -178,7 +181,15 @@ export function Advisor({
   ])].filter(Boolean).slice(0, 40)
   const providerOptions = [{ id: 'all', label: 'All providers' }, ...detectedProviders.filter(item => item.id !== 'all')]
 
-  const [scope, setScope] = useState<AdvisorScope>(() => ({
+  const normalizedContextualLaunch = useMemo(
+    () => contextualLaunch ? normalizeAdvisorContextualLaunch(contextualLaunch) : null,
+    [contextualLaunch],
+  )
+  const contextualScope = useMemo(
+    () => normalizedContextualLaunch ? advisorScopeFromContextualLaunch(normalizedContextualLaunch) : null,
+    [normalizedContextualLaunch],
+  )
+  const [scope, setScope] = useState<AdvisorScope>(() => contextualScope ?? ({
     period,
     range,
     provider,
@@ -187,8 +198,9 @@ export function Advisor({
     model: null,
   }))
   useEffect(() => {
+    if (normalizedContextualLaunch) return
     setScope(current => ({ ...current, period, range, provider, projectId: projectScopeId, projectName }))
-  }, [period, provider, projectScopeId, projectName, range])
+  }, [normalizedContextualLaunch, period, provider, projectScopeId, projectName, range])
   useEffect(() => {
     if (scope.model && !modelOptions.includes(scope.model)) setScope(current => ({ ...current, model: null }))
   }, [modelOptions, scope.model])
@@ -298,6 +310,14 @@ export function Advisor({
   const [notice, setNotice] = useState<string | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
   const requestController = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (!normalizedContextualLaunch || !contextualScope) return
+    setScope(contextualScope)
+    setComposer(normalizedContextualLaunch.suggestedPrompt ?? '')
+    setNotice(`Context from ${advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)} loaded. Review the suggested investigation before sending.`)
+    setSelectedAnswerId(null)
+  }, [contextualScope, normalizedContextualLaunch])
 
   const activeConversation = conversations.find(conversation => conversation.id === activeConversationId) ?? conversations[0]!
   const messages = activeConversation.messages
@@ -513,6 +533,7 @@ export function Advisor({
         </header>
         <div className="advisor-scope-bar" aria-label="Advisor context">
           <span className="advisor-scope-label">Context</span>
+          {normalizedContextualLaunch ? <span className="advisor-contextual-origin">From {advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)}</span> : null}
           <label>Period<select aria-label="Advisor period" value={scope.period} onChange={event => setScope(current => ({ ...current, period: event.target.value as Period }))}>{PERIODS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label>Project<select aria-label="Advisor Project" value={scope.projectId} onChange={event => { const id = event.target.value; setScope(current => ({ ...current, projectId: id, projectName: id === 'all' ? 'All projects' : projectOptions.find(option => option.id === id)?.name ?? id })) }}><option value="all">All projects</option>{projectOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
           <label>Provider<select aria-label="Advisor provider" value={scope.provider} onChange={event => setScope(current => ({ ...current, provider: event.target.value }))}>{providerOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>

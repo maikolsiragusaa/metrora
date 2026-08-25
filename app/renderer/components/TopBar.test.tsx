@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { DesktopSectionCapabilities } from '../lib/desktopSections'
@@ -13,7 +13,7 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities) {
+function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: () => void) {
   render(
     <TopBar
       title="Workspace"
@@ -33,6 +33,7 @@ function renderTopBar(capabilities: DesktopSectionCapabilities) {
       configSource={null}
       onConfigSelect={vi.fn()}
       capabilities={capabilities}
+      onAskAdvisor={onAskAdvisor}
     />,
   )
 }
@@ -58,5 +59,15 @@ describe('TopBar scope capabilities', () => {
     expect(screen.queryByText('7D')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Choose date range')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Claude config source')).not.toBeInTheDocument()
+  })
+
+  it('renders one page-level Ask Advisor action without adding card-level advice controls', () => {
+    const onAskAdvisor = vi.fn()
+    renderTopBar(full, onAskAdvisor)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ask Advisor' }))
+
+    expect(onAskAdvisor).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByRole('button', { name: 'Ask Advisor' })).toHaveLength(1)
   })
 })

@@ -201,6 +201,7 @@
   background: var(--advisor-surface);
 }
 .advisor-scope-label { margin-right: 4px; color: var(--advisor-ink); font-size: 10px; font-weight: 750; }
+.advisor-contextual-origin { padding: 4px 7px; border: 1px solid var(--advisor-accent-soft); border-radius: 5px; color: var(--advisor-accent); background: var(--advisor-accent-soft); font-size: 9px; font-weight: 700; }
 .advisor-scope-bar label { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; }
 .advisor-scope-bar select {
   max-width: 128px;

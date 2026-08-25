@@ -47,6 +47,7 @@ export function TopBar({
   projectScopeId,
   onProjectScopeSelect,
   capabilities = DEFAULT_CAPABILITIES,
+  onAskAdvisor,
 }: {
   title: ReactNode
   scope?: ReactNode
@@ -65,12 +66,18 @@ export function TopBar({
   projectScopeId?: string
   onProjectScopeSelect?: (id: string) => void
   capabilities?: DesktopSectionCapabilities
+  onAskAdvisor?: () => void
 }) {
   return (
     <div className="bar">
       <div className="t">{title}</div>
       {scope !== undefined && <span className="scope">{scope}</span>}
       <div className="sp" />
+      {onAskAdvisor && (
+        <button type="button" className="btn btn-s ask-advisor-button" onClick={onAskAdvisor}>
+          Ask Advisor <span aria-hidden="true">↗</span>
+        </button>
+      )}
       {capabilities.period && (
         <SegTabs options={PERIOD_OPTIONS} value={customRange ? '' : period} onChange={onPeriodChange} />
       )}
