@@ -104,6 +104,7 @@ describe('BenchRunV1 ollama-local', () => {
     expect(result.fixture.digest).toBe(SYNTHETIC_FIXTURE_DIGEST)
     expect(result.runtime.endpoint).toBe(OLLAMA_LOCAL_BASE_URL)
     expect(calls.every(call => call.url.startsWith(OLLAMA_LOCAL_BASE_URL))).toBe(true)
+    expect(calls.every(call => call.init?.redirect === 'error')).toBe(true)
   })
 
   it('keeps runtime-reported token metadata factual and distinguishes missing values', async () => {

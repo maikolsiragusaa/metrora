@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 
+import { LMStudioAdvisorRuntime } from './lmstudio'
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
 import { advisorScopeFingerprint, type AdvisorEvidence, type AdvisorScope } from './types'
 
@@ -30,6 +31,8 @@ const spendEvidence: AdvisorEvidence = {
     sessionsByCost: [],
     trend: null,
     pricingCoverage: 1,
+    history: [],
+    modelHistory: [],
   },
 }
 const quotaEvidence: AdvisorEvidence = {
@@ -119,7 +122,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(contents).not.toContain('different factual answer')
   })
 
-  it('runs one tool-planning request, one streamed final request, and retains all evidence domains', async () => {
+  it('runs one tool-planning request, one final request, and retains all evidence domains', async () => {
     const events: string[] = []
     const transport = transportFor(events, [[
       { function: { name: 'get_spend_snapshot', arguments: '{}' } },
@@ -137,20 +140,20 @@ describe('Ollama Advisor renderer state machine', () => {
         type: 'function',
         function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } },
       }],
-      executeTool: async name => ({ content: name === 'get_spend_snapshot' ? 'spend' : 'quota', evidence: name === 'get_spend_snapshot' ? spendEvidence : quotaEvidence }),
+      executeTool: async name => ({ content: JSON.stringify({ tool: name === 'get_spend_snapshot' ? 'spend' : 'quota' }), evidence: name === 'get_spend_snapshot' ? spendEvidence : quotaEvidence }),
       onDelta: text => deltas.push(text),
     })
 
-    expect(JSON.parse(events[0]!).stream).toBe(true)
+    expect(JSON.parse(events[0]!).stream).toBe(false)
     expect(JSON.parse(events[0]!).tools).toEqual([])
     expect(answer.generatedByModel).toBe(true)
-    expect(answer.streamed).toBe(true)
+    expect(answer.streamed).toBe(false)
     expect(answer.evidence.map(ref => ref.id)).toEqual(['spend', 'quota'])
     expect(answer.details.some(detail => detail.includes('provider credits remaining'))).toBe(true)
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.conclusion).not.toContain('99 calls')
-    expect(answer.conclusion).toContain('Local model context')
-    expect(deltas).toEqual(['The observed pattern is worth investigating further.'])
+    expect(answer.conclusion).not.toContain('Local model context')
+    expect(deltas).toEqual([])
   })
 
   it('keeps model identifiers while rejecting an unverified numeric model claim', async () => {
@@ -161,7 +164,7 @@ describe('Ollama Advisor renderer state machine', () => {
       tools: [],
       onDelta: () => {},
     })
-    expect(answer.conclusion).toContain('GPT-5.6')
+    expect(answer.details.some(detail => detail.includes('GPT-5.6'))).toBe(true)
   })
 
   it.each(['Spend rose by 12.', 'The scope contains 12 calls.'])(
@@ -172,7 +175,7 @@ describe('Ollama Advisor renderer state machine', () => {
         question: 'What changed in spend?',
         evidence: spendEvidence,
         tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
-        executeTool: async () => ({ content: 'spend', evidence: spendEvidence }),
+        executeTool: async () => ({ content: '{"tool":"spend"}', evidence: spendEvidence }),
       })
       expect(answer.conclusion).not.toContain('Local model context')
       expect(answer.conclusion).not.toContain(narrative)
@@ -188,13 +191,28 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.conclusion).not.toContain('Local model context')
   })
 
+  it('does not append contradictory qualitative prose in Ollama or LM Studio', async () => {
+    const narrative = 'Claude was not the main driver.'
+    const runtimes = [
+      new OllamaAdvisorRuntime({ model: 'llama3.2', transport: noToolTransport(narrative) }),
+      new LMStudioAdvisorRuntime({ model: 'qwen/qwen3-8b', transport: noToolTransport(narrative) }),
+    ]
+    for (const runtime of runtimes) {
+      const answer = await runtime.generate({
+        question: 'What changed in spend?', evidence: spendEvidence, tools: [],
+      })
+      expect(answer.conclusion).toContain('Metrora measured')
+      expect(answer.conclusion).not.toContain(narrative)
+      expect(answer.streamed).toBe(false)
+    }
+  })
   it('does not expose numeric streamed deltas before final narrative validation', async () => {
     const deltas: string[] = []
     const transport = transportFor([], [[{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]], 'A qualitative observation.', 'Planning found 99 calls.')
     await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
       question: 'What changed in spend?', evidence: spendEvidence,
       tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
-      executeTool: async () => ({ content: 'spend', evidence: spendEvidence }),
+      executeTool: async () => ({ content: '{"tool":"spend"}', evidence: spendEvidence }),
       onDelta: text => deltas.push(text),
     })
     expect(deltas).toEqual([])
@@ -222,22 +240,22 @@ describe('Ollama Advisor renderer state machine', () => {
   ])('rejects mixed-scope tool evidence without cross-scope contamination (%s then %s)', async (first, second) => {
     const finalRequests: string[] = []
     const transport = transportFor(finalRequests, [[
-      { function: { name: 'get_spend_snapshot', arguments: { provider: first } } },
-      { function: { name: 'get_spend_snapshot', arguments: { provider: second } } },
+      { function: { name: 'get_quota_snapshot', arguments: { provider: first } } },
+      { function: { name: 'get_quota_snapshot', arguments: { provider: second } } },
     ]])
     const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
       question: 'Compare spend',
       evidence: spendEvidence,
-      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      tools: [{ type: 'function', function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } } }],
       executeTool: async (_name, args) => {
-        const provider = String(args.provider)
+        const provider = String(args.provider) as 'claude' | 'codex'
         const evidence: AdvisorEvidence = {
-          ...spendEvidence,
+          ...quotaEvidence,
           scope: { ...scope, provider },
-          refs: [{ id: 'spend-' + provider, label: provider + ' spend', source: 'overview' }],
-          spend: { ...spendEvidence.spend!, measuredCostUSD: provider === 'claude' ? 41 : 73 },
+          refs: [{ id: 'quota-' + provider, label: provider + ' quota', source: 'quota' }],
+          quota: { ...quotaEvidence.quota!, providers: quotaEvidence.quota!.providers.map(row => ({ ...row, provider })) },
         }
-        return { content: provider, evidence }
+        return { content: JSON.stringify({ provider }), evidence }
       },
     })
 

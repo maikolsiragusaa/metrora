@@ -69,7 +69,7 @@ async function fetchJson(fetchImpl: FetchLike, url: string, init: RequestInit, t
   const timed = timeoutSignal(parent, timeoutMs)
   try {
     throwIfAborted(timed.signal)
-    const response = await fetchImpl(url, { ...init, signal: timed.signal })
+    const response = await fetchImpl(url, { ...init, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new Error('Local runtime returned HTTP ' + response.status + '.')
     const text = await boundedText(response)
@@ -84,7 +84,8 @@ export async function probeOllamaMain(fetchImpl: FetchLike = fetch, parent?: Abo
     const payload = await fetchJson(fetchImpl, LOOPBACK_ENDPOINT + '/api/tags', {}, PROBE_TIMEOUT_MS, parent)
     const rows = Array.isArray(payload.models) ? payload.models : []
     const models = rows.flatMap(row => row && typeof row === 'object' && typeof (row as { name?: unknown }).name === 'string' ? [(row as { name: string }).name] : [])
-    return models.length ? { available: true, models, detail: 'Local Ollama is reachable.' } : { available: false, models: [], detail: 'Ollama is reachable but has no local models.' }
+    const capabilities = models.map(modelId => ({ schemaVersion: 1, runtime: 'ollama', modelId, discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool-call support is unknown until this model passes a bounded Advisor conformance check.' }))
+    return models.length ? { available: true, models, detail: 'Local Ollama is reachable.', capabilities } : { available: false, models: [], detail: 'Ollama is reachable but has no local models.', capabilities: [] }
   } catch (error) {
     if (parent?.aborted) throw error
     return { available: false, models: [], detail: boundedError(error).message }
@@ -217,7 +218,7 @@ async function streamNdjsonResponse(response: Response): Promise<AdvisorRuntimeC
   if (validMessages === 0) throw new Error('Local runtime stream contained no valid messages.')
   return { message: { content, tool_calls: toolCalls.slice(0, 16) }, streamed: true }
 }
-const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant', 'tool'])
+const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant'])
 
 function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeChatPayload {
   if (!isRecord(value) || typeof value.model !== 'string' || !validModel(value.model)) throw new Error('Local runtime model is invalid.')
@@ -229,7 +230,7 @@ function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeCha
     if (!isRecord(message) || typeof message.role !== 'string' || !ADVISOR_MESSAGE_ROLES.has(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
     boundedMessageContent(message.content)
-    if (message.tool_calls !== undefined) parseToolCalls(message.tool_calls)
+    if (message.tool_calls !== undefined || message.tool_name !== undefined) throw new Error('Local runtime provider-native tool continuation is not supported.')
   }
   for (const tool of value.tools) {
     if (!isRecord(tool) || tool.type !== 'function' || !isRecord(tool.function) || typeof tool.function.name !== 'string' || !tool.function.name.trim()) {
@@ -246,6 +247,7 @@ async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      redirect: 'error',
       signal: timed.signal,
     })
     throwIfAborted(timed.signal)
@@ -273,7 +275,7 @@ type AdvisorRuntimeId = 'ollama' | 'lmstudio'
 function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' }
 function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
   const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
-  return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState }
+  return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState, capabilities: value.capabilities }
 }
 export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>> {
   const flights = new Map<string, AbortController>()
@@ -298,7 +300,7 @@ export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Reco
         return { ok: true, value }
       } catch (error) {
         return controller.signal.aborted ? fail(new Error('Advisor request cancelled.'), 'cancelled') : fail(error)
-      } finally { flights.delete(requestId) }
+      } finally { if (flights.get(requestId) === controller) flights.delete(requestId) }
     },
     'metrora:advisorCancel': async (requestId: string) => {
       if (!validRequestId(requestId)) return { ok: false as const, error: { kind: 'validation', message: 'Advisor request id is invalid.' } }

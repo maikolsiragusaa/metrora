@@ -7,11 +7,12 @@ import type { MenubarPayload } from '../lib/types'
 import type { AdvisorAnswer } from '../advisor/types'
 import { Advisor } from './Advisor'
 
-const { advisorProbe, investigate } = vi.hoisted(() => ({
+const { advisorProbe, advisorHostedProbe, investigate } = vi.hoisted(() => ({
   advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama') => runtime === 'lmstudio'
     ? { runtime: 'lmstudio' as const, available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered' as const, capabilities: [{ schemaVersion: 1 as const, runtime: 'lmstudio' as const, modelId: 'qwen/qwen3-8b', discovery: 'discovered' as const, conversational: 'available' as const, toolCall: 'unknown' as const, streaming: 'supported' as const, limitation: 'Tool support varies by model.' }] }
     : { available: false, models: [], detail: 'Ollama is not running.' }),
   investigate: vi.fn(),
+  advisorHostedProbe: vi.fn(),
 }))
 vi.mock('../advisor/kernel', () => ({ createAdvisorKernel: () => ({ investigate }) }))
 vi.mock('../lib/ipc', async importOriginal => {
@@ -21,6 +22,7 @@ vi.mock('../lib/ipc', async importOriginal => {
     metrora: {
       ...actual.metrora,
       advisorProbe,
+      advisorHostedProbe,
       advisorChat: vi.fn(),
       advisorCancel: vi.fn(async () => false),
       onAdvisorDelta: vi.fn(() => () => {}),
@@ -46,7 +48,7 @@ const overviewWithOptions = {
 } as unknown as Polled<MenubarPayload>
 const answer = {
   conclusion: 'Verified RESPONSE needle.', scopeLabel: 'Last 7 days · All projects · All providers', periodLabel: 'Last 7 days',
-  evidence: [], coverage: { level: 'partial', label: 'Partial', detail: 'Test evidence.' }, assumptions: [], unknown: [], nextInvestigations: [], details: [],
+  evidence: [], coverage: { level: 'partial', label: 'Partial', detail: 'Test evidence.' }, assumptions: [], unknown: ['Unknown detail.'], nextInvestigations: ['Inspect the evidence'], details: ['Detailed evidence.'], why: ['Primary driver.'], materialLimits: ['Interpretation is bounded.'],
   runtime: { id: 'test', label: 'Test', mode: 'deterministic-local' },
 } satisfies AdvisorAnswer
 
@@ -60,6 +62,17 @@ async function submitQuestion(question: string): Promise<void> {
 describe('Advisor workspace', () => {
   beforeEach(() => {
     advisorProbe.mockClear()
+    advisorHostedProbe.mockReset().mockImplementation(async (provider: 'openai' | 'anthropic' | 'gemini') => ({
+      provider,
+      available: true,
+      models: provider === 'openai'
+        ? [{ id: 'gpt-a', label: 'gpt-a', state: 'discovered', limitation: null }, { id: 'gpt-b', label: 'gpt-b', state: 'discovered', limitation: null }]
+        : provider === 'anthropic'
+          ? [{ id: 'claude-a', label: 'claude-a', state: 'discovered', limitation: null }]
+          : [{ id: 'gemini-a', label: 'gemini-a', state: 'discovered', limitation: null }],
+      detail: 'Hosted provider is reachable.',
+      credentialState: 'ready',
+    }))
     investigate.mockReset().mockResolvedValue(answer)
   })
   it('opens with useful prompt families, explicit scope, local history, and evidence rail', async () => {
@@ -74,6 +87,39 @@ describe('Advisor workspace', () => {
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
     expect(advisorProbe).toHaveBeenCalledTimes(1)
   })
+  it('renders direct answer hierarchy while keeping deeper evidence in progressive disclosure', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('Inspect spend behavior')
+
+    expect(screen.getByText(answer.conclusion)).toBeInTheDocument()
+    expect(screen.getByText('Why')).toBeInTheDocument()
+    expect(screen.getByText('Primary driver.')).toBeInTheDocument()
+    expect(screen.getByText('Important limit')).toBeInTheDocument()
+    expect(screen.getByText('Interpretation is bounded.')).toBeInTheDocument()
+    expect(screen.getByText('Next step')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Inspect the evidence' })).toBeInTheDocument()
+    expect(screen.getByText('Evidence & details')).toBeInTheDocument()
+  })
+
+  it('renders Metrora-owned presentation blocks inside the direct answer hierarchy', async () => {
+    investigate.mockResolvedValueOnce({
+      ...answer,
+      presentation: [{
+        kind: 'metric-cards',
+        title: 'At a glance',
+        scopeLabel: 'Last 7 days · All projects · All providers',
+        periodLabel: 'Last 7 days',
+        evidenceRefs: [],
+        cards: [{ label: 'Measured spend', value: '$12.00', unit: 'USD', detail: 'Canonical measured cost.', claimIds: [] }],
+      }],
+    })
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('Show a spend summary')
+    expect(screen.getByText('At a glance')).toBeInTheDocument()
+    expect(screen.getByText('Measured spend')).toBeInTheDocument()
+    expect(screen.getByText('$12.00')).toBeInTheDocument()
+  })
+
 
   it('switches between supported local runtimes and discovers its models factually', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
@@ -170,5 +216,33 @@ describe('Advisor workspace', () => {
     expect(screen.queryByRole('button', { name: /Inspect spend behavior/ })).not.toBeInTheDocument()
     fireEvent.change(search, { target: { value: '' } })
     expect(screen.getByRole('button', { name: /Inspect spend behavior/ })).toBeInTheDocument()
+  })
+  it('keeps hosted model and consent coherent across refresh and selection changes', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+
+    const model = await screen.findByLabelText('Advisor hosted model') as HTMLSelectElement
+    const consent = screen.getByRole('checkbox') as HTMLInputElement
+    expect(model).toHaveValue('gpt-a')
+    expect(consent.checked).toBe(false)
+
+    fireEvent.click(consent)
+    await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh hosted models' }))
+    await waitFor(() => expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('gpt-a'))
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+
+    fireEvent.change(model, { target: { value: 'gpt-b' } })
+    await waitFor(() => expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('gpt-b'))
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
+    await waitFor(() => {
+      expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic')
+      expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('claude-a')
+    })
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
   })
 })

@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }))
 
-import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, shouldInstallApplicationMenu } from './main'
+import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, projectAdvisorHostedEvent, shouldInstallApplicationMenu } from './main'
 import { CliError } from './cli'
 import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -31,6 +31,19 @@ function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
   })
   return { spawnCli, spawnCliAction, calls }
 }
+
+describe('hosted Advisor renderer event boundary', () => {
+  it('drops provider text, deltas, tool arguments, and raw tool calls', () => {
+    const projected = projectAdvisorHostedEvent({
+      requestId: 'request-1', provider: 'openai', model: 'model/name', kind: 'tool-call-complete',
+      text: 'raw provider response', callId: 'call-1', name: 'get_spend_snapshot', delta: 'raw delta', arguments: '{"secret":"no"}',
+      toolCalls: [{ id: 'call-1', name: 'get_spend_snapshot', arguments: '{"secret":"no"}' }], usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, streamed: true,
+    })
+    expect(projected).toEqual({ requestId: 'request-1', provider: 'openai', model: 'model/name', kind: 'tool-call-complete', usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, streamed: true })
+    expect(JSON.stringify(projected)).not.toContain('raw provider response')
+    expect(JSON.stringify(projected)).not.toContain('secret')
+  })
+})
 
 // Every metrora:* channel with a representative arg tuple → the exact argv it
 // must spawn. cliStatus is the one channel that resolves without spawning.

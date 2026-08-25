@@ -312,12 +312,13 @@ export function createAdvisorToolResultEnvelope(
 ): AdvisorToolResultEnvelope {
   return createContentMinimalAdvisorToolResultEnvelope(name, scope, args, evidence, output)
 }
-const CONTENT_MINIMAL_SOURCE_VALUES = new Set(['overview', 'history', 'models', 'quota'])
+const CONTENT_MINIMAL_SOURCE_VALUES = new Set(['overview', 'history', 'models', 'quota', 'bench'])
 const CONTENT_MINIMAL_PROVIDER_VALUES = new Set(['all', 'claude', 'codex', '[provider]'])
 
 function containsUnsafeAdvisorToolContent(value: unknown, key = ''): boolean {
   const normalizedKey = key.replace(/[^a-z0-9]/giu, '').toLowerCase()
-  if (/(?:token|password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|sessionid|internalid)/u.test(normalizedKey)) return true
+  const safeNumericTokenKey = /^(?:inputtokens|outputtokens|totaltokens|cachereadtokens|cachewritetokens|reasoningtokens|additivereasoningtokens)$/u.test(normalizedKey)
+  if (/(?:token|password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|sessionid|internalid)/u.test(normalizedKey) && !(safeNumericTokenKey && (value === null || typeof value === 'number'))) return true
   if (value === null || typeof value === 'boolean' || typeof value === 'number') return false
   if (typeof value === 'string') return containsAdvisorSensitiveText(value)
   if (Array.isArray(value)) return value.some(item => containsUnsafeAdvisorToolContent(item, key))
@@ -361,6 +362,7 @@ export function createContentMinimalAdvisorToolResultEnvelope(
   const safeOutput = JSON.parse(boundedAdvisorJson(contentMinimalEvidence(evidence), ADVISOR_TOOL_OUTPUT_MAX_BYTES)) as AdvisorJsonObject
   const envelope: AdvisorToolResultEnvelope = {
     contractVersion: ADVISOR_TOOL_CONTRACT_VERSION,
+    schemaVersion: ADVISOR_TOOL_SCHEMA_VERSION,
     tool: name,
     scope: safeScope,
     arguments: safeArguments,

@@ -1,6 +1,9 @@
-import { formatAdvisorCreditsUsd, formatAdvisorPercent, formatAdvisorUsd, periodLabel, scopeLabel } from './evidence'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelEvidenceRow, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
+import { periodLabel, scopeLabel } from './evidence'
+import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
 import { sanitizeAdvisorAnswer } from './privacy'
+import { buildAdvisorPresentationBlocks } from './presentation'
+import { advisorCopyLanguage } from './turn-plan'
+import { renderDeterministicEvidenceAnswer } from './claim-atoms'
 
 export class AdvisorRuntimeUnavailableError extends Error {
   constructor() {
@@ -10,16 +13,6 @@ export class AdvisorRuntimeUnavailableError extends Error {
 }
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Advisor investigation cancelled', 'AbortError')
-}
-function resetLabel(value: string | null): string | null {
-  if (!value) return null
-  const time = Date.parse(value)
-  if (!Number.isFinite(time)) return null
-  const minutes = Math.ceil((time - Date.now()) / 60_000)
-  if (minutes <= 0) return 'reset boundary has passed; refresh for the current window'
-  if (minutes >= 1440) return 'resets in ' + Math.floor(minutes / 1440) + 'd'
-  if (minutes >= 60) return 'resets in ' + Math.floor(minutes / 60) + 'h'
-  return 'resets in ' + minutes + 'm'
 }
 function baseAnswer(evidence: AdvisorEvidence, runtime: AdvisorModelRuntime): AdvisorAnswer {
   return {
@@ -32,66 +25,44 @@ function baseAnswer(evidence: AdvisorEvidence, runtime: AdvisorModelRuntime): Ad
     unknown: evidence.unknown,
     nextInvestigations: evidence.nextInvestigations,
     details: [],
+    why: [],
+    materialLimits: [],
+    understanding: evidence.understanding,
+    plan: evidence.plan,
+    actionProposal: evidence.actionProposal,
     runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
   }
 }
-function modelRow(row: AdvisorModelEvidenceRow): string {
-  return row.model + ' · ' + (row.costPerCallUSD === null ? 'cost per call unavailable' : formatAdvisorUsd(row.costPerCallUSD) + ' per observed call') + ' · ' + row.calls.toLocaleString('en-US') + ' calls'
+
+function socialAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
+  const value = evidence.question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const italian = advisorCopyLanguage(value) === 'it'
+  if (/^(?:grazie|grazie mille|thanks|thank you|thankyou|much appreciated)[!.?,\s]*$/u.test(value)) {
+    return { ...answer, conclusion: italian ? 'Di nulla. Quando vuoi, possiamo guardare un altro periodo o confronto.' : 'You’re welcome. Whenever you like, we can look at another period or comparison.' }
+  }
+  if (/^(?:come stai|how are you)[!?.,\s]*$/u.test(value)) {
+    return { ...answer, conclusion: italian ? 'Bene, grazie. Sono qui per aiutarti a leggere i dati di Metrora.' : 'I’m well, thanks. I’m here to help you read your Metrora data.' }
+  }
+  return { ...answer, conclusion: italian ? 'Buongiorno. Posso aiutarti a capire spesa, modelli, Projects, sessioni, quota e risultati Bench.' : 'Hello. I can help you understand spend, models, Projects, sessions, quota, and Bench results.' }
 }
-function spendAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
-  const spend = evidence.spend
-  if (!spend || evidence.coverage.level === 'unavailable') return { ...answer, conclusion: 'I could not find measured spend for this scope yet.', details: ['No cost or call total was available from the canonical Overview payload.'] }
-  const trend = spend.trend
-  const trendText = trend ? ' The latest returned day was ' + formatAdvisorUsd(trend.latestCostUSD) + ', ' + (trend.direction === 'up' ? 'above' : trend.direction === 'down' ? 'below' : 'near') + ' the ' + trend.comparisonLabel + ' (' + formatAdvisorUsd(trend.comparisonCostUSD) + ').' : ''
-  const driver = spend.models[0]
-  const facts = [
-    spend.measuredCostUSD === null ? null : 'Metrora measured ' + formatAdvisorUsd(spend.measuredCostUSD),
-    spend.calls === null ? null : spend.calls.toLocaleString('en-US') + ' calls',
-    spend.sessions === null ? null : spend.sessions.toLocaleString('en-US') + ' sessions',
-  ].filter((item): item is string => Boolean(item))
-  const intro = facts.length ? facts.join(' across ') + ' in this scope.' : 'Metrora returned no usable measured totals for this scope.'
+
+function actionProposalAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
   return {
     ...answer,
-    conclusion: intro + trendText + (driver ? ' Largest represented model driver: ' + driver.name + ' at ' + formatAdvisorUsd(driver.costUSD) + '.' : ''),
-    details: [
-      ...spend.models.slice(0, 4).map(row => 'Model · ' + row.name + ' · ' + formatAdvisorUsd(row.costUSD) + ' · ' + row.calls.toLocaleString('en-US') + ' calls'),
-      ...spend.projects.slice(0, 4).map(row => 'Project · ' + row.name + ' · ' + formatAdvisorUsd(row.costUSD) + ' · ' + row.calls.toLocaleString('en-US') + ' sessions'),
-      ...(trend ? ['History · ' + trend.latestDate + ' vs ' + trend.comparisonLabel + ' · change ' + formatAdvisorUsd(trend.deltaUSD) + (trend.deltaPercent === null ? '' : ' (' + formatAdvisorPercent(trend.deltaPercent) + ')')] : []),
-    ],
+    conclusion: evidence.understanding?.boundary ?? 'This request needs a separately authorized action proposal; no action was executed.',
+    materialLimits: ['Advisor can read and explain existing Metrora evidence here. It does not execute Bench runs, launch agents, change routing, or apply policy from conversation text.'],
+    details: ['Action state · proposal only', 'Execution · not requested from an authorized action surface'],
   }
 }
-function modelAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
-  const model = evidence.modelEfficiency
-  if (!model || !model.rows.length) return { ...answer, conclusion: 'I could not find model detail for this scope yet.', details: ['The canonical model report returned no rows for the selected context.'] }
-  const best = model.rows[0]!
-  return {
-    ...answer,
-    conclusion: 'The lowest observed cost per call' + (model.selectedModel ? ' for ' + model.selectedModel : '') + ' is ' + (best.costPerCallUSD === null ? 'not available' : formatAdvisorUsd(best.costPerCallUSD)) + ' on ' + best.model + '. This is a descriptive cost signal, not proof that the model is better for comparable work.',
-    details: model.rows.slice(0, 8).map(modelRow),
-  }
-}
-function quotaAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
-  const quota = evidence.quota
-  if (!quota || !quota.providers.length || evidence.coverage.level === 'unavailable') return { ...answer, conclusion: 'No usable provider-reported quota is available for this scope.', details: ['Quota is unavailable, so no remaining percentage, reset, plan, or credit number is shown.'] }
-  const summaries: string[] = []
-  const details: string[] = []
-  for (const provider of quota.providers) {
-    const name = provider.provider === 'claude' ? 'Claude' : 'Codex'
-    const staleNote = provider.freshness === 'stale' ? ' Last observation ' + (provider.observedAt ? new Date(provider.observedAt).toLocaleString('en-US') : 'unknown') + '; refresh failed.' : provider.freshness === 'fresh' ? ' Fresh provider response.' : ' Provider response unavailable.'
-    if (provider.freshness === 'unavailable') {
-      summaries.push(name + ' quota is unavailable.')
-      continue
+function factualAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer, question: string): AdvisorAnswer {
+  const rendered = renderDeterministicEvidenceAnswer(answer, evidence, question)
+  if (!rendered.claims?.length) {
+    return {
+      ...rendered,
+      materialLimits: [...(rendered.materialLimits ?? []), 'No typed factual atom was available for the selected evidence scope.'],
     }
-    const windows = provider.windows.map(window => {
-      const reset = resetLabel(window.resetsAt)
-      details.push(name + ' · ' + window.label + ' · ' + window.usedPercent + '% used · ' + window.remainingPercent + '% remaining' + (reset ? ' · ' + reset : ''))
-      return window.label + ' ' + window.remainingPercent + '% remaining'
-    })
-    summaries.push(name + (provider.planLabel ? ' (' + provider.planLabel + ')' : '') + (windows.length ? ' reports ' + windows.join(', ') + '.' : ' reports no quota windows.') + staleNote)
-    if (provider.creditsUSD !== null) details.push(name + ' · provider credits remaining · ' + formatAdvisorCreditsUsd(provider.creditsUSD))
   }
-  if (quota.measuredSpendUSD !== null) details.push('Metrora usage context · ' + formatAdvisorUsd(quota.measuredSpendUSD) + ' measured spend · separate from provider quota authority.')
-  return { ...answer, conclusion: summaries.join(' '), details }
+  return rendered
 }
 export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
   readonly id = 'metrora-deterministic-local'
@@ -101,10 +72,25 @@ export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
     throwIfAborted(signal)
     const answer = baseAnswer(input.evidence, this)
-    if (input.evidence.intent === 'spend-change') return sanitizeAdvisorAnswer(spendAnswer(input.evidence, answer))
-    if (input.evidence.intent === 'model-efficiency') return sanitizeAdvisorAnswer(modelAnswer(input.evidence, answer))
-    if (input.evidence.intent === 'quota-capacity') return sanitizeAdvisorAnswer(quotaAnswer(input.evidence, answer))
-    return { ...answer, conclusion: 'I can investigate spend changes, observed model efficiency, and provider quota. Try one of the suggested questions.', details: ['This local foundation does not send your question or Metrora data to a hosted model.'] }
+    const plan = input.plan ?? input.evidence.plan
+    const finalize = (next: AdvisorAnswer): AdvisorAnswer => sanitizeAdvisorAnswer({
+      ...next,
+      plan,
+      presentation: plan ? buildAdvisorPresentationBlocks(input.evidence, plan, input.question, next.synthesis ?? null, next.claims ?? []) : next.presentation,
+    })
+    if (input.evidence.intent === 'social') return finalize(socialAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'action-proposal') return finalize(actionProposalAnswer(input.evidence, answer))
+    if (input.evidence.intent === 'spend-change' || input.evidence.intent === 'model-efficiency' || input.evidence.intent === 'quota-capacity' || input.evidence.intent === 'bench-result') return finalize(factualAnswer(input.evidence, answer, input.question))
+    if (input.evidence.intent === 'clarification' || input.evidence.intent === 'unsupported') return finalize({
+      ...answer,
+      conclusion: input.evidence.understanding?.clarification ?? input.evidence.understanding?.boundary ?? 'Choose a supported Metrora evidence question.',
+      materialLimits: ['No evidence was read until the question had a single supported meaning.'],
+    })
+    return finalize({
+      ...answer,
+      conclusion: 'I can investigate measured spend, observed model cost per call, provider quota, and controlled Bench results.',
+      materialLimits: ['The deterministic Metrora evidence answer remains authoritative; any runtime context is supplementary and qualitative.'],
+    })
   }
 }
 /** Explicit placeholder for future verified local/BYOK adapters; it never pretends to support a provider. */

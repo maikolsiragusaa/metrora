@@ -5,6 +5,7 @@ import type { Envelope } from './main'
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
+type AdvisorHostedRendererEvent = { requestId: string; provider: 'openai' | 'anthropic' | 'gemini'; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
@@ -20,6 +21,12 @@ const bridge = {
   advisorProbe: (runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorProbe', runtime),
   advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
   advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
+  advisorCredentialStatus: (provider: 'openai' | 'anthropic' | 'gemini') => invoke('metrora:advisorCredentialStatus', provider),
+  advisorCredentialSet: (provider: 'openai' | 'anthropic' | 'gemini', secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),
+  advisorCredentialClear: (provider: 'openai' | 'anthropic' | 'gemini') => invoke('metrora:advisorCredentialClear', provider),
+  advisorHostedProbe: (provider: 'openai' | 'anthropic' | 'gemini', requestId?: string) => invoke('metrora:advisorHostedProbe', provider, requestId),
+  advisorHostedChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorHostedChat', requestId, payload),
+  advisorHostedCancel: (requestId: string) => invoke('metrora:advisorHostedCancel', requestId),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
   runBenchTaskPack: (model: string, pack?: string) => invoke('metrora:runBenchTaskPack', model, pack),
@@ -96,6 +103,11 @@ const bridge = {
     const listener = (_event: unknown, event: { requestId: string; text: string }) => cb(event)
     ipcRenderer.on('metrora:advisorDelta', listener)
     return () => { ipcRenderer.removeListener('metrora:advisorDelta', listener) }
+  },
+  onAdvisorHostedEvent: (cb: (event: AdvisorHostedRendererEvent) => void) => {
+    const listener = (_event: unknown, event: AdvisorHostedRendererEvent) => cb(event)
+    ipcRenderer.on('metrora:advisorHostedEvent', listener)
+    return () => { ipcRenderer.removeListener('metrora:advisorHostedEvent', listener) }
   },
   platform: process.platform,
   arch: process.arch,

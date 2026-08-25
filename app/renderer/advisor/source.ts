@@ -1,4 +1,5 @@
 import type { AdvisorBridge, AdvisorDataSource, AdvisorScope } from './types'
+import { readAdvisorBenchEvidence } from './bench'
 
 /** Adapts the existing read-only renderer bridge into the Advisor data boundary. */
 export function createAdvisorDataSource(bridge: AdvisorBridge): AdvisorDataSource {
@@ -36,6 +37,12 @@ export function createAdvisorDataSource(bridge: AdvisorBridge): AdvisorDataSourc
       const quota = await bridge.getQuota(false)
       if (signal?.aborted) throw new DOMException('Advisor data read cancelled', 'AbortError')
       return quota
+    },
+    getBenchEvidence: async (context, signal) => {
+      if (signal?.aborted) throw new DOMException('Advisor data read cancelled', 'AbortError')
+      const evidence = await readAdvisorBenchEvidence(bridge, context, signal)
+      if (signal?.aborted) throw new DOMException('Advisor data read cancelled', 'AbortError')
+      return evidence
     },
   }
 }
