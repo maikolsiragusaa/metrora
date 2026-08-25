@@ -1,6 +1,7 @@
 package eu.metrora.app.ui
 
 import eu.metrora.app.MetroraConnectionState
+import eu.metrora.app.MetroraDataMode
 import eu.metrora.app.MetroraFailure
 import eu.metrora.app.MetroraFailureCategory
 import eu.metrora.app.MetroraFailureReason
@@ -9,6 +10,7 @@ import eu.metrora.app.MetroraUiState
 import eu.metrora.app.R
 import eu.metrora.app.data.AnalyzeAccountingCoverage
 import eu.metrora.app.data.DetailCoverage
+import eu.metrora.app.testCredentials
 import eu.metrora.app.testSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -134,6 +136,57 @@ class MetroraPresentationModelTest {
 
         assertEquals(FreshnessKind.FRESH, freshnessPresentation(state).kind)
         assertEquals(R.string.data_fresh, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun demo_presentation_is_explicit_and_not_paired_or_cached() {
+        val state = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.DEMO,
+            dataMode = MetroraDataMode.DEMO,
+            demoDatasetVersion = "v1",
+            demoToday = "2026-08-25",
+            snapshot = testSnapshot(),
+        )
+
+        assertFalse(state.paired)
+        assertFalse(state.showingCachedData)
+        assertEquals(R.string.status_demo, statusCopy(state.status).title)
+        assertEquals(R.string.data_demo, freshnessPresentation(state).label)
+    }
+
+    @Test
+    fun refresh_action_copy_is_local_in_demo_and_desktop_based_in_real_mode() {
+        val demoState = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.DEMO,
+            dataMode = MetroraDataMode.DEMO,
+            demoDatasetVersion = "v1",
+            demoToday = "2026-08-25",
+        )
+        val realState = MetroraUiState(initializing = false, status = MetroraConnectionState.RESTORED)
+
+        assertEquals(R.string.refresh_demo, refreshActionResource(demoState))
+        assertEquals(R.string.refresh, refreshActionResource(realState))
+    }
+
+    @Test
+    fun initial_destination_is_ignored_for_real_state_but_allowed_for_demo_state() {
+        val realState = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.RESTORED,
+            credentials = testCredentials(),
+        )
+        val demoState = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.DEMO,
+            dataMode = MetroraDataMode.DEMO,
+            demoDatasetVersion = "v1",
+            demoToday = "2026-08-25",
+        )
+
+        assertEquals("HOME", initialDestinationFor(realState, "SETTINGS"))
+        assertEquals("SETTINGS", initialDestinationFor(demoState, "SETTINGS"))
     }
 
     @Test

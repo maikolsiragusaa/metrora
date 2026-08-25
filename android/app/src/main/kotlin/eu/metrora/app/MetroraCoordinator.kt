@@ -2,6 +2,10 @@ package eu.metrora.app
 
 import android.content.Context
 import android.os.Build
+import eu.metrora.app.demo.MetroraDemoDataSource
+import eu.metrora.app.demo.MetroraDemoDatasetV1
+import eu.metrora.app.demo.MetroraDemoLifecycleState
+import eu.metrora.app.demo.MetroraDemoLaunchSpec
 import eu.metrora.app.data.CapabilityDiscovery
 import eu.metrora.app.data.CapabilityFreshness
 import eu.metrora.app.data.MobileFoundationSnapshot
@@ -44,12 +48,20 @@ class MetroraCoordinator internal constructor(
     private val api: MetroraApi,
     private val scope: CoroutineScope,
     private val deviceName: String,
+    private val demoLaunchSpec: MetroraDemoLaunchSpec? = null,
+    private val demoLifecycleState: MetroraDemoLifecycleState? = null,
 ) : Closeable {
-    constructor(context: Context) : this(
+    constructor(
+        context: Context,
+        demoLaunchSpec: MetroraDemoLaunchSpec? = null,
+        demoLifecycleState: MetroraDemoLifecycleState? = null,
+    ) : this(
         store = SecureStore(context.applicationContext),
         api = MetroraApiClient(),
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
         deviceName = androidDeviceName(),
+        demoLaunchSpec = demoLaunchSpec,
+        demoLifecycleState = demoLifecycleState,
     )
 
     private val mutableState = MutableStateFlow(MetroraUiState())
@@ -59,6 +71,7 @@ class MetroraCoordinator internal constructor(
     private var activityRequestGeneration: Long = 0L
     private var pendingPairResult: Deferred<PairingCredentials>? = null
     private var pendingDesktop: DiscoveredDesktop? = null
+    private var demoDataSource: MetroraDemoDataSource? = null
 
     val state: StateFlow<MetroraUiState> = mutableState.asStateFlow()
 
@@ -68,7 +81,7 @@ class MetroraCoordinator internal constructor(
 
     fun pair(host: String, portText: String) {
         val current = mutableState.value
-        if (current.initializing || current.busy || current.paired) return
+        if (current.initializing || current.busy || current.paired || current.isDemo) return
 
         val normalizedHost = try {
             MetroraProtocol.normalizeHost(host)
@@ -249,12 +262,39 @@ class MetroraCoordinator internal constructor(
         )
     }
 
+    /** Enter the built-in fixture without creating a pairing or touching persistence. */
+    fun enterDemo() {
+        val current = mutableState.value
+        if (current.initializing || current.paired || current.isDemo || current.status != MetroraConnectionState.UNPAIRED) return
+        enterDemo(MetroraDemoLaunchSpec.forExploreDemo())
+    }
+
+    /** Return to the untouched unpaired real state; Demo Mode has no store cleanup. */
+    fun exitDemo() {
+        if (!mutableState.value.isDemo) return
+        requestGeneration += 1
+        activityRequestGeneration += 1
+        operationJob?.cancel()
+        activityJob?.cancel()
+        operationJob = null
+        activityJob = null
+        demoDataSource = null
+        mutableState.value = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.UNPAIRED,
+        )
+    }
+
     fun refresh(
         period: String = mutableState.value.selectedPeriod,
         trendGranularity: String? = null,
         projectScopeId: String? = mutableState.value.selectedProjectId,
     ) {
         val current = mutableState.value
+        if (current.isDemo) {
+            refreshDemo(period, trendGranularity, projectScopeId)
+            return
+        }
         val credentials = current.credentials ?: return
         if (current.initializing || current.status in setOf(
                 MetroraConnectionState.PAIRING,
@@ -315,13 +355,14 @@ class MetroraCoordinator internal constructor(
 
     fun selectPeriod(period: String) {
         if (period !in SUPPORTED_PERIODS) return
+        if (mutableState.value.isDemo && !MetroraDemoDatasetV1.supportsPeriod(period)) return
         refresh(period)
     }
 
     /** Project scope is a canonical Desktop selection, not a local filter. */
     fun selectProject(projectId: String) {
         val current = mutableState.value
-        if (current.initializing || current.credentials == null || current.status in setOf(
+        if (current.initializing || (!current.isDemo && current.credentials == null) || current.status in setOf(
                 MetroraConnectionState.PAIRING,
                 MetroraConnectionState.VERIFYING_SAS,
                 MetroraConnectionState.WAITING_FOR_DESKTOP_APPROVAL,
@@ -352,13 +393,17 @@ class MetroraCoordinator internal constructor(
     fun selectTrendGranularity(granularity: String) {
         if (granularity !in SUPPORTED_TREND_GRANULARITIES) return
         val current = mutableState.value
-        if (current.credentials == null || current.snapshot?.costTrendGranularity == granularity) return
+        if ((!current.isDemo && current.credentials == null) || current.snapshot?.costTrendGranularity == granularity) return
         refresh(current.selectedPeriod, granularity, current.selectedProjectId)
     }
 
     /** Refresh only the bounded Activity query; Overview domains remain stable while filters change. */
     fun setActivityQuery(query: ActivityQuery) {
         val current = mutableState.value
+        if (current.isDemo) {
+            setDemoActivityQuery(query)
+            return
+        }
         val credentials = current.credentials ?: return
         if (current.initializing || current.status in setOf(
                 MetroraConnectionState.REVOKED_OR_UNAUTHORIZED,
@@ -400,6 +445,7 @@ class MetroraCoordinator internal constructor(
 
     fun loadMoreActivity(tab: ActivityTab) {
         val current = mutableState.value
+        if (current.isDemo) return
         val credentials = current.credentials ?: return
         val activity = current.activity ?: return
         val cursor = when (tab) {
@@ -438,6 +484,12 @@ class MetroraCoordinator internal constructor(
 
     fun openActivitySession(id: String) {
         val current = mutableState.value
+        if (current.isDemo) {
+            val activity = current.activity ?: return
+            val detail = demoDataSource?.activitySessionDetail(activity.query, id) ?: return
+            mutableState.update { it.copy(activity = it.activity?.copy(selectedSession = detail), status = MetroraConnectionState.DEMO) }
+            return
+        }
         val credentials = current.credentials ?: return
         val activity = current.activity ?: return
         val session = activity.sessions.firstOrNull { it.id == id } ?: return
@@ -489,6 +541,7 @@ class MetroraCoordinator internal constructor(
 
     fun revoke() {
         val current = mutableState.value
+        if (current.isDemo) return
         val credentials = current.credentials ?: return
         if (current.initializing || current.busy) return
         mutableState.update {
@@ -540,6 +593,7 @@ class MetroraCoordinator internal constructor(
     /** Local cleanup is intentionally separate from remote revoke. */
     fun forgetLocal() {
         val current = mutableState.value
+        if (current.isDemo) return
         if (current.initializing || current.busy || !current.hasLocalState) return
         mutableState.update {
             it.copy(
@@ -589,6 +643,113 @@ class MetroraCoordinator internal constructor(
         scope.cancel()
     }
 
+    private fun enterDemo(spec: MetroraDemoLaunchSpec) {
+        enterDemo(
+            session = spec.session,
+            period = "month",
+            projectScopeId = "all",
+        )
+    }
+
+    private fun enterDemo(
+        session: eu.metrora.app.demo.MetroraDemoSession,
+        period: String,
+        projectScopeId: String,
+    ) {
+        val source = MetroraDemoDatasetV1.source(session.today)
+        val safePeriod = period.takeIf(MetroraDemoDatasetV1::supportsPeriod) ?: "month"
+        val safeProjectScopeId = projectScopeId.takeIf { id ->
+            source.load().projectCatalog.projectOption(id) != null
+        } ?: "all"
+        val payload = source.load(
+            period = safePeriod,
+            trendGranularity = "day",
+            projectScopeId = safeProjectScopeId,
+        )
+        demoDataSource = source
+        mutableState.value = demoState(source, payload, safePeriod)
+    }
+
+    private fun refreshDemo(
+        period: String,
+        trendGranularity: String?,
+        projectScopeId: String?,
+    ) {
+        val current = mutableState.value
+        if (!current.isDemo || !MetroraDemoDatasetV1.supportsPeriod(period)) return
+        val source = demoDataSource ?: return
+        val scopeId = normalizedProjectScopeId(projectScopeId)
+        if (source.load().projectCatalog.projectOption(scopeId) == null) return
+        val query = current.activity?.query?.copy(
+            period = period,
+            projectScopeId = scopeId,
+            effectiveFrom = null,
+            effectiveTo = null,
+        )
+        val payload = source.load(
+            period = period,
+            trendGranularity = trendGranularity ?: current.snapshot?.costTrendGranularity ?: "day",
+            projectScopeId = scopeId,
+            activityQuery = query,
+        )
+        mutableState.value = demoState(source, payload, period)
+    }
+
+    private fun setDemoActivityQuery(query: ActivityQuery) {
+        val current = mutableState.value
+        val source = demoDataSource ?: return
+        val normalized = query.copy(
+            period = current.selectedPeriod,
+            projectScopeId = current.selectedProjectId,
+            effectiveFrom = null,
+            effectiveTo = null,
+        )
+        val currentQuery = current.activity?.query
+        if (currentQuery?.matchesRequest(normalized) == true &&
+            currentQuery.provider == normalized.provider &&
+            currentQuery.route == normalized.route &&
+            currentQuery.model == normalized.model &&
+            currentQuery.source == normalized.source
+        ) return
+        val loaded = source.load(
+            period = current.selectedPeriod,
+            trendGranularity = current.snapshot?.costTrendGranularity ?: "day",
+            projectScopeId = current.selectedProjectId,
+            activityQuery = normalized,
+        ).activity
+        mutableState.update {
+            it.copy(
+                status = MetroraConnectionState.DEMO,
+                activity = loaded,
+                activityFailure = null,
+                failure = null,
+                notice = null,
+            )
+        }
+    }
+
+    private fun demoState(
+        source: MetroraDemoDataSource,
+        payload: eu.metrora.app.demo.MetroraDemoPayload,
+        selectedPeriod: String = periodKeyFromLabel(payload.snapshot.periodLabel),
+    ): MetroraUiState =
+        MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.DEMO,
+            dataMode = MetroraDataMode.DEMO,
+            demoDatasetVersion = source.datasetVersion,
+            demoToday = source.today.toString(),
+            selectedPeriod = selectedPeriod,
+            selectedProjectId = payload.snapshot.projectScopeId,
+            snapshot = payload.snapshot,
+            foundation = payload.foundation,
+            projectCatalog = payload.projectCatalog,
+            activity = payload.activity,
+            capabilities = payload.capabilities,
+            notice = null,
+            failure = null,
+        )
+
     private suspend fun restoreState() {
         try {
             val credentials = store.loadCredentials()
@@ -596,6 +757,23 @@ class MetroraCoordinator internal constructor(
             val foundation = store.loadFoundation()
             val projectCatalog = store.loadProjectCatalog()
             val activity = store.loadActivity()
+            if (credentials is StorageRead.Missing &&
+                snapshot is StorageRead.Missing &&
+                foundation is StorageRead.Missing &&
+                projectCatalog is StorageRead.Missing &&
+                activity is StorageRead.Missing
+            ) {
+                when {
+                    demoLaunchSpec != null -> enterDemo(demoLaunchSpec)
+                    demoLifecycleState != null -> enterDemo(
+                        session = demoLifecycleState.session,
+                        period = demoLifecycleState.selectedPeriod,
+                        projectScopeId = demoLifecycleState.selectedProjectId,
+                    )
+                    else -> restoreWithoutCredentials(snapshot, foundation, projectCatalog, activity)
+                }
+                return
+            }
             when (credentials) {
                 StorageRead.Missing -> restoreWithoutCredentials(snapshot, foundation, projectCatalog, activity)
                 is StorageRead.Corrupted -> {

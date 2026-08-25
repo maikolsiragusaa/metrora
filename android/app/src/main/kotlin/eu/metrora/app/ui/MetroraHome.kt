@@ -48,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +84,7 @@ import eu.metrora.app.data.ModelAccountingGap
 import eu.metrora.app.data.ModelUsage
 import eu.metrora.app.data.ProjectScopeOption
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.demo.MetroraDemoDatasetV1
 import java.util.Locale
 
 private enum class HomeDestination(val label: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
@@ -107,10 +109,18 @@ internal fun HomeState(
     onCloseActivityDetail: () -> Unit,
     onRevoke: () -> Unit,
     onForget: () -> Unit,
+    onExitDemo: () -> Unit,
+    initialDestination: String? = null,
+    onDestinationChanged: (String) -> Unit = {},
 ) {
-    var destinationName by rememberSaveable { mutableStateOf(HomeDestination.HOME.name) }
+    val requestedInitialDestination = initialDestinationFor(state, initialDestination)
+    var destinationName by rememberSaveable(state.isDemo, initialDestination) { mutableStateOf(requestedInitialDestination) }
     val destination = HomeDestination.entries.firstOrNull { it.name == destinationName } ?: HomeDestination.HOME
     val scrollState = remember(destination) { androidx.compose.foundation.ScrollState(0) }
+
+    LaunchedEffect(destination) {
+        onDestinationChanged(destination.name)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0A151B), MetroraPalette.background))),
@@ -148,10 +158,18 @@ internal fun HomeState(
                 )
                 HomeDestination.ANALYZE -> AnalyzeSurface(state, scopeControls = { ScopeControls(state, onSelectProject, onSelectPeriod) })
                 HomeDestination.WORKSPACE -> WorkspaceSurface(state)
-                HomeDestination.SETTINGS -> SettingsSurface(state, onRevoke, onForget)
+                HomeDestination.SETTINGS -> SettingsSurface(state, onRevoke, onForget, onExitDemo)
             }
         }
     }
+}
+
+internal fun initialDestinationFor(state: MetroraUiState, requested: String?): String {
+    if (!state.isDemo) return HomeDestination.HOME.name
+    return HomeDestination.entries
+        .firstOrNull { it.name.equals(requested, ignoreCase = true) }
+        ?.name
+        ?: HomeDestination.HOME.name
 }
 
 @Composable
@@ -165,19 +183,30 @@ private fun PostConnectionHeader(state: MetroraUiState, onRefresh: () -> Unit) {
             markBoxWidth = 36.dp,
             markOffsetX = (-8).dp,
         )
-        Text(desktopName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+        if (state.isDemo) {
+            DemoDataBadge(modifier = Modifier.weight(1f))
+        } else {
+            Text(desktopName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+        }
         IconButton(
             onClick = onRefresh,
             enabled = !state.busy && state.status != MetroraConnectionState.RECOVERY_REQUIRED && state.status != MetroraConnectionState.REVOKED_OR_UNAUTHORIZED,
             modifier = Modifier.size(36.dp),
         ) {
             if (state.status == MetroraConnectionState.REFRESHING) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Outlined.Refresh, contentDescription = androidx.compose.ui.res.stringResource(R.string.refresh), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(21.dp))
+            else Icon(
+                Icons.Outlined.Refresh,
+                contentDescription = androidx.compose.ui.res.stringResource(refreshActionResource(state)),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(21.dp),
+            )
         }
-        MetroraStatusPill(
-            label = androidx.compose.ui.res.stringResource(if (connected) R.string.connected else R.string.saved_state),
-            connected = connected,
-        )
+        if (!state.isDemo) {
+            MetroraStatusPill(
+                label = androidx.compose.ui.res.stringResource(if (connected) R.string.connected else R.string.saved_state),
+                connected = connected,
+            )
+        }
     }
 }
 
@@ -185,7 +214,7 @@ private fun PostConnectionHeader(state: MetroraUiState, onRefresh: () -> Unit) {
 private fun ScopeControls(state: MetroraUiState, onSelectProject: (String) -> Unit, onSelectPeriod: (String) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         CompactProjectMenu(state, onSelectProject, Modifier.weight(1.15f))
-        CompactPeriodMenu(state.selectedPeriod, onSelectPeriod, Modifier.weight(1f))
+        CompactPeriodMenu(state.selectedPeriod, onSelectPeriod, Modifier.weight(1f), state.isDemo)
     }
 }
 
@@ -215,8 +244,8 @@ private fun CompactProjectMenu(state: MetroraUiState, onSelect: (String) -> Unit
 }
 
 @Composable
-private fun CompactPeriodMenu(selected: String, onSelect: (String) -> Unit, modifier: Modifier) {
-    val periods = listOf("today", "week", "30days", "month", "all", "lifetime")
+private fun CompactPeriodMenu(selected: String, onSelect: (String) -> Unit, modifier: Modifier, demo: Boolean) {
+    val periods = if (demo) MetroraDemoDatasetV1.supportedPeriods else listOf("today", "week", "30days", "month", "all", "lifetime")
     val current = selected.takeIf { it in periods } ?: "month"
     val currentLabel = periodLabel(current)
     var expanded by remember { mutableStateOf(false) }
@@ -251,7 +280,7 @@ private fun OverviewSurface(state: MetroraUiState, onRefresh: () -> Unit, onSele
             HomeMetricTiles(snapshot)
             TopModels(snapshot.models.ifEmpty { snapshot.topModels }, snapshot.modelCoverage, snapshot.modelAccountingGap, onViewAllModels)
             FreshnessFooter(state)
-        } ?: EmptyHomeSnapshot(state.status, onRefresh)
+        } ?: EmptyHomeSnapshot(state, onRefresh)
     }
 }
 
@@ -485,38 +514,52 @@ private fun FreshnessFooter(state: MetroraUiState) {
 }
 
 @Composable
-private fun EmptyHomeSnapshot(status: MetroraConnectionState, onRefresh: () -> Unit) {
+private fun EmptyHomeSnapshot(state: MetroraUiState, onRefresh: () -> Unit) {
     MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MetroraPalette.surfaceRaised) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(androidx.compose.ui.res.stringResource(R.string.no_snapshot_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-            Text(androidx.compose.ui.res.stringResource(if (status == MetroraConnectionState.PAIRED_NO_SNAPSHOT) R.string.empty_snapshot_paired else R.string.empty_snapshot_offline), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
-            androidx.compose.material3.Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(androidx.compose.ui.res.stringResource(R.string.refresh)) }
+            Text(androidx.compose.ui.res.stringResource(if (state.status == MetroraConnectionState.PAIRED_NO_SNAPSHOT) R.string.empty_snapshot_paired else R.string.empty_snapshot_offline), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.material3.Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
+                Text(androidx.compose.ui.res.stringResource(refreshActionResource(state)))
+            }
         }
     }
 }
 
 @Composable
-private fun SettingsSurface(state: MetroraUiState, onRevoke: () -> Unit, onForget: () -> Unit) {
+private fun SettingsSurface(state: MetroraUiState, onRevoke: () -> Unit, onForget: () -> Unit, onExitDemo: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(androidx.compose.ui.res.stringResource(R.string.nav_settings), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-        Text(androidx.compose.ui.res.stringResource(R.string.settings_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        DeviceCard(state)
-        if (state.status != MetroraConnectionState.REVOKED_OR_UNAUTHORIZED && state.status != MetroraConnectionState.RECOVERY_REQUIRED) {
+        Text(androidx.compose.ui.res.stringResource(if (state.isDemo) R.string.demo_settings_subtitle else R.string.settings_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state.isDemo) {
+            DemoDataBadge()
+            SettingsInfoCard(Icons.Outlined.Info, R.string.demo_settings_title, R.string.demo_settings_body)
             DeviceActionCard(
                 icon = Icons.Outlined.LinkOff,
-                title = androidx.compose.ui.res.stringResource(R.string.revoke_desktop),
-                body = androidx.compose.ui.res.stringResource(R.string.revoke_desktop_hint),
+                title = androidx.compose.ui.res.stringResource(R.string.exit_demo_action),
+                body = androidx.compose.ui.res.stringResource(R.string.exit_demo_body),
                 enabled = !state.busy,
-                onClick = onRevoke,
+                onClick = onExitDemo,
+            )
+        } else {
+            DeviceCard(state)
+            if (state.status != MetroraConnectionState.REVOKED_OR_UNAUTHORIZED && state.status != MetroraConnectionState.RECOVERY_REQUIRED) {
+                DeviceActionCard(
+                    icon = Icons.Outlined.LinkOff,
+                    title = androidx.compose.ui.res.stringResource(R.string.revoke_desktop),
+                    body = androidx.compose.ui.res.stringResource(R.string.revoke_desktop_hint),
+                    enabled = !state.busy,
+                    onClick = onRevoke,
+                )
+            }
+            DeviceActionCard(
+                icon = Icons.Outlined.DeleteOutline,
+                title = androidx.compose.ui.res.stringResource(if (state.status == MetroraConnectionState.REVOKED_OR_UNAUTHORIZED || state.status == MetroraConnectionState.RECOVERY_REQUIRED) R.string.pair_again else R.string.forget_local),
+                body = androidx.compose.ui.res.stringResource(R.string.forget_local_hint),
+                enabled = !state.busy,
+                onClick = onForget,
             )
         }
-        DeviceActionCard(
-            icon = Icons.Outlined.DeleteOutline,
-            title = androidx.compose.ui.res.stringResource(if (state.status == MetroraConnectionState.REVOKED_OR_UNAUTHORIZED || state.status == MetroraConnectionState.RECOVERY_REQUIRED) R.string.pair_again else R.string.forget_local),
-            body = androidx.compose.ui.res.stringResource(R.string.forget_local_hint),
-            enabled = !state.busy,
-            onClick = onForget,
-        )
         SettingsInfoCard(Icons.Outlined.Lock, R.string.privacy_data_title, R.string.privacy_data_body)
         SettingsInfoCard(Icons.Outlined.Info, R.string.about_title, R.string.about_body, androidx.compose.ui.res.stringResource(R.string.about_version, BuildConfig.VERSION_NAME))
     }
