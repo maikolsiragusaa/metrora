@@ -1,0 +1,209 @@
+.share-card-trigger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--accent) 6%);
+}
+
+.share-card-trigger-copy {
+  min-width: 0;
+}
+
+.share-card-trigger-copy strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.share-card-trigger-copy span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.share-card-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 7, 10, .72);
+  backdrop-filter: blur(10px);
+}
+
+.share-card-modal {
+  width: min(980px, calc(100vw - 40px));
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .42);
+}
+
+.share-card-head,
+.share-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.share-card-head {
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--line2);
+}
+
+.share-card-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.share-card-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.share-card-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--ink);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.share-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(250px, .75fr);
+  gap: 20px;
+  padding: 20px 22px;
+}
+
+.share-card-preview-shell {
+  min-width: 0;
+}
+
+.share-card-preview-shell img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #0d0f13;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .22);
+}
+
+.share-card-preview-note {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.share-card-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.share-card-disclosure h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.share-card-disclosure-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-card-disclosure-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.share-card-disclosure-list strong {
+  max-width: 58%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-card-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line2);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.share-card-option input {
+  margin-top: 2px;
+}
+
+.share-card-option span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.share-card-privacy {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.share-card-actions {
+  padding: 14px 22px 20px;
+  border-top: 1px solid var(--line2);
+}
+
+.share-card-status {
+  min-height: 18px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.share-card-status.error {
+  color: #d96c6c;
+}
+
+@media (max-width: 760px) {
+  .share-card-body {
+    grid-template-columns: 1fr;
+  }
+
+  .share-card-trigger-row,
+  .share-card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
