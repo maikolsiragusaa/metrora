@@ -9,24 +9,22 @@ The public renderer contract is `advisor-contextual-launch-v1`, schema version `
 It carries only:
 
 - the originating supported Desktop section;
-- the canonical period and optional custom date range;
-- the canonical provider filter;
-- the Metrora Project id and canonical display name;
-- an optional exact model identity when the source has one that Advisor can investigate;
+- the surface-aware `scopeMode`;
+- only the canonical scope dimensions consumed by that surface;
 - a Metrora-owned suggested investigation prompt.
 
-The builder projects fields explicitly and snapshots them through the existing `AdvisorScope` validator. It does not accept evidence, claims, renderer state, page payloads, selection collections, or arbitrary prose. Invalid optional model state degrades to page scope; malformed required scope fails closed.
+The builder applies `ADVISOR_CONTEXTUAL_SCOPE_POLICY` before snapshotting through the existing `AdvisorScope` validator. It does not accept evidence, claims, renderer state, page payloads, selection collections, or arbitrary prose. Invalid optional model state degrades to page scope; malformed required scope fails closed. Compare and Plans deliberately discard unsupported incoming dimensions instead of validating or carrying them.
 
-## Surface matrix
+## Surface matrix: before and after remediation
 
-| Surface | V1 behavior | Contextual investigation |
+| Surface | Before remediation | After remediation |
 | --- | --- | --- |
-| Home / Overview | Supported | Current period/range, provider, Project; measured overview prompt |
-| Spend | Supported | Current period/range, provider, Project; measured spend drivers prompt |
-| Models | Supported | Current period/range, provider, Project; observed cost-per-call prompt |
-| Sessions / Activity | Supported | Page-scope period/range, provider, Project; session/Project spend prompt |
-| Compare | Supported at page scope | Does not pass the selected pair; asks about canonical observed model-efficiency evidence |
-| Capacity / Plans | Supported | Uses the existing provider-reported quota evidence path |
+| Home / Overview | Inherited global period/range/provider/Project | Supported; current period/range/provider/Project only |
+| Spend | Inherited global period/range/provider/Project | Supported; current period/range/provider/Project only |
+| Models | Inherited global period/range/provider/Project | Supported; current period/range/provider/Project only |
+| Sessions / Activity | Inherited global period/range/provider/Project | Supported; current period/range/provider/Project only |
+| Compare | Could inherit custom range and Project | Supported at page scope; current period/provider only; custom dates, Project, and the selected pair are dropped |
+| Capacity / Plans | Could inherit hidden provider/Project/range state | Supported as current provider-reported capacity across all providers; no Project/history/custom-range authority and no model |
 | Bench | Unsupported in V1 | Bench evidence is truthful only for its own compatible all-provider/all-Project scope; the page has no matching shared scope handoff |
 | Pull requests, Insights, Workspace, Settings | Unsupported in V1 | No current Advisor evidence contract makes a truthful page-level investigation for these surfaces |
 
@@ -34,7 +32,9 @@ The contextual affordance is one page/header action: `Ask Advisor`. It is shared
 
 ## UX and safety behavior
 
-Selecting `Ask Advisor` navigates to Advisor with the canonical handoff. Advisor shows the originating surface, preselects the supported scope dimensions, and loads the suggested question into the composer. It never submits the question automatically; the user can edit, send, or discard it.
+Selecting `Ask Advisor` navigates to Advisor with the canonical handoff. Advisor shows the originating surface, preselects only the supported scope dimensions, and loads the suggested question into the composer. Compare explains that custom dates and Project are not part of its page scope. Capacity shows `Provider-reported now · All providers` and keeps the generic Advisor placeholder dimensions out of the contextual UI. It never submits the question automatically; the user can edit, send, or discard it.
+
+The Capacity placeholder `today / all providers / all projects / no model` exists only because the shared `AdvisorScope` contract is generic. Provider quota windows, reset timestamps, freshness, and credits remain the authority; Metrora history and Project scope do not silently scope Capacity.
 
 Advisor remains the authority for conversation scope. Existing scope fingerprints filter follow-up history, so changing period, range, provider, Project, or model cannot reuse incompatible factual conversation context. Returning to a product section does not mutate its accounting scope.
 

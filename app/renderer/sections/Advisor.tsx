@@ -10,8 +10,8 @@ import { createAdvisorRuntime } from '../advisor/runtime'
 import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
 import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
-import { scopeLabel } from '../advisor/evidence'
-import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1 } from '../advisor/context'
+import { periodLabel, scopeLabel } from '../advisor/evidence'
+import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorLocalRuntimeId, type AdvisorPresentationBlockV1, type AdvisorPresentationChartSeries, type AdvisorScope } from '../advisor/types'
 
 type DetectedProvider = { id: string; label: string }
@@ -42,6 +42,11 @@ function isCancelled(error: unknown): boolean {
 function providerLabel(provider: string): string {
   if (provider === 'all') return 'All providers'
   return provider.split(/[-\s]+/).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+function contextualScopeLabel(scope: AdvisorScope, mode: AdvisorContextualScopeMode | null): string {
+  if (mode === 'capacity') return 'Provider-reported current capacity · All providers'
+  if (mode === 'compare') return `Compare page scope · ${periodLabel(scope)} · ${providerLabel(scope.provider)}`
+  return scopeLabel(scope)
 }
 function displayAnswer(answer: AdvisorAnswer): string {
   return answer.conclusion
@@ -189,6 +194,7 @@ export function Advisor({
     () => normalizedContextualLaunch ? advisorScopeFromContextualLaunch(normalizedContextualLaunch) : null,
     [normalizedContextualLaunch],
   )
+  const contextualScopeMode = normalizedContextualLaunch?.scopeMode ?? null
   const [scope, setScope] = useState<AdvisorScope>(() => contextualScope ?? ({
     period,
     range,
@@ -365,7 +371,8 @@ export function Advisor({
       const answer = await kernel.investigate({
         question,
         scope: requestedScope,
-        overview: requestedScope.period === period
+        overview: contextualScopeMode !== 'capacity'
+          && requestedScope.period === period
           && requestedScope.provider === provider
           && requestedScope.projectId === projectScopeId
           && requestedScope.range?.from === range?.from
@@ -399,7 +406,7 @@ export function Advisor({
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, conversations, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
+  }, [activeConversationId, contextualScopeMode, conversations, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -534,11 +541,17 @@ export function Advisor({
         <div className="advisor-scope-bar" aria-label="Advisor context">
           <span className="advisor-scope-label">Context</span>
           {normalizedContextualLaunch ? <span className="advisor-contextual-origin">From {advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)}</span> : null}
-          <label>Period<select aria-label="Advisor period" value={scope.period} onChange={event => setScope(current => ({ ...current, period: event.target.value as Period }))}>{PERIODS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-          <label>Project<select aria-label="Advisor Project" value={scope.projectId} onChange={event => { const id = event.target.value; setScope(current => ({ ...current, projectId: id, projectName: id === 'all' ? 'All projects' : projectOptions.find(option => option.id === id)?.name ?? id })) }}><option value="all">All projects</option>{projectOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
-          <label>Provider<select aria-label="Advisor provider" value={scope.provider} onChange={event => setScope(current => ({ ...current, provider: event.target.value }))}>{providerOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-          <label>Model<select aria-label="Advisor model" value={scope.model ?? ''} onChange={event => setScope(current => ({ ...current, model: event.target.value || null }))}><option value="">All models</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
-          <span className="advisor-read-only">Read-only · {scopeLabel(scope)}</span>
+          {contextualScopeMode === 'capacity' ? (
+            <span className="advisor-contextual-authority">Provider-reported now · All providers; Project and history do not scope Capacity.</span>
+          ) : (
+            <>
+              <label>Period<select aria-label="Advisor period" value={scope.period} onChange={event => setScope(current => ({ ...current, period: event.target.value as Period }))}>{PERIODS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              {contextualScopeMode === 'compare' ? <span className="advisor-contextual-authority">Compare uses period + provider; custom dates and Project are not part of Compare.</span> : <label>Project<select aria-label="Advisor Project" value={scope.projectId} onChange={event => { const id = event.target.value; setScope(current => ({ ...current, projectId: id, projectName: id === 'all' ? 'All projects' : projectOptions.find(option => option.id === id)?.name ?? id })) }}><option value="all">All projects</option>{projectOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>}
+              <label>Provider<select aria-label="Advisor provider" value={scope.provider} onChange={event => setScope(current => ({ ...current, provider: event.target.value }))}>{providerOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+              <label>Model<select aria-label="Advisor model" value={scope.model ?? ''} onChange={event => setScope(current => ({ ...current, model: event.target.value || null }))}><option value="">All models</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
+            </>
+          )}
+          <span className="advisor-read-only">Read-only · {contextualScopeLabel(scope, contextualScopeMode)}</span>
         </div>
         {runtimeChoice !== 'hosted' && runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form model conversation and tool calls. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
         {overview.error && !overview.data ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overview.error.message}</div> : null}

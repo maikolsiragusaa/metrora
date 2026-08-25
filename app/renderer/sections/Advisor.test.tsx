@@ -121,6 +121,38 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('From Spend')).toBeInTheDocument()
     expect(investigate).not.toHaveBeenCalled()
   })
+  it('shows Capacity as current provider authority without exposing hidden Desktop scope', async () => {
+    const contextualLaunch = createAdvisorContextualLaunch({
+      originatingSection: 'plans',
+      period: '30days',
+      range: { from: '2026-08-01', to: '2026-08-25' },
+      provider: 'codex',
+      projectId: 'project-a',
+      projectName: 'Project A',
+      model: 'gpt-safe',
+    })
+
+    render(
+      <Advisor
+        period="week"
+        provider="codex"
+        projectScopeId="project-a"
+        range={{ from: '2026-08-01', to: '2026-08-25' }}
+        overview={overviewWithOptions}
+        detectedProviders={[{ id: 'codex', label: 'Codex' }]}
+        contextualLaunch={contextualLaunch}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue('What current provider-reported capacity and reset windows are available across the connected providers?'))
+    expect(screen.getByText('From Plans')).toBeInTheDocument()
+    expect(screen.getByText(/Provider-reported now · All providers; Project and history do not scope Capacity/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor period')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor Project')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor provider')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor model')).not.toBeInTheDocument()
+    expect(investigate).not.toHaveBeenCalled()
+  })
   it('renders direct answer hierarchy while keeping deeper evidence in progressive disclosure', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     await submitQuestion('Inspect spend behavior')

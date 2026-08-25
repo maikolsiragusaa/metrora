@@ -145,16 +145,14 @@ function AppMain() {
   const projectName = metroraProjectId === 'all'
     ? 'All projects'
     : projectScope?.options.find(option => option.id === metroraProjectId)?.name ?? null
-  const contextualAdvisorLaunch = projectName
-    ? createAdvisorContextualLaunch({
-        originatingSection: section,
-        period,
-        range: customRange,
-        provider,
-        projectId: metroraProjectId,
-        projectName,
-      })
-    : null
+  const contextualAdvisorLaunch = createAdvisorContextualLaunch({
+    originatingSection: section,
+    period,
+    range: customRange,
+    provider,
+    projectId: metroraProjectId,
+    projectName,
+  })
   useEffect(() => {
     if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
     onProjectScopeSelect('all')

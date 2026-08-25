@@ -26,6 +26,7 @@ describe('Advisor contextual launch contract', () => {
       contractVersion: ADVISOR_CONTEXTUAL_LAUNCH_CONTRACT_VERSION,
       schemaVersion: ADVISOR_CONTEXTUAL_LAUNCH_SCHEMA_VERSION,
       originatingSection: 'models',
+      scopeMode: 'analytics',
       period: '30days',
       range: { from: '2026-08-01', to: '2026-08-25' },
       provider: 'codex',
@@ -57,6 +58,7 @@ describe('Advisor contextual launch contract', () => {
       'contractVersion',
       'schemaVersion',
       'originatingSection',
+      'scopeMode',
       'period',
       'range',
       'provider',
@@ -78,6 +80,64 @@ describe('Advisor contextual launch contract', () => {
 
     const malformedModel = createAdvisorContextualLaunch({ ...base, model: { kind: 'session', id: 'session-1' } as never })
     expect(malformedModel?.model).toBeNull()
+  })
+
+  it('projects analytics surfaces with every dimension they actually consume', () => {
+    for (const originatingSection of ['overview', 'sessions', 'spend', 'models'] as const) {
+      const launch = createAdvisorContextualLaunch({ ...base, originatingSection, model: 'gpt-safe' })
+
+      expect(launch).toMatchObject({
+        originatingSection,
+        scopeMode: 'analytics',
+        period: '30days',
+        range: { from: '2026-08-01', to: '2026-08-25' },
+        provider: 'codex',
+        projectId: 'project-a',
+        projectName: 'Project A',
+        model: 'gpt-safe',
+      })
+    }
+  })
+
+  it('drops Compare dimensions that the page does not consume', () => {
+    const launch = createAdvisorContextualLaunch({ ...base, originatingSection: 'compare', model: 'gpt-pair' })
+
+    expect(launch).toMatchObject({
+      originatingSection: 'compare',
+      scopeMode: 'compare',
+      period: '30days',
+      range: null,
+      provider: 'codex',
+      projectId: 'all',
+      projectName: 'All projects',
+      model: null,
+      suggestedPrompt: 'Investigate the observed model-efficiency evidence for the selected period and provider.',
+    })
+  })
+
+  it('does not inherit hidden provider, Project, range, period, or model state for Plans capacity', () => {
+    const launch = createAdvisorContextualLaunch({
+      ...base,
+      originatingSection: 'plans',
+      period: 'not-a-period' as never,
+      range: { from: 'not-a-date', to: 'also-not-a-date' },
+      provider: 'codex',
+      projectId: 'private-project',
+      projectName: 'Private project',
+      model: 'gpt-hidden',
+    })
+
+    expect(launch).toMatchObject({
+      originatingSection: 'plans',
+      scopeMode: 'capacity',
+      period: 'today',
+      range: null,
+      provider: 'all',
+      projectId: 'all',
+      projectName: 'All projects',
+      model: null,
+      suggestedPrompt: 'What current provider-reported capacity and reset windows are available across the connected providers?',
+    })
   })
 
   it('revalidates a launch and replaces arbitrary suggested prose with Metrora-owned copy', () => {

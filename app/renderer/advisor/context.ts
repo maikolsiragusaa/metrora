@@ -14,10 +14,37 @@ export const ADVISOR_CONTEXTUAL_LAUNCH_SCHEMA_VERSION = 1 as const
  */
 export type AdvisorContextualSurface = 'overview' | 'sessions' | 'spend' | 'models' | 'compare' | 'plans'
 
+export type AdvisorContextualScopeMode = 'analytics' | 'compare' | 'capacity'
+
+export type AdvisorContextualScopePolicy = Readonly<{
+  scopeMode: AdvisorContextualScopeMode
+  period: 'current' | 'placeholder'
+  range: 'current' | 'unsupported'
+  provider: 'current' | 'all'
+  project: 'current' | 'all'
+  model: 'optional' | 'none'
+}>
+
+/**
+ * The source page, not the global Desktop state, decides which dimensions are
+ * truthful for a contextual launch. Placeholder values exist only because the
+ * shared AdvisorScope is intentionally generic; contextual UI must use
+ * scopeMode when displaying the authority.
+ */
+export const ADVISOR_CONTEXTUAL_SCOPE_POLICY: Readonly<Record<AdvisorContextualSurface, AdvisorContextualScopePolicy>> = Object.freeze({
+  overview: { scopeMode: 'analytics', period: 'current', range: 'current', provider: 'current', project: 'current', model: 'optional' },
+  sessions: { scopeMode: 'analytics', period: 'current', range: 'current', provider: 'current', project: 'current', model: 'optional' },
+  spend: { scopeMode: 'analytics', period: 'current', range: 'current', provider: 'current', project: 'current', model: 'optional' },
+  models: { scopeMode: 'analytics', period: 'current', range: 'current', provider: 'current', project: 'current', model: 'optional' },
+  compare: { scopeMode: 'compare', period: 'current', range: 'unsupported', provider: 'current', project: 'all', model: 'none' },
+  plans: { scopeMode: 'capacity', period: 'placeholder', range: 'unsupported', provider: 'all', project: 'all', model: 'none' },
+})
+
 export type AdvisorContextualLaunchV1 = {
   contractVersion: typeof ADVISOR_CONTEXTUAL_LAUNCH_CONTRACT_VERSION
   schemaVersion: typeof ADVISOR_CONTEXTUAL_LAUNCH_SCHEMA_VERSION
   originatingSection: AdvisorContextualSurface
+  scopeMode: AdvisorContextualScopeMode
   period: Period
   range: DateRange | null
   provider: string
@@ -35,7 +62,7 @@ export type AdvisorContextualLaunchInput = {
   range: DateRange | null
   provider: string
   projectId: string
-  projectName: string
+  projectName: string | null
   model?: string | null
 }
 
@@ -44,8 +71,8 @@ const SURFACE_PROMPTS: Readonly<Record<AdvisorContextualSurface, string>> = Obje
   sessions: 'Which sessions or Projects explain the most measured spend in this scope?',
   spend: 'What changed in measured spend in this scope, and which drivers are visible?',
   models: 'Which models have the lowest observed cost per call in this scope?',
-  compare: 'Investigate the observed model-efficiency evidence in this scope.',
-  plans: 'What provider quota remains and when does it reset in this scope?',
+  compare: 'Investigate the observed model-efficiency evidence for the selected period and provider.',
+  plans: 'What current provider-reported capacity and reset windows are available across the connected providers?',
 })
 
 const SURFACES: readonly AdvisorContextualSurface[] = Object.freeze([
@@ -96,19 +123,24 @@ export function createAdvisorContextualLaunch(input: AdvisorContextualLaunchInpu
   if (!isContextualSurface(input.originatingSection)) return null
 
   try {
+    const policy = ADVISOR_CONTEXTUAL_SCOPE_POLICY[input.originatingSection]
     const scope = snapshotAdvisorScope({
-      period: input.period,
-      range: input.range ? { from: input.range.from, to: input.range.to } : null,
-      provider: input.provider,
-      projectId: input.projectId,
-      projectName: input.projectName,
-      model: boundedModel(input.model),
+      // Plans/Capacity has no historical period. `today` is an internal
+      // placeholder for the generic AdvisorScope and is never presented as
+      // the capacity authority.
+      period: policy.period === 'current' ? input.period : 'today',
+      range: policy.range === 'current' && input.range ? { from: input.range.from, to: input.range.to } : null,
+      provider: policy.provider === 'current' ? input.provider : 'all',
+      projectId: policy.project === 'current' ? input.projectId : 'all',
+      projectName: policy.project === 'current' ? input.projectName ?? '' : 'All projects',
+      model: policy.model === 'optional' ? boundedModel(input.model) : null,
     })
 
     return Object.freeze({
       contractVersion: ADVISOR_CONTEXTUAL_LAUNCH_CONTRACT_VERSION,
       schemaVersion: ADVISOR_CONTEXTUAL_LAUNCH_SCHEMA_VERSION,
       originatingSection: input.originatingSection,
+      scopeMode: policy.scopeMode,
       period: scope.period,
       range: scope.range,
       provider: scope.provider,
