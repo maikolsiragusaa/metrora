@@ -156,6 +156,21 @@ class MetroraPresentationModelTest {
     }
 
     @Test
+    fun refresh_action_copy_is_local_in_demo_and_desktop_based_in_real_mode() {
+        val demoState = MetroraUiState(
+            initializing = false,
+            status = MetroraConnectionState.DEMO,
+            dataMode = MetroraDataMode.DEMO,
+            demoDatasetVersion = "v1",
+            demoToday = "2026-08-25",
+        )
+        val realState = MetroraUiState(initializing = false, status = MetroraConnectionState.RESTORED)
+
+        assertEquals(R.string.refresh_demo, refreshActionResource(demoState))
+        assertEquals(R.string.refresh, refreshActionResource(realState))
+    }
+
+    @Test
     fun initial_destination_is_ignored_for_real_state_but_allowed_for_demo_state() {
         val realState = MetroraUiState(
             initializing = false,

@@ -40,7 +40,12 @@ private enum class ConfirmAction {
 }
 
 @Composable
-fun MetroraApp(coordinator: MetroraCoordinator, initialDemoDestination: String? = null) {
+fun MetroraApp(
+    coordinator: MetroraCoordinator,
+    initialDemoDestination: String? = null,
+    onDemoDestinationChanged: (String) -> Unit = {},
+    onExitDemo: () -> Unit = coordinator::exitDemo,
+) {
     val state by coordinator.state.collectAsState()
     var confirmation by rememberSaveable { mutableStateOf<ConfirmAction?>(null) }
     var scannerVisible by rememberSaveable { mutableStateOf(false) }
@@ -130,8 +135,9 @@ fun MetroraApp(coordinator: MetroraCoordinator, initialDemoDestination: String? 
                 onCloseActivityDetail = coordinator::closeActivityDetail,
                 onRevoke = { confirmation = ConfirmAction.REVOKE },
                 onForget = { confirmation = ConfirmAction.FORGET },
-                onExitDemo = coordinator::exitDemo,
+                onExitDemo = onExitDemo,
                 initialDestination = initialDemoDestination.takeIf { state.isDemo },
+                onDestinationChanged = onDemoDestinationChanged,
             )
         }
     }

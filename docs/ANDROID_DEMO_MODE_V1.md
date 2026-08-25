@@ -8,8 +8,10 @@ and Activity presentation models used by the paired product.
 Demo Mode does not create a pairing, credentials, Desktop authorization,
 Workspace identity or provider account. It performs no network requests and
 does not write demo data to the encrypted credential or projection caches.
-Exiting Demo Mode returns to the untouched unpaired state. Restarting the app
-also returns to the normal real-data authority unless a fresh automation launch
+Exiting Demo Mode returns to the untouched unpaired state. Active Demo Mode
+survives ordinary same-session Android Activity/configuration recreation using
+lifecycle-only state; that state is not product authority. A fresh normal
+launch/task returns to the real-data authority unless a fresh automation launch
 explicitly requests the built-in fixture.
 
 The clean-install Connect screen keeps pairing as the primary action and adds
@@ -20,7 +22,10 @@ Mode. Workspace remains clearly unavailable because Android has no truthful
 Workspace authority in this version.
 
 The fixture is versioned as `v1`. V1 exposes Today, Last 7 days, Last 30 days,
-and This month over the same bounded 30-day sample; it does not expose
+and This month. This month uses calendar-month-to-date semantics from the first
+calendar day through the session's Demo today; Last 30 days remains a distinct
+rolling recent-days window. All Usage, Foundation, Project, Activity and Pull
+Request values use the same resolved Demo period window. V1 does not expose
 lifetime history. A deterministic automation launch may use the
 allowlisted Android intent extras `metrora.demo=true`,
 `metrora.demo.dataset=v1`, `metrora.demo.now=YYYY-MM-DD`, and

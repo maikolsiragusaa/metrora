@@ -135,6 +135,7 @@
     <string name="empty_snapshot_paired">Your computer is paired. Refresh to load the first overview from Desktop.</string>
     <string name="empty_snapshot_offline">There is no saved overview to show yet. Try Refresh when Desktop is available.</string>
     <string name="refresh">Refresh from Desktop</string>
+    <string name="refresh_demo">Refresh demo data</string>
 
     <string name="nav_home">Home</string>
     <string name="nav_activity">Activity</string>

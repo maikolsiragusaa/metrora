@@ -52,7 +52,7 @@ data class MetroraDemoPayload(
  */
 object MetroraDemoDatasetV1 {
     const val VERSION = "v1"
-    val supportedPeriods: List<String> = listOf("today", "week", "30days", "month")
+    val supportedPeriods: List<String> = DemoPeriodWindow.SUPPORTED_PERIODS
 
     fun supportsPeriod(period: String): Boolean = period in supportedPeriods
 
@@ -87,10 +87,11 @@ class MetroraDemoDataSource internal constructor(
         }
         require(projectCatalog.projectOption(projectScopeId) != null) { "Unknown demo Project scope." }
 
+        val window = periodWindow(period)
         val effectiveGranularity = trendGranularity ?: "day"
-        val selected = recordsFor(period, projectScopeId)
-        val snapshot = usageSnapshot(period, effectiveGranularity, projectScopeId, selected)
-        val foundation = foundationSnapshot(period, effectiveGranularity, projectScopeId, selected, snapshot)
+        val selected = recordsFor(window, projectScopeId)
+        val snapshot = usageSnapshot(period, window, effectiveGranularity, projectScopeId, selected)
+        val foundation = foundationSnapshot(effectiveGranularity, projectScopeId, selected, snapshot)
         val query = (activityQuery ?: ActivityQuery(period = period, projectScopeId = projectScopeId)).copy(
             period = period,
             projectScopeId = projectScopeId,
@@ -101,13 +102,14 @@ class MetroraDemoDataSource internal constructor(
             snapshot = snapshot,
             foundation = foundation,
             projectCatalog = projectCatalog,
-            activity = activitySnapshot(query),
+            activity = activitySnapshot(query, window),
             capabilities = capabilities,
         )
     }
 
     fun activitySessionDetail(query: ActivityQuery, id: String): ActivitySessionDetail? {
-        val record = recordsFor(query.period, query.projectScopeId)
+        val window = periodWindow(query.period)
+        val record = recordsFor(window, query.projectScopeId)
             .firstOrNull { it.id == id && recordMatchesQuery(it, query) }
             ?: return null
         return ActivitySessionDetail(
@@ -127,6 +129,7 @@ class MetroraDemoDataSource internal constructor(
 
     private fun usageSnapshot(
         period: String,
+        window: DemoPeriodWindow,
         trendGranularity: String,
         projectScopeId: String,
         selected: List<DemoRecord>,
@@ -155,7 +158,7 @@ class MetroraDemoDataSource internal constructor(
             tokenCoverage = DetailCoverage.COMPLETE,
             modelCoverage = DetailCoverage.COMPLETE,
             estimatedCostMicrosUsd = (cost / 12L).takeIf { it > 0L },
-            costTrend = costTrend(selected, period, trendGranularity),
+            costTrend = costTrend(selected, window, trendGranularity),
             costTrendGranularity = trendGranularity,
             costTrendPeriodLabel = periodLabel(period),
             retrievedAtEpochMs = generatedAtEpochMs,
@@ -163,7 +166,6 @@ class MetroraDemoDataSource internal constructor(
     }
 
     private fun foundationSnapshot(
-        period: String,
         trendGranularity: String,
         projectScopeId: String,
         selected: List<DemoRecord>,
@@ -206,19 +208,19 @@ class MetroraDemoDataSource internal constructor(
         )
     }
 
-    private fun activitySnapshot(query: ActivityQuery): ActivitySnapshot {
+    private fun activitySnapshot(query: ActivityQuery, window: DemoPeriodWindow): ActivitySnapshot {
         val boundedQuery = query.copy(
-            effectiveFrom = periodStart(query.period).toString(),
-            effectiveTo = today.toString(),
+            effectiveFrom = window.start.toString(),
+            effectiveTo = window.end.toString(),
         )
-        val filteredRecords = recordsFor(query.period, query.projectScopeId)
+        val filteredRecords = recordsFor(window, query.projectScopeId)
             .filter { recordMatchesQuery(it, query) }
             .sortedWith(compareBy<DemoRecord> { it.offset }.thenBy { it.id })
         val sessionRows = filteredRecords.take(query.limit).map { it.toActivitySession() }
         val filteredPullRequests = pullRequests
-            .filter { pullRequestMatchesQuery(it, query) }
+            .filter { pullRequestMatchesQuery(it, query, window) }
             .take(query.limit)
-            .map { it.toActivityPullRequest(query.period) }
+            .map { it.toActivityPullRequest(window) }
         val sessionsMeta = ActivityPageMeta(
             desktopId = DEMO_ID,
             generatedAt = generatedAtText,
@@ -252,22 +254,21 @@ class MetroraDemoDataSource internal constructor(
         )
     }
 
-    private fun recordsFor(period: String, projectScopeId: String): List<DemoRecord> = records.filter { record ->
-        record.offset < periodDays(period) && (projectScopeId == ALL_PROJECTS || record.projectId == projectScopeId)
+    fun periodWindow(period: String): DemoPeriodWindow = DemoPeriodWindow.resolve(today, period)
+
+    private fun recordsFor(window: DemoPeriodWindow, projectScopeId: String): List<DemoRecord> = records.filter { record ->
+        window.contains(recordDate(record)) &&
+            (projectScopeId == ALL_PROJECTS || record.projectId == projectScopeId)
     }
 
-    private fun periodDays(period: String): Int = when (period) {
-        "today" -> 1
-        "week" -> 7
-        "30days", "month" -> 30
-        else -> error("Unsupported demo period.")
-    }
-
-    private fun periodStart(period: String): LocalDate = today.minusDays((periodDays(period) - 1).toLong())
-
-    private fun costTrend(records: List<DemoRecord>, period: String, granularity: String): List<eu.metrora.app.data.CostTrendPoint> {
-        val days = periodDays(period)
-        val dates = (days - 1 downTo 0).map { today.minusDays(it.toLong()) }
+    private fun costTrend(
+        records: List<DemoRecord>,
+        window: DemoPeriodWindow,
+        granularity: String,
+    ): List<eu.metrora.app.data.CostTrendPoint> {
+        val dates = generateSequence(window.start) { date ->
+            date.plusDays(1).takeIf { !it.isAfter(window.end) }
+        }.toList()
         val buckets = dates.map { bucketDate(it, granularity) }.distinct().sorted()
         return buckets.map { bucket ->
             eu.metrora.app.data.CostTrendPoint(
@@ -324,14 +325,18 @@ class MetroraDemoDataSource internal constructor(
             (query.model == null || query.model == record.model) &&
             (query.source == null || query.source == record.sourceProjectId)
 
-    private fun pullRequestMatchesQuery(request: DemoPullRequest, query: ActivityQuery): Boolean =
+    private fun pullRequestMatchesQuery(
+        request: DemoPullRequest,
+        query: ActivityQuery,
+        window: DemoPeriodWindow,
+    ): Boolean =
         if (query.projectScopeId != ALL_PROJECTS && query.projectScopeId != request.projectId) {
             false
         } else {
             val rows = records.filter {
                 it.projectId == request.projectId &&
-                    it.offset in request.offsets &&
-                    it.offset < periodDays(query.period)
+                it.offset in request.offsets &&
+                window.contains(recordDate(it))
             }
             rows.isNotEmpty() &&
                 (query.provider == null || rows.any { query.provider in it.sourceIds }) &&
@@ -488,11 +493,11 @@ class MetroraDemoDataSource internal constructor(
         endedAt = endedAt,
     )
 
-    private fun DemoPullRequest.toActivityPullRequest(period: String): ActivityPullRequest {
+    private fun DemoPullRequest.toActivityPullRequest(window: DemoPeriodWindow): ActivityPullRequest {
         val rows = records.filter {
             it.projectId == projectId &&
-                it.offset in offsets &&
-                it.offset < periodDays(period)
+            it.offset in offsets &&
+                window.contains(recordDate(it))
         }
         val cost = rows.sumOf { it.costMicrosUsd }
         return ActivityPullRequest(
@@ -565,7 +570,7 @@ class MetroraDemoDataSource internal constructor(
         val SOURCE_NOVA = "sp_${"2".repeat(64)}"
         val SOURCE_BEACON = "sp_${"3".repeat(64)}"
         val SOURCE_UNASSIGNED = "sp_${"4".repeat(64)}"
-        val SUPPORTED_PERIODS = MetroraDemoDatasetV1.supportedPeriods.toSet()
+        val SUPPORTED_PERIODS = DemoPeriodWindow.SUPPORTED_PERIODS
         val SUPPORTED_TREND_GRANULARITIES = setOf("day", "week", "month")
         val SEEDS = listOf(
             DemoSeed("mp_atlas", SOURCE_ATLAS, "Atlas Console", listOf("codex"), "openai", "gpt-4.1-mini", "openai", 22_000L, 1_600L),

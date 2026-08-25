@@ -48,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,11 +111,16 @@ internal fun HomeState(
     onForget: () -> Unit,
     onExitDemo: () -> Unit,
     initialDestination: String? = null,
+    onDestinationChanged: (String) -> Unit = {},
 ) {
     val requestedInitialDestination = initialDestinationFor(state, initialDestination)
     var destinationName by rememberSaveable(state.isDemo, initialDestination) { mutableStateOf(requestedInitialDestination) }
     val destination = HomeDestination.entries.firstOrNull { it.name == destinationName } ?: HomeDestination.HOME
     val scrollState = remember(destination) { androidx.compose.foundation.ScrollState(0) }
+
+    LaunchedEffect(destination) {
+        onDestinationChanged(destination.name)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0A151B), MetroraPalette.background))),
@@ -188,7 +194,12 @@ private fun PostConnectionHeader(state: MetroraUiState, onRefresh: () -> Unit) {
             modifier = Modifier.size(36.dp),
         ) {
             if (state.status == MetroraConnectionState.REFRESHING) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Outlined.Refresh, contentDescription = androidx.compose.ui.res.stringResource(R.string.refresh), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(21.dp))
+            else Icon(
+                Icons.Outlined.Refresh,
+                contentDescription = androidx.compose.ui.res.stringResource(refreshActionResource(state)),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(21.dp),
+            )
         }
         if (!state.isDemo) {
             MetroraStatusPill(
@@ -269,7 +280,7 @@ private fun OverviewSurface(state: MetroraUiState, onRefresh: () -> Unit, onSele
             HomeMetricTiles(snapshot)
             TopModels(snapshot.models.ifEmpty { snapshot.topModels }, snapshot.modelCoverage, snapshot.modelAccountingGap, onViewAllModels)
             FreshnessFooter(state)
-        } ?: EmptyHomeSnapshot(state.status, onRefresh)
+        } ?: EmptyHomeSnapshot(state, onRefresh)
     }
 }
 
@@ -503,12 +514,14 @@ private fun FreshnessFooter(state: MetroraUiState) {
 }
 
 @Composable
-private fun EmptyHomeSnapshot(status: MetroraConnectionState, onRefresh: () -> Unit) {
+private fun EmptyHomeSnapshot(state: MetroraUiState, onRefresh: () -> Unit) {
     MetroraPanel(modifier = Modifier.fillMaxWidth(), color = MetroraPalette.surfaceRaised) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(androidx.compose.ui.res.stringResource(R.string.no_snapshot_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-            Text(androidx.compose.ui.res.stringResource(if (status == MetroraConnectionState.PAIRED_NO_SNAPSHOT) R.string.empty_snapshot_paired else R.string.empty_snapshot_offline), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
-            androidx.compose.material3.Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(androidx.compose.ui.res.stringResource(R.string.refresh)) }
+            Text(androidx.compose.ui.res.stringResource(if (state.status == MetroraConnectionState.PAIRED_NO_SNAPSHOT) R.string.empty_snapshot_paired else R.string.empty_snapshot_offline), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.material3.Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
+                Text(androidx.compose.ui.res.stringResource(refreshActionResource(state)))
+            }
         }
     }
 }

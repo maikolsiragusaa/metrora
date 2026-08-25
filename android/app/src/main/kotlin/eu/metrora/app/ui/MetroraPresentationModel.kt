@@ -78,6 +78,9 @@ internal fun freshnessPresentation(state: MetroraUiState): FreshnessPresentation
     )
 }
 
+internal fun refreshActionResource(state: MetroraUiState): Int =
+    if (state.isDemo) R.string.refresh_demo else R.string.refresh
+
 internal fun statusCopy(status: MetroraConnectionState): StatusCopy = when (status) {
     MetroraConnectionState.UNPAIRED -> StatusCopy(
         R.string.status_not_connected,

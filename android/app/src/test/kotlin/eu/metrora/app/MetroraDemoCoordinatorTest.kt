@@ -10,10 +10,15 @@ import eu.metrora.app.data.PairingCredentials
 import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.StorageRead
 import eu.metrora.app.data.UsageSnapshot
+import eu.metrora.app.demo.MetroraDemoDestination
+import eu.metrora.app.demo.MetroraDemoLifecycleInput
+import eu.metrora.app.demo.MetroraDemoLifecycleState
 import eu.metrora.app.demo.MetroraDemoLaunchSpec
+import eu.metrora.app.demo.MetroraDemoSession
 import eu.metrora.app.network.DiscoveredDesktop
 import eu.metrora.app.network.MetroraApi
 import eu.metrora.app.security.MetroraStore
+import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -137,6 +142,102 @@ class MetroraDemoCoordinatorTest {
         assertEquals(MetroraConnectionState.RESTORED, coordinator.state.value.status)
         assertEquals(0, store.writes)
         coordinator.close()
+    }
+
+    @Test
+    fun lifecycle_restore_keeps_demo_state_selection_and_stays_local() = runTest {
+        val store = CountingStore()
+        val api = CountingApi()
+        val restored = MetroraDemoLifecycleState(
+            session = MetroraDemoSession(LocalDate.of(2026, 8, 25)),
+            selectedPeriod = "week",
+            selectedProjectId = "mp_atlas",
+            destination = MetroraDemoDestination.ACTIVITY,
+        )
+        val coordinator = MetroraCoordinator(
+            store = store,
+            api = api,
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            deviceName = "Demo test",
+            demoLifecycleState = restored,
+        )
+        advanceUntilIdle()
+
+        val state = coordinator.state.value
+        assertTrue(state.isDemo)
+        assertEquals(MetroraDataMode.DEMO, state.dataMode)
+        assertEquals("v1", state.demoDatasetVersion)
+        assertEquals("2026-08-25", state.demoToday)
+        assertEquals("week", state.selectedPeriod)
+        assertEquals("mp_atlas", state.selectedProjectId)
+        assertFalse(state.paired)
+        assertEquals(0, api.calls.get())
+        assertEquals(0, store.writes)
+        assertEquals(0, store.clears)
+        coordinator.close()
+    }
+
+    @Test
+    fun restored_demo_hint_cannot_override_real_pairing() = runTest {
+        val store = CountingStore(credentials = testCredentials())
+        val restored = MetroraDemoLifecycleState(
+            session = MetroraDemoSession(LocalDate.of(2026, 8, 25)),
+            selectedPeriod = "month",
+            selectedProjectId = "all",
+            destination = MetroraDemoDestination.SETTINGS,
+        )
+        val coordinator = MetroraCoordinator(
+            store = store,
+            api = CountingApi(identityMatches = true),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            deviceName = "Demo test",
+            demoLifecycleState = restored,
+        )
+        advanceUntilIdle()
+
+        assertFalse(coordinator.state.value.isDemo)
+        assertEquals(MetroraDataMode.REAL, coordinator.state.value.dataMode)
+        assertTrue(coordinator.state.value.paired)
+        assertEquals(MetroraConnectionState.RESTORED, coordinator.state.value.status)
+        assertEquals(0, store.writes)
+        coordinator.close()
+    }
+
+    @Test
+    fun cleared_exit_demo_lifecycle_state_cannot_reenter_on_recreation() = runTest {
+        val store = CountingStore()
+        val first = coordinator(store, CountingApi(), StandardTestDispatcher(testScheduler))
+        advanceUntilIdle()
+        first.enterDemo()
+        first.exitDemo()
+
+        val restored = MetroraDemoLifecycleState.fromInput(
+            MetroraDemoLifecycleInput(
+                active = false,
+                dataset = null,
+                now = null,
+                period = null,
+                project = null,
+                destination = null,
+            ),
+        )
+        first.close()
+
+        val second = MetroraCoordinator(
+            store = store,
+            api = CountingApi(),
+            scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)),
+            deviceName = "Demo test",
+            demoLifecycleState = restored,
+        )
+        advanceUntilIdle()
+
+        assertFalse(second.state.value.isDemo)
+        assertEquals(MetroraConnectionState.UNPAIRED, second.state.value.status)
+        assertFalse(second.state.value.paired)
+        assertEquals(0, store.writes)
+        assertEquals(0, store.clears)
+        second.close()
     }
 
     private fun coordinator(

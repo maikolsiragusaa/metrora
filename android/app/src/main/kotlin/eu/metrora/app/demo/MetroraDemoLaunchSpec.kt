@@ -1,6 +1,7 @@
 package eu.metrora.app.demo
 
 import android.content.Intent
+import android.os.Bundle
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -63,3 +64,99 @@ data class MetroraDemoLaunchSpec(
         )
     }
 }
+
+/**
+ * Narrow lifecycle-only Demo state. This is saved in Activity instance state,
+ * never in Metrora's product authority or projection stores.
+ */
+data class MetroraDemoLifecycleState(
+    val session: MetroraDemoSession,
+    val selectedPeriod: String,
+    val selectedProjectId: String,
+    val destination: MetroraDemoDestination,
+) {
+    init {
+        require(MetroraDemoDatasetV1.supportsPeriod(selectedPeriod)) { "Unsupported demo lifecycle period." }
+        require(selectedProjectId.isNotBlank()) { "Demo lifecycle Project scope cannot be blank." }
+    }
+
+    fun toInput(): MetroraDemoLifecycleInput = MetroraDemoLifecycleInput(
+        active = true,
+        dataset = session.datasetVersion,
+        now = session.today.toString(),
+        period = selectedPeriod,
+        project = selectedProjectId,
+        destination = destination.wireName,
+    )
+
+    fun writeTo(bundle: Bundle) {
+        val input = toInput()
+        bundle.putBoolean(ACTIVE_KEY, input.active)
+        bundle.putString(DATASET_KEY, input.dataset)
+        bundle.putString(NOW_KEY, input.now)
+        bundle.putString(PERIOD_KEY, input.period)
+        bundle.putString(PROJECT_KEY, input.project)
+        bundle.putString(DESTINATION_KEY, input.destination)
+    }
+
+    companion object {
+        private const val ACTIVE_KEY = "metrora.demo.lifecycle.active"
+        private const val DATASET_KEY = "metrora.demo.lifecycle.dataset"
+        private const val NOW_KEY = "metrora.demo.lifecycle.now"
+        private const val PERIOD_KEY = "metrora.demo.lifecycle.period"
+        private const val PROJECT_KEY = "metrora.demo.lifecycle.project"
+        private const val DESTINATION_KEY = "metrora.demo.lifecycle.destination"
+
+        fun fromInput(input: MetroraDemoLifecycleInput): MetroraDemoLifecycleState? {
+            if (!input.active || input.dataset == null || input.now == null || input.period == null ||
+                input.project == null || input.destination == null
+            ) return null
+            val launchSpec = MetroraDemoLaunchSpec.parse(
+                enabled = true,
+                dataset = input.dataset,
+                now = input.now,
+                destination = input.destination,
+            ) ?: return null
+            if (!MetroraDemoDatasetV1.supportsPeriod(input.period)) return null
+            return MetroraDemoLifecycleState(
+                session = launchSpec.session,
+                selectedPeriod = input.period,
+                selectedProjectId = input.project,
+                destination = launchSpec.initialDestination,
+            )
+        }
+
+        fun fromBundle(bundle: Bundle?): MetroraDemoLifecycleState? {
+            if (bundle == null) return null
+            return fromInput(
+                MetroraDemoLifecycleInput(
+                    active = bundle.getBoolean(ACTIVE_KEY, false),
+                    dataset = bundle.getString(DATASET_KEY),
+                    now = bundle.getString(NOW_KEY),
+                    period = bundle.getString(PERIOD_KEY),
+                    project = bundle.getString(PROJECT_KEY),
+                    destination = bundle.getString(DESTINATION_KEY),
+                ),
+            )
+        }
+
+        fun clearFrom(bundle: Bundle) {
+            bundle.remove(ACTIVE_KEY)
+            bundle.remove(DATASET_KEY)
+            bundle.remove(NOW_KEY)
+            bundle.remove(PERIOD_KEY)
+            bundle.remove(PROJECT_KEY)
+            bundle.remove(DESTINATION_KEY)
+        }
+    }
+}
+
+/** Pure representation used to test the lifecycle contract without Android framework state. */
+data class MetroraDemoLifecycleInput(
+    val active: Boolean,
+    val dataset: String?,
+    val now: String?,
+    val period: String?,
+    val project: String?,
+    val destination: String?,
+)
