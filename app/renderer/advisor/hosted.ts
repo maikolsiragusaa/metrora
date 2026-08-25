@@ -5,7 +5,7 @@ import { hasMixedEvidenceScopes, mergeEvidence } from './ollama'
 import { contentMinimalEvidence, sanitizeAdvisorAnswer } from './privacy'
 import { buildAdvisorPresentationBlocks } from './presentation'
 import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput } from './types'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorEvidence, type AdvisorHostedModel, type AdvisorHostedProviderId, type AdvisorModelRuntime, type AdvisorRuntimeInput } from './types'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
 export type HostedAdvisorProbeResult = {
@@ -47,6 +47,16 @@ export async function probeHostedAdvisor(provider: HostedAdvisorProvider, signal
   return result
 }
 function requestId(): string { return 'hosted-advisor-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) }
+function safeConversation(input: AdvisorRuntimeInput): Array<{ role: AdvisorConversationTurn['role']; content: string }> {
+  const currentScopeFingerprint = advisorScopeFingerprint(input.evidence.scope)
+  return (input.conversation ?? [])
+    .filter(turn => turn.scopeFingerprint === currentScopeFingerprint)
+    .slice(-12)
+    .flatMap(turn => {
+      const content = turn.content.trim().slice(0, 4000)
+      return content ? [{ role: turn.role, content }] : []
+    })
+}
 function messagePayload(input: AdvisorRuntimeInput, consent: boolean, tools: readonly unknown[], stream: boolean): Record<string, unknown> {
   const verified = JSON.stringify(contentMinimalEvidence(input.evidence))
   return {
@@ -54,6 +64,7 @@ function messagePayload(input: AdvisorRuntimeInput, consent: boolean, tools: rea
     model: '',
     messages: [
       { role: 'system', content: 'You are Metrora Advisor. Use the supplied Metrora evidence as read-only facts. Do not invent numbers, dates, causes, rankings, recommendations, secrets, paths, prompts, or hidden reasoning. Answer in plain language and keep factual claims tied to the evidence. After read-only evidence is available, return only a JSON object with contractVersion "advisor-synthesis-draft-v1", schemaVersion 1, conclusion, why, details, claims, and presentationRequests. Material claims must include evidenceRefs and evidencePaths into the verified evidence object. Causal, forecast, and recommendation claims are unsupported. Do not include chart values.' },
+      ...safeConversation(input),
       { role: 'user', content: input.question.trim().slice(0, 4000) },
       { role: 'system', content: 'Verified Metrora facts for this question. Treat them as authoritative and do not recompute them: ' + verified },
     ],

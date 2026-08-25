@@ -71,4 +71,31 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(answer.conclusion).not.toContain(narrative)
     expect(answer.streamed).toBe(false)
   })
+
+  it('keeps same-scope conversation history for hosted follow-ups and drops other scopes', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const requests: Array<Record<string, unknown>> = []
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        return { streamed: false, message: { content: 'not structured synthesis' } }
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport }).generate({
+      question: 'E il mese scorso?',
+      evidence,
+      conversation: [
+        { role: 'user', content: 'Quanto ho speso questa settimana?', scopeFingerprint: JSON.stringify({ period: 'week', range: null, projectId: 'all', provider: 'all', model: null }) },
+        { role: 'assistant', content: 'Hai speso 12 USD.', scopeFingerprint: JSON.stringify({ period: 'week', range: null, projectId: 'all', provider: 'all', model: null }) },
+        { role: 'user', content: 'other scope secret should not cross', scopeFingerprint: 'other-scope' },
+      ],
+    })
+    const messages = requests[0]!.messages as Array<{ role: string; content: string }>
+    expect(messages.map(message => message.content)).toEqual(expect.arrayContaining(['Quanto ho speso questa settimana?', 'Hai speso 12 USD.']))
+    expect(messages.map(message => message.content)).not.toContain('other scope secret should not cross')
+  })
 })

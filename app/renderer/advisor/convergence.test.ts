@@ -66,6 +66,21 @@ describe('Advisor mainstream convergence contracts', () => {
     expect(block).toMatchObject({ kind: 'line-chart', series: [{ points: [{ value: 3 }] }] })
   })
 
+  it('keeps missing Project cost unavailable instead of rendering a synthetic zero', () => {
+    const fixture = createAdvisorConformanceFixture()
+    const base = buildSpendEvidence('Compare Projects', fixture.scope, fixture.overview)
+    const evidence: AdvisorEvidence = {
+      ...base,
+      spend: {
+        ...base.spend!,
+        projects: [{ name: 'Unknown cost project', calls: 2, costUSD: null as unknown as number }],
+      },
+    }
+    const plan = resolveAdvisorQuestion('Compare Projects', scope).plan
+    const block = buildAdvisorPresentationBlocks(evidence, plan, 'Compare Projects').find(item => item.kind === 'comparison-table')
+    expect(block).toMatchObject({ kind: 'comparison-table', table: { rows: [['Unknown cost project', 'Project', '2', 'Unavailable', 'unavailable']] } })
+  })
+
   it('keeps a model action request out of the Advisor read-tool contract', () => {
     const evidence = buildActionProposalEvidence('Launch five agents', scope, 'Launching agents requires authorization.')
     expect(evidence.intent).toBe('action-proposal')

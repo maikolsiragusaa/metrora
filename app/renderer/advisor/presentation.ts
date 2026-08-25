@@ -73,20 +73,28 @@ function barChart(evidence: AdvisorEvidence): AdvisorPresentationBlockV1 | null 
   }
 }
 
+function driverPricingState(cost: unknown): 'priced' | 'unavailable' {
+  return typeof cost === 'number' && Number.isFinite(cost) ? 'priced' : 'unavailable'
+}
+
 function comparisonTable(evidence: AdvisorEvidence, family: AdvisorTurnPlanV1['questionFamily']): AdvisorPresentationBlockV1 | null {
   const modelRows = evidence.modelEfficiency?.rows ?? []
-  const driverRows = family === 'projects' ? (evidence.spend?.projects ?? []).map(row => ({ model: row.name, provider: 'Project', calls: row.calls, costUSD: row.costUSD, costPerCallUSD: null, pricingState: 'priced' as const }))
-    : family === 'sessions' ? (evidence.spend?.sessionsByCost ?? []).map(row => ({ model: row.name, provider: 'Session', calls: row.calls, costUSD: row.costUSD, costPerCallUSD: null, pricingState: 'priced' as const }))
+  const driverRows = family === 'projects' ? (evidence.spend?.projects ?? []).map(row => ({ model: row.name, provider: 'Project', calls: row.calls, costUSD: row.costUSD, costPerCallUSD: null, pricingState: driverPricingState(row.costUSD) }))
+    : family === 'sessions' ? (evidence.spend?.sessionsByCost ?? []).map(row => ({ model: row.name, provider: 'Session', calls: row.calls, costUSD: row.costUSD, costPerCallUSD: null, pricingState: driverPricingState(row.costUSD) }))
       : []
   const rows = modelRows.length ? modelRows : driverRows
   if (!rows.length) return null
+  const driverCostLabel = (name: string): string => {
+    const cost = driverRows.find(item => item.model === name)?.costUSD
+    return typeof cost === 'number' && Number.isFinite(cost) ? formatAdvisorUsd(cost) : 'Unavailable'
+  }
   return {
     kind: 'comparison-table',
     title: modelRows.length ? 'Observed model comparison' : family === 'projects' ? 'Observed Project drivers' : 'Observed session highlights',
     summary: modelRows.length ? 'Canonical usage rows compared within the selected scope. Comparable work and quality are not established.' : 'Bounded canonical drivers in the selected scope; raw session content is excluded.',
     table: {
       columns: ['Name', 'Source', 'Calls', modelRows.length ? 'Cost/call' : 'Measured cost', 'Pricing'],
-      rows: rows.slice(0, 12).map(row => [row.model, row.provider, number(row.calls), row.costPerCallUSD === null ? modelRows.length ? 'Unavailable' : formatAdvisorUsd(driverRows.find(item => item.model === row.model)?.costUSD ?? 0) : formatAdvisorUsd(row.costPerCallUSD), row.pricingState]),
+      rows: rows.slice(0, 12).map(row => [row.model, row.provider, number(row.calls), row.costPerCallUSD === null ? modelRows.length ? 'Unavailable' : driverCostLabel(row.model) : formatAdvisorUsd(row.costPerCallUSD), row.pricingState]),
     },
     scopeLabel: scopeLabel(evidence.scope),
     periodLabel: periodLabel(evidence.scope),
