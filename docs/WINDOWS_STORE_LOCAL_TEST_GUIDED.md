@@ -4,6 +4,8 @@ This guide documents the physical-Windows test used for Store candidates. It is 
 
 It does not imitate Microsoft certification. The submission candidate remains unsigned and unchanged. A separate copy is signed with a temporary test certificate only so Windows can install it locally.
 
+The current published Microsoft Store baseline is **RC11** (`1.0.0-rc.11`, Desktop `1.0.0.11`, Store identity version `1.0.1.0`). Any future controlled update acceptance starts from that published baseline. This document does **not** select or authorize a future candidate or package version. The earlier RC10 → RC11 procedure is preserved later in this guide as historical acceptance procedure/evidence.
+
 ## Scope
 
 The local test verifies:
@@ -137,15 +139,30 @@ A passing local report is one submission input only. It does not authorize:
 - replacement of the existing portable or NSIS channels;
 - claims about Store-managed update behavior.
 
-The RC10-to-RC11 update/profile-preservation sequence is deliberately deferred
-to a separate Founder-run controlled test profile. No automation in this path
-installs over the real Store package or claims Microsoft Store-managed update
-certification. The machine-verifiable candidate ordering check is covered by
-the version authority and Store identity tests.
+The historical RC10-to-RC11 update/profile-preservation sequence is preserved below in its accepted release-time form. It is no longer the current starting point for a future Store update. Future controlled update acceptance starts from the published RC11 baseline and requires a separately reviewed future candidate.
 
 Submission, certification, publication and availability remain separate gates; this guide does not authorize a publication action or a Store-availability claim.
 
-## Deferred controlled update acceptance
+## Current controlled update starting point: RC11 → future candidate
+
+**Status: NO FUTURE CANDIDATE SELECTED OR AUTHORIZED.**
+
+When a future Store candidate is separately selected, its controlled update acceptance must start from a frozen RC11-equivalent baseline rather than RC10:
+
+1. Prepare a frozen RC11-equivalent baseline package using the published Store identity version `1.0.1.0` and a temporary local-test signing identity.
+2. Prepare the separately reviewed future candidate using the same temporary local-test signing identity. Its Store identity version must be strictly greater than `1.0.1.0`, but this guide does not choose or infer that version.
+3. Install the RC11-equivalent baseline on a dedicated test profile, create only bounded user-owned test state, and record sanitized pre-update status for endpoint identity, Workspace state, a user-owned file and companion-state coherence.
+4. Install the future candidate as the version increase and verify endpoint identity, Workspace state, the user-owned file, fail-safe/coherent companion state, launch, local collection and the current bounded Android companion flow.
+5. Exercise disconnect/offline → reconnect, then remove the candidate, baseline, temporary certificate, private key and all bounded test state.
+6. Preserve only a sanitized PASS/FAIL record containing package versions, source/digest references and boolean observations. Do not record usernames, paths, addresses, certificates, keys, tokens, SAS values or private data.
+
+Before any future Microsoft Store freeze, [#230](https://github.com/maikolsiragusaa/metrora/issues/230) must be resolved so retained provider Capacity facts cannot cross a confirmed provider credential/account identity change. [#203](https://github.com/maikolsiragusaa/metrora/issues/203), [#231](https://github.com/maikolsiragusaa/metrora/issues/231) and [#232](https://github.com/maikolsiragusaa/metrora/issues/232) remain progressive product/UX work rather than whole-issue freeze blockers. This distinction does not waive normal review for any slice that is actually included in a future candidate.
+
+Do not advance the machine-readable Store package-version authority merely to satisfy this documentation procedure. Candidate/version selection remains a separate reviewed release decision.
+
+## Historical RC10 → RC11 controlled update acceptance
+
+The procedure below is preserved as historical RC10 → RC11 acceptance procedure/evidence. Its status and wording describe the release-time state and are not rewritten into a claim that the current future-update baseline is still RC10.
 
 **Status: STOPPED/DEFERRED — Founder-run physical step, not automated.**
 
