@@ -168,7 +168,7 @@ export function buildAdvisorVerifiedClaimAtoms(evidence: AdvisorEvidence): Advis
         const name = stringValue(row.name)
         if (!name) return
         addDirectNumber(atoms, evidence, 'project-measured-cost-' + index, 'project_measured_cost', 'cost', row.costUSD, 'spend.projects.' + index + '.costUSD', 'USD', name)
-        addDirectNumber(atoms, evidence, 'project-observed-calls-' + index, 'observed_count', 'sessions', row.calls, 'spend.projects.' + index + '.calls', 'sessions', name)
+        addDirectNumber(atoms, evidence, 'project-observed-calls-' + index, 'observed_count', 'calls', row.calls, 'spend.projects.' + index + '.calls', 'calls', name)
       })
     }
     if (Array.isArray(spend.sessionsByCost)) {
@@ -235,7 +235,7 @@ export function buildAdvisorVerifiedClaimAtoms(evidence: AdvisorEvidence): Advis
 
 function pathMatches(kind: AdvisorClaimKindV1, metric: AdvisorClaimMetricV1 | null, path: string): boolean {
   if (kind === 'measured_total') return metric === 'cost' && /^(?:spend\.measuredCostUSD|quota\.measuredSpendUSD)$/u.test(path)
-  if (kind === 'observed_count') return (metric === 'calls' && /^(?:spend\.calls|quota\.measuredCalls|spend\.(?:models|projects)\.\d+\.calls|spend\.sessionsByCost\.\d+\.calls|modelEfficiency\.rows\.\d+\.calls)$/u.test(path)) || (metric === 'sessions' && /^spend\.(?:sessions|projects\.\d+\.calls|sessionsByCost\.\d+\.calls)$/u.test(path)) || (metric === 'tokens' && /^spend\.(?:inputTokens|outputTokens|cacheReadTokens|cacheWriteTokens)$/u.test(path))
+  if (kind === 'observed_count') return (metric === 'calls' && /^(?:spend\.calls|quota\.measuredCalls|spend\.(?:models|projects)\.\d+\.calls|spend\.sessionsByCost\.\d+\.calls|modelEfficiency\.rows\.\d+\.calls)$/u.test(path)) || (metric === 'sessions' && path === 'spend.sessions') || (metric === 'tokens' && /^spend\.(?:inputTokens|outputTokens|cacheReadTokens|cacheWriteTokens)$/u.test(path))
   if (kind === 'provider_quota_remaining') return (metric === 'remaining_percent' && /^quota\.providers\.\d+\.windows\.\d+\.remainingPercent$/u.test(path)) || (metric === 'credits' && /^quota\.providers\.\d+\.creditsUSD$/u.test(path))
   if (kind === 'provider_quota_reset') return metric === 'reset' && /^quota\.providers\.\d+\.windows\.\d+\.resetsAt$/u.test(path)
   if (kind === 'model_identity') return metric === null && /^(?:spend\.models\.\d+\.name|modelEfficiency\.rows\.\d+\.model)$/u.test(path)
@@ -314,17 +314,53 @@ function dateText(value: string, language: 'en' | 'it'): string {
   return Number.isFinite(parsed) ? new Date(parsed).toLocaleString(language === 'it' ? 'it-IT' : 'en-US') : value
 }
 
+type PresentationLabel = { en: string; it: string }
+
+const COVERAGE_LABELS: Record<string, PresentationLabel> = {
+  high: { en: 'high', it: 'elevata' },
+  partial: { en: 'partial', it: 'parziale' },
+  unavailable: { en: 'unavailable', it: 'non disponibile' },
+}
+
+const FRESHNESS_LABELS: Record<string, PresentationLabel> = {
+  fresh: { en: 'up to date', it: 'aggiornata' },
+  stale: { en: 'not up to date (last known)', it: 'non aggiornata (ultimo dato noto)' },
+  unavailable: { en: 'unavailable', it: 'non disponibile' },
+}
+
+const BENCH_STATUS_LABELS: Record<string, PresentationLabel> = {
+  completed: { en: 'completed', it: 'completato' },
+  unavailable: { en: 'unavailable', it: 'non disponibile' },
+  cancelled: { en: 'cancelled', it: 'annullato' },
+}
+
+const BENCH_COMPARABILITY_LABELS: Record<string, PresentationLabel> = {
+  compatible: { en: 'comparable', it: 'comparabile' },
+  incompatible: { en: 'not comparable', it: 'non comparabile' },
+}
+
+function presentationLabel(value: string, labels: Record<string, PresentationLabel>, language: 'en' | 'it'): string | null {
+  return labels[value]?.[language] ?? null
+}
+
+function providerDisplayName(value: string): string {
+  if (value === 'codex') return 'Codex'
+  if (value === 'claude') return 'Claude'
+  return value
+}
+
 export function renderAdvisorVerifiedClaimAtom(atomValue: AdvisorVerifiedClaimAtomV1, language: 'en' | 'it'): string {
   const value = atomValue.value
   const subject = atomValue.subject ?? ''
+  const provider = atomValue.subject === null ? 'provider' : providerDisplayName(atomValue.subject)
   if (atomValue.claimKind === 'measured_total' && atomValue.metric === 'cost' && typeof value === 'number') return language === 'it' ? 'Hai speso ' + currency(value, language) + ' nel periodo selezionato.' : 'Metrora measured ' + currency(value, language) + ' in the selected period.'
   if (atomValue.claimKind === 'observed_count' && typeof value === 'number') {
     const label = atomValue.metric === 'sessions' ? (language === 'it' ? 'sessioni' : 'sessions') : atomValue.metric === 'tokens' ? (language === 'it' ? 'token' : 'tokens') : (language === 'it' ? 'chiamate' : 'calls')
     return subject ? (language === 'it' ? 'Sono state registrate ' + integer(value, language) + ' ' + label + ' per ' + subject + '.' : 'Metrora recorded ' + integer(value, language) + ' ' + label + ' for ' + subject + '.') : (language === 'it' ? 'Metrora ha registrato ' + integer(value, language) + ' ' + label + ' nel periodo selezionato.' : 'Metrora recorded ' + integer(value, language) + ' ' + label + ' in the selected period.')
   }
-  if (atomValue.claimKind === 'provider_quota_remaining' && atomValue.metric === 'credits' && typeof value === 'number') return language === 'it' ? 'Il credito residuo riportato da ' + subject + ' è ' + currency(value, language) + '.' : subject + ' provider credits remaining are ' + currency(value, language) + '.'
-  if (atomValue.claimKind === 'provider_quota_remaining' && atomValue.metric === 'remaining_percent' && typeof value === 'number') return language === 'it' ? subject + ' riporta il ' + percentPoints(value, language) + ' di quota rimanente.' : subject + ' reports ' + percentPoints(value, language) + ' quota remaining.'
-  if (atomValue.claimKind === 'provider_quota_reset' && typeof value === 'string') return language === 'it' ? 'Il reset della quota di ' + subject + ' è riportato alle ' + dateText(value, language) + '.' : subject + ' quota reset is reported at ' + dateText(value, language) + '.'
+  if (atomValue.claimKind === 'provider_quota_remaining' && atomValue.metric === 'credits' && typeof value === 'number') return language === 'it' ? 'Il credito residuo riportato da ' + provider + ' è ' + currency(value, language) + '.' : provider + ' provider credits remaining are ' + currency(value, language) + '.'
+  if (atomValue.claimKind === 'provider_quota_remaining' && atomValue.metric === 'remaining_percent' && typeof value === 'number') return language === 'it' ? provider + ' riporta il ' + percentPoints(value, language) + ' di quota rimanente.' : provider + ' reports ' + percentPoints(value, language) + ' quota remaining.'
+  if (atomValue.claimKind === 'provider_quota_reset' && typeof value === 'string') return language === 'it' ? 'Il reset della quota di ' + provider + ' è riportato alle ' + dateText(value, language) + '.' : provider + ' quota reset is reported at ' + dateText(value, language) + '.'
   if (atomValue.claimKind === 'model_identity' && typeof value === 'string') return language === 'it' ? 'Il modello osservato è ' + value + '.' : 'The observed model is ' + value + '.'
   if (atomValue.claimKind === 'model_measured_cost' && typeof value === 'number') return atomValue.metric === 'cost_per_call'
     ? (language === 'it' ? 'Il costo osservato per chiamata di ' + subject + ' è ' + currency(value, language) + '.' : 'Observed cost per call for ' + subject + ' was ' + currency(value, language) + '.')
@@ -335,11 +371,23 @@ export function renderAdvisorVerifiedClaimAtom(atomValue: AdvisorVerifiedClaimAt
     const direction = value === 'up' ? (language === 'it' ? 'in aumento' : 'up') : value === 'down' ? (language === 'it' ? 'in diminuzione' : 'down') : (language === 'it' ? 'stabile' : 'flat')
     return language === 'it' ? 'L’andamento della spesa misurata è ' + direction + '.' : 'Measured spend trend was ' + direction + '.'
   }
-  if (atomValue.claimKind === 'coverage_state' && typeof value === 'string') return language === 'it' ? 'La copertura delle evidenze è ' + value + '.' : 'Evidence coverage is ' + value + '.'
-  if (atomValue.claimKind === 'freshness_state' && typeof value === 'string') return language === 'it' ? 'La freschezza della quota di ' + subject + ' è ' + value + '.' : subject + ' quota freshness is ' + value + '.'
+  if (atomValue.claimKind === 'coverage_state' && typeof value === 'string') {
+    const label = presentationLabel(value, COVERAGE_LABELS, language)
+    if (label) return language === 'it' ? 'La copertura delle evidenze è ' + label + '.' : 'Evidence coverage is ' + label + '.'
+  }
+  if (atomValue.claimKind === 'freshness_state' && typeof value === 'string') {
+    const label = presentationLabel(value, FRESHNESS_LABELS, language)
+    if (label) return language === 'it' ? 'La freschezza della quota di ' + provider + ' è ' + label + '.' : provider + ' quota freshness is ' + label + '.'
+  }
   if (atomValue.claimKind === 'bench_score' && typeof value === 'number') return language === 'it' ? 'Il punteggio dell’ultimo test controllato è ' + formatAdvisorPercent(value) + '.' : 'The latest controlled test score was ' + formatAdvisorPercent(value) + '.'
-  if (atomValue.claimKind === 'bench_status' && typeof value === 'string') return language === 'it' ? 'Lo stato dell’ultimo test controllato è ' + value + '.' : 'The latest controlled test status is ' + value + '.'
-  if (atomValue.claimKind === 'bench_comparability' && typeof value === 'string') return language === 'it' ? 'La comparabilità dei test controllati è ' + value + '.' : 'Controlled test comparability is ' + value + '.'
+  if (atomValue.claimKind === 'bench_status' && typeof value === 'string') {
+    const label = presentationLabel(value, BENCH_STATUS_LABELS, language)
+    if (label) return language === 'it' ? 'Lo stato dell’ultimo test controllato è ' + label + '.' : 'The latest controlled test status is ' + label + '.'
+  }
+  if (atomValue.claimKind === 'bench_comparability' && typeof value === 'string') {
+    const label = presentationLabel(value, BENCH_COMPARABILITY_LABELS, language)
+    if (label) return language === 'it' ? 'La comparabilità dei test controllati è ' + label + '.' : 'Controlled test comparability is ' + label + '.'
+  }
   return language === 'it' ? 'Questa evidenza Metrora è disponibile.' : 'This Metrora evidence is available.'
 }
 
