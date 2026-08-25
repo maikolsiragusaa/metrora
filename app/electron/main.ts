@@ -130,6 +130,11 @@ function registerHandlers(): void {
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
+  }, {
+    // Android receives only the same sanitized ProviderQuotaSnapshot array
+    // already used by Desktop. It never receives provider credentials or
+    // invokes provider endpoints itself.
+    getCapacity: () => getQuota(),
   })
   const advisorCredentials = new AdvisorCredentialStore({
     userDataPath: app.getPath('userData'),

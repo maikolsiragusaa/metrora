@@ -12,6 +12,7 @@ class ProtocolTest {
         assertEquals("/api/v1/peer/pair-request", MetroraProtocol.PAIR_REQUEST_PATH)
         assertEquals("/api/v1/peer/revoke", MetroraProtocol.REVOKE_PATH)
         assertEquals("/api/v1/capabilities", MetroraProtocol.CAPABILITIES_PATH)
+        assertEquals("/api/v1/capacity", MetroraProtocol.CAPACITY_PATH)
         assertEquals("/api/v1/foundation", MetroraProtocol.FOUNDATION_PATH)
         assertEquals("/api/v1/projects", MetroraProtocol.PROJECTS_PATH)
         assertEquals("/api/v1/projects", MetroraProtocol.projectCatalogPath())
@@ -22,6 +23,7 @@ class ProtocolTest {
         )
         assertEquals("metrora.companion.usage", MetroraProtocol.USAGE_KIND)
         assertEquals("metrora.companion.capabilities", MetroraProtocol.CAPABILITIES_KIND)
+        assertEquals("metrora.companion.capacity", MetroraProtocol.CAPACITY_KIND)
     }
 
     @Test

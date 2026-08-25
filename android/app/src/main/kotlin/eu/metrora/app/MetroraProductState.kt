@@ -6,6 +6,7 @@ import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.UsageSnapshot
 import eu.metrora.app.data.ActivitySnapshot
+import eu.metrora.app.data.CapacitySnapshot
 import java.time.LocalDate
 
 enum class MetroraDataMode {
@@ -25,6 +26,8 @@ data class MetroraUiState(
     val selectedProjectId: String = "all",
     val credentials: PairingCredentials? = null,
     val snapshot: UsageSnapshot? = null,
+    /** Provider-reported Capacity V1; owned by Desktop and independent of Usage scope. */
+    val capacity: CapacitySnapshot? = null,
     val foundation: MobileFoundationSnapshot? = null,
     val projectCatalog: ProjectCatalogSnapshot? = null,
     val activity: ActivitySnapshot? = null,
@@ -79,9 +82,9 @@ data class MetroraUiState(
 
     val showingCachedData: Boolean
         get() = dataMode == MetroraDataMode.REAL &&
-            (snapshot != null || activity != null) && status != MetroraConnectionState.CONNECTED
+            (snapshot != null || capacity != null || activity != null) && status != MetroraConnectionState.CONNECTED
 
     val hasLocalState: Boolean
         get() = dataMode == MetroraDataMode.REAL &&
-            (paired || snapshot != null || foundation != null || projectCatalog != null || activity != null || status == MetroraConnectionState.RECOVERY_REQUIRED)
+            (paired || snapshot != null || capacity != null || foundation != null || projectCatalog != null || activity != null || status == MetroraConnectionState.RECOVERY_REQUIRED)
 }

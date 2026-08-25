@@ -23,7 +23,7 @@ export type DesktopShareRuntime = {
 }
 
 export type DesktopShareRuntimeModule = {
-  createDesktopShareRuntime(port?: number): Promise<DesktopShareRuntime>
+  createDesktopShareRuntime(port?: number, options?: { getCapacity?: () => Promise<unknown> }): Promise<DesktopShareRuntime>
 }
 
 export type DesktopShareRuntimePathDeps = {
@@ -42,17 +42,21 @@ export function desktopShareRuntimeModulePath(deps: DesktopShareRuntimePathDeps)
 
 export async function loadDesktopShareRuntime(
   deps: DesktopShareRuntimePathDeps,
+  options: { getCapacity?: () => Promise<unknown> } = {},
   importModule: (url: string) => Promise<DesktopShareRuntimeModule> = async url => import(url) as Promise<DesktopShareRuntimeModule>,
 ): Promise<DesktopShareRuntime> {
   const module = await importModule(pathToFileURL(desktopShareRuntimeModulePath(deps)).href)
   if (typeof module.createDesktopShareRuntime !== 'function') {
     throw new Error('bundled desktop share runtime is invalid')
   }
-  return module.createDesktopShareRuntime(7777)
+  return module.createDesktopShareRuntime(7777, options)
 }
 
-export function initializeDesktopShareRuntime(deps: DesktopShareRuntimePathDeps): DesktopShareRuntime {
-  desktopShareRuntimePromise = loadDesktopShareRuntime(deps)
+export function initializeDesktopShareRuntime(
+  deps: DesktopShareRuntimePathDeps,
+  options: { getCapacity?: () => Promise<unknown> } = {},
+): DesktopShareRuntime {
+  desktopShareRuntimePromise = loadDesktopShareRuntime(deps, options)
   return {
     status: () => desktopShareRuntimePromise!.then(runtime => runtime.status()),
     start: always => desktopShareRuntimePromise!.then(runtime => runtime.start(always)),

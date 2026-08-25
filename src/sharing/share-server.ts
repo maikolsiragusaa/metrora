@@ -111,6 +111,8 @@ export type ShareServerOptions = {
   getCapabilities?: () => Promise<unknown>
   /** Optional bounded mobile foundation projection. */
   getFoundation?: (query: UsageQuery) => Promise<unknown>
+  /** Optional bounded provider Capacity projection from Desktop authority. */
+  getCapacity?: () => Promise<unknown>
   /** Optional non-period-scoped Project catalog projection. */
   getProjectCatalog?: () => Promise<unknown>
   /** Additive bounded Activity projections; Foundation remains unchanged. */
@@ -380,6 +382,19 @@ export class ShareServer {
         projectScopeId: url.searchParams.get('projectScopeId') ?? undefined,
       })
       json(200, await this.opts.getFoundation(query))
+      return
+    }
+
+    if (pathname === '/api/capacity' && req.method === 'GET') {
+      if (!this.authorizedPeer(req)) {
+        json(401, { error: 'unauthorized' })
+        return
+      }
+      if (!this.opts.getCapacity) {
+        json(404, { error: 'capacity capability unavailable' })
+        return
+      }
+      json(200, withDesktopId(await this.opts.getCapacity(), this.opts.identity.fingerprint))
       return
     }
 

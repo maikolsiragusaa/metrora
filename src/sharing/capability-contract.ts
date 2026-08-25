@@ -3,6 +3,7 @@ export const COMPANION_CAPABILITY_VERSION = 1 as const
 
 export const COMPANION_CAPABILITY_IDS = [
   'home.usage',
+  'home.capacity',
   'projects',
   'activity.sessions',
   'activity.pullRequests',
@@ -49,7 +50,10 @@ export type CompanionDomainEnvelopeV1<T> = {
 }
 
 /** The public capability matrix is factual: Workspace has no bounded mobile projection in V1. */
-export function buildCompanionCapabilitiesV1(generatedAt = new Date().toISOString()): CompanionCapabilitiesV1 {
+export function buildCompanionCapabilitiesV1(
+  generatedAt = new Date().toISOString(),
+  options: { capacityAvailable?: boolean } = {},
+): CompanionCapabilitiesV1 {
   const available = new Set<CompanionCapabilityId>([
     'home.usage',
     'projects',
@@ -59,6 +63,7 @@ export function buildCompanionCapabilitiesV1(generatedAt = new Date().toISOStrin
     'analyze.spend',
     'device.settings',
   ])
+  if (options.capacityAvailable) available.add('home.capacity')
   return {
     kind: COMPANION_CAPABILITY_KIND,
     version: COMPANION_CAPABILITY_VERSION,
@@ -72,8 +77,8 @@ export function buildCompanionCapabilitiesV1(generatedAt = new Date().toISOStrin
       // or live data for a capability it has not fetched.
       freshness: 'unknown',
       scopes: {
-        period: id !== 'projects' && id !== 'device.settings',
-        project: id !== 'device.settings',
+        period: id !== 'projects' && id !== 'device.settings' && id !== 'home.capacity',
+        project: id !== 'device.settings' && id !== 'home.capacity',
         workspace: false,
       },
       ...(id === 'workspace' ? { reason: 'no-authority' as const } : {}),

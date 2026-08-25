@@ -4,6 +4,7 @@ import eu.metrora.app.MetroraFailureCategory
 import eu.metrora.app.MetroraFailureReason
 import eu.metrora.app.MetroraException
 import eu.metrora.app.data.PairingCredentials
+import eu.metrora.app.data.CapacityFreshness
 import eu.metrora.app.security.ClientIdentity
 import eu.metrora.app.security.IdentityMaterial
 import java.net.SocketTimeoutException
@@ -130,6 +131,48 @@ class MetroraApiClientTest {
         assertTrue(discovery.isAvailable("projects"))
         assertEquals("/api/v1/capabilities", transport.lastPath)
         assertEquals("Bearer token-1", transport.lastHeaders["Authorization"])
+    }
+
+    @Test
+    fun capacity_fetch_is_authenticated_versioned_and_older_desktop_is_unavailable() = runTest {
+        transport.response = MetroraResponse(
+            200,
+            """
+                {
+                  "kind":"metrora.companion.capacity",
+                  "version":1,
+                  "desktopId":"$desktopFingerprint",
+                  "generatedAt":"2026-08-14T10:00:00Z",
+                  "scope":{"id":"desktop-provider-capacity"},
+                  "observationId":"${"11".repeat(32)}",
+                  "freshness":"fresh",
+                  "available":true,
+                  "providers":[{
+                    "provider":"claude",
+                    "displayName":"Claude",
+                    "availability":"available",
+                    "connection":"connected",
+                    "freshness":"fresh",
+                    "observedAt":"2026-08-14T10:00:00Z",
+                    "planLabel":"Pro",
+                    "windows":[{"id":"primary","label":"5 hour","usedPercent":0,"remainingPercent":100,"resetsAt":null}],
+                    "credits":{"balance":0,"currency":"USD"}
+                  }]
+                }
+            """.trimIndent(),
+            desktopFingerprint,
+        )
+
+        val capacity = api.fetchCapacity(credentials())
+
+        assertTrue(capacity.available)
+        assertEquals(CapacityFreshness.FRESH, capacity.freshness)
+        assertEquals(0.0, capacity.providers.single().windows.single().usedPercent, 0.0)
+        assertEquals("/api/v1/capacity", transport.lastPath)
+        assertEquals("Bearer token-1", transport.lastHeaders["Authorization"])
+
+        transport.response = MetroraResponse(404, "{\"error\":\"not found\"}", desktopFingerprint)
+        assertFalse(api.fetchCapacity(credentials()).available)
     }
 
     @Test

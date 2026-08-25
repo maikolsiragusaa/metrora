@@ -13,7 +13,8 @@ describe('Companion capability discovery', () => {
     expect(isCompanionCapabilitiesV1(discovery)).toBe(true)
     expect(negotiateCapabilityVersion(discovery, 'projects')).toBe(1)
     expect(negotiateCapabilityVersion(discovery, 'workspace')).toBeNull()
-    expect(discovery.capabilities).toHaveLength(8)
+    expect(discovery.capabilities).toHaveLength(9)
+    expect(negotiateCapabilityVersion(discovery, 'home.capacity')).toBeNull()
     expect(negotiateCapabilityVersion(discovery, 'activity.pullRequests')).toBe(1)
     expect(new Set(discovery.capabilities.map(capability => capability.freshness))).toEqual(new Set(['unknown']))
   })
@@ -23,6 +24,18 @@ describe('Companion capability discovery', () => {
 
     expect(negotiateCapabilityVersion(discovery, 'home.usage', [2])).toBeNull()
     expect(negotiateCapabilityVersion(discovery, 'home.usage', [1, 2])).toBe(1)
+  })
+
+  it('advertises Capacity only when the Desktop authority is wired', () => {
+    const discovery = buildCompanionCapabilitiesV1('2026-08-14T10:00:00.000Z', { capacityAvailable: true })
+    const capacity = discovery.capabilities.find(item => item.id === 'home.capacity')
+
+    expect(capacity).toMatchObject({
+      availability: 'available',
+      versions: [1],
+      scopes: { period: false, project: false, workspace: false },
+    })
+    expect(negotiateCapabilityVersion(discovery, 'home.capacity')).toBe(1)
   })
 
   it('rejects foreign or malformed discovery envelopes without a false positive', () => {

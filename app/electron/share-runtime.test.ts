@@ -34,9 +34,26 @@ describe('desktop share runtime loader', () => {
     }))
     const runtime = await loadDesktopShareRuntime(
       { isPackaged: false, appPath: 'C:/metrora/app', resourcesPath: 'ignored' },
+      {},
       async () => ({ createDesktopShareRuntime }),
     )
-    expect(createDesktopShareRuntime).toHaveBeenCalledWith(7777)
+    expect(createDesktopShareRuntime).toHaveBeenCalledWith(7777, {})
     expect(await runtime.status()).toEqual(status)
+  })
+
+  it('passes the injected Capacity authority through the loader', async () => {
+    const getCapacity = async () => []
+    const createDesktopShareRuntime = vi.fn(async (_port?: number, _options?: { getCapacity?: () => Promise<unknown> }) => ({
+      status: async () => status,
+      start: async () => status,
+      stop: async () => status,
+      approve: async () => status,
+    }))
+    await loadDesktopShareRuntime(
+      { isPackaged: false, appPath: 'C:/metrora/app', resourcesPath: 'ignored' },
+      { getCapacity },
+      async () => ({ createDesktopShareRuntime }),
+    )
+    expect(createDesktopShareRuntime).toHaveBeenCalledWith(7777, { getCapacity })
   })
 })

@@ -32,6 +32,7 @@ Remote revoke is confirmed by Desktop before local credentials and cache are cle
 Android performs authenticated capability discovery before exposing domain surfaces. The current Desktop advertises:
 
 - Home / Usage;
+- Home / Capacity & limits, when the paired Desktop exposes the canonical provider projection;
 - Projects;
 - Activity / Sessions (additive paged Activity contract);
 - Activity / Pull Requests (same Activity destination);
@@ -48,13 +49,13 @@ The active Android IA is:
 
 `Home · Activity · Analyze · Workspace · Settings`
 
-Home preserves the accepted period selector, trend granularity, freshness, connection/cache state and factual accounting. Activity is a native Sessions/Pull Requests destination with progressive disclosure, opaque cursor continuation, safe filters and metadata-only detail. Analyze contains Models and Spend/trend. Workspace is shown as explicitly unavailable from capability discovery. Settings preserves pairing, security, cache, revoke, forget and device behavior.
+Home preserves the accepted period selector, trend granularity, freshness, connection/cache state and factual accounting. It adds one compact Capacity & limits module using provider-canonical display names and factual windows/credits; tapping it opens an optional native detail dialog with reset, observation and bounded source metadata. Capacity is not a sixth destination and is not relabeled as Usage or Project scope. Activity is a native Sessions/Pull Requests destination with progressive disclosure, opaque cursor continuation, safe filters and metadata-only detail. Analyze contains Models and Spend/trend. Workspace is shown as explicitly unavailable from capability discovery. Settings preserves pairing, security, cache, revoke, forget and device behavior.
 
 ## Local storage and offline behavior
 
-Pairing credentials, the canonical `CompanionUsageV1` snapshot, the bounded Foundation cache and the Activity page/detail cache are encrypted with AES-GCM using a key held in Android Keystore. Activity cache keys bind Desktop identity, canonical Project scope, period/effective bounds, filters, ordering and cursor/page identity. The caches are additive and independently parse-validated. A corrupted Activity or Foundation cache is discarded without discarding valid pairing credentials or the usage snapshot. A cache from a different Desktop identity or incompatible query is ignored. Android backup and device-transfer export remain disabled for application state.
+Pairing credentials, the canonical `CompanionUsageV1` snapshot, the bounded Foundation cache, the Capacity projection and the Activity page/detail cache are encrypted with AES-GCM using a key held in Android Keystore. Capacity cache identity binds the paired Desktop fingerprint, contract version, fixed `desktop-provider-capacity` scope and safe observation identity. Activity cache keys bind Desktop identity, canonical Project scope, period/effective bounds, filters, ordering and cursor/page identity. The caches are additive and independently parse-validated. A corrupted Activity, Foundation or Capacity cache is discarded without discarding valid pairing credentials or the usage snapshot. A cache from a different Desktop identity or incompatible query/contract is ignored. Android backup and device-transfer export remain disabled for application state.
 
-When Desktop is unreachable, Android keeps showing the last valid encrypted usage snapshot and marks it cached. It also retains already fetched Activity pages and bounded detail, never synthesizes missing pages and never presents cached rows under a different scope or filter query. A Foundation fallback is used only when the paired Desktop explicitly lacks the Activity V1 capability; an advertised-but-failing Activity V1 request remains an explicit bounded Activity error/degraded state with retry, rather than masquerading as a legacy Desktop. Android does not synthesize totals from presentation metadata, and historical Project/session detail is never represented as factual zero.
+When Desktop is unreachable, Android keeps showing the last valid encrypted usage snapshot and marks it cached. A valid Capacity observation can remain visible as stale with its original provider observation time; it is never presented as current after a failed refresh. It also retains already fetched Activity pages and bounded detail, never synthesizes missing pages and never presents cached rows under a different scope or filter query. A Foundation fallback is used only when the paired Desktop explicitly lacks the Activity V1 capability; an advertised-but-failing Activity V1 request remains an explicit bounded Activity error/degraded state with retry, rather than masquerading as a legacy Desktop. Android does not synthesize totals from presentation metadata, and historical Project/session detail is never represented as factual zero.
 
 ## Validation and accepted scope
 

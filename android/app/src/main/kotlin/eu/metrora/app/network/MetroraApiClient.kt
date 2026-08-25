@@ -11,6 +11,7 @@ import eu.metrora.app.data.ActivityQuery
 import eu.metrora.app.data.ActivitySessionDetail
 import eu.metrora.app.data.ActivitySessionsPage
 import eu.metrora.app.data.CapabilityDiscovery
+import eu.metrora.app.data.CapacitySnapshot
 import eu.metrora.app.data.MobileFoundationSnapshot
 import eu.metrora.app.data.ProjectCatalogSnapshot
 import eu.metrora.app.data.UsageSnapshot
@@ -61,6 +62,10 @@ interface MetroraApi {
 
     suspend fun fetchCapabilities(credentials: PairingCredentials): CapabilityDiscovery =
         CapabilityDiscovery.unavailable()
+
+    /** Additive Capacity V1 projection; older Desktops remain explicitly unavailable. */
+    suspend fun fetchCapacity(credentials: PairingCredentials): CapacitySnapshot =
+        CapacitySnapshot.unavailable(credentials.serverFingerprint)
 
     suspend fun fetchFoundation(
         credentials: PairingCredentials,
@@ -378,6 +383,37 @@ class MetroraApiClient(
                     MetroraFailureCategory.MALFORMED_RESPONSE,
                     MetroraFailureReason.MALFORMED_RESPONSE,
                     "The endpoint returned invalid capability discovery",
+                    error,
+                )
+            }
+        }
+
+    override suspend fun fetchCapacity(credentials: PairingCredentials): CapacitySnapshot =
+        mapped(MetroraOperation.REFRESH) {
+            requireCurrentIdentity(credentials, MetroraOperation.REFRESH)
+            val response = transport.request(
+                host = credentials.host,
+                port = credentials.port,
+                method = "GET",
+                path = MetroraProtocol.CAPACITY_PATH,
+                expectedFingerprint = credentials.serverFingerprint,
+                headers = mapOf("Authorization" to "Bearer ${credentials.token}"),
+                readTimeoutMs = MetroraTransport.USAGE_READ_TIMEOUT_MS,
+            )
+            if (response.status == 404 || response.status == 405) {
+                return@mapped CapacitySnapshot.unavailable(credentials.serverFingerprint)
+            }
+            ensureSuccess(MetroraOperation.REFRESH, response)
+            try {
+                CompanionCapacityV1Parser.parse(response.body, credentials, System.currentTimeMillis())
+            } catch (error: MetroraException) {
+                throw error
+            } catch (error: Exception) {
+                throw failure(
+                    MetroraOperation.REFRESH,
+                    MetroraFailureCategory.MALFORMED_RESPONSE,
+                    MetroraFailureReason.MALFORMED_RESPONSE,
+                    "The endpoint returned an invalid Capacity projection",
                     error,
                 )
             }

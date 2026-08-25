@@ -16,6 +16,15 @@ import eu.metrora.app.data.ActivitySession
 import eu.metrora.app.data.ActivitySnapshot
 import eu.metrora.app.data.ActivityPageMeta
 import eu.metrora.app.data.ActivitySessionsPage
+import eu.metrora.app.data.CapacitySnapshot
+import eu.metrora.app.data.CapacityAvailability
+import eu.metrora.app.data.CapacityConnection
+import eu.metrora.app.data.CapacityFreshness
+import eu.metrora.app.data.CapacityProvider
+import eu.metrora.app.data.CapacityProviderSnapshot
+import eu.metrora.app.data.CapacityWindow
+import eu.metrora.app.data.CAPACITY_CONTRACT_VERSION
+import eu.metrora.app.data.CAPACITY_SCOPE_KEY
 import eu.metrora.app.network.DiscoveredDesktop
 import eu.metrora.app.network.MetroraApi
 import eu.metrora.app.security.MetroraStore
@@ -36,6 +45,45 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MetroraCoordinatorTest {
+    @Test
+    fun capacity_is_desktop_wide_and_fetched_only_when_advertised() = runTest {
+        val store = FakeStore(credentials = testCredentials(), snapshot = testSnapshot(), foundation = testFoundation("all"))
+        val api = FakeApi().apply {
+            capabilitiesResult = capacityCapabilities()
+            capacityResult = testCapacity()
+        }
+        val coordinator = coordinator(store, api)
+        advanceUntilIdle()
+
+        coordinator.refresh(period = "today", projectScopeId = "all")
+        advanceUntilIdle()
+
+        assertEquals(1, api.capacityCount.get())
+        assertEquals(CapacityFreshness.FRESH, coordinator.state.value.capacity?.freshness)
+
+        coordinator.refresh(period = "week", projectScopeId = "all")
+        advanceUntilIdle()
+
+        assertEquals(2, api.capacityCount.get())
+        assertEquals(CapacityFreshness.FRESH, coordinator.state.value.capacity?.freshness)
+        coordinator.close()
+    }
+
+    @Test
+    fun restored_capacity_is_marked_stale_before_it_can_be_shown_as_current() = runTest {
+        val store = FakeStore(
+            credentials = testCredentials(),
+            snapshot = testSnapshot(),
+            capacity = testCapacity(),
+        )
+        val coordinator = coordinator(store, FakeApi())
+        advanceUntilIdle()
+
+        assertEquals(CapacityFreshness.STALE, coordinator.state.value.capacity?.freshness)
+        assertEquals("2026-08-14T10:00:00Z", coordinator.state.value.capacity?.providers?.single()?.observedAt)
+        coordinator.close()
+    }
+
     @Test
     fun advertised_activity_failure_does_not_masquerade_as_foundation_compatibility() = runTest {
         val store = FakeStore(testCredentials(), testSnapshot(), testFoundation("all"))
@@ -556,6 +604,45 @@ private fun activityCapabilities(): CapabilityDiscovery = CapabilityDiscovery(
     ),
 )
 
+private fun capacityCapabilities(): CapabilityDiscovery = CapabilityDiscovery(
+    generatedAt = "2026-08-15T10:00:00.000Z",
+    capabilities = listOf(
+        CapabilityDescriptor(
+            id = "home.capacity",
+            versions = listOf(1),
+            availability = CapabilityAvailability.AVAILABLE,
+            freshness = CapabilityFreshness.LIVE,
+            periodScoped = false,
+            projectScoped = false,
+            workspaceScoped = false,
+        ),
+    ),
+)
+
+private fun testCapacity(): CapacitySnapshot = CapacitySnapshot(
+    desktopId = testCredentials().serverFingerprint,
+    contractVersion = CAPACITY_CONTRACT_VERSION,
+    scopeKey = CAPACITY_SCOPE_KEY,
+    generatedAtEpochMs = 1_700_000_000_000L,
+    retrievedAtEpochMs = 1_700_000_001_000L,
+    observationId = "11".repeat(32),
+    freshness = CapacityFreshness.FRESH,
+    available = true,
+    providers = listOf(
+        CapacityProviderSnapshot(
+            provider = CapacityProvider.CLAUDE,
+            availability = CapacityAvailability.AVAILABLE,
+            connection = CapacityConnection.CONNECTED,
+            freshness = CapacityFreshness.FRESH,
+            observedAt = "2026-08-14T10:00:00Z",
+            planLabel = "Pro",
+            windows = listOf(CapacityWindow("primary", "5 hour", 25.0, 75.0, null)),
+            credits = null,
+            source = null,
+        ),
+    ),
+)
+
 private fun testActivitySessionsPage(projectScopeId: String): ActivitySessionsPage {
     val snapshot = testActivity(projectScopeId)
     return ActivitySessionsPage(
@@ -639,6 +726,7 @@ private class FakeStore(
     var foundation: MobileFoundationSnapshot? = null,
     var projectCatalog: ProjectCatalogSnapshot? = null,
     var activity: ActivitySnapshot? = null,
+    var capacity: CapacitySnapshot? = null,
 ) : MetroraStore {
     var credentialsRead: StorageRead<PairingCredentials>? = null
     var snapshotRead: StorageRead<UsageSnapshot>? = null
@@ -684,6 +772,17 @@ private class FakeStore(
         this.foundation = foundation
     }
 
+    override suspend fun loadCapacity(): StorageRead<CapacitySnapshot> =
+        capacity?.let { StorageRead.Present(it) } ?: StorageRead.Missing
+
+    override suspend fun saveCapacity(snapshot: CapacitySnapshot) {
+        capacity = snapshot
+    }
+
+    override suspend fun clearCapacity() {
+        capacity = null
+    }
+
     override suspend fun clearCredentials() {
         credentials = null
     }
@@ -722,6 +821,7 @@ private class FakeStore(
         credentials = null
         snapshot = null
         foundation = null
+        capacity = null
         projectCatalog = null
         activity = null
     }
@@ -738,12 +838,15 @@ private class FakeApi : MetroraApi {
     var foundationFailure: MetroraException? = null
     var capabilitiesResult: CapabilityDiscovery? = null
     var capabilitiesFailure: MetroraException? = null
+    var capacityResult: CapacitySnapshot? = null
+    var capacityFailure: MetroraException? = null
     var activityFailure: MetroraException? = null
     var activitySessionsResult: eu.metrora.app.data.ActivitySessionsPage? = null
     var revokeFailure: MetroraException? = null
     var identityMatches = true
     val pairCount = AtomicInteger()
     val fetchCount = AtomicInteger()
+    val capacityCount = AtomicInteger()
     var lastPeriod: String? = null
     var lastTrendGranularity: String? = null
     var lastProjectScopeId: String? = null
@@ -805,6 +908,12 @@ private class FakeApi : MetroraApi {
     override suspend fun fetchCapabilities(credentials: PairingCredentials): CapabilityDiscovery {
         capabilitiesFailure?.let { throw it }
         return capabilitiesResult ?: CapabilityDiscovery.unavailable()
+    }
+
+    override suspend fun fetchCapacity(credentials: PairingCredentials): CapacitySnapshot {
+        capacityCount.incrementAndGet()
+        capacityFailure?.let { throw it }
+        return capacityResult ?: CapacitySnapshot.unavailable(credentials.serverFingerprint)
     }
 
     override suspend fun fetchActivitySessions(

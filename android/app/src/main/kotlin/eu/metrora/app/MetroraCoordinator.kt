@@ -20,6 +20,7 @@ import eu.metrora.app.data.ActivitySessionDetail
 import eu.metrora.app.data.ActivitySnapshot
 import eu.metrora.app.data.ActivityTab
 import eu.metrora.app.data.ActivitySessionsPage
+import eu.metrora.app.data.CapacitySnapshot
 import eu.metrora.app.network.MetroraApi
 import eu.metrora.app.network.MetroraApiClient
 import eu.metrora.app.network.DiscoveredDesktop
@@ -322,6 +323,9 @@ class MetroraCoordinator internal constructor(
                 selectedPeriod = period,
                 selectedProjectId = requestedScopeId,
                 snapshot = if (domainChanged) null else it.snapshot,
+                // Capacity is Desktop-wide and deliberately independent of
+                // Usage period and Project scope.
+                capacity = it.capacity,
                 foundation = if (domainChanged) null else it.foundation,
                 activity = if (domainChanged) null else it.activity,
                 activityFailure = if (domainChanged) null else it.activityFailure,
@@ -330,6 +334,7 @@ class MetroraCoordinator internal constructor(
             )
         }
         val foundationFallback = current.foundation
+        val capacityFallback = current.capacity
         val activityFallback = current.activity
         operationJob = scope.launch {
             try {
@@ -341,6 +346,7 @@ class MetroraCoordinator internal constructor(
                     trendGranularity = trendGranularity,
                     projectScopeId = requestedScopeId,
                     foundationFallback = foundationFallback,
+                    capacityFallback = capacityFallback,
                     activityFallback = activityFallback,
                     activityGeneration = activityGeneration,
                     generation = generation,
@@ -755,11 +761,13 @@ class MetroraCoordinator internal constructor(
             val credentials = store.loadCredentials()
             val snapshot = store.loadSnapshot()
             val foundation = store.loadFoundation()
+            val capacity = store.loadCapacity()
             val projectCatalog = store.loadProjectCatalog()
             val activity = store.loadActivity()
             if (credentials is StorageRead.Missing &&
                 snapshot is StorageRead.Missing &&
                 foundation is StorageRead.Missing &&
+                capacity is StorageRead.Missing &&
                 projectCatalog is StorageRead.Missing &&
                 activity is StorageRead.Missing
             ) {
@@ -770,12 +778,12 @@ class MetroraCoordinator internal constructor(
                         period = demoLifecycleState.selectedPeriod,
                         projectScopeId = demoLifecycleState.selectedProjectId,
                     )
-                    else -> restoreWithoutCredentials(snapshot, foundation, projectCatalog, activity)
+                    else -> restoreWithoutCredentials(snapshot, foundation, capacity, projectCatalog, activity)
                 }
                 return
             }
             when (credentials) {
-                StorageRead.Missing -> restoreWithoutCredentials(snapshot, foundation, projectCatalog, activity)
+                StorageRead.Missing -> restoreWithoutCredentials(snapshot, foundation, capacity, projectCatalog, activity)
                 is StorageRead.Corrupted -> {
                     mutableState.value = recoveryState(
                         credentials = null,
@@ -787,7 +795,7 @@ class MetroraCoordinator internal constructor(
                         detail = "Saved pairing credentials need recovery",
                     )
                 }
-                is StorageRead.Present -> restorePaired(credentials.value, snapshot, foundation, projectCatalog, activity)
+                is StorageRead.Present -> restorePaired(credentials.value, snapshot, foundation, capacity, projectCatalog, activity)
             }
         } catch (error: CancellationException) {
             throw error
@@ -804,9 +812,27 @@ class MetroraCoordinator internal constructor(
     private fun restoreWithoutCredentials(
         snapshot: StorageRead<UsageSnapshot>,
         foundation: StorageRead<MobileFoundationSnapshot>,
+        capacity: StorageRead<CapacitySnapshot>,
         projectCatalog: StorageRead<ProjectCatalogSnapshot>,
         activity: StorageRead<ActivitySnapshot>,
     ) {
+        if (capacity is StorageRead.Present || capacity is StorageRead.Corrupted) {
+            mutableState.value = recoveryState(
+                credentials = null,
+                snapshot = null,
+                reason = if (capacity is StorageRead.Present) {
+                    MetroraFailureReason.INCONSISTENT_LOCAL_STATE
+                } else {
+                    MetroraFailureReason.STORAGE_CORRUPTED
+                },
+                detail = if (capacity is StorageRead.Present) {
+                    "A saved Capacity projection exists without a saved pairing"
+                } else {
+                    "Saved Capacity data needs recovery"
+                },
+            )
+            return
+        }
         if (activity is StorageRead.Present) {
             mutableState.value = recoveryState(
                 credentials = null,
@@ -865,6 +891,7 @@ class MetroraCoordinator internal constructor(
         credentials: PairingCredentials,
         snapshot: StorageRead<UsageSnapshot>,
         foundation: StorageRead<MobileFoundationSnapshot>,
+        capacity: StorageRead<CapacitySnapshot>,
         projectCatalog: StorageRead<ProjectCatalogSnapshot>,
         activity: StorageRead<ActivitySnapshot>,
     ) {
@@ -895,6 +922,19 @@ class MetroraCoordinator internal constructor(
                 null
             }
         }
+        val usableCapacity = when (capacity) {
+            StorageRead.Missing -> null
+            is StorageRead.Present -> if (capacity.value.isCompatible(credentials.serverFingerprint) && capacity.value.available) {
+                capacity.value.asLocallyCached()
+            } else {
+                runCatching { store.clearCapacity() }
+                null
+            }
+            is StorageRead.Corrupted -> {
+                runCatching { store.clearCapacity() }
+                null
+            }
+        }
         val usableProjectCatalog = when (projectCatalog) {
             StorageRead.Missing -> null
             is StorageRead.Present -> projectCatalog.value.takeIf { it.desktopId == credentials.serverFingerprint }
@@ -918,17 +958,17 @@ class MetroraCoordinator internal constructor(
             }
         }
         when (snapshot) {
-            StorageRead.Missing -> mutableState.value = restoredState(credentials, null, usableFoundation, usableProjectCatalog, usableActivity)
+            StorageRead.Missing -> mutableState.value = restoredState(credentials, null, usableCapacity, usableFoundation, usableProjectCatalog, usableActivity)
             is StorageRead.Present -> {
                 val usable = snapshot.value.takeIf { it.desktopId == credentials.serverFingerprint }
-                mutableState.value = restoredState(credentials, usable, usableFoundation, usableProjectCatalog, usableActivity)
+                mutableState.value = restoredState(credentials, usable, usableCapacity, usableFoundation, usableProjectCatalog, usableActivity)
             }
             is StorageRead.Corrupted -> {
                 val cleanupFailure = runCatching { store.clearSnapshot() }.exceptionOrNull()
                 mutableState.value = if (cleanupFailure == null) {
-                    restoredState(credentials, null, usableFoundation, usableProjectCatalog, usableActivity).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
+                    restoredState(credentials, null, usableCapacity, usableFoundation, usableProjectCatalog, usableActivity).copy(notice = MetroraNotice.SNAPSHOT_RECOVERED)
                 } else {
-                    restoredState(credentials, null, usableFoundation, usableProjectCatalog, usableActivity).copy(
+                    restoredState(credentials, null, usableCapacity, usableFoundation, usableProjectCatalog, usableActivity).copy(
                         status = MetroraConnectionState.ERROR,
                         failure = localFailure(
                             MetroraFailureReason.STORAGE_CORRUPTED,
@@ -943,6 +983,7 @@ class MetroraCoordinator internal constructor(
     private fun restoredState(
         credentials: PairingCredentials,
         snapshot: UsageSnapshot?,
+        capacity: CapacitySnapshot? = null,
         foundation: MobileFoundationSnapshot? = null,
         projectCatalog: ProjectCatalogSnapshot? = null,
         activity: ActivitySnapshot? = null,
@@ -955,6 +996,7 @@ class MetroraCoordinator internal constructor(
                 ?: "month",
             credentials = credentials,
             snapshot = snapshot,
+            capacity = capacity,
             foundation = foundation,
             projectCatalog = projectCatalog,
             activity = activity,
@@ -984,6 +1026,7 @@ class MetroraCoordinator internal constructor(
         trendGranularity: String? = null,
         projectScopeId: String? = mutableState.value.selectedProjectId,
         foundationFallback: MobileFoundationSnapshot? = mutableState.value.foundation,
+        capacityFallback: CapacitySnapshot? = mutableState.value.capacity,
         activityFallback: ActivitySnapshot? = mutableState.value.activity,
         activityGeneration: Long = activityRequestGeneration,
         generation: Long = requestGeneration,
@@ -1029,6 +1072,12 @@ class MetroraCoordinator internal constructor(
             val current = mutableState.value
             val capabilities = optionalCapabilities(credentials, current.capabilities)
             ensureLatest(generation)
+            val capacity = resolveCapacity(
+                credentials = credentials,
+                capabilities = capabilities,
+                fallback = capacityFallback ?: current.capacity,
+            )
+            ensureLatest(generation)
             val foundation = resolveFoundation(
                 credentials = credentials,
                 period = period,
@@ -1052,6 +1101,7 @@ class MetroraCoordinator internal constructor(
             // the catalog was already persisted independently above so a
             // period-domain failure cannot erase Project identity.
             store.saveSnapshotFoundationAndCatalog(snapshot, foundation, catalog)
+            if (capacity != null) store.saveCapacity(capacity)
             if (activityRequestGeneration == activityGeneration && activityResolution.snapshot != null) {
                 store.saveActivity(activityResolution.snapshot)
             }
@@ -1062,6 +1112,7 @@ class MetroraCoordinator internal constructor(
                     status = MetroraConnectionState.CONNECTED,
                     selectedPeriod = period,
                     snapshot = snapshot,
+                    capacity = capacity,
                     foundation = foundation,
                     // An Activity-only filter/query may have started while the
                     // broader refresh was in flight. Do not let the older
@@ -1100,6 +1151,30 @@ class MetroraCoordinator internal constructor(
         throw error
     } catch (_: Exception) {
         fallback
+    }
+
+    private suspend fun resolveCapacity(
+        credentials: PairingCredentials,
+        capabilities: CapabilityDiscovery,
+        fallback: CapacitySnapshot?,
+    ): CapacitySnapshot? {
+        val compatibleFallback = fallback?.takeIf {
+            it.available && it.isCompatible(credentials.serverFingerprint)
+        }
+        if (!capabilities.isAvailable("home.capacity")) {
+            return compatibleFallback?.asLocallyCached()
+        }
+        return try {
+            val candidate = api.fetchCapacity(credentials)
+            when {
+                candidate.available && candidate.isCompatible(credentials.serverFingerprint) -> candidate
+                else -> compatibleFallback?.asLocallyCached()
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            compatibleFallback?.asLocallyCached()
+        }
     }
 
     private suspend fun resolveProjectCatalog(

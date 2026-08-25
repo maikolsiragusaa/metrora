@@ -15,6 +15,7 @@ The stable first-party route prefix is `/api/v1`. The inherited unversioned path
 | `POST /api/v1/peer/revoke` | `POST /api/peer/revoke` | Revoke the authenticated certificate/token peer |
 | `GET /api/v1/usage` | `GET /api/usage` | Read the bounded `CompanionUsageV1` Home contract |
 | `GET /api/v1/capabilities` | — | Discover domain availability and supported contract versions |
+| `GET /api/v1/capacity` | — | Read the Desktop-owned provider Capacity/Limits V1 projection |
 | `GET /api/v1/foundation` | — | Read the bounded Mobile Product Foundation V1 projection |
 | `GET /api/v1/activity/sessions` | — | Read a bounded, cursor-paged Activity Sessions page |
 | `GET /api/v1/activity/sessions/:id` | — | Read bounded metadata/accounting for one Activity session |
@@ -67,7 +68,42 @@ The response remains `CompanionUsageV1`, including integer micro-USD totals, cal
 }
 ```
 
-The bounded capability IDs are `home.usage`, `projects`, `activity.sessions`, `activity.pullRequests`, `analyze.models`, `analyze.spend`, `workspace` and `device.settings`. Clients negotiate an intersection of advertised and supported versions. Unknown or unsupported capability versions fail safe to unavailable; they do not produce guessed UI or data. The standalone Activity contracts are additive alongside Foundation V1, so older clients can continue consuming the Foundation envelope.
+The bounded capability IDs are `home.usage`, `home.capacity`, `projects`, `activity.sessions`, `activity.pullRequests`, `analyze.models`, `analyze.spend`, `workspace` and `device.settings`. `home.capacity` is advertised only by the Electron runtime that has the canonical Desktop `ProviderQuotaSnapshot` service; the standalone CLI share path reports it unavailable. Capacity has no period or Project scope. Clients negotiate an intersection of advertised and supported versions. Unknown or unsupported capability versions fail safe to unavailable; they do not produce guessed UI or data. The standalone Activity contracts are additive alongside Foundation V1, so older clients can continue consuming the Foundation envelope.
+
+## Provider Capacity/Limits V1
+
+`GET /api/v1/capacity` returns the additive `metrora.companion.capacity` version 1 envelope. It is a Desktop-owned projection of the existing canonical `ProviderQuotaSnapshot` authority; Android does not query provider endpoints, read provider credentials, perform OAuth, calculate allowance, or maintain an independent quota history.
+
+```json
+{
+  "kind": "metrora.companion.capacity",
+  "version": 1,
+  "desktopId": "<Desktop certificate fingerprint>",
+  "generatedAt": "2026-08-14T10:00:00.000Z",
+  "scope": {"id": "desktop-provider-capacity"},
+  "observationId": "<stable hash of the safe observation set>",
+  "freshness": "fresh",
+  "available": true,
+  "providers": [{
+    "provider": "claude",
+    "displayName": "Claude",
+    "availability": "available",
+    "connection": "connected",
+    "freshness": "fresh",
+    "observedAt": "2026-08-14T10:00:00.000Z",
+    "planLabel": "Pro",
+    "windows": [{"id": "primary", "label": "5 hour", "usedPercent": 25, "remainingPercent": 75, "resetsAt": "2026-08-14T15:00:00.000Z"}],
+    "credits": null,
+    "source": {"kind": "provider-api", "stability": "provider-owned"}
+  }]
+}
+```
+
+The provider set and display names are closed and canonical: Claude, Codex, GitHub Copilot, Kimi Code and Antigravity. `usedPercent`, `remainingPercent`, reset timestamps and USD credits are provider-reported facts. An explicit zero remains zero. Unknown, unmetered, disconnected or access-denied observations remain unavailable and are never converted into zero or a guessed plan allowance. A stale observation may retain its factual windows/credits and original `observedAt`, but is marked unavailable/stale so the UI cannot present it as current.
+
+The last-mile projection allowlists provider, canonical display name, connection/freshness, observation time, bounded plan label, window identity/label/percentages/reset, USD credits and bounded source provenance. Credentials, account IDs/emails, tokens, OAuth material, unrestricted paths, raw provider response fields and secret-bearing errors are excluded. `desktopId` is the paired Desktop identity, while `observationId` is an opaque integrity/cache key and not an account identifier.
+
+Android stores Capacity separately from Usage/Foundation. A cached projection is usable only when its Desktop identity, contract version, `desktop-provider-capacity` scope and observation shape remain compatible. It is encrypted with the existing Android Keystore/AES-GCM cache and is cleared with revoke/forget. Changing Usage period or Project scope does not relabel, clear or refetch Capacity as a scoped Usage result.
 
 ## Mobile Foundation V1
 
@@ -143,6 +179,6 @@ existing period presets.
 
 ## Offline behavior and evolution
 
-A companion may retain the latest successful usage, Foundation and Activity projections in encrypted local storage. Activity page cache keys bind Desktop identity, domain, Project scope, period/effective bounds, filters, ordering and page cursor. The projections are committed after compatibility checks; incompatible scope/query pages are discarded rather than relabeled. It must preserve Desktop-generated timestamps, show freshness/cache state and treat missing or corrupted projections as unavailable. It must not fill unavailable fields with zero or infer provenance.
+A companion may retain the latest successful usage, Foundation, Capacity and Activity projections in encrypted local storage. Capacity cache identity binds Desktop identity, contract version, fixed capacity scope and observation identity; Activity page cache keys bind Desktop identity, domain, Project scope, period/effective bounds, filters, ordering and page cursor. The projections are committed after compatibility checks; incompatible scope/query pages are discarded rather than relabeled. It must preserve Desktop-generated timestamps, show freshness/cache state and treat missing or corrupted projections as unavailable. It must not fill unavailable fields with zero or infer provenance.
 
 `CompanionUsageV1` remains a compatibility contract. Capability discovery and each Foundation domain are separate bounded versioned surfaces so future transports can serve the same Android domain layer without coupling presentation to HTTP. New fields may be added compatibly inside a version; incompatible shape or meaning requires a new version. No database, server, account, cloud relay, billing backend or remote execution is part of this API.
