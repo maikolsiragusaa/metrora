@@ -109,10 +109,16 @@ export function ShareCardModal({
             </ul>
 
             <label className="share-card-option">
-              <input type="checkbox" checked={includeCost} onChange={event => setIncludeCost(event.target.checked)} />
+              <input
+                type="checkbox"
+                aria-label="Include exact spend"
+                aria-describedby="share-card-cost-help"
+                checked={includeCost}
+                onChange={event => setIncludeCost(event.target.checked)}
+              />
               <div>
                 Include exact spend
-                <span>Off by default. Pricing coverage is shown when it is incomplete.</span>
+                <span id="share-card-cost-help">Off by default. Pricing coverage is shown when it is incomplete.</span>
               </div>
             </label>
 
@@ -120,13 +126,15 @@ export function ShareCardModal({
               <label className="share-card-option">
                 <input
                   type="checkbox"
+                  aria-label="Include Project name"
+                  aria-describedby="share-card-project-help"
                   checked={includeProjectName}
                   disabled={!projectScopeName}
                   onChange={event => setIncludeProjectName(event.target.checked)}
                 />
                 <div>
                   Include Project name
-                  <span>{projectScopeName ? 'Off by default.' : 'Project name is unavailable for this scope.'}</span>
+                  <span id="share-card-project-help">{projectScopeName ? 'Off by default.' : 'Project name is unavailable for this scope.'}</span>
                 </div>
               </label>
             )}
