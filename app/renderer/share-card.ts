@@ -163,7 +163,7 @@ export function renderShareCardSvg(card: ShareCardV1): string {
     : ''
   const thirdMetric = card.metrics.costUSD === null
     ? metricBlock(828, 'Top model', topModel, card.topModel ? `${formatInteger(card.topModel.calls)} calls` : '')
-    : metricBlock(828, 'Spend', formatCost(card.metrics.costUSD), coverageNote)
+    : metricBlock(828, 'Spend (USD)', formatCost(card.metrics.costUSD), coverageNote)
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_CARD_WIDTH}" height="${SHARE_CARD_HEIGHT}" viewBox="0 0 ${SHARE_CARD_WIDTH} ${SHARE_CARD_HEIGHT}">
   <defs>
