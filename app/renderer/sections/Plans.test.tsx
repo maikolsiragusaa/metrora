@@ -382,7 +382,7 @@ describe('Plans', () => {
     expect(screen.queryByText(/rate limited the quota endpoint/)).not.toBeInTheDocument()
   })
 
-  it('renders the keychain access-denied state with recovery copy and a locked indicator', async () => {
+  it('renders the access-denied state with provider-neutral recovery copy and a locked indicator', async () => {
     getPlans.mockResolvedValue(statusWithPlans)
     getQuota.mockResolvedValue([
       quota('claude', { connection: 'accessDenied', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
@@ -391,7 +391,7 @@ describe('Plans', () => {
 
     render(<Plans period="30days" />)
 
-    expect(await screen.findByText('Keychain access needed: click Allow when macOS asks, then Refresh.')).toBeInTheDocument()
+    expect(await screen.findByText('Credential access is needed. Grant access in the provider or operating-system prompt, then Refresh.')).toBeInTheDocument()
     expect(screen.getByText('locked')).toBeInTheDocument()
   })
 })

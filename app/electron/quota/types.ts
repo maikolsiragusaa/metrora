@@ -8,7 +8,8 @@
 
 export const PROVIDER_QUOTA_SCHEMA_VERSION = 1 as const
 
-export type ProviderName = 'claude' | 'codex'
+export const PROVIDER_NAMES = ['claude', 'codex', 'copilot', 'kimi', 'antigravity'] as const
+export type ProviderName = typeof PROVIDER_NAMES[number]
 export type QuotaAuthority = 'provider-reported'
 export type QuotaConnection =
   | 'connected'
@@ -20,6 +21,22 @@ export type QuotaConnection =
   | 'terminalFailure'
 export type QuotaAvailability = 'available' | 'unavailable'
 export type QuotaFreshness = 'fresh' | 'stale' | 'unavailable'
+
+/**
+ * Transport provenance is deliberately separate from factual authority.
+ * Every accepted snapshot still carries provider-reported facts, while this
+ * bounded metadata tells product surfaces how those facts were observed.
+ */
+export type QuotaSourceKind =
+  | 'provider-api'
+  | 'provider-cli'
+  | 'provider-loopback'
+  | 'provider-internal-api'
+export type QuotaSourceStability = 'documented' | 'provider-owned' | 'experimental'
+export type ProviderQuotaSource = {
+  kind: QuotaSourceKind
+  stability: QuotaSourceStability
+}
 
 export type ProviderQuotaWindow = {
   /** Stable producer identity; display labels are not row identity. */
@@ -51,6 +68,11 @@ export type ProviderQuotaSnapshot = {
   schemaVersion: typeof PROVIDER_QUOTA_SCHEMA_VERSION
   provider: ProviderName
   authority: QuotaAuthority
+  /**
+   * Additive v1 provenance metadata. Older snapshots may omit it; consumers
+   * must never infer a stronger source from absence.
+   */
+  source?: ProviderQuotaSource
   availability: QuotaAvailability
   connection: QuotaConnection
   freshness: QuotaFreshness
@@ -137,7 +159,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isProvider(value: unknown): value is ProviderName {
-  return value === 'claude' || value === 'codex'
+  return typeof value === 'string' && (PROVIDER_NAMES as readonly string[]).includes(value)
 }
 
 function isConnection(value: unknown): value is QuotaConnection {
@@ -146,6 +168,22 @@ function isConnection(value: unknown): value is QuotaConnection {
 
 function isFreshness(value: unknown): value is QuotaFreshness {
   return value === 'fresh' || value === 'stale' || value === 'unavailable'
+}
+
+function isSourceKind(value: unknown): value is QuotaSourceKind {
+  return value === 'provider-api'
+    || value === 'provider-cli'
+    || value === 'provider-loopback'
+    || value === 'provider-internal-api'
+}
+
+function isSourceStability(value: unknown): value is QuotaSourceStability {
+  return value === 'documented' || value === 'provider-owned' || value === 'experimental'
+}
+
+function sanitizeQuotaSource(value: unknown): ProviderQuotaSource | undefined {
+  if (!isObject(value) || !isSourceKind(value.kind) || !isSourceStability(value.stability)) return undefined
+  return { kind: value.kind, stability: value.stability }
 }
 
 function isoOrNull(value: unknown): string | null {
@@ -176,6 +214,7 @@ function finiteNumber(value: unknown): number | null {
 export function sanitizeQuotaProvider(value: unknown): QuotaProvider | null {
   if (!isObject(value) || !isProvider(value.provider)) return null
   const connection = isConnection(value.connection) ? value.connection : 'transientFailure'
+  const source = sanitizeQuotaSource(value.source)
   const windows = Array.isArray(value.windows)
     ? value.windows.flatMap(row => {
         if (!isObject(row) || typeof row.id !== 'string' || !row.id || typeof row.label !== 'string' || !row.label) return []
@@ -207,6 +246,7 @@ export function sanitizeQuotaProvider(value: unknown): QuotaProvider | null {
     schemaVersion: PROVIDER_QUOTA_SCHEMA_VERSION,
     provider: value.provider,
     authority: 'provider-reported',
+    ...(source ? { source } : {}),
     availability: 'unavailable',
     connection,
     freshness: isFreshness(value.freshness) ? value.freshness : 'unavailable',

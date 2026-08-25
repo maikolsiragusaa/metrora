@@ -1,10 +1,14 @@
 import os from 'node:os'
 import path from 'node:path'
 
+import { fetchAntigravityQuota } from './antigravity'
 import { fetchClaudeQuota } from './claude'
 import { fetchCodexQuota } from './codex'
+import { fetchCopilotQuota } from './copilot'
+import { fetchKimiQuota } from './kimi'
 import { atomicWriteSecureFile, readSecureFile, sanitizeError } from './security'
 import {
+  PROVIDER_NAMES,
   emptyQuota,
   hasProviderQuotaFacts,
   markStale,
@@ -19,20 +23,27 @@ export type {
   ProviderQuotaCredits,
   ProviderQuotaRateLimit,
   ProviderQuotaSnapshot,
+  ProviderQuotaSource,
   ProviderQuotaWindow,
   QuotaAvailability,
   QuotaAuthority,
   QuotaConnection,
   QuotaFreshness,
+  QuotaSourceKind,
+  QuotaSourceStability,
 } from './types'
 export { hasProviderQuotaFacts } from './types'
 export { sanitizeError } from './security'
 
 type Blocked = Partial<Record<ProviderNameFromQuota, string>>
 type FetchResult = { quota: QuotaProvider; retryAfterSeconds?: number }
+type ProviderFetcher = (options: { signal: AbortSignal; allowKeychain: boolean }) => Promise<FetchResult>
 type QuotaDeps = {
-  claude: (options: { signal: AbortSignal; allowKeychain: boolean }) => Promise<FetchResult>
-  codex: (options: { signal: AbortSignal; allowKeychain: boolean }) => Promise<FetchResult>
+  claude: ProviderFetcher
+  codex: ProviderFetcher
+  copilot: ProviderFetcher
+  kimi: ProviderFetcher
+  antigravity: ProviderFetcher
   statePath: string
   readFile: typeof readSecureFile
   writeFile: typeof atomicWriteSecureFile
@@ -41,8 +52,11 @@ type QuotaDeps = {
 }
 
 const defaultDeps: QuotaDeps = {
-  claude: fetchClaudeQuota,
-  codex: fetchCodexQuota,
+  claude: options => fetchClaudeQuota(options),
+  codex: options => fetchCodexQuota(options),
+  copilot: options => fetchCopilotQuota(options),
+  kimi: options => fetchKimiQuota(options),
+  antigravity: options => fetchAntigravityQuota(options),
   statePath: path.join(os.homedir(), '.metrora', 'quota-backoff.json'),
   readFile: readSecureFile,
   writeFile: atomicWriteSecureFile,
@@ -65,19 +79,23 @@ function isFactualSnapshot(quota: QuotaProvider): boolean {
     && Number.isFinite(Date.parse(quota.observedAt))
 }
 
+function generationMap(): Record<ProviderNameFromQuota, number> {
+  return Object.fromEntries(PROVIDER_NAMES.map(provider => [provider, 0])) as Record<ProviderNameFromQuota, number>
+}
+
 export class QuotaService {
   private readonly deps: QuotaDeps
   private cache: { at: number; value: QuotaProvider[] } | null = null
   /** Last factual value survives cache invalidation so force failures can be honest. */
   private readonly lastGood: Partial<Record<ProviderNameFromQuota, QuotaProvider>> = {}
   private flight: Promise<QuotaProvider[]> | null = null
-  private generations: Record<ProviderNameFromQuota, number> = { claude: 0, codex: 0 }
+  private generations: Record<ProviderNameFromQuota, number> = generationMap()
   private controllers: Partial<Record<ProviderNameFromQuota, AbortController>> = {}
 
   constructor(deps: Partial<QuotaDeps> = {}) { this.deps = { ...defaultDeps, ...deps } }
 
   invalidate(provider?: ProviderNameFromQuota): void {
-    const providers: ProviderNameFromQuota[] = provider ? [provider] : ['claude', 'codex']
+    const providers: readonly ProviderNameFromQuota[] = provider ? [provider] : PROVIDER_NAMES
     for (const p of providers) {
       this.generations[p] += 1
       this.controllers[p]?.abort()
@@ -109,6 +127,10 @@ export class QuotaService {
     catch (error) { console.warn(`Quota backoff state not saved: ${sanitizeError(error)}`) }
   }
 
+  private fetcher(provider: ProviderNameFromQuota): ProviderFetcher {
+    return this.deps[provider]
+  }
+
   private async fetchAll(allowKeychain: boolean): Promise<QuotaProvider[]> {
     const startingGenerations = { ...this.generations }
     const prior = this.cache?.value ?? []
@@ -135,8 +157,10 @@ export class QuotaService {
 
       const until = blocked[provider] ? Date.parse(blocked[provider]!) : NaN
       if (Number.isFinite(until) && until > this.deps.now()) {
+        const previous = this.lastGood[provider] ?? prior.find(item => item.provider === provider)
         return retainOnFailure({
           ...emptyQuota(provider, 'transientFailure', backoffRateLimit(new Date(until).toISOString())),
+          ...(previous?.source ? { source: previous.source } : {}),
         })
       }
 
@@ -144,9 +168,7 @@ export class QuotaService {
       const controller = new AbortController()
       this.controllers[provider] = controller
       try {
-        const result = provider === 'claude'
-          ? await this.deps.claude({ signal: controller.signal, allowKeychain })
-          : await this.deps.codex({ signal: controller.signal, allowKeychain })
+        const result = await this.fetcher(provider)({ signal: controller.signal, allowKeychain })
         if (generation !== this.generations[provider] || controller.signal.aborted) return emptyQuota(provider, 'disconnected')
 
         const quota = sanitizeQuotaProvider(result.quota) ?? emptyQuota(provider, 'transientFailure')
@@ -158,7 +180,10 @@ export class QuotaService {
           // A 429 response contains no new quota fact. Do not let an adapter
           // accidentally mark its placeholder as fresh; only a prior factual
           // snapshot may supply windows while this backoff is active.
-          return retainOnFailure(emptyQuota(provider, 'transientFailure', backoffRateLimit(retryAt)))
+          return retainOnFailure({
+            ...emptyQuota(provider, 'transientFailure', backoffRateLimit(retryAt)),
+            ...(quota.source ? { source: quota.source } : {}),
+          })
         }
 
         if (blocked[provider]) {
@@ -169,8 +194,7 @@ export class QuotaService {
         return retainOnFailure(quota)
       } catch (error) {
         // Provider adapters normally convert failures to a snapshot. Keep this
-        // final guard so a test/transport adapter cannot turn one provider's
-        // outage into a rejected all-provider request.
+        // final guard so one provider's outage cannot reject the all-provider request.
         console.warn(`${provider} quota unavailable: ${sanitizeError(error)}`)
         return retainOnFailure(emptyQuota(provider, 'transientFailure'))
       } finally {
@@ -178,10 +202,9 @@ export class QuotaService {
       }
     }
 
-    const value = await Promise.all([run('claude'), run('codex')])
-    if (startingGenerations.claude === this.generations.claude && startingGenerations.codex === this.generations.codex) {
-      this.cache = { at: this.deps.now(), value }
-    }
+    const value = await Promise.all(PROVIDER_NAMES.map(run))
+    const unchanged = PROVIDER_NAMES.every(provider => startingGenerations[provider] === this.generations[provider])
+    if (unchanged) this.cache = { at: this.deps.now(), value }
     return value
   }
 }
