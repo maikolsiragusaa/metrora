@@ -40,6 +40,14 @@ const PROVIDERS: Record<ProviderName, ProviderPresentation> = {
   },
 }
 
+export function isQuotaProviderName(provider: string): provider is ProviderName {
+  return Object.prototype.hasOwnProperty.call(PROVIDERS, provider)
+}
+
+export function quotaProviderDisplayName(provider: string): string {
+  return isQuotaProviderName(provider) ? PROVIDERS[provider].name : provider
+}
+
 export function quotaProviderName(provider: ProviderName): string {
   return PROVIDERS[provider].name
 }
