@@ -22,7 +22,7 @@ type Deps = {
   spawnCli: (args: string[], opts?: { timeoutMs?: number; idleTimeoutMs?: number; onStderr?: (chunk: string) => void; onProgress?: (event: TrustedProgressEvent) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority }) => Promise<unknown>
   spawnCliAction: (args: string[], opts?: { timeoutMs?: number }) => Promise<ActionResult>
   resolveMetroraPath: () => string | null
-  getQuota: typeof getQuota
+  getQuota?: typeof getQuota
   /** Forward cold-start scan-progress events to the renderer splash. */
   emitProgress?: (event: unknown) => void
   /** Consent-gated anonymous telemetry; absent under tests unless injected. */
@@ -158,6 +158,7 @@ function cliErrorProps(err: unknown, cmd: string | undefined): Record<string, un
  */
 export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
   const snapshotEnv = { METRORA_READ_MODE: 'snapshot' }
+  const readQuota = deps.getQuota ?? getQuota
   const emitProgress = deps.emitProgress ?? (() => {})
   const telemetry = deps.telemetry ?? null
   // Latch cold_start to the first coalesced attempt in this app process.
@@ -259,7 +260,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
   }
   return {
     'metrora:getQuota': async (force?: boolean) => {
-      try { return { ok: true, value: sanitizeQuotaProviders(await deps.getQuota({ force: Boolean(force) })) } }
+      try { return { ok: true, value: sanitizeQuotaProviders(await readQuota({ force: Boolean(force) })) } }
       catch (error) { return { ok: false, error: { kind: 'nonzero', message: sanitizeError(error) } } }
     },
     'metrora:getOverview': getOverview,
