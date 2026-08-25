@@ -2,11 +2,13 @@
 
 <img src="./assets/brand/metrora-lockup.svg" alt="Metrora" width="520" />
 
-### Local-first intelligence for AI-assisted development
+### The local-first control center for AI-assisted development
 
-Understand where AI time, tokens and money go across tools, models, projects and sessions — without routing your work through another service.
+Bring usage, cost, models, projects, provider capacity, comparisons and evidence-backed investigation into one coherent view — without putting a mandatory proxy between you and your AI tools.
 
-[Website](https://metrora.eu) · [Getting started](docs/GETTING_STARTED.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Documentation](docs/README.md)
+[Get Metrora for Windows](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Get the Android companion](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3) · [Build from source](docs/GETTING_STARTED.md)
+
+[Website](https://metrora.eu) · [Documentation](docs/README.md) · [Supported tools](docs/SUPPORTED_TOOLS.md)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Download-0078D4?logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
@@ -18,6 +20,27 @@ Understand where AI time, tokens and money go across tools, models, projects and
 
 > [!IMPORTANT]
 > Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The current Store update is the accepted **RC11** Windows line and includes the companion runtime used for local Android pairing. The **Android companion is publicly available now as the production-signed `0.1.0-alpha.3` GitHub pre-release**, with a Google Play release planned within 30 days. Repository builds and historical GitHub Windows pre-releases remain separate development or archival artifacts.
+
+## Observe. Compare. Advise. Control.
+
+Metrora brings fragmented AI-development evidence together without requiring a new traffic path or a mandatory cloud account. The current product is organized around four shipped jobs:
+
+| Stage | What Metrora provides today |
+| --- | --- |
+| **Observe** | Usage, Cost, Models, Projects and Activity from supported local tool evidence, with measured, derived, estimated and unavailable states kept distinct. |
+| **Compare** | Side-by-side model and provider views using observed economics, plus controlled local Bench evidence without inventing a universal quality ranking. |
+| **Advise** | Contextual, read-only Advisor investigation over Metrora evidence. Deterministic Metrora facts remain authoritative; the model interprets rather than replaces them. |
+| **Control** | Provider-reported Capacity/quota, budgets, Project scope, local settings and explicit reversible controls where Metrora has deterministic authority. No autonomous routing or orchestration is implied. |
+
+Metrora is multi-tool and multi-provider by design. A supported collector can contribute useful local evidence without forcing the underlying AI request through Metrora.
+
+## Local-first by design
+
+- **No mandatory account for local use.** Install Metrora, read supported local evidence and use the core product without creating a Metrora account.
+- **No mandatory proxy or gateway.** Your AI traffic does not need to pass through Metrora for Metrora to observe supported usage evidence.
+- **Local evidence stays authoritative.** Canonical measurements, pricing provenance and evidence states are owned by Metrora's local factual surfaces; Advisor does not silently rewrite them.
+- **Unknown is not zero.** Missing, stale, partial or unavailable provider evidence remains explicit instead of being converted into a reassuring number.
+- **Companions consume bounded projections.** Android pairs locally with Desktop and does not become a second collector, pricing engine or accounting authority.
 
 ## Install Metrora
 
@@ -37,35 +60,18 @@ The current public Android alpha is [`0.1.0-alpha.3`](https://github.com/maikols
 
 `0.1.0-alpha.1` remains an immutable historical release and `0.1.0-alpha.2` was never published. The direct GitHub APK remains available now; Google Play publication is planned within 30 days and remains a separate release channel until it is actually live. The companion pairs locally with the current Microsoft Store Desktop and does not become a second collection or accounting authority. F-Droid remains separately gated.
 
-## What Metrora helps you understand
+## What Metrora helps you answer
 
-AI-assisted work is usually split across editors, desktop applications, CLIs, subscriptions, gateways and models. Each tool exposes a different fragment of the picture.
+AI-assisted development is usually split across editors, desktop applications, CLIs, subscriptions, gateways and models. Each tool exposes a different fragment of the picture. Metrora reads supported evidence already available on your machine and lets you investigate questions such as:
 
-Metrora reads supported usage records already stored on your machine and builds one evidence-aware view that can answer questions such as:
+- Which tools, models and projects are driving usage and cost?
+- What provider Capacity or quota remains, when the provider exposes trustworthy evidence?
+- How do models or providers compare on observed economics in the selected scope?
+- What does a controlled local Bench run actually prove, and what remains unknown?
+- Why did a scoped period, model, Project or provider change, according to the evidence Advisor can inspect?
+- Which explicit local controls or reversible optimizations are supported by deterministic Metrora authority?
 
-- Which tools, models and projects are driving cost and token usage?
-- How much usage is covered by cache, subscriptions or local models?
-- Which sessions were efficient, retried, abandoned, reverted or unusually expensive?
-- Which observed model cost-per-call signals are lower in the selected scope, with task quality kept explicit as unknown?
-- Which optimization findings are supported by observed data, and which values remain estimated or unknown?
-
-No wrapper or proxy is required, and AI traffic does not pass through Metrora.
-
-## What works today
-
-| Capability | What it provides |
-| --- | --- |
-| **Collect** | Local collection from 39 registered AI-tool and gateway integrations, with provider-specific discovery and parsing. |
-| **Understand** | Cost, tokens, cache, projects, sessions, tools, task categories, timing and model breakdowns. |
-| **Compare** | Model efficiency and observed working-style comparisons, with missing evidence kept explicit. |
-| **Optimize** | Waste findings, reversible configuration changes and realized-versus-estimated savings reporting. |
-| **Control** | Budgets, subscription plans, local pricing overrides, model aliases and subscription-covered paths. |
-| **Inspect** | Token audit, provider diagnostics, durable history and provenance-aware evidence states. |
-| **Export** | CSV and JSON output suitable for inspection, automation and independent tooling. |
-| **Connect locally** | Private device pairing and combined usage across machines on the same local network. |
-| **Verify** | A local personal Workspace with protected endpoint identity, explicit reviewed production, signed batches and independently verifiable evidence export. |
-
-Local collector support and eligibility for signed Workspace measurements are deliberately separate. A collector can be useful for local analysis before every field and source path has passed the stricter signed-sharing review. See [Supported tools](docs/SUPPORTED_TOOLS.md).
+Metrora does not require a wrapper around your AI requests, and it does not claim general model quality or autonomous control from incomplete evidence.
 
 ## Try Metrora from source
 
@@ -163,7 +169,7 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 
 | Surface | Role | Current status |
 | --- | --- | --- |
-| Desktop | Primary local analysis and configuration | **Available on Microsoft Store for Windows; RC11 current Store line** |
+| Desktop | Primary local control center for observation, comparison, Advisor, Capacity and configuration | **Available on Microsoft Store for Windows; RC11 current Store line** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
 | Android companion | Read-focused local-network companion for a paired Desktop | **Public GitHub pre-release `0.1.0-alpha.3`; Google Play release planned within 30 days** |
@@ -199,6 +205,8 @@ Start from the [documentation index](docs/README.md):
 
 - [Getting started](docs/GETTING_STARTED.md)
 - [CLI reference](docs/CLI_REFERENCE.md)
+- [Advisor public foundation](docs/ADVISOR_PUBLIC_FOUNDATION.md)
+- [Advisor contextual integration v1](docs/ADVISOR_CONTEXT_INTEGRATION_V1.md)
 - [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)
 - [Bench task pack v1](docs/BENCH_TASK_PACK_V1.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)

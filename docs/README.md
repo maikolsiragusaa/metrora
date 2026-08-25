@@ -1,10 +1,12 @@
 # Metrora documentation
 
+Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate with Advisor; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
+
 This index separates user guidance, current product guarantees, public contracts and contributor-facing technical references.
 
 ## Use Metrora
 
-- [Getting started](GETTING_STARTED.md) — build from source, run the first reports and understand the current distribution boundary.
+- [Getting started](GETTING_STARTED.md) — install or build Metrora, run the first reports and understand the current distribution boundary.
 - [CLI reference](CLI_REFERENCE.md) — public commands grouped by task.
 - [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — bounded synthetic runtime evidence from an explicitly selected local Ollama model.
 - [Bench task pack v1](BENCH_TASK_PACK_V1.md) — deterministic local task assertions, private history and factual comparison for an explicitly selected Ollama model.
@@ -22,7 +24,9 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
-- [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — read-only conversational evidence architecture, local runtime boundary, privacy rules, tests and license provenance.
+- [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — read-only conversational investigation over bounded Metrora evidence, runtime/privacy boundaries, tests and license provenance.
+- [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — factual-surface → Ask Advisor → contextual investigation scope handoff across supported Desktop surfaces.
+- [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
 - [Canonical history parity observer v1](CANONICAL_HISTORY_PARITY_OBSERVER_V1.md) — non-authoritative cache-to-shadow parity validation before snapshot publication.
@@ -50,7 +54,7 @@ Component references in this section explain bounded implementation responsibili
 
 - [Windows distribution](WINDOWS_DISTRIBUTION.md) — canonical current Windows package, identity and publication boundary.
 - [Windows Store package identity v1](WINDOWS_STORE_IDENTITY_V1.md) — assigned package identity and separate AppX/MSIX build boundary.
-- [Windows Store local package test](WINDOWS_STORE_LOCAL_TEST_GUIDED.md) — bounded local installation and cleanup path used for Store candidates.
+- [Windows Store local package test](WINDOWS_STORE_LOCAL_TEST_GUIDED.md) — bounded local installation/cleanup path, preserved RC10 → RC11 historical procedure and RC11 starting point for any separately selected future candidate.
 - [Windows release candidate v1](WINDOWS_RELEASE_CANDIDATE_V1.md) — unsigned candidate manifest and independent verification contract.
 - [Windows format derivation v1](WINDOWS_FORMAT_DERIVATION_V1.md) — one-payload portable and installer derivation.
 - [Windows clean install v1](WINDOWS_CLEAN_INSTALL_V1.md) — isolated NSIS installation and state-preservation contract.
