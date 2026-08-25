@@ -22,8 +22,9 @@ describe('ShareCard PNG export', () => {
     expect(() => decodeShareCardPngDataUrl('data:image/png;base64,not base64')).toThrow(/encoding is invalid/u)
   })
 
-  it('sanitizes the suggested leaf filename without accepting a renderer path', () => {
+  it('sanitizes POSIX and Windows suggested paths down to a bounded leaf filename', () => {
     expect(sanitizeShareCardFilename('../../Secret Folder/my recap.png')).toBe('my-recap.png')
+    expect(sanitizeShareCardFilename('..\\Secret Folder\\my recap.png')).toBe('my-recap.png')
     expect(sanitizeShareCardFilename('')).toBe('metrora-ai-recap.png')
   })
 
