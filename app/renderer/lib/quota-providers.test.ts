@@ -15,8 +15,8 @@ describe('capacity provider presentation', () => {
   })
 
   it('keeps connect guidance provider-owned and does not invent Metrora login flows', () => {
-    expect(quotaProviderConnect('copilot')).toMatchObject({ command: undefined })
-    expect(quotaProviderConnect('antigravity')).toMatchObject({ command: undefined })
+    expect('command' in quotaProviderConnect('copilot')).toBe(false)
+    expect('command' in quotaProviderConnect('antigravity')).toBe(false)
     expect(quotaProviderConnect('kimi').command).toBe('kimi')
   })
 
