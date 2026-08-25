@@ -10,6 +10,7 @@ import eu.metrora.app.data.CapacityWindow
 import eu.metrora.app.data.CAPACITY_CONTRACT_VERSION
 import eu.metrora.app.data.CAPACITY_SCOPE_KEY
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CapacityPresentationTest {
@@ -44,6 +45,46 @@ class CapacityPresentationTest {
 
         assertEquals(CapacityPresentationState.UNAVAILABLE, presentation.state)
         assertEquals(0, presentation.visibleProviders.size)
+        assertTrue(presentation.detailProviders.isEmpty())
+    }
+
+    @Test
+    fun compact_home_is_bounded_but_detail_retains_every_window_and_reset() {
+        val presentation = capacityPresentation(snapshot(provider(
+            provider = CapacityProvider.CLAUDE,
+            freshness = CapacityFreshness.FRESH,
+            withFacts = true,
+            windows = listOf(
+                CapacityWindow("short", "5 hour", 25.0, 75.0, "2026-08-14T15:00:00Z"),
+                CapacityWindow("weekly", "Weekly", 50.0, 50.0, "2026-08-21T10:00:00Z"),
+            ),
+        )))
+
+        assertEquals(listOf("short"), presentation.compactProviders.single().windows.map { it.id })
+        assertEquals(listOf("short", "weekly"), presentation.detailProviders.single().windows.map { it.id })
+        assertEquals(listOf("5 hour", "Weekly"), presentation.detailProviders.single().windows.map { it.label })
+        assertEquals(
+            listOf("2026-08-14T15:00:00Z", "2026-08-21T10:00:00Z"),
+            presentation.detailProviders.single().windows.map { it.resetsAt },
+        )
+    }
+
+    @Test
+    fun stale_multi_window_facts_remain_stale_and_explicit_zero_remains_zero() {
+        val presentation = capacityPresentation(snapshot(provider(
+            provider = CapacityProvider.CODEX,
+            freshness = CapacityFreshness.STALE,
+            withFacts = true,
+            windows = listOf(
+                CapacityWindow("short", "5 hour", 0.0, 100.0, null),
+                CapacityWindow("weekly", "Weekly", 80.0, 20.0, "2026-08-21T10:00:00Z"),
+            ),
+        )))
+
+        assertEquals(CapacityPresentationState.STALE, presentation.state)
+        assertEquals(2, presentation.detailProviders.single().windows.size)
+        assertEquals(0.0, presentation.detailProviders.single().windows.first().usedPercent, 0.0)
+        assertEquals(100.0, presentation.detailProviders.single().windows.first().remainingPercent, 0.0)
     }
 
     private fun snapshot(vararg providers: CapacityProviderSnapshot) = CapacitySnapshot(
@@ -66,6 +107,7 @@ class CapacityPresentationTest {
         provider: CapacityProvider,
         freshness: CapacityFreshness,
         withFacts: Boolean,
+        windows: List<CapacityWindow>? = null,
     ) = CapacityProviderSnapshot(
         provider = provider,
         availability = if (withFacts && freshness == CapacityFreshness.FRESH) CapacityAvailability.AVAILABLE else CapacityAvailability.UNAVAILABLE,
@@ -77,7 +119,7 @@ class CapacityPresentationTest {
         freshness = freshness,
         observedAt = if (withFacts) "2026-08-14T10:00:00Z" else null,
         planLabel = if (withFacts) "Pro" else null,
-        windows = if (withFacts) listOf(CapacityWindow("primary", "Window", 25.0, 75.0, null)) else emptyList(),
+        windows = windows ?: if (withFacts) listOf(CapacityWindow("primary", "Window", 25.0, 75.0, null)) else emptyList(),
         credits = null,
         source = null,
     )

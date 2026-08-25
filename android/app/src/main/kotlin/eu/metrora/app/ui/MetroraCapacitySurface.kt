@@ -22,8 +22,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.metrora.app.R
 import eu.metrora.app.data.CapacityFreshness
-import eu.metrora.app.data.CapacityProviderSnapshot
 import eu.metrora.app.data.CapacitySnapshot
+import eu.metrora.app.data.CapacityWindow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -76,7 +76,7 @@ internal fun CapacityModule(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                presentation.visibleProviders.forEach { provider ->
+                presentation.compactProviders.forEach { provider ->
                     CapacityProviderRow(provider, compact = true)
                 }
                 if (presentation.unavailableProviderCount > 0) {
@@ -121,7 +121,7 @@ internal fun CapacityDetailsDialog(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 } else {
-                    presentation.visibleProviders.forEach { provider -> CapacityProviderRow(provider, compact = false) }
+                    presentation.detailProviders.forEach { provider -> CapacityProviderRow(provider, compact = false) }
                 }
                 Text(
                     androidx.compose.ui.res.stringResource(R.string.capacity_projection_generated, snapshot.generatedAtEpochMs.toCapacityDate()),
@@ -139,7 +139,9 @@ internal fun CapacityDetailsDialog(
 }
 
 @Composable
-private fun CapacityProviderRow(provider: CapacityProviderSnapshot, compact: Boolean) {
+private fun CapacityProviderRow(presentation: CapacityProviderPresentation, compact: Boolean) {
+    val provider = presentation.provider
+    val primaryWindow = presentation.primaryWindow
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -150,34 +152,48 @@ private fun CapacityProviderRow(provider: CapacityProviderSnapshot, compact: Boo
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            provider.windows.firstOrNull()?.let { window ->
-                Text(
-                    androidx.compose.ui.res.stringResource(R.string.capacity_used_remaining, formatPercent(window.usedPercent), formatPercent(window.remainingPercent)),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (provider.freshness == CapacityFreshness.STALE) MaterialTheme.colorScheme.onSurfaceVariant else MetroraPalette.cyan,
-                )
-            } ?: provider.credits?.let { credits ->
-                Text(
-                    androidx.compose.ui.res.stringResource(R.string.capacity_credits, formatCredits(credits.balance)),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MetroraPalette.cyan,
-                )
-            } ?: provider.planLabel?.let { plan ->
-                Text(
-                    plan,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MetroraPalette.cyan,
-                )
+            if (compact) {
+                when {
+                    primaryWindow != null -> {
+                        val window = primaryWindow
+                        Text(
+                            androidx.compose.ui.res.stringResource(R.string.capacity_used_remaining, formatPercent(window.usedPercent), formatPercent(window.remainingPercent)),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (provider.freshness == CapacityFreshness.STALE) MaterialTheme.colorScheme.onSurfaceVariant else MetroraPalette.cyan,
+                        )
+                    }
+                    provider.credits != null -> Text(
+                        androidx.compose.ui.res.stringResource(R.string.capacity_credits, formatCredits(provider.credits.balance)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MetroraPalette.cyan,
+                    )
+                    provider.planLabel != null -> Text(
+                        provider.planLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MetroraPalette.cyan,
+                    )
+                }
             }
         }
-        provider.windows.firstOrNull()?.resetsAt?.let { reset ->
-            Text(
-                androidx.compose.ui.res.stringResource(R.string.capacity_resets, reset.toCapacityDate()),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (!compact) {
+        if (compact) {
+            primaryWindow?.resetsAt?.let { reset ->
+                Text(
+                    androidx.compose.ui.res.stringResource(R.string.capacity_resets, reset.toCapacityDate()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            presentation.windows.forEach { window ->
+                CapacityWindowRow(window, provider.freshness == CapacityFreshness.STALE)
+            }
+            provider.credits?.let { credits ->
+                Text(
+                    androidx.compose.ui.res.stringResource(R.string.capacity_credits, formatCredits(credits.balance)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             provider.observedAt?.let { observedAt ->
                 Text(
                     androidx.compose.ui.res.stringResource(R.string.capacity_provider_observed, observedAt.toCapacityDate()),
@@ -199,6 +215,37 @@ private fun CapacityProviderRow(provider: CapacityProviderSnapshot, compact: Boo
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CapacityWindowRow(window: CapacityWindow, stale: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                window.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                androidx.compose.ui.res.stringResource(R.string.capacity_used_remaining, formatPercent(window.usedPercent), formatPercent(window.remainingPercent)),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (stale) MaterialTheme.colorScheme.onSurfaceVariant else MetroraPalette.cyan,
+            )
+        }
+        window.resetsAt?.let { reset ->
+            Text(
+                androidx.compose.ui.res.stringResource(R.string.capacity_resets, reset.toCapacityDate()),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

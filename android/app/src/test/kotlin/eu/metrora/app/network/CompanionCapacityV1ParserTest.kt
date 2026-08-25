@@ -39,6 +39,13 @@ class CompanionCapacityV1ParserTest {
         }
     }
 
+    @Test
+    fun rejects_malformed_window_without_fabricating_a_value() {
+        assertThrows(IllegalArgumentException::class.java) {
+            CompanionCapacityV1Parser.parse(payload().replace("\"remainingPercent\":100", "\"remainingPercent\":101"), credentials())
+        }
+    }
+
     private fun credentials() = PairingCredentials(
         host = "desktop.local",
         port = 7777,

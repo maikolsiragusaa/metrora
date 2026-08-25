@@ -3,6 +3,7 @@ package eu.metrora.app.ui
 import eu.metrora.app.data.CapacityFreshness
 import eu.metrora.app.data.CapacityProviderSnapshot
 import eu.metrora.app.data.CapacitySnapshot
+import eu.metrora.app.data.CapacityWindow
 
 /** Small, deterministic view model for the Home Capacity module. */
 internal enum class CapacityPresentationState {
@@ -13,6 +14,15 @@ internal enum class CapacityPresentationState {
     UNAVAILABLE,
 }
 
+/** Progressive-disclosure projection: Home gets a primary window; detail gets every factual window. */
+internal data class CapacityProviderPresentation(
+    val provider: CapacityProviderSnapshot,
+    val windows: List<CapacityWindow>,
+) {
+    val primaryWindow: CapacityWindow?
+        get() = windows.firstOrNull()
+}
+
 internal data class CapacityPresentation(
     val state: CapacityPresentationState,
     val visibleProviders: List<CapacityProviderSnapshot>,
@@ -20,6 +30,16 @@ internal data class CapacityPresentation(
 ) {
     val showModule: Boolean
         get() = state != CapacityPresentationState.HIDDEN
+
+    val compactProviders: List<CapacityProviderPresentation>
+        get() = visibleProviders.map { provider ->
+            CapacityProviderPresentation(provider, provider.windows.take(1))
+        }
+
+    val detailProviders: List<CapacityProviderPresentation>
+        get() = visibleProviders.map { provider ->
+            CapacityProviderPresentation(provider, provider.windows)
+        }
 }
 
 internal fun capacityPresentation(snapshot: CapacitySnapshot?): CapacityPresentation {
