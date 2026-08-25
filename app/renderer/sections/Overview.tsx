@@ -5,6 +5,7 @@ import { ActivityHeatmap } from '../components/ActivityHeatmap'
 import { EmptyNote } from '../components/EmptyState'
 import { ListRow } from '../components/ListRow'
 import { SectionSkeleton } from '../components/Skeleton'
+import { ShareCardModal } from '../components/ShareCardModal'
 import { StaleBanner } from '../components/StaleBanner'
 import { useBarGrowIn } from '../lib/motion'
 import { type Polled, usePolled } from '../hooks/usePolled'
@@ -326,6 +327,7 @@ export function OverviewContent({
 }) {
   const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [], { enabled: ready, memoKey: 'overview-act' })
   const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
+  const [shareOpen, setShareOpen] = useState(false)
   const { data, error } = overview
   const modelIndex = useMemo(() => data ? buildModelIndex(data) : new Map<string, string>(), [data])
 
@@ -359,6 +361,14 @@ export function OverviewContent({
   const signals = deriveSignals(data, now, rangeActive)
   const decision = deriveOverviewDecision(data, signals, rangeActive)
   const streak = streakDays(data.history.daily, now)
+  const providerLabel = provider === 'all'
+    ? 'All providers'
+    : data.current.providerDetails?.find(item => item.id === provider)?.label ?? provider
+  const selectedProjectId = data.projectScope?.selectedId ?? 'all'
+  const projectScopeActive = selectedProjectId !== 'all'
+  const projectScopeName = projectScopeActive
+    ? data.projectScope?.options.find(option => option.id === selectedProjectId)?.name ?? null
+    : null
   return (
     <div className="ov-dashboard">
       {error && <StaleBanner error={error} />}
@@ -367,6 +377,15 @@ export function OverviewContent({
           Showing canonical last-good data · source reconciliation is incomplete
         </div>
       )}
+
+      <div className="share-card-trigger-row">
+        <div className="share-card-trigger-copy">
+          <strong>Share this recap</strong>
+          <span>Create a privacy-safe PNG from the exact local scope you are viewing.</span>
+        </div>
+        <button className="btn" type="button" onClick={() => setShareOpen(true)}>Create share card</button>
+      </div>
+
       <div className="ov-card ov-home-shell" aria-label="Key performance indicators">
         <OverviewHomeSummary
           current={data.current}
@@ -424,6 +443,19 @@ export function OverviewContent({
           <EfficiencyDiagnostics current={data.current} />
         </div>
       </div>
+
+      {shareOpen && (
+        <ShareCardModal
+          payload={data}
+          period={period}
+          range={range}
+          providerLabel={providerLabel}
+          projectScopeActive={projectScopeActive}
+          projectScopeName={projectScopeName}
+          stale={Boolean(error)}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   )
 }
