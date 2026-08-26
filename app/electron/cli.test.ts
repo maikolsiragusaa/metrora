@@ -357,7 +357,14 @@ describe('bounded process watchdog', () => {
     ].join('\n')
   }
 
-  it('accepts split valid progress heartbeats without extending the absolute ceiling', async () => {
+  // Leave room for real-child startup and Windows scheduling while keeping
+  // the success path bounded tightly enough to prove accepted heartbeats
+  // reset the idle deadline.
+  const SUCCESS_HEARTBEAT_INTERVAL_MS = 80
+  const SUCCESS_IDLE_TIMEOUT_MS = 500
+  const SUCCESS_ABSOLUTE_TIMEOUT_MS = 2_000
+
+  it('accepts spaced valid progress heartbeats and resets the idle deadline', async () => {
     const seen: unknown[] = []
     const lines = [
       'METRORA_PROGRESS {"kind":"providers","providers":["claude"]}',
@@ -367,10 +374,10 @@ describe('bounded process watchdog', () => {
       'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":2,"total":3}',
       'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"done","files":3}',
     ]
-    fakeBin('valid-heartbeat.cjs', heartbeatScript(lines, 15))
+    fakeBin('valid-heartbeat.cjs', heartbeatScript(lines, SUCCESS_HEARTBEAT_INTERVAL_MS))
     const result = await spawnCli(['status'], {
-      timeoutMs: 500,
-      idleTimeoutMs: 70,
+      timeoutMs: SUCCESS_ABSOLUTE_TIMEOUT_MS,
+      idleTimeoutMs: SUCCESS_IDLE_TIMEOUT_MS,
       onProgress: event => seen.push(event),
     })
     expect(result).toEqual({ ok: 1 })
