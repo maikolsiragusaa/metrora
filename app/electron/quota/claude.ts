@@ -4,6 +4,7 @@ import path from 'node:path'
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { fraction, quotaRequestSignal, readKeychainPassword, readSecureFile, sanitizeError } from './security'
 import type { KeychainOutcome } from './security'
+import { knownIdentity, unknownIdentity, type IdentityObservation } from './identity'
 
 const ENDPOINT = 'https://api.anthropic.com/api/oauth/usage'
 const KEYCHAIN_SERVICE = 'Claude Code-credentials'
@@ -168,45 +169,50 @@ async function request(token: string, deps: ClaudeDeps, parent?: AbortSignal): P
   })
 }
 
-export type ClaudeResult = { quota: QuotaProvider; retryAfterSeconds?: number }
+export type ClaudeResult = { quota: QuotaProvider; retryAfterSeconds?: number; identity: IdentityObservation }
 
-export async function fetchClaudeQuota(options: Partial<ClaudeDeps> & { signal?: AbortSignal; allowKeychain?: boolean } = {}): Promise<ClaudeResult> {
+export async function fetchClaudeQuota(options: Partial<ClaudeDeps> & { signal?: AbortSignal; allowKeychain?: boolean; identityOnly?: boolean } = {}): Promise<ClaudeResult> {
   const deps = { ...defaults, ...options }
   try {
     const discovered = await discoverCredential(deps, Boolean(options.allowKeychain))
-    if (discovered === 'accessDenied') return { quota: empty('accessDenied') }
-    if (!discovered) return { quota: empty('disconnected') }
+    if (discovered === 'accessDenied') return { quota: empty('accessDenied'), identity: unknownIdentity() }
+    if (!discovered) return { quota: empty('disconnected'), identity: unknownIdentity() }
     const source = discovered
     let credential = source.credential
+    let identity = knownIdentity('claude', credential.accessToken)
 
     // Claude's CLI owns token rotation. A near-expiry credential gets one
     // bounded reread; Metrora never calls a provider refresh endpoint.
     if (credential.expiresAt !== undefined && credential.expiresAt - deps.now() <= 5 * 60_000) {
       const reread = await source.reread()
-      if (!reread || reread.accessToken === credential.accessToken) return { quota: empty('transientFailure') }
+      if (!reread || reread.accessToken === credential.accessToken) return { quota: empty('transientFailure'), identity }
       credential = reread
+      identity = knownIdentity('claude', credential.accessToken)
     }
+
+    if (options.identityOnly) return { quota: empty('loading'), identity }
 
     let response = await request(credential.accessToken, deps, options.signal)
     if (response.status === 401) {
       const reread = await source.reread()
-      if (!reread || reread.accessToken === credential.accessToken) return { quota: empty('transientFailure') }
+      if (!reread || reread.accessToken === credential.accessToken) return { quota: empty('transientFailure'), identity }
       credential = reread
+      identity = knownIdentity('claude', credential.accessToken)
       response = await request(credential.accessToken, deps, options.signal)
-      if (response.status === 401) return { quota: empty('transientFailure') }
+      if (response.status === 401) return { quota: empty('transientFailure'), identity }
     }
     if (response.status === 429) {
       let hint: unknown
       try { hint = (await response.json() as Record<string, unknown>).retry_after } catch { hint = undefined }
       const parsed = typeof hint === 'number' ? hint : typeof hint === 'string' ? Number(hint) : NaN
-      return { quota: empty('transientFailure'), retryAfterSeconds: Math.max(Number.isFinite(parsed) ? parsed : 300, 60) }
+      return { quota: empty('transientFailure'), retryAfterSeconds: Math.max(Number.isFinite(parsed) ? parsed : 300, 60), identity }
     }
-    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure') }
-    return { quota: markObserved(decodeClaudeUsage(await response.json(), credential), deps.now()) }
+    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure'), identity }
+    return { quota: markObserved(decodeClaudeUsage(await response.json(), credential), deps.now()), identity }
   } catch (error) {
     // Deliberately sanitize before the only diagnostic sink. Tokens and
     // provider response bodies are never returned or logged.
     console.warn(`Claude quota unavailable: ${sanitizeError(error)}`)
-    return { quota: empty('transientFailure') }
+    return { quota: empty('transientFailure'), identity: unknownIdentity() }
   }
 }

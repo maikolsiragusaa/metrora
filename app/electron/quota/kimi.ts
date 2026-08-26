@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { quotaRequestSignal, readSecureFile, sanitizeError } from './security'
+import { knownIdentity, unknownIdentity, type IdentityObservation } from './identity'
 
 const USAGE_ENDPOINT = 'https://api.kimi.com/coding/v1/usages'
 const SOURCE = { kind: 'provider-api', stability: 'experimental' } as const
@@ -144,14 +145,16 @@ function retryAfterSeconds(response: Response, now: number): number {
   return Math.max(60, Number.isFinite(date) ? Math.ceil((date - now) / 1000) : 300)
 }
 
-export type KimiResult = { quota: QuotaProvider; retryAfterSeconds?: number }
+export type KimiResult = { quota: QuotaProvider; retryAfterSeconds?: number; identity: IdentityObservation }
 
-export async function fetchKimiQuota(options: Partial<KimiDeps> & { signal?: AbortSignal } = {}): Promise<KimiResult> {
+export async function fetchKimiQuota(options: Partial<KimiDeps> & { signal?: AbortSignal; identityOnly?: boolean } = {}): Promise<KimiResult> {
   const deps = { ...defaults, ...options }
   try {
     const token = await freshToken(deps)
-    if (token === null) return { quota: empty('disconnected') }
-    if (token === 'expired') return { quota: empty('terminalFailure') }
+    if (token === null) return { quota: empty('disconnected'), identity: unknownIdentity() }
+    if (token === 'expired') return { quota: empty('terminalFailure'), identity: unknownIdentity() }
+    const identity = knownIdentity('kimi', 'credential', token)
+    if (options.identityOnly) return { quota: empty('loading'), identity }
     const deviceId = await readDeviceId(deps)
     const response = await deps.fetch(USAGE_ENDPOINT, {
       method: 'GET',
@@ -165,13 +168,13 @@ export async function fetchKimiQuota(options: Partial<KimiDeps> & { signal?: Abo
         ...(deviceId ? { 'X-Msh-Device-Id': deviceId } : {}),
       },
     })
-    if (response.status === 401 || response.status === 403) return { quota: empty('terminalFailure') }
-    if (response.status === 429) return { quota: empty('transientFailure'), retryAfterSeconds: retryAfterSeconds(response, deps.now()) }
-    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure') }
+    if (response.status === 401 || response.status === 403) return { quota: empty('terminalFailure'), identity }
+    if (response.status === 429) return { quota: empty('transientFailure'), retryAfterSeconds: retryAfterSeconds(response, deps.now()), identity }
+    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure'), identity }
     const quota = decodeKimiUsage(await response.json())
-    return { quota: quota ? markObserved(quota, deps.now()) : empty('transientFailure') }
+    return { quota: quota ? markObserved(quota, deps.now()) : empty('transientFailure'), identity }
   } catch (error) {
     console.warn(`Kimi Code capacity unavailable: ${sanitizeError(error)}`)
-    return { quota: empty('transientFailure') }
+    return { quota: empty('transientFailure'), identity: unknownIdentity() }
   }
 }

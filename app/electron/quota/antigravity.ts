@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { sanitizeError } from './security'
+import { knownContinuityIdentity, unknownIdentity, type IdentityObservation } from './identity'
 
 const SOURCE = { kind: 'provider-loopback', stability: 'experimental' } as const
 const SUMMARY_PATH = '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary'
@@ -250,29 +251,37 @@ async function probe(deps: AntigravityDeps, candidate: Candidate, port: number, 
   return null
 }
 
-export async function fetchAntigravityQuota(options: Partial<AntigravityDeps> & { signal?: AbortSignal } = {}): Promise<{ quota: QuotaProvider }> {
+export type AntigravityResult = { quota: QuotaProvider; identity: IdentityObservation }
+
+export async function fetchAntigravityQuota(options: Partial<AntigravityDeps> & { signal?: AbortSignal; identityOnly?: boolean } = {}): Promise<AntigravityResult> {
   const deps = { ...defaults, ...options }
   try {
-    if (options.signal?.aborted) return { quota: empty('disconnected') }
+    if (options.signal?.aborted) return { quota: empty('disconnected'), identity: unknownIdentity() }
     const candidates = await processCandidates(deps)
-    if (options.signal?.aborted) return { quota: empty('disconnected') }
-    for (const candidate of candidates) {
-      if (options.signal?.aborted) return { quota: empty('disconnected') }
-      const ports = candidate.port ? [candidate.port] : await listeningPorts(deps, candidate.pid)
-      for (const port of ports) {
-        if (options.signal?.aborted) return { quota: empty('disconnected') }
-        const quota = await probe(deps, candidate, port, options.signal)
-        if (quota) return { quota: markObserved(quota, deps.now()) }
-      }
+    if (options.signal?.aborted) return { quota: empty('disconnected'), identity: unknownIdentity() }
+    if (candidates.length === 0) return { quota: empty('disconnected'), identity: unknownIdentity() }
+    // Multiple eligible desktop authorities make the current session ambiguous;
+    // do not select one just to make stale retention appear available.
+    if (candidates.length !== 1) return { quota: empty('transientFailure'), identity: unknownIdentity() }
+    const candidate = candidates[0]!
+    // The local process/CSRF pair proves session continuity only. It is not a
+    // provider-account identity and must never authorize stale factual reuse.
+    const identity = knownContinuityIdentity('antigravity', 'session', candidate.pid, candidate.csrf)
+    if (options.identityOnly) return { quota: empty('loading'), identity }
+    const ports = candidate.port ? [candidate.port] : await listeningPorts(deps, candidate.pid)
+    for (const port of ports) {
+      if (options.signal?.aborted) return { quota: empty('disconnected'), identity }
+      const quota = await probe(deps, candidate, port, options.signal)
+      if (quota) return { quota: markObserved(quota, deps.now()), identity }
     }
     // An absent eligible process is a normal disconnected state. Once an
     // eligible provider-owned authority was observed, however, a failed port
     // or protocol probe is a transport failure and may legitimately retain a
     // prior factual snapshot as stale in QuotaService.
-    return { quota: empty(candidates.length > 0 ? 'transientFailure' : 'disconnected') }
+    return { quota: empty('transientFailure'), identity }
   } catch (error) {
-    if (options.signal?.aborted) return { quota: empty('disconnected') }
+    if (options.signal?.aborted) return { quota: empty('disconnected'), identity: unknownIdentity() }
     console.warn(`Antigravity capacity unavailable: ${sanitizeError(error)}`)
-    return { quota: empty('transientFailure') }
+    return { quota: empty('transientFailure'), identity: unknownIdentity() }
   }
 }

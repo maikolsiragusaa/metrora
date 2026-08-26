@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { decodeAntigravitySummary, fetchAntigravityQuota } from './antigravity'
 import { decodeCopilotUsage, fetchCopilotQuota } from './copilot'
 import { decodeKimiUsage, fetchKimiQuota } from './kimi'
+import { sameIdentity } from './identity'
 import { sanitizeQuotaProvider } from './types'
 
 describe('Capacity provider expansion', () => {
@@ -188,6 +189,7 @@ describe('Capacity provider expansion', () => {
       source: { kind: 'provider-loopback', stability: 'experimental' },
     })
     expect(result.quota.windows[0]).toMatchObject({ label: 'Gemini Models · Weekly', usedFraction: 0.25 })
+    expect(result.identity).toMatchObject({ state: 'known', capability: 'continuity' })
     expect(execFile).toHaveBeenCalledTimes(2)
   })
 
@@ -211,6 +213,41 @@ describe('Capacity provider expansion', () => {
     })
     expect(failedProbe.quota.connection).toBe('transientFailure')
     expect(failedProbe.quota.windows).toEqual([])
+  })
+
+  it('fails closed when multiple Antigravity authorities are eligible', async () => {
+    const execFile = vi.fn(async (_file: string, args: string[]) => {
+      const command = args.at(-1) ?? ''
+      if (!command.includes('Get-CimInstance')) return { stdout: '' }
+      return {
+        stdout: [
+          JSON.stringify({ PID: 4242, Cmd: 'C:\\Antigravity\\language_server.exe --app_data_dir antigravity --csrf_token abcdefghijklmnop' }),
+          JSON.stringify({ PID: 4343, Cmd: 'C:\\Antigravity\\language_server.exe --app_data_dir antigravity --csrf_token qrstuvwxyzabcdef' }),
+        ].join('\n'),
+      }
+    })
+    const request = vi.fn()
+    const result = await fetchAntigravityQuota({ platform: 'win32', execFile, request })
+    expect(result.quota.connection).toBe('transientFailure')
+    expect(result.identity.state).toBe('unknown')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('keeps Antigravity continuity bound to the process and CSRF pair', async () => {
+    let pid = '4242'
+    const execFile = vi.fn(async (_file: string, args: string[]) => {
+      const command = args.at(-1) ?? ''
+      if (!command.includes('Get-CimInstance')) return { stdout: '' }
+      return { stdout: `${JSON.stringify({ PID: Number(pid), Cmd: `C:\\Antigravity\\language_server.exe --app_data_dir antigravity --csrf_token abcdefghijklmnop` })}\n` }
+    })
+
+    const first = await fetchAntigravityQuota({ platform: 'win32', execFile, identityOnly: true })
+    pid = '4343'
+    const second = await fetchAntigravityQuota({ platform: 'win32', execFile, identityOnly: true })
+
+    expect(first.identity).toMatchObject({ state: 'known', capability: 'continuity' })
+    expect(second.identity).toMatchObject({ state: 'known', capability: 'continuity' })
+    expect(sameIdentity(first.identity, second.identity)).toBe(false)
   })
 
   it('sanitizes source metadata through the renderer boundary and drops unknown values', () => {

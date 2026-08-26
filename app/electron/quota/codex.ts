@@ -4,6 +4,7 @@ import path from 'node:path'
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { fraction, quotaRequestSignal, readKeychainPassword, readSecureFile, sanitizeError } from './security'
 import type { KeychainOutcome } from './security'
+import { knownIdentity, sameIdentity, unknownIdentity, type IdentityObservation } from './identity'
 
 const USAGE_ENDPOINT = 'https://chatgpt.com/backend-api/wham/usage'
 // The Metrora menubar caches its ChatGPT-mode Codex OAuth here as a
@@ -46,6 +47,13 @@ type CodexSource = {
 
 function empty(connection: QuotaProvider['connection']): QuotaProvider {
   return emptyQuota('codex', connection)
+}
+
+function identityForAuth(auth: AuthDoc): IdentityObservation {
+  const accountId = typeof auth.tokens?.account_id === 'string' ? auth.tokens.account_id.trim() : ''
+  if (accountId) return knownIdentity('codex', 'account', accountId)
+  const token = typeof auth.tokens?.access_token === 'string' ? auth.tokens.access_token : ''
+  return token ? knownIdentity('codex', 'credential', token) : unknownIdentity()
 }
 
 async function readAuth(deps: CodexDeps, filePath: string = deps.authPath): Promise<AuthDoc | null> {
@@ -206,46 +214,50 @@ async function usage(auth: AuthDoc, deps: CodexDeps, signal?: AbortSignal): Prom
   return deps.fetch(USAGE_ENDPOINT, { method: 'GET', headers, signal: quotaRequestSignal(signal) })
 }
 
-export type CodexResult = { quota: QuotaProvider; retryAfterSeconds?: number }
+export type CodexResult = { quota: QuotaProvider; retryAfterSeconds?: number; identity: IdentityObservation }
 
-export async function fetchCodexQuota(options: Partial<CodexDeps> & { signal?: AbortSignal; allowKeychain?: boolean } = {}): Promise<CodexResult> {
+export async function fetchCodexQuota(options: Partial<CodexDeps> & { signal?: AbortSignal; allowKeychain?: boolean; identityOnly?: boolean } = {}): Promise<CodexResult> {
   const deps = { ...defaults, ...options }
   try {
     const discovered = await discoverSource(deps, Boolean(options.allowKeychain))
-    if (discovered === 'accessDenied') return { quota: empty('accessDenied') }
-    if (!discovered) return { quota: empty('disconnected') }
+    if (discovered === 'accessDenied') return { quota: empty('accessDenied'), identity: unknownIdentity() }
+    if (!discovered) return { quota: empty('disconnected'), identity: unknownIdentity() }
     const source = discovered
     let auth = source.auth
-    if (auth.auth_mode !== 'chatgpt') return { quota: empty('terminalFailure') }
-    if (!auth.tokens?.access_token) return { quota: empty('disconnected') }
+    let identity = identityForAuth(auth)
+    if (auth.auth_mode !== 'chatgpt') return { quota: empty('terminalFailure'), identity }
+    if (!auth.tokens?.access_token) return { quota: empty('disconnected'), identity: unknownIdentity() }
+    if (options.identityOnly) return { quota: empty('loading'), identity }
 
     // Provider-owned Codex OAuth is observationally read-only. In particular,
     // a stale refresh_token in auth.json is never spent by this code.
     let response = await usage(auth, deps, options.signal)
-    if (!response) return { quota: empty('disconnected') }
+    if (!response) return { quota: empty('disconnected'), identity }
     if (response.status === 401) {
       // One bounded reread lets the owner win a concurrent rotation. If the
       // access token did not change, truthfully wait rather than refreshing or
       // mutating the provider-owned credential source.
       const reread = await source.reread()
       const nextToken = reread?.tokens?.access_token
-      if (!nextToken || nextToken === auth.tokens?.access_token) return { quota: empty('transientFailure') }
-      if (reread?.auth_mode !== 'chatgpt') return { quota: empty('terminalFailure') }
+      const nextIdentity = reread ? identityForAuth(reread) : unknownIdentity()
+      if (!nextToken || (nextToken === auth.tokens?.access_token && sameIdentity(nextIdentity, identity))) return { quota: empty('transientFailure'), identity }
+      if (reread?.auth_mode !== 'chatgpt') return { quota: empty('terminalFailure'), identity: nextIdentity }
       auth = reread
+      identity = nextIdentity
       response = await usage(auth, deps, options.signal)
-      if (!response) return { quota: empty('transientFailure') }
-      if (response.status === 401) return { quota: empty('transientFailure') }
+      if (!response) return { quota: empty('transientFailure'), identity }
+      if (response.status === 401) return { quota: empty('transientFailure'), identity }
     }
     if (response.status === 429) {
       const raw = response.headers.get('Retry-After')
       let seconds = raw === null ? NaN : Number(raw)
       if (!Number.isFinite(seconds) && raw) seconds = (Date.parse(raw) - deps.now()) / 1000
-      return { quota: empty('transientFailure'), retryAfterSeconds: Math.max(Number.isFinite(seconds) ? Math.ceil(seconds) : 300, 60) }
+      return { quota: empty('transientFailure'), retryAfterSeconds: Math.max(Number.isFinite(seconds) ? Math.ceil(seconds) : 300, 60), identity }
     }
-    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure') }
-    return { quota: markObserved(decodeCodexUsage(await response.json()), deps.now()) }
+    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure'), identity }
+    return { quota: markObserved(decodeCodexUsage(await response.json()), deps.now()), identity }
   } catch (error) {
     console.warn(`Codex quota unavailable: ${sanitizeError(error)}`)
-    return { quota: empty('transientFailure') }
+    return { quota: empty('transientFailure'), identity: unknownIdentity() }
   }
 }
