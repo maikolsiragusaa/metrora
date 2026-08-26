@@ -102,11 +102,8 @@ Android has a platform-native version authority separate from the frozen
 Windows Store package version:
 
 - source authority: `android/app/build.gradle.kts`;
-- latest public `versionName`: `0.1.0-alpha.3`;
-- latest public `versionCode`: `3`;
-- current accepted source `versionName`: `0.1.0-alpha.3`;
-- current accepted source `versionCode`: `3`;
-- current Play candidate line: `0.1.0-alpha.4` / `versionCode = 4`;
+- current published direct APK authority: `0.1.0-alpha.3` / `versionCode = 3`;
+- current source / Google Play candidate line: `0.1.0-alpha.4` / `versionCode = 4`;
 - GitHub identity: `android-v<versionName>`;
 - Play and direct APK upgrades use the same `eu.metrora.app` package line and
   the same strictly increasing `versionCode` sequence.
