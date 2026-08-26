@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload } from '../lib/types'
 import { createAdvisorContextualLaunch } from '../advisor/context'
-import type { AdvisorAnswer } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorHostedModelState } from '../advisor/types'
 import { Advisor } from './Advisor'
 
 const { advisorProbe, advisorHostedProbe, investigate } = vi.hoisted(() => ({
@@ -358,6 +358,23 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Credential invalid')).toBeInTheDocument()
   })
 
+  it('does not infer unreachable from a ready credential without provider reachability evidence', async () => {
+    advisorHostedProbe.mockImplementation(async provider => ({
+      provider,
+      available: false,
+      models: [],
+      detail: 'The provider did not return usable models.',
+      credentialState: 'ready',
+    }))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+
+    await waitFor(() => expect(screen.getByText('Reachability: Unavailable')).toBeInTheDocument())
+    expect(screen.queryByText('Reachability: Unreachable')).not.toBeInTheDocument()
+    expect(screen.getByText('Provider unavailable')).toBeInTheDocument()
+  })
+
   it('shows credential, reachability, and model compatibility as separate hosted states', async () => {
     advisorHostedProbe.mockImplementation(async provider => ({
       provider,
@@ -374,7 +391,32 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
     expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
     expect(screen.getByText('Model: Unverified')).toBeInTheDocument()
-    expect(screen.getByText('Model unverified')).toBeInTheDocument()
+    expect(screen.getByText('Compatibility unverified')).toBeInTheDocument()
+    expect(screen.getByLabelText('Advisor runtime status')).toHaveClass('unknown')
+  })
+
+  it.each([
+    ['discovered', 'Compatibility unverified', 'unknown', 'Discovered'],
+    ['unverified', 'Compatibility unverified', 'unknown', 'Unverified'],
+    ['limited', 'Model limited', 'unknown', 'Limited'],
+    ['verified', 'Ready', 'ready', 'Verified'],
+    ['unsupported', 'Model unsupported', 'unavailable', 'Unsupported'],
+    ['failed-conformance', 'Model failed conformance', 'unavailable', 'Failed Conformance'],
+  ] as Array<[AdvisorHostedModelState, string, 'ready' | 'unknown' | 'unavailable', string]>)('keeps hosted %s model compatibility distinct from generic Ready', async (state, expectedAvailability, expectedStatus, expectedModelState) => {
+    advisorHostedProbe.mockImplementation(async provider => ({
+      provider,
+      available: true,
+      models: [{ id: provider + '-model', label: provider + '-model', state, limitation: null }],
+      detail: provider + ' is reachable.',
+      credentialState: 'ready',
+    }))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+
+    await waitFor(() => expect(screen.getByText(expectedAvailability, { selector: '.advisor-runtime-availability' })).toBeInTheDocument())
+    expect(screen.getByLabelText('Advisor runtime status')).toHaveClass(expectedStatus)
+    expect(screen.getByText('Model: ' + expectedModelState)).toBeInTheDocument()
   })
 
   it('keeps all hosted BYOK providers available through the disclosed configuration', async () => {
