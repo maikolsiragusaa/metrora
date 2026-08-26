@@ -154,11 +154,42 @@
 .advisor-kicker { margin: 0 0 7px; color: var(--advisor-accent); font-size: 9px; font-weight: 800; letter-spacing: .16em; }
 .advisor-main-head h1 { margin: 0; font-size: 25px; letter-spacing: -.045em; }
 .advisor-subtitle { margin: 6px 0 0; color: var(--advisor-muted); font-size: 11px; }
-.advisor-runtime-status { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; max-width: 520px; color: var(--advisor-muted); }
+.advisor-runtime-status { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 0 9px; min-width: 260px; max-width: 560px; color: var(--advisor-muted); }
+.advisor-runtime-summary-copy { display: grid; min-width: 0; gap: 3px; }
 .advisor-runtime-status strong { display: block; color: var(--advisor-ink); font-size: 11px; }
-.advisor-runtime-status small { display: block; margin-top: 3px; font-size: 9px; line-height: 1.3; }
-.advisor-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--advisor-muted); }
+.advisor-runtime-status small { display: block; font-size: 9px; line-height: 1.3; }
+.advisor-runtime-description { color: var(--advisor-muted); }
+.advisor-runtime-detail { overflow: hidden; color: var(--advisor-muted); text-overflow: ellipsis; white-space: nowrap; }
+.advisor-runtime-availability { display: block; width: fit-content; color: var(--advisor-muted); font-size: 9px; font-weight: 750; }
+.advisor-runtime-availability.ready { color: #18704f; }
+.advisor-runtime-availability.unavailable { color: #a23a34; }
+.advisor-runtime-availability.unknown { color: #956000; }
+.advisor-runtime-availability.checking { color: var(--advisor-accent); }
+.advisor-status-dot { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 4px; border-radius: 50%; background: var(--advisor-muted); }
 .advisor-status-dot.ready { background: #22a06b; box-shadow: 0 0 0 4px rgba(34,160,107,.12); }
+.advisor-status-dot.unavailable { background: #c2382f; box-shadow: 0 0 0 4px rgba(194,56,47,.1); }
+.advisor-status-dot.unknown { background: #d29100; box-shadow: 0 0 0 4px rgba(210,145,0,.1); }
+.advisor-status-dot.checking { background: var(--advisor-accent); box-shadow: 0 0 0 4px var(--advisor-accent-soft); }
+.advisor-configure-toggle {
+  border: 1px solid var(--advisor-line);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: var(--advisor-ink);
+  background: var(--advisor-surface-strong);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.advisor-configure-toggle:hover { border-color: var(--advisor-accent); color: var(--advisor-accent); }
+.advisor-runtime-config { grid-column: 1 / -1; display: grid; gap: 10px; margin-top: 7px; padding: 12px 0 0 17px; border-top: 1px solid var(--advisor-line); }
+.advisor-runtime-config-head { display: grid; gap: 3px; }
+.advisor-runtime-config-head strong { font-size: 10px; }
+.advisor-runtime-config-head span { color: var(--advisor-muted); font-size: 9px; line-height: 1.35; }
+.advisor-runtime-config-controls { display: grid; gap: 9px; }
+.advisor-runtime-config-actions,
+.advisor-runtime-picker-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.advisor-runtime-picker-row { align-items: start; }
 .advisor-quiet-button {
   flex: 0 0 auto;
   border: 1px solid var(--advisor-line);
@@ -182,13 +213,17 @@
   font: inherit;
   font-size: 9px;
 }
-.advisor-hosted-controls { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 8px 0 0 16px; border-top: 1px solid var(--advisor-line); }
-.advisor-hosted-controls .advisor-runtime-picker select { max-width: 160px; }
-.advisor-credential-status { align-self: center; color: var(--advisor-muted); font-size: 9px; }
+.advisor-runtime-picker-row .advisor-runtime-picker select { max-width: 160px; }
+.advisor-runtime-state-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.advisor-runtime-state-grid span { padding: 4px 6px; border: 1px solid var(--advisor-line); border-radius: 5px; color: var(--advisor-muted); background: var(--advisor-tint); font-size: 9px; line-height: 1.25; }
+.advisor-runtime-state-grid span[data-state="credential"] { border-color: rgba(230,93,25,.22); }
+.advisor-runtime-state-grid span[data-state="reachability"] { border-color: rgba(45,111,229,.22); }
+.advisor-runtime-state-grid span[data-state="model"] { border-color: rgba(125,91,214,.22); }
 .advisor-credential-entry { display: flex; align-items: center; gap: 6px; }
 .advisor-credential-entry input { width: 165px; border: 1px solid var(--advisor-line); border-radius: 5px; padding: 5px 6px; color: var(--advisor-ink); background: var(--advisor-tint); font: inherit; font-size: 9px; }
-.advisor-hosted-consent { flex: 1 0 100%; display: flex; align-items: flex-start; gap: 6px; max-width: 480px; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
+.advisor-hosted-consent { display: flex; align-items: flex-start; gap: 6px; max-width: 480px; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
 .advisor-hosted-consent input { flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--advisor-accent); }
+.advisor-consent-unavailable { max-width: 480px; margin: 0; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
 .advisor-quiet-button:disabled { opacity: .45; cursor: not-allowed; }
 .advisor-scope-bar {
   display: flex;
@@ -388,7 +423,7 @@
   .advisor-workspace { grid-template-columns: 190px minmax(0, 1fr) 240px; }
   .advisor-main-head, .advisor-scope-bar, .advisor-thread { padding-left: 20px; padding-right: 20px; }
   .advisor-composer { margin-left: 20px; margin-right: 20px; }
-  .advisor-runtime-status { max-width: 280px; }
+  .advisor-runtime-status { min-width: 0; max-width: 360px; }
 }
 @media (max-width: 900px) {
   .advisor-workspace { grid-template-columns: 0 minmax(0, 1fr) 230px; }
@@ -398,7 +433,8 @@
   .advisor-workspace { grid-template-columns: minmax(0, 1fr); }
   .advisor-evidence { display: none; }
   .advisor-main-head { display: block; }
-  .advisor-runtime-status { margin-top: 14px; max-width: none; }
+  .advisor-runtime-status { margin-top: 14px; min-width: 0; max-width: none; }
+  .advisor-runtime-config { padding-left: 0; }
   .advisor-scope-bar { overflow-x: auto; }
   .advisor-scope-label { position: sticky; left: 0; }
   .advisor-prompt-grid { grid-template-columns: 1fr; }

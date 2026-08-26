@@ -85,7 +85,12 @@ describe('Advisor workspace', () => {
     expect(screen.getByRole('button', { name: /What quota remains/ })).toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'Advisor conversations' })).toHaveTextContent('Session-local history')
     expect(screen.getByRole('complementary', { name: 'Advisor evidence' })).toHaveTextContent('Ask a question to pin its evidence')
+    expect(screen.getByRole('button', { name: 'Configure runtime' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor runtime')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor hosted provider')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
+    expect(screen.getByText('Ollama')).toBeInTheDocument()
+    expect(screen.getByText('Runtime unavailable')).toBeInTheDocument()
     expect(advisorProbe).toHaveBeenCalledTimes(1)
   })
   it('loads a contextual scope and suggested investigation without auto-executing it', async () => {
@@ -190,6 +195,7 @@ describe('Advisor workspace', () => {
   it('switches between supported local runtimes and discovers its models factually', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.change(screen.getByLabelText('Advisor runtime'), { target: { value: 'lmstudio' } })
     await waitFor(() => expect(screen.getByLabelText('Advisor local runtime model')).toHaveValue('qwen/qwen3-8b'))
     expect(screen.getByText(/LM Studio · qwen\/qwen3-8b/)).toBeInTheDocument()
@@ -285,6 +291,7 @@ describe('Advisor workspace', () => {
   })
   it('keeps hosted model and consent coherent across refresh and selection changes', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
 
     const model = await screen.findByLabelText('Advisor hosted model') as HTMLSelectElement
@@ -310,5 +317,74 @@ describe('Advisor workspace', () => {
       expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('claude-a')
     })
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('presents an unexpected hosted probe failure as unknown instead of Ready or Not configured', async () => {
+    advisorHostedProbe.mockRejectedValue(new Error('bridge unavailable'))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+
+    await waitFor(() => expect(screen.getByText('Runtime status unavailable')).toBeInTheDocument())
+    expect(screen.getByText('OpenAI', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('Credential: Unknown')).toBeInTheDocument()
+    expect(screen.getByText('Reachability: Unknown')).toBeInTheDocument()
+    expect(screen.queryByText('Credential: Ready')).not.toBeInTheDocument()
+    expect(screen.queryByText('Credential: Not configured')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Advisor hosted model')).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close runtime' }))
+    expect(screen.queryByLabelText('Advisor runtime configuration')).not.toBeInTheDocument()
+    expect(screen.getByText('OpenAI')).toBeInTheDocument()
+    expect(screen.getByText('Runtime status unavailable')).toBeInTheDocument()
+  })
+
+  it('preserves provider-owned credential state and keeps reachability and model state separate', async () => {
+    advisorHostedProbe.mockImplementation(async provider => ({
+      provider,
+      available: false,
+      models: [],
+      detail: 'The provider rejected the saved credential.',
+      credentialState: 'invalid',
+    }))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
+
+    await waitFor(() => expect(screen.getByText('Credential: Invalid')).toBeInTheDocument())
+    expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
+    expect(screen.getByText('Model: Unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Credential invalid')).toBeInTheDocument()
+  })
+
+  it('shows credential, reachability, and model compatibility as separate hosted states', async () => {
+    advisorHostedProbe.mockImplementation(async provider => ({
+      provider,
+      available: true,
+      models: [{ id: provider + '-model', label: provider + '-model', state: 'unverified', limitation: 'Not verified in this session.' }],
+      detail: provider + ' is reachable.',
+      credentialState: 'ready',
+    }))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openai-model'))
+    expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
+    expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
+    expect(screen.getByText('Model: Unverified')).toBeInTheDocument()
+    expect(screen.getByText('Model unverified')).toBeInTheDocument()
+  })
+
+  it('keeps all hosted BYOK providers available through the disclosed configuration', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    await screen.findByLabelText('Advisor hosted model')
+
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'gemini' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('gemini-a'))
+    expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
   })
 })

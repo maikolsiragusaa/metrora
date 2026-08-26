@@ -9,16 +9,28 @@ import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
 import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
 import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
-import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
+import { HostedAdvisorRuntime, probeHostedAdvisor, type HostedAdvisorProbeResult } from '../advisor/hosted'
 import { periodLabel, scopeLabel } from '../advisor/evidence'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorLocalRuntimeId, type AdvisorPresentationBlockV1, type AdvisorPresentationChartSeries, type AdvisorScope } from '../advisor/types'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorCredentialState, type AdvisorHostedModel, type AdvisorHostedModelState, type AdvisorLocalRuntimeId, type AdvisorPresentationBlockV1, type AdvisorPresentationChartSeries, type AdvisorScope, type AdvisorToolCapability } from '../advisor/types'
 
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
-type RuntimeState = { runtime: AdvisorLocalRuntimeId; status: 'checking' | 'ready' | 'unavailable'; detail: string; models: string[]; toolCall: 'unknown' | 'supported' | 'unsupported' | 'failed-conformance' }
+type RuntimeState = { runtime: AdvisorLocalRuntimeId; status: 'checking' | 'ready' | 'unavailable'; detail: string; models: string[]; modelState: RuntimeModelState; toolCall: AdvisorToolCapability }
+type RuntimeModelState = AdvisorHostedModelState | 'unavailable'
+type ProviderReachability = 'checking' | 'reachable' | 'unreachable' | 'unknown'
+type HostedCredentialState = AdvisorCredentialState | 'unknown'
+type HostedProbePresentation = {
+  provider: HostedAdvisorProbeResult['provider']
+  available: boolean
+  models: AdvisorHostedModel[]
+  detail: string
+  credentialState: HostedCredentialState
+  reachability: ProviderReachability
+}
+type RuntimeStatusKind = 'checking' | 'ready' | 'unavailable' | 'unknown'
 
 const PERIODS: Array<{ value: Period; label: string }> = PERIOD_OPTIONS.map(option => ({ value: option.value as Period, label: option.label }))
 const PROMPTS = [
@@ -42,6 +54,71 @@ function isCancelled(error: unknown): boolean {
 function providerLabel(provider: string): string {
   if (provider === 'all') return 'All providers'
   return provider.split(/[-\s]+/).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+function hostedProviderLabel(provider: HostedAdvisorProbeResult['provider']): string {
+  if (provider === 'openai') return 'OpenAI'
+  if (provider === 'anthropic') return 'Anthropic'
+  return 'Gemini'
+}
+function stateLabel(value: string): string {
+  return value.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+function modelStateLabel(value: RuntimeModelState): string {
+  return stateLabel(value)
+}
+function reachabilityLabel(value: ProviderReachability): string {
+  return stateLabel(value)
+}
+function credentialStateLabel(value: HostedCredentialState): string {
+  return stateLabel(value)
+}
+function hostedReachability(result: HostedAdvisorProbeResult): ProviderReachability {
+  // An invalid credential is reported after the official endpoint has
+  // answered, so the provider is reachable even though the credential is not
+  // usable. Other non-ready credential states stop before a provider request.
+  if (result.available || result.credentialState === 'invalid') return 'reachable'
+  return result.credentialState === 'ready' ? 'unreachable' : 'unknown'
+}
+function hostedProbePresentation(result: HostedAdvisorProbeResult): HostedProbePresentation {
+  return { ...result, reachability: hostedReachability(result) }
+}
+function hostedProbeFailure(provider: HostedAdvisorProbeResult['provider']): HostedProbePresentation {
+  return {
+    provider,
+    available: false,
+    models: [],
+    detail: 'Hosted runtime status is unavailable. The provider probe did not complete.',
+    credentialState: 'unknown',
+    reachability: 'unknown',
+  }
+}
+function hostedProbeChecking(provider: HostedAdvisorProbeResult['provider'], previous: HostedProbePresentation | null = null): HostedProbePresentation {
+  const preserveModels = previous?.provider === provider ? previous.models : []
+  return {
+    provider,
+    available: false,
+    models: preserveModels,
+    detail: 'Checking the hosted provider…',
+    credentialState: 'unknown',
+    reachability: 'checking',
+  }
+}
+function hostedRuntimeStatusKind(probe: HostedProbePresentation, model: AdvisorHostedModel | null): RuntimeStatusKind {
+  if (probe.reachability === 'checking') return 'checking'
+  if (probe.reachability === 'unknown') return probe.credentialState === 'unknown' ? 'unknown' : 'unavailable'
+  if (probe.credentialState !== 'ready' || probe.reachability === 'unreachable' || !model || model.state === 'unsupported' || model.state === 'failed-conformance') return 'unavailable'
+  return 'ready'
+}
+function hostedAvailabilityLabel(probe: HostedProbePresentation, model: AdvisorHostedModel | null): string {
+  if (probe.reachability === 'checking') return 'Checking provider'
+  if (probe.credentialState !== 'ready' && probe.credentialState !== 'unknown') return 'Credential ' + credentialStateLabel(probe.credentialState).toLowerCase()
+  if (probe.reachability === 'unknown') return probe.credentialState === 'unknown' ? 'Runtime status unavailable' : 'Credential ' + credentialStateLabel(probe.credentialState).toLowerCase()
+  if (probe.reachability === 'unreachable') return 'Provider unavailable'
+  if (!model) return 'No usable model discovered'
+  if (model.state === 'unsupported') return 'Model unsupported'
+  if (model.state === 'failed-conformance') return 'Model failed conformance'
+  if (model.state === 'unverified' || model.state === 'limited') return 'Model ' + model.state
+  return 'Ready'
 }
 function contextualScopeLabel(scope: AdvisorScope, mode: AdvisorContextualScopeMode | null): string {
   if (mode === 'capacity') return 'Provider-reported current capacity · All providers'
@@ -216,13 +293,14 @@ export function Advisor({
   const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
   const [runtimeChoice, setRuntimeChoice] = useState<RuntimeChoice>('ollama')
   const [hostedProvider, setHostedProvider] = useState<'openai' | 'anthropic' | 'gemini'>('openai')
-  const [hostedProbe, setHostedProbe] = useState<Awaited<ReturnType<typeof probeHostedAdvisor>> | null>(null)
   const [hostedModel, setHostedModel] = useState<string | null>(null)
   const hostedModelRef = useRef<string | null>(null)
   hostedModelRef.current = hostedModel
   const [hostedConsent, setHostedConsent] = useState(false)
   const hostedRuntime = useMemo(() => hostedModel ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModel, consent: hostedConsent }) : null, [hostedConsent, hostedModel, hostedProvider])
-  const [runtimeState, setRuntimeState] = useState<RuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], toolCall: 'unknown' })
+  const [runtimeState, setRuntimeState] = useState<RuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
+  const [hostedProbe, setHostedProbe] = useState<HostedProbePresentation>(() => hostedProbeChecking('openai'))
+  const [configureOpen, setConfigureOpen] = useState(false)
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
   const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
   const [lmStudioRuntime, setLMStudioRuntime] = useState<LMStudioAdvisorRuntime | null>(null)
@@ -235,7 +313,7 @@ export function Advisor({
     const controller = new AbortController()
     probeController.current = controller
     const runtimeName = requestedRuntime === 'lmstudio' ? 'LM Studio' : 'Ollama'
-    setRuntimeState({ runtime: requestedRuntime, status: 'checking', detail: 'Checking for a local ' + runtimeName + ' model…', models: [], toolCall: 'unknown' })
+    setRuntimeState({ runtime: requestedRuntime, status: 'checking', detail: 'Checking for a local ' + runtimeName + ' model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
     try {
       const result = requestedRuntime === 'lmstudio' ? await probeLMStudio(controller.signal) : await probeOllama(controller.signal)
       if (controller.signal.aborted) return
@@ -251,15 +329,15 @@ export function Advisor({
         }
         const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: RuntimeState['toolCall'] }> }).capabilities ?? []
         const capability = capabilityProfiles.find(profile => profile.modelId === selected)
-        setRuntimeState({ runtime: requestedRuntime, status: 'ready', detail: result.detail, models: result.models, toolCall: capability?.toolCall ?? 'unknown' })
+        setRuntimeState({ runtime: requestedRuntime, status: 'ready', detail: result.detail, models: result.models, modelState: 'discovered', toolCall: capability?.toolCall ?? 'unknown' })
       } else {
         setRuntimeModel(null)
         if (requestedRuntime === 'lmstudio') setLMStudioRuntime(null)
         else setOllamaRuntime(null)
-        setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: result.detail, models: [], toolCall: 'unknown' })
+        setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: result.detail, models: [], modelState: 'unavailable', toolCall: 'unknown' })
       }
     } catch (error) {
-      if (!isCancelled(error)) setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: 'Local runtime probe was cancelled or failed.', models: [], toolCall: 'unknown' })
+      if (!isCancelled(error)) setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: 'Local runtime probe was cancelled or failed.', models: [], modelState: 'unavailable', toolCall: 'unknown' })
     }
   }, [runtimeId, runtimeModel])
   useEffect(() => {
@@ -272,10 +350,11 @@ export function Advisor({
     hostedProbeController.current?.abort()
     const controller = new AbortController()
     hostedProbeController.current = controller
+    setHostedProbe(current => hostedProbeChecking(requestedProvider, current))
     try {
       const result = await probeHostedAdvisor(requestedProvider, controller.signal)
       if (controller.signal.aborted) return
-      setHostedProbe(result)
+      setHostedProbe(hostedProbePresentation(result))
       const selectable = result.models.find(model => model.state !== 'unsupported')
       if (result.available && selectable) {
         const currentModel = resetSelection ? null : hostedModelRef.current
@@ -290,7 +369,7 @@ export function Advisor({
       if (!isCancelled(caught)) {
         setHostedModel(null)
         setHostedConsent(false)
-        setHostedProbe({ provider: requestedProvider, available: false, models: [], detail: 'Hosted provider probe failed.', credentialState: 'ready' })
+        setHostedProbe(hostedProbeFailure(requestedProvider))
       }
     }
   }, [hostedProvider])
@@ -420,7 +499,7 @@ export function Advisor({
   }
   const cancel = () => {
     requestController.current?.abort()
-    setNotice('Cancelling the local investigation…')
+    setNotice('Cancelling investigation…')
   }
   const newConversation = () => {
     const next: AdvisorConversation = { id: makeId('chat'), title: 'New investigation', messages: [] }
@@ -472,18 +551,28 @@ export function Advisor({
     ...conversation.messages.map(message => message.text ?? message.answer?.conclusion ?? ''),
   ].some(value => value.toLowerCase().includes(normalizedHistoryQuery)))
   const selectedModelRuntime = runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime
-  const displayedRuntime = runtimeChoice === 'hosted' ? hostedRuntime : selectedModelRuntime
-  const displayedReady = runtimeChoice === 'hosted'
-    ? Boolean(hostedProbe?.available && hostedRuntime)
-    : runtimeState.status === 'ready' && Boolean(selectedModelRuntime)
-  const runtimeLabel = displayedReady && displayedRuntime ? displayedRuntime.label : 'Offline evidence fallback'
+  const selectableHostedModels = hostedProbe.models.filter(model => model.state !== 'unsupported')
+  const selectedHostedModel = hostedProbe.models.find(model => model.id === hostedModel) ?? null
+  const hostedModelState: RuntimeModelState = selectedHostedModel?.state ?? 'unavailable'
+  const hostedStatusKind = hostedRuntimeStatusKind(hostedProbe, selectedHostedModel)
+  const runtimeStatusKind: RuntimeStatusKind = runtimeChoice === 'hosted' ? hostedStatusKind : runtimeState.status
+  const runtimeIdentity = runtimeChoice === 'hosted'
+    ? hostedProviderLabel(hostedProvider) + (selectedHostedModel ? ' · ' + selectedHostedModel.label : '')
+    : (runtimeId === 'lmstudio' ? 'LM Studio' : 'Ollama') + (runtimeModel ? ' · ' + runtimeModel : '')
+  const runtimeAvailability = runtimeChoice === 'hosted'
+    ? hostedAvailabilityLabel(hostedProbe, selectedHostedModel)
+    : runtimeState.status === 'checking'
+      ? 'Checking runtime'
+      : runtimeState.status === 'ready'
+        ? 'Ready'
+        : 'Runtime unavailable'
   const runtimeDescription = runtimeChoice === 'hosted'
     ? 'Hosted provider account · minimum evidence sent directly · no Metrora proxy'
     : runtimeState.status === 'ready' && selectedModelRuntime
       ? (runtimeId === 'lmstudio' ? 'Local LM Studio model' : 'Local Ollama model') + ' · read-only evidence tools · tool support varies by model'
-      : 'Deterministic evidence fallback · no model connected'
+      : 'Offline evidence fallback'
   const runtimeDetail = runtimeChoice === 'hosted'
-    ? hostedProbe?.detail ?? 'Choose a hosted provider and connect a credential.'
+    ? hostedProbe.detail
     : runtimeState.detail
   const latestAnswer = selectedAnswer ?? answerForMessage(messages, null)
   const suppliedOverviewMatchesScope = scope.period === period
@@ -516,26 +605,49 @@ export function Advisor({
       <main className="advisor-main">
         <header className="advisor-main-head">
           <div><p className="advisor-kicker">ADVISE · READ ONLY</p><h1>Ask Metrora</h1><p className="advisor-subtitle">Investigate measured usage, model efficiency, Projects, and provider capacity.</p></div>
-          <div className="advisor-runtime-status">
-            <span className={displayedReady ? 'advisor-status-dot ready' : 'advisor-status-dot'} />
-            <div><strong>{runtimeLabel}</strong><small>{runtimeDescription} · {runtimeDetail}</small></div>
-            {runtimeChoice === 'hosted'
-              ? <button type="button" className="advisor-quiet-button" onClick={() => void checkHostedRuntime()}>{hostedProbe?.available ? 'Refresh hosted models' : 'Check hosted provider'}</button>
-              : <button type="button" className="advisor-quiet-button" onClick={() => void checkLocalRuntime()}>{runtimeState.status === 'checking' ? 'Checking…' : 'Check local model'}</button>}
-            {runtimeChoice === 'hosted' ? <>
-              <button type="button" className="advisor-quiet-button" onClick={activateLocal}>Use local runtime</button>
-              <div className="advisor-hosted-controls">
-                <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => { const next = event.target.value as 'openai' | 'anthropic' | 'gemini'; setHostedProvider(next); setHostedProbe(null); setHostedModel(null); setHostedConsent(false); void checkHostedRuntime(next, true) }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
-                {hostedProbe?.models.filter(model => model.state !== 'unsupported').length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? hostedProbe.models.find(model => model.state !== 'unsupported')?.id ?? ''} onChange={event => { const model = event.target.value; setHostedModel(model); setHostedConsent(false) }}>{hostedProbe.models.filter(model => model.state !== 'unsupported').map(model => <option key={model.id} value={model.id}>{model.label} · {model.state}</option>)}</select></label> : null}
-                <span className="advisor-credential-status">Credential: {hostedProbe?.credentialState ?? 'not-configured'}</span>
-                {hostedProbe?.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Advisor provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => setCredentialEntry(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={() => void saveHostedCredential()} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={() => void clearHostedCredential()}>Remove key</button>}
-                {hostedRuntime ? <label className="advisor-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => updateHostedConsent(event.target.checked)} /> Before the first hosted investigation, send this question and minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</label> : null}
-              </div>
-            </> : <>
-              <button type="button" className="advisor-quiet-button" onClick={activateHosted}>Use hosted provider</button>
-              <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor runtime" value={runtimeId} onChange={event => { const next = event.target.value as AdvisorLocalRuntimeId; setRuntimeId(next); setRuntimeModel(null); setHostedConsent(false); void checkLocalRuntime(next) }}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
-              {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => { const model = event.target.value; setRuntimeModel(model); if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' })); else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' })) }}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
-            </>}
+          <div className={'advisor-runtime-status ' + runtimeStatusKind} aria-label="Advisor runtime status">
+            <span className={'advisor-status-dot ' + runtimeStatusKind} aria-hidden="true" />
+            <div className="advisor-runtime-summary-copy">
+              <strong>{runtimeIdentity}</strong>
+              <span className={'advisor-runtime-availability ' + runtimeStatusKind}>{runtimeAvailability}</span>
+              <small className="advisor-runtime-description">{runtimeDescription}</small>
+              <small className="advisor-runtime-detail">{runtimeDetail}</small>
+            </div>
+            <button type="button" className="advisor-configure-toggle" aria-expanded={configureOpen} aria-controls={configureOpen ? 'advisor-runtime-config' : undefined} onClick={() => setConfigureOpen(current => !current)}>{configureOpen ? 'Close runtime' : 'Configure runtime'}</button>
+            {configureOpen ? <div className="advisor-runtime-config" id="advisor-runtime-config" aria-label="Advisor runtime configuration">
+              <div className="advisor-runtime-config-head"><strong>Runtime configuration</strong><span>Choose a local or hosted runtime. Technical state stays here while the conversation remains the focus.</span></div>
+              {runtimeChoice === 'hosted' ? <div className="advisor-runtime-config-controls">
+                <div className="advisor-runtime-config-actions">
+                  <button type="button" className="advisor-quiet-button" onClick={() => void checkHostedRuntime()}>{hostedProbe.available ? 'Refresh hosted models' : 'Check hosted provider'}</button>
+                  <button type="button" className="advisor-quiet-button" onClick={activateLocal}>Use local runtime</button>
+                </div>
+                <div className="advisor-runtime-picker-row">
+                  <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => { const next = event.target.value as 'openai' | 'anthropic' | 'gemini'; setHostedProvider(next); setHostedModel(null); setHostedConsent(false); void checkHostedRuntime(next, true) }}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
+                  {selectableHostedModels.length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? selectableHostedModels[0]!.id} onChange={event => { const model = event.target.value; setHostedModel(model); setHostedConsent(false) }}>{selectableHostedModels.map(model => <option key={model.id} value={model.id}>{model.label} · {modelStateLabel(model.state)}</option>)}</select></label> : null}
+                </div>
+                <div className="advisor-runtime-state-grid" aria-label="Hosted runtime state">
+                  <span data-state="credential">Credential: {credentialStateLabel(hostedProbe.credentialState)}</span>
+                  <span data-state="reachability">Reachability: {reachabilityLabel(hostedProbe.reachability)}</span>
+                  <span data-state="model">Model: {modelStateLabel(hostedModelState)}</span>
+                </div>
+                {hostedProbe.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Advisor provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => setCredentialEntry(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={() => void saveHostedCredential()} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={() => void clearHostedCredential()}>Remove key</button>}
+                {hostedRuntime ? <label className="advisor-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => updateHostedConsent(event.target.checked)} /><span>Before the first hosted investigation, send this question and minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</span></label> : <p className="advisor-consent-unavailable">Consent appears after a usable hosted model is available. It is always explicit and starts unchecked.</p>}
+              </div> : <div className="advisor-runtime-config-controls">
+                <div className="advisor-runtime-config-actions">
+                  <button type="button" className="advisor-quiet-button" onClick={() => void checkLocalRuntime()}>{runtimeState.status === 'checking' ? 'Checking…' : 'Check local model'}</button>
+                  <button type="button" className="advisor-quiet-button" onClick={activateHosted}>Use hosted provider</button>
+                </div>
+                <div className="advisor-runtime-picker-row">
+                  <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor runtime" value={runtimeId} onChange={event => { const next = event.target.value as AdvisorLocalRuntimeId; setRuntimeId(next); setRuntimeModel(null); setHostedConsent(false); void checkLocalRuntime(next) }}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
+                  {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => { const model = event.target.value; setRuntimeModel(model); if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' })); else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' })) }}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+                </div>
+                <div className="advisor-runtime-state-grid" aria-label="Local runtime state">
+                  <span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span>
+                  <span data-state="model">Model: {modelStateLabel(runtimeState.modelState)}</span>
+                  <span data-state="tool-call">Tool calls: {stateLabel(runtimeState.toolCall)}</span>
+                </div>
+              </div>}
+            </div> : null}
           </div>
         </header>
         <div className="advisor-scope-bar" aria-label="Advisor context">
@@ -559,9 +671,9 @@ export function Advisor({
           {messages.length === 0 ? (
             <div className="advisor-welcome">
               <span className="advisor-welcome-mark">M</span>
-              <p className="advisor-kicker">LOCAL INVESTIGATION SPACE</p>
+              <p className="advisor-kicker">METRORA INVESTIGATION</p>
               <h2>What should we look into?</h2>
-              <p>Ask naturally. A connected local model can call Metrora evidence tools; every number stays in verified details.</p>
+              <p>Ask naturally. Advisor connects your question to Metrora factual evidence; a configured runtime can help explain it while verified details remain the authority.</p>
               <div className="advisor-prompt-grid">{PROMPTS.map(prompt => <button key={prompt.question} type="button" className="advisor-prompt" onClick={() => void ask(prompt.question)}><small>{prompt.eyebrow}</small><span>{prompt.label}</span><i>↗</i></button>)}</div>
             </div>
           ) : (
@@ -570,7 +682,7 @@ export function Advisor({
               : <AnswerCard key={message.id} answer={message.answer!} selected={selectedAnswerId === message.id} onSelect={() => setSelectedAnswerId(message.id)} onFollowUp={next => void ask(next)} />
             )
           )}
-          {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor</div><p className="advisor-tool-progress">{toolStatus ?? 'Thinking with local evidence…'}</p>{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button></article> : null}
+          {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor</div><p className="advisor-tool-progress">{toolStatus ?? 'Investigating with Metrora evidence…'}</p>{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button></article> : null}
           {error ? <div className="advisor-error" role="alert"><strong>Investigation unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequest) { setActiveConversationId(failedRequest.conversationId); void ask(failedRequest.question, failedRequest) } }}>Retry</button></div> : null}
           {notice ? <div className="advisor-notice" role="status">{notice}</div> : null}
         </div>
