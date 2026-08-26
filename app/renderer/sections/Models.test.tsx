@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuditRow, DateRange, ModelPricingSummary, ModelReportRow } from '../lib/types'
+import type { AuditRow, DateRange, DurableModelAccountingRow, ModelPricingSummary, ModelReportRow } from '../lib/types'
 import { Models } from './Models'
 
 const { getModels, getAudit } = vi.hoisted(() => ({
@@ -92,6 +92,21 @@ const auditRows: AuditRow[] = [{
   attributedCostUSD: 252,
 }]
 
+function durableRow(name: string, cost: number, calls: number, savingsUSD: number | undefined, overrides: Partial<DurableModelAccountingRow> = {}): DurableModelAccountingRow {
+  return {
+    name,
+    cost,
+    savingsUSD: savingsUSD as number,
+    calls,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    tokenDetail: true,
+    ...overrides,
+  }
+}
+
 function loadedOverview(overrides: Record<string, unknown> = {}) {
   return {
     data: {
@@ -144,44 +159,62 @@ function loadedOverview(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
+async function openDetails() {
+  const details = screen.getByTestId('models-details')
+  fireEvent.click(within(details).getByText('Details'))
+  await waitFor(() => expect(details).toHaveAttribute('open'))
+  return { details, evidence: within(details).getByRole('table', { name: 'Model usage details' }) }
+}
+
 describe('Models', () => {
   beforeEach(() => {
     getModels.mockReset()
     getAudit.mockReset()
   })
 
-  it('renders one durable model table with shared token/cache/unit-cost/performance metrics without spawning the detail report', () => {
+  it('renders only Model, Calls, Cost, and Saved by default', () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
 
-    expect(screen.getByText('Model usage')).toBeInTheDocument()
+    const primary = screen.getByRole('table', { name: 'Model usage' })
+    expect(within(primary).getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Model', 'Calls', 'Cost', 'Saved'])
     expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
     expect(screen.getByText('Claude Opus 4.8')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Active ms / 1K' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
-    expect(screen.getByText('9×')).toBeInTheDocument()
-    expect(screen.getByText('5.1M')).toBeInTheDocument()
-    expect(screen.getByText('250.0ms')).toBeInTheDocument()
-    expect(screen.getByText('300.0ms')).toBeInTheDocument()
-    expect(screen.getByText(/observed active-generation timing/i)).toBeInTheDocument()
-    expect(screen.queryByText(/Detailed token breakdown/i)).not.toBeInTheDocument()
+    expect(screen.getByTestId('models-details')).not.toHaveAttribute('open')
+    expect(screen.queryByRole('columnheader', { name: 'Reasoning' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Cache ×' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Total tokens' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/durable accounting values/i)).not.toBeInTheDocument()
     expect(getModels).not.toHaveBeenCalled()
   })
 
-  it('shows unavailable token-derived and timing metrics instead of fake zeros for legacy durable rows', () => {
+  it('opens and closes the native Details disclosure while preserving advanced evidence', async () => {
+    render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
+
+    const details = screen.getByTestId('models-details')
+    const summary = within(details).getByText('Details')
+    expect(summary.tagName).toBe('SUMMARY')
+    summary.focus()
+    expect(document.activeElement).toBe(summary)
+
+    const opened = await openDetails()
+    expect(opened.details.firstElementChild?.tagName).toBe('SUMMARY')
+    expect(within(opened.evidence).getByRole('columnheader', { name: 'Reasoning' })).toBeInTheDocument()
+    expect(within(opened.evidence).getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
+    expect(within(opened.details).getByText('5.1M')).toBeInTheDocument()
+    expect(within(opened.evidence).getByRole('columnheader', { name: 'Generated tok/s' })).toBeInTheDocument()
+    expect(within(opened.evidence).getByRole('columnheader', { name: 'Timing' })).toBeInTheDocument()
+    expect(within(opened.evidence).getAllByText('observed')).toHaveLength(2)
+    expect(within(opened.evidence).getByText('250.0ms')).toBeInTheDocument()
+
+    fireEvent.click(summary)
+    await waitFor(() => expect(opened.details).not.toHaveAttribute('open'))
+    expect(screen.queryByRole('table', { name: 'Model usage details' })).not.toBeInTheDocument()
+  })
+
+  it('shows unavailable token-derived and timing metrics instead of fake zeros for legacy durable rows', async () => {
     const overview = loadedOverview({
       modelAccounting: {
-        rows: [{
-          name: 'Legacy model',
-          cost: 12,
-          savingsUSD: 0,
-          calls: 9,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          tokenDetail: false,
-        }],
+        rows: [durableRow('Legacy model', 12, 9, 0, { tokenDetail: false })],
         gap: { cost: 0, savingsUSD: 0, calls: 0 },
         coverage: { cost: 1, calls: 1 },
         tokenCoverage: { cost: 0, calls: 0 },
@@ -189,39 +222,83 @@ describe('Models', () => {
     })
 
     const { container } = render(<Models period="lifetime" provider="all" overview={overview} />)
-
-    expect(screen.getByText(/Legacy rows without a durable token split show/i)).toBeInTheDocument()
-    const row = screen.getByText('Legacy model').closest('tr')!
-    expect(row.textContent?.match(/—/g)?.length).toBeGreaterThanOrEqual(8)
+    expect(screen.getByText('Legacy model')).toBeInTheDocument()
+    const { details, evidence } = await openDetails()
+    expect(within(details).getByText(/Rows without a durable token split show/i)).toBeInTheDocument()
+    const row = within(evidence).getByRole('row', { name: /Legacy model/ })
+    expect(row.querySelectorAll('.models-unavailable').length).toBeGreaterThanOrEqual(9)
     expect(container.querySelector('.provider-mono')).toBeInTheDocument()
   })
 
-  it('sorts the durable model table by total observed tokens on demand', () => {
+  it('sorts the durable evidence table by total observed tokens on demand', async () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
+    const { details, evidence } = await openDetails()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Total tokens' }))
-    const modelRows = screen.getAllByRole('row').filter(row => row.querySelector('tbody') == null).slice(1)
+    fireEvent.click(within(details).getByRole('tab', { name: 'Total tokens' }))
+    const modelRows = within(evidence).getAllByRole('row').slice(1)
     expect(modelRows[0]).toHaveTextContent('GPT-5.4')
   })
 
-  it('sorts observed ms per 1K fastest-first and leaves untimed rows at the bottom', () => {
+  it('sorts observed ms per 1K fastest-first and leaves untimed rows at the bottom', async () => {
     const overview = loadedOverview({
       modelAccounting: {
         rows: [
-          {
-            name: 'Untimed model', cost: 9, savingsUSD: 0, calls: 9,
-            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: true,
-          },
-          {
-            name: 'Slower model', cost: 8, savingsUSD: 0, calls: 8,
-            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: true,
-            activeDurationMs: 4000, activeGeneratedTokens: 10_000,
-          },
-          {
-            name: 'Faster model', cost: 7, savingsUSD: 0, calls: 7,
-            inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, tokenDetail: true,
-            activeDurationMs: 2000, activeGeneratedTokens: 10_000,
-          },
+          durableRow('Untimed model', 9, 9, 0, { inputTokens: 1, outputTokens: 1 }),
+          durableRow('Slower model', 8, 8, 0, { inputTokens: 1, outputTokens: 1, activeDurationMs: 4000, activeGeneratedTokens: 10_000 }),
+          durableRow('Faster model', 7, 7, 0, { inputTokens: 1, outputTokens: 1, activeDurationMs: 2000, activeGeneratedTokens: 10_000 }),
+        ],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    const { details, evidence } = await openDetails()
+
+    fireEvent.click(within(details).getByRole('tab', { name: 'Active ms / 1K' }))
+    const bodyRows = within(evidence).getAllByRole('row').slice(1)
+    expect(bodyRows[0]).toHaveTextContent('Faster model')
+    expect(bodyRows[1]).toHaveTextContent('Slower model')
+    expect(bodyRows[2]).toHaveTextContent('Untimed model')
+  })
+
+  it('keeps positive, explicit-zero, and unavailable Saved values distinct', () => {
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: [
+          durableRow('Saved model', 3, 3, 1.25),
+          durableRow('Free model', 0, 2, 0),
+          durableRow('Missing saved model', 2, 1, undefined),
+        ],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    const primary = screen.getByRole('table', { name: 'Model usage' })
+    const savedRow = within(primary).getByRole('row', { name: /Saved model/ })
+    const freeRow = within(primary).getByRole('row', { name: /Free model/ })
+    const missingRow = within(primary).getByRole('row', { name: /Missing saved model/ })
+
+    expect(within(savedRow).getAllByRole('cell')[3]).toHaveTextContent('$1.25')
+    expect(within(freeRow).getAllByRole('cell')[3]).toHaveTextContent('$0.00')
+    expect(within(within(missingRow).getAllByRole('cell')[3]).getByLabelText(/Saved is unavailable/)).toBeInTheDocument()
+    expect(within(missingRow).getAllByRole('cell')[3]).toHaveTextContent('—')
+  })
+
+  it('qualifies estimated and unpriced Cost while keeping known zero Cost numeric', () => {
+    const overview = loadedOverview({
+      unpricedModels: [
+        { model: 'Unpriced model', calls: 2, tokens: 0 },
+        { model: 'Partially unpriced model', calls: 1, tokens: 0 },
+      ],
+      modelAccounting: {
+        rows: [
+          durableRow('Explicit free model', 0, 2, 0),
+          durableRow('Estimated model', 4, 2, 0, { costIsEstimated: true, estimatedCostUSD: 1 }),
+          durableRow('Unpriced model', 0, 2, 0),
+          durableRow('Partially unpriced model', 5, 1, 0),
         ],
         gap: { cost: 0, savingsUSD: 0, calls: 0 },
         coverage: { cost: 1, calls: 1 },
@@ -230,11 +307,40 @@ describe('Models', () => {
     })
     render(<Models period="lifetime" provider="all" overview={overview} />)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Active ms / 1K' }))
-    const bodyRows = screen.getAllByRole('row').slice(1)
-    expect(bodyRows[0]).toHaveTextContent('Faster model')
-    expect(bodyRows[1]).toHaveTextContent('Slower model')
-    expect(bodyRows[2]).toHaveTextContent('Untimed model')
+    const primary = screen.getByRole('table', { name: 'Model usage' })
+    const freeRow = within(primary).getByRole('row', { name: /Explicit free model/ })
+    const estimatedRow = within(primary).getByRole('row', { name: /Estimated model/ })
+    const unpricedRow = within(primary).getByRole('row', { name: /Unpriced model/ })
+    const partialUnpricedRow = within(primary).getByRole('row', { name: /Partially unpriced model/ })
+    expect(within(freeRow).getAllByRole('cell')[2]).toHaveTextContent('$0.00')
+    expect(within(freeRow).getAllByRole('cell')[2]).not.toHaveTextContent(/unpriced|est\.|partial/i)
+    expect(within(estimatedRow).getAllByRole('cell')[2]).toHaveTextContent('$4.00')
+    expect(within(estimatedRow).getAllByRole('cell')[2]).toHaveTextContent('est.')
+    expect(within(unpricedRow).getAllByRole('cell')[2]).toHaveTextContent('unpriced')
+    expect(within(within(unpricedRow).getAllByRole('cell')[2]).getByLabelText(/Cost unavailable/)).toBeInTheDocument()
+    expect(within(partialUnpricedRow).getAllByRole('cell')[2]).toHaveTextContent('$5.00')
+    expect(within(partialUnpricedRow).getAllByRole('cell')[2]).toHaveTextContent('partial')
+  })
+
+  it('keeps Other models visible when durable reconciliation has a remainder', () => {
+    const overview = loadedOverview({
+      cost: 35,
+      calls: 35,
+      modelAccounting: {
+        rows: [durableRow('Named model', 20, 20, 0)],
+        gap: { cost: 15, savingsUSD: 0, calls: 15 },
+        coverage: { cost: 20 / 35, calls: 20 / 35 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+
+    const primary = screen.getByRole('table', { name: 'Model usage' })
+    const otherRow = within(primary).getByRole('row', { name: /Other models/ })
+    expect(otherRow).toHaveTextContent('Other models')
+    expect(within(otherRow).getAllByRole('cell')[1]).toHaveTextContent('15')
+    expect(within(otherRow).getAllByRole('cell')[2]).toHaveTextContent('$15.00')
+    expect(within(otherRow).getAllByRole('cell')[3]).toHaveTextContent('$0.00')
   })
 
   it('loads surviving session detail only when By task is requested', async () => {
@@ -264,12 +370,12 @@ describe('Models', () => {
     expect(screen.getAllByText('230').length).toBeGreaterThan(0)
   })
 
-  it('keeps Audit as an explicit on-demand diagnostic lens', async () => {
+  it('keeps Evidence as an explicit on-demand diagnostic lens', async () => {
     getAudit.mockResolvedValue(auditRows)
     render(<Models period="30days" provider="all" overview={loadedOverview()} />)
 
     expect(getAudit).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('tab', { name: 'Audit' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Evidence' }))
 
     await waitFor(() => expect(getAudit).toHaveBeenCalledWith('30days', 'all'))
     expect(await screen.findByText('3.1M')).toBeInTheDocument()
