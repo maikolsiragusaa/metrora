@@ -26,9 +26,9 @@ describe('Sidebar', () => {
       'Advisor⌘',
       'Bench⌘',
     ])
-    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Workspace⌘8'])
+    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Capacity⌘', 'Workspace⌘8'])
     expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(11)
+    expect(screen.getAllByRole('button')).toHaveLength(12)
   })
 
   it('routes by click and keyboard without changing section ids', async () => {
@@ -52,7 +52,7 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: /Home/ })).not.toHaveClass('on')
   })
 
-  it('opens About without competing with the ten product destinations', () => {
+  it('opens About without competing with the visible product destinations', () => {
     render(<Sidebar active="overview" onNavigate={() => {}} />)
     fireEvent.click(screen.getByRole('link', { name: 'About' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
