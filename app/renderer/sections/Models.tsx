@@ -23,7 +23,7 @@ type DurableModelAccounting = ModelAccounting
 const LENSES = [
   { value: 'model', label: 'By model' },
   { value: 'task', label: 'By task' },
-  { value: 'audit', label: 'Audit' },
+  { value: 'audit', label: 'Evidence' },
 ]
 
 function fmtInt(n: number): string {
@@ -214,23 +214,21 @@ function ModelsUsage({
 
   const accounting = durableAccounting(overview.data)
   const presentation = durablePresentation(overview.data, accounting)
-  const incomplete = accounting.coverage.cost < 0.999999 || accounting.coverage.calls < 0.999999
-  const tokenIncomplete = (accounting.tokenCoverage?.cost ?? 0) < 0.999999 || (accounting.tokenCoverage?.calls ?? 0) < 0.999999
-
   return (
     <>
       {overview.error && <StaleBanner error={overview.error} />}
-      <Panel className="scroll-x">
-          <div style={{ padding: '12px 14px 4px' }}>
-            <strong>Model usage</strong>
-            <div style={authorityNoteStyle}>Historical cost, calls and retained token detail from Metrora&apos;s durable local ledger.</div>
-            <div style={authorityNoteStyle}>Generated tok/s uses retained active-generation evidence only. Observed active-generation timing is shown where the source provides it; Active ms / 1K is the inverse secondary view and unavailable routes remain —.</div>
-            <div style={authorityNoteStyle}>Total includes Input, Output, Cache R, Cache W, and only reasoning reported as additive. Reasoning shows observed evidence; mixed rows can include reasoning already inside Output.</div>
-          {incomplete ? <div style={authorityNoteStyle}>Some older usage no longer has a reliable model identity; that remainder is shown as Other models.</div> : null}
-          {tokenIncomplete ? <div style={authorityNoteStyle}>Legacy rows without a durable token split show — for token-derived metrics instead of guessing.</div> : null}
+      <Panel className="models-panel">
+        <div style={{ padding: '12px 14px 4px' }}>
+          <strong>Model usage</strong>
+          <div style={authorityNoteStyle}>Calls, cost, and savings by model for the selected scope.</div>
         </div>
         {hasAccountingValue(accounting) ? (
-          <DurableModelsTable accounting={accounting} presentation={presentation} legacyPresentationRow={legacyPresentationRow} />
+          <DurableModelsTable
+            accounting={accounting}
+            presentation={presentation}
+            legacyPresentationRow={legacyPresentationRow}
+            unpricedModels={overview.data.current.unpricedModels}
+          />
         ) : (
           <EmptyNote>No model usage in this range yet.</EmptyNote>
         )}
@@ -267,8 +265,8 @@ function AuditLens({
   )
 
   if (!report.data) {
-    if (report.error) return <CliErrorPanel error={report.error} subject="the token audit" />
-    return <SectionSkeleton label="Auditing token usage…" rows={5} />
+    if (report.error) return <CliErrorPanel error={report.error} subject="model usage evidence" />
+    return <SectionSkeleton label="Loading usage evidence…" rows={5} />
   }
 
   return (
@@ -278,7 +276,7 @@ function AuditLens({
         {report.data.length ? (
           <AuditTable rows={report.data} />
         ) : (
-          <EmptyNote>No model usage to audit in this range yet.</EmptyNote>
+          <EmptyNote>No usage evidence is available for this range yet.</EmptyNote>
         )}
       </Panel>
     </>
@@ -287,18 +285,19 @@ function AuditLens({
 
 function AuditTable({ rows }: { rows: AuditRow[] }) {
   return (
-    <table className="audit-table">
+    <table className="audit-table" aria-label="Model usage evidence">
+      <caption className="sr-only">Model usage evidence</caption>
       <thead>
         <tr>
-          <th>Model</th>
-          <th>Calls</th>
-          <th>Input</th>
-          <th>Output</th>
-          <th>Reasoning</th>
-          <th>Norm out</th>
-          <th>Cache wr</th>
-          <th>Cache rd</th>
-          <th>Cost</th>
+          <th scope="col">Model</th>
+          <th scope="col">Calls</th>
+          <th scope="col">Input</th>
+          <th scope="col">Output</th>
+          <th scope="col">Reasoning</th>
+          <th scope="col">Norm out</th>
+          <th scope="col">Cache wr</th>
+          <th scope="col">Cache rd</th>
+          <th scope="col">Cost</th>
         </tr>
       </thead>
       <tbody>
