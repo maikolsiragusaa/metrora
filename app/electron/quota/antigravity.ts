@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { sanitizeError } from './security'
-import { knownIdentity, unknownIdentity, type IdentityObservation } from './identity'
+import { knownContinuityIdentity, unknownIdentity, type IdentityObservation } from './identity'
 
 const SOURCE = { kind: 'provider-loopback', stability: 'experimental' } as const
 const SUMMARY_PATH = '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary'
@@ -264,7 +264,9 @@ export async function fetchAntigravityQuota(options: Partial<AntigravityDeps> & 
     // do not select one just to make stale retention appear available.
     if (candidates.length !== 1) return { quota: empty('transientFailure'), identity: unknownIdentity() }
     const candidate = candidates[0]!
-    const identity = knownIdentity('antigravity', 'session', candidate.csrf)
+    // The local process/CSRF pair proves session continuity only. It is not a
+    // provider-account identity and must never authorize stale factual reuse.
+    const identity = knownContinuityIdentity('antigravity', 'session', candidate.pid, candidate.csrf)
     if (options.identityOnly) return { quota: empty('loading'), identity }
     const ports = candidate.port ? [candidate.port] : await listeningPorts(deps, candidate.pid)
     for (const port of ports) {

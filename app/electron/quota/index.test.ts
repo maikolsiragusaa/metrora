@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { QuotaService } from './index'
-import { knownIdentity, unknownIdentity } from './identity'
+import { knownContinuityIdentity, knownIdentity, unknownIdentity } from './identity'
 import type { ProviderName, QuotaProvider } from './types'
 
 const quota = (provider: ProviderName, overrides: Partial<QuotaProvider> = {}): QuotaProvider => ({
@@ -25,13 +25,19 @@ const result = (provider: ProviderName, value: QuotaProvider = quota(provider), 
   identity: knownIdentity(provider, account),
 })
 
+const continuityResult = (provider: ProviderName, value: QuotaProvider = quota(provider), session = 'A', extra: Record<string, unknown> = {}) => ({
+  ...extra,
+  quota: value,
+  identity: knownContinuityIdentity(provider, 'session', session),
+})
+
 function providerDeps(overrides: Partial<Record<ProviderName, ReturnType<typeof vi.fn>>> = {}) {
   return {
     claude: overrides.claude ?? vi.fn(async () => result('claude')),
     codex: overrides.codex ?? vi.fn(async () => result('codex')),
     copilot: overrides.copilot ?? vi.fn(async () => result('copilot')),
     kimi: overrides.kimi ?? vi.fn(async () => result('kimi')),
-    antigravity: overrides.antigravity ?? vi.fn(async () => result('antigravity')),
+    antigravity: overrides.antigravity ?? vi.fn(async () => continuityResult('antigravity')),
   }
 }
 
@@ -151,6 +157,91 @@ describe('QuotaService', () => {
     expect(value[0]!.windows).toEqual([])
     expect(value[0]!.observedAt).toBeNull()
     expect(value[0]!.freshness).toBe('unavailable')
+  })
+
+  it('keeps a fresh Antigravity observation usable without making its session retention-safe', async () => {
+    const antigravity = vi.fn(async (options: { identityOnly?: boolean }) => {
+      const identity = knownContinuityIdentity('antigravity', 'session', 'A')
+      if (options.identityOnly) return probe('antigravity', identity)
+      return continuityResult('antigravity', factual('antigravity', 0.25, '2026-07-12T00:00:00.000Z'), 'A')
+    })
+    const service = new QuotaService({
+      ...providerDeps({ antigravity }),
+      readFile: vi.fn(async () => null), writeFile: vi.fn(async () => undefined),
+    })
+
+    const value = await service.getQuota({ force: true })
+
+    expect(value[4]).toMatchObject({ provider: 'antigravity', connection: 'connected', freshness: 'fresh' })
+    expect(value[4]!.windows[0]!.usedFraction).toBe(0.25)
+    const cached = await service.getQuota()
+    expect(cached[4]!.freshness).toBe('fresh')
+    expect(actualCalls(antigravity)).toBe(1)
+  })
+
+  it('does not reuse Antigravity facts after a same-session transient failure', async () => {
+    let healthy = true
+    const antigravity = vi.fn(async (options: { identityOnly?: boolean }) => {
+      const identity = knownContinuityIdentity('antigravity', 'session', 'A')
+      if (options.identityOnly) return probe('antigravity', identity)
+      return healthy
+        ? continuityResult('antigravity', factual('antigravity', 0.25, '2026-07-12T00:00:00.000Z'), 'A')
+        : continuityResult('antigravity', quota('antigravity', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }), 'A')
+    })
+    const service = new QuotaService({
+      ...providerDeps({ antigravity }),
+      readFile: vi.fn(async () => null), writeFile: vi.fn(async () => undefined),
+    })
+
+    await service.getQuota({ force: true })
+    healthy = false
+    const value = await service.getQuota({ force: true })
+
+    expect(value[4]).toMatchObject({ provider: 'antigravity', connection: 'transientFailure', freshness: 'unavailable' })
+    expect(value[4]!.windows).toEqual([])
+    expect(value[4]!.observedAt).toBeNull()
+  })
+
+  it('does not let a replacement Antigravity session inherit prior factual quota', async () => {
+    let session = 'A'
+    let healthy = true
+    const antigravity = vi.fn(async (options: { identityOnly?: boolean }) => {
+      const identity = knownContinuityIdentity('antigravity', 'session', session)
+      if (options.identityOnly) return probe('antigravity', identity)
+      return healthy
+        ? continuityResult('antigravity', factual('antigravity', 0.25, '2026-07-12T00:00:00.000Z'), session)
+        : continuityResult('antigravity', quota('antigravity', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }), session)
+    })
+    const service = new QuotaService({
+      ...providerDeps({ antigravity }),
+      readFile: vi.fn(async () => null), writeFile: vi.fn(async () => undefined),
+    })
+
+    await service.getQuota({ force: true })
+    session = 'B'
+    healthy = false
+    const value = await service.getQuota({ force: true })
+
+    expect(value[4]).toMatchObject({ provider: 'antigravity', connection: 'transientFailure', freshness: 'unavailable' })
+    expect(value[4]!.windows).toEqual([])
+    expect(value[4]!.observedAt).toBeNull()
+  })
+
+  it('rejects a late Antigravity result when the session changes before postflight verification', async () => {
+    const antigravity = vi.fn(async (options: { identityOnly?: boolean }) => {
+      if (options.identityOnly) return probe('antigravity', knownContinuityIdentity('antigravity', 'session', 'B'))
+      return continuityResult('antigravity', factual('antigravity', 0.25, '2026-07-12T00:00:00.000Z'), 'A')
+    })
+    const service = new QuotaService({
+      ...providerDeps({ antigravity }),
+      readFile: vi.fn(async () => null), writeFile: vi.fn(async () => undefined),
+    })
+
+    const value = await service.getQuota({ force: true })
+
+    expect(value[4]).toMatchObject({ provider: 'antigravity', connection: 'disconnected', freshness: 'unavailable' })
+    expect(value[4]!.windows).toEqual([])
+    expect(value[4]!.observedAt).toBeNull()
   })
 
   it('reuses stale facts only for the same credential identity and never exposes the key', async () => {

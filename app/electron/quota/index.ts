@@ -7,7 +7,7 @@ import { fetchCodexQuota } from './codex'
 import { fetchCopilotQuota } from './copilot'
 import { fetchKimiQuota } from './kimi'
 import { atomicWriteSecureFile, readSecureFile, sanitizeError } from './security'
-import { sameIdentity, unknownIdentity, type IdentityObservation } from './identity'
+import { isRetentionSafe, sameIdentity, unknownIdentity, type IdentityObservation } from './identity'
 import {
   PROVIDER_NAMES,
   emptyQuota,
@@ -40,7 +40,12 @@ type Blocked = Partial<Record<ProviderNameFromQuota, string>>
 type FetchResult = { quota: QuotaProvider; retryAfterSeconds?: number; identity: IdentityObservation }
 type ProviderFetcher = (options: { signal: AbortSignal; allowKeychain: boolean; identityOnly?: boolean }) => Promise<FetchResult>
 type RetainedQuota = { quota: QuotaProvider; identity: IdentityObservation }
-type CacheState = { at: number; value: QuotaProvider[]; retained: Partial<Record<ProviderNameFromQuota, RetainedQuota>> }
+type CacheState = {
+  at: number
+  value: QuotaProvider[]
+  cacheIdentity: Partial<Record<ProviderNameFromQuota, IdentityObservation>>
+  retained: Partial<Record<ProviderNameFromQuota, RetainedQuota>>
+}
 type QuotaDeps = {
   claude: ProviderFetcher
   codex: ProviderFetcher
@@ -142,11 +147,11 @@ export class QuotaService {
     const checks = await Promise.all(PROVIDER_NAMES.map(async provider => {
       const current = cache.value.find(item => item.provider === provider)
       if (!current || !hasRetainedFacts(current)) return true
-      const retained = cache.retained[provider]
-      if (!retained) return false
+      const cachedIdentity = cache.cacheIdentity[provider]
+      if (!cachedIdentity || cachedIdentity.state !== 'known') return false
       const observed = await this.observeIdentity(provider, allowKeychain)
-      if (hasKnownIdentityMismatch(retained.identity, observed.identity)) return false
-      return sameIdentity(retained.identity, observed.identity)
+      if (hasKnownIdentityMismatch(cachedIdentity, observed.identity)) return false
+      return sameIdentity(cachedIdentity, observed.identity)
     }))
     return checks.every(Boolean)
   }
@@ -180,6 +185,7 @@ export class QuotaService {
         const candidate = this.lastGood[provider] ?? this.cache?.retained[provider]
         const previous = candidate && hasRetainedFacts(candidate.quota) ? candidate : undefined
         if (!previous) return next
+        if (!isRetentionSafe(previous.identity) || !isRetentionSafe(identity)) return next
         if (hasKnownIdentityMismatch(previous.identity, identity)) {
           this.clearRetained(provider)
           return next
@@ -254,7 +260,7 @@ export class QuotaService {
           delete blocked[provider]
           await this.writeBlocked(blocked)
         }
-        if (isFactualSnapshot(quota)) this.lastGood[provider] = { quota, identity }
+        if (isFactualSnapshot(quota) && isRetentionSafe(identity)) this.lastGood[provider] = { quota, identity }
         return retainOnFailure(quota, identity)
       } catch (error) {
         // Provider adapters normally convert failures to a snapshot. Keep this
@@ -270,13 +276,17 @@ export class QuotaService {
     const value = await Promise.all(PROVIDER_NAMES.map(run))
     const unchanged = PROVIDER_NAMES.every(provider => startingGenerations[provider] === this.generations[provider])
     if (unchanged) {
+      const cacheIdentity: Partial<Record<ProviderNameFromQuota, IdentityObservation>> = {}
       const retained: Partial<Record<ProviderNameFromQuota, RetainedQuota>> = {}
       for (const provider of PROVIDER_NAMES) {
         const identity = runIdentities[provider]
         const quota = value.find(item => item.provider === provider)
-        if (identity?.state === 'known' && quota && hasRetainedFacts(quota)) retained[provider] = { quota, identity }
+        if (identity?.state === 'known' && quota && hasRetainedFacts(quota)) {
+          cacheIdentity[provider] = identity
+          if (isRetentionSafe(identity)) retained[provider] = { quota, identity }
+        }
       }
-      this.cache = { at: this.deps.now(), value, retained }
+      this.cache = { at: this.deps.now(), value, cacheIdentity, retained }
     }
     return value
   }
