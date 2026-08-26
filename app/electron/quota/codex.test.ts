@@ -91,6 +91,25 @@ describe('Codex quota', () => {
     expect(usageInit.headers).toMatchObject({ 'ChatGPT-Account-Id': 'acct_1', 'User-Agent': 'Metrora' })
   })
 
+  it('binds retention identity to Codex account_id rather than token alone', async () => {
+    let accountId = 'acct_1'
+    const readFile = vi.fn(async () => JSON.stringify({
+      ...auth,
+      tokens: { ...auth.tokens, access_token: 'same-token', account_id: accountId },
+    }))
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ plan_type: 'pro' }), { status: 200 }))
+
+    const first = await fetchCodexQuota({ fetch: fetchMock, readFile, now: () => now })
+    accountId = 'acct_2'
+    const second = await fetchCodexQuota({ fetch: fetchMock, readFile, now: () => now })
+
+    expect(first.identity.state).toBe('known')
+    expect(second.identity.state).toBe('known')
+    expect(first.identity).not.toEqual(second.identity)
+    expect(JSON.stringify(first.identity)).not.toContain('acct_1')
+    expect(JSON.stringify(second.identity)).not.toContain('acct_2')
+  })
+
   it('never refreshes or writes a stale provider-owned auth document', async () => {
     const stale = { ...auth, last_refresh: '2026-07-01T00:00:00Z' }
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ plan_type: 'pro', rate_limit: {} }), { status: 200 }))

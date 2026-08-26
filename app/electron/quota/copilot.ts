@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { emptyQuota, markObserved, type QuotaProvider, type QuotaWindow } from './types'
 import { quotaRequestSignal, readSecureFile, sanitizeError } from './security'
+import { knownIdentity, unknownIdentity, type IdentityObservation } from './identity'
 
 const USAGE_ENDPOINT = 'https://api.github.com/copilot_internal/user'
 const SOURCE = { kind: 'provider-internal-api', stability: 'experimental' } as const
@@ -210,27 +211,30 @@ function retryAfterSeconds(response: Response, now: number): number {
   return Math.max(60, Number.isFinite(date) ? Math.ceil((date - now) / 1000) : 300)
 }
 
-export type CopilotResult = { quota: QuotaProvider; retryAfterSeconds?: number }
+export type CopilotResult = { quota: QuotaProvider; retryAfterSeconds?: number; identity: IdentityObservation }
 
-export async function fetchCopilotQuota(options: Partial<CopilotDeps> & { signal?: AbortSignal } = {}): Promise<CopilotResult> {
+export async function fetchCopilotQuota(options: Partial<CopilotDeps> & { signal?: AbortSignal; identityOnly?: boolean } = {}): Promise<CopilotResult> {
   const deps = { ...defaults, ...options }
   try {
     let token = await credentialFromFiles(deps)
-    if (!token) return { quota: empty('disconnected') }
+    if (!token) return { quota: empty('disconnected'), identity: unknownIdentity() }
+    let identity = knownIdentity('copilot', 'credential', token)
+    if (options.identityOnly) return { quota: empty('loading'), identity }
 
     let response = await request(token, deps, options.signal)
     if (response.status === 401) {
       const reread = await credentialFromFiles(deps)
-      if (!reread || reread === token) return { quota: empty('transientFailure') }
+      if (!reread || reread === token) return { quota: empty('transientFailure'), identity }
       token = reread
+      identity = knownIdentity('copilot', 'credential', token)
       response = await request(token, deps, options.signal)
-      if (response.status === 401) return { quota: empty('transientFailure') }
+      if (response.status === 401) return { quota: empty('transientFailure'), identity }
     }
-    if (response.status === 429) return { quota: empty('transientFailure'), retryAfterSeconds: retryAfterSeconds(response, deps.now()) }
-    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure') }
-    return { quota: markObserved(decodeCopilotUsage(await response.json()), deps.now()) }
+    if (response.status === 429) return { quota: empty('transientFailure'), retryAfterSeconds: retryAfterSeconds(response, deps.now()), identity }
+    if (!response.ok) return { quota: empty(response.status >= 400 && response.status < 500 ? 'terminalFailure' : 'transientFailure'), identity }
+    return { quota: markObserved(decodeCopilotUsage(await response.json()), deps.now()), identity }
   } catch (error) {
     console.warn(`GitHub Copilot capacity unavailable: ${sanitizeError(error)}`)
-    return { quota: empty('transientFailure') }
+    return { quota: empty('transientFailure'), identity: unknownIdentity() }
   }
 }

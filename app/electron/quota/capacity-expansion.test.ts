@@ -213,6 +213,24 @@ describe('Capacity provider expansion', () => {
     expect(failedProbe.quota.windows).toEqual([])
   })
 
+  it('fails closed when multiple Antigravity authorities are eligible', async () => {
+    const execFile = vi.fn(async (_file: string, args: string[]) => {
+      const command = args.at(-1) ?? ''
+      if (!command.includes('Get-CimInstance')) return { stdout: '' }
+      return {
+        stdout: [
+          JSON.stringify({ PID: 4242, Cmd: 'C:\\Antigravity\\language_server.exe --app_data_dir antigravity --csrf_token abcdefghijklmnop' }),
+          JSON.stringify({ PID: 4343, Cmd: 'C:\\Antigravity\\language_server.exe --app_data_dir antigravity --csrf_token qrstuvwxyzabcdef' }),
+        ].join('\n'),
+      }
+    })
+    const request = vi.fn()
+    const result = await fetchAntigravityQuota({ platform: 'win32', execFile, request })
+    expect(result.quota.connection).toBe('transientFailure')
+    expect(result.identity.state).toBe('unknown')
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('sanitizes source metadata through the renderer boundary and drops unknown values', () => {
     const base = {
       schemaVersion: 1,
