@@ -39,7 +39,7 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
   compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '7' },
   advisor: { id: 'advisor', label: 'Advisor', title: 'Advisor', shortcut: '' },
   bench: { id: 'bench', label: 'Bench', title: 'Local Bench', shortcut: '' },
-  plans: { id: 'plans', label: 'Plans', title: 'Provider plans', shortcut: '' },
+  plans: { id: 'plans', label: 'Capacity', title: 'Provider plans', shortcut: '' },
   workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '8' },
   settings: { id: 'settings', label: 'Settings', title: 'Settings', shortcut: ',' },
 }
@@ -48,7 +48,7 @@ export const DESKTOP_NAVIGATION_GROUPS: readonly DesktopNavigationGroup[] = [
   { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
   { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
   { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare', 'advisor', 'bench'] },
-  { id: 'control', label: 'Control', placement: 'primary', sections: ['workspace'] },
+  { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
   { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
 ]
 

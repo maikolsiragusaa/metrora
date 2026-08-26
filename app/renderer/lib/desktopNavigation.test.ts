@@ -13,7 +13,7 @@ describe('desktop navigation authority', () => {
   it('keeps every visible destination unique while allowing internal routable sections', () => {
     expect(new Set(DESKTOP_NAVIGATION_ORDER).size).toBe(DESKTOP_NAVIGATION_ORDER.length)
     expect(DESKTOP_NAVIGATION_ORDER.every(id => SECTION_IDS.includes(id))).toBe(true)
-    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('plans')
+    expect(DESKTOP_NAVIGATION_ORDER).toContain('plans')
     expect(SECTION_IDS).toContain('plans')
   })
 
@@ -28,20 +28,22 @@ describe('desktop navigation authority', () => {
     }
   })
 
-  it('keeps Advisor in the Analyze hierarchy without exposing Plans as a shortcut', () => {
+  it('keeps Advisor in Analyze and Capacity in Control without exposing Capacity as a shortcut', () => {
     expect(DESKTOP_NAVIGATION_GROUPS).toEqual([
       { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
       { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
       { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare', 'advisor', 'bench'] },
-      { id: 'control', label: 'Control', placement: 'primary', sections: ['workspace'] },
+      { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
       { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
     ])
     expect(DESKTOP_NAVIGATION_ORDER).toEqual([
-      'overview', 'sessions', 'pullRequests', 'spend', 'optimize', 'models', 'compare', 'advisor', 'bench', 'workspace', 'settings',
+      'overview', 'sessions', 'pullRequests', 'spend', 'optimize', 'models', 'compare', 'advisor', 'bench', 'plans', 'workspace', 'settings',
     ])
     expect(DESKTOP_NAVIGATION_ITEMS.optimize.label).toBe('Insights')
     expect(DESKTOP_NAVIGATION_ITEMS.advisor.label).toBe('Advisor')
     expect(DESKTOP_NAVIGATION_ITEMS.bench.title).toBe('Local Bench')
+    expect(DESKTOP_NAVIGATION_ITEMS.plans.id).toBe('plans')
+    expect(DESKTOP_NAVIGATION_ITEMS.plans.label).toBe('Capacity')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.shortcut).toBe('')
     expect(DESKTOP_NAVIGATION_ITEMS.workspace.shortcut).toBe('8')
     expect(DESKTOP_NAVIGATION_ITEMS.settings.shortcut).toBe(',')
