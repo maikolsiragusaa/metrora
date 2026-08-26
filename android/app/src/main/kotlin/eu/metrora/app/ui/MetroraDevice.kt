@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -69,10 +70,11 @@ internal fun DeviceActionCard(
     title: String,
     body: String,
     enabled: Boolean = true,
+    onClickLabel: String? = null,
     onClick: () -> Unit,
 ) {
     MetroraPanel(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Button, onClickLabel = onClickLabel, onClick = onClick),
         color = MetroraPalette.surface.copy(alpha = 0.78f),
         radius = 12,
     ) {

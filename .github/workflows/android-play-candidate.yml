@@ -1,0 +1,202 @@
+name: Android Google Play candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full 40-character commit SHA already reachable from main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrora-android-play-candidate
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    name: Build and verify source-bound Play AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment:
+      name: android-play-candidate
+    env:
+      METRORA_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      METRORA_ANDROID_PLAY_UPLOAD_CERTIFICATE_SHA256: ${{ vars.METRORA_ANDROID_PLAY_UPLOAD_CERTIFICATE_SHA256 }}
+    steps:
+      - name: Checkout exact candidate source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source binding to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$METRORA_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$METRORA_SOURCE_COMMIT"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$METRORA_SOURCE_COMMIT" origin/main
+
+      - name: Set up Java 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.6.1
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Set up Android SDK API 36
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: platform-tools
+
+      - name: Install Android API 36 and bundletool
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-36'
+          bundletool_version='1.18.1'
+          expected_bundletool_sha256='675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c'
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/bundletool.jar" \
+            "https://github.com/google/bundletool/releases/download/${bundletool_version}/bundletool-all-${bundletool_version}.jar"
+          test -s "$RUNNER_TEMP/bundletool.jar"
+          actual_bundletool_sha256="$(sha256sum "$RUNNER_TEMP/bundletool.jar" | awk '{ print tolower($1) }')"
+          if [[ "$actual_bundletool_sha256" != "$expected_bundletool_sha256" ]]; then
+            echo "bundletool ${bundletool_version} SHA-256 mismatch" >&2
+            echo "expected: ${expected_bundletool_sha256}" >&2
+            echo "actual:   ${actual_bundletool_sha256}" >&2
+            exit 1
+          fi
+
+      - name: Validate Android without signing secrets
+        shell: bash
+        run: >-
+          gradle -p android --no-daemon
+          :app:testGithubDebugUnitTest
+          :app:lint
+
+      - name: Materialize Play upload key and assemble signed AAB
+        shell: bash
+        env:
+          METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_B64: ${{ secrets.METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_B64 }}
+          METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD: ${{ secrets.METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD }}
+          METRORA_ANDROID_PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.METRORA_ANDROID_PLAY_UPLOAD_KEY_PASSWORD }}
+          METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          play_keystore="$RUNNER_TEMP/metrora-android-play-upload.jks"
+          cleanup() {
+            set +e
+            rm -f -- "$play_keystore"
+            unset METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_B64 \
+              METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD \
+              METRORA_ANDROID_PLAY_UPLOAD_KEY_PASSWORD \
+              METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS \
+              METRORA_ANDROID_PLAY_UPLOAD_SIGNING_ENABLED \
+              METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_PATH
+          }
+          trap cleanup EXIT HUP INT TERM
+
+          test -n "$METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_B64"
+          test -n "$METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD"
+          test -n "$METRORA_ANDROID_PLAY_UPLOAD_KEY_PASSWORD"
+          test -n "$METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS"
+          test -n "$METRORA_ANDROID_PLAY_UPLOAD_CERTIFICATE_SHA256"
+          printf '%s' "$METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_B64" | base64 --decode > "$play_keystore"
+          chmod 600 "$play_keystore"
+          test -s "$play_keystore"
+          keytool -list -storetype JKS -keystore "$play_keystore" \
+            -storepass "$METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD" \
+            -alias "$METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS" >/dev/null 2>&1
+
+          export METRORA_ANDROID_PLAY_UPLOAD_SIGNING_ENABLED=true
+          export METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_PATH="$play_keystore"
+          gradle -p android --no-daemon \
+            :app:verifyPlayUploadCandidate \
+            :app:bundlePlayRelease
+          cleanup
+          trap - EXIT HUP INT TERM
+
+      - name: Remove any residual Play upload key
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          rm -f -- "$RUNNER_TEMP/metrora-android-play-upload.jks"
+
+      - name: Read and verify candidate version authority
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(gradle -p android --no-daemon --quiet :app:printPlayReleaseMetadata)"
+          version_name="$(printf '%s\n' "$metadata" | awk -F= '$1 == "versionName" { print $2 }')"
+          version_code="$(printf '%s\n' "$metadata" | awk -F= '$1 == "versionCode" { print $2 }')"
+          application_id="$(printf '%s\n' "$metadata" | awk -F= '$1 == "applicationId" { print $2 }')"
+          distribution_channel="$(printf '%s\n' "$metadata" | awk -F= '$1 == "distributionChannel" { print $2 }')"
+          test "$application_id" = 'eu.metrora.app'
+          test "$distribution_channel" = 'play'
+          test "$version_name" = '0.1.0-alpha.4'
+          test "$version_code" = '4'
+          mapfile -t aab_candidates < <(find android/app/build/outputs/bundle/playRelease -maxdepth 1 -type f -name '*.aab' -print)
+          test "${#aab_candidates[@]}" -eq 1
+          aab="${aab_candidates[0]}"
+          [[ "$aab" != *-unsigned.aab ]]
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "aab_path=$aab" >> "$GITHUB_OUTPUT"
+
+      - name: Create and independently verify Play candidate evidence
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$METRORA_ANDROID_PLAY_UPLOAD_CERTIFICATE_SHA256"
+          release_directory="$RUNNER_TEMP/metrora-android-play-candidate"
+          mkdir -p "$release_directory"
+          node scripts/verify-android-play-candidate.mjs \
+            --aab '${{ steps.metadata.outputs.aab_path }}' \
+            --output-dir "$release_directory" \
+            --source-commit "$METRORA_SOURCE_COMMIT" \
+            --expected-application-id eu.metrora.app \
+            --expected-version-name '${{ steps.metadata.outputs.version_name }}' \
+            --expected-version-code '${{ steps.metadata.outputs.version_code }}' \
+            --expected-certificate-sha256 "$METRORA_ANDROID_PLAY_UPLOAD_CERTIFICATE_SHA256" \
+            --bundletool java \
+            --bundletool-jar "$RUNNER_TEMP/bundletool.jar" \
+            --jarsigner jarsigner \
+            --keytool keytool
+          echo "release_directory=$release_directory" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=Metrora-Android-${{ steps.metadata.outputs.version_name }}.aab" >> "$GITHUB_OUTPUT"
+
+      - name: Upload verified short-lived Play candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: metrora-android-play-candidate-${{ inputs.source_commit }}
+          path: ${{ steps.verify.outputs.release_directory }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summarize non-publishing candidate
+        shell: bash
+        run: |
+          {
+            echo '## Android Google Play candidate'
+            echo
+            echo '- Source commit: `${{ inputs.source_commit }}`'
+            echo '- Application ID: `eu.metrora.app`'
+            echo '- Version: `${{ steps.metadata.outputs.version_name }}` (code `${{ steps.metadata.outputs.version_code }}`)'
+            echo '- Artifact: `${{ steps.verify.outputs.artifact_name }}`'
+            echo '- Signature: Play upload certificate verified; app-signing continuity remains a Founder-controlled Play App Signing enrollment gate'
+            echo '- State: signed source-bound candidate; no Google Play upload or production submission was performed'
+          } >> "$GITHUB_STEP_SUMMARY"

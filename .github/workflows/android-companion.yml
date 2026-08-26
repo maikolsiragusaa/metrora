@@ -8,8 +8,11 @@ on:
       - "docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md"
       - "scripts/verify-android-release.mjs"
       - "scripts/verify-android-release.node-test.mjs"
+      - "scripts/verify-android-play-candidate.mjs"
+      - "scripts/verify-android-play-candidate.node-test.mjs"
       - ".github/workflows/android-companion.yml"
       - ".github/workflows/android-public-release.yml"
+      - ".github/workflows/android-play-candidate.yml"
   push:
     branches: [main]
     paths:
@@ -18,8 +21,11 @@ on:
       - "docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md"
       - "scripts/verify-android-release.mjs"
       - "scripts/verify-android-release.node-test.mjs"
+      - "scripts/verify-android-play-candidate.mjs"
+      - "scripts/verify-android-play-candidate.node-test.mjs"
       - ".github/workflows/android-companion.yml"
       - ".github/workflows/android-public-release.yml"
+      - ".github/workflows/android-play-candidate.yml"
   workflow_dispatch:
 
 permissions:
