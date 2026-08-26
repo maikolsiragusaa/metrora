@@ -35,7 +35,7 @@ read-only infra release/custody conventions.
 | Version authority | `android/app/build.gradle.kts` declares `versionName = 0.1.0-alpha.1` and `versionCode = 1` | Future public upgrades must advance `versionCode` strictly | Yes; retain the never-public initial value | Founder approves each release |
 | Release discovery | No changing asset semantics or updater service exists | Obtainium needs a predictable GitHub release and APK asset | Yes | Founder publishes the final release |
 | Brand tokens | Android primary cyan was `#0BD5F4`; the public authority is Graphite + Signal Cyan | Primary token drift from the canonical brand authority | Yes | None |
-| F-Droid | The flavor builds, but dependency/license/compliance status is not a release claim | CameraX/ML Kit and reproducible metadata need a separate review | Characterize only | Separate F-Droid gate |
+| F-Droid | The flavor builds, but dependency/license/compliance status is not a release claim | CameraX/ZXing and reproducible metadata need a separate review | Characterize only | Separate F-Droid gate |
 | Google Play | The Play AAB builds | Listing, Play signing and publication gates are not complete | Preserve buildability only | Separate Play gate |
 
 ## Current accepted authority
@@ -93,8 +93,8 @@ does not write secret or private-key material into it.
 
 `SHA256SUMS` contains exactly the APK and manifest filenames. The verifier
 rejects additional bundle files, path traversal, checksum mismatches, a wrong
-application ID, a wrong version, an unsigned APK, a certificate mismatch or a
-source-commit mismatch.
+application ID, a wrong version, an unsigned APK/AAB, a certificate mismatch
+or a source-commit mismatch.
 
 ## Version policy
 
@@ -106,6 +106,7 @@ Windows Store package version:
 - latest public `versionCode`: `3`;
 - current accepted source `versionName`: `0.1.0-alpha.3`;
 - current accepted source `versionCode`: `3`;
+- current Play candidate line: `0.1.0-alpha.4` / `versionCode = 4`;
 - GitHub identity: `android-v<versionName>`;
 - Play and direct APK upgrades use the same `eu.metrora.app` package line and
   the same strictly increasing `versionCode` sequence.
@@ -151,6 +152,20 @@ The non-secret expected certificate fingerprint is supplied as the protected
 environment/repository variable
 `METRORA_ANDROID_PRODUCTION_CERTIFICATE_SHA256`. The workflow fails closed if
 it is missing and the verifier compares the APK certificate with it.
+
+The Play candidate path uses a separate upload-key namespace and never reuses
+the direct-APK production key as an upload key:
+
+- `METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_B64`;
+- `METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD`;
+- `METRORA_ANDROID_PLAY_UPLOAD_KEY_PASSWORD`;
+- `METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS`.
+
+The existing production certificate remains the intended Android app-signing
+identity across the direct APK and Google Play channels through Google's
+supported Play App Signing enrollment flow. The distinct Play upload key only
+authorizes future AAB uploads. Neither key bytes nor passwords are repository,
+issue, PR, log or artifact content.
 
 The keystore is decoded only into the trusted runner's temporary directory and
 used inside one protected signing/build step. Signing credentials are scoped
@@ -219,6 +234,15 @@ existing `android-v<versionName>` tag bound to the same commit, and creates a
 draft GitHub Release only. Final publication remains a separate Founder
 action after production-signed physical acceptance.
 
+`.github/workflows/android-play-candidate.yml` is a separate manual-only path.
+It also requires a full source commit dispatched from `main`, verifies that
+the commit is reachable from current `origin/main`, runs Android tests and
+lint before secrets are scoped, materializes the dedicated Play upload JKS
+only for `playRelease`, removes it on every exit path, and independently
+verifies the signed AAB, package, version, upload certificate, source SHA and
+SHA-256 evidence. It uploads only a short-lived candidate artifact and has no
+Google Play upload or production-submission step.
+
 ## Verification procedure
 
 The deterministic verifier is
@@ -238,7 +262,11 @@ It verifies:
 
 The verifier has Node tests in
 `scripts/verify-android-release.node-test.mjs`. It is intentionally a small
-release-boundary tool rather than a new release framework.
+release-boundary tool rather than a new release framework. The direct APK path
+uses `aapt2`/`apksigner`. The separate small Play candidate verifier in
+`scripts/verify-android-play-candidate.mjs` reuses the same manifest/checksum
+primitives and uses `bundletool`, `jarsigner` and `keytool` to verify the AAB
+manifest and upload certificate.
 
 ## Obtainium compatibility
 
@@ -312,13 +340,11 @@ evidence; do not commit personal screenshots publicly.
 The existing `fdroidRelease` build remains intact, but it is not declared
 F-Droid-ready by this milestone. The current Android dependency surface
 includes Compose, CameraX, DataStore, coroutines and
-`com.google.mlkit:barcode-scanning`. A separate F-Droid tranche must review:
+ZXing Core. A separate F-Droid tranche must review:
 
 - dependency licenses and complete transitive notices;
-- scanner/ML Kit availability, repository policy and offline/reproducible
-  build behavior;
-- whether a dedicated open scanner implementation or flavor substitution is
-  required;
+- scanner/ZXing availability, repository policy and offline/reproducible build
+  behavior;
 - metadata, build reproducibility and network/privacy declarations.
 
 The GitHub and Play product paths must not be weakened or made less secure to
@@ -326,11 +352,26 @@ avoid these separate compliance questions.
 
 ## Google Play boundary
 
-`playRelease` remains buildable as an AAB for compatibility. This milestone
-does not create Play listing metadata, enroll Play signing, submit an AAB or
-publish to Google Play. Play remains a separate channel gate using the same
-application ID and monotonic versionCode policy when its own acceptance is
-authorized.
+The current direct-install authority remains the published alpha.3 APK and
+`versionCode = 3`. Alpha.4 (`versionCode = 4`) is the current Play candidate
+line only; it is not a published Google Play release.
+
+The Play candidate uses the same `eu.metrora.app` package and monotonic
+versionCode sequence. The existing production app-signing certificate is the
+intended cross-store identity and must be supplied to Play App Signing through
+the supported enrollment path. A distinct Play upload key signs candidate
+AABs. The two identities are deliberately separate concepts, and the
+repository does not provision either private key.
+
+The candidate verifier records the exact source SHA, package, version,
+upload-certificate verification and AAB SHA-256 in a reviewable artifact. The
+Founder must complete Play App Signing enrollment, review the candidate and
+make the final Play submission decision. This tranche does not upload to Play,
+submit to production, create a tag or claim Google Play availability.
+
+The Android Settings / Privacy surface links to the canonical policy at
+`https://metrora.eu/privacy`, which must remain live before any Store listing
+or submission.
 
 ## Security and privacy regression boundary
 
@@ -339,7 +380,7 @@ boundaries. The existing implementation and tests remain responsible for:
 
 - QR pairing, SAS/Desktop approval, mutual TLS and certificate pinning;
 - Android Keystore client identity and encrypted local caches;
-- local-first LAN behavior and explicit revoke/forget/re-pair controls;
+- direct local-first behavior and explicit revoke/forget/re-pair controls;
 - prompt, response, source code, patch, secret, tool-argument and unrestricted
   path exclusion from Android projections;
 - Desktop/core authority for collection, pricing, accounting, history,

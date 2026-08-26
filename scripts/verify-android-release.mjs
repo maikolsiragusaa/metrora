@@ -17,6 +17,7 @@ import { basename, join, resolve } from 'node:path'
 export const ANDROID_RELEASE_MANIFEST_VERSION = 1
 export const ANDROID_APPLICATION_ID = 'eu.metrora.app'
 export const ANDROID_DISTRIBUTION_CHANNEL = 'github'
+export const ANDROID_PLAY_DISTRIBUTION_CHANNEL = 'play'
 
 const sha256Pattern = /^[a-f0-9]{64}$/
 const gitSha1Pattern = /^[a-f0-9]{40}$/
@@ -49,18 +50,30 @@ export function normalizeCertificateFingerprint(value) {
   return normalized
 }
 
-export function artifactFilenameForVersion(versionName) {
+export function artifactFilenameForVersion(versionName, extension = '.apk') {
   if (!versionNamePattern.test(versionName)) {
     throw new Error(`Android versionName is not a supported release identifier: ${versionName}`)
   }
-  return `Metrora-Android-${versionName}.apk`
+  if (extension !== '.apk' && extension !== '.aab') {
+    throw new Error(`unsupported Android artifact extension: ${extension}`)
+  }
+  return `Metrora-Android-${versionName}${extension}`
+}
+
+export function aabArtifactFilenameForVersion(versionName) {
+  return artifactFilenameForVersion(versionName, '.aab')
 }
 
 export function manifestFilenameForArtifact(artifactFilename) {
-  if (!artifactFilename.endsWith('.apk')) {
-    throw new Error('Android release artifact must be an APK')
+  const extension = artifactFilename.endsWith('.apk')
+    ? '.apk'
+    : artifactFilename.endsWith('.aab')
+      ? '.aab'
+      : null
+  if (!extension) {
+    throw new Error('Android release artifact must be an APK or AAB')
   }
-  return artifactFilename.slice(0, -'.apk'.length) + '.manifest.json'
+  return artifactFilename.slice(0, -extension.length) + '.manifest.json'
 }
 
 export function parseAaptBadging(output) {
@@ -89,6 +102,36 @@ export function parseApksignerOutput(output) {
     throw new Error('APK must have exactly one verifiable signing certificate')
   }
 
+  return normalizeCertificateFingerprint(matches[0][1])
+}
+
+export function parseBundletoolManifest(output) {
+  const text = String(output)
+  const readAttribute = pattern => text.match(pattern)?.[1]
+  const applicationId = readAttribute(/\bpackage\s*=\s*["']([^"']+)["']/)
+  const versionCodeText = readAttribute(/\b(?:android:)?versionCode\s*=\s*["']([^"']+)["']/)
+  const versionName = readAttribute(/\b(?:android:)?versionName\s*=\s*["']([^"']+)["']/)
+  const versionCode = Number(versionCodeText)
+
+  if (!applicationId || !versionName || !Number.isSafeInteger(versionCode) || versionCode < 1) {
+    throw new Error('bundletool did not report complete Android package metadata')
+  }
+
+  return { applicationId, versionName, versionCode }
+}
+
+export function parseJarsignerOutput(output) {
+  if (!/\bjar verified\b/i.test(String(output))) {
+    throw new Error('jarsigner did not verify the Android App Bundle')
+  }
+  return true
+}
+
+export function parseKeytoolJarCertificateOutput(output) {
+  const matches = [...String(output).matchAll(/\bSHA256:\s*([0-9a-f: -]+)/ig)]
+  if (matches.length !== 1) {
+    throw new Error('Android App Bundle must have exactly one readable signing certificate')
+  }
   return normalizeCertificateFingerprint(matches[0][1])
 }
 
@@ -121,6 +164,7 @@ export function buildReleaseManifest({
   applicationId,
   versionName,
   versionCode,
+  distributionChannel = ANDROID_DISTRIBUTION_CHANNEL,
   sourceCommit,
   artifactFilename,
   artifactSha256,
@@ -132,8 +176,13 @@ export function buildReleaseManifest({
   }
   if (!Number.isSafeInteger(versionCode) || versionCode < 1) throw new Error('Android versionCode is invalid')
   if (!gitSha1Pattern.test(sourceCommit)) throw new Error('source commit must be a lowercase 40-character SHA-1')
-  if (artifactFilename !== artifactFilenameForVersion(versionName)) {
-    throw new Error('Android artifact filename is not canonical for versionName')
+  if (distributionChannel !== ANDROID_DISTRIBUTION_CHANNEL && distributionChannel !== ANDROID_PLAY_DISTRIBUTION_CHANNEL) {
+    throw new Error('Android distribution channel is invalid')
+  }
+  const expectedApk = artifactFilenameForVersion(versionName)
+  const expectedAab = aabArtifactFilenameForVersion(versionName)
+  if (artifactFilename !== expectedApk && artifactFilename !== expectedAab) {
+    throw new Error(`Android artifact filename is not canonical for versionName: expected ${expectedApk} or ${expectedAab}`)
   }
   if (!sha256Pattern.test(artifactSha256)) throw new Error('Android artifact SHA-256 is invalid')
   const certificate = normalizeCertificateFingerprint(signingCertificateSha256)
@@ -143,7 +192,7 @@ export function buildReleaseManifest({
     product: 'Metrora',
     versionName,
     versionCode,
-    distributionChannel: ANDROID_DISTRIBUTION_CHANNEL,
+    distributionChannel,
     applicationId,
     sourceCommit,
     artifactFilename,
@@ -156,8 +205,9 @@ export function validateReleaseManifest(manifest, expected = {}) {
   if (!manifest || typeof manifest !== 'object') throw new Error('Android release manifest must be an object')
   if (manifest.schemaVersion !== ANDROID_RELEASE_MANIFEST_VERSION) throw new Error('unsupported Android release manifest schema')
   if (manifest.product !== 'Metrora') throw new Error('Android release manifest product is not canonical')
-  if (manifest.distributionChannel !== ANDROID_DISTRIBUTION_CHANNEL) {
-    throw new Error('Android release manifest distribution channel is not github')
+  const expectedDistributionChannel = expected.distributionChannel ?? ANDROID_DISTRIBUTION_CHANNEL
+  if (manifest.distributionChannel !== expectedDistributionChannel) {
+    throw new Error(`Android release manifest distribution channel is not ${expectedDistributionChannel}`)
   }
   if (manifest.applicationId !== ANDROID_APPLICATION_ID) throw new Error('Android release manifest applicationId is invalid')
   if (!versionNamePattern.test(manifest.versionName)) throw new Error('Android release manifest versionName is invalid')
@@ -165,7 +215,10 @@ export function validateReleaseManifest(manifest, expected = {}) {
     throw new Error('Android release manifest versionCode is invalid')
   }
   if (!gitSha1Pattern.test(manifest.sourceCommit)) throw new Error('Android release manifest source commit is invalid')
-  if (manifest.artifactFilename !== artifactFilenameForVersion(manifest.versionName)) {
+  if (
+    manifest.artifactFilename !== artifactFilenameForVersion(manifest.versionName)
+    && manifest.artifactFilename !== aabArtifactFilenameForVersion(manifest.versionName)
+  ) {
     throw new Error('Android release manifest artifact filename is not canonical')
   }
   if (!sha256Pattern.test(manifest.artifactSha256)) throw new Error('Android release manifest artifact SHA-256 is invalid')
@@ -192,14 +245,18 @@ export function validateReleaseManifest(manifest, expected = {}) {
   return manifest
 }
 
-export function assertApkMetadataMatches(metadata, expected) {
-  if (metadata.applicationId !== expected.applicationId) throw new Error('APK applicationId does not match the expected applicationId')
-  if (metadata.versionName !== expected.versionName) throw new Error('APK versionName does not match the expected versionName')
-  if (metadata.versionCode !== expected.versionCode) throw new Error('APK versionCode does not match the expected versionCode')
+export function assertArtifactMetadataMatches(metadata, expected, artifactLabel = 'artifact') {
+  if (metadata.applicationId !== expected.applicationId) throw new Error(`${artifactLabel} applicationId does not match the expected applicationId`)
+  if (metadata.versionName !== expected.versionName) throw new Error(`${artifactLabel} versionName does not match the expected versionName`)
+  if (metadata.versionCode !== expected.versionCode) throw new Error(`${artifactLabel} versionCode does not match the expected versionCode`)
   const expectedCertificate = normalizeCertificateFingerprint(expected.signingCertificateSha256)
   if (metadata.signingCertificateSha256 !== expectedCertificate) {
-    throw new Error('APK signing certificate does not match the expected certificate')
+    throw new Error(`${artifactLabel} signing certificate does not match the expected certificate`)
   }
+}
+
+export function assertApkMetadataMatches(metadata, expected) {
+  assertArtifactMetadataMatches(metadata, expected, 'APK')
 }
 
 function runTool(command, argumentsList) {
@@ -227,6 +284,25 @@ export async function inspectApk(apkPath, { aapt2, apksigner }) {
   return { ...packageInfo, signingCertificateSha256 }
 }
 
+export async function inspectAab(aabPath, { bundletool, bundletoolJar, jarsigner, keytool }) {
+  const aab = resolve(aabPath)
+  const info = await stat(aab).catch(() => null)
+  if (!info?.isFile()) throw new Error(`Android App Bundle does not exist: ${aab}`)
+  if (!bundletool || !jarsigner || !keytool) {
+    throw new Error('bundletool, jarsigner and keytool paths are required for AAB verification')
+  }
+
+  const bundletoolArguments = bundletoolJar
+    ? ['-jar', resolve(bundletoolJar), 'dump', 'manifest', `--bundle=${aab}`]
+    : ['dump', 'manifest', `--bundle=${aab}`]
+  const packageInfo = parseBundletoolManifest(runTool(bundletool, bundletoolArguments))
+  parseJarsignerOutput(runTool(jarsigner, ['-verify', aab]))
+  const signingCertificateSha256 = parseKeytoolJarCertificateOutput(
+    runTool(keytool, ['-printcert', '-jarfile', aab]),
+  )
+  return { ...packageInfo, signingCertificateSha256 }
+}
+
 async function assertDirectoryContainsOnly(root, expectedNames) {
   const entries = await readdir(root, { withFileTypes: true })
   const actualNames = entries.map(entry => entry.name).sort(compareText)
@@ -238,6 +314,26 @@ async function assertDirectoryContainsOnly(root, expectedNames) {
 }
 
 export async function verifyReleaseBundle(bundleDirectory, options = {}) {
+  return verifyCandidateBundle(bundleDirectory, {
+    ...options,
+    distributionChannel: ANDROID_DISTRIBUTION_CHANNEL,
+    artifactExtension: '.apk',
+    inspectArtifact: inspectApk,
+    artifactLabel: 'APK',
+  }).then(result => ({ ...result, apkMetadata: result.artifactMetadata }))
+}
+
+export async function verifyPlayCandidateBundle(bundleDirectory, options = {}) {
+  return verifyCandidateBundle(bundleDirectory, {
+    ...options,
+    distributionChannel: ANDROID_PLAY_DISTRIBUTION_CHANNEL,
+    artifactExtension: '.aab',
+    inspectArtifact: inspectAab,
+    artifactLabel: 'AAB',
+  })
+}
+
+async function verifyCandidateBundle(bundleDirectory, options) {
   const root = resolve(bundleDirectory)
   const entries = await readdir(root, { withFileTypes: true })
   const manifestCandidates = entries
@@ -248,6 +344,10 @@ export async function verifyReleaseBundle(bundleDirectory, options = {}) {
   const manifestFilename = manifestCandidates[0]
   const manifest = JSON.parse(await readFile(join(root, manifestFilename), 'utf8'))
   validateReleaseManifest(manifest, options)
+  const expectedArtifactFilename = artifactFilenameForVersion(manifest.versionName, options.artifactExtension)
+  if (manifest.artifactFilename !== expectedArtifactFilename) {
+    throw new Error(`Android ${options.artifactLabel} filename is not canonical`)
+  }
   const expectedManifestFilename = manifestFilenameForArtifact(manifest.artifactFilename)
   if (manifestFilename !== expectedManifestFilename) throw new Error('Android release manifest filename is not canonical')
 
@@ -256,7 +356,7 @@ export async function verifyReleaseBundle(bundleDirectory, options = {}) {
   const sums = parseSha256Sums(await readFile(join(root, checksumsFilename), 'utf8'))
   const expectedNames = [manifest.artifactFilename, manifestFilename].sort(compareText)
   if (JSON.stringify([...sums.keys()].sort(compareText)) !== JSON.stringify(expectedNames)) {
-    throw new Error('SHA256SUMS must contain exactly the APK and manifest')
+    throw new Error(`SHA256SUMS must contain exactly the ${options.artifactLabel} and manifest`)
   }
 
   const artifactPath = join(root, manifest.artifactFilename)
@@ -264,25 +364,25 @@ export async function verifyReleaseBundle(bundleDirectory, options = {}) {
   const artifactSha256 = await sha256File(artifactPath)
   const manifestSha256 = await sha256File(manifestPath)
   if (artifactSha256 !== manifest.artifactSha256 || sums.get(manifest.artifactFilename) !== artifactSha256) {
-    throw new Error('Android APK checksum mismatch')
+    throw new Error(`Android ${options.artifactLabel} checksum mismatch`)
   }
   if (sums.get(manifestFilename) !== manifestSha256) throw new Error('Android release manifest checksum mismatch')
 
-  const apkMetadata = await inspectApk(artifactPath, options)
-  assertApkMetadataMatches(apkMetadata, {
+  const artifactMetadata = await options.inspectArtifact(artifactPath, options)
+  assertArtifactMetadataMatches(artifactMetadata, {
     applicationId: manifest.applicationId,
     versionName: manifest.versionName,
     versionCode: manifest.versionCode,
     signingCertificateSha256: manifest.signingCertificateSha256,
-  })
+  }, options.artifactLabel)
   if (options.signingCertificateSha256) {
     const expectedCertificate = normalizeCertificateFingerprint(options.signingCertificateSha256)
-    if (apkMetadata.signingCertificateSha256 !== expectedCertificate) {
-      throw new Error('APK signing certificate does not match the configured production certificate')
+    if (artifactMetadata.signingCertificateSha256 !== expectedCertificate) {
+      throw new Error(`${options.artifactLabel} signing certificate does not match the configured certificate`)
     }
   }
 
-  return { manifest, apkMetadata, artifactSha256, manifestSha256 }
+  return { manifest, artifactMetadata, artifactSha256, manifestSha256 }
 }
 
 export async function createReleaseBundle({

@@ -14,7 +14,7 @@
     <string name="manual_address_action">Enter address manually</string>
     <string name="manual_address_title">Enter address manually</string>
     <string name="manual_address_body">Connect to your computer using the local address shown in Desktop.</string>
-    <string name="manual_address_fallback_body">Find your computer on the local network.</string>
+    <string name="manual_address_fallback_body">Enter the Desktop address shown in Metrora Desktop.</string>
     <string name="explore_demo_action">Explore demo</string>
     <string name="explore_demo_body">See sample data now. Pair a Desktop to see your real usage.</string>
     <string name="local_private_title">Local and private — No account required.</string>
@@ -72,13 +72,13 @@
     <string name="status_up_to_date">Up to date</string>
     <string name="status_online_body">Desktop is reachable and this overview is current.</string>
     <string name="status_updating">Updating from Desktop…</string>
-    <string name="status_updating_body">Keep Metrora Desktop available on the local network.</string>
+    <string name="status_updating_body">Keep Metrora Desktop available and reachable.</string>
     <string name="status_saved_on_phone">Saved on this phone</string>
     <string name="status_saved_on_phone_body">Showing the last saved overview. Refresh to check Desktop for newer data.</string>
     <string name="status_paired_no_snapshot">Paired — usage not loaded</string>
     <string name="status_paired_no_snapshot_body">Pairing succeeded, but the first usage overview is not available yet. Refresh to try again.</string>
     <string name="status_desktop_unavailable">Desktop could not be reached</string>
-    <string name="status_cached_body">Your saved overview is still available. Try again when Desktop is on the same network.</string>
+    <string name="status_cached_body">Your saved overview is still available. Try again when Desktop is reachable.</string>
     <string name="status_no_snapshot">No saved overview yet</string>
     <string name="status_no_snapshot_body">No overview is saved yet. Try Refresh when Desktop is available.</string>
     <string name="status_access_attention">Desktop access needs attention</string>
@@ -240,6 +240,9 @@
     <string name="exit_demo_body">Return to the normal pairing screen. Nothing from this demo is saved.</string>
     <string name="privacy_data_title">Privacy &amp; data</string>
     <string name="privacy_data_body">Pairing credentials and encrypted cached data stay on this phone. Activity remains metadata-only.</string>
+    <string name="privacy_policy_action">Open privacy policy</string>
+    <string name="privacy_policy_action_a11y">Open Metrora privacy policy in your browser</string>
+    <string name="privacy_policy_body">Read the canonical policy at metrora.eu/privacy.</string>
     <string name="about_title">About Metrora</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_body">Local-first usage companion. No account or cloud relay is required.</string>
@@ -251,13 +254,13 @@
     <string name="qr_multiple_codes_in_image">More than one QR code was found. Choose an image with a single Metrora QR code.</string>
     <string name="qr_image_read_failed">Could not read this image. Choose another image and try again.</string>
     <string name="qr_scanner_local_only">Metrora will verify the computer and show a six-digit code before Desktop access is approved.</string>
-    <string name="qr_same_network_title">Keep both devices on the same network.</string>
-    <string name="qr_same_network_body">Metrora connects directly to Desktop. No account or cloud relay is used.</string>
+    <string name="qr_same_network_title">Keep Desktop reachable.</string>
+    <string name="qr_same_network_body">Metrora connects directly to the Desktop address in the QR code. No account or cloud relay is used.</string>
     <string name="camera_permission_title">Camera access is needed to scan</string>
     <string name="camera_permission_body">Metrora uses the camera only to read a Desktop connection QR code.</string>
     <string name="allow_camera">Allow camera</string>
 
-    <string name="device_local_only_body">This phone connects directly to Metrora Desktop on your local network. No cloud account is used.</string>
+    <string name="device_local_only_body">This phone connects directly to Metrora Desktop at the paired address. No cloud account is used.</string>
     <string name="connection_details">Connection and security details</string>
     <string name="hide_connection_details">Hide connection and security details</string>
     <string name="desktop_endpoint_label">Desktop address</string>
@@ -299,7 +302,7 @@
     <string name="failure_action_title">Could not complete that action</string>
     <string name="error_invalid_host">Enter a computer address such as 192.168.1.24 or metrora-pc.local.</string>
     <string name="error_invalid_port">Enter a port between 1 and 65535. Metrora Desktop usually uses 7777.</string>
-    <string name="error_unreachable">Metrora Desktop could not be reached. Check that sharing is on and both devices are on the same network.</string>
+    <string name="error_unreachable">Metrora Desktop could not be reached. Check that sharing is on and the Desktop address is reachable.</string>
     <string name="error_timeout">Desktop did not respond in time. Check the network and try again.</string>
     <string name="error_not_metrora">That address is not a Metrora Desktop endpoint.</string>
     <string name="error_api_unavailable">This Desktop does not expose the companion API required by this phone.</string>

@@ -18,8 +18,20 @@ val productionReleaseEnabled = providers.gradleProperty("metroraProductionReleas
     .orElse(false)
     .get()
 
+val playUploadSigningEnabled = providers.gradleProperty("metroraPlayUploadSigningEnabled")
+    .orElse(providers.environmentVariable("METRORA_ANDROID_PLAY_UPLOAD_SIGNING_ENABLED"))
+    .map(String::toBoolean)
+    .orElse(false)
+    .get()
+
 if (qaSigningEnabled && productionReleaseEnabled) {
     error("QA and production Android signing cannot be enabled together")
+}
+if (qaSigningEnabled && playUploadSigningEnabled) {
+    error("QA and Play upload Android signing cannot be enabled together")
+}
+if (productionReleaseEnabled && playUploadSigningEnabled) {
+    error("Production and Play upload Android signing cannot be enabled together")
 }
 
 fun requiredProductionSigningValue(environmentName: String, propertyName: String): String =
@@ -29,9 +41,16 @@ fun requiredProductionSigningValue(environmentName: String, propertyName: String
         ?.takeIf(String::isNotBlank)
         ?: error("Production signing is enabled but $environmentName/$propertyName is missing")
 
+fun requiredPlayUploadSigningValue(environmentName: String, propertyName: String): String =
+    providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.takeIf(String::isNotBlank)
+        ?: error("Play upload signing is enabled but $environmentName/$propertyName is missing")
+
 val androidApplicationId = "eu.metrora.app"
-val androidVersionCode = 3
-val androidVersionName = "0.1.0-alpha.3"
+val androidVersionCode = 4
+val androidVersionName = "0.1.0-alpha.4"
 
 val productionKeystorePath = if (productionReleaseEnabled) {
     requiredProductionSigningValue(
@@ -61,6 +80,39 @@ val productionKeyAlias = if (productionReleaseEnabled) {
     requiredProductionSigningValue(
         environmentName = "METRORA_ANDROID_PRODUCTION_KEY_ALIAS",
         propertyName = "metroraProductionKeyAlias",
+    )
+} else {
+    null
+}
+
+val playUploadKeystorePath = if (playUploadSigningEnabled) {
+    requiredPlayUploadSigningValue(
+        environmentName = "METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_PATH",
+        propertyName = "metroraPlayUploadKeystorePath",
+    )
+} else {
+    null
+}
+val playUploadStorePassword = if (playUploadSigningEnabled) {
+    requiredPlayUploadSigningValue(
+        environmentName = "METRORA_ANDROID_PLAY_UPLOAD_STORE_PASSWORD",
+        propertyName = "metroraPlayUploadStorePassword",
+    )
+} else {
+    null
+}
+val playUploadKeyPassword = if (playUploadSigningEnabled) {
+    requiredPlayUploadSigningValue(
+        environmentName = "METRORA_ANDROID_PLAY_UPLOAD_KEY_PASSWORD",
+        propertyName = "metroraPlayUploadKeyPassword",
+    )
+} else {
+    null
+}
+val playUploadKeyAlias = if (playUploadSigningEnabled) {
+    requiredPlayUploadSigningValue(
+        environmentName = "METRORA_ANDROID_PLAY_UPLOAD_KEY_ALIAS",
+        propertyName = "metroraPlayUploadKeyAlias",
     )
 } else {
     null
@@ -124,6 +176,22 @@ android {
         }
     }
 
+    if (playUploadSigningEnabled) {
+        val keystorePath = requireNotNull(playUploadKeystorePath)
+        require(file(keystorePath).isFile) {
+            "Play upload signing is enabled but METRORA_ANDROID_PLAY_UPLOAD_KEYSTORE_PATH is not a file"
+        }
+        signingConfigs {
+            create("playUpload") {
+                storeFile = file(keystorePath)
+                storeType = "JKS"
+                storePassword = requireNotNull(playUploadStorePassword)
+                keyAlias = requireNotNull(playUploadKeyAlias)
+                keyPassword = requireNotNull(playUploadKeyPassword)
+            }
+        }
+    }
+
     flavorDimensions += "distribution"
     productFlavors {
         create("github") {
@@ -182,6 +250,11 @@ androidComponents {
                 extensions.getByType<ApplicationExtension>().signingConfigs.getByName("githubProduction"),
             )
         }
+        if (playUploadSigningEnabled && variant.name == "playRelease") {
+            variant.signingConfig.setConfig(
+                extensions.getByType<ApplicationExtension>().signingConfigs.getByName("playUpload"),
+            )
+        }
     }
 }
 
@@ -192,6 +265,17 @@ tasks.register("printGithubReleaseMetadata") {
         println("applicationId=$androidApplicationId")
         println("versionName=$androidVersionName")
         println("versionCode=$androidVersionCode")
+    }
+}
+
+tasks.register("printPlayReleaseMetadata") {
+    group = "help"
+    description = "Print the canonical Android Google Play candidate metadata."
+    doLast {
+        println("applicationId=$androidApplicationId")
+        println("versionName=$androidVersionName")
+        println("versionCode=$androidVersionCode")
+        println("distributionChannel=play")
     }
 }
 
@@ -210,6 +294,25 @@ tasks.register("verifyGithubPublicRelease") {
         }
         check(productionStorePassword != null && productionKeyPassword != null && productionKeyAlias != null) {
             "GitHub public release requires production signing credentials"
+        }
+    }
+}
+
+tasks.register("verifyPlayUploadCandidate") {
+    group = "verification"
+    description = "Fail closed unless the Google Play candidate uses the dedicated upload signing configuration."
+    doLast {
+        check(playUploadSigningEnabled) {
+            "Google Play candidate requires METRORA_ANDROID_PLAY_UPLOAD_SIGNING_ENABLED=true"
+        }
+        check(!qaSigningEnabled && !productionReleaseEnabled) {
+            "Google Play candidate cannot use QA or production Android signing"
+        }
+        check(playUploadKeystorePath != null && file(playUploadKeystorePath).isFile) {
+            "Google Play candidate requires a Play upload keystore file"
+        }
+        check(playUploadStorePassword != null && playUploadKeyPassword != null && playUploadKeyAlias != null) {
+            "Google Play candidate requires Play upload signing credentials"
         }
     }
 }

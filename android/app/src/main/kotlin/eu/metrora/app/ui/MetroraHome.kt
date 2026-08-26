@@ -67,6 +67,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -535,6 +536,7 @@ private fun EmptyHomeSnapshot(state: MetroraUiState, onRefresh: () -> Unit) {
 
 @Composable
 private fun SettingsSurface(state: MetroraUiState, onRevoke: () -> Unit, onForget: () -> Unit, onExitDemo: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(androidx.compose.ui.res.stringResource(R.string.nav_settings), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
         Text(androidx.compose.ui.res.stringResource(if (state.isDemo) R.string.demo_settings_subtitle else R.string.settings_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -568,6 +570,13 @@ private fun SettingsSurface(state: MetroraUiState, onRevoke: () -> Unit, onForge
             )
         }
         SettingsInfoCard(Icons.Outlined.Lock, R.string.privacy_data_title, R.string.privacy_data_body)
+        DeviceActionCard(
+            icon = Icons.Outlined.Lock,
+            title = androidx.compose.ui.res.stringResource(R.string.privacy_policy_action),
+            body = androidx.compose.ui.res.stringResource(R.string.privacy_policy_body),
+            onClickLabel = androidx.compose.ui.res.stringResource(R.string.privacy_policy_action_a11y),
+            onClick = { openMetroraPrivacyPolicy(uriHandler) },
+        )
         SettingsInfoCard(Icons.Outlined.Info, R.string.about_title, R.string.about_body, androidx.compose.ui.res.stringResource(R.string.about_version, BuildConfig.VERSION_NAME))
     }
 }
