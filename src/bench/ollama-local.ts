@@ -10,14 +10,17 @@ import { sha256Text } from './serialization.js'
 export const OLLAMA_LOCAL_BASE_URL = 'http://127.0.0.1:11434' as const
 export const OLLAMA_GENERATE_URL = `${OLLAMA_LOCAL_BASE_URL}/api/generate` as const
 export const OLLAMA_VERSION_URL = `${OLLAMA_LOCAL_BASE_URL}/api/version` as const
+export const OLLAMA_TAGS_URL = `${OLLAMA_LOCAL_BASE_URL}/api/tags` as const
 
 export const DEFAULT_OLLAMA_TIMEOUT_MS = 30_000
+export const OLLAMA_MODEL_DISCOVERY_TIMEOUT_MS = 1_500
 export const MAX_RESPONSE_BYTES = 1_048_576
 export const MAX_OUTPUT_BYTES = 32_768
 export const MAX_NDJSON_LINE_BYTES = 262_144
 export const MAX_STREAM_CHUNKS = 4_096
 export const MAX_STREAM_EVENTS = 4_096
 export const MAX_MODEL_ID_LENGTH = 200
+export const MAX_DISCOVERED_MODELS = 64
 
 export type BenchFetch = typeof fetch
 
@@ -46,6 +49,12 @@ export type OllamaGenerateEvidence = {
     outputDigest: string
   }
   runtimeReported: RuntimeReportedMetricsV1
+}
+
+export type OllamaModelDiscovery = {
+  status: 'models-discovered' | 'no-models' | 'unavailable'
+  models: string[]
+  detail: string
 }
 
 type MonotonicClock = () => number
@@ -306,6 +315,72 @@ export async function fetchOllamaVersion(options: {
     const normalized = normalizeBoundaryError(error, boundary)
     if (normalized.code === 'timeout' || normalized.code === 'cancelled') throw normalized
     return null
+  } finally {
+    boundary.dispose()
+  }
+}
+
+/** Discover only models that this bounded Ollama Bench runner can execute. */
+export async function discoverOllamaModels(options: {
+  fetchImpl?: BenchFetch
+  signal?: AbortSignal
+  timeoutMs?: number
+} = {}): Promise<OllamaModelDiscovery> {
+  let request: BenchFetch
+  try {
+    request = getFetch(options.fetchImpl)
+  } catch {
+    return { status: 'unavailable', models: [], detail: 'Ollama local runtime is unavailable.' }
+  }
+
+  const boundary = new RequestBoundary({
+    signal: options.signal,
+    timeoutMs: options.timeoutMs ?? OLLAMA_MODEL_DISCOVERY_TIMEOUT_MS,
+  })
+  try {
+    const response = await boundary.race(request(OLLAMA_TAGS_URL, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      redirect: 'error',
+      signal: boundary.controller.signal,
+    }))
+    if (!response.ok) throw new BenchOllamaError('http-error', `Ollama returned HTTP status ${response.status}.`, response.status)
+    const text = await readResponseText(response, boundary, MAX_RESPONSE_BYTES)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      throw new BenchOllamaError('malformed-response', 'Ollama returned malformed model data.')
+    }
+    const record = objectValue(parsed)
+    if (!Array.isArray(record.models)) throw new BenchOllamaError('malformed-response', 'Ollama returned malformed model data.')
+    const rows = record.models
+    const seen = new Set<string>()
+    const models: string[] = []
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row) || typeof (row as { name?: unknown }).name !== 'string') continue
+      try {
+        const model = validateOllamaModelId((row as { name: string }).name)
+        if (seen.has(model)) continue
+        seen.add(model)
+        models.push(model)
+        if (models.length >= MAX_DISCOVERED_MODELS) break
+      } catch {
+        // Ignore malformed entries while preserving usable model discovery.
+      }
+    }
+    if (!models.length) return { status: 'no-models', models: [], detail: 'Ollama is reachable but no usable local models were discovered.' }
+    return {
+      status: 'models-discovered',
+      models,
+      detail: `${models.length} local Ollama model${models.length === 1 ? '' : 's'} discovered.`,
+    }
+  } catch (error) {
+    const normalized = normalizeBoundaryError(error, boundary)
+    if (normalized.code === 'cancelled') throw normalized
+    if (normalized.code === 'timeout') return { status: 'unavailable', models: [], detail: 'Ollama model discovery timed out.' }
+    if (normalized.code === 'malformed-response') return { status: 'unavailable', models: [], detail: 'Ollama returned malformed model data.' }
+    return { status: 'unavailable', models: [], detail: 'Ollama local runtime is unavailable.' }
   } finally {
     boundary.dispose()
   }

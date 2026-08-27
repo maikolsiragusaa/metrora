@@ -96,6 +96,7 @@ const CHANNELS = [
   'metrora:advisorChat',
   'metrora:advisorCancel',
   'metrora:getBenchHistory',
+  'metrora:getBenchModelDiscovery',
   'metrora:getBenchComparison',
   'metrora:runBenchTaskPack',
 ] as const
@@ -104,6 +105,7 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'metrora:getOverview', args: ['30days', 'claude'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline', '--provider', 'claude'] },
   { channel: 'metrora:getOverview', args: ['30days', 'all'], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--no-timeline'] },
   { channel: 'metrora:getBenchHistory', args: [], argv: ['bench', 'history', '--format', 'json', '--limit', '50'] },
+  { channel: 'metrora:getBenchModelDiscovery', args: [], argv: ['bench', 'models', '--format', 'json'] },
   { channel: 'metrora:getBenchComparison', args: ['left-run', 'right-run'], argv: ['bench', 'compare', 'left-run', 'right-run', '--format', 'json'] },
   { channel: 'metrora:getPlans', args: ['week'], argv: ['status', '--format', 'json', '--period', 'week'] },
   { channel: 'metrora:getActReport', args: [], argv: ['act', 'report', '--json'] },

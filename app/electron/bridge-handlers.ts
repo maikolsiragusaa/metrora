@@ -273,6 +273,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
       'metrora:advisorCredentialClear': credentialClear,
     } : {}),
     'metrora:getBenchHistory': run(() => ['bench', 'history', '--format', 'json', '--limit', '50']),
+    'metrora:getBenchModelDiscovery': run(() => ['bench', 'models', '--format', 'json']),
     'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
     'metrora:runBenchTaskPack': async (model: string, pack = 'core-v1') => {
       try {

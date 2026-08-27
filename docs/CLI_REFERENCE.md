@@ -82,8 +82,9 @@ Experimental commands label heuristic or incomplete methodology explicitly. Thei
 
 | Command | Purpose |
 | --- | --- |
+| `metrora bench models` | Discover bounded local Ollama model names that the Bench runner can execute; reports unavailable and no-model states separately. |
 | `metrora bench local --model <model>` | Run one warmup plus five measured requests against the fixed local Ollama loopback endpoint using the versioned synthetic BenchRunV1 fixture. |
-| `metrora bench task-pack --model <model>` | Run the six-task deterministic local task pack and optionally save its bounded evaluation to private history. |
+| `metrora bench task-pack --model <model>` | Run the six-check Core conformance pack and optionally save its bounded evaluation to private history. |
 | `metrora bench history` / `metrora bench compare <left> <right>` | Read private task-pack history or compare compatible results using factual deltas only. |
 
 The Bench commands record bounded local runtime or synthetic-task evidence only.

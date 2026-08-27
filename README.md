@@ -208,7 +208,7 @@ Start from the [documentation index](docs/README.md):
 - [Advisor public foundation](docs/ADVISOR_PUBLIC_FOUNDATION.md)
 - [Advisor contextual integration v1](docs/ADVISOR_CONTEXT_INTEGRATION_V1.md)
 - [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)
-- [Bench task pack v1](docs/BENCH_TASK_PACK_V1.md)
+- [Bench Core conformance v1](docs/BENCH_TASK_PACK_V1.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)
 - [Product principles](docs/PRODUCT_PRINCIPLES.md)
 - [Pricing history](docs/PRICING_HISTORY.md)

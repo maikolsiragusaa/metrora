@@ -1,9 +1,10 @@
-# Bench task pack v1
+# Bench Core conformance v1
 
-The Bench task pack is a bounded, local-first evidence surface for checking a
-selected Ollama runtime against a small versioned set of synthetic tasks. It is
-separate from [BenchRunV1](BENCHRUN_V1_OLLAMA_LOCAL.md), which remains the
-timing-and-runtime evidence contract used by `bench local`.
+The Bench Core conformance surface is a bounded, local-first evidence surface
+for checking a selected Ollama runtime against a small versioned set of
+synthetic tasks. It is separate from
+[BenchRunV1](BENCHRUN_V1_OLLAMA_LOCAL.md), which remains the timing-and-runtime
+evidence contract used by `bench local`.
 
 It is not a general model-quality benchmark. It does not rank or recommend
 models, calculate cost or quota, read Metrora Usage records, inspect user work,
@@ -13,15 +14,20 @@ task-pack result.
 ## Run it
 
 ```bash
+metrora bench models --format table
 metrora bench task-pack --model <ollama-model>
 metrora bench history --format table
 metrora bench compare <left-run-id> <right-run-id> --format table
 ```
 
-The model is required and must be selected explicitly. The runtime boundary is
-fixed to `http://127.0.0.1:11434`; there is no option for a remote or arbitrary
-OpenAI-compatible endpoint. Ollama must already be running locally. Each task
-uses one bounded request with the fixed generation parameters
+`bench models` discovers bounded, executable local Ollama model names through
+`/api/tags`. It reports `models-discovered`, `no-models`, or `unavailable`
+without treating an unavailable runtime as an empty model list. The Desktop
+picker uses this discovery when available and keeps manual model entry as an
+explicit fallback; a manually entered name is not proof that the model is
+installed. The runtime boundary is fixed to `http://127.0.0.1:11434`; there is
+no option for a remote or arbitrary OpenAI-compatible endpoint. Ollama must
+already be running locally. Each task uses one bounded request with the fixed generation parameters
 `temperature: 0`, `seed: 1729` and `num_predict: 64`.
 
 `--format json` emits the versioned evaluation contract. `--no-save` keeps the
@@ -36,10 +42,11 @@ and raw generated text are transient runner inputs; persisted history contains
 only task ids, pass/fail state, bounded output metadata and digests.
 
 The deterministic score is the number of passed assertions divided by the
-number of attempted assertions that produced a score. Unavailable, timeout and
-cancelled work remains explicitly represented and does not become a fabricated
-zero. Runtime-reported timing and token fields remain nullable when Ollama does
-not provide them.
+number of attempted assertions that produced a score. The UI reports both
+passed/planned checks and the pass rate over scored checks. Unavailable, timeout
+and cancelled work remains explicitly represented and does not become a
+fabricated zero. Runtime-reported timing and token fields remain nullable when
+Ollama does not provide them.
 
 ## Local history and comparison
 
@@ -56,8 +63,11 @@ show a reason and no numerical delta. The surface deliberately has no
 leaderboard, ranking, cost estimate or cross-pack comparison.
 
 The Desktop route is **Analyze → Bench**. It uses the same local CLI boundary,
-requires an explicit model name, shows recent private history and exposes only
-the same compatibility-gated factual comparison.
+discovers local models when possible, keeps an explicit manual fallback, shows
+recent private history and exposes only the same compatibility-gated factual
+comparison. Technical pack identity, digests, task evidence and raw retained
+metadata are available through Details/Evidence disclosures rather than the
+primary outcome view.
 
 ## Contract and provenance
 
