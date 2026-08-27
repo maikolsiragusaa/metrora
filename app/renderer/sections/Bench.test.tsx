@@ -64,6 +64,18 @@ function unavailableRecord(runId = 'run-unavailable') {
   })
 }
 
+function partialUnavailableRecord(runId = 'run-partial-unavailable') {
+  const base = unavailableRecord(runId)
+  const tasks = base.tasks.map((task, index) => index === 0
+    ? { ...task, attempted: true, status: 'passed', score: 1, outputDigest: 'b'.repeat(64), outputChars: 4, requestLatencyMs: 10, timeToFirstContentMs: 3, failure: null }
+    : task)
+  return {
+    ...base,
+    tasks,
+    aggregate: { planned: 6, attempted: 1, passed: 1, failed: 0, unavailable: 5, cancelled: 0, score: { numerator: 1, denominator: 1, value: 1 } },
+  }
+}
+
 function compatibleComparison() {
   return {
     schemaVersion: 'metrora.bench-comparison.v1',
@@ -140,6 +152,13 @@ describe('Bench desktop surface', () => {
     expect(screen.getAllByText('No checks scored · 6 planned')).toHaveLength(2)
     expect(screen.getAllByText('Not available').length).toBeGreaterThan(0)
     expect(screen.queryByText('0 / 6')).not.toBeInTheDocument()
+  })
+
+  it('distinguishes a runtime outage during a partial run from generic incompleteness', async () => {
+    getBenchHistory.mockResolvedValue({ schemaVersion: 'metrora.bench-history-report.v1', records: [partialUnavailableRecord()], invalidCount: 0 })
+    render(<Bench />)
+    expect(await screen.findByText('Runtime unavailable during run')).toBeInTheDocument()
+    expect(screen.getByText(/local runtime became unavailable during the run/)).toBeInTheDocument()
   })
 
   it('distinguishes invalid-only history from an empty history', async () => {

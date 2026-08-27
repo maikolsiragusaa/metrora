@@ -122,6 +122,10 @@ function numberValue(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function scoreDenominatorValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 64 ? value : null
+}
+
 function addDirectNumber(atoms: AdvisorVerifiedClaimAtomV1[], evidence: AdvisorEvidence, id: string, kind: AdvisorClaimKindV1, metric: AdvisorClaimMetricV1, value: unknown, path: string, unit: string | null, subject: string | null = null): void {
   const number = numberValue(value)
   const next = number === null ? null : atom(id, kind, subject, metric, number, unit, evidence, path)
@@ -225,7 +229,14 @@ export function buildAdvisorVerifiedClaimAtoms(evidence: AdvisorEvidence): Advis
   const latest = bench && isRecord(bench.latest) ? bench.latest : null
   if (latest) {
     const aggregate = isRecord(latest.aggregate) ? latest.aggregate : null
-    if (aggregate) addDirectNumber(atoms, evidence, 'bench-score', 'bench_score', 'score', aggregate.scoreValue, 'bench.latest.aggregate.scoreValue', '%')
+    if (aggregate) {
+      const scoreAtom = atom('bench-score', 'bench_score', null, 'score', aggregate.scoreValue, '%', evidence, 'bench.latest.aggregate.scoreValue')
+      if (scoreAtom) {
+        const denominator = scoreDenominatorValue(aggregate.scoreDenominator)
+        if (denominator !== null) scoreAtom.scoreDenominator = denominator
+        atoms.push(scoreAtom)
+      }
+    }
     addDirectString(atoms, evidence, 'bench-status', 'bench_status', 'status', latest.status, 'bench.latest.status')
   }
   const comparison = bench && isRecord(bench.comparison) ? bench.comparison : null
@@ -286,6 +297,11 @@ export function verifyAdvisorVerifiedClaimAtom(atomValue: AdvisorVerifiedClaimAt
   if (!unitMatches(atomValue)) return false
   const minimal = contentMinimalEvidence(evidence, { preserveEvidenceIds: true }) as MinimalEvidence
   if (!equalFact(getPath(minimal, atomValue.evidencePath), atomValue.value)) return false
+  if (atomValue.scoreDenominator !== undefined) {
+    if (atomValue.claimKind !== 'bench_score') return false
+    const denominator = scoreDenominatorValue(getPath(minimal, 'bench.latest.aggregate.scoreDenominator'))
+    if (denominator === null || denominator !== atomValue.scoreDenominator) return false
+  }
   return subjectMatches(atomValue, minimal)
 }
 
@@ -379,7 +395,11 @@ export function renderAdvisorVerifiedClaimAtom(atomValue: AdvisorVerifiedClaimAt
     const label = presentationLabel(value, FRESHNESS_LABELS, language)
     if (label) return language === 'it' ? 'La freschezza della quota di ' + provider + ' è ' + label + '.' : provider + ' quota freshness is ' + label + '.'
   }
-  if (atomValue.claimKind === 'bench_score' && typeof value === 'number') return language === 'it' ? 'Il punteggio dell’ultimo test controllato è ' + formatAdvisorPercent(value) + '.' : 'The latest controlled test score was ' + formatAdvisorPercent(value) + '.'
+  if (atomValue.claimKind === 'bench_score' && typeof value === 'number') {
+    const denominator = scoreDenominatorValue(atomValue.scoreDenominator)
+    const context = denominator === null ? '' : language === 'it' ? ' su ' + integer(denominator, language) + ' controlli valutati' : ' of ' + integer(denominator, language) + ' scored checks'
+    return language === 'it' ? 'Il punteggio dell’ultimo test controllato è ' + formatAdvisorPercent(value) + context + '.' : 'The latest controlled test score was ' + formatAdvisorPercent(value) + context + '.'
+  }
   if (atomValue.claimKind === 'bench_status' && typeof value === 'string') {
     const label = presentationLabel(value, BENCH_STATUS_LABELS, language)
     if (label) return language === 'it' ? 'Lo stato dell’ultimo test controllato è ' + label + '.' : 'The latest controlled test status is ' + label + '.'

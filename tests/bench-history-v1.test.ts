@@ -15,13 +15,38 @@ import {
   scanBenchHistoryV1,
 } from '../src/bench/history-v1.js'
 import { sha256Json } from '../src/bench/serialization.js'
-import type { BenchEvaluationV1 } from '../src/bench/task-pack-run-v1.js'
+import { CORE_TASK_PACK_V1 } from '../src/bench/task-pack-v1.js'
+import { digestBenchEvaluationV1, type BenchEvaluationV1 } from '../src/bench/task-pack-run-v1.js'
 
 const dirs: string[] = []
 function evaluation(runId: string, endedAt = '2026-08-24T10:00:00.000Z'): BenchEvaluationV1 {
-  return {
-    schemaVersion: 'metrora.bench-evaluation.v1', runId, runner: { id: 'ollama-task-pack-v1', version: '1.0.0' }, pack: { packId: 'metrora.bench.core', version: '1.0.0', digest: 'a'.repeat(64) }, model: { selected: 'qwen3:8b', reported: 'qwen3:8b' }, runtime: { id: 'ollama-local', endpoint: 'http://127.0.0.1:11434', version: '0.12.6' }, environment: { os: 'test', arch: 'x64', node: 'v22' }, generation: { parameters: { temperature: 0, seed: 1729, numPredict: 64 }, policy: 'one-bounded-request-per-task' }, startedAt: endedAt, endedAt, status: 'completed', tasks: [{ taskId: 'exact-word', attempted: true, status: 'passed', score: 1, outputDigest: 'b'.repeat(64), outputChars: 4, requestLatencyMs: 10, timeToFirstContentMs: 3, runtimeReported: { totalDurationNs: null, loadDurationNs: null, promptEvalCount: null, promptEvalDurationNs: null, evalCount: null, evalDurationNs: null }, failure: null }], aggregate: { planned: 1, attempted: 1, passed: 1, failed: 0, unavailable: 0, cancelled: 0, score: { numerator: 1, denominator: 1, value: 1 } }, resultDigest: 'c'.repeat(64),
+  const resultWithoutDigest = {
+    schemaVersion: 'metrora.bench-evaluation.v1' as const,
+    runId,
+    runner: { id: 'ollama-task-pack-v1' as const, version: '1.0.0' as const },
+    pack: { packId: 'metrora.bench.core' as const, version: '1.0.0' as const, digest: CORE_TASK_PACK_V1.digest },
+    model: { selected: 'qwen3:8b', reported: 'qwen3:8b' },
+    runtime: { id: 'ollama-local' as const, endpoint: 'http://127.0.0.1:11434' as const, version: '0.12.6' },
+    environment: { os: 'test', arch: 'x64', node: 'v22' },
+    generation: { parameters: { temperature: 0, seed: 1729, numPredict: 64 }, policy: 'one-bounded-request-per-task' as const },
+    startedAt: endedAt,
+    endedAt,
+    status: 'completed' as const,
+    tasks: CORE_TASK_PACK_V1.tasks.map(task => ({
+      taskId: task.id,
+      attempted: true,
+      status: 'passed' as const,
+      score: 1 as const,
+      outputDigest: 'b'.repeat(64),
+      outputChars: 4,
+      requestLatencyMs: 10,
+      timeToFirstContentMs: 3,
+      runtimeReported: { totalDurationNs: null, loadDurationNs: null, promptEvalCount: null, promptEvalDurationNs: null, evalCount: null, evalDurationNs: null },
+      failure: null,
+    })),
+    aggregate: { planned: 6, attempted: 6, passed: 6, failed: 0, unavailable: 0, cancelled: 0, score: { numerator: 6, denominator: 6, value: 1 } },
   }
+  return { ...resultWithoutDigest, resultDigest: digestBenchEvaluationV1(resultWithoutDigest) }
 }
 function dataDir(): string { const dir = mkdtempSync(join(tmpdir(), 'metrora-bench-history-')); dirs.push(dir); return dir }
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -32,7 +57,8 @@ describe('Bench history v1', () => {
     const record = evaluation('run-one')
     expect(await saveBenchEvaluationV1(record, { dataDir: dir })).toMatchObject({ status: 'saved' })
     expect(await saveBenchEvaluationV1(record, { dataDir: dir })).toMatchObject({ status: 'duplicate' })
-    await expect(saveBenchEvaluationV1({ ...record, model: { selected: 'other', reported: null } }, { dataDir: dir })).rejects.toThrow('collision')
+    const otherModel = { ...record, model: { selected: 'other', reported: null } }
+    await expect(saveBenchEvaluationV1({ ...otherModel, resultDigest: digestBenchEvaluationV1(otherModel) }, { dataDir: dir })).rejects.toThrow('collision')
     const corrupt = join(benchHistoryDirectoryV1(dir), 'a'.repeat(64) + '.json')
     writeFileSync(corrupt, '{not-json}')
     const scan = await scanBenchHistoryV1({ dataDir: dir })
@@ -59,6 +85,63 @@ describe('Bench history v1', () => {
     const scan = await scanBenchHistoryV1({ dataDir: dir })
     expect(scan.records).toHaveLength(0)
     expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('passed count does not match') }])
+  })
+
+  it('rejects non-canonical packs and tampered result digests', async () => {
+    const dir = dataDir()
+    const record = evaluation('tampered')
+    const invalidRecord = { ...record, pack: { ...record.pack, digest: 'a'.repeat(64) } }
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    const file = sha256Json([BENCH_HISTORY_KIND, invalidRecord.runId]) + '.json'
+    writeFileSync(join(recordsDir, file), JSON.stringify({
+      kind: BENCH_HISTORY_KIND,
+      version: BENCH_HISTORY_VERSION,
+      recordSha256: sha256Json(invalidRecord),
+      record: invalidRecord,
+    }))
+
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records).toHaveLength(0)
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('canonical Core conformance pack') }])
+  })
+
+  it('rejects a result digest that does not match retained task evidence', async () => {
+    const dir = dataDir()
+    const record = evaluation('bad-result-digest')
+    const invalidRecord = { ...record, resultDigest: 'c'.repeat(64) }
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    const file = sha256Json([BENCH_HISTORY_KIND, invalidRecord.runId]) + '.json'
+    writeFileSync(join(recordsDir, file), JSON.stringify({
+      kind: BENCH_HISTORY_KIND,
+      version: BENCH_HISTORY_VERSION,
+      recordSha256: sha256Json(invalidRecord),
+      record: invalidRecord,
+    }))
+
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records).toHaveLength(0)
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('result digest does not match') }])
+  })
+
+  it('rejects altered fixed generation parameters', async () => {
+    const dir = dataDir()
+    const record = evaluation('altered-generation')
+    const invalidRecord = { ...record, generation: { ...record.generation, parameters: { ...record.generation.parameters, seed: 1730 } } }
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    const file = sha256Json([BENCH_HISTORY_KIND, invalidRecord.runId]) + '.json'
+    writeFileSync(join(recordsDir, file), JSON.stringify({
+      kind: BENCH_HISTORY_KIND,
+      version: BENCH_HISTORY_VERSION,
+      recordSha256: sha256Json(invalidRecord),
+      record: invalidRecord,
+    }))
+
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records).toHaveLength(0)
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('fixed Core conformance policy') }])
   })
 
   it('bounds oversized corrupt files before parsing', async () => {

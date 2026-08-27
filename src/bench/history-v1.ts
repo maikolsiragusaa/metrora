@@ -5,7 +5,9 @@ import { atomicWritePrivateFile, cleanupStaleAtomicTemps, ensurePrivateDirectory
 import { defaultMetroraDataDir } from '../local-state/endpoint-identity.js'
 import { withLocalStateLease } from '../local-state/local-state-lease.js'
 import { sha256Json } from './serialization.js'
-import { BENCH_EVALUATION_SCHEMA_VERSION, type BenchEvaluationV1 } from './task-pack-run-v1.js'
+import { FIXED_GENERATION_PARAMETERS } from './contract-v1.js'
+import { CORE_TASK_PACK_V1 } from './task-pack-v1.js'
+import { BENCH_EVALUATION_SCHEMA_VERSION, digestBenchEvaluationV1, type BenchEvaluationV1 } from './task-pack-run-v1.js'
 
 export const BENCH_HISTORY_KIND = 'metrora.bench-history.v1' as const
 export const BENCH_HISTORY_VERSION = 1 as const
@@ -49,11 +51,17 @@ const Evaluation = EvaluationShape.superRefine((record, ctx) => {
   const expectedStatus = counts.cancelled > 0 ? 'cancelled' : counts.unavailable > 0 ? 'unavailable' : 'completed'
   if (record.status !== expectedStatus) issue(['status'], 'status does not match retained task outcomes')
   if (Date.parse(record.startedAt) > Date.parse(record.endedAt)) issue(['endedAt'], 'endedAt must not precede startedAt')
+  if (record.pack.digest !== CORE_TASK_PACK_V1.digest) issue(['pack', 'digest'], 'pack digest does not match the canonical Core conformance pack')
+  if (tasks.length !== CORE_TASK_PACK_V1.tasks.length) issue(['tasks'], 'task count does not match the canonical Core conformance pack')
+  for (const key of ['temperature', 'seed', 'numPredict'] as const) {
+    if (record.generation.parameters[key] !== FIXED_GENERATION_PARAMETERS[key]) issue(['generation', 'parameters', key], 'generation parameter does not match the fixed Core conformance policy')
+  }
 
   const taskIds = new Set<string>()
   tasks.forEach((task, index) => {
     if (taskIds.has(task.taskId)) issue(['tasks', index, 'taskId'], 'task ids must be unique')
     taskIds.add(task.taskId)
+    if (task.taskId !== CORE_TASK_PACK_V1.tasks[index]?.id) issue(['tasks', index, 'taskId'], 'task id or order does not match the canonical Core conformance pack')
     if (!task.attempted && task.score !== null) issue(['tasks', index], 'an unattempted task cannot have a score')
     if (task.status === 'passed') {
       if (!task.attempted || task.score !== 1 || task.failure !== null || task.outputDigest === null || task.outputChars === null) issue(['tasks', index], 'passed tasks must contain a scored output')
@@ -63,6 +71,7 @@ const Evaluation = EvaluationShape.superRefine((record, ctx) => {
       issue(['tasks', index], 'unscored tasks must retain only bounded failure metadata')
     }
   })
+  if (record.resultDigest !== digestBenchEvaluationV1(record)) issue(['resultDigest'], 'result digest does not match retained task evidence')
 })
 const HistoryFile = z.object({ kind: z.literal(BENCH_HISTORY_KIND), version: z.literal(BENCH_HISTORY_VERSION), recordSha256: z.string().regex(/^[0-9a-f]{64}$/), record: Evaluation }).strict()
 

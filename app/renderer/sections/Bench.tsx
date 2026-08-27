@@ -53,7 +53,8 @@ function runtimeLabel(record: BenchEvaluation): string {
 function statusLabel(record: BenchEvaluation): string {
   if (record.status === 'completed') return 'Complete'
   if (record.status === 'cancelled') return 'Cancelled'
-  return record.aggregate.attempted === 0 ? 'Runtime unavailable' : 'Incomplete'
+  if (record.aggregate.attempted === 0) return 'Runtime unavailable'
+  return record.aggregate.unavailable > 0 ? 'Runtime unavailable during run' : 'Incomplete'
 }
 
 function statusTone(record: BenchEvaluation): string {
@@ -70,6 +71,7 @@ function stateMessage(record: BenchEvaluation): string {
   if (record.status === 'completed') return `${record.aggregate.attempted} of ${record.aggregate.planned} planned checks completed. Failed checks are scoring results, not missing data.`
   if (record.status === 'cancelled') return `Run cancelled after ${record.aggregate.attempted} of ${record.aggregate.planned} planned checks. Unstarted checks are not counted as failures.`
   if (record.aggregate.attempted === 0) return 'The local runtime was unavailable before any check ran. No score was calculated.'
+  if (record.aggregate.unavailable > 0) return `The local runtime became unavailable during the run after ${record.aggregate.attempted} of ${record.aggregate.planned} planned checks. Unstarted checks are not counted as failures.`
   return `Run stopped after ${record.aggregate.attempted} of ${record.aggregate.planned} planned checks. Unstarted checks are not counted as failures.`
 }
 

@@ -102,6 +102,8 @@ export type AdvisorVerifiedClaimAtomV1 = {
   evidenceRef: string
   evidencePath: string
   scope: AdvisorScope
+  /** Denominator context for a bounded Bench score; absent for other claims. */
+  scoreDenominator?: number
 }
 export type AdvisorClaimSelectionV1 = { contractVersion: 'advisor-claim-selection-v1'; schemaVersion: 1; id: string }
 export type AdvisorSynthesisBlockV1 = { claimIds: string[]; emphasis?: 'primary' | 'supporting' | 'detail' }

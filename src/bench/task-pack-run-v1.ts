@@ -76,7 +76,7 @@ function buildAggregate(tasks: BenchTaskResultV1[]): BenchEvaluationV1['aggregat
   const denominator = passed + failed
   return { planned: tasks.length, attempted: tasks.filter(task => task.attempted).length, passed, failed, unavailable, cancelled, score: { numerator: passed, denominator, value: denominator === 0 ? null : passed / denominator } }
 }
-function digestOf(result: Pick<BenchEvaluationV1, 'model' | 'runtime' | 'pack' | 'tasks'>): string {
+export function digestBenchEvaluationV1(result: Pick<BenchEvaluationV1, 'model' | 'runtime' | 'pack' | 'tasks'>): string {
   return sha256Json({ schemaVersion: BENCH_EVALUATION_SCHEMA_VERSION, runner: { id: BENCH_TASK_RUNNER_ID, version: BENCH_TASK_RUNNER_VERSION }, pack: result.pack, model: result.model, runtimeVersion: result.runtime.version, tasks: result.tasks.map(task => ({ taskId: task.taskId, attempted: task.attempted, status: task.status, score: task.score, outputDigest: task.outputDigest, outputChars: task.outputChars, runtimeReported: task.runtimeReported, failure: task.failure?.code ?? null })) })
 }
 
@@ -134,5 +134,5 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
     tasks,
     aggregate: buildAggregate(tasks),
   }
-  return { ...resultWithoutDigest, resultDigest: digestOf(resultWithoutDigest) }
+  return { ...resultWithoutDigest, resultDigest: digestBenchEvaluationV1(resultWithoutDigest) }
 }
