@@ -158,9 +158,10 @@ export function Advisor({
   const hostedModelRef = useRef<string | null>(null)
   hostedModelRef.current = hostedModel
   const [hostedConsent, setHostedConsent] = useState(false)
-  const hostedRuntime = useMemo(() => hostedModel ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModel, consent: hostedConsent }) : null, [hostedConsent, hostedModel, hostedProvider])
-  const [runtimeState, setRuntimeState] = useState<AdvisorRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
   const [hostedProbe, setHostedProbe] = useState<AdvisorHostedProbePresentation>(() => createHostedProbeChecking('openai'))
+  const hostedModelForRuntime = hostedModel && hostedProbe.models.some(model => model.id === hostedModel && isSelectableHostedModel(model)) ? hostedModel : null
+  const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
+  const [runtimeState, setRuntimeState] = useState<AdvisorRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
   const [configureOpen, setConfigureOpen] = useState(false)
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
   const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
@@ -260,6 +261,16 @@ export function Advisor({
   const [notice, setNotice] = useState<string | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
   const requestController = useRef<AbortController | null>(null)
+  const requestGenerationRef = useRef(0)
+  const invalidateAdvisorRequest = useCallback(() => {
+    requestGenerationRef.current += 1
+    requestController.current?.abort()
+    requestController.current = null
+    setLoadingQuestion(null)
+    setStreamPreview('')
+    setToolStatus(null)
+  }, [])
+  useEffect(() => () => invalidateAdvisorRequest(), [invalidateAdvisorRequest])
 
   useEffect(() => {
     if (!normalizedContextualLaunch || !contextualScope) return
@@ -289,9 +300,11 @@ export function Advisor({
       setNotice(currentHosted.hostedRuntime ? 'Confirm the hosted-provider evidence sharing notice before investigating.' : 'Connect a hosted provider credential before investigating.')
       return
     }
-    requestController.current?.abort()
+    invalidateAdvisorRequest()
     const controller = new AbortController()
     requestController.current = controller
+    const requestId = requestGenerationRef.current
+    const isCurrentRequest = () => !controller.signal.aborted && requestGenerationRef.current === requestId
     const requestedScopeFingerprint = advisorScopeFingerprint(requestedScope)
     const history: AdvisorConversationTurn[] = retryRequest?.conversation ?? targetConversation.messages
       .map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '', scopeFingerprint: message.scopeFingerprint }))
@@ -326,14 +339,15 @@ export function Advisor({
           && !overview.switching ? overview.data : null,
         conversation: history,
         signal: controller.signal,
-        onToolEvent: event => setToolStatus(event.status === 'started' ? 'Investigating ' + event.name.replaceAll('_', ' ') + '…' : null),
-        onDelta: text => setStreamPreview(text),
+        onToolEvent: event => { if (isCurrentRequest()) setToolStatus(event.status === 'started' ? 'Investigating ' + event.name.replaceAll('_', ' ') + '…' : null) },
+        onDelta: text => { if (isCurrentRequest()) setStreamPreview(text) },
       })
-      if (controller.signal.aborted) return
+      if (!isCurrentRequest()) return
       const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint }
       updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {
+      if (!isCurrentRequest()) return
       if (isCancelled(caught)) setNotice('Investigation cancelled. Your conversation stays local to this session.')
       else {
         setFailedRequest({
@@ -345,12 +359,13 @@ export function Advisor({
         setError(caught instanceof Error ? caught.message : 'Advisor could not complete this investigation.')
       }
     } finally {
+      if (requestGenerationRef.current !== requestId) return
       if (requestController.current === controller) requestController.current = null
       setLoadingQuestion(null)
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, contextualScopeMode, conversations, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
+  }, [activeConversationId, contextualScopeMode, conversations, invalidateAdvisorRequest, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -363,7 +378,7 @@ export function Advisor({
     }
   }
   const cancel = () => {
-    requestController.current?.abort()
+    invalidateAdvisorRequest()
     setNotice('Cancelling investigation…')
   }
   const newConversation = () => {
@@ -375,18 +390,22 @@ export function Advisor({
     setNotice(null)
   }
   const activateHosted = () => {
+    invalidateAdvisorRequest()
     setRuntimeChoice('hosted')
     setHostedConsent(false)
     void checkHostedRuntime()
   }
   const activateLocal = () => {
+    invalidateAdvisorRequest()
     setRuntimeChoice(runtimeId)
     setHostedConsent(false)
   }
   const updateHostedConsent = (consent: boolean) => {
+    invalidateAdvisorRequest()
     setHostedConsent(consent)
   }
   const updateHostedProvider = (next: AdvisorHostedProviderId) => {
+    invalidateAdvisorRequest()
     hostedOperationGuardRef.current.setProvider(next)
     hostedProbeController.current?.abort()
     setHostedProvider(next)
@@ -396,16 +415,19 @@ export function Advisor({
     void checkHostedRuntime(next, true)
   }
   const updateHostedModel = (model: string) => {
+    invalidateAdvisorRequest()
     setHostedModel(model)
     setHostedConsent(false)
   }
   const updateLocalRuntime = (next: AdvisorLocalRuntimeId) => {
+    invalidateAdvisorRequest()
     setRuntimeId(next)
     setRuntimeModel(null)
     setHostedConsent(false)
     void checkLocalRuntime(next)
   }
   const updateLocalModel = (model: string) => {
+    invalidateAdvisorRequest()
     setRuntimeModel(model)
     if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' }))
     else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' }))

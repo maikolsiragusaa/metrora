@@ -447,6 +447,23 @@ describe('Advisor workspace', () => {
     expect(screen.queryByText('OpenAI · gpt-a')).not.toBeInTheDocument()
   })
 
+  it('does not append a hosted answer after switching providers during an active request', async () => {
+    let resolveInvestigation: ((value: AdvisorAnswer) => void) | undefined
+    investigate.mockImplementation(() => new Promise(resolve => { resolveInvestigation = resolve }))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    await screen.findByLabelText('Advisor hosted model')
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
+    await submitQuestion('Do not retain this stale answer')
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic'))
+    resolveInvestigation?.(answer)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(screen.queryByText(answer.conclusion)).not.toBeInTheDocument()
+  })
+
   it('keeps all hosted BYOK providers available through the disclosed configuration', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
