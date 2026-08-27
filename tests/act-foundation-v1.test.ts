@@ -192,6 +192,30 @@ describe('controlled Core Bench action lifecycle', () => {
     expect(journal).not.toContain('"response":"blue"')
   })
 
+  it('rejects a journal result digest that does not match canonical Bench evidence', async () => {
+    const fx = await makeRoot()
+    const authority = new TrustedActionAuthorityV1(Buffer.alloc(32, 19))
+    const proposal = action({ actionId: 'act-forged-result-digest-001' })
+    const approved = authority.issueApprovalAfterTrustedUserConfirmation(proposal)
+    const record = await executeApprovedCoreConformanceBench(approved, {
+      authority,
+      actionsDir: fx.actionsDir,
+      dataDir: fx.dataDir,
+      fetchImpl: passingFetch(),
+    })
+    const forgedDigest = 'f'.repeat(64)
+    await appendRecord(fx.actionsDir, {
+      ...record,
+      operation: {
+        ...record.operation,
+        result: { ...record.operation.result!, resultDigest: forgedDigest },
+        evidenceReferences: [{ ...record.operation.evidenceReferences[0]!, resultDigest: forgedDigest }],
+      },
+    })
+
+    await expect(readCoreConformanceAction(record.id, { actionsDir: fx.actionsDir, dataDir: fx.dataDir })).rejects.toMatchObject({ code: 'identity-mismatch' })
+  })
+
   it('rejects duplicate proposals and replay after a terminal action', async () => {
     const fx = await makeRoot()
     const authority = new TrustedActionAuthorityV1(Buffer.alloc(32, 9))
