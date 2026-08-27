@@ -13,12 +13,12 @@ const request = (provider: AdvisorHostedProviderId, stream = false) => ({
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 }
-function sseResponse(payloads: unknown[]): Response {
+function sseResponse(payloads: unknown[], includeDone = true): Response {
   const encoder = new TextEncoder()
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       for (const payload of payloads) controller.enqueue(encoder.encode('data: ' + JSON.stringify(payload) + '\n\n'))
-      controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+      if (includeDone) controller.enqueue(encoder.encode('data: [DONE]\n\n'))
       controller.close()
     },
   })
@@ -102,7 +102,7 @@ describe('Advisor hosted provider authority', () => {
     const streamPayloads = provider === 'openai'
       ? [{ type: 'response.output_text.delta', delta: 'Measured ' }, { type: 'response.output_text.delta', delta: 'stream.' }, { type: 'response.completed', response: { usage: { input_tokens: 2, output_tokens: 2, total_tokens: 4 } } }]
       : provider === 'anthropic'
-        ? [{ type: 'message_start', message: { usage: { input_tokens: 2 } } }, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Measured stream.' } }, { type: 'content_block_stop', index: 0 }, { type: 'message_delta', usage: { output_tokens: 2 } }]
+        ? [{ type: 'message_start', message: { usage: { input_tokens: 2 } } }, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Measured stream.' } }, { type: 'content_block_stop', index: 0 }, { type: 'message_delta', usage: { output_tokens: 2 } }, { type: 'message_stop' }]
         : [{ candidates: [{ content: { parts: [{ text: 'Measured stream.' }] } }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 2, totalTokenCount: 4 } }]
     const fetchImpl = (async () => sseResponse(streamPayloads)) as typeof fetch
     const handlers = readyHandlers(fetchImpl, events)
@@ -110,6 +110,22 @@ describe('Advisor hosted provider authority', () => {
     expect(result).toMatchObject({ ok: true, value: { message: { content: 'Measured stream.' }, streamed: true, usage: { inputTokens: 2, outputTokens: 2, totalTokens: 4 } } })
     expect(events.some(event => event.kind === 'text-delta')).toBe(true)
     expect(events.some(event => event.kind === 'response.output_text.delta' as never)).toBe(false)
+  })
+
+  it.each(['openai', 'anthropic'] as const)('rejects a truncated %s SSE response without a terminal event', async provider => {
+    const payload = provider === 'openai'
+      ? { type: 'response.output_text.delta', delta: 'partial' }
+      : { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial' } }
+    const fetchImpl = (async () => sseResponse([payload], false)) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('truncated-' + provider, request(provider, true)) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'response-malformed' } })
+  })
+
+  it('rejects provider-declared SSE errors without exposing the error body', async () => {
+    const fetchImpl = (async () => sseResponse([{ type: 'error', error: { message: 'provider-secret-body' } }])) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('stream-error', request('openai', true)) as { ok: boolean; error: { kind: string; message: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'provider-unavailable' } })
+    expect(JSON.stringify(result)).not.toContain('provider-secret-body')
   })
 
   it('requires explicit evidence-sharing consent in the main process', async () => {
@@ -148,6 +164,29 @@ describe('Advisor hosted provider authority', () => {
     await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
     expect(events.some(event => event.kind === 'cancelled')).toBe(true)
   })
+  it('cancels a hosted chat while its SSE response body is pending', async () => {
+    const encoder = new TextEncoder()
+    let releaseBlockedRead!: () => void
+    const blockedRead = new Promise<void>(resolve => { releaseBlockedRead = resolve })
+    let blocked = false
+    let bodyCancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start: controller => controller.enqueue(encoder.encode('data: ' + JSON.stringify({ type: 'response.output_text.delta', delta: 'partial' }) + '\n\n')),
+      pull: () => {
+        if (blocked) return
+        blocked = true
+        releaseBlockedRead()
+      },
+      cancel: () => { bodyCancelled = true },
+    })
+    const fetchImpl = vi.fn(async () => new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const pending = handlers['metrora:advisorHostedChat']!('body-cancel', request('openai', true))
+    await blockedRead
+    expect(await handlers['metrora:advisorHostedCancel']!('body-cancel')).toEqual({ ok: true, value: true })
+    await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
+    expect(bodyCancelled).toBe(true)
+  })
   it('cancels hosted chat during credential custody before any provider request starts', async () => {
     let markStatusStarted!: () => void
     const statusStarted = new Promise<void>(resolve => { markStatusStarted = resolve })
@@ -164,8 +203,29 @@ describe('Advisor hosted provider authority', () => {
     const pending = handlers['metrora:advisorHostedChat']!('custody-cancel', request('openai'))
     await statusStarted
     expect(await handlers['metrora:advisorHostedCancel']!('custody-cancel')).toEqual({ ok: true, value: true })
-    resolveStatus({ provider: 'openai', state: 'ready' })
     await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
+    expect(fetchImpl).not.toHaveBeenCalled()
+    resolveStatus({ provider: 'openai', state: 'ready' })
+  })
+  it('rejects duplicate active request ids without overwriting the original flight', async () => {
+    let markStatusStarted!: () => void
+    const statusStarted = new Promise<void>(resolve => { markStatusStarted = resolve })
+    let resolveStatus!: (value: { provider: 'openai'; state: 'ready' }) => void
+    const fetchImpl = vi.fn(async () => jsonResponse(textPayload('openai')))
+    const handlers = createAdvisorHostedHandlers({
+      fetchImpl,
+      credentialStatus: async () => {
+        markStatusStarted()
+        return await new Promise<{ provider: 'openai'; state: 'ready' }>(resolve => { resolveStatus = resolve })
+      },
+      readCredential: async () => 'synthetic-secret',
+    })
+    const first = handlers['metrora:advisorHostedChat']!('duplicate-id', request('openai'))
+    await statusStarted
+    await expect(handlers['metrora:advisorHostedChat']!('duplicate-id', request('openai'))).resolves.toMatchObject({ ok: false, error: { kind: 'request-in-flight' } })
+    expect(await handlers['metrora:advisorHostedCancel']!('duplicate-id')).toEqual({ ok: true, value: true })
+    await expect(first).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
+    resolveStatus({ provider: 'openai', state: 'ready' })
     expect(fetchImpl).not.toHaveBeenCalled()
   })
   it('cancels an in-flight hosted model probe', async () => {

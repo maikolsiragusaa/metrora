@@ -39,6 +39,8 @@ export type {
 
 const {
   ANTHROPIC_VERSION,
+  abortError,
+  abortable,
   DESCRIPTORS,
   MAX_MESSAGES,
   MAX_MODELS,
@@ -63,6 +65,7 @@ const {
   safeError,
   safeModelLabel,
   statusCheck,
+  throwIfAborted,
   validModel,
   validProvider,
   validRequestId,
@@ -194,6 +197,9 @@ function throwIfCancelled(signal?: AbortSignal): void {
   error.name = 'AbortError'
   throw error
 }
+function withOptionalAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  return signal ? abortable(operation, signal) : operation
+}
 function credentialDetail(status: AdvisorHostedCredentialStatus): string {
   if (status.state === 'not-configured') return 'Add your provider credential to use hosted Advisor.'
   if (status.state === 'locked-unavailable') return 'Secure credential storage is unavailable on this device.'
@@ -205,45 +211,71 @@ function credentialDetail(status: AdvisorHostedCredentialStatus): string {
 function parseSseLine(line: string, data: string[]): void {
   if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
 }
-async function readSse(response: Response, onPayload: (payload: Record<string, unknown>) => void): Promise<void> {
+type SseReadResult = { sawDone: boolean; payloadCount: number }
+function rejectProviderStreamError(payload: Record<string, unknown>): void {
+  if ((payload.error !== undefined && payload.error !== null) || payload.type === 'error' || payload.type === 'response.failed' || payload.type === 'response.incomplete' || payload.type === 'response.cancelled') {
+    throw new HostedAdapterError('provider-unavailable', 'The provider stream reported an error.')
+  }
+}
+async function readSse(response: Response, onPayload: (payload: Record<string, unknown>) => void, signal?: AbortSignal): Promise<SseReadResult> {
+  if (signal) throwIfAborted(signal)
   const reader = response.body?.getReader()
   if (!reader) {
-    onPayload(await readJson(response))
-    return
+    const payload = await readJson(response, signal)
+    rejectProviderStreamError(payload)
+    onPayload(payload)
+    return { sawDone: false, payloadCount: 1 }
   }
+  const onAbort = () => { void reader.cancel().catch(() => {}) }
+  signal?.addEventListener('abort', onAbort, { once: true })
   const decoder = new TextDecoder()
   let pending = ''
   let bytes = 0
   let events = 0
+  let payloadCount = 0
+  let sawDone = false
   let data: string[] = []
   const dispatch = () => {
     if (!data.length) return
     const joined = data.join('\n')
     data = []
-    if (joined === '[DONE]') return
+    if (joined === '[DONE]') {
+      sawDone = true
+      return
+    }
     let payload: unknown
     try { payload = JSON.parse(joined) } catch { throw new HostedAdapterError('response-malformed', 'The provider stream was malformed.') }
     if (!isRecord(payload)) throw new HostedAdapterError('response-malformed', 'The provider stream was malformed.')
     events += 1
     if (events > MAX_SSE_EVENTS) throw new HostedAdapterError('response-too-large', 'The provider stream exceeded the event limit.')
+    payloadCount += 1
+    rejectProviderStreamError(payload)
     onPayload(payload)
   }
-  while (true) {
-    const part = await reader.read()
-    if (part.done) break
-    bytes += part.value.byteLength
-    if (bytes > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-    pending += decoder.decode(part.value, { stream: true })
-    const lines = pending.split(/\r?\n/)
-    pending = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line.trim()) dispatch()
-      else parseSseLine(line, data)
+  try {
+    while (true) {
+      if (signal) throwIfAborted(signal)
+      const part = await reader.read()
+      if (signal) throwIfAborted(signal)
+      if (part.done) break
+      bytes += part.value.byteLength
+      if (bytes > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      pending += decoder.decode(part.value, { stream: true })
+      const lines = pending.split(/\r?\n/)
+      pending = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.trim()) dispatch()
+        else parseSseLine(line, data)
+      }
     }
-  }
-  pending += decoder.decode()
-  if (pending.trim()) parseSseLine(pending, data)
-  dispatch()
+    pending += decoder.decode()
+    if (pending.trim()) parseSseLine(pending, data)
+    dispatch()
+    return { sawDone, payloadCount }
+  } catch (error) {
+    if (signal?.aborted) throw abortError()
+    throw error
+  } finally { signal?.removeEventListener('abort', onAbort) }
 }
 async function discover(provider: AdvisorHostedProviderId, secret: string, fetchImpl: FetchLike, parent?: AbortSignal): Promise<AdvisorHostedModel[]> {
   const descriptor = DESCRIPTORS[provider]
@@ -263,7 +295,7 @@ async function discover(provider: AdvisorHostedProviderId, secret: string, fetch
     const request = await fetchResponse(fetchImpl, providerUrl(provider, url.pathname + url.search), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
     try {
       statusCheck(request.response)
-      nextToken = modelRows(provider, await readJson(request.response), models, seen)
+      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen)
     } finally { request.dispose() }
     if (!nextToken || seenTokens.has(nextToken)) break
     seenTokens.add(nextToken)
@@ -287,11 +319,14 @@ async function hostedChat(provider: AdvisorHostedProviderId, secret: string, req
     let usage: AdvisorHostedUsage | null = null
     const contentType = result.response.headers.get('content-type') ?? ''
     if (stream && (!contentType || contentType.includes('text/event-stream'))) {
-      await readSse(result.response, payload => adapter.parseStream(payload, state, provider, requestId, request.model, emit))
+      const sse = await readSse(result.response, payload => adapter.parseStream(payload, state, provider, requestId, request.model, emit), result.signal)
+      if (protocol === 'openai-responses' && !state.terminal) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
+      if (protocol === 'anthropic-messages' && !state.terminal) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
+      if (protocol === 'openai-chat' && !state.terminal && !sse.sawDone) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
       if (protocol !== 'gemini-content') finalizeOpenToolCalls(state, provider, requestId, request.model, emit, protocol !== 'openai-chat')
       usage = state.usage
     } else {
-      const parsed = adapter.parseJson(await readJson(result.response), provider, requestId, request.model, emit)
+      const parsed = adapter.parseJson(await readJson(result.response, result.signal), provider, requestId, request.model, emit)
       state.content = parsed.content
       state.calls = parsed.calls
       usage = parsed.usage
@@ -328,16 +363,23 @@ export function createAdvisorHostedHandlers(options: {
       if (!validProvider(providerValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor hosted provider is invalid.' } }
       if (requestIdValue !== undefined && !validRequestId(requestIdValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor request id is invalid.' } }
       const probeRequestId = typeof requestIdValue === 'string' ? requestIdValue : null
+      if (probeRequestId && flights.has(probeRequestId)) return { ok: false, error: { kind: 'request-in-flight', message: 'Advisor request id is already active.' } }
       const controller = probeRequestId ? new AbortController() : null
       if (controller && probeRequestId) flights.set(probeRequestId, controller)
       try {
         throwIfCancelled(controller?.signal)
         let status: AdvisorHostedCredentialStatus
-        try { status = await options.credentialStatus(providerValue) } catch { status = { provider: providerValue, state: 'locked-unavailable' } }
+        try { status = await withOptionalAbort(options.credentialStatus(providerValue), controller?.signal) } catch {
+          throwIfCancelled(controller?.signal)
+          status = { provider: providerValue, state: 'locked-unavailable' }
+        }
         throwIfCancelled(controller?.signal)
         if (status.state !== 'ready') return { ok: true, value: { provider: providerValue, available: false, models: [], detail: credentialDetail(status), credentialState: status.state } satisfies AdvisorHostedProbe }
         let secret: string | null
-        try { secret = await options.readCredential(providerValue) } catch { secret = null }
+        try { secret = await withOptionalAbort(options.readCredential(providerValue), controller?.signal) } catch {
+          throwIfCancelled(controller?.signal)
+          secret = null
+        }
         throwIfCancelled(controller?.signal)
         if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
         const models = await discover(providerValue, secret, fetchImpl, controller?.signal)
@@ -354,17 +396,24 @@ export function createAdvisorHostedHandlers(options: {
     'metrora:advisorHostedChat': async (requestIdValue: unknown, requestValue: unknown): Promise<AdvisorHostedEnvelope> => {
       let parsed: { requestId: string; request: AdvisorHostedChatRequest }
       try { parsed = parseChatRequest(requestIdValue, requestValue) } catch (error) { return fail(error, 'validation') }
+      if (flights.has(parsed.requestId)) return { ok: false, error: { kind: 'request-in-flight', message: 'Advisor request id is already active.' } }
       const controller = new AbortController()
       flights.set(parsed.requestId, controller)
       const emit = (event: AdvisorHostedEvent) => emitEvent({ ...event, requestId: parsed.requestId })
       try {
         throwIfCancelled(controller.signal)
         let status: AdvisorHostedCredentialStatus
-        try { status = await options.credentialStatus(parsed.request.provider) } catch { status = { provider: parsed.request.provider, state: 'locked-unavailable' } }
+        try { status = await withOptionalAbort(options.credentialStatus(parsed.request.provider), controller.signal) } catch {
+          throwIfCancelled(controller.signal)
+          status = { provider: parsed.request.provider, state: 'locked-unavailable' }
+        }
         throwIfCancelled(controller.signal)
         if (status.state !== 'ready') return { ok: false, error: { kind: 'credential-unavailable', message: credentialDetail(status) } }
         let secret: string | null
-        try { secret = await options.readCredential(parsed.request.provider) } catch { secret = null }
+        try { secret = await withOptionalAbort(options.readCredential(parsed.request.provider), controller.signal) } catch {
+          throwIfCancelled(controller.signal)
+          secret = null
+        }
         throwIfCancelled(controller.signal)
         if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
         return { ok: true, value: await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal) }

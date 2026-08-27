@@ -202,12 +202,38 @@ export function validProvider(value: unknown): value is AdvisorHostedProviderId 
 export function validRequestId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(value) }
 export function validModel(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u.test(value) }
 export function safeModelLabel(value: string): string { return value.replace(/^models\//u, '') }
+export function abortError(): Error {
+  const error = new Error('Advisor request cancelled.')
+  error.name = 'AbortError'
+  return error
+}
 export function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
-    const error = new Error('Advisor request cancelled.')
-    error.name = 'AbortError'
-    throw error
-  }
+  if (signal.aborted) throw abortError()
+}
+export function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  throwIfAborted(signal)
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(abortError())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    operation.then(value => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }, error => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    })
+  })
 }
 
 export class HostedAdapterError extends Error {
@@ -248,44 +274,67 @@ export function timeoutRequest(parent: AbortSignal | undefined, timeoutMs: numbe
   else parent?.addEventListener('abort', forward, { once: true })
   return { signal: controller.signal, dispose: () => { clearTimeout(timer); parent?.removeEventListener('abort', forward) } }
 }
-export async function fetchResponse(fetchImpl: FetchLike, url: string, init: RequestInit, timeoutMs: number, parent?: AbortSignal): Promise<{ response: Response; dispose: () => void }> {
+export async function fetchResponse(fetchImpl: FetchLike, url: string, init: RequestInit, timeoutMs: number, parent?: AbortSignal): Promise<{ response: Response; dispose: () => void; signal: AbortSignal }> {
   const timed = timeoutRequest(parent, timeoutMs)
   try {
     throwIfAborted(timed.signal)
     const response = await fetchImpl(url, { ...init, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
-    return { response, dispose: timed.dispose }
+    return { response, dispose: timed.dispose, signal: timed.signal }
   } catch (error) {
     timed.dispose()
-    if (timed.signal.aborted) {
-      const cancelled = new Error('Advisor request cancelled.')
-      cancelled.name = 'AbortError'
-      throw cancelled
-    }
+    if (timed.signal.aborted) throw abortError()
     throw error
   }
 }
-export async function readBoundedText(response: Response): Promise<string> {
+function bindReaderAbort(reader: ReadableStreamDefaultReader<Uint8Array>, signal?: AbortSignal): () => void {
+  if (!signal) return () => {}
+  const onAbort = () => { void reader.cancel().catch(() => {}) }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => signal.removeEventListener('abort', onAbort)
+}
+export async function readBoundedText(response: Response, signal?: AbortSignal): Promise<string> {
+  if (signal) throwIfAborted(signal)
   const reader = response.body?.getReader()
   if (!reader) {
-    const text = await response.text()
-    if (byteLength(text) > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-    return text
+    if (!signal) {
+      const text = await response.text()
+      if (byteLength(text) > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      return text
+    }
+    let rejectAbort!: (reason: unknown) => void
+    const abortPromise = new Promise<never>((_, reject) => { rejectAbort = reject })
+    const onAbort = () => rejectAbort(abortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      const text = await Promise.race([response.text(), abortPromise])
+      throwIfAborted(signal)
+      if (byteLength(text) > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      return text
+    } finally { signal.removeEventListener('abort', onAbort) }
   }
+  const disposeAbort = bindReaderAbort(reader, signal)
   const decoder = new TextDecoder()
   let bytes = 0
   let text = ''
-  while (true) {
-    const part = await reader.read()
-    if (part.done) break
-    bytes += part.value.byteLength
-    if (bytes > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-    text += decoder.decode(part.value, { stream: true })
-  }
-  return text + decoder.decode()
+  try {
+    while (true) {
+      if (signal) throwIfAborted(signal)
+      const part = await reader.read()
+      if (signal) throwIfAborted(signal)
+      if (part.done) break
+      bytes += part.value.byteLength
+      if (bytes > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      text += decoder.decode(part.value, { stream: true })
+    }
+    return text + decoder.decode()
+  } catch (error) {
+    if (signal?.aborted) throw abortError()
+    throw error
+  } finally { disposeAbort() }
 }
-export async function readJson(response: Response): Promise<Record<string, unknown>> {
-  const text = await readBoundedText(response)
+export async function readJson(response: Response, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const text = await readBoundedText(response, signal)
   try {
     const parsed = JSON.parse(text) as unknown
     if (!isRecord(parsed)) throw new Error()

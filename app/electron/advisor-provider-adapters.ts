@@ -28,6 +28,7 @@ export type StreamState = {
   content: string
   calls: AdvisorHostedToolCall[]
   usage: AdvisorHostedUsage | null
+  terminal: boolean
   openCalls: Map<string, { id: string; name: string; arguments: string }>
   openCallKeys: Map<string, string>
   startedCalls: Set<string>
@@ -222,6 +223,7 @@ function parseOpenAiStream(payload: Record<string, unknown>, state: StreamState,
   } else if (payload.type === 'response.function_call_arguments.done') {
     completeTool(state, requestId, provider, model, boundedString(payload.item_id, 128, 'The provider returned an invalid tool call id.'), payload.name, payload.arguments, emit)
   } else if (payload.type === 'response.completed' && isRecord(payload.response)) {
+    state.terminal = true
     state.usage = mergeUsage(state.usage, usageFromOpenAi(payload.response.usage))
   }
 }
@@ -244,6 +246,8 @@ function parseAnthropicStream(payload: Record<string, unknown>, state: StreamSta
     state.usage = mergeUsage(state.usage, usageFromAnthropic(payload.message.usage))
   } else if (payload.type === 'message_delta' && isRecord(payload.usage)) {
     state.usage = mergeUsage(state.usage, usageFromAnthropic(payload.usage))
+  } else if (payload.type === 'message_stop') {
+    state.terminal = true
   } else if (payload.type === 'content_block_stop') {
     const key = String(payload.index)
     if (!state.openCallKeys.has(key)) return
@@ -279,7 +283,9 @@ function startChatTool(state: StreamState, requestId: string, provider: AdvisorH
 function parseOpenAiChatStream(payload: Record<string, unknown>, state: StreamState, provider: AdvisorHostedProviderId, requestId: string, model: string, emit: EventEmitter): void {
   const choices = Array.isArray(payload.choices) ? payload.choices : []
   for (const choice of choices) {
-    if (!isRecord(choice) || !isRecord(choice.delta)) continue
+    if (!isRecord(choice)) continue
+    if (choice.finish_reason !== null && choice.finish_reason !== undefined) state.terminal = true
+    if (!isRecord(choice.delta)) continue
     appendText(state, requestId, provider, model, choice.delta.content, emit)
     const toolCalls = Array.isArray(choice.delta.tool_calls) ? choice.delta.tool_calls : []
     for (const toolCall of toolCalls) {
@@ -305,7 +311,7 @@ function parseOpenAiChatStream(payload: Record<string, unknown>, state: StreamSt
 }
 
 function newStreamState(): StreamState {
-  return { content: '', calls: [], usage: null, openCalls: new Map(), openCallKeys: new Map(), startedCalls: new Set(), completedCalls: new Set() }
+  return { content: '', calls: [], usage: null, terminal: false, openCalls: new Map(), openCallKeys: new Map(), startedCalls: new Set(), completedCalls: new Set() }
 }
 
 export function streamState(): StreamState {
