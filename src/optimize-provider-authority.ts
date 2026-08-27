@@ -33,6 +33,7 @@ export const ACTION_TARGET_AUTHORITY: Readonly<Record<ActionKind, ActionTargetAu
   'guard-install': 'manual-only',
   'guard-uninstall': 'manual-only',
   'model-default': 'manual-only',
+  'run-core-conformance-bench': 'manual-only',
 }
 
 export type FindingEvidenceRequirement = 'claude-evidence-included' | 'explicit-claude-scope'

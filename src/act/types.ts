@@ -1,10 +1,18 @@
-export type ActionKind =
+import type {
+  ActionContractV1,
+  ActionOperationStateV1,
+  ActionOperationStatus,
+} from './action-contract-v1.js'
+
+export type FileActionKind =
   | 'mcp-remove' | 'mcp-project-scope'
   | 'defer-enable' | 'defer-alwaysload' | 'defer-threshold'
   | 'archive-skill' | 'archive-agent' | 'archive-command'
   | 'claude-md-rule' | 'shell-config'
   | 'guard-install' | 'guard-uninstall'
   | 'model-default'
+
+export type ActionKind = FileActionKind | 'run-core-conformance-bench'
 
 export type FileChange = {
   path: string            // absolute path modified
@@ -39,15 +47,23 @@ export type ActionBaseline = {
 }
 
 export type ActionRecord = {
+  recordVersion?: 'metrora.action-record.v1'
   id: string              // crypto.randomUUID()
   at: string              // ISO timestamp
   kind: ActionKind
   findingId: string | null
   description: string     // one human sentence, shown in `act list`
   changes: FileChange[]
-  status: 'applied' | 'undone'
+  // File actions retain their historical applied/undone statuses. Controlled
+  // operation records use the lifecycle statuses below in the same append-
+  // only journal, so the journal remains the single ACT authority.
+  status: 'applied' | 'undone' | ActionOperationStatus
   undoneAt?: string
   baseline?: ActionBaseline
+  // Only controlled operation records carry these fields. They are optional so
+  // old file-mutation records remain valid and round-trip unchanged.
+  contract?: ActionContractV1
+  operation?: ActionOperationStateV1
 }
 
 // expectedHash: sha256 of the raw on-disk bytes the plan's content was
@@ -61,7 +77,9 @@ export type PlannedChange =
   | { op: 'move'; path: string; movedTo: string }
 
 export type ActionPlan = {
-  kind: ActionKind
+  // File mutation is intentionally the only plan accepted by runAction.
+  // Controlled operations construct their own versioned records instead.
+  kind: FileActionKind
   description: string
   findingId?: string | null
   changes: PlannedChange[]

@@ -63,6 +63,9 @@ export async function undoAction(
     if (record.status === 'undone') {
       throw new Error(`Action ${shortId(record.id)} is already undone.`)
     }
+    if (record.kind === 'run-core-conformance-bench') {
+      throw new Error(`Action ${shortId(record.id)} is a bounded Bench operation and has no conventional rollback.`)
+    }
     if (!opts.force) {
       const drifted = await driftedFiles(record)
       if (drifted.length > 0) throw new DriftError(record, drifted)

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { isAbsolute, join } from 'path'
 import { homedir } from 'os'
-import type { ActionKind, ActionPlan, PlannedChange } from './types.js'
+import type { ActionKind, ActionPlan, FileActionKind, PlannedChange } from './types.js'
 import { sha256 } from './backup.js'
 import {
   ALWAYSLOAD_MIN_VERSION,
@@ -370,7 +370,7 @@ function buildMcpProjectScope(finding: WasteFinding, r: ResolvedPaths): BuiltPla
   }
 }
 
-function mcpPlan(kind: ActionKind, findingId: string, description: string, changes: PlannedChange[]): ActionPlan {
+function mcpPlan(kind: FileActionKind, findingId: string, description: string, changes: PlannedChange[]): ActionPlan {
   return { kind, findingId, description, changes }
 }
 
@@ -610,7 +610,7 @@ function buildDeferThreshold(finding: WasteFinding, r: ResolvedPaths): BuiltPlan
 // Archive unused skills / agents / commands
 // ---------------------------------------------------------------------------
 
-const ARCHIVE_KIND: Record<'skill' | 'agent' | 'command', ActionKind> = {
+const ARCHIVE_KIND: Record<'skill' | 'agent' | 'command', FileActionKind> = {
   skill: 'archive-skill',
   agent: 'archive-agent',
   command: 'archive-command',

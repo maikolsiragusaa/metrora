@@ -10,6 +10,11 @@ import { backupDirFor, relBackupPath, revertChange, sha256File, snapshotFile } f
 // append throws, the steps already applied are rolled back (newest first) and
 // nothing is journaled.
 export async function runAction(plan: ActionPlan, actionsDir: string = defaultActionsDir()): Promise<ActionRecord> {
+  // Keep the runtime boundary closed even when JavaScript callers bypass the
+  // FileActionKind compile-time restriction.
+  if ((plan as { kind: string }).kind === 'run-core-conformance-bench') {
+    throw new Error('run-core-conformance-bench is a controlled operation, not a file-mutation plan')
+  }
   return withLock(actionsDir, async () => {
     const id = randomUUID()
     const at = new Date().toISOString()

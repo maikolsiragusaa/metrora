@@ -11,7 +11,7 @@ function formatWhen(at: string): string {
 export function registerActCommands(program: Command): void {
   const act = program
     .command('act')
-    .description('Review and undo changes metrora has applied')
+    .description('Review actions and undo reversible file changes metrora has applied')
 
   act
     .command('list')

@@ -43,7 +43,24 @@ export type BenchEvaluationV1 = {
   resultDigest: string
 }
 
-export type BenchTaskPackRunOptions = { model: string; packId?: string; fetchImpl?: BenchFetch; signal?: AbortSignal; timeoutMs?: number; now?: () => Date; monotonicNow?: () => number; runId?: string }
+export type BenchTaskPackProgressV1 = {
+  planned: number
+  completed: number
+  currentTaskId: string
+}
+
+export type BenchTaskPackRunOptions = {
+  model: string
+  packId?: string
+  fetchImpl?: BenchFetch
+  signal?: AbortSignal
+  timeoutMs?: number
+  now?: () => Date
+  monotonicNow?: () => number
+  runId?: string
+  /** Called only after an individual task has produced a retained result. */
+  onProgress?: (progress: BenchTaskPackProgressV1) => void | Promise<void>
+}
 
 const EMPTY_RUNTIME_METRICS: RuntimeReportedMetricsV1 = { totalDurationNs: null, loadDurationNs: null, promptEvalCount: null, promptEvalDurationNs: null, evalCount: null, evalDurationNs: null }
 const isoNow = (now: () => Date): string => now().toISOString()
@@ -123,6 +140,9 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
       tasks.push({ taskId: task.id, attempted: true, status, score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported: { ...EMPTY_RUNTIME_METRICS }, failure })
       if (status === 'cancelled') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
       if (status === 'unavailable') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'unavailable', 'runtime-unavailable')); break }
+    }
+    if (tasks[index]?.attempted) {
+      await options.onProgress?.({ planned: pack.tasks.length, completed: tasks.filter(taskResult => taskResult.attempted).length, currentTaskId: task.id })
     }
   }
 

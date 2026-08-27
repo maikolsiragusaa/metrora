@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'fs/promises'
+import { appendFile, mkdir, readFile, rm, stat, utimes, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { getConfigFilePath } from '../config.js'
 import type { ActionRecord } from './types.js'
@@ -22,9 +22,9 @@ export async function appendRecord(actionsDir: string, record: ActionRecord): Pr
   await appendFile(journalPath(actionsDir), JSON.stringify(record) + '\n', 'utf-8')
 }
 
-// Append-only JSONL: a status flip is a full replacement line for the same id,
-// so the last line for an id wins. Returns records in creation (first-seen)
-// order. Unparseable lines are skipped so a corrupt journal never crashes.
+// Append-only JSONL: a status transition is a full replacement line for the
+// same id, so the last line for an id wins. Returns records in creation
+// (first-seen) order. Unparseable lines are skipped for legacy callers.
 export async function readRecords(actionsDir: string): Promise<ActionRecord[]> {
   let raw: string
   try {
@@ -50,7 +50,38 @@ export async function readRecords(actionsDir: string): Promise<ActionRecord[]> {
   return order.map(id => byId.get(id)!)
 }
 
+// New controlled operations use this fail-closed reader. Existing ACT list and
+// undo flows retain readRecords' compatibility behavior for old journals.
+export async function readRecordsStrict(actionsDir: string): Promise<ActionRecord[]> {
+  let raw: string
+  try {
+    raw = await readFile(journalPath(actionsDir), 'utf-8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
+  }
+  const order: string[] = []
+  const byId = new Map<string, ActionRecord>()
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue
+    let rec: unknown
+    try {
+      rec = JSON.parse(line)
+    } catch {
+      throw new Error('the action journal contains corrupt JSON')
+    }
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec) || typeof (rec as { id?: unknown }).id !== 'string') {
+      throw new Error('the action journal contains a malformed record')
+    }
+    const typed = rec as ActionRecord
+    if (!byId.has(typed.id)) order.push(typed.id)
+    byId.set(typed.id, typed)
+  }
+  return order.map(id => byId.get(id)!)
+}
+
 const LOCK_STALE_MS = 60_000
+const LOCK_REFRESH_MS = Math.floor(LOCK_STALE_MS / 3)
 
 function lockPath(actionsDir: string): string {
   return join(actionsDir, '.lock')
@@ -85,9 +116,14 @@ export async function withLock<T>(actionsDir: string, fn: () => Promise<T>): Pro
   await mkdir(actionsDir, { recursive: true })
   const lock = lockPath(actionsDir)
   await acquireLock(lock)
+  const refreshHandle = setInterval(() => {
+    void utimes(lock, new Date(), new Date()).catch(() => undefined)
+  }, LOCK_REFRESH_MS)
+  refreshHandle.unref?.()
   try {
     return await fn()
   } finally {
+    clearInterval(refreshHandle)
     await rm(lock, { force: true })
   }
 }
