@@ -207,9 +207,23 @@ export function Advisor({
     return () => probeController.current?.abort()
   }, [checkLocalRuntime])
 
+  const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
+  const [streamPreview, setStreamPreview] = useState('')
+  const [toolStatus, setToolStatus] = useState<string | null>(null)
+  const requestController = useRef<AbortController | null>(null)
+  const requestGenerationRef = useRef(0)
+  const invalidateAdvisorRequest = useCallback(() => {
+    requestGenerationRef.current += 1
+    requestController.current?.abort()
+    requestController.current = null
+    setLoadingQuestion(null)
+    setStreamPreview('')
+    setToolStatus(null)
+  }, [])
   const hostedProbeController = useRef<AbortController | null>(null)
   const checkHostedRuntime = useCallback(async (requestedProvider: 'openai' | 'anthropic' | 'gemini' = hostedProvider, resetSelection = false) => {
     if (!hostedOperationGuardRef.current.isCurrentProvider(requestedProvider)) return
+    invalidateAdvisorRequest()
     hostedProbeController.current?.abort()
     const requestId = hostedOperationGuardRef.current.startProbe(requestedProvider)
     if (requestId === null) return
@@ -238,7 +252,7 @@ export function Advisor({
         setHostedProbe(createHostedProbeFailure(requestedProvider))
       }
     }
-  }, [hostedProvider])
+  }, [hostedProvider, invalidateAdvisorRequest])
   useEffect(() => {
     if (runtimeChoice !== 'hosted') return
     void checkHostedRuntime()
@@ -248,28 +262,15 @@ export function Advisor({
   const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]!.id)
   const [historyQuery, setHistoryQuery] = useState('')
   const [composer, setComposer] = useState('')
-  const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
   const [credentialEntry, setCredentialEntry] = useState('')
   const [credentialSaving, setCredentialSaving] = useState(false)
   const hostedConfigRef = useRef({ runtimeChoice, hostedRuntime, hostedConsent })
   hostedConfigRef.current = { runtimeChoice, hostedRuntime, hostedConsent }
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
-  const [streamPreview, setStreamPreview] = useState('')
-  const [toolStatus, setToolStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [failedRequest, setFailedRequest] = useState<AdvisorFailedRequest | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
-  const requestController = useRef<AbortController | null>(null)
-  const requestGenerationRef = useRef(0)
-  const invalidateAdvisorRequest = useCallback(() => {
-    requestGenerationRef.current += 1
-    requestController.current?.abort()
-    requestController.current = null
-    setLoadingQuestion(null)
-    setStreamPreview('')
-    setToolStatus(null)
-  }, [])
   useEffect(() => () => invalidateAdvisorRequest(), [invalidateAdvisorRequest])
 
   useEffect(() => {
@@ -441,6 +442,7 @@ export function Advisor({
     try {
       const status = await metrora.advisorCredentialSet(requestedProvider, credentialEntry)
       if (!hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) return
+      invalidateAdvisorRequest()
       setNotice(status.state === 'ready' ? 'Provider credential saved in protected local storage.' : 'Provider credential was not saved: ' + status.state + '.')
       await checkHostedRuntime(requestedProvider)
     } catch {
@@ -459,6 +461,7 @@ export function Advisor({
     try {
       await metrora.advisorCredentialClear(requestedProvider)
       if (!hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) return
+      invalidateAdvisorRequest()
       setHostedConsent(false)
       setNotice('Provider credential removed from this device.')
       await checkHostedRuntime(requestedProvider)
