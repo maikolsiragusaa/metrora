@@ -176,11 +176,8 @@ async function verifyBenchEvidence(record: CoreBenchActionRecordV1, dataDir?: st
   if (!record.operation.result) return record
   const evidence = await findBenchEvidence(record.id, record.contract, dataDir)
   if (!evidence) throw new ActionOperationError('identity-mismatch', 'the action journal references missing or mismatched Bench evidence')
-  if (record.operation.result.resultDigest !== evidence.resultDigest) {
-    throw new ActionOperationError('identity-mismatch', 'the action journal result digest does not match canonical Bench evidence')
-  }
-  const expectedCounts = resultCounts(evidence)
-  if (!record.operation.resultCounts || !countsEqual(record.operation.resultCounts, expectedCounts)) {
+  if (record.operation.result.resultDigest !== evidence.resultDigest) throw new ActionOperationError('identity-mismatch', 'the action journal result digest does not match canonical Bench evidence')
+  if (!record.operation.resultCounts || !countsEqual(record.operation.resultCounts, resultCounts(evidence))) {
     throw new ActionOperationError('identity-mismatch', 'the action journal result counts do not match Bench evidence')
   }
   const expected = terminalFromEvidence(record, evidence, () => new Date())
