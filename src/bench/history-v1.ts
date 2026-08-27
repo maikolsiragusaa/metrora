@@ -77,7 +77,7 @@ const HistoryFile = z.object({ kind: z.literal(BENCH_HISTORY_KIND), version: z.l
 
 export type BenchHistoryScanV1 = { records: BenchEvaluationV1[]; invalid: Array<{ file: string; reason: string }> }
 export type BenchHistoryOptions = { dataDir?: string }
-type ScannedHistoryFile = { file: string; byteLength: number; record: BenchEvaluationV1 | null }
+type ScannedHistoryFile = { file: string; byteLength: number; record: BenchEvaluationV1 | null; reason?: string }
 type PreparedBenchHistoryScan = BenchHistoryScanV1 & { files: ScannedHistoryFile[]; candidateScanTruncated: boolean }
 type BoundedHistoryFileRead =
   | { kind: 'missing'; byteLength: 0 }
@@ -148,6 +148,23 @@ function compareRecords(left: BenchEvaluationV1, right: BenchEvaluationV1): numb
   return Date.parse(right.endedAt) - Date.parse(left.endedAt) || left.runId.localeCompare(right.runId)
 }
 
+async function scanHistoryFile(recordsDir: string, file: string): Promise<ScannedHistoryFile | null> {
+  const read = await readBoundedHistoryFile(join(recordsDir, file))
+  if (read.kind === 'missing') return null
+  const scanned: ScannedHistoryFile = { file, byteLength: read.byteLength, record: null }
+  if (read.kind === 'invalid') return { ...scanned, reason: read.reason }
+  try {
+    const wrapper = HistoryFile.parse(JSON.parse(read.bytes.toString('utf8')))
+    if (fileName(wrapper.record.runId) !== file) throw new Error('run id does not match history filename')
+    if (wrapper.recordSha256 !== recordDigest(wrapper.record as BenchEvaluationV1)) throw new Error('history record digest mismatch')
+    scanned.record = wrapper.record as BenchEvaluationV1
+  } catch (error) {
+    // Invalid files are retained only as bounded diagnostics or candidates for pruning.
+    return { ...scanned, reason: boundedDiagnosticReason(error) }
+  }
+  return scanned
+}
+
 async function scanPrepared(recordsDir: string): Promise<PreparedBenchHistoryScan> {
   const records: BenchEvaluationV1[] = []
   const scannedFiles: ScannedHistoryFile[] = []
@@ -159,28 +176,82 @@ async function scanPrepared(recordsDir: string): Promise<PreparedBenchHistorySca
   }
   const candidates = await candidateHistoryFiles(recordsDir)
   for (const file of candidates.files) {
-    const read = await readBoundedHistoryFile(join(recordsDir, file))
-    if (read.kind === 'missing') continue
-    const scanned: ScannedHistoryFile = { file, byteLength: read.byteLength, record: null }
+    const scanned = await scanHistoryFile(recordsDir, file)
+    if (!scanned) continue
     scannedFiles.push(scanned)
-    if (read.kind === 'invalid') {
-      addInvalid(file, read.reason)
+    if (scanned.record === null) {
+      addInvalid(file, scanned.reason ?? 'history file is invalid')
       continue
     }
-    try {
-      const wrapper = HistoryFile.parse(JSON.parse(read.bytes.toString('utf8')))
-      if (fileName(wrapper.record.runId) !== file) throw new Error('run id does not match history filename')
-      if (wrapper.recordSha256 !== recordDigest(wrapper.record as BenchEvaluationV1)) throw new Error('history record digest mismatch')
-      scanned.record = wrapper.record as BenchEvaluationV1
-      records.push(scanned.record)
-    } catch (error) {
-      addInvalid(file, boundedDiagnosticReason(error))
-    }
+    records.push(scanned.record)
   }
   if (candidates.truncated) addInvalid('<candidate-scan>', 'history candidate scan stopped at the bounded file limit')
   if (omittedInvalid > 0) invalid.push({ file: '<bounded-diagnostics>', reason: String(omittedInvalid) + ' additional invalid history diagnostics were omitted' })
   records.sort(compareRecords)
   return { records, invalid, files: scannedFiles, candidateScanTruncated: candidates.truncated }
+}
+
+function addNewestValidCandidate(candidates: ScannedHistoryFile[], candidate: ScannedHistoryFile): void {
+  candidates.push(candidate)
+  candidates.sort((left, right) => compareRecords(left.record!, right.record!))
+  if (candidates.length > BENCH_HISTORY_MAX_RECORDS) candidates.pop()
+}
+
+function addInvalidCandidate(candidates: ScannedHistoryFile[], candidate: ScannedHistoryFile): void {
+  if (candidate.byteLength > BENCH_HISTORY_MAX_FILE_BYTES) return
+  candidates.push(candidate)
+  candidates.sort((left, right) => left.file.localeCompare(right.file))
+  if (candidates.length > BENCH_HISTORY_MAX_INVALID_FILES) candidates.pop()
+}
+
+/**
+ * Reconciles an overfull directory in bounded-memory passes. The normal read
+ * path caps candidate inspection; this path is entered only after that cap is
+ * reached, and retains only the bounded newest/diagnostic candidates while
+ * every individual file read remains byte-limited.
+ */
+async function pruneHistoryToBounds(recordsDir: string): Promise<void> {
+  const validCandidates: ScannedHistoryFile[] = []
+  const invalidCandidates: ScannedHistoryFile[] = []
+  const directory = await opendir(recordsDir)
+  try {
+    for await (const entry of directory) {
+      if (!entry.isFile() || !HISTORY_FILE_PATTERN.test(entry.name)) continue
+      const scanned = await scanHistoryFile(recordsDir, entry.name)
+      if (!scanned) continue
+      if (scanned.record) addNewestValidCandidate(validCandidates, scanned)
+      else addInvalidCandidate(invalidCandidates, scanned)
+    }
+  } finally {
+    await directory.close().catch(() => undefined)
+  }
+
+  const keep = new Set<string>()
+  let bytes = 0
+  let validKept = 0
+  for (const item of validCandidates) {
+    if (validKept >= BENCH_HISTORY_MAX_RECORDS || bytes + item.byteLength > BENCH_HISTORY_MAX_BYTES) continue
+    keep.add(item.file)
+    validKept += 1
+    bytes += item.byteLength
+  }
+  let invalidKept = 0
+  for (const item of invalidCandidates) {
+    if (invalidKept >= BENCH_HISTORY_MAX_INVALID_FILES || bytes + item.byteLength > BENCH_HISTORY_MAX_BYTES) continue
+    keep.add(item.file)
+    invalidKept += 1
+    bytes += item.byteLength
+  }
+
+  const cleanup = await opendir(recordsDir)
+  try {
+    for await (const entry of cleanup) {
+      if (!entry.isFile() || !HISTORY_FILE_PATTERN.test(entry.name) || keep.has(entry.name)) continue
+      await removePrivateFile(join(recordsDir, entry.name))
+    }
+  } finally {
+    await cleanup.close().catch(() => undefined)
+  }
 }
 export async function scanBenchHistoryV1(options: BenchHistoryOptions = {}): Promise<BenchHistoryScanV1> {
   const scan = await scanPrepared((await prepare(options.dataDir ?? defaultMetroraDataDir())).records)
@@ -202,6 +273,10 @@ export async function saveBenchEvaluationV1(recordInput: BenchEvaluationV1, opti
     if (existing.kind === 'invalid') throw new Error('Bench history run id collision with invalid existing content')
     await atomicWritePrivateFile(path, JSON.stringify({ kind: BENCH_HISTORY_KIND, version: BENCH_HISTORY_VERSION, recordSha256: recordDigest(record), record }))
     const scan = await scanPrepared(p.records)
+    if (scan.candidateScanTruncated) {
+      await pruneHistoryToBounds(p.records)
+      return { status: 'saved', record }
+    }
     const keep = new Set<string>()
     let bytes = 0
     let validKept = 0

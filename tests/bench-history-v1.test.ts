@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -204,5 +204,23 @@ describe('Bench history v1', () => {
     const scan = await scanBenchHistoryV1({ dataDir: dir })
     expect(scan.records.length).toBeLessThanOrEqual(BENCH_HISTORY_MAX_RECORDS)
     expect(scan.records[0]?.runId).toBe('run-51')
+  })
+
+  it('prunes overflow candidates instead of leaving the history directory unbounded', async () => {
+    const dir = dataDir()
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    for (let index = 0; index < BENCH_HISTORY_MAX_CANDIDATE_FILES + 20; index++) {
+      const file = index.toString(16).padStart(64, '0') + '.json'
+      writeFileSync(join(recordsDir, file), '{not-json}')
+    }
+
+    await saveBenchEvaluationV1(evaluation('newest', '2026-08-24T14:00:00.000Z'), { dataDir: dir })
+
+    const files = readdirSync(recordsDir).filter(file => /^[0-9a-f]{64}\.json$/u.test(file))
+    expect(files).toHaveLength(1 + BENCH_HISTORY_MAX_INVALID_FILES)
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records.map(item => item.runId)).toEqual(['newest'])
+    expect(scan.invalid.length).toBeLessThanOrEqual(BENCH_HISTORY_MAX_INVALID_FILES)
   })
 })

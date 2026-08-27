@@ -95,6 +95,7 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
 
   const tasks: BenchTaskResultV1[] = []
   let reportedModel: string | null = null
+  let reportedModelConflict = false
   for (let index = 0; index < pack.tasks.length; index++) {
     const task = pack.tasks[index]!
     if (preflightFailure) {
@@ -106,7 +107,13 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
     if (options.signal?.aborted) { for (let rest = index; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
     try {
       const evidence = await runOllamaGenerate({ model, prompt: task.prompt, includeOutput: true, fetchImpl: options.fetchImpl, signal: options.signal, timeoutMs, monotonicNow })
-      if (evidence.reportedModel !== null) reportedModel = reportedModel === null || reportedModel === evidence.reportedModel ? evidence.reportedModel : null
+      if (evidence.reportedModel !== null && !reportedModelConflict) {
+        if (reportedModel === null) reportedModel = evidence.reportedModel
+        else if (reportedModel !== evidence.reportedModel) {
+          reportedModel = null
+          reportedModelConflict = true
+        }
+      }
       if (evidence.output === undefined) throw new BenchOllamaError('malformed-response', 'The local runtime output was unavailable for transient scoring.')
       const scored = scoreBenchTaskV1(task, evidence.output)
       tasks.push({ taskId: task.id, attempted: true, status: scored.status, score: scored.score, outputDigest: scored.outputDigest, outputChars: scored.outputChars, requestLatencyMs: evidence.observed.requestLatencyMs, timeToFirstContentMs: evidence.observed.timeToFirstContentMs, runtimeReported: evidence.runtimeReported, failure: scored.status === 'passed' ? null : { code: scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed', message: failureMessage(scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed') } })

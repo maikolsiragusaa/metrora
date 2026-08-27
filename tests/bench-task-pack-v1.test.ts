@@ -98,4 +98,19 @@ describe('deterministic Bench task pack v1', () => {
     expect(result.aggregate.score).toEqual({ numerator: 5, denominator: 5, value: 1 })
     expect(result.tasks[5]).toMatchObject({ status: 'unavailable', score: null })
   })
+
+  it('keeps a conflicting reported model identity unknown after it changes back', async () => {
+    let generateCalls = 0
+    const result = await runBenchTaskPackV1({ model: 'qwen3:8b', fetchImpl: async (input, init) => {
+      const url = String(input)
+      if (url === OLLAMA_VERSION_URL) return new Response(JSON.stringify({ version: '0.12.6' }), { status: 200 })
+      const body = JSON.parse(String(init?.body)) as { prompt: string }
+      const reportedModels = ['model-a', 'model-b', 'model-a', 'model-a', 'model-a', 'model-a']
+      const reportedModel = reportedModels[generateCalls++] ?? 'model-a'
+      return stream(passingOutput(body.prompt), reportedModel)
+    }, runId: 'pack-conflicting-model', timeoutMs: 1000 })
+
+    expect(result.status).toBe('completed')
+    expect(result.model.reported).toBeNull()
+  })
 })
