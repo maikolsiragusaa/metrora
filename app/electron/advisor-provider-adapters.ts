@@ -255,6 +255,7 @@ function parseAnthropicStream(payload: Record<string, unknown>, state: StreamSta
   }
 }
 function parseGeminiStream(payload: Record<string, unknown>, state: StreamState, provider: AdvisorHostedProviderId, requestId: string, model: string, emit: EventEmitter): void {
+  if (Array.isArray(payload.candidates) && payload.candidates.some(candidate => isRecord(candidate) && typeof candidate.finishReason === 'string' && candidate.finishReason.trim())) state.terminal = true
   const parsed = parseGeminiJson(payload, provider, requestId, model, emit)
   state.content += parsed.content
   if (byteLength(state.content) > MAX_TEXT_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')

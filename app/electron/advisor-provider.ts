@@ -322,6 +322,7 @@ async function hostedChat(provider: AdvisorHostedProviderId, secret: string, req
       const sse = await readSse(result.response, payload => adapter.parseStream(payload, state, provider, requestId, request.model, emit), result.signal)
       if (protocol === 'openai-responses' && !state.terminal) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
       if (protocol === 'anthropic-messages' && !state.terminal) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
+      if (protocol === 'gemini-content' && !state.terminal) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
       if (protocol === 'openai-chat' && !state.terminal && !sse.sawDone) throw new HostedAdapterError('response-malformed', 'The provider stream ended before completion.')
       if (protocol !== 'gemini-content') finalizeOpenToolCalls(state, provider, requestId, request.model, emit, protocol !== 'openai-chat')
       usage = state.usage

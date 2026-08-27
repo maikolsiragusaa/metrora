@@ -103,7 +103,7 @@ describe('Advisor hosted provider authority', () => {
       ? [{ type: 'response.output_text.delta', delta: 'Measured ' }, { type: 'response.output_text.delta', delta: 'stream.' }, { type: 'response.completed', response: { usage: { input_tokens: 2, output_tokens: 2, total_tokens: 4 } } }]
       : provider === 'anthropic'
         ? [{ type: 'message_start', message: { usage: { input_tokens: 2 } } }, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Measured stream.' } }, { type: 'content_block_stop', index: 0 }, { type: 'message_delta', usage: { output_tokens: 2 } }, { type: 'message_stop' }]
-        : [{ candidates: [{ content: { parts: [{ text: 'Measured stream.' }] } }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 2, totalTokenCount: 4 } }]
+        : [{ candidates: [{ content: { parts: [{ text: 'Measured stream.' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 2, totalTokenCount: 4 } }]
     const fetchImpl = (async () => sseResponse(streamPayloads)) as typeof fetch
     const handlers = readyHandlers(fetchImpl, events)
     const result = await handlers['metrora:advisorHostedChat']!('stream-' + provider, request(provider, true)) as { ok: boolean; value: any }
@@ -112,10 +112,12 @@ describe('Advisor hosted provider authority', () => {
     expect(events.some(event => event.kind === 'response.output_text.delta' as never)).toBe(false)
   })
 
-  it.each(['openai', 'anthropic'] as const)('rejects a truncated %s SSE response without a terminal event', async provider => {
+  it.each(['openai', 'anthropic', 'gemini'] as const)('rejects a truncated %s SSE response without a terminal event', async provider => {
     const payload = provider === 'openai'
       ? { type: 'response.output_text.delta', delta: 'partial' }
-      : { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial' } }
+      : provider === 'anthropic'
+        ? { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial' } }
+        : { candidates: [{ content: { parts: [{ text: 'partial' }] } }] }
     const fetchImpl = (async () => sseResponse([payload], false)) as typeof fetch
     const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('truncated-' + provider, request(provider, true)) as { ok: boolean; error: { kind: string } }
     expect(result).toMatchObject({ ok: false, error: { kind: 'response-malformed' } })
