@@ -5,7 +5,8 @@ import type { Envelope } from './main'
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
-type AdvisorHostedRendererEvent = { requestId: string; provider: 'openai' | 'anthropic' | 'gemini'; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
+type AdvisorHostedProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
+type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorHostedProvider; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
@@ -21,10 +22,10 @@ const bridge = {
   advisorProbe: (runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorProbe', runtime),
   advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
   advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
-  advisorCredentialStatus: (provider: 'openai' | 'anthropic' | 'gemini') => invoke('metrora:advisorCredentialStatus', provider),
-  advisorCredentialSet: (provider: 'openai' | 'anthropic' | 'gemini', secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),
-  advisorCredentialClear: (provider: 'openai' | 'anthropic' | 'gemini') => invoke('metrora:advisorCredentialClear', provider),
-  advisorHostedProbe: (provider: 'openai' | 'anthropic' | 'gemini', requestId?: string) => invoke('metrora:advisorHostedProbe', provider, requestId),
+  advisorCredentialStatus: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialStatus', provider),
+  advisorCredentialSet: (provider: AdvisorHostedProvider, secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),
+  advisorCredentialClear: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialClear', provider),
+  advisorHostedProbe: (provider: AdvisorHostedProvider, requestId?: string) => invoke('metrora:advisorHostedProbe', provider, requestId),
   advisorHostedChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorHostedChat', requestId, payload),
   advisorHostedCancel: (requestId: string) => invoke('metrora:advisorHostedCancel', requestId),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),

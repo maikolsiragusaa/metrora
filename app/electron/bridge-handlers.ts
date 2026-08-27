@@ -254,7 +254,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
   }
 
   const credentialProvider = (value: unknown): AdvisorCredentialProvider | null => {
-    return value === 'openai' || value === 'anthropic' || value === 'gemini' ? value : null
+    return value === 'openai' || value === 'anthropic' || value === 'gemini' || value === 'openrouter' || value === 'opencode-zen' ? value : null
   }
   const credentialStatus = async (value: unknown): Promise<Envelope> => {
     const provider = credentialProvider(value)

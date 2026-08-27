@@ -3,7 +3,7 @@ import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from 
 import { finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
 export type HostedAdvisorProbeResult = {
@@ -32,9 +32,15 @@ const bridgeTransport: HostedAdvisorTransport = {
       signal?.removeEventListener('abort', cancel)
     }
   },
-  chat: (requestId, payload, signal) => {
+  chat: async (requestId, payload, signal) => {
     if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
-    return metrora.advisorHostedChat(requestId, payload)
+    const cancel = () => { void metrora.advisorHostedCancel(requestId).catch(() => {}) }
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      return await metrora.advisorHostedChat(requestId, payload)
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   },
   cancel: requestId => metrora.advisorHostedCancel(requestId),
   onEvent: callback => metrora.onAdvisorHostedEvent(callback),
@@ -59,10 +65,10 @@ function toolDefinitions(input: AdvisorRuntimeInput): readonly AdvisorToolDefini
   return input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : []
 }
 
-function planningValidation(input: AdvisorRuntimeInput, response: { message: { content: string; tool_calls?: Array<Record<string, unknown>> } }): AdvisorPlanningValidation | null {
+function planningValidation(input: AdvisorRuntimeInput, response: { message: { content: string; tool_calls?: Array<Record<string, unknown>> } }, allowNativeToolCalls = true): AdvisorPlanningValidation | null {
   const { fallbackPlan, guard } = runtimeGuardPlan(input)
   let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
-  if (!draft && Array.isArray(response.message?.tool_calls)) {
+  if (!draft && allowNativeToolCalls && Array.isArray(response.message?.tool_calls)) {
     draft = planningDraftFromNativeToolCalls(response.message.tool_calls, fallbackPlan)
   }
   if (!draft) return null
@@ -96,20 +102,24 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
   readonly label: string
   readonly mode = 'hosted-byok' as const
   readonly providerSupport: readonly string[]
-  readonly supportsStreaming = true
+  readonly supportsStreaming: boolean
   readonly availability = 'ready' as const
   private readonly provider: HostedAdvisorProvider
   private readonly model: string
   private readonly consent: boolean
+  private readonly capabilities: AdvisorHostedModelCapabilities
   private readonly transport: HostedAdvisorTransport
 
-  constructor(options: { provider: HostedAdvisorProvider; model: string; consent?: boolean; transport?: HostedAdvisorTransport }) {
+  constructor(options: { provider: HostedAdvisorProvider; model: string; capabilities?: AdvisorHostedModelCapabilities; consent?: boolean; transport?: HostedAdvisorTransport }) {
     this.provider = options.provider
     this.model = options.model
     this.transport = options.transport ?? bridgeTransport
     this.consent = options.consent === true
+    this.capabilities = options.capabilities ?? { conversational: 'unknown', streaming: 'unknown', toolCall: 'unknown' }
+    this.supportsStreaming = this.capabilities.streaming !== 'unsupported'
     this.id = 'hosted-' + options.provider
-    this.label = options.provider.charAt(0).toUpperCase() + options.provider.slice(1) + ' · ' + options.model.replace(/^models\//u, '')
+    const providerLabel = options.provider === 'opencode-zen' ? 'OpenCode Zen' : options.provider === 'openrouter' ? 'OpenRouter' : options.provider.charAt(0).toUpperCase() + options.provider.slice(1)
+    this.label = providerLabel + ' · ' + options.model.replace(/^models\//u, '')
     this.providerSupport = [options.provider + ' official API']
   }
 
@@ -136,13 +146,14 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       }
 
       let planningResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
+      const allowNativeToolCalls = this.capabilities.toolCall === 'supported'
       try {
         activeRequestId = requestId('hosted-planning')
         planningResponse = await this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
           messages: buildAdvisorPlanningMessages(input, fallbackPlan, guard),
-          tools: definitions,
+          tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
         }, signal)
@@ -154,7 +165,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         return fallback('The hosted model planning phase was unavailable; this answer uses the deterministic Metrora evidence path.')
       }
 
-      const validation = planningValidation(input, planningResponse)
+      const validation = planningValidation(input, planningResponse, allowNativeToolCalls)
       if (!validation) return fallback('The hosted model planning output was malformed or outside the bounded Advisor contract.')
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
       let evidenceItems: AdvisorEvidence[] = []

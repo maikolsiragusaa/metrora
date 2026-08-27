@@ -4,7 +4,20 @@ import type { AdvisorCredentialProvider, AdvisorCredentialState } from './adviso
 export type AdvisorHostedProviderId = AdvisorCredentialProvider
 export type AdvisorHostedCredentialStatus = { provider: AdvisorHostedProviderId; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
-export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null }
+export type AdvisorHostedProtocol = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'
+export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
+export type AdvisorHostedModelCapabilities = {
+  conversational: 'available' | 'unavailable' | 'unknown'
+  streaming: 'supported' | 'unsupported' | 'unknown'
+  toolCall: AdvisorHostedCapabilityState
+}
+export type AdvisorHostedModel = {
+  id: string
+  label: string
+  state: AdvisorHostedModelState
+  limitation: string | null
+  capabilities?: AdvisorHostedModelCapabilities
+}
 export type AdvisorHostedProbe = { provider: AdvisorHostedProviderId; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
 export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
 export type AdvisorHostedToolCall = { id: string; name: string; arguments: string }
@@ -38,6 +51,14 @@ export type FetchLike = typeof fetch
 export type CredentialReader = (provider: AdvisorHostedProviderId) => Promise<string | null>
 export type CredentialStatusReader = (provider: AdvisorHostedProviderId) => Promise<AdvisorHostedCredentialStatus>
 export type EventEmitter = (event: AdvisorHostedEvent) => void
+export type AdvisorHostedModelListKind = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
+export type AdvisorHostedProviderDescriptor = {
+  origin: string
+  modelsPath: string
+  modelListKind: AdvisorHostedModelListKind
+  protocolForModel: (model: string) => AdvisorHostedProtocol | null
+  chatPath: (model: string, stream: boolean, protocol: AdvisorHostedProtocol) => string
+}
 
 export const MAX_REQUEST_BYTES = 128 * 1024
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -64,13 +85,104 @@ export const TOOL_NAMES = new Set([
   'get_coverage_report',
 ])
 
-export const DESCRIPTORS: Record<AdvisorHostedProviderId, { origin: string; modelsPath: string; chatPath: (model: string, stream: boolean) => string }> = {
-  openai: { origin: 'https://api.openai.com', modelsPath: '/v1/models', chatPath: () => '/v1/responses' },
-  anthropic: { origin: 'https://api.anthropic.com', modelsPath: '/v1/models', chatPath: () => '/v1/messages' },
+const OPENCODE_ZEN_PROTOCOLS: Readonly<Record<string, AdvisorHostedProtocol>> = {
+  'gpt-5.6-sol': 'openai-responses',
+  'gpt-5.6-terra': 'openai-responses',
+  'gpt-5.6-luna': 'openai-responses',
+  'gpt-5.5': 'openai-responses',
+  'gpt-5.5-pro': 'openai-responses',
+  'gpt-5.4': 'openai-responses',
+  'gpt-5.4-pro': 'openai-responses',
+  'gpt-5.4-mini': 'openai-responses',
+  'gpt-5.4-nano': 'openai-responses',
+  'gpt-5.3-codex': 'openai-responses',
+  'gpt-5.3-codex-spark': 'openai-responses',
+  'gpt-5.2': 'openai-responses',
+  'gpt-5.2-codex': 'openai-responses',
+  'gpt-5.1': 'openai-responses',
+  'gpt-5.1-codex': 'openai-responses',
+  'gpt-5.1-codex-max': 'openai-responses',
+  'gpt-5.1-codex-mini': 'openai-responses',
+  'gpt-5': 'openai-responses',
+  'gpt-5-codex': 'openai-responses',
+  'gpt-5-nano': 'openai-responses',
+  'claude-fable-5': 'anthropic-messages',
+  'claude-opus-5': 'anthropic-messages',
+  'claude-opus-4-8': 'anthropic-messages',
+  'claude-opus-4-7': 'anthropic-messages',
+  'claude-opus-4-6': 'anthropic-messages',
+  'claude-opus-4-5': 'anthropic-messages',
+  'claude-sonnet-5': 'anthropic-messages',
+  'claude-sonnet-4-6': 'anthropic-messages',
+  'claude-sonnet-4-5': 'anthropic-messages',
+  'claude-haiku-4-5': 'anthropic-messages',
+  'gemini-3.7-flash': 'gemini-content',
+  'gemini-3.6-flash': 'gemini-content',
+  'gemini-3.5-flash': 'gemini-content',
+  'gemini-3.5-flash-lite': 'gemini-content',
+  'gemini-3.1-pro': 'gemini-content',
+  'gemini-3-flash': 'gemini-content',
+  'grok-4.6': 'openai-responses',
+  'grok-4.5': 'openai-responses',
+  'grok-build-0.1': 'openai-responses',
+  'muse-spark-1.2': 'openai-responses',
+  'qwen3.7-max': 'anthropic-messages',
+  'qwen3.7-plus': 'anthropic-messages',
+  'qwen3.6-plus': 'anthropic-messages',
+  'qwen3.5-plus': 'anthropic-messages',
+  'deepseek-v4-pro': 'openai-chat',
+  'deepseek-v4-flash': 'openai-chat',
+  'minimax-m3': 'openai-chat',
+  'minimax-m2.7': 'openai-chat',
+  'minimax-m2.5': 'openai-chat',
+  'glm-5.2': 'openai-chat',
+  'glm-5.1': 'openai-chat',
+  'glm-5': 'openai-chat',
+  'kimi-k2.5': 'openai-chat',
+  'kimi-k2.6': 'openai-chat',
+  'kimi-k2.7-code': 'openai-chat',
+  'kimi-k3': 'openai-chat',
+  'big-pickle': 'openai-chat',
+  'mimo-v2.5-free': 'openai-chat',
+  'hy3-free': 'openai-chat',
+  'nemotron-3-ultra-free': 'openai-chat',
+  'nemotron-3.5-lightning-free': 'openai-chat',
+  'muse-spark-1.2-contributor-free': 'openai-responses',
+}
+
+function openCodeZenModelId(model: string): string { return model.replace(/^models\//u, '') }
+function openCodeZenProtocol(model: string): AdvisorHostedProtocol | null { return OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null }
+
+function openCodeZenChatPath(model: string, stream: boolean, protocol: AdvisorHostedProtocol): string {
+  if (protocol === 'openai-responses') return '/zen/v1/responses'
+  if (protocol === 'anthropic-messages') return '/zen/v1/messages'
+  if (protocol === 'openai-chat') return '/zen/v1/chat/completions'
+  return '/zen/v1/models/' + encodeURIComponent(openCodeZenModelId(model)) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent')
+}
+
+export const DESCRIPTORS: Record<AdvisorHostedProviderId, AdvisorHostedProviderDescriptor> = {
+  openai: { origin: 'https://api.openai.com', modelsPath: '/v1/models', modelListKind: 'openai', protocolForModel: () => 'openai-responses', chatPath: () => '/v1/responses' },
+  anthropic: { origin: 'https://api.anthropic.com', modelsPath: '/v1/models', modelListKind: 'anthropic', protocolForModel: () => 'anthropic-messages', chatPath: () => '/v1/messages' },
   gemini: {
     origin: 'https://generativelanguage.googleapis.com',
     modelsPath: '/v1beta/models',
+    modelListKind: 'gemini',
+    protocolForModel: () => 'gemini-content',
     chatPath: (model, stream) => '/v1beta/models/' + encodeURIComponent(model.replace(/^models\//u, '')) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'),
+  },
+  openrouter: {
+    origin: 'https://openrouter.ai',
+    modelsPath: '/api/v1/models?output_modalities=text',
+    modelListKind: 'openrouter',
+    protocolForModel: () => 'openai-chat',
+    chatPath: () => '/api/v1/chat/completions',
+  },
+  'opencode-zen': {
+    origin: 'https://opencode.ai',
+    modelsPath: '/zen/v1/models',
+    modelListKind: 'opencode-zen',
+    protocolForModel: openCodeZenProtocol,
+    chatPath: openCodeZenChatPath,
   },
 }
 
@@ -84,16 +196,44 @@ export function boundedString(value: unknown, limit: number, label: string): str
   if (typeof value !== 'string' || !value.trim() || byteLength(value) > limit) throw new HostedAdapterError('request-malformed', label)
   return value
 }
-export function validProvider(value: unknown): value is AdvisorHostedProviderId { return value === 'openai' || value === 'anthropic' || value === 'gemini' }
+export function validProvider(value: unknown): value is AdvisorHostedProviderId {
+  return value === 'openai' || value === 'anthropic' || value === 'gemini' || value === 'openrouter' || value === 'opencode-zen'
+}
 export function validRequestId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(value) }
 export function validModel(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u.test(value) }
 export function safeModelLabel(value: string): string { return value.replace(/^models\//u, '') }
+export function abortError(): Error {
+  const error = new Error('Advisor request cancelled.')
+  error.name = 'AbortError'
+  return error
+}
 export function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
-    const error = new Error('Advisor request cancelled.')
-    error.name = 'AbortError'
-    throw error
-  }
+  if (signal.aborted) throw abortError()
+}
+export function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  throwIfAborted(signal)
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(abortError())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    operation.then(value => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }, error => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    })
+  })
 }
 
 export class HostedAdapterError extends Error {
@@ -117,13 +257,14 @@ export function providerUrl(provider: AdvisorHostedProviderId, path: string): st
   if (url.protocol !== 'https:' || url.origin !== DESCRIPTORS[provider].origin) throw new HostedAdapterError('provider-unavailable', 'The provider endpoint is not approved.')
   return url.toString()
 }
-export function authHeaders(provider: AdvisorHostedProviderId, secret: string): Record<string, string> {
-  if (provider === 'openai') return { Authorization: 'Bearer ' + secret }
-  if (provider === 'anthropic') return { 'x-api-key': secret, 'anthropic-version': ANTHROPIC_VERSION }
-  return { 'x-goog-api-key': secret }
+export function authHeaders(provider: AdvisorHostedProviderId, secret: string, protocol?: AdvisorHostedProtocol): Record<string, string> {
+  const resolved = protocol ?? DESCRIPTORS[provider].protocolForModel('')
+  if (resolved === 'anthropic-messages') return { 'x-api-key': secret, 'anthropic-version': ANTHROPIC_VERSION }
+  if (resolved === 'gemini-content') return { 'x-goog-api-key': secret }
+  return { Authorization: 'Bearer ' + secret }
 }
-export function requestHeaders(provider: AdvisorHostedProviderId, secret: string, stream: boolean): Record<string, string> {
-  return { Accept: stream ? 'text/event-stream' : 'application/json', 'Content-Type': 'application/json', ...authHeaders(provider, secret) }
+export function requestHeaders(provider: AdvisorHostedProviderId, secret: string, stream: boolean, protocol?: AdvisorHostedProtocol): Record<string, string> {
+  return { Accept: stream ? 'text/event-stream' : 'application/json', 'Content-Type': 'application/json', ...authHeaders(provider, secret, protocol) }
 }
 export function timeoutRequest(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController()
@@ -133,44 +274,67 @@ export function timeoutRequest(parent: AbortSignal | undefined, timeoutMs: numbe
   else parent?.addEventListener('abort', forward, { once: true })
   return { signal: controller.signal, dispose: () => { clearTimeout(timer); parent?.removeEventListener('abort', forward) } }
 }
-export async function fetchResponse(fetchImpl: FetchLike, url: string, init: RequestInit, timeoutMs: number, parent?: AbortSignal): Promise<{ response: Response; dispose: () => void }> {
+export async function fetchResponse(fetchImpl: FetchLike, url: string, init: RequestInit, timeoutMs: number, parent?: AbortSignal): Promise<{ response: Response; dispose: () => void; signal: AbortSignal }> {
   const timed = timeoutRequest(parent, timeoutMs)
   try {
     throwIfAborted(timed.signal)
     const response = await fetchImpl(url, { ...init, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
-    return { response, dispose: timed.dispose }
+    return { response, dispose: timed.dispose, signal: timed.signal }
   } catch (error) {
     timed.dispose()
-    if (timed.signal.aborted) {
-      const cancelled = new Error('Advisor request cancelled.')
-      cancelled.name = 'AbortError'
-      throw cancelled
-    }
+    if (timed.signal.aborted) throw abortError()
     throw error
   }
 }
-export async function readBoundedText(response: Response): Promise<string> {
+function bindReaderAbort(reader: ReadableStreamDefaultReader<Uint8Array>, signal?: AbortSignal): () => void {
+  if (!signal) return () => {}
+  const onAbort = () => { void reader.cancel().catch(() => {}) }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => signal.removeEventListener('abort', onAbort)
+}
+export async function readBoundedText(response: Response, signal?: AbortSignal): Promise<string> {
+  if (signal) throwIfAborted(signal)
   const reader = response.body?.getReader()
   if (!reader) {
-    const text = await response.text()
-    if (byteLength(text) > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-    return text
+    if (!signal) {
+      const text = await response.text()
+      if (byteLength(text) > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      return text
+    }
+    let rejectAbort!: (reason: unknown) => void
+    const abortPromise = new Promise<never>((_, reject) => { rejectAbort = reject })
+    const onAbort = () => rejectAbort(abortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      const text = await Promise.race([response.text(), abortPromise])
+      throwIfAborted(signal)
+      if (byteLength(text) > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      return text
+    } finally { signal.removeEventListener('abort', onAbort) }
   }
+  const disposeAbort = bindReaderAbort(reader, signal)
   const decoder = new TextDecoder()
   let bytes = 0
   let text = ''
-  while (true) {
-    const part = await reader.read()
-    if (part.done) break
-    bytes += part.value.byteLength
-    if (bytes > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-    text += decoder.decode(part.value, { stream: true })
-  }
-  return text + decoder.decode()
+  try {
+    while (true) {
+      if (signal) throwIfAborted(signal)
+      const part = await reader.read()
+      if (signal) throwIfAborted(signal)
+      if (part.done) break
+      bytes += part.value.byteLength
+      if (bytes > MAX_RESPONSE_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
+      text += decoder.decode(part.value, { stream: true })
+    }
+    return text + decoder.decode()
+  } catch (error) {
+    if (signal?.aborted) throw abortError()
+    throw error
+  } finally { disposeAbort() }
 }
-export async function readJson(response: Response): Promise<Record<string, unknown>> {
-  const text = await readBoundedText(response)
+export async function readJson(response: Response, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const text = await readBoundedText(response, signal)
   try {
     const parsed = JSON.parse(text) as unknown
     if (!isRecord(parsed)) throw new Error()
@@ -193,7 +357,10 @@ export function usageFrom(input: unknown, output: unknown, total: unknown = unde
 }
 export function mergeUsage(previous: AdvisorHostedUsage | null, next: AdvisorHostedUsage | null): AdvisorHostedUsage | null {
   if (!next) return previous
-  return { inputTokens: next.inputTokens ?? previous?.inputTokens ?? null, outputTokens: next.outputTokens ?? previous?.outputTokens ?? null, totalTokens: next.totalTokens ?? previous?.totalTokens ?? null }
+  const inputTokens = next.inputTokens ?? previous?.inputTokens ?? null
+  const outputTokens = next.outputTokens ?? previous?.outputTokens ?? null
+  const totalTokens = next.totalTokens ?? (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : previous?.totalTokens ?? null)
+  return { inputTokens, outputTokens, totalTokens }
 }
 export function emitUsage(requestId: string, provider: AdvisorHostedProviderId, model: string, usage: AdvisorHostedUsage | null, emit: EventEmitter): void {
   if (usage) emit({ requestId, provider, model, kind: 'usage', usage })
@@ -209,10 +376,11 @@ export function toolArguments(value: unknown): string {
   if (byteLength(text) > MAX_TOOL_ARGUMENT_BYTES) throw new HostedAdapterError('tool-malformed', 'The provider returned oversized tool arguments.')
   return text
 }
-export function normalizeToolCall(id: unknown, name: unknown, args: unknown): AdvisorHostedToolCall {
+export function normalizeToolCall(id: unknown, name: unknown, args: unknown, fallbackId = 'tool-call'): AdvisorHostedToolCall {
   const normalizedName = toolName(name)
   if (!normalizedName || !TOOL_NAMES.has(normalizedName)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
-  return { id: boundedString(typeof id === 'string' ? id : 'tool-call', 128, 'The provider returned an invalid tool call id.'), name: normalizedName, arguments: toolArguments(args ?? '{}') }
+  const normalizedId = typeof id === 'string' && id.trim() ? id : fallbackId
+  return { id: boundedString(normalizedId, 128, 'The provider returned an invalid tool call id.'), name: normalizedName, arguments: toolArguments(args ?? '{}') }
 }
 export function emitToolCall(call: AdvisorHostedToolCall, requestId: string, provider: AdvisorHostedProviderId, model: string, emit: EventEmitter): void {
   emit({ requestId, provider, model, kind: 'tool-call-start', callId: call.id, name: call.name })

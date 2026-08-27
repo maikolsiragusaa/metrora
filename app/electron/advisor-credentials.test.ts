@@ -42,6 +42,14 @@ describe('Advisor BYOK credential store', () => {
     expect(await store.readSecret('openai')).toBe('secret-value')
   })
 
+  it.each(['openrouter', 'opencode-zen'] as const)('stores %s credentials in the same protected main-process store', async provider => {
+    const { store, files } = fixture()
+    expect(await store.set(provider, provider + '-secret')).toEqual({ provider, state: 'ready' })
+    expect(await store.status(provider)).toEqual({ provider, state: 'ready' })
+    expect(await store.readSecret(provider)).toBe(provider + '-secret')
+    expect([...files.values()][0]).not.toContain(provider + '-secret')
+  })
+
   it('fails closed for Linux basic_text fallback', async () => {
     const { store } = fixture({ platform: 'linux', backend: 'basic_text' })
     expect(await store.set('gemini', 'secret-value')).toEqual({ provider: 'gemini', state: 'locked-unavailable' })
