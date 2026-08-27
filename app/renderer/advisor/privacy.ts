@@ -229,6 +229,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
       if (claim.contractVersion !== 'advisor-verified-claim-atom-v1' || claim.schemaVersion !== 1 || claim.operator !== 'equals' || !claimKinds.includes(claim.claimKind) || !CLAIM_ID_PATTERN.test(claim.id)) return []
       const evidenceRef = evidenceIdMap.get(claim.evidenceRef) ?? claim.evidenceRef
       if (!evidence.some(item => item.id === evidenceRef)) return []
+      const scoreDenominator = typeof claim.scoreDenominator === 'number' && Number.isSafeInteger(claim.scoreDenominator) && claim.scoreDenominator > 0 && claim.scoreDenominator <= 64 ? claim.scoreDenominator : undefined
       return [{
         ...claim,
         value: safeJsonValue(claim.value),
@@ -237,6 +238,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
         evidenceRef,
         evidencePath: /^[A-Za-z][A-Za-z0-9_.-]{0,160}$/u.test(claim.evidencePath) ? claim.evidencePath : 'invalid-path',
         scope: contentMinimalScope(claim.scope),
+        scoreDenominator,
       }]
     }).slice(0, 24)
   }

@@ -5,7 +5,9 @@ import { atomicWritePrivateFile, cleanupStaleAtomicTemps, ensurePrivateDirectory
 import { defaultMetroraDataDir } from '../local-state/endpoint-identity.js'
 import { withLocalStateLease } from '../local-state/local-state-lease.js'
 import { sha256Json } from './serialization.js'
-import { BENCH_EVALUATION_SCHEMA_VERSION, type BenchEvaluationV1 } from './task-pack-run-v1.js'
+import { FIXED_GENERATION_PARAMETERS } from './contract-v1.js'
+import { CORE_TASK_PACK_V1 } from './task-pack-v1.js'
+import { BENCH_EVALUATION_SCHEMA_VERSION, digestBenchEvaluationV1, type BenchEvaluationV1 } from './task-pack-run-v1.js'
 
 export const BENCH_HISTORY_KIND = 'metrora.bench-history.v1' as const
 export const BENCH_HISTORY_VERSION = 1 as const
@@ -20,14 +22,62 @@ const RuntimeMetrics = z.object({ totalDurationNs: z.number().int().nonnegative(
 const TaskResult = z.object({
   taskId: z.string().min(1).max(128), attempted: z.boolean(), status: z.enum(['passed', 'failed', 'malformed', 'unavailable', 'timeout', 'cancelled']), score: z.union([z.literal(0), z.literal(1), z.null()]), outputDigest: z.string().regex(/^[0-9a-f]{64}$/).nullable(), outputChars: z.number().int().nonnegative().max(32_768).nullable(), requestLatencyMs: z.number().nonnegative().nullable(), timeToFirstContentMs: z.number().nonnegative().nullable(), runtimeReported: RuntimeMetrics, failure: z.object({ code: z.string().min(1).max(64), message: z.string().min(1).max(240) }).strict().nullable(),
 }).strict()
-const Evaluation = z.object({
+const EvaluationShape = z.object({
   schemaVersion: z.literal(BENCH_EVALUATION_SCHEMA_VERSION), runId: z.string().min(1).max(128), runner: z.object({ id: z.literal('ollama-task-pack-v1'), version: z.literal('1.0.0') }).strict(), pack: z.object({ packId: z.literal('metrora.bench.core'), version: z.literal('1.0.0'), digest: z.string().regex(/^[0-9a-f]{64}$/) }).strict(), model: z.object({ selected: z.string().min(1).max(200), reported: z.string().min(1).max(200).nullable() }).strict(), runtime: z.object({ id: z.literal('ollama-local'), endpoint: z.literal('http://127.0.0.1:11434'), version: z.string().max(128).nullable() }).strict(), environment: z.object({ os: z.string().min(1).max(240), arch: z.string().min(1).max(64), node: z.string().min(1).max(64) }).strict(), generation: z.object({ parameters: z.object({ temperature: z.number(), seed: z.number().int(), numPredict: z.number().int() }).strict(), policy: z.literal('one-bounded-request-per-task') }).strict(), startedAt: z.string().datetime({ offset: true }), endedAt: z.string().datetime({ offset: true }), status: z.enum(['completed', 'unavailable', 'cancelled']), tasks: z.array(TaskResult).min(1).max(64), aggregate: z.object({ planned: z.number().int().nonnegative().max(64), attempted: z.number().int().nonnegative().max(64), passed: z.number().int().nonnegative().max(64), failed: z.number().int().nonnegative().max(64), unavailable: z.number().int().nonnegative().max(64), cancelled: z.number().int().nonnegative().max(64), score: z.object({ numerator: z.number().int().nonnegative(), denominator: z.number().int().nonnegative(), value: z.number().min(0).max(1).nullable() }).strict() }).strict(), resultDigest: z.string().regex(/^[0-9a-f]{64}$/),
 }).strict()
+const Evaluation = EvaluationShape.superRefine((record, ctx) => {
+  const issue = (path: (string | number)[], message: string): void => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message })
+  const tasks = record.tasks
+  const counts = {
+    attempted: tasks.filter(task => task.attempted).length,
+    passed: tasks.filter(task => task.status === 'passed').length,
+    failed: tasks.filter(task => task.status === 'failed' || task.status === 'malformed').length,
+    unavailable: tasks.filter(task => task.status === 'unavailable' || task.status === 'timeout').length,
+    cancelled: tasks.filter(task => task.status === 'cancelled').length,
+    scored: tasks.filter(task => task.score !== null).length,
+    passedScore: tasks.filter(task => task.score === 1).length,
+  }
+  if (record.aggregate.planned !== tasks.length) issue(['aggregate', 'planned'], 'planned count must equal the retained task count')
+  for (const key of ['attempted', 'passed', 'failed', 'unavailable', 'cancelled'] as const) {
+    if (record.aggregate[key] !== counts[key]) issue(['aggregate', key], key + ' count does not match retained task results')
+  }
+  if (record.aggregate.score.numerator !== counts.passedScore) issue(['aggregate', 'score', 'numerator'], 'score numerator must equal passed scored tasks')
+  if (record.aggregate.score.denominator !== counts.scored) issue(['aggregate', 'score', 'denominator'], 'score denominator must equal scored tasks')
+  if (record.aggregate.score.numerator > record.aggregate.score.denominator) issue(['aggregate', 'score'], 'score numerator cannot exceed its denominator')
+  const expectedScore = counts.scored === 0 ? null : counts.passedScore / counts.scored
+  if (record.aggregate.score.value === null ? expectedScore !== null : expectedScore === null || Math.abs(record.aggregate.score.value - expectedScore) > 1e-12) {
+    issue(['aggregate', 'score', 'value'], 'score value does not match its numerator and denominator')
+  }
+  const expectedStatus = counts.cancelled > 0 ? 'cancelled' : counts.unavailable > 0 ? 'unavailable' : 'completed'
+  if (record.status !== expectedStatus) issue(['status'], 'status does not match retained task outcomes')
+  if (Date.parse(record.startedAt) > Date.parse(record.endedAt)) issue(['endedAt'], 'endedAt must not precede startedAt')
+  if (record.pack.digest !== CORE_TASK_PACK_V1.digest) issue(['pack', 'digest'], 'pack digest does not match the canonical Core conformance pack')
+  if (tasks.length !== CORE_TASK_PACK_V1.tasks.length) issue(['tasks'], 'task count does not match the canonical Core conformance pack')
+  for (const key of ['temperature', 'seed', 'numPredict'] as const) {
+    if (record.generation.parameters[key] !== FIXED_GENERATION_PARAMETERS[key]) issue(['generation', 'parameters', key], 'generation parameter does not match the fixed Core conformance policy')
+  }
+
+  const taskIds = new Set<string>()
+  tasks.forEach((task, index) => {
+    if (taskIds.has(task.taskId)) issue(['tasks', index, 'taskId'], 'task ids must be unique')
+    taskIds.add(task.taskId)
+    if (task.taskId !== CORE_TASK_PACK_V1.tasks[index]?.id) issue(['tasks', index, 'taskId'], 'task id or order does not match the canonical Core conformance pack')
+    if (!task.attempted && task.score !== null) issue(['tasks', index], 'an unattempted task cannot have a score')
+    if (task.status === 'passed') {
+      if (!task.attempted || task.score !== 1 || task.failure !== null || task.outputDigest === null || task.outputChars === null) issue(['tasks', index], 'passed tasks must contain a scored output')
+    } else if (task.status === 'failed' || task.status === 'malformed') {
+      if (!task.attempted || task.score !== 0 || task.failure === null || task.outputDigest === null || task.outputChars === null) issue(['tasks', index], 'scored failures must contain a scored output')
+    } else if (task.score !== null || task.outputDigest !== null || task.outputChars !== null || task.failure === null) {
+      issue(['tasks', index], 'unscored tasks must retain only bounded failure metadata')
+    }
+  })
+  if (record.resultDigest !== digestBenchEvaluationV1(record as unknown as BenchEvaluationV1)) issue(['resultDigest'], 'result digest does not match retained task evidence')
+})
 const HistoryFile = z.object({ kind: z.literal(BENCH_HISTORY_KIND), version: z.literal(BENCH_HISTORY_VERSION), recordSha256: z.string().regex(/^[0-9a-f]{64}$/), record: Evaluation }).strict()
 
 export type BenchHistoryScanV1 = { records: BenchEvaluationV1[]; invalid: Array<{ file: string; reason: string }> }
 export type BenchHistoryOptions = { dataDir?: string }
-type ScannedHistoryFile = { file: string; byteLength: number; record: BenchEvaluationV1 | null }
+type ScannedHistoryFile = { file: string; byteLength: number; record: BenchEvaluationV1 | null; reason?: string }
 type PreparedBenchHistoryScan = BenchHistoryScanV1 & { files: ScannedHistoryFile[]; candidateScanTruncated: boolean }
 type BoundedHistoryFileRead =
   | { kind: 'missing'; byteLength: 0 }
@@ -98,6 +148,23 @@ function compareRecords(left: BenchEvaluationV1, right: BenchEvaluationV1): numb
   return Date.parse(right.endedAt) - Date.parse(left.endedAt) || left.runId.localeCompare(right.runId)
 }
 
+async function scanHistoryFile(recordsDir: string, file: string): Promise<ScannedHistoryFile | null> {
+  const read = await readBoundedHistoryFile(join(recordsDir, file))
+  if (read.kind === 'missing') return null
+  const scanned: ScannedHistoryFile = { file, byteLength: read.byteLength, record: null }
+  if (read.kind === 'invalid') return { ...scanned, reason: read.reason }
+  try {
+    const wrapper = HistoryFile.parse(JSON.parse(read.bytes.toString('utf8')))
+    if (fileName(wrapper.record.runId) !== file) throw new Error('run id does not match history filename')
+    if (wrapper.recordSha256 !== recordDigest(wrapper.record as BenchEvaluationV1)) throw new Error('history record digest mismatch')
+    scanned.record = wrapper.record as BenchEvaluationV1
+  } catch (error) {
+    // Invalid files are retained only as bounded diagnostics or candidates for pruning.
+    return { ...scanned, reason: boundedDiagnosticReason(error) }
+  }
+  return scanned
+}
+
 async function scanPrepared(recordsDir: string): Promise<PreparedBenchHistoryScan> {
   const records: BenchEvaluationV1[] = []
   const scannedFiles: ScannedHistoryFile[] = []
@@ -109,28 +176,82 @@ async function scanPrepared(recordsDir: string): Promise<PreparedBenchHistorySca
   }
   const candidates = await candidateHistoryFiles(recordsDir)
   for (const file of candidates.files) {
-    const read = await readBoundedHistoryFile(join(recordsDir, file))
-    if (read.kind === 'missing') continue
-    const scanned: ScannedHistoryFile = { file, byteLength: read.byteLength, record: null }
+    const scanned = await scanHistoryFile(recordsDir, file)
+    if (!scanned) continue
     scannedFiles.push(scanned)
-    if (read.kind === 'invalid') {
-      addInvalid(file, read.reason)
+    if (scanned.record === null) {
+      addInvalid(file, scanned.reason ?? 'history file is invalid')
       continue
     }
-    try {
-      const wrapper = HistoryFile.parse(JSON.parse(read.bytes.toString('utf8')))
-      if (fileName(wrapper.record.runId) !== file) throw new Error('run id does not match history filename')
-      if (wrapper.recordSha256 !== recordDigest(wrapper.record as BenchEvaluationV1)) throw new Error('history record digest mismatch')
-      scanned.record = wrapper.record as BenchEvaluationV1
-      records.push(scanned.record)
-    } catch (error) {
-      addInvalid(file, boundedDiagnosticReason(error))
-    }
+    records.push(scanned.record)
   }
   if (candidates.truncated) addInvalid('<candidate-scan>', 'history candidate scan stopped at the bounded file limit')
   if (omittedInvalid > 0) invalid.push({ file: '<bounded-diagnostics>', reason: String(omittedInvalid) + ' additional invalid history diagnostics were omitted' })
   records.sort(compareRecords)
   return { records, invalid, files: scannedFiles, candidateScanTruncated: candidates.truncated }
+}
+
+function addNewestValidCandidate(candidates: ScannedHistoryFile[], candidate: ScannedHistoryFile): void {
+  candidates.push(candidate)
+  candidates.sort((left, right) => compareRecords(left.record!, right.record!))
+  if (candidates.length > BENCH_HISTORY_MAX_RECORDS) candidates.pop()
+}
+
+function addInvalidCandidate(candidates: ScannedHistoryFile[], candidate: ScannedHistoryFile): void {
+  if (candidate.byteLength > BENCH_HISTORY_MAX_FILE_BYTES) return
+  candidates.push(candidate)
+  candidates.sort((left, right) => left.file.localeCompare(right.file))
+  if (candidates.length > BENCH_HISTORY_MAX_INVALID_FILES) candidates.pop()
+}
+
+/**
+ * Reconciles an overfull directory in bounded-memory passes. The normal read
+ * path caps candidate inspection; this path is entered only after that cap is
+ * reached, and retains only the bounded newest/diagnostic candidates while
+ * every individual file read remains byte-limited.
+ */
+async function pruneHistoryToBounds(recordsDir: string): Promise<void> {
+  const validCandidates: ScannedHistoryFile[] = []
+  const invalidCandidates: ScannedHistoryFile[] = []
+  const directory = await opendir(recordsDir)
+  try {
+    for await (const entry of directory) {
+      if (!entry.isFile() || !HISTORY_FILE_PATTERN.test(entry.name)) continue
+      const scanned = await scanHistoryFile(recordsDir, entry.name)
+      if (!scanned) continue
+      if (scanned.record) addNewestValidCandidate(validCandidates, scanned)
+      else addInvalidCandidate(invalidCandidates, scanned)
+    }
+  } finally {
+    await directory.close().catch(() => undefined)
+  }
+
+  const keep = new Set<string>()
+  let bytes = 0
+  let validKept = 0
+  for (const item of validCandidates) {
+    if (validKept >= BENCH_HISTORY_MAX_RECORDS || bytes + item.byteLength > BENCH_HISTORY_MAX_BYTES) continue
+    keep.add(item.file)
+    validKept += 1
+    bytes += item.byteLength
+  }
+  let invalidKept = 0
+  for (const item of invalidCandidates) {
+    if (invalidKept >= BENCH_HISTORY_MAX_INVALID_FILES || bytes + item.byteLength > BENCH_HISTORY_MAX_BYTES) continue
+    keep.add(item.file)
+    invalidKept += 1
+    bytes += item.byteLength
+  }
+
+  const cleanup = await opendir(recordsDir)
+  try {
+    for await (const entry of cleanup) {
+      if (!entry.isFile() || !HISTORY_FILE_PATTERN.test(entry.name) || keep.has(entry.name)) continue
+      await removePrivateFile(join(recordsDir, entry.name))
+    }
+  } finally {
+    await cleanup.close().catch(() => undefined)
+  }
 }
 export async function scanBenchHistoryV1(options: BenchHistoryOptions = {}): Promise<BenchHistoryScanV1> {
   const scan = await scanPrepared((await prepare(options.dataDir ?? defaultMetroraDataDir())).records)
@@ -152,6 +273,10 @@ export async function saveBenchEvaluationV1(recordInput: BenchEvaluationV1, opti
     if (existing.kind === 'invalid') throw new Error('Bench history run id collision with invalid existing content')
     await atomicWritePrivateFile(path, JSON.stringify({ kind: BENCH_HISTORY_KIND, version: BENCH_HISTORY_VERSION, recordSha256: recordDigest(record), record }))
     const scan = await scanPrepared(p.records)
+    if (scan.candidateScanTruncated) {
+      await pruneHistoryToBounds(p.records)
+      return { status: 'saved', record }
+    }
     const keep = new Set<string>()
     let bytes = 0
     let validKept = 0

@@ -4,6 +4,7 @@ import { atomicWritePrivateFile } from '../local-state/atomic-file.js'
 import { BENCH_RUNNER_ID, type BenchRunV1, type NumericSummaryV1 } from './contract-v1.js'
 import { compareBenchEvaluationsV1 } from './compare-v1.js'
 import { saveBenchEvaluationV1, scanBenchHistoryV1 } from './history-v1.js'
+import { discoverBenchModelsV1, type BenchModelDiscoveryV1 } from './model-discovery-v1.js'
 import { runBenchTaskPackV1, type BenchEvaluationV1 } from './task-pack-run-v1.js'
 import { runBenchRunV1, validateBenchTimeoutMs } from './run-v1.js'
 
@@ -52,27 +53,63 @@ function parseHistoryLimit(value: string): number {
 }
 
 function renderBenchEvaluation(result: BenchEvaluationV1): string {
-  const score = result.aggregate.score.value === null ? 'unavailable' : (result.aggregate.score.value * 100).toFixed(0) + '%'
+  const score = result.aggregate.score.value === null ? 'unavailable (no checks scored)' : (result.aggregate.score.value * 100).toFixed(0) + '% of ' + result.aggregate.score.denominator + ' scored checks'
   return [
-    'Bench task pack ' + result.status,
+    'Core conformance ' + result.status,
     '  runner: ' + result.runner.id + '@' + result.runner.version,
     '  model: ' + result.model.selected,
     '  pack: ' + result.pack.packId + '@' + result.pack.version,
-    '  tasks: ' + result.aggregate.passed + '/' + result.aggregate.planned + ' passed; deterministic pass rate ' + score,
+    '  checks: ' + result.aggregate.passed + '/' + result.aggregate.planned + ' passed; ' + result.aggregate.failed + ' failed; ' + result.aggregate.unavailable + ' unavailable; ' + result.aggregate.cancelled + ' cancelled',
+    '  scored result: ' + score,
     '  runtime: ' + (result.runtime.version ?? 'unavailable'),
     '  result digest: ' + result.resultDigest,
   ].join('\n') + '\n'
 }
 
-function renderBenchHistory(records: BenchEvaluationV1[]): string {
-  if (records.length === 0) return 'No Bench task-pack history.\n'
-  return records.map(record => record.runId + '  ' + record.model.selected + '  ' + record.status + '  ' + record.aggregate.passed + '/' + record.aggregate.planned + ' passed  ' + record.endedAt).join('\n') + '\n'
+export function renderBenchHistory(records: BenchEvaluationV1[]): string {
+  if (records.length === 0) return 'No Core conformance history.\n'
+  return records.map(record => {
+    const checks = record.aggregate.score.value === null
+      ? record.aggregate.planned + ' planned; no checks scored; ' + record.aggregate.unavailable + ' unavailable; ' + record.aggregate.cancelled + ' cancelled'
+      : record.aggregate.passed + ' passed; ' + record.aggregate.failed + ' failed; ' + record.aggregate.unavailable + ' unavailable; ' + record.aggregate.cancelled + ' cancelled; ' + record.aggregate.planned + ' planned; ' + (record.aggregate.score.value * 100).toFixed(0) + '% of ' + record.aggregate.score.denominator + ' scored checks'
+    return record.runId + '  ' + record.model.selected + '  Core conformance ' + record.status + '  ' + checks + '  ' + record.endedAt
+  }).join('\n') + '\n'
+}
+
+function renderBenchModelDiscovery(result: BenchModelDiscoveryV1): string {
+  return [
+    'Bench local model discovery ' + result.status,
+    '  runtime: ' + result.runtime.id,
+    '  models: ' + (result.models.length ? result.models.join(', ') : 'none discovered'),
+    '  detail: ' + result.detail,
+  ].join('\n') + '\n'
 }
 
 export function registerBenchCommands(program: Command): void {
   const bench = program
     .command('bench')
     .description('Run bounded synthetic local runtime evidence; no quality, ranking, or cost scoring')
+
+  bench
+    .command('models')
+    .description('Discover local Ollama models that the Bench runner can execute')
+    .option('--format <format>', 'Output format: table, json', 'table')
+    .action(async (options: { format: string }) => {
+      const format = options.format.toLowerCase()
+      if (format !== 'table' && format !== 'json') {
+        process.stderr.write('metrora bench models: --format must be table or json.\n')
+        process.exitCode = 2
+        return
+      }
+      try {
+        const result = await discoverBenchModelsV1()
+        if (format === 'json') process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+        else process.stdout.write(renderBenchModelDiscovery(result))
+      } catch (error) {
+        process.stderr.write('metrora bench models: ' + (error instanceof Error ? error.message : String(error)) + '\n')
+        process.exitCode = 2
+      }
+    })
 
   bench
     .command('local')

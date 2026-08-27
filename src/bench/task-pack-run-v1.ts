@@ -69,14 +69,14 @@ function emptyTask(taskId: string, status: 'unavailable' | 'timeout' | 'cancelle
   return { taskId, attempted: false, status, score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported: { ...EMPTY_RUNTIME_METRICS }, failure: { code, message: failureMessage(code) } }
 }
 function buildAggregate(tasks: BenchTaskResultV1[]): BenchEvaluationV1['aggregate'] {
-  const passed = tasks.filter(task => task.status === 'passed').length
-  const failed = tasks.filter(task => task.status === 'failed' || task.status === 'malformed').length
-  const unavailable = tasks.filter(task => task.status === 'unavailable').length
+  const passed = tasks.filter(task => task.score === 1).length
+  const failed = tasks.filter(task => task.score === 0).length
+  const unavailable = tasks.filter(task => task.status === 'unavailable' || task.status === 'timeout').length
   const cancelled = tasks.filter(task => task.status === 'cancelled').length
   const denominator = passed + failed
   return { planned: tasks.length, attempted: tasks.filter(task => task.attempted).length, passed, failed, unavailable, cancelled, score: { numerator: passed, denominator, value: denominator === 0 ? null : passed / denominator } }
 }
-function digestOf(result: Pick<BenchEvaluationV1, 'model' | 'runtime' | 'pack' | 'tasks'>): string {
+export function digestBenchEvaluationV1(result: Pick<BenchEvaluationV1, 'model' | 'runtime' | 'pack' | 'tasks'>): string {
   return sha256Json({ schemaVersion: BENCH_EVALUATION_SCHEMA_VERSION, runner: { id: BENCH_TASK_RUNNER_ID, version: BENCH_TASK_RUNNER_VERSION }, pack: result.pack, model: result.model, runtimeVersion: result.runtime.version, tasks: result.tasks.map(task => ({ taskId: task.taskId, attempted: task.attempted, status: task.status, score: task.score, outputDigest: task.outputDigest, outputChars: task.outputChars, runtimeReported: task.runtimeReported, failure: task.failure?.code ?? null })) })
 }
 
@@ -95,6 +95,7 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
 
   const tasks: BenchTaskResultV1[] = []
   let reportedModel: string | null = null
+  let reportedModelConflict = false
   for (let index = 0; index < pack.tasks.length; index++) {
     const task = pack.tasks[index]!
     if (preflightFailure) {
@@ -106,13 +107,19 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
     if (options.signal?.aborted) { for (let rest = index; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
     try {
       const evidence = await runOllamaGenerate({ model, prompt: task.prompt, includeOutput: true, fetchImpl: options.fetchImpl, signal: options.signal, timeoutMs, monotonicNow })
-      if (evidence.reportedModel !== null) reportedModel = reportedModel === null || reportedModel === evidence.reportedModel ? evidence.reportedModel : null
+      if (evidence.reportedModel !== null && !reportedModelConflict) {
+        if (reportedModel === null) reportedModel = evidence.reportedModel
+        else if (reportedModel !== evidence.reportedModel) {
+          reportedModel = null
+          reportedModelConflict = true
+        }
+      }
       if (evidence.output === undefined) throw new BenchOllamaError('malformed-response', 'The local runtime output was unavailable for transient scoring.')
       const scored = scoreBenchTaskV1(task, evidence.output)
       tasks.push({ taskId: task.id, attempted: true, status: scored.status, score: scored.score, outputDigest: scored.outputDigest, outputChars: scored.outputChars, requestLatencyMs: evidence.observed.requestLatencyMs, timeToFirstContentMs: evidence.observed.timeToFirstContentMs, runtimeReported: evidence.runtimeReported, failure: scored.status === 'passed' ? null : { code: scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed', message: failureMessage(scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed') } })
     } catch (error) {
       const failure = asFailure(error)
-      const status: BenchTaskRunStatusV1 = failure.code === 'cancelled' ? 'cancelled' : failure.code === 'timeout' ? 'timeout' : ['runtime-unavailable', 'transport-error', 'http-error', 'model-not-found'].includes(failure.code) ? 'unavailable' : 'failed'
+      const status: BenchTaskRunStatusV1 = failure.code === 'cancelled' ? 'cancelled' : failure.code === 'timeout' ? 'timeout' : ['runtime-unavailable', 'transport-error', 'http-error', 'model-not-found', 'runtime-error', 'malformed-response', 'response-limit'].includes(failure.code) ? 'unavailable' : 'failed'
       tasks.push({ taskId: task.id, attempted: true, status, score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported: { ...EMPTY_RUNTIME_METRICS }, failure })
       if (status === 'cancelled') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
       if (status === 'unavailable') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'unavailable', 'runtime-unavailable')); break }
@@ -134,5 +141,5 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
     tasks,
     aggregate: buildAggregate(tasks),
   }
-  return { ...resultWithoutDigest, resultDigest: digestOf(resultWithoutDigest) }
+  return { ...resultWithoutDigest, resultDigest: digestBenchEvaluationV1(resultWithoutDigest) }
 }

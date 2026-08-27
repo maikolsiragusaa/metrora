@@ -28,6 +28,7 @@ const bridge = {
   advisorHostedChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorHostedChat', requestId, payload),
   advisorHostedCancel: (requestId: string) => invoke('metrora:advisorHostedCancel', requestId),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
+  getBenchModelDiscovery: () => invoke('metrora:getBenchModelDiscovery'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
   runBenchTaskPack: (model: string, pack?: string) => invoke('metrora:runBenchTaskPack', model, pack),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null) => invoke('metrora:getOverview', period, provider, range, configSource, background, fresh, projectScopeId),

@@ -4,7 +4,8 @@ import { buildSpendEvidence } from './evidence'
 import { buildAdvisorVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis, renderAdvisorVerifiedClaimAtom, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
 import { createAdvisorConformanceFixture } from './conformance'
 import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
-import type { AdvisorEvidence, AdvisorScope, AdvisorVerifiedClaimAtomV1 } from './types'
+import { buildBenchEvidence } from './special-evidence'
+import type { AdvisorBenchRun, AdvisorEvidence, AdvisorScope, AdvisorVerifiedClaimAtomV1 } from './types'
 
 const scope: AdvisorScope = {
   period: 'week',
@@ -150,6 +151,28 @@ describe('Advisor typed verified claim atoms', () => {
     expect(verification.valid).toBe(true)
     expect(renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'What changed in spend?').conclusion).toContain('Metrora measured')
     expect(renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'Quanto ho speso?').conclusion).toContain('Hai speso')
+  })
+
+  it('keeps the scored-check denominator in the verified Bench score claim', () => {
+    const run: AdvisorBenchRun = {
+      runId: 'bench-run',
+      pack: { id: 'metrora.bench.core', version: '1.0.0', digest: 'a'.repeat(64) },
+      scorer: { id: 'metrora.bench-scoring', version: '1' },
+      runner: { id: 'ollama-task-pack-v1', version: '1.0.0' },
+      runtime: { id: 'ollama-local', version: '0.12.6' },
+      model: { selected: 'qwen3:8b', reported: 'qwen3:8b' },
+      generationPolicy: 'one-bounded-request-per-task-temperature-0-seed-1729-numPredict-64',
+      status: 'completed',
+      aggregate: { planned: 6, attempted: 6, passed: 5, failed: 1, unavailable: 0, cancelled: 0, scoreNumerator: 5, scoreDenominator: 6, scoreValue: 5 / 6 },
+      tasks: [],
+      resultDigest: 'b'.repeat(64),
+    }
+    const evidence = buildBenchEvidence('What happened in the Bench?', scope, { state: 'AVAILABLE', runs: [run], latest: run, comparison: null })
+    const scoreAtom = buildAdvisorVerifiedClaimAtoms(evidence).find(item => item.id === 'bench-score')!
+    expect(scoreAtom.scoreDenominator).toBe(6)
+    expect(verifyAdvisorVerifiedClaimAtom(scoreAtom, evidence)).toBe(true)
+    expect(renderAdvisorVerifiedClaimAtom(scoreAtom, 'en')).toContain('83% of 6 scored checks')
+    expect(renderAdvisorVerifiedClaimAtom(scoreAtom, 'it')).toContain('83% su 6 controlli valutati')
   })
 
   it('renders supported factual enums through closed EN/IT presentation labels', () => {

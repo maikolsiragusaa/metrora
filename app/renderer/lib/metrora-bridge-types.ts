@@ -50,6 +50,14 @@ export type BenchTaskResult = {
   outputChars: number | null
   requestLatencyMs: number | null
   timeToFirstContentMs: number | null
+  runtimeReported?: {
+    totalDurationNs: number | null
+    loadDurationNs: number | null
+    promptEvalCount: number | null
+    promptEvalDurationNs: number | null
+    evalCount: number | null
+    evalDurationNs: number | null
+  }
   failure: { code: string; message: string } | null
 }
 
@@ -60,6 +68,7 @@ export type BenchEvaluation = {
   pack: { packId: string; version: string; digest: string }
   model: { selected: string; reported: string | null }
   runtime: { id: string; endpoint: string; version: string | null }
+  environment?: { os: string; arch: string; node: string }
   generation?: { parameters: Record<string, number>; policy: string }
   startedAt: string
   endedAt: string
@@ -70,6 +79,14 @@ export type BenchEvaluation = {
 }
 
 export type BenchHistoryReport = { schemaVersion: string; records: BenchEvaluation[]; invalidCount: number }
+export type BenchModelDiscovery = {
+  schemaVersion: 'metrora.bench-model-discovery.v1'
+  runtime: { id: 'ollama-local'; endpoint: string }
+  status: 'models-discovered' | 'no-models' | 'unavailable'
+  models: string[]
+  detail: string
+  checkedAt: string
+}
 export type BenchComparison = {
   schemaVersion: 'metrora.bench-comparison.v1'
   compatible: boolean
@@ -97,6 +114,7 @@ export interface MetroraBridge extends ProjectBridge {
   advisorCredentialSet(provider: AdvisorCredentialProvider, secret: string): Promise<AdvisorCredentialStatus>
   advisorCredentialClear(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus>
   getBenchHistory(): Promise<BenchHistoryReport>
+  getBenchModelDiscovery(): Promise<BenchModelDiscovery>
   getBenchComparison(leftRunId: string, rightRunId: string): Promise<BenchComparison>
   runBenchTaskPack(model: string, pack?: string): Promise<BenchEvaluation>
   onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
