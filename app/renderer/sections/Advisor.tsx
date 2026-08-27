@@ -152,15 +152,15 @@ export function Advisor({
   const fallbackRuntime = useMemo(() => createAdvisorRuntime(), [])
   const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
   const [runtimeChoice, setRuntimeChoice] = useState<AdvisorRuntimeChoice>('ollama')
-  const [hostedProvider, setHostedProvider] = useState<'openai' | 'anthropic' | 'gemini'>('openai')
+  const [hostedProvider, setHostedProvider] = useState<AdvisorHostedProviderId>('openai')
   const hostedOperationGuardRef = useRef(new AdvisorHostedOperationGuard(hostedProvider))
   const [hostedModel, setHostedModel] = useState<string | null>(null)
   const hostedModelRef = useRef<string | null>(null)
   hostedModelRef.current = hostedModel
   const [hostedConsent, setHostedConsent] = useState(false)
   const [hostedProbe, setHostedProbe] = useState<AdvisorHostedProbePresentation>(() => createHostedProbeChecking('openai'))
-  const hostedModelForRuntime = hostedModel && hostedProbe.models.some(model => model.id === hostedModel && isSelectableHostedModel(model)) ? hostedModel : null
-  const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
+  const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
+  const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
   const [runtimeState, setRuntimeState] = useState<AdvisorRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
   const [configureOpen, setConfigureOpen] = useState(false)
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
@@ -221,7 +221,7 @@ export function Advisor({
     setToolStatus(null)
   }, [])
   const hostedProbeController = useRef<AbortController | null>(null)
-  const checkHostedRuntime = useCallback(async (requestedProvider: 'openai' | 'anthropic' | 'gemini' = hostedProvider, resetSelection = false) => {
+  const checkHostedRuntime = useCallback(async (requestedProvider: AdvisorHostedProviderId = hostedProvider, resetSelection = false) => {
     if (!hostedOperationGuardRef.current.isCurrentProvider(requestedProvider)) return
     invalidateAdvisorRequest()
     hostedProbeController.current?.abort()

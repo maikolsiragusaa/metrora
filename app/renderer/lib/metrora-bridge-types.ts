@@ -28,11 +28,13 @@ import type {
 import type { ProjectBridge } from './project-bridge-types'
 import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
 
-export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini'
+export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
-export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null }
+export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
+export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState }
+export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities }
 export type AdvisorHostedProbe = { provider: AdvisorCredentialProvider; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
 export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
 export type AdvisorHostedToolCall = { id: string; name: string; arguments: string }

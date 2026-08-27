@@ -1,6 +1,6 @@
-import type { AdvisorHostedModelState } from '../advisor/types'
+import type { AdvisorHostedModelState, AdvisorHostedProviderId } from '../advisor/types'
 
-export type AdvisorHostedOperationProvider = 'openai' | 'anthropic' | 'gemini'
+export type AdvisorHostedOperationProvider = AdvisorHostedProviderId
 
 export function isSelectableHostedModel(model: { state: AdvisorHostedModelState }): boolean {
   return model.state !== 'unsupported' && model.state !== 'failed-conformance'

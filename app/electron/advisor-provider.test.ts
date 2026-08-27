@@ -49,6 +49,19 @@ describe('Advisor hosted provider authority', () => {
       openai: { origin: 'https://api.openai.com', modelsPath: '/v1/models', chatPath: '/v1/responses' },
       anthropic: { origin: 'https://api.anthropic.com', modelsPath: '/v1/models', chatPath: '/v1/messages', anthropicVersion: '2023-06-01' },
       gemini: { origin: 'https://generativelanguage.googleapis.com', modelsPath: '/v1beta/models', chatPath: '/v1beta/models/{model}:generateContent', streamPath: '/v1beta/models/{model}:streamGenerateContent?alt=sse' },
+      openrouter: { origin: 'https://openrouter.ai', modelsPath: '/api/v1/models?output_modalities=text', chatPath: '/api/v1/chat/completions', protocol: 'openai-chat' },
+      'opencode-zen': {
+        origin: 'https://opencode.ai',
+        modelsPath: '/zen/v1/models',
+        modelProtocol: 'per-model',
+        chatPaths: {
+          responses: '/zen/v1/responses',
+          messages: '/zen/v1/messages',
+          chat: '/zen/v1/chat/completions',
+          gemini: '/zen/v1/models/{model}:generateContent',
+          geminiStream: '/zen/v1/models/{model}:streamGenerateContent?alt=sse',
+        },
+      },
     })
   })
 
@@ -243,5 +256,124 @@ describe('Advisor hosted provider authority', () => {
     expect(events.find(event => event.kind === 'tool-call-start')).toMatchObject({ callId: 'call-1', name: 'get_spend_snapshot' })
     expect(events.find(event => event.kind === 'tool-call-delta')).toMatchObject({ callId: 'call-1' })
     expect(events.find(event => event.kind === 'tool-call-complete')).toMatchObject({ callId: 'call-1', arguments: '{"provider":"all"}' })
+  })
+
+  it('discovers OpenRouter capabilities without treating model listing as conformance', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return jsonResponse({ data: [
+        { id: 'openai/gpt-5', name: 'GPT 5', supported_parameters: ['tools', 'structured_outputs'] },
+        { id: 'openai/text-only', name: 'Text only', supported_parameters: [] },
+      ] })
+    }) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedProbe']!('openrouter') as { ok: boolean; value: any }
+    expect(result.value.models).toEqual([
+      expect.objectContaining({ id: 'openai/gpt-5', state: 'discovered', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' } }),
+      expect.objectContaining({ id: 'openai/text-only', state: 'limited', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unsupported' } }),
+    ])
+    expect(calls[0]?.url).toContain('output_modalities=text')
+    expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer synthetic-secret')
+  })
+
+  it('marks OpenRouter models without capability metadata unverified and fails closed for native tools', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return jsonResponse({ data: [{ id: 'openai/metadata-missing', name: 'Metadata missing' }] })
+    }) as typeof fetch
+    const probe = await readyHandlers(fetchImpl)['metrora:advisorHostedProbe']!('openrouter') as { ok: boolean; value: any }
+    expect(probe.value.models[0]).toEqual(expect.objectContaining({
+      id: 'openai/metadata-missing',
+      state: 'unverified',
+      capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' },
+    }))
+  })
+
+  it('maps OpenRouter Chat Completions body, auth and usage', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return jsonResponse({ choices: [{ message: { role: 'assistant', content: 'OpenRouter response.' } }], usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 } })
+    }) as typeof fetch
+    const tool = { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('openrouter-chat', {
+      provider: 'openrouter', model: 'openai/gpt-5', messages: [{ role: 'user', content: 'What changed?' }], tools: [tool], stream: false, consent: true,
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { provider: 'openrouter', message: { content: 'OpenRouter response.' }, usage: { inputTokens: 5, outputTokens: 4, totalTokens: 9 } } })
+    expect(calls[0]?.url).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer synthetic-secret')
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
+    expect(body.messages).toEqual([{ role: 'user', content: 'What changed?' }])
+    expect(body.tools).toEqual([{ type: 'function', function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }])
+  })
+
+  it('normalizes OpenRouter streamed tool calls without provider-native events', async () => {
+    const events: AdvisorHostedEvent[] = []
+    const payloads = [
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'or-call-1', type: 'function', function: { name: 'get_spend_snapshot', arguments: '{"provider":' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"all"}' } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 } },
+    ]
+    const handlers = readyHandlers((async () => sseResponse(payloads)) as typeof fetch, events)
+    const result = await handlers['metrora:advisorHostedChat']!('openrouter-stream', {
+      provider: 'openrouter', model: 'openai/gpt-5', messages: [{ role: 'user', content: 'Use evidence.' }], stream: true, consent: true,
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { message: { tool_calls: [{ id: 'or-call-1', name: 'get_spend_snapshot', arguments: '{"provider":"all"}' }] }, streamed: true } })
+    expect(events.find(event => event.kind === 'tool-call-start')).toMatchObject({ provider: 'openrouter', callId: 'or-call-1' })
+    expect(events.find(event => event.kind === 'tool-call-complete')).toMatchObject({ callId: 'or-call-1', arguments: '{"provider":"all"}' })
+  })
+
+  it('keeps a stable synthetic Chat tool id when the provider assigns its id after the first delta', async () => {
+    const events: AdvisorHostedEvent[] = []
+    const payloads = [
+      { choices: [{ delta: { tool_calls: [{ index: 0, type: 'function', function: { name: 'get_spend_snapshot', arguments: '{"provider":' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'late-provider-id', function: { arguments: '"all"}' } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    ]
+    const handlers = readyHandlers((async () => sseResponse(payloads)) as typeof fetch, events)
+    const result = await handlers['metrora:advisorHostedChat']!('openrouter-late-id', {
+      provider: 'openrouter', model: 'openai/gpt-5', messages: [{ role: 'user', content: 'Use evidence.' }], stream: true, consent: true,
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { message: { tool_calls: [{ id: 'openrouter-tool-0', name: 'get_spend_snapshot', arguments: '{"provider":"all"}' }] } } })
+    expect(events.find(event => event.kind === 'tool-call-delta')).toMatchObject({ callId: 'openrouter-tool-0' })
+  })
+
+  it('keeps OpenCode Zen protocol, endpoint and credential headers model-specific', async () => {
+    const cases = [
+      { model: 'gpt-5.6-sol', path: '/zen/v1/responses', header: 'Authorization', payload: textPayload('openai') },
+      { model: 'claude-sonnet-5', path: '/zen/v1/messages', header: 'x-api-key', payload: textPayload('anthropic') },
+      { model: 'deepseek-v4-pro', path: '/zen/v1/chat/completions', header: 'Authorization', payload: { choices: [{ message: { content: 'Zen chat response.' } }], usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } } },
+      { model: 'gemini-3.6-flash', path: '/zen/v1/models/gemini-3.6-flash:generateContent', header: 'x-goog-api-key', payload: textPayload('gemini') },
+    ] as const
+    for (const item of cases) {
+      const calls: Array<{ url: string; init?: RequestInit }> = []
+      const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(url), init })
+        return jsonResponse(item.payload)
+      }) as typeof fetch
+      const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('zen-' + item.model, {
+        provider: 'opencode-zen', model: item.model, messages: [{ role: 'user', content: 'Use the approved path.' }], stream: false, consent: true,
+      }) as { ok: boolean; value: any }
+      expect(result).toMatchObject({ ok: true, value: { provider: 'opencode-zen', model: item.model } })
+      expect(calls[0]?.url).toBe('https://opencode.ai' + item.path)
+      const headers = calls[0]?.init?.headers as Record<string, string>
+      expect(headers[item.header]).toBe(item.header === 'Authorization' ? 'Bearer synthetic-secret' : 'synthetic-secret')
+    }
+  })
+
+  it('marks unknown OpenCode Zen models unsupported and fails closed before network use', async () => {
+    const probeFetch = (async () => jsonResponse({ data: [{ id: 'future-unknown-model' }, { id: 'gpt-5.6-sol' }] })) as typeof fetch
+    const probe = await readyHandlers(probeFetch)['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(probe.value.models).toEqual([
+      expect.objectContaining({ id: 'future-unknown-model', state: 'unsupported' }),
+      expect.objectContaining({ id: 'gpt-5.6-sol', state: 'unverified' }),
+    ])
+    const chatFetch = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'should not run' } }] }))
+    const result = await readyHandlers(chatFetch as typeof fetch)['metrora:advisorHostedChat']!('zen-unknown', {
+      provider: 'opencode-zen', model: 'future-unknown-model', messages: [{ role: 'user', content: 'Do not run.' }], consent: true,
+    }) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'model-unavailable' } })
+    expect(chatFetch).not.toHaveBeenCalled()
   })
 })

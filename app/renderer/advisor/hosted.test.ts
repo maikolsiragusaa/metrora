@@ -98,4 +98,41 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(messages.map(message => message.content)).toEqual(expect.arrayContaining(['Quanto ho speso questa settimana?', 'Hai speso 12 USD.']))
     expect(messages.map(message => message.content)).not.toContain('other scope secret should not cross')
   })
+
+  it('does not send or accept provider-native tool calls when model capability is unknown', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const requests: Array<Record<string, unknown>> = []
+    const planning = JSON.stringify({
+      contractVersion: 'advisor-planning-draft-v1',
+      schemaVersion: 1,
+      turnKind: 'investigate',
+      questionFamily: 'spend',
+      requestedEvidenceDomains: ['usage-totals', 'cost'],
+      toolRequests: [{ tool: 'get_spend_snapshot', arguments: {} }],
+      presentationIntent: 'text',
+      expertDetailRequested: false,
+      clarification: null,
+    })
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openrouter', available: true, models: [{ id: 'text-only', label: 'Text only', state: 'limited', limitation: null, capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unsupported' } }], detail: 'ready', credentialState: 'ready' }),
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        return requests.length === 1
+          ? { streamed: false, message: { content: planning, tool_calls: [{ id: 'native-should-ignore', function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+          : { streamed: false, message: { content: '{}' } }
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const answer = await new HostedAdvisorRuntime({ provider: 'openrouter', model: 'text-only', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' }, consent: true, transport }).generate({
+      question: 'What changed in spend?',
+      evidence,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async () => ({ content: '{"bounded":true}', evidence }),
+    })
+    expect(requests[0]?.tools).toEqual([])
+    expect(requests[0]?.message).toBeUndefined()
+    expect(answer.runtime).toMatchObject({ id: 'hosted-openrouter', mode: 'hosted-byok' })
+  })
 })

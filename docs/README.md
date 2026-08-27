@@ -25,6 +25,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
 - [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — read-only conversational investigation over bounded Metrora evidence, runtime/privacy boundaries, tests and license provenance.
+- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — design-only action boundary, first local Bench proposal, mobile projection and OSS reuse notes; no executor is added.
 - [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — factual-surface → Ask Advisor → contextual investigation scope handoff across supported Desktop surfaces.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.

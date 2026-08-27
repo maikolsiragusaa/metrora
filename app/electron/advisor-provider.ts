@@ -3,30 +3,34 @@ import type {
   AdvisorHostedChatMessage,
   AdvisorHostedChatRequest,
   AdvisorHostedChatResult,
+  AdvisorHostedCapabilityState,
   AdvisorHostedCredentialStatus,
   AdvisorHostedEnvelope,
   AdvisorHostedEvent,
   AdvisorHostedModel,
+  AdvisorHostedModelCapabilities,
   AdvisorHostedProbe,
   AdvisorHostedProviderId,
-  AdvisorHostedToolCall,
-  AdvisorHostedToolDefinition,
   AdvisorHostedUsage,
   CredentialReader,
   CredentialStatusReader,
   EventEmitter,
   FetchLike,
 } from './advisor-provider-contract'
+import { bodyFor, finalizeOpenToolCalls, protocolAdapter, streamState } from './advisor-provider-adapters'
 export type {
   AdvisorHostedChatMessage,
   AdvisorHostedChatRequest,
   AdvisorHostedChatResult,
+  AdvisorHostedCapabilityState,
   AdvisorHostedCredentialStatus,
   AdvisorHostedEnvelope,
   AdvisorHostedEvent,
   AdvisorHostedModel,
+  AdvisorHostedModelCapabilities,
   AdvisorHostedModelState,
   AdvisorHostedProbe,
+  AdvisorHostedProtocol,
   AdvisorHostedProviderId,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
@@ -41,40 +45,24 @@ const {
   MAX_MODEL_PAGE_SIZE,
   MAX_MODEL_PAGES,
   MAX_PAGE_TOKEN_BYTES,
-  MAX_REQUEST_BYTES,
   MAX_RESPONSE_BYTES,
   MAX_SSE_EVENTS,
-  MAX_TEXT_BYTES,
-  MAX_TOOL_ARGUMENT_BYTES,
   MAX_TOOL_CALLS,
-  MAX_TOOLS,
   PROBE_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
-  TOOL_NAMES,
   authHeaders,
   boundedJson,
   boundedString,
-  byteLength,
-  emitToolCall,
   emitUsage,
   fetchResponse,
   isRecord,
-  mergeUsage,
-  normalizeToolCall,
   normalizeTools,
-  numberOrNull,
-  providerHttpError,
   providerUrl,
-  readBoundedText,
   readJson,
   requestHeaders,
   safeError,
   safeModelLabel,
   statusCheck,
-  throwIfAborted,
-  toolArguments,
-  toolName,
-  usageFrom,
   validModel,
   validProvider,
   validRequestId,
@@ -107,65 +95,71 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
     },
   }
 }
-function openAiTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
-  return tools.map(tool => ({ type: 'function', name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), ...(tool.function.parameters ? { parameters: tool.function.parameters } : {}) }))
-}
-function anthropicTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
-  return tools.map(tool => ({ name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), input_schema: tool.function.parameters ?? { type: 'object', properties: {}, additionalProperties: false } }))
-}
-function geminiTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
-  return tools.length ? [{ functionDeclarations: tools.map(tool => ({ name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), parameters: tool.function.parameters ?? { type: 'object', properties: {}, additionalProperties: false } })) }] : []
-}
-function openAiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
-  const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const input: Array<Record<string, unknown>> = []
-  for (const message of request.messages) {
-    if (message.role === 'system') continue
-    input.push({ role: message.role, content: message.content })
-  }
-  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), stream: request.stream === true, store: false }
-}
-function anthropicBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
-  const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const messages = request.messages.filter(message => message.role !== 'system').map(message => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }))
-  return { model: request.model, max_tokens: 2048, ...(system ? { system } : {}), messages, ...(request.tools?.length ? { tools: anthropicTools(request.tools) } : {}), stream: request.stream === true }
-}
-function geminiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
-  const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const contents = request.messages.filter(message => message.role !== 'system').map(message => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }))
-  return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(request.tools?.length ? { tools: geminiTools(request.tools) } : {}) }
-}
-function bodyFor(provider: AdvisorHostedProviderId, request: AdvisorHostedChatRequest): Record<string, unknown> {
-  if (provider === 'openai') return openAiBody(request)
-  if (provider === 'anthropic') return anthropicBody(request)
-  return geminiBody(request)
+function baseCapabilities(toolCall: AdvisorHostedCapabilityState = 'supported'): AdvisorHostedModelCapabilities {
+  return { conversational: 'available', streaming: 'supported', toolCall }
 }
 
+function unsupportedCapabilities(): AdvisorHostedModelCapabilities {
+  return { conversational: 'unavailable', streaming: 'unsupported', toolCall: 'unsupported' }
+}
 
 function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, unknown>, models: AdvisorHostedModel[], seen: Set<string>): string | null {
-  const rows = provider === 'gemini' ? payload.models : payload.data
+  const kind = DESCRIPTORS[provider].modelListKind
+  const rows = kind === 'gemini' ? payload.models : payload.data
   if (!Array.isArray(rows)) throw new HostedAdapterError('response-malformed', 'The provider model listing was malformed.')
   for (const row of rows) {
     if (!isRecord(row)) continue
-    const id = provider === 'gemini' ? row.name : row.id
+    const id = kind === 'gemini' ? row.name : row.id
     if (!validModel(id) || seen.has(id)) continue
-    const display = provider === 'anthropic' ? row.display_name : provider === 'gemini' ? row.displayName : id
+    const display = kind === 'anthropic' ? row.display_name : kind === 'gemini' ? row.displayName : kind === 'openrouter' ? row.name : id
     const label = typeof display === 'string' && display.length <= 160 ? display : safeModelLabel(id)
-    const methods = provider === 'gemini' && Array.isArray(row.supportedGenerationMethods)
+    const methods = kind === 'gemini' && Array.isArray(row.supportedGenerationMethods)
       ? row.supportedGenerationMethods.filter(item => typeof item === 'string')
       : []
-    const supported = provider !== 'gemini' || methods.length === 0 || methods.includes('generateContent')
+    const protocol = DESCRIPTORS[provider].protocolForModel(id)
+    const supported = kind !== 'gemini' || methods.length === 0 || methods.includes('generateContent')
+    const openRouterParameters = kind === 'openrouter' && Array.isArray(row.supported_parameters)
+      ? row.supported_parameters.filter(item => typeof item === 'string')
+      : null
+    const toolCall = kind === 'openrouter'
+      ? openRouterParameters === null ? 'unknown' : openRouterParameters.includes('tools') ? 'supported' : 'unsupported'
+      : kind === 'opencode-zen' ? protocol ? 'unknown' : 'unsupported'
+        : supported ? 'supported' : 'unsupported'
+    const capabilities = supported && protocol ? baseCapabilities(toolCall as AdvisorHostedCapabilityState) : unsupportedCapabilities()
+    const state: AdvisorHostedModel['state'] = !supported
+      ? 'unsupported'
+      : kind === 'opencode-zen' && !protocol
+        ? 'unsupported'
+        : kind === 'openrouter' && toolCall === 'unsupported'
+          ? 'limited'
+          : kind === 'openrouter' && toolCall === 'unknown'
+            ? 'unverified'
+            : kind === 'opencode-zen'
+              ? 'unverified'
+              : 'discovered'
+    const limitation = !supported
+      ? 'The provider listing does not report the required text generation capability.'
+      : kind === 'opencode-zen' && !protocol
+        ? 'OpenCode Zen did not publish a reviewed protocol mapping for this model.'
+        : kind === 'openrouter' && toolCall === 'unsupported'
+          ? 'This model does not advertise tool calls; Advisor can use deterministic evidence retrieval plus hosted synthesis.'
+        : kind === 'openrouter' && toolCall === 'unknown'
+          ? 'OpenRouter did not advertise tool-call capability for this model; Advisor will use deterministic evidence retrieval plus hosted synthesis until verified.'
+          : kind === 'opencode-zen'
+            ? 'Discovered from OpenCode Zen; the model protocol is documented, but Metrora Advisor conformance and tool capability are not verified.'
+            : 'Discovered from the provider model listing; Metrora Advisor compatibility is not verified.'
     models.push({
       id,
       label,
-      state: supported ? 'discovered' : 'unsupported',
-      limitation: supported ? 'Discovered from the provider model listing; Metrora Advisor compatibility is not verified.' : 'The provider listing does not report generateContent support.',
+      state,
+      limitation,
+      capabilities,
     })
     seen.add(id)
     if (models.length >= MAX_MODELS) break
   }
-  if (provider === 'openai') return null
-  if (provider === 'anthropic') {
+  if (kind === 'openai' || kind === 'openrouter' || kind === 'opencode-zen') return null
+  if (kind === 'anthropic') {
     if (payload.has_more !== true) return null
     if (typeof payload.last_id !== 'string' || !payload.last_id.trim()) throw new HostedAdapterError('response-malformed', 'The provider model listing pagination was malformed.')
     return boundedString(payload.last_id, MAX_PAGE_TOKEN_BYTES, 'The provider model listing pagination token is too large.')
@@ -173,9 +167,14 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
   if (typeof payload.nextPageToken !== 'string' || !payload.nextPageToken.trim()) return null
   return boundedString(payload.nextPageToken, MAX_PAGE_TOKEN_BYTES, 'The provider model listing pagination token is too large.')
 }
-function providerDetail(provider: AdvisorHostedProviderId): string {
-  return provider === 'openai' ? 'OpenAI is reachable.' : provider === 'anthropic' ? 'Anthropic is reachable.' : 'Google Gemini is reachable.'
+const PROVIDER_LABELS: Record<AdvisorHostedProviderId, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  gemini: 'Google Gemini',
+  openrouter: 'OpenRouter',
+  'opencode-zen': 'OpenCode Zen',
 }
+function providerDetail(provider: AdvisorHostedProviderId): string { return PROVIDER_LABELS[provider] + ' is reachable.' }
 function credentialDetail(status: AdvisorHostedCredentialStatus): string {
   if (status.state === 'not-configured') return 'Add your provider credential to use hosted Advisor.'
   if (status.state === 'locked-unavailable') return 'Secure credential storage is unavailable on this device.'
@@ -184,169 +183,6 @@ function credentialDetail(status: AdvisorHostedCredentialStatus): string {
   return 'The provider credential is unavailable.'
 }
 
-type StreamState = {
-  content: string
-  calls: AdvisorHostedToolCall[]
-  usage: AdvisorHostedUsage | null
-  openCalls: Map<string, { id: string; name: string; arguments: string }>
-  openCallKeys: Map<string, string>
-  completedCalls: Set<string>
-}
-function streamState(): StreamState {
-  return { content: '', calls: [], usage: null, openCalls: new Map(), openCallKeys: new Map(), completedCalls: new Set() }
-}
-function appendText(state: StreamState, requestId: string, provider: AdvisorHostedProviderId, model: string, value: unknown, emit: EventEmitter): void {
-  if (typeof value !== 'string' || !value) return
-  if (byteLength(state.content + value) > MAX_TEXT_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-  state.content += value
-  emit({ requestId, provider, model, kind: 'text-delta', text: value })
-}
-function appendToolDelta(state: StreamState, requestId: string, provider: AdvisorHostedProviderId, model: string, key: string, value: unknown, emit: EventEmitter): void {
-  if (typeof value !== 'string' || !value) return
-  const id = state.openCallKeys.get(key) ?? key
-  const current = state.openCalls.get(id)
-  if (!current) throw new HostedAdapterError('tool-malformed', 'The provider returned a tool delta without a tool call.')
-  if (byteLength(current.arguments + value) > MAX_TOOL_ARGUMENT_BYTES) throw new HostedAdapterError('tool-malformed', 'The provider returned oversized tool arguments.')
-  current.arguments += value
-  emit({ requestId, provider, model, kind: 'tool-call-delta', callId: id, delta: value })
-}
-function completeTool(state: StreamState, requestId: string, provider: AdvisorHostedProviderId, model: string, key: string, name: unknown, args: unknown, emit: EventEmitter): void {
-  const id = state.openCallKeys.get(key) ?? key
-  if (state.completedCalls.has(id)) throw new HostedAdapterError('tool-malformed', 'The provider completed a tool call more than once.')
-  const current = state.openCalls.get(id)
-  const call = normalizeToolCall(current?.id ?? id, name ?? current?.name, args ?? current?.arguments ?? '{}')
-  state.openCalls.delete(id)
-  state.openCallKeys.delete(key)
-  state.completedCalls.add(id)
-  if (state.calls.length >= MAX_TOOL_CALLS) throw new HostedAdapterError('tool-malformed', 'The provider returned too many tool calls.')
-  state.calls.push(call)
-  emit({ requestId, provider, model, kind: 'tool-call-complete', callId: call.id, name: call.name, arguments: call.arguments })
-}
-function usageFromOpenAi(value: unknown): AdvisorHostedUsage | null {
-  if (!isRecord(value)) return null
-  return usageFrom(value.input_tokens, value.output_tokens, value.total_tokens)
-}
-function usageFromAnthropic(value: unknown): AdvisorHostedUsage | null {
-  if (!isRecord(value)) return null
-  return usageFrom(value.input_tokens, value.output_tokens)
-}
-function usageFromGemini(value: unknown): AdvisorHostedUsage | null {
-  if (!isRecord(value)) return null
-  return usageFrom(value.promptTokenCount, value.candidatesTokenCount, value.totalTokenCount)
-}
-function parseOpenAiJson(payload: Record<string, unknown>, requestId: string, model: string, emit: EventEmitter): { content: string; calls: AdvisorHostedToolCall[]; usage: AdvisorHostedUsage | null } {
-  const state = streamState()
-  if (Array.isArray(payload.output)) {
-    for (const item of payload.output) {
-      if (!isRecord(item)) continue
-      if (item.type === 'message' && Array.isArray(item.content)) {
-        for (const part of item.content) if (isRecord(part) && part.type === 'output_text') appendText(state, requestId, 'openai', model, part.text, emit)
-      }
-      if (item.type === 'function_call') {
-        const call = normalizeToolCall(item.call_id ?? item.id, item.name, item.arguments)
-        state.calls.push(call)
-        emitToolCall(call, requestId, 'openai', model, emit)
-      }
-    }
-  } else if (typeof payload.output_text === 'string') {
-    appendText(state, requestId, 'openai', model, payload.output_text, emit)
-  }
-  return { content: state.content, calls: state.calls, usage: usageFromOpenAi(payload.usage) }
-}
-function parseAnthropicJson(payload: Record<string, unknown>, requestId: string, model: string, emit: EventEmitter): { content: string; calls: AdvisorHostedToolCall[]; usage: AdvisorHostedUsage | null } {
-  const state = streamState()
-  if (Array.isArray(payload.content)) {
-    for (const block of payload.content) {
-      if (!isRecord(block)) continue
-      if (block.type === 'text') appendText(state, requestId, 'anthropic', model, block.text, emit)
-      if (block.type === 'tool_use') {
-        const call = normalizeToolCall(block.id, block.name, block.input)
-        state.calls.push(call)
-        emitToolCall(call, requestId, 'anthropic', model, emit)
-      }
-    }
-  }
-  return { content: state.content, calls: state.calls, usage: usageFromAnthropic(payload.usage) }
-}
-function parseGeminiJson(payload: Record<string, unknown>, requestId: string, model: string, emit: EventEmitter): { content: string; calls: AdvisorHostedToolCall[]; usage: AdvisorHostedUsage | null } {
-  const state = streamState()
-  const candidates = Array.isArray(payload.candidates) ? payload.candidates : []
-  for (const candidate of candidates) {
-    if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) continue
-    for (const part of candidate.content.parts) {
-      if (!isRecord(part)) continue
-      if (typeof part.text === 'string') appendText(state, requestId, 'gemini', model, part.text, emit)
-      if (isRecord(part.functionCall)) {
-        const call = normalizeToolCall(part.functionCall.id ?? 'gemini-tool-' + state.calls.length, part.functionCall.name, part.functionCall.args)
-        state.calls.push(call)
-        emitToolCall(call, requestId, 'gemini', model, emit)
-      }
-    }
-  }
-  return { content: state.content, calls: state.calls, usage: usageFromGemini(payload.usageMetadata) }
-}
-function parseJsonByProvider(provider: AdvisorHostedProviderId, payload: Record<string, unknown>, requestId: string, model: string, emit: EventEmitter): { content: string; calls: AdvisorHostedToolCall[]; usage: AdvisorHostedUsage | null } {
-  if (provider === 'openai') return parseOpenAiJson(payload, requestId, model, emit)
-  if (provider === 'anthropic') return parseAnthropicJson(payload, requestId, model, emit)
-  return parseGeminiJson(payload, requestId, model, emit)
-}
-function parseOpenAiStream(payload: Record<string, unknown>, state: StreamState, requestId: string, model: string, emit: EventEmitter): void {
-  if (payload.type === 'response.output_text.delta') appendText(state, requestId, 'openai', model, payload.delta, emit)
-  else if (payload.type === 'response.output_item.added' && isRecord(payload.item) && payload.item.type === 'function_call') {
-    const itemId = boundedString(payload.item.id, 128, 'The provider returned an invalid tool call item id.')
-    const id = boundedString(payload.item.call_id, 128, 'The provider returned an invalid tool call id.')
-    const name = toolName(payload.item.name)
-    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
-    if (state.openCalls.has(id)) throw new HostedAdapterError('tool-malformed', 'The provider returned a duplicate tool call.')
-    state.openCalls.set(id, { id, name, arguments: '' })
-    state.openCallKeys.set(itemId, id)
-    emit({ requestId, provider: 'openai', model, kind: 'tool-call-start', callId: id, name })
-  } else if (payload.type === 'response.function_call_arguments.delta') {
-    appendToolDelta(state, requestId, 'openai', model, boundedString(payload.item_id, 128, 'The provider returned an invalid tool call id.'), payload.delta, emit)
-  } else if (payload.type === 'response.function_call_arguments.done') {
-    completeTool(state, requestId, 'openai', model, boundedString(payload.item_id, 128, 'The provider returned an invalid tool call id.'), payload.name, payload.arguments, emit)
-  } else if (payload.type === 'response.completed' && isRecord(payload.response)) {
-    state.usage = mergeUsage(state.usage, usageFromOpenAi(payload.response.usage))
-  }
-}
-function parseAnthropicStream(payload: Record<string, unknown>, state: StreamState, requestId: string, model: string, emit: EventEmitter): void {
-  if (payload.type === 'content_block_start' && isRecord(payload.content_block) && payload.content_block.type === 'tool_use') {
-    const key = String(payload.index)
-    const id = boundedString(payload.content_block.id, 128, 'The provider returned an invalid tool call id.')
-    const name = toolName(payload.content_block.name)
-    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
-    state.openCalls.set(id, { id, name, arguments: '' })
-    state.openCallKeys.set(key, id)
-    emit({ requestId, provider: 'anthropic', model, kind: 'tool-call-start', callId: id, name })
-  } else if (payload.type === 'content_block_delta' && isRecord(payload.delta)) {
-    if (payload.delta.type === 'text_delta') appendText(state, requestId, 'anthropic', model, payload.delta.text, emit)
-    else if (payload.delta.type === 'input_json_delta') appendToolDelta(state, requestId, 'anthropic', model, String(payload.index), payload.delta.partial_json, emit)
-  } else if (payload.type === 'message_start' && isRecord(payload.message)) {
-    state.usage = mergeUsage(state.usage, usageFromAnthropic(payload.message.usage))
-  } else if (payload.type === 'message_delta' && isRecord(payload.usage)) {
-    state.usage = mergeUsage(state.usage, usageFromAnthropic(payload.usage))
-  } else if (payload.type === 'content_block_stop') {
-    const key = String(payload.index)
-    if (!state.openCallKeys.has(key)) return
-    completeTool(state, requestId, 'anthropic', model, String(payload.index), undefined, undefined, emit)
-  }
-}
-function parseGeminiStream(payload: Record<string, unknown>, state: StreamState, requestId: string, model: string, emit: EventEmitter): void {
-  const parsed = parseGeminiJson(payload, requestId, model, emit)
-  state.content += parsed.content
-  if (byteLength(state.content) > MAX_TEXT_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-  state.usage = mergeUsage(state.usage, parsed.usage)
-  for (const call of parsed.calls) {
-    if (!state.calls.some(existing => existing.id === call.id && existing.name === call.name)) state.calls.push(call)
-  }
-}
-
-
-function parseStreamByProvider(provider: AdvisorHostedProviderId, payload: Record<string, unknown>, state: StreamState, requestId: string, model: string, emit: EventEmitter): void {
-  if (provider === 'openai') parseOpenAiStream(payload, state, requestId, model, emit)
-  else if (provider === 'anthropic') parseAnthropicStream(payload, state, requestId, model, emit)
-  else parseGeminiStream(payload, state, requestId, model, emit)
-}
 function parseSseLine(line: string, data: string[]): void {
   if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
 }
@@ -398,10 +234,10 @@ async function discover(provider: AdvisorHostedProviderId, secret: string, fetch
   let nextToken: string | null = null
   for (let page = 0; page < MAX_MODEL_PAGES && models.length < MAX_MODELS; page += 1) {
     const url = new URL(descriptor.modelsPath, descriptor.origin)
-    if (provider === 'anthropic') {
+    if (descriptor.modelListKind === 'anthropic') {
       url.searchParams.set('limit', String(MAX_MODEL_PAGE_SIZE))
       if (nextToken) url.searchParams.set('after_id', nextToken)
-    } else if (provider === 'gemini') {
+    } else if (descriptor.modelListKind === 'gemini') {
       url.searchParams.set('pageSize', String(MAX_MODEL_PAGE_SIZE))
       if (nextToken) url.searchParams.set('pageToken', nextToken)
     }
@@ -417,10 +253,13 @@ async function discover(provider: AdvisorHostedProviderId, secret: string, fetch
 }
 async function hostedChat(provider: AdvisorHostedProviderId, secret: string, requestId: string, request: AdvisorHostedChatRequest, fetchImpl: FetchLike, emit: EventEmitter, parent?: AbortSignal): Promise<AdvisorHostedChatResult> {
   const stream = request.stream === true
-  const result = await fetchResponse(fetchImpl, providerUrl(provider, DESCRIPTORS[provider].chatPath(request.model, stream)), {
+  const protocol = DESCRIPTORS[provider].protocolForModel(request.model)
+  if (!protocol) throw new HostedAdapterError('model-unavailable', 'The selected provider model has no approved Advisor protocol.')
+   const adapter = protocolAdapter(protocol)
+  const result = await fetchResponse(fetchImpl, providerUrl(provider, DESCRIPTORS[provider].chatPath(request.model, stream, protocol)), {
     method: 'POST',
-    headers: requestHeaders(provider, secret, stream),
-    body: boundedJson(bodyFor(provider, request), 'Advisor hosted request exceeded the safety limit.'),
+    headers: requestHeaders(provider, secret, stream, protocol),
+    body: boundedJson(bodyFor(provider, protocol, request), 'Advisor hosted request exceeded the safety limit.'),
   }, REQUEST_TIMEOUT_MS, parent)
   emit({ requestId, provider, model: request.model, kind: 'started' })
   try {
@@ -429,10 +268,11 @@ async function hostedChat(provider: AdvisorHostedProviderId, secret: string, req
     let usage: AdvisorHostedUsage | null = null
     const contentType = result.response.headers.get('content-type') ?? ''
     if (stream && (!contentType || contentType.includes('text/event-stream'))) {
-      await readSse(result.response, payload => parseStreamByProvider(provider, payload, state, requestId, request.model, emit))
+      await readSse(result.response, payload => adapter.parseStream(payload, state, provider, requestId, request.model, emit))
+      if (protocol === 'openai-chat') finalizeOpenToolCalls(state, provider, requestId, request.model, emit)
       usage = state.usage
     } else {
-      const parsed = parseJsonByProvider(provider, await readJson(result.response), requestId, request.model, emit)
+      const parsed = adapter.parseJson(await readJson(result.response), provider, requestId, request.model, emit)
       state.content = parsed.content
       state.calls = parsed.calls
       usage = parsed.usage
@@ -528,4 +368,17 @@ export const advisorHostedProviderDescriptors = {
   openai: { origin: DESCRIPTORS.openai.origin, modelsPath: DESCRIPTORS.openai.modelsPath, chatPath: '/v1/responses' },
   anthropic: { origin: DESCRIPTORS.anthropic.origin, modelsPath: DESCRIPTORS.anthropic.modelsPath, chatPath: '/v1/messages', anthropicVersion: ANTHROPIC_VERSION },
   gemini: { origin: DESCRIPTORS.gemini.origin, modelsPath: DESCRIPTORS.gemini.modelsPath, chatPath: '/v1beta/models/{model}:generateContent', streamPath: '/v1beta/models/{model}:streamGenerateContent?alt=sse' },
+  openrouter: { origin: DESCRIPTORS.openrouter.origin, modelsPath: DESCRIPTORS.openrouter.modelsPath, chatPath: '/api/v1/chat/completions', protocol: 'openai-chat' as const },
+  'opencode-zen': {
+    origin: DESCRIPTORS['opencode-zen'].origin,
+    modelsPath: DESCRIPTORS['opencode-zen'].modelsPath,
+    modelProtocol: 'per-model' as const,
+    chatPaths: {
+      responses: '/zen/v1/responses',
+      messages: '/zen/v1/messages',
+      chat: '/zen/v1/chat/completions',
+      gemini: '/zen/v1/models/{model}:generateContent',
+      geminiStream: '/zen/v1/models/{model}:streamGenerateContent?alt=sse',
+    },
+  },
 } as const

@@ -4,7 +4,20 @@ import type { AdvisorCredentialProvider, AdvisorCredentialState } from './adviso
 export type AdvisorHostedProviderId = AdvisorCredentialProvider
 export type AdvisorHostedCredentialStatus = { provider: AdvisorHostedProviderId; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
-export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null }
+export type AdvisorHostedProtocol = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'
+export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
+export type AdvisorHostedModelCapabilities = {
+  conversational: 'available' | 'unavailable'
+  streaming: 'supported' | 'unsupported' | 'unknown'
+  toolCall: AdvisorHostedCapabilityState
+}
+export type AdvisorHostedModel = {
+  id: string
+  label: string
+  state: AdvisorHostedModelState
+  limitation: string | null
+  capabilities?: AdvisorHostedModelCapabilities
+}
 export type AdvisorHostedProbe = { provider: AdvisorHostedProviderId; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
 export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
 export type AdvisorHostedToolCall = { id: string; name: string; arguments: string }
@@ -38,6 +51,14 @@ export type FetchLike = typeof fetch
 export type CredentialReader = (provider: AdvisorHostedProviderId) => Promise<string | null>
 export type CredentialStatusReader = (provider: AdvisorHostedProviderId) => Promise<AdvisorHostedCredentialStatus>
 export type EventEmitter = (event: AdvisorHostedEvent) => void
+export type AdvisorHostedModelListKind = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
+export type AdvisorHostedProviderDescriptor = {
+  origin: string
+  modelsPath: string
+  modelListKind: AdvisorHostedModelListKind
+  protocolForModel: (model: string) => AdvisorHostedProtocol | null
+  chatPath: (model: string, stream: boolean, protocol: AdvisorHostedProtocol) => string
+}
 
 export const MAX_REQUEST_BYTES = 128 * 1024
 export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -64,13 +85,45 @@ export const TOOL_NAMES = new Set([
   'get_coverage_report',
 ])
 
-export const DESCRIPTORS: Record<AdvisorHostedProviderId, { origin: string; modelsPath: string; chatPath: (model: string, stream: boolean) => string }> = {
-  openai: { origin: 'https://api.openai.com', modelsPath: '/v1/models', chatPath: () => '/v1/responses' },
-  anthropic: { origin: 'https://api.anthropic.com', modelsPath: '/v1/models', chatPath: () => '/v1/messages' },
+function openCodeZenProtocol(model: string): AdvisorHostedProtocol | null {
+  const id = model.replace(/^models\//u, '')
+  if (/^(?:gpt-|grok-|muse-spark)/u.test(id)) return 'openai-responses'
+  if (/^(?:claude-|qwen3)/u.test(id)) return 'anthropic-messages'
+  if (/^gemini-/u.test(id)) return 'gemini-content'
+  if (/^(?:deepseek-|minimax-|glm-|kimi-|big-pickle$|mimo-.*-free$|hy3-free$|nemotron-.*-free$|laguna-.*-free$|x-preview-f-free$)/u.test(id)) return 'openai-chat'
+  return null
+}
+
+function openCodeZenChatPath(model: string, stream: boolean, protocol: AdvisorHostedProtocol): string {
+  if (protocol === 'openai-responses') return '/zen/v1/responses'
+  if (protocol === 'anthropic-messages') return '/zen/v1/messages'
+  if (protocol === 'openai-chat') return '/zen/v1/chat/completions'
+  return '/zen/v1/models/' + encodeURIComponent(model.replace(/^models\//u, '')) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent')
+}
+
+export const DESCRIPTORS: Record<AdvisorHostedProviderId, AdvisorHostedProviderDescriptor> = {
+  openai: { origin: 'https://api.openai.com', modelsPath: '/v1/models', modelListKind: 'openai', protocolForModel: () => 'openai-responses', chatPath: () => '/v1/responses' },
+  anthropic: { origin: 'https://api.anthropic.com', modelsPath: '/v1/models', modelListKind: 'anthropic', protocolForModel: () => 'anthropic-messages', chatPath: () => '/v1/messages' },
   gemini: {
     origin: 'https://generativelanguage.googleapis.com',
     modelsPath: '/v1beta/models',
+    modelListKind: 'gemini',
+    protocolForModel: () => 'gemini-content',
     chatPath: (model, stream) => '/v1beta/models/' + encodeURIComponent(model.replace(/^models\//u, '')) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'),
+  },
+  openrouter: {
+    origin: 'https://openrouter.ai',
+    modelsPath: '/api/v1/models?output_modalities=text',
+    modelListKind: 'openrouter',
+    protocolForModel: () => 'openai-chat',
+    chatPath: () => '/api/v1/chat/completions',
+  },
+  'opencode-zen': {
+    origin: 'https://opencode.ai',
+    modelsPath: '/zen/v1/models',
+    modelListKind: 'opencode-zen',
+    protocolForModel: openCodeZenProtocol,
+    chatPath: openCodeZenChatPath,
   },
 }
 
@@ -84,7 +137,9 @@ export function boundedString(value: unknown, limit: number, label: string): str
   if (typeof value !== 'string' || !value.trim() || byteLength(value) > limit) throw new HostedAdapterError('request-malformed', label)
   return value
 }
-export function validProvider(value: unknown): value is AdvisorHostedProviderId { return value === 'openai' || value === 'anthropic' || value === 'gemini' }
+export function validProvider(value: unknown): value is AdvisorHostedProviderId {
+  return value === 'openai' || value === 'anthropic' || value === 'gemini' || value === 'openrouter' || value === 'opencode-zen'
+}
 export function validRequestId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(value) }
 export function validModel(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u.test(value) }
 export function safeModelLabel(value: string): string { return value.replace(/^models\//u, '') }
@@ -117,13 +172,14 @@ export function providerUrl(provider: AdvisorHostedProviderId, path: string): st
   if (url.protocol !== 'https:' || url.origin !== DESCRIPTORS[provider].origin) throw new HostedAdapterError('provider-unavailable', 'The provider endpoint is not approved.')
   return url.toString()
 }
-export function authHeaders(provider: AdvisorHostedProviderId, secret: string): Record<string, string> {
-  if (provider === 'openai') return { Authorization: 'Bearer ' + secret }
-  if (provider === 'anthropic') return { 'x-api-key': secret, 'anthropic-version': ANTHROPIC_VERSION }
-  return { 'x-goog-api-key': secret }
+export function authHeaders(provider: AdvisorHostedProviderId, secret: string, protocol?: AdvisorHostedProtocol): Record<string, string> {
+  const resolved = protocol ?? DESCRIPTORS[provider].protocolForModel('')
+  if (resolved === 'anthropic-messages') return { 'x-api-key': secret, 'anthropic-version': ANTHROPIC_VERSION }
+  if (resolved === 'gemini-content') return { 'x-goog-api-key': secret }
+  return { Authorization: 'Bearer ' + secret }
 }
-export function requestHeaders(provider: AdvisorHostedProviderId, secret: string, stream: boolean): Record<string, string> {
-  return { Accept: stream ? 'text/event-stream' : 'application/json', 'Content-Type': 'application/json', ...authHeaders(provider, secret) }
+export function requestHeaders(provider: AdvisorHostedProviderId, secret: string, stream: boolean, protocol?: AdvisorHostedProtocol): Record<string, string> {
+  return { Accept: stream ? 'text/event-stream' : 'application/json', 'Content-Type': 'application/json', ...authHeaders(provider, secret, protocol) }
 }
 export function timeoutRequest(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController()

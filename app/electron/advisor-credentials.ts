@@ -2,7 +2,7 @@ import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { atomicWriteSecureFile, readSecureFile } from './quota/security'
 
-export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini'
+export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 
@@ -22,7 +22,7 @@ export type AdvisorCredentialFileSystem = {
 const FILE_VERSION = 1 as const
 const MAX_SECRET_BYTES = 16 * 1024
 const MAX_CREDENTIAL_FILE_BYTES = 64 * 1024
-const PROVIDERS: readonly AdvisorCredentialProvider[] = ['openai', 'anthropic', 'gemini']
+const PROVIDERS: readonly AdvisorCredentialProvider[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen']
 
 type CredentialFile = { version: typeof FILE_VERSION; records: Partial<Record<AdvisorCredentialProvider, string>> }
 

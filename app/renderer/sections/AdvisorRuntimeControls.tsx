@@ -80,7 +80,7 @@ export function createHostedProbeChecking(provider: HostedAdvisorProbeResult['pr
 function hostedRuntimeStatusKind(probe: AdvisorHostedProbePresentation, model: AdvisorHostedModel | null): AdvisorRuntimeStatusKind {
   if (probe.reachability === 'checking') return 'checking'
   if (probe.reachability === 'unknown') return probe.credentialState === 'unknown' ? 'unknown' : 'unavailable'
-  if (probe.credentialState !== 'ready' || probe.reachability !== 'reachable' || !model) return 'unavailable'
+  if (probe.credentialState !== 'ready' || probe.reachability !== 'reachable' || !model || model.capabilities?.conversational === 'unavailable') return 'unavailable'
   if (model.state === 'verified') return 'ready'
   if (model.state === 'discovered' || model.state === 'unverified' || model.state === 'limited') return 'unknown'
   return 'unavailable'
@@ -194,13 +194,14 @@ export function AdvisorRuntimeControls({
             <button type="button" className="advisor-quiet-button" onClick={onActivateLocal}>Use local runtime</button>
           </div>
           <div className="advisor-runtime-picker-row">
-            <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => onHostedProviderChange(event.target.value as AdvisorHostedProviderId)}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
+            <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => onHostedProviderChange(event.target.value as AdvisorHostedProviderId)}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="opencode-zen">OpenCode Zen</option></select></label>
             {selectableHostedModels.length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? selectableHostedModels[0]!.id} onChange={event => onHostedModelChange(event.target.value)}>{selectableHostedModels.map(model => <option key={model.id} value={model.id}>{model.label} · {modelStateLabel(model.state)}</option>)}</select></label> : null}
           </div>
           <div className="advisor-runtime-state-grid" aria-label="Hosted runtime state">
             <span data-state="credential">Credential: {credentialStateLabel(hostedProbe.credentialState)}</span>
             <span data-state="reachability">Reachability: {reachabilityLabel(hostedProbe.reachability)}</span>
             <span data-state="model">Model: {modelStateLabel(hostedModelState)}</span>
+            <span data-state="tool-call">Tool calls: {stateLabel(selectedHostedModel?.capabilities?.toolCall ?? 'unknown')}</span>
           </div>
           {hostedProbe.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Advisor provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => onCredentialEntryChange(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={onSaveHostedCredential} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={onClearHostedCredential}>Remove key</button>}
           {hasHostedRuntime ? <label className="advisor-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => onHostedConsentChange(event.target.checked)} /><span>Before the first hosted investigation, send this question and minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</span></label> : <p className="advisor-consent-unavailable">Consent appears after a usable hosted model is available. It is always explicit and starts unchecked.</p>}
@@ -227,5 +228,7 @@ export function AdvisorRuntimeControls({
 function hostedProviderLabel(provider: AdvisorHostedProviderId): string {
   if (provider === 'openai') return 'OpenAI'
   if (provider === 'anthropic') return 'Anthropic'
-  return 'Gemini'
+  if (provider === 'gemini') return 'Gemini'
+  if (provider === 'openrouter') return 'OpenRouter'
+  return 'OpenCode Zen'
 }
