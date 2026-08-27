@@ -95,8 +95,12 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
     },
   }
 }
-function baseCapabilities(toolCall: AdvisorHostedCapabilityState = 'supported'): AdvisorHostedModelCapabilities {
-  return { conversational: 'available', streaming: 'supported', toolCall }
+function baseCapabilities(
+  conversational: AdvisorHostedModelCapabilities['conversational'] = 'unknown',
+  streaming: AdvisorHostedModelCapabilities['streaming'] = 'unknown',
+  toolCall: AdvisorHostedCapabilityState = 'unknown',
+): AdvisorHostedModelCapabilities {
+  return { conversational, streaming, toolCall }
 }
 
 function unsupportedCapabilities(): AdvisorHostedModelCapabilities {
@@ -121,11 +125,18 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
     const openRouterParameters = kind === 'openrouter' && Array.isArray(row.supported_parameters)
       ? row.supported_parameters.filter(item => typeof item === 'string')
       : null
+    const openRouterToolsAdvertised = openRouterParameters?.includes('tools') === true
+    const conversational: AdvisorHostedModelCapabilities['conversational'] = kind === 'gemini'
+      ? methods.length === 0 ? 'unknown' : supported ? 'available' : 'unavailable'
+      : kind === 'openrouter' || kind === 'opencode-zen' ? 'available' : 'unknown'
+    const streaming: AdvisorHostedModelCapabilities['streaming'] = kind === 'gemini'
+      ? methods.length === 0 ? 'unknown' : methods.includes('streamGenerateContent') ? 'supported' : 'unsupported'
+      : 'unknown'
     const toolCall = kind === 'openrouter'
-      ? openRouterParameters === null ? 'unknown' : openRouterParameters.includes('tools') ? 'supported' : 'unsupported'
+      ? openRouterParameters === null ? 'unknown' : openRouterToolsAdvertised ? 'unknown' : 'unsupported'
       : kind === 'opencode-zen' ? protocol ? 'unknown' : 'unsupported'
-        : supported ? 'supported' : 'unsupported'
-    const capabilities = supported && protocol ? baseCapabilities(toolCall as AdvisorHostedCapabilityState) : unsupportedCapabilities()
+        : 'unknown'
+    const capabilities = supported && protocol ? baseCapabilities(conversational, streaming, toolCall as AdvisorHostedCapabilityState) : unsupportedCapabilities()
     const state: AdvisorHostedModel['state'] = !supported
       ? 'unsupported'
       : kind === 'opencode-zen' && !protocol
@@ -144,7 +155,9 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
         : kind === 'openrouter' && toolCall === 'unsupported'
           ? 'This model does not advertise tool calls; Advisor can use deterministic evidence retrieval plus hosted synthesis.'
         : kind === 'openrouter' && toolCall === 'unknown'
-          ? 'OpenRouter did not advertise tool-call capability for this model; Advisor will use deterministic evidence retrieval plus hosted synthesis until verified.'
+          ? openRouterToolsAdvertised
+            ? 'This model advertises tool calls, but Metrora Advisor conformance is not verified; deterministic evidence retrieval remains authoritative.'
+            : 'OpenRouter did not report tool-call capability for this model; Advisor will use deterministic evidence retrieval plus hosted synthesis until verified.'
           : kind === 'opencode-zen'
             ? 'Discovered from OpenCode Zen; the model protocol is documented, but Metrora Advisor conformance and tool capability are not verified.'
             : 'Discovered from the provider model listing; Metrora Advisor compatibility is not verified.'
@@ -175,6 +188,12 @@ const PROVIDER_LABELS: Record<AdvisorHostedProviderId, string> = {
   'opencode-zen': 'OpenCode Zen',
 }
 function providerDetail(provider: AdvisorHostedProviderId): string { return PROVIDER_LABELS[provider] + ' is reachable.' }
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Advisor request cancelled.')
+  error.name = 'AbortError'
+  throw error
+}
 function credentialDetail(status: AdvisorHostedCredentialStatus): string {
   if (status.state === 'not-configured') return 'Add your provider credential to use hosted Advisor.'
   if (status.state === 'locked-unavailable') return 'Secure credential storage is unavailable on this device.'
@@ -269,7 +288,7 @@ async function hostedChat(provider: AdvisorHostedProviderId, secret: string, req
     const contentType = result.response.headers.get('content-type') ?? ''
     if (stream && (!contentType || contentType.includes('text/event-stream'))) {
       await readSse(result.response, payload => adapter.parseStream(payload, state, provider, requestId, request.model, emit))
-      if (protocol === 'openai-chat') finalizeOpenToolCalls(state, provider, requestId, request.model, emit)
+      if (protocol !== 'gemini-content') finalizeOpenToolCalls(state, provider, requestId, request.model, emit, protocol !== 'openai-chat')
       usage = state.usage
     } else {
       const parsed = adapter.parseJson(await readJson(result.response), provider, requestId, request.model, emit)
@@ -309,15 +328,18 @@ export function createAdvisorHostedHandlers(options: {
       if (!validProvider(providerValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor hosted provider is invalid.' } }
       if (requestIdValue !== undefined && !validRequestId(requestIdValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor request id is invalid.' } }
       const probeRequestId = typeof requestIdValue === 'string' ? requestIdValue : null
-      let status: AdvisorHostedCredentialStatus
-      try { status = await options.credentialStatus(providerValue) } catch { status = { provider: providerValue, state: 'locked-unavailable' } }
-      if (status.state !== 'ready') return { ok: true, value: { provider: providerValue, available: false, models: [], detail: credentialDetail(status), credentialState: status.state } satisfies AdvisorHostedProbe }
-      let secret: string | null
-      try { secret = await options.readCredential(providerValue) } catch { secret = null }
-      if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
       const controller = probeRequestId ? new AbortController() : null
       if (controller && probeRequestId) flights.set(probeRequestId, controller)
       try {
+        throwIfCancelled(controller?.signal)
+        let status: AdvisorHostedCredentialStatus
+        try { status = await options.credentialStatus(providerValue) } catch { status = { provider: providerValue, state: 'locked-unavailable' } }
+        throwIfCancelled(controller?.signal)
+        if (status.state !== 'ready') return { ok: true, value: { provider: providerValue, available: false, models: [], detail: credentialDetail(status), credentialState: status.state } satisfies AdvisorHostedProbe }
+        let secret: string | null
+        try { secret = await options.readCredential(providerValue) } catch { secret = null }
+        throwIfCancelled(controller?.signal)
+        if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
         const models = await discover(providerValue, secret, fetchImpl, controller?.signal)
         return { ok: true, value: { provider: providerValue, available: true, models, detail: models.length ? providerDetail(providerValue) : 'The provider is reachable but returned no usable models.', credentialState: 'ready' } satisfies AdvisorHostedProbe }
       } catch (error) {
@@ -332,16 +354,19 @@ export function createAdvisorHostedHandlers(options: {
     'metrora:advisorHostedChat': async (requestIdValue: unknown, requestValue: unknown): Promise<AdvisorHostedEnvelope> => {
       let parsed: { requestId: string; request: AdvisorHostedChatRequest }
       try { parsed = parseChatRequest(requestIdValue, requestValue) } catch (error) { return fail(error, 'validation') }
-      let status: AdvisorHostedCredentialStatus
-      try { status = await options.credentialStatus(parsed.request.provider) } catch { status = { provider: parsed.request.provider, state: 'locked-unavailable' } }
-      if (status.state !== 'ready') return { ok: false, error: { kind: 'credential-unavailable', message: credentialDetail(status) } }
-      let secret: string | null
-      try { secret = await options.readCredential(parsed.request.provider) } catch { secret = null }
-      if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
       const controller = new AbortController()
       flights.set(parsed.requestId, controller)
       const emit = (event: AdvisorHostedEvent) => emitEvent({ ...event, requestId: parsed.requestId })
       try {
+        throwIfCancelled(controller.signal)
+        let status: AdvisorHostedCredentialStatus
+        try { status = await options.credentialStatus(parsed.request.provider) } catch { status = { provider: parsed.request.provider, state: 'locked-unavailable' } }
+        throwIfCancelled(controller.signal)
+        if (status.state !== 'ready') return { ok: false, error: { kind: 'credential-unavailable', message: credentialDetail(status) } }
+        let secret: string | null
+        try { secret = await options.readCredential(parsed.request.provider) } catch { secret = null }
+        throwIfCancelled(controller.signal)
+        if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
         return { ok: true, value: await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal) }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {

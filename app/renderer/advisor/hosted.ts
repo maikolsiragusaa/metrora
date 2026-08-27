@@ -32,9 +32,15 @@ const bridgeTransport: HostedAdvisorTransport = {
       signal?.removeEventListener('abort', cancel)
     }
   },
-  chat: (requestId, payload, signal) => {
+  chat: async (requestId, payload, signal) => {
     if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
-    return metrora.advisorHostedChat(requestId, payload)
+    const cancel = () => { void metrora.advisorHostedCancel(requestId).catch(() => {}) }
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      return await metrora.advisorHostedChat(requestId, payload)
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   },
   cancel: requestId => metrora.advisorHostedCancel(requestId),
   onEvent: callback => metrora.onAdvisorHostedEvent(callback),
@@ -109,7 +115,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     this.model = options.model
     this.transport = options.transport ?? bridgeTransport
     this.consent = options.consent === true
-    this.capabilities = options.capabilities ?? { conversational: 'available', streaming: 'supported', toolCall: 'supported' }
+    this.capabilities = options.capabilities ?? { conversational: 'unknown', streaming: 'unknown', toolCall: 'unknown' }
     this.supportsStreaming = this.capabilities.streaming !== 'unsupported'
     this.id = 'hosted-' + options.provider
     const providerLabel = options.provider === 'opencode-zen' ? 'OpenCode Zen' : options.provider === 'openrouter' ? 'OpenRouter' : options.provider.charAt(0).toUpperCase() + options.provider.slice(1)

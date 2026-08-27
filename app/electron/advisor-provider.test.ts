@@ -107,7 +107,7 @@ describe('Advisor hosted provider authority', () => {
     const fetchImpl = (async () => sseResponse(streamPayloads)) as typeof fetch
     const handlers = readyHandlers(fetchImpl, events)
     const result = await handlers['metrora:advisorHostedChat']!('stream-' + provider, request(provider, true)) as { ok: boolean; value: any }
-    expect(result).toMatchObject({ ok: true, value: { message: { content: 'Measured stream.' }, streamed: true } })
+    expect(result).toMatchObject({ ok: true, value: { message: { content: 'Measured stream.' }, streamed: true, usage: { inputTokens: 2, outputTokens: 2, totalTokens: 4 } } })
     expect(events.some(event => event.kind === 'text-delta')).toBe(true)
     expect(events.some(event => event.kind === 'response.output_text.delta' as never)).toBe(false)
   })
@@ -147,6 +147,26 @@ describe('Advisor hosted provider authority', () => {
     expect(await handlers['metrora:advisorHostedCancel']!('cancel-me')).toEqual({ ok: true, value: true })
     await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
     expect(events.some(event => event.kind === 'cancelled')).toBe(true)
+  })
+  it('cancels hosted chat during credential custody before any provider request starts', async () => {
+    let markStatusStarted!: () => void
+    const statusStarted = new Promise<void>(resolve => { markStatusStarted = resolve })
+    let resolveStatus!: (value: { provider: 'openai'; state: 'ready' }) => void
+    const fetchImpl = vi.fn(async () => jsonResponse(textPayload('openai')))
+    const handlers = createAdvisorHostedHandlers({
+      fetchImpl,
+      credentialStatus: async () => {
+        markStatusStarted()
+        return await new Promise<{ provider: 'openai'; state: 'ready' }>(resolve => { resolveStatus = resolve })
+      },
+      readCredential: async () => 'synthetic-secret',
+    })
+    const pending = handlers['metrora:advisorHostedChat']!('custody-cancel', request('openai'))
+    await statusStarted
+    expect(await handlers['metrora:advisorHostedCancel']!('custody-cancel')).toEqual({ ok: true, value: true })
+    resolveStatus({ provider: 'openai', state: 'ready' })
+    await expect(pending).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
   it('cancels an in-flight hosted model probe', async () => {
     let started!: () => void
@@ -257,6 +277,16 @@ describe('Advisor hosted provider authority', () => {
     expect(events.find(event => event.kind === 'tool-call-delta')).toMatchObject({ callId: 'call-1' })
     expect(events.find(event => event.kind === 'tool-call-complete')).toMatchObject({ callId: 'call-1', arguments: '{"provider":"all"}' })
   })
+  it('rejects more than the bounded number of JSON tool calls', async () => {
+    const payload = { output: Array.from({ length: 9 }, (_, index) => ({ type: 'function_call', call_id: 'call-' + index, name: 'get_spend_snapshot', arguments: '{}' })) }
+    const result = await readyHandlers((async () => jsonResponse(payload)) as typeof fetch)['metrora:advisorHostedChat']!('too-many-json-tools', request('openai')) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'tool-malformed' } })
+  })
+  it('rejects an OpenAI Responses stream that ends with an incomplete tool call', async () => {
+    const payloads = [{ type: 'response.output_item.added', item: { id: 'item-incomplete', type: 'function_call', call_id: 'call-incomplete', name: 'get_spend_snapshot' } }, { type: 'response.completed', response: {} }]
+    const result = await readyHandlers((async () => sseResponse(payloads)) as typeof fetch)['metrora:advisorHostedChat']!('incomplete-response-tool', request('openai', true)) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'tool-malformed' } })
+  })
 
   it('discovers OpenRouter capabilities without treating model listing as conformance', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
@@ -269,8 +299,8 @@ describe('Advisor hosted provider authority', () => {
     }) as typeof fetch
     const result = await readyHandlers(fetchImpl)['metrora:advisorHostedProbe']!('openrouter') as { ok: boolean; value: any }
     expect(result.value.models).toEqual([
-      expect.objectContaining({ id: 'openai/gpt-5', state: 'discovered', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' } }),
-      expect.objectContaining({ id: 'openai/text-only', state: 'limited', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unsupported' } }),
+      expect.objectContaining({ id: 'openai/gpt-5', state: 'unverified', capabilities: { conversational: 'available', streaming: 'unknown', toolCall: 'unknown' } }),
+      expect.objectContaining({ id: 'openai/text-only', state: 'limited', capabilities: { conversational: 'available', streaming: 'unknown', toolCall: 'unsupported' } }),
     ])
     expect(calls[0]?.url).toContain('output_modalities=text')
     expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe('Bearer synthetic-secret')
@@ -286,7 +316,7 @@ describe('Advisor hosted provider authority', () => {
     expect(probe.value.models[0]).toEqual(expect.objectContaining({
       id: 'openai/metadata-missing',
       state: 'unverified',
-      capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' },
+      capabilities: { conversational: 'available', streaming: 'unknown', toolCall: 'unknown' },
     }))
   })
 
@@ -306,6 +336,16 @@ describe('Advisor hosted provider authority', () => {
     const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
     expect(body.messages).toEqual([{ role: 'user', content: 'What changed?' }])
     expect(body.tools).toEqual([{ type: 'function', function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }])
+  })
+  it('assigns unique bounded ids when a JSON tool call omits its provider id', async () => {
+    const fetchImpl = (async () => jsonResponse({ choices: [{ message: { tool_calls: [
+      { function: { name: 'get_spend_snapshot', arguments: '{}' } },
+      { function: { name: 'get_model_efficiency', arguments: '{}' } },
+    ] } }] })) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('openrouter-json-ids', {
+      provider: 'openrouter', model: 'openai/gpt-5', messages: [{ role: 'user', content: 'Use evidence.' }], consent: true,
+    }) as { ok: boolean; value: any }
+    expect(result.value.message.tool_calls.map((call: { id: string }) => call.id)).toEqual(['openrouter-tool-0', 'openrouter-tool-1'])
   })
 
   it('normalizes OpenRouter streamed tool calls without provider-native events', async () => {
@@ -363,15 +403,16 @@ describe('Advisor hosted provider authority', () => {
   })
 
   it('marks unknown OpenCode Zen models unsupported and fails closed before network use', async () => {
-    const probeFetch = (async () => jsonResponse({ data: [{ id: 'future-unknown-model' }, { id: 'gpt-5.6-sol' }] })) as typeof fetch
+    const probeFetch = (async () => jsonResponse({ data: [{ id: 'future-unknown-model' }, { id: 'gpt-future-model' }, { id: 'gpt-5.6-sol' }] })) as typeof fetch
     const probe = await readyHandlers(probeFetch)['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
     expect(probe.value.models).toEqual([
       expect.objectContaining({ id: 'future-unknown-model', state: 'unsupported' }),
+      expect.objectContaining({ id: 'gpt-future-model', state: 'unsupported' }),
       expect.objectContaining({ id: 'gpt-5.6-sol', state: 'unverified' }),
     ])
     const chatFetch = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'should not run' } }] }))
     const result = await readyHandlers(chatFetch as typeof fetch)['metrora:advisorHostedChat']!('zen-unknown', {
-      provider: 'opencode-zen', model: 'future-unknown-model', messages: [{ role: 'user', content: 'Do not run.' }], consent: true,
+      provider: 'opencode-zen', model: 'gpt-future-model', messages: [{ role: 'user', content: 'Do not run.' }], consent: true,
     }) as { ok: boolean; error: { kind: string } }
     expect(result).toMatchObject({ ok: false, error: { kind: 'model-unavailable' } })
     expect(chatFetch).not.toHaveBeenCalled()

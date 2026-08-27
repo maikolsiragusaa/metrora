@@ -170,7 +170,7 @@ describe('Advisor independent planning and synthesis phases', () => {
   it.each(['openai', 'anthropic', 'gemini'] as const)('%s performs the same two independent calls without tool-result replay', async provider => {
     const payloads: Array<Record<string, unknown>> = []
     const events: string[] = []
-    const runtime = new HostedAdvisorRuntime({ provider, model: provider + '-test', consent: true, transport: hostedTransport(provider, payloads, events) })
+    const runtime = new HostedAdvisorRuntime({ provider, model: provider + '-test', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport: hostedTransport(provider, payloads, events) })
     const answer = await runtime.generate({
       question: 'What changed in spend?',
       evidence,
@@ -191,7 +191,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     const payloads: Array<Record<string, unknown>> = []
     const events: string[] = []
     const controller = new AbortController()
-    const runtime = new HostedAdvisorRuntime({ provider, model: provider + '-test', consent: true, transport: hostedTransport(provider, payloads, events) })
+    const runtime = new HostedAdvisorRuntime({ provider, model: provider + '-test', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport: hostedTransport(provider, payloads, events) })
     await expect(runtime.generate({
       question: 'What changed in spend?',
       evidence,

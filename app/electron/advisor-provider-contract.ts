@@ -7,7 +7,7 @@ export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' |
 export type AdvisorHostedProtocol = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
 export type AdvisorHostedModelCapabilities = {
-  conversational: 'available' | 'unavailable'
+  conversational: 'available' | 'unavailable' | 'unknown'
   streaming: 'supported' | 'unsupported' | 'unknown'
   toolCall: AdvisorHostedCapabilityState
 }
@@ -85,20 +85,79 @@ export const TOOL_NAMES = new Set([
   'get_coverage_report',
 ])
 
-function openCodeZenProtocol(model: string): AdvisorHostedProtocol | null {
-  const id = model.replace(/^models\//u, '')
-  if (/^(?:gpt-|grok-|muse-spark)/u.test(id)) return 'openai-responses'
-  if (/^(?:claude-|qwen3)/u.test(id)) return 'anthropic-messages'
-  if (/^gemini-/u.test(id)) return 'gemini-content'
-  if (/^(?:deepseek-|minimax-|glm-|kimi-|big-pickle$|mimo-.*-free$|hy3-free$|nemotron-.*-free$|laguna-.*-free$|x-preview-f-free$)/u.test(id)) return 'openai-chat'
-  return null
+const OPENCODE_ZEN_PROTOCOLS: Readonly<Record<string, AdvisorHostedProtocol>> = {
+  'gpt-5.6-sol': 'openai-responses',
+  'gpt-5.6-terra': 'openai-responses',
+  'gpt-5.6-luna': 'openai-responses',
+  'gpt-5.5': 'openai-responses',
+  'gpt-5.5-pro': 'openai-responses',
+  'gpt-5.4': 'openai-responses',
+  'gpt-5.4-pro': 'openai-responses',
+  'gpt-5.4-mini': 'openai-responses',
+  'gpt-5.4-nano': 'openai-responses',
+  'gpt-5.3-codex': 'openai-responses',
+  'gpt-5.3-codex-spark': 'openai-responses',
+  'gpt-5.2': 'openai-responses',
+  'gpt-5.2-codex': 'openai-responses',
+  'gpt-5.1': 'openai-responses',
+  'gpt-5.1-codex': 'openai-responses',
+  'gpt-5.1-codex-max': 'openai-responses',
+  'gpt-5.1-codex-mini': 'openai-responses',
+  'gpt-5': 'openai-responses',
+  'gpt-5-codex': 'openai-responses',
+  'gpt-5-nano': 'openai-responses',
+  'claude-fable-5': 'anthropic-messages',
+  'claude-opus-5': 'anthropic-messages',
+  'claude-opus-4-8': 'anthropic-messages',
+  'claude-opus-4-7': 'anthropic-messages',
+  'claude-opus-4-6': 'anthropic-messages',
+  'claude-opus-4-5': 'anthropic-messages',
+  'claude-sonnet-5': 'anthropic-messages',
+  'claude-sonnet-4-6': 'anthropic-messages',
+  'claude-sonnet-4-5': 'anthropic-messages',
+  'claude-haiku-4-5': 'anthropic-messages',
+  'gemini-3.7-flash': 'gemini-content',
+  'gemini-3.6-flash': 'gemini-content',
+  'gemini-3.5-flash': 'gemini-content',
+  'gemini-3.5-flash-lite': 'gemini-content',
+  'gemini-3.1-pro': 'gemini-content',
+  'gemini-3-flash': 'gemini-content',
+  'grok-4.6': 'openai-responses',
+  'grok-4.5': 'openai-responses',
+  'grok-build-0.1': 'openai-responses',
+  'muse-spark-1.2': 'openai-responses',
+  'qwen3.7-max': 'anthropic-messages',
+  'qwen3.7-plus': 'anthropic-messages',
+  'qwen3.6-plus': 'anthropic-messages',
+  'qwen3.5-plus': 'anthropic-messages',
+  'deepseek-v4-pro': 'openai-chat',
+  'deepseek-v4-flash': 'openai-chat',
+  'minimax-m3': 'openai-chat',
+  'minimax-m2.7': 'openai-chat',
+  'minimax-m2.5': 'openai-chat',
+  'glm-5.2': 'openai-chat',
+  'glm-5.1': 'openai-chat',
+  'glm-5': 'openai-chat',
+  'kimi-k2.5': 'openai-chat',
+  'kimi-k2.6': 'openai-chat',
+  'kimi-k2.7-code': 'openai-chat',
+  'kimi-k3': 'openai-chat',
+  'big-pickle': 'openai-chat',
+  'mimo-v2.5-free': 'openai-chat',
+  'hy3-free': 'openai-chat',
+  'nemotron-3-ultra-free': 'openai-chat',
+  'nemotron-3.5-lightning-free': 'openai-chat',
+  'muse-spark-1.2-contributor-free': 'openai-responses',
 }
+
+function openCodeZenModelId(model: string): string { return model.replace(/^models\//u, '') }
+function openCodeZenProtocol(model: string): AdvisorHostedProtocol | null { return OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null }
 
 function openCodeZenChatPath(model: string, stream: boolean, protocol: AdvisorHostedProtocol): string {
   if (protocol === 'openai-responses') return '/zen/v1/responses'
   if (protocol === 'anthropic-messages') return '/zen/v1/messages'
   if (protocol === 'openai-chat') return '/zen/v1/chat/completions'
-  return '/zen/v1/models/' + encodeURIComponent(model.replace(/^models\//u, '')) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent')
+  return '/zen/v1/models/' + encodeURIComponent(openCodeZenModelId(model)) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent')
 }
 
 export const DESCRIPTORS: Record<AdvisorHostedProviderId, AdvisorHostedProviderDescriptor> = {
@@ -249,7 +308,10 @@ export function usageFrom(input: unknown, output: unknown, total: unknown = unde
 }
 export function mergeUsage(previous: AdvisorHostedUsage | null, next: AdvisorHostedUsage | null): AdvisorHostedUsage | null {
   if (!next) return previous
-  return { inputTokens: next.inputTokens ?? previous?.inputTokens ?? null, outputTokens: next.outputTokens ?? previous?.outputTokens ?? null, totalTokens: next.totalTokens ?? previous?.totalTokens ?? null }
+  const inputTokens = next.inputTokens ?? previous?.inputTokens ?? null
+  const outputTokens = next.outputTokens ?? previous?.outputTokens ?? null
+  const totalTokens = next.totalTokens ?? (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : previous?.totalTokens ?? null)
+  return { inputTokens, outputTokens, totalTokens }
 }
 export function emitUsage(requestId: string, provider: AdvisorHostedProviderId, model: string, usage: AdvisorHostedUsage | null, emit: EventEmitter): void {
   if (usage) emit({ requestId, provider, model, kind: 'usage', usage })
@@ -265,10 +327,11 @@ export function toolArguments(value: unknown): string {
   if (byteLength(text) > MAX_TOOL_ARGUMENT_BYTES) throw new HostedAdapterError('tool-malformed', 'The provider returned oversized tool arguments.')
   return text
 }
-export function normalizeToolCall(id: unknown, name: unknown, args: unknown): AdvisorHostedToolCall {
+export function normalizeToolCall(id: unknown, name: unknown, args: unknown, fallbackId = 'tool-call'): AdvisorHostedToolCall {
   const normalizedName = toolName(name)
   if (!normalizedName || !TOOL_NAMES.has(normalizedName)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
-  return { id: boundedString(typeof id === 'string' ? id : 'tool-call', 128, 'The provider returned an invalid tool call id.'), name: normalizedName, arguments: toolArguments(args ?? '{}') }
+  const normalizedId = typeof id === 'string' && id.trim() ? id : fallbackId
+  return { id: boundedString(normalizedId, 128, 'The provider returned an invalid tool call id.'), name: normalizedName, arguments: toolArguments(args ?? '{}') }
 }
 export function emitToolCall(call: AdvisorHostedToolCall, requestId: string, provider: AdvisorHostedProviderId, model: string, emit: EventEmitter): void {
   emit({ requestId, provider, model, kind: 'tool-call-start', callId: call.id, name: call.name })

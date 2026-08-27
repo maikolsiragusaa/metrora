@@ -21,7 +21,7 @@ describe('Hosted Advisor renderer runtime', () => {
       cancel: async () => true,
       onEvent: () => () => {},
     }
-    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport }).generate({
+    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport }).generate({
       question: 'What changed in spend?',
       evidence,
       tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
