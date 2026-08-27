@@ -154,7 +154,7 @@ export function AdvisorRuntimeControls({
   onLocalRuntimeChange,
   onLocalModelChange,
 }: AdvisorRuntimeControlsProps) {
-  const selectableHostedModels = hostedProbe.models.filter(model => model.state !== 'unsupported')
+  const selectableHostedModels = hostedProbe.models.filter(model => model.state !== 'unsupported' && model.state !== 'failed-conformance')
   const selectedHostedModel = hostedProbe.models.find(model => model.id === hostedModel) ?? null
   const hostedModelForPresentation = selectedHostedModel ?? (hostedProbe.models.length === 1 ? hostedProbe.models[0]! : null)
   const hostedModelState: AdvisorRuntimeModelState = hostedModelForPresentation?.state ?? 'unavailable'

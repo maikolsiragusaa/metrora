@@ -12,7 +12,7 @@ import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { periodLabel, scopeLabel } from '../advisor/evidence'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorPresentationBlockV1, type AdvisorPresentationChartSeries, type AdvisorScope } from '../advisor/types'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedModelState, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorPresentationBlockV1, type AdvisorPresentationChartSeries, type AdvisorScope } from '../advisor/types'
 import { AdvisorRuntimeControls, createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type AdvisorHostedProbePresentation, type AdvisorRuntimeChoice, type AdvisorRuntimeState } from './AdvisorRuntimeControls'
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
@@ -35,6 +35,9 @@ function isCancelled(error: unknown): boolean {
     return item.kind === 'cancelled' || (typeof item.message === 'string' && /cancel|abort/i.test(item.message))
   }
   return false
+}
+function isSelectableHostedModel(model: { state: AdvisorHostedModelState }): boolean {
+  return model.state !== 'unsupported' && model.state !== 'failed-conformance'
 }
 function providerLabel(provider: string): string {
   if (provider === 'all') return 'All providers'
@@ -211,6 +214,8 @@ export function Advisor({
   const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
   const [runtimeChoice, setRuntimeChoice] = useState<AdvisorRuntimeChoice>('ollama')
   const [hostedProvider, setHostedProvider] = useState<'openai' | 'anthropic' | 'gemini'>('openai')
+  const hostedProviderRef = useRef(hostedProvider)
+  hostedProviderRef.current = hostedProvider
   const [hostedModel, setHostedModel] = useState<string | null>(null)
   const hostedModelRef = useRef<string | null>(null)
   hostedModelRef.current = hostedModel
@@ -264,19 +269,24 @@ export function Advisor({
   }, [checkLocalRuntime])
 
   const hostedProbeController = useRef<AbortController | null>(null)
+  const hostedProbeRequestRef = useRef(0)
   const checkHostedRuntime = useCallback(async (requestedProvider: 'openai' | 'anthropic' | 'gemini' = hostedProvider, resetSelection = false) => {
+    if (hostedProviderRef.current !== requestedProvider) return
     hostedProbeController.current?.abort()
+    const requestId = hostedProbeRequestRef.current + 1
+    hostedProbeRequestRef.current = requestId
     const controller = new AbortController()
     hostedProbeController.current = controller
+    const isCurrentRequest = () => !controller.signal.aborted && hostedProviderRef.current === requestedProvider && hostedProbeRequestRef.current === requestId
     setHostedProbe(current => createHostedProbeChecking(requestedProvider, current))
     try {
       const result = await probeHostedAdvisor(requestedProvider, controller.signal)
-      if (controller.signal.aborted) return
+      if (!isCurrentRequest()) return
       setHostedProbe(presentHostedProbe(result))
-      const selectable = result.models.find(model => model.state !== 'unsupported')
+      const selectable = result.models.find(isSelectableHostedModel)
       if (result.available && selectable) {
         const currentModel = resetSelection ? null : hostedModelRef.current
-        const next = currentModel && result.models.some(model => model.id === currentModel && model.state !== 'unsupported') ? currentModel : selectable.id
+        const next = currentModel && result.models.some(model => model.id === currentModel && isSelectableHostedModel(model)) ? currentModel : selectable.id
         setHostedModel(next)
         if (next !== currentModel) setHostedConsent(false)
       } else {
@@ -284,7 +294,7 @@ export function Advisor({
         setHostedConsent(false)
       }
     } catch (caught) {
-      if (!isCancelled(caught)) {
+      if (isCurrentRequest() && !isCancelled(caught)) {
         setHostedModel(null)
         setHostedConsent(false)
         setHostedProbe(createHostedProbeFailure(requestedProvider))
@@ -303,6 +313,7 @@ export function Advisor({
   const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
   const [credentialEntry, setCredentialEntry] = useState('')
   const [credentialSaving, setCredentialSaving] = useState(false)
+  const credentialOperationRef = useRef(0)
   const hostedConfigRef = useRef({ runtimeChoice, hostedRuntime, hostedConsent })
   hostedConfigRef.current = { runtimeChoice, hostedRuntime, hostedConsent }
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
@@ -440,9 +451,14 @@ export function Advisor({
     setHostedConsent(consent)
   }
   const updateHostedProvider = (next: AdvisorHostedProviderId) => {
+    hostedProviderRef.current = next
+    hostedProbeRequestRef.current += 1
+    credentialOperationRef.current += 1
+    hostedProbeController.current?.abort()
     setHostedProvider(next)
     setHostedModel(null)
     setHostedConsent(false)
+    setCredentialSaving(false)
     void checkHostedRuntime(next, true)
   }
   const updateHostedModel = (model: string) => {
@@ -462,26 +478,36 @@ export function Advisor({
   }
   const saveHostedCredential = async () => {
     if (!credentialEntry.trim() || credentialSaving) return
+    const requestedProvider = hostedProvider
+    const operationId = credentialOperationRef.current + 1
+    credentialOperationRef.current = operationId
     setCredentialSaving(true)
     try {
-      const status = await metrora.advisorCredentialSet(hostedProvider, credentialEntry)
+      const status = await metrora.advisorCredentialSet(requestedProvider, credentialEntry)
+      if (credentialOperationRef.current !== operationId || hostedProviderRef.current !== requestedProvider) return
       setNotice(status.state === 'ready' ? 'Provider credential saved in protected local storage.' : 'Provider credential was not saved: ' + status.state + '.')
-      await checkHostedRuntime(hostedProvider)
+      await checkHostedRuntime(requestedProvider)
     } catch {
-      setNotice('Provider credential could not be saved. Enter it again.')
+      if (credentialOperationRef.current === operationId && hostedProviderRef.current === requestedProvider) setNotice('Provider credential could not be saved. Enter it again.')
     } finally {
-      setCredentialEntry('')
-      setCredentialSaving(false)
+      if (credentialOperationRef.current === operationId) {
+        setCredentialEntry('')
+        setCredentialSaving(false)
+      }
     }
   }
   const clearHostedCredential = async () => {
+    const requestedProvider = hostedProvider
+    const operationId = credentialOperationRef.current + 1
+    credentialOperationRef.current = operationId
     try {
-      await metrora.advisorCredentialClear(hostedProvider)
+      await metrora.advisorCredentialClear(requestedProvider)
+      if (credentialOperationRef.current !== operationId || hostedProviderRef.current !== requestedProvider) return
       setHostedConsent(false)
       setNotice('Provider credential removed from this device.')
-      await checkHostedRuntime(hostedProvider)
+      await checkHostedRuntime(requestedProvider)
     } catch {
-      setNotice('Provider credential could not be removed.')
+      if (credentialOperationRef.current === operationId && hostedProviderRef.current === requestedProvider) setNotice('Provider credential could not be removed.')
     }
   }
   const normalizedHistoryQuery = historyQuery.trim().toLowerCase()

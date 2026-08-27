@@ -8,12 +8,14 @@ import { createAdvisorContextualLaunch } from '../advisor/context'
 import type { AdvisorAnswer, AdvisorHostedModelState } from '../advisor/types'
 import { Advisor } from './Advisor'
 
-const { advisorProbe, advisorHostedProbe, investigate } = vi.hoisted(() => ({
+const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentialClear, investigate } = vi.hoisted(() => ({
   advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama') => runtime === 'lmstudio'
     ? { runtime: 'lmstudio' as const, available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered' as const, capabilities: [{ schemaVersion: 1 as const, runtime: 'lmstudio' as const, modelId: 'qwen/qwen3-8b', discovery: 'discovered' as const, conversational: 'available' as const, toolCall: 'unknown' as const, streaming: 'supported' as const, limitation: 'Tool support varies by model.' }] }
     : { available: false, models: [], detail: 'Ollama is not running.' }),
   investigate: vi.fn(),
   advisorHostedProbe: vi.fn(),
+  advisorCredentialSet: vi.fn(async (provider: 'openai' | 'anthropic' | 'gemini') => ({ provider, state: 'ready' as const })),
+  advisorCredentialClear: vi.fn(async (provider: 'openai' | 'anthropic' | 'gemini') => ({ provider, state: 'not-configured' as const })),
 }))
 vi.mock('../advisor/kernel', () => ({ createAdvisorKernel: () => ({ investigate }) }))
 vi.mock('../lib/ipc', async importOriginal => {
@@ -24,6 +26,8 @@ vi.mock('../lib/ipc', async importOriginal => {
       ...actual.metrora,
       advisorProbe,
       advisorHostedProbe,
+      advisorCredentialSet,
+      advisorCredentialClear,
       advisorChat: vi.fn(),
       advisorCancel: vi.fn(async () => false),
       onAdvisorDelta: vi.fn(() => () => {}),
@@ -63,6 +67,8 @@ async function submitQuestion(question: string): Promise<void> {
 describe('Advisor workspace', () => {
   beforeEach(() => {
     advisorProbe.mockClear()
+    advisorCredentialSet.mockClear()
+    advisorCredentialClear.mockClear()
     advisorHostedProbe.mockReset().mockImplementation(async (provider: 'openai' | 'anthropic' | 'gemini') => ({
       provider,
       available: true,
@@ -417,6 +423,28 @@ describe('Advisor workspace', () => {
     await waitFor(() => expect(screen.getByText(expectedAvailability, { selector: '.advisor-runtime-availability' })).toBeInTheDocument())
     expect(screen.getByLabelText('Advisor runtime status')).toHaveClass(expectedStatus)
     expect(screen.getByText('Model: ' + expectedModelState)).toBeInTheDocument()
+    if (state === 'failed-conformance') expect(screen.queryByLabelText('Advisor hosted model')).not.toBeInTheDocument()
+  })
+
+  it('ignores a stale credential operation after switching hosted providers', async () => {
+    let resolveCredential: ((value: { provider: 'openai' | 'anthropic' | 'gemini'; state: 'ready' }) => void) | undefined
+    advisorHostedProbe.mockImplementation(async provider => provider === 'openai'
+      ? { provider, available: false, models: [], detail: 'OpenAI credential is not configured.', credentialState: 'not-configured' as const }
+      : { provider, available: true, models: [{ id: 'claude-a', label: 'claude-a', state: 'verified' as const, limitation: null }], detail: 'Anthropic provider is reachable.', credentialState: 'ready' as const })
+    advisorCredentialSet.mockImplementation(() => new Promise(resolve => { resolveCredential = resolve }))
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    const entry = await screen.findByLabelText('Advisor provider key')
+    fireEvent.change(entry, { target: { value: 'test-key-value' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save key' }))
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic'))
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('claude-a'))
+    resolveCredential?.({ provider: 'openai', state: 'ready' })
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic'))
+    expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('claude-a')
+    expect(screen.queryByText('OpenAI · gpt-a')).not.toBeInTheDocument()
   })
 
   it('keeps all hosted BYOK providers available through the disclosed configuration', async () => {
