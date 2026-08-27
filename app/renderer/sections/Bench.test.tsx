@@ -156,6 +156,20 @@ describe('Bench desktop surface', () => {
     expect(screen.getByPlaceholderText('e.g. qwen3:8b')).toBeInTheDocument()
   })
 
+  it('distinguishes structured discovery unavailability from an empty model list', async () => {
+    getBenchModelDiscovery.mockResolvedValue({
+      schemaVersion: 'metrora.bench-model-discovery.v1',
+      runtime: { id: 'ollama-local', endpoint: 'http://127.0.0.1:11434' },
+      status: 'unavailable',
+      models: [],
+      detail: 'Ollama local runtime is unavailable.',
+      checkedAt: '2026-08-24T10:00:00.000Z',
+    })
+    render(<Bench />)
+    expect(await screen.findByText(/Model discovery is unavailable/)).toBeInTheDocument()
+    expect(screen.queryByText(/No local Ollama models were discovered/)).not.toBeInTheDocument()
+  })
+
   it('preserves a manually entered model when discovery is refreshed', async () => {
     getBenchModelDiscovery.mockResolvedValueOnce({
       schemaVersion: 'metrora.bench-model-discovery.v1',

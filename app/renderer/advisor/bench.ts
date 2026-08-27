@@ -140,13 +140,16 @@ export function buildAdvisorBenchEvidence(history: BenchHistoryReport, compariso
   const records = Array.isArray(history.records) ? history.records.slice(0, MAX_RUNS) : []
   const runs = records.map(mapRun)
   const mappedComparison = mapComparison(comparison)
-  const latest = runs.find(run => run.status === 'completed') ?? null
+  const latest = runs[0] ?? null
+  const hasCompletedRun = runs.some(run => run.status === 'completed')
   const state = !runs.length
     ? history.invalidCount > 0 ? 'UNAVAILABLE' as const : 'NO_DATA' as const
     : !latest
       ? 'UNAVAILABLE' as const
       : mappedComparison?.compatibility === 'incompatible'
       ? 'NOT_COMPARABLE' as const
+      : latest.status !== 'completed'
+        ? hasCompletedRun ? 'PARTIAL' as const : 'UNAVAILABLE' as const
       : history.invalidCount > 0
         || runs.some(run => run.status !== 'completed')
         || runs.some(run => run.tasks.some(task => task.status === 'malformed' || task.status === 'unavailable' || task.status === 'timeout' || task.status === 'cancelled'))

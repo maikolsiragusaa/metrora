@@ -79,4 +79,23 @@ describe('deterministic Bench task pack v1', () => {
     }, runId: 'pack-no-metrics', timeoutMs: 1000 })
     expect(noMetrics.tasks[0]?.runtimeReported.evalCount).toBeNull()
   })
+
+  it('does not score an operational response failure as a failed assertion', async () => {
+    let generateCalls = 0
+    const result = await runBenchTaskPackV1({ model: 'qwen3:8b', fetchImpl: async (input, init) => {
+      const url = String(input)
+      if (url === OLLAMA_VERSION_URL) return new Response(JSON.stringify({ version: '0.12.6' }), { status: 200 })
+      generateCalls += 1
+      if (generateCalls < 6) {
+        const body = JSON.parse(String(init?.body)) as { prompt: string }
+        return stream(passingOutput(body.prompt))
+      }
+      return new Response(JSON.stringify({ model: 'qwen3:8b', response: 'x'.repeat(40_000), done: false }) + NL, { status: 200 })
+    }, runId: 'pack-runtime-failure', timeoutMs: 1000 })
+
+    expect(result.status).toBe('unavailable')
+    expect(result.aggregate).toMatchObject({ planned: 6, attempted: 6, passed: 5, failed: 0, unavailable: 1 })
+    expect(result.aggregate.score).toEqual({ numerator: 5, denominator: 5, value: 1 })
+    expect(result.tasks[5]).toMatchObject({ status: 'unavailable', score: null })
+  })
 })

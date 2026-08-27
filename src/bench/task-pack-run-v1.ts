@@ -69,9 +69,9 @@ function emptyTask(taskId: string, status: 'unavailable' | 'timeout' | 'cancelle
   return { taskId, attempted: false, status, score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported: { ...EMPTY_RUNTIME_METRICS }, failure: { code, message: failureMessage(code) } }
 }
 function buildAggregate(tasks: BenchTaskResultV1[]): BenchEvaluationV1['aggregate'] {
-  const passed = tasks.filter(task => task.status === 'passed').length
-  const failed = tasks.filter(task => task.status === 'failed' || task.status === 'malformed').length
-  const unavailable = tasks.filter(task => task.status === 'unavailable').length
+  const passed = tasks.filter(task => task.score === 1).length
+  const failed = tasks.filter(task => task.score === 0).length
+  const unavailable = tasks.filter(task => task.status === 'unavailable' || task.status === 'timeout').length
   const cancelled = tasks.filter(task => task.status === 'cancelled').length
   const denominator = passed + failed
   return { planned: tasks.length, attempted: tasks.filter(task => task.attempted).length, passed, failed, unavailable, cancelled, score: { numerator: passed, denominator, value: denominator === 0 ? null : passed / denominator } }
@@ -112,7 +112,7 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
       tasks.push({ taskId: task.id, attempted: true, status: scored.status, score: scored.score, outputDigest: scored.outputDigest, outputChars: scored.outputChars, requestLatencyMs: evidence.observed.requestLatencyMs, timeToFirstContentMs: evidence.observed.timeToFirstContentMs, runtimeReported: evidence.runtimeReported, failure: scored.status === 'passed' ? null : { code: scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed', message: failureMessage(scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed') } })
     } catch (error) {
       const failure = asFailure(error)
-      const status: BenchTaskRunStatusV1 = failure.code === 'cancelled' ? 'cancelled' : failure.code === 'timeout' ? 'timeout' : ['runtime-unavailable', 'transport-error', 'http-error', 'model-not-found'].includes(failure.code) ? 'unavailable' : 'failed'
+      const status: BenchTaskRunStatusV1 = failure.code === 'cancelled' ? 'cancelled' : failure.code === 'timeout' ? 'timeout' : ['runtime-unavailable', 'transport-error', 'http-error', 'model-not-found', 'runtime-error', 'malformed-response', 'response-limit'].includes(failure.code) ? 'unavailable' : 'failed'
       tasks.push({ taskId: task.id, attempted: true, status, score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported: { ...EMPTY_RUNTIME_METRICS }, failure })
       if (status === 'cancelled') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
       if (status === 'unavailable') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'unavailable', 'runtime-unavailable')); break }

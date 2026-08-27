@@ -132,7 +132,9 @@ function ModelPicker({
         ? discovery.detail + ' Choose a discovered model or enter another one.'
         : discovery?.status === 'no-models'
           ? discovery.detail + ' Enter a model name manually after loading one into Ollama.'
-          : 'No local Ollama models were discovered. Enter a model name manually if one is available.'
+          : discovery?.status === 'unavailable'
+            ? 'Model discovery is unavailable. Manual Ollama model entry remains available.'
+            : 'No local Ollama models were discovered. Enter a model name manually if one is available.'
 
   return (
     <div className="bench-model-picker">

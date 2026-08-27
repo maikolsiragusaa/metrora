@@ -43,11 +43,18 @@ describe('Advisor Bench evidence projection', () => {
   it('preserves unavailable and incompatible states without fabricating comparison facts', () => {
     const unavailable = buildAdvisorBenchEvidence(history(evaluation('unavailable')))
     expect(unavailable.state).toBe('UNAVAILABLE')
-    expect(unavailable.latest).toBeNull()
+    expect(unavailable.latest).toMatchObject({ runId: 'run-1', status: 'unavailable', aggregate: { scoreValue: null, scoreDenominator: null } })
     const comparison: BenchComparison = { schemaVersion: 'metrora.bench-comparison.v1', compatible: false, reason: 'pack-mismatch', left: { runId: 'run-1', model: 'qwen3:8b', endedAt: '2026-08-24T10:00:01.000Z' }, right: { runId: 'run-2', model: 'other', endedAt: '2026-08-23T10:00:01.000Z' }, deltas: null }
     const projected = buildAdvisorBenchEvidence(history(evaluation()), comparison)
     expect(projected.state).toBe('NOT_COMPARABLE')
     expect(projected.comparison).toMatchObject({ compatibility: 'incompatible', reason: 'pack-mismatch', scoreDelta: null })
+  })
+
+  it('keeps the newest unavailable run as latest instead of surfacing an older score', () => {
+    const newestUnavailable = { ...evaluation('unavailable'), runId: 'run-2', startedAt: '2026-08-25T10:00:00.000Z', endedAt: '2026-08-25T10:00:01.000Z' }
+    const projected = buildAdvisorBenchEvidence({ ...history(evaluation()), records: [newestUnavailable, evaluation()] })
+    expect(projected.state).toBe('PARTIAL')
+    expect(projected.latest).toMatchObject({ runId: 'run-2', status: 'unavailable', aggregate: { scoreValue: null } })
   })
   it('does not use global Bench runs outside the selected scope', async () => {
     const projected = await readAdvisorBenchEvidence(

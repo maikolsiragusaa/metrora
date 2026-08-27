@@ -20,9 +20,50 @@ const RuntimeMetrics = z.object({ totalDurationNs: z.number().int().nonnegative(
 const TaskResult = z.object({
   taskId: z.string().min(1).max(128), attempted: z.boolean(), status: z.enum(['passed', 'failed', 'malformed', 'unavailable', 'timeout', 'cancelled']), score: z.union([z.literal(0), z.literal(1), z.null()]), outputDigest: z.string().regex(/^[0-9a-f]{64}$/).nullable(), outputChars: z.number().int().nonnegative().max(32_768).nullable(), requestLatencyMs: z.number().nonnegative().nullable(), timeToFirstContentMs: z.number().nonnegative().nullable(), runtimeReported: RuntimeMetrics, failure: z.object({ code: z.string().min(1).max(64), message: z.string().min(1).max(240) }).strict().nullable(),
 }).strict()
-const Evaluation = z.object({
+const EvaluationShape = z.object({
   schemaVersion: z.literal(BENCH_EVALUATION_SCHEMA_VERSION), runId: z.string().min(1).max(128), runner: z.object({ id: z.literal('ollama-task-pack-v1'), version: z.literal('1.0.0') }).strict(), pack: z.object({ packId: z.literal('metrora.bench.core'), version: z.literal('1.0.0'), digest: z.string().regex(/^[0-9a-f]{64}$/) }).strict(), model: z.object({ selected: z.string().min(1).max(200), reported: z.string().min(1).max(200).nullable() }).strict(), runtime: z.object({ id: z.literal('ollama-local'), endpoint: z.literal('http://127.0.0.1:11434'), version: z.string().max(128).nullable() }).strict(), environment: z.object({ os: z.string().min(1).max(240), arch: z.string().min(1).max(64), node: z.string().min(1).max(64) }).strict(), generation: z.object({ parameters: z.object({ temperature: z.number(), seed: z.number().int(), numPredict: z.number().int() }).strict(), policy: z.literal('one-bounded-request-per-task') }).strict(), startedAt: z.string().datetime({ offset: true }), endedAt: z.string().datetime({ offset: true }), status: z.enum(['completed', 'unavailable', 'cancelled']), tasks: z.array(TaskResult).min(1).max(64), aggregate: z.object({ planned: z.number().int().nonnegative().max(64), attempted: z.number().int().nonnegative().max(64), passed: z.number().int().nonnegative().max(64), failed: z.number().int().nonnegative().max(64), unavailable: z.number().int().nonnegative().max(64), cancelled: z.number().int().nonnegative().max(64), score: z.object({ numerator: z.number().int().nonnegative(), denominator: z.number().int().nonnegative(), value: z.number().min(0).max(1).nullable() }).strict() }).strict(), resultDigest: z.string().regex(/^[0-9a-f]{64}$/),
 }).strict()
+const Evaluation = EvaluationShape.superRefine((record, ctx) => {
+  const issue = (path: (string | number)[], message: string): void => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message })
+  const tasks = record.tasks
+  const counts = {
+    attempted: tasks.filter(task => task.attempted).length,
+    passed: tasks.filter(task => task.status === 'passed').length,
+    failed: tasks.filter(task => task.status === 'failed' || task.status === 'malformed').length,
+    unavailable: tasks.filter(task => task.status === 'unavailable' || task.status === 'timeout').length,
+    cancelled: tasks.filter(task => task.status === 'cancelled').length,
+    scored: tasks.filter(task => task.score !== null).length,
+    passedScore: tasks.filter(task => task.score === 1).length,
+  }
+  if (record.aggregate.planned !== tasks.length) issue(['aggregate', 'planned'], 'planned count must equal the retained task count')
+  for (const key of ['attempted', 'passed', 'failed', 'unavailable', 'cancelled'] as const) {
+    if (record.aggregate[key] !== counts[key]) issue(['aggregate', key], key + ' count does not match retained task results')
+  }
+  if (record.aggregate.score.numerator !== counts.passedScore) issue(['aggregate', 'score', 'numerator'], 'score numerator must equal passed scored tasks')
+  if (record.aggregate.score.denominator !== counts.scored) issue(['aggregate', 'score', 'denominator'], 'score denominator must equal scored tasks')
+  if (record.aggregate.score.numerator > record.aggregate.score.denominator) issue(['aggregate', 'score'], 'score numerator cannot exceed its denominator')
+  const expectedScore = counts.scored === 0 ? null : counts.passedScore / counts.scored
+  if (record.aggregate.score.value === null ? expectedScore !== null : expectedScore === null || Math.abs(record.aggregate.score.value - expectedScore) > 1e-12) {
+    issue(['aggregate', 'score', 'value'], 'score value does not match its numerator and denominator')
+  }
+  const expectedStatus = counts.cancelled > 0 ? 'cancelled' : counts.unavailable > 0 ? 'unavailable' : 'completed'
+  if (record.status !== expectedStatus) issue(['status'], 'status does not match retained task outcomes')
+  if (Date.parse(record.startedAt) > Date.parse(record.endedAt)) issue(['endedAt'], 'endedAt must not precede startedAt')
+
+  const taskIds = new Set<string>()
+  tasks.forEach((task, index) => {
+    if (taskIds.has(task.taskId)) issue(['tasks', index, 'taskId'], 'task ids must be unique')
+    taskIds.add(task.taskId)
+    if (!task.attempted && task.score !== null) issue(['tasks', index], 'an unattempted task cannot have a score')
+    if (task.status === 'passed') {
+      if (!task.attempted || task.score !== 1 || task.failure !== null || task.outputDigest === null || task.outputChars === null) issue(['tasks', index], 'passed tasks must contain a scored output')
+    } else if (task.status === 'failed' || task.status === 'malformed') {
+      if (!task.attempted || task.score !== 0 || task.failure === null || task.outputDigest === null || task.outputChars === null) issue(['tasks', index], 'scored failures must contain a scored output')
+    } else if (task.score !== null || task.outputDigest !== null || task.outputChars !== null || task.failure === null) {
+      issue(['tasks', index], 'unscored tasks must retain only bounded failure metadata')
+    }
+  })
+})
 const HistoryFile = z.object({ kind: z.literal(BENCH_HISTORY_KIND), version: z.literal(BENCH_HISTORY_VERSION), recordSha256: z.string().regex(/^[0-9a-f]{64}$/), record: Evaluation }).strict()
 
 export type BenchHistoryScanV1 = { records: BenchEvaluationV1[]; invalid: Array<{ file: string; reason: string }> }

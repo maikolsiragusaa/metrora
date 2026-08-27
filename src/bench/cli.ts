@@ -66,9 +66,14 @@ function renderBenchEvaluation(result: BenchEvaluationV1): string {
   ].join('\n') + '\n'
 }
 
-function renderBenchHistory(records: BenchEvaluationV1[]): string {
-  if (records.length === 0) return 'No Bench task-pack history.\n'
-  return records.map(record => record.runId + '  ' + record.model.selected + '  ' + record.status + '  ' + record.aggregate.passed + '/' + record.aggregate.planned + ' passed  ' + record.endedAt).join('\n') + '\n'
+export function renderBenchHistory(records: BenchEvaluationV1[]): string {
+  if (records.length === 0) return 'No Core conformance history.\n'
+  return records.map(record => {
+    const checks = record.aggregate.score.value === null
+      ? record.aggregate.planned + ' planned; no checks scored; ' + record.aggregate.unavailable + ' unavailable; ' + record.aggregate.cancelled + ' cancelled'
+      : record.aggregate.passed + ' passed; ' + record.aggregate.failed + ' failed; ' + record.aggregate.unavailable + ' unavailable; ' + record.aggregate.cancelled + ' cancelled; ' + record.aggregate.planned + ' planned; ' + (record.aggregate.score.value * 100).toFixed(0) + '% of ' + record.aggregate.score.denominator + ' scored checks'
+    return record.runId + '  ' + record.model.selected + '  Core conformance ' + record.status + '  ' + checks + '  ' + record.endedAt
+  }).join('\n') + '\n'
 }
 
 function renderBenchModelDiscovery(result: BenchModelDiscoveryV1): string {

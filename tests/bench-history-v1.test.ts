@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  BENCH_HISTORY_KIND,
+  BENCH_HISTORY_VERSION,
   BENCH_HISTORY_MAX_CANDIDATE_FILES,
   BENCH_HISTORY_MAX_FILE_BYTES,
   BENCH_HISTORY_MAX_INVALID_DIAGNOSTICS,
@@ -12,6 +14,7 @@ import {
   saveBenchEvaluationV1,
   scanBenchHistoryV1,
 } from '../src/bench/history-v1.js'
+import { sha256Json } from '../src/bench/serialization.js'
 import type { BenchEvaluationV1 } from '../src/bench/task-pack-run-v1.js'
 
 const dirs: string[] = []
@@ -37,6 +40,25 @@ describe('Bench history v1', () => {
     expect(scan.invalid).toHaveLength(1)
     expect(JSON.stringify(scan.records)).not.toContain('single lowercase word')
     expect(JSON.stringify(scan.records)).not.toContain('model response body')
+  })
+
+  it('rejects semantically inconsistent retained records', async () => {
+    const dir = dataDir()
+    const record = evaluation('inconsistent')
+    const invalidRecord = { ...record, aggregate: { ...record.aggregate, passed: 0 } }
+    const recordsDir = benchHistoryDirectoryV1(dir)
+    mkdirSync(recordsDir, { recursive: true })
+    const file = sha256Json([BENCH_HISTORY_KIND, invalidRecord.runId]) + '.json'
+    writeFileSync(join(recordsDir, file), JSON.stringify({
+      kind: BENCH_HISTORY_KIND,
+      version: BENCH_HISTORY_VERSION,
+      recordSha256: sha256Json(invalidRecord),
+      record: invalidRecord,
+    }))
+
+    const scan = await scanBenchHistoryV1({ dataDir: dir })
+    expect(scan.records).toHaveLength(0)
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('passed count does not match') }])
   })
 
   it('bounds oversized corrupt files before parsing', async () => {
