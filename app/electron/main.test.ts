@@ -27,7 +27,7 @@ function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
   })
   const spawnCliAction = vi.fn(async (args: string[]) => {
     calls.push(args)
-    return { ok: true, stdout: 'updated', stderr: '', code: 0 }
+    return { ok: true, stdout: JSON.stringify({ ok: true }), stderr: '', code: 0 }
   })
   return { spawnCli, spawnCliAction, calls }
 }
@@ -177,6 +177,23 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
     expect(calls[0]?.slice(0, 9)).toEqual(['bench', 'task-pack', '--model', 'qwen3:8b', '--pack', 'core-v1', '--format', 'json', '--run-id'])
     expect(calls[0]?.[9]).toMatch(/^[0-9a-f-]{36}$/)
     expect(res).toMatchObject({ ok: true })
+  })
+
+  it('returns a structured unavailable Bench result even when the CLI exits non-zero after saving it', async () => {
+    const calls: string[][] = []
+    const unavailable = { schemaVersion: 'metrora.bench-evaluation.v1', status: 'unavailable' }
+    const spawnCli = vi.fn()
+    const spawnCliAction = vi.fn(async (args: string[]) => {
+      calls.push(args)
+      return { ok: false, stdout: JSON.stringify(unavailable), stderr: '', code: 1 }
+    })
+    const handlers = createBridgeHandlers(deps({ spawnCli, spawnCliAction, resolveMetroraPath: () => '/bin/metrora' }))
+
+    const res = await handlers['metrora:runBenchTaskPack']!('qwen3:8b', 'core-v1')
+
+    expect(spawnCli).not.toHaveBeenCalled()
+    expect(calls[0]?.slice(0, 9)).toEqual(['bench', 'task-pack', '--model', 'qwen3:8b', '--pack', 'core-v1', '--format', 'json', '--run-id'])
+    expect(res).toEqual({ ok: true, value: unavailable })
   })
 
   it('metrora:cliStatus resolves from resolveMetroraPath without spawning', async () => {

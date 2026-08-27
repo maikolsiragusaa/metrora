@@ -131,6 +131,26 @@ function toEnvelopeError(err: unknown): { kind: string; message: string } {
   return { kind: 'nonzero', message: sanitizeError(err instanceof Error ? err.message : String(err)) }
 }
 
+function isBenchEvaluationPayload(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && (value as { schemaVersion?: unknown }).schemaVersion === 'metrora.bench-evaluation.v1'
+}
+
+/**
+ * Bench deliberately emits a structured, persisted result before returning a
+ * non-zero exit code for an unavailable or cancelled run. Preserve that
+ * factual result across the desktop bridge; ordinary process failures still
+ * become an error envelope.
+ */
+function parseBenchTaskPackAction(result: ActionResult): unknown {
+  let value: unknown
+  try { value = JSON.parse(result.stdout) }
+  catch {
+    throw new CliError('bad-json', 'Metrora Bench task pack returned invalid structured data')
+  }
+  if (result.ok || isBenchEvaluationPayload(value)) return value
+  throw new CliError('nonzero', result.stderr.trim() || `Metrora bench task-pack exited with code ${result.code ?? 'unknown'}`)
+}
+
 /**
  * Props for a `cli_error` telemetry event. Deliberately carries only
  * non-sensitive enums so the event is diagnosable without a repro yet leaks
@@ -277,8 +297,8 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
     'metrora:runBenchTaskPack': async (model: string, pack = 'core-v1') => {
       try {
-        const value = await deps.spawnCli(['bench', 'task-pack', '--model', vToken(model), '--pack', vToken(pack), '--format', 'json', '--run-id', randomUUID()], { timeoutMs: 10 * 60_000, extraEnv: snapshotEnv })
-        return { ok: true, value }
+        const result = await deps.spawnCliAction(['bench', 'task-pack', '--model', vToken(model), '--pack', vToken(pack), '--format', 'json', '--run-id', randomUUID()], { timeoutMs: 10 * 60_000 })
+        return { ok: true, value: parseBenchTaskPackAction(result) }
       } catch (err) {
         return { ok: false, error: toEnvelopeError(err) }
       }

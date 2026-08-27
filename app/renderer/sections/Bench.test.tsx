@@ -128,6 +128,23 @@ describe('Bench desktop surface', () => {
     expect(screen.getByText('Latest core conformance')).toBeInTheDocument()
   })
 
+  it('shows an unavailable result after a runtime outage instead of retaining the previous score', async () => {
+    runBenchTaskPack.mockResolvedValue(record('run-c', 'qwen3:8b', {
+      status: 'unavailable',
+      tasks: [{ taskId: 'exact-word', attempted: false, status: 'unavailable', score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported, failure: { code: 'runtime-unavailable', message: 'Ollama local runtime unavailable.' } }],
+      aggregate: { planned: 1, attempted: 0, passed: 0, failed: 0, unavailable: 1, cancelled: 0, score: { numerator: 0, denominator: 0, value: null } },
+    }))
+    render(<Bench />)
+    await screen.findByText(/2 local Ollama models discovered/)
+    fireEvent.change(screen.getByLabelText('Local model'), { target: { value: 'qwen3:8b' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Run Core conformance' }))
+
+    await waitFor(() => expect(runBenchTaskPack).toHaveBeenCalledWith('qwen3:8b', 'core-v1'))
+    expect(await screen.findByText('Runtime unavailable')).toBeInTheDocument()
+    expect(screen.getAllByText('No checks scored · 1 planned')).toHaveLength(2)
+    expect(screen.queryByText('100%')).not.toBeInTheDocument()
+  })
+
   it('keeps technical identity and raw task evidence behind progressive disclosure', async () => {
     render(<Bench />)
     await screen.findByText('Latest core conformance')

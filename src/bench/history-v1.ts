@@ -71,7 +71,7 @@ const Evaluation = EvaluationShape.superRefine((record, ctx) => {
       issue(['tasks', index], 'unscored tasks must retain only bounded failure metadata')
     }
   })
-  if (record.resultDigest !== digestBenchEvaluationV1(record)) issue(['resultDigest'], 'result digest does not match retained task evidence')
+  if (record.resultDigest !== digestBenchEvaluationV1(record as unknown as BenchEvaluationV1)) issue(['resultDigest'], 'result digest does not match retained task evidence')
 })
 const HistoryFile = z.object({ kind: z.literal(BENCH_HISTORY_KIND), version: z.literal(BENCH_HISTORY_VERSION), recordSha256: z.string().regex(/^[0-9a-f]{64}$/), record: Evaluation }).strict()
 
