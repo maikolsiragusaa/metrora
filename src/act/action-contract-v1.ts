@@ -58,10 +58,12 @@ export type ActionOriginatingSurfaceV1 = 'cli' | 'desktop'
 const ACTION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/
 const EMPTY_DIGEST = '0'.repeat(64)
+const APPROVAL_MAX_AGE_MS = 5 * 60_000
+const APPROVAL_MAX_FUTURE_SKEW_MS = 30_000
 
 const ActionId = z.string().regex(ACTION_ID_PATTERN)
 const Digest = z.string().regex(DIGEST_PATTERN)
-const IsoDate = z.string().datetime({ offset: true })
+const IsoDate = z.string().max(64).datetime({ offset: true })
 const ModelId = z.string().min(1).max(200).refine(value => {
   try {
     validateOllamaModelId(value)
@@ -177,6 +179,7 @@ const ApprovalTokenShape = z.object({
   authority: z.literal(ACTION_APPROVAL_AUTHORITY),
   proof: Digest,
 }).strict()
+const ApprovedActionEnvelopeShape = z.object({ contract: z.unknown(), approval: z.unknown() }).strict()
 
 export type ActionApprovalTokenV1 = z.infer<typeof ApprovalTokenShape>
 
@@ -198,7 +201,15 @@ export type ActionResultCountsV1 = {
   passed: number
   failed: number
   unavailable: number
+  timedOut: number
   cancelled: number
+}
+
+export type ActionEvidenceReferenceV1 = {
+  kind: 'metrora.bench-history.v1'
+  runId: string
+  resultDigest: string
+  history: 'saved' | 'duplicate'
 }
 
 export type ActionOperationFailureV1 = {
@@ -229,7 +240,7 @@ export type ActionOperationStateV1 = {
   }
   result: ActionResultReferenceV1 | null
   resultCounts: ActionResultCountsV1 | null
-  evidenceReferences: ActionResultReferenceV1[]
+  evidenceReferences: ActionEvidenceReferenceV1[]
   failure: ActionOperationFailureV1 | null
   rollback: {
     capability: 'none'
@@ -261,14 +272,23 @@ function assertJsonSafe(value: unknown, seen = new Set<object>()): void {
   if (typeof value !== 'object') throw new ActionContractError('invalid-contract', 'action contract contains an unsupported value')
   if (seen.has(value)) throw new ActionContractError('invalid-contract', 'action contract must not contain cycles')
   seen.add(value)
+  const ownKeys = Reflect.ownKeys(value)
+  if (ownKeys.some(key => typeof key === 'symbol')) throw new ActionContractError('invalid-contract', 'action contract must not contain symbol properties')
   if (Array.isArray(value)) {
-    for (const item of value) assertJsonSafe(item, seen)
+    for (const key of ownKeys) {
+      if (key === 'length') continue
+      if (typeof key !== 'string') throw new ActionContractError('invalid-contract', 'action contract must not contain symbol properties')
+      const index = Number(key)
+      if (!/^\d+$/.test(key) || !Number.isSafeInteger(index) || index < 0 || index >= 2 ** 32 - 1 || String(index) !== key) throw new ActionContractError('invalid-contract', 'action contract arrays must not contain named properties')
+      assertJsonSafe((value as unknown[])[index], seen)
+    }
   } else {
     const prototype = Object.getPrototypeOf(value)
     if (prototype !== Object.prototype && prototype !== null) {
       throw new ActionContractError('invalid-contract', 'action contract must contain plain JSON objects only')
     }
-    for (const key of Object.keys(value)) {
+    for (const key of ownKeys) {
+      if (typeof key !== 'string') throw new ActionContractError('invalid-contract', 'action contract must not contain symbol properties')
       if (FORBIDDEN_JSON_KEYS.has(key)) throw new ActionContractError('invalid-contract', 'action contract contains a forbidden object key')
       assertJsonSafe((value as Record<string, unknown>)[key], seen)
     }
@@ -484,10 +504,22 @@ export class TrustedActionAuthorityV1 {
   }
 
   verifyApprovedAction(input: unknown): ApprovedActionV1 {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ActionContractError('invalid-approval', 'approved action must be an object')
-    const candidate = input as { contract?: unknown; approval?: unknown }
-    const contract = validateActionContractV1(candidate.contract)
-    const approval = parseActionApprovalTokenV1(candidate.approval)
+    let envelope: { contract: unknown; approval: unknown }
+    try {
+      assertJsonSafe(input)
+      const parsed = ApprovedActionEnvelopeShape.safeParse(input)
+      if (!parsed.success) throw new Error('invalid envelope')
+      envelope = parsed.data as { contract: unknown; approval: unknown }
+    } catch {
+      throw new ActionContractError('invalid-approval', 'approved action envelope failed strict validation')
+    }
+    const contract = validateActionContractV1(envelope.contract)
+    const approval = parseActionApprovalTokenV1(envelope.approval)
+    const issuedAtMs = Date.parse(approval.issuedAt)
+    const nowMs = Date.now()
+    if (!Number.isFinite(issuedAtMs) || issuedAtMs > nowMs + APPROVAL_MAX_FUTURE_SKEW_MS || nowMs - issuedAtMs > APPROVAL_MAX_AGE_MS) {
+      throw new ActionContractError('invalid-approval', 'approval is expired or not yet valid')
+    }
     const expectedProposalDigest = computeActionProposalDigest(contract)
     const expectedConfirmationDigest = computeActionConfirmationDigest(expectedProposalDigest)
     if (

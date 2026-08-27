@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -66,6 +66,20 @@ describe('Bench history v1', () => {
     expect(scan.invalid).toHaveLength(1)
     expect(JSON.stringify(scan.records)).not.toContain('single lowercase word')
     expect(JSON.stringify(scan.records)).not.toContain('model response body')
+  })
+
+  it('rejects a wrapper digest forged to make tampered existing content look like a duplicate', async () => {
+    const dir = dataDir()
+    const original = evaluation('wrapper-tamper')
+    await saveBenchEvaluationV1(original, { dataDir: dir })
+    const incomingWithoutDigest = { ...original, tasks: original.tasks.map((task, index) => index === 0 ? { ...task, outputDigest: 'c'.repeat(64) } : task) }
+    const incoming = { ...incomingWithoutDigest, resultDigest: digestBenchEvaluationV1(incomingWithoutDigest) }
+    const file = join(benchHistoryDirectoryV1(dir), sha256Json([BENCH_HISTORY_KIND, original.runId]) + '.json')
+    const wrapper = JSON.parse(readFileSync(file, 'utf8')) as { recordSha256: string; record: BenchEvaluationV1 }
+    wrapper.recordSha256 = sha256Json(incoming)
+    writeFileSync(file, JSON.stringify({ ...wrapper, kind: BENCH_HISTORY_KIND, version: BENCH_HISTORY_VERSION }))
+
+    await expect(saveBenchEvaluationV1(incoming, { dataDir: dir })).rejects.toThrow('existing history record digest mismatch')
   })
 
   it('rejects semantically inconsistent retained records', async () => {

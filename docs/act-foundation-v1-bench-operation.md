@@ -72,10 +72,12 @@ reported as `failed` with failure category `timeout`; it is not converted into
 Progress is authoritative only for attempted task results. The operation
 exposes six planned checks and increments completed checks after the canonical
 executor retains an individual task result. It never fabricates progress for
-unstarted work. A fresh ACT lock is heartbeated for the duration of the
-operation. If a persisted running owner is no longer alive, the next trusted
-execution attempt closes that record as failed with no result and requires a
-new action; it never retries an unknown operation.
+unstarted work. Network execution does not hold the ACT journal lock: each
+progress, cancellation, recovery, and terminal write is a short lock-fenced
+critical section, with lock heartbeat while that section is active. If a
+persisted running owner is no longer alive, the next trusted status or
+execution read closes that record from matching Bench evidence when available,
+otherwise as failed with no result; it never retries an unknown operation.
 
 ## Journal and Bench history
 

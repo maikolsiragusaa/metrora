@@ -84,7 +84,7 @@ export function createActionBridgeV1(options: ActionBridgeOptionsV1): ActionBrid
     contractVersion: ACTION_CONTRACT_VERSION,
     schemaVersion: ACTION_SCHEMA_VERSION,
     async proposeCoreConformance(input): Promise<{ proposal: ActionContractV1; confirmation: CoreConformanceConfirmationSummaryV1 }> {
-      const proposal = createCoreConformanceBenchAction({ ...input, originatingSurface: 'desktop' })
+      const proposal = createCoreConformanceBenchAction({ model: input.model, timeoutMs: input.timeoutMs, originatingSurface: 'desktop' })
       await recordCoreConformanceProposal(proposal)
       return { proposal, confirmation: confirmationSummary(proposal) }
     },

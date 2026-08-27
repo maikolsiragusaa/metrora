@@ -267,7 +267,10 @@ export async function saveBenchEvaluationV1(recordInput: BenchEvaluationV1, opti
     const existing = await readBoundedHistoryFile(path)
     if (existing.kind === 'ok') {
       const parsed = HistoryFile.parse(JSON.parse(existing.bytes.toString('utf8')))
-      if (parsed.recordSha256 === recordDigest(record)) return { status: 'duplicate', record: parsed.record as BenchEvaluationV1 }
+      const existingRecord = parsed.record as BenchEvaluationV1
+      if (fileName(existingRecord.runId) !== file) throw new Error('history record does not match its filename')
+      if (parsed.recordSha256 !== recordDigest(existingRecord)) throw new Error('existing history record digest mismatch')
+      if (parsed.recordSha256 === recordDigest(record)) return { status: 'duplicate', record: existingRecord }
       throw new Error('Bench history run id collision with different content')
     }
     if (existing.kind === 'invalid') throw new Error('Bench history run id collision with invalid existing content')
