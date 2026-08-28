@@ -74,8 +74,23 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           ? ['I used the current scope selected in Metrora. Use the scope controls above to change it.', ...evidence.assumptions]
           : evidence.assumptions,
       }
-      if (!plan.needsEvidence || runtime.mode === 'deterministic-local' || runtime.availability === 'unavailable' || runtime.mode === 'unsupported') {
-        return new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan }, signal)
+      const modelReady = runtime.mode !== 'deterministic-local' && runtime.availability !== 'unavailable' && runtime.mode !== 'unsupported'
+      if (!plan.needsEvidence) {
+        // Ordinary conversation should use the selected model when available;
+        // Metrora's deterministic runtime remains the offline fallback. Action,
+        // clarification, and explicit boundary turns stay deterministic because
+        // their authorization/boundary text is owned by Metrora.
+        if (plan.intent === 'social' && modelReady) {
+          try {
+            return await runtime.generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, guard: plan.guard, onDelta }, signal)
+          } catch (error) {
+            rethrowCancellation(error, signal)
+          }
+        }
+        return new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, guard: plan.guard }, signal)
+      }
+      if (!modelReady) {
+        return new DeterministicAdvisorRuntime().generate({ question, evidence: withUnderstanding, conversation, plan: plan.plan, guard: plan.guard }, signal)
       }
       const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
       try {
@@ -92,7 +107,7 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
             plan: plan.plan,
           }
         }
-        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: fallbackEvidence, conversation, plan: plan.plan }, signal)
+        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: fallbackEvidence, conversation, plan: plan.plan, guard: plan.guard }, signal)
         return {
           ...fallback,
           materialLimits: [...(fallback.materialLimits ?? []), 'The explanatory model was unavailable, so this answer uses Metrora deterministic evidence.'],
