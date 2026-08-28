@@ -121,8 +121,8 @@ export function ipcChannelAliases(channel: string): string[] {
   return [channel]
 }
 
-export function shouldInstallApplicationMenu(isDev: boolean, platform = process.platform): boolean {
-  return platform === 'darwin' || isDev
+export function shouldInstallApplicationMenu(_isDev: boolean, platform = process.platform): boolean {
+  return platform === 'darwin'
 }
 
 function registerHandlers(): void {
@@ -339,7 +339,7 @@ function bootstrap(): void {
     updateChecker = createUpdateChecker({ currentVersion: app.getVersion() })
     const runUpdateCheck = () => { void updateChecker?.check().then(broadcastUpdateStatus) }
     runUpdateCheck()
-    setInterval(runUpdateCheck, 24 * 60 * 60 * 1000)
+    setInterval(runUpdateCheck, 24 * 60 * 60_000)
   })
 
   app.on('window-all-closed', () => {
