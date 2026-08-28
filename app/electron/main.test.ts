@@ -145,7 +145,7 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'metrora:removeDevice', args: ['studio-mac'], argv: ['devices', 'rm', 'studio-mac'] },
   { channel: 'metrora:setPlan', args: ['claude-max', 'claude'], argv: ['plan', 'set', 'claude-max', '--provider', 'claude'] },
   { channel: 'metrora:resetPlan', args: ['cursor'], argv: ['plan', 'reset', '--provider', 'cursor'] },
-  { channel: 'metrora:exportData', args: ['json', 'all', '/tmp/metrora-export'], argv: ['export', '-f', 'json', '-o', '/tmp/metrora-export', '--provider', 'all'] },
+  { channel: 'metrora:exportData', args: ['json', 'all', '/tmp/out'], argv: ['export', '-f', 'json', '-o', '/tmp/out', '--provider', 'all'] },
 ]
 
 function flattenMenuItems(items: any[]): any[] {
@@ -395,10 +395,13 @@ describe('createApplicationMenuTemplate', () => {
     expect(roles).not.toContain('forceReload')
   })
 
-  it('installs the menu for development on Windows but keeps packaged Windows apps menu-free', () => {
-    expect(shouldInstallApplicationMenu(true, 'win32')).toBe(true)
+  it('keeps Windows and Linux menu-free in dev and packaged builds while preserving the macOS menu', () => {
+    expect(shouldInstallApplicationMenu(true, 'win32')).toBe(false)
     expect(shouldInstallApplicationMenu(false, 'win32')).toBe(false)
+    expect(shouldInstallApplicationMenu(true, 'linux')).toBe(false)
+    expect(shouldInstallApplicationMenu(false, 'linux')).toBe(false)
     expect(shouldInstallApplicationMenu(false, 'darwin')).toBe(true)
+    expect(shouldInstallApplicationMenu(true, 'darwin')).toBe(true)
   })
 })
 
