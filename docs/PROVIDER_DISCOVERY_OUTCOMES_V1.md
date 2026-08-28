@@ -23,11 +23,20 @@ may authorize removal of a non-durable cached source that is no longer present
 in the current source set. `failed`, `partial`, `unavailable` and `cancelled`
 outcomes never authorize that deletion.
 
-When discovery is not complete, cached source entries remain available as
-retained-only history, the session cache is not published as complete, and the
-daily-history completeness authority stays degraded. This prevents a temporary
-permission problem, malformed source family or cancellation from becoming a
-false statement that a provider has zero history. Durable-source carry-forward
+Session-cache hydration and source-set completeness are separate authorities.
+A parser run that reaches its normal provider-safe completion leaves the session
+cache warm even when one provider's discovery is degraded; otherwise every later
+refresh would incorrectly re-enter cold hydration. Degraded providers still
+retain their cached source entries, and their incomplete outcome never authorizes
+destructive reconciliation.
+
+Global snapshot and daily-history authority remain degraded while the current
+source set is incomplete. Freshness checks re-evaluate discovery outcomes and
+source fingerprints before granting complete authority, while degraded daily
+reconciliation may advance only provider slices whose discovery is complete.
+This prevents a temporary permission problem, malformed source family or
+cancellation from becoming either a false statement that a provider has zero
+history or a global veto on healthy providers. Durable-source carry-forward
 remains governed by its existing monotonic rules.
 
 ## Diagnostics and ordering
