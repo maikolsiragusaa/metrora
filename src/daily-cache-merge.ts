@@ -217,7 +217,7 @@ export function mergeDayEntriesByProviderCompleteness(
     }
 
     const next = emptyReconciledDay(date)
-    let carried = baselineDay.carried === true
+    let carried = false
     const providers = new Set([...Object.keys(freshDay.providers), ...Object.keys(baselineDay.providers)])
     for (const provider of providers) {
       const freshSlice = Object.hasOwn(freshDay.providers, provider) ? freshDay.providers[provider] : undefined
