@@ -1,6 +1,6 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
@@ -128,13 +128,39 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
     const definitions = toolDefinitions(input)
     const { fallbackPlan, guard } = runtimeGuardPlan(input)
-    if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') {
+    if (guard.authorization !== 'read-only') {
       return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
     }
     let activeRequestId: string | null = null
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
+      const conversation = async (kind: 'social' | 'boundary', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
+        try {
+          activeRequestId = requestId('hosted-conversation')
+          const response = await this.transport.chat(activeRequestId, {
+            provider: this.provider,
+            model: this.model,
+            messages: buildAdvisorConversationMessages(effectiveInput, kind),
+            tools: [],
+            stream: false,
+            consent: true,
+          }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, response.message?.content ?? '', true, signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, signal)
+        }
+      }
+
+      if (guard.turnKind === 'social') return conversation('social', input)
+      if (guard.turnKind !== 'investigate') {
+        return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
+      }
+
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
         const deterministic = deterministicPlanningFallback(fallbackPlan, definitions)
         let evidenceItems: AdvisorEvidence[] = []
@@ -168,6 +194,10 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       const validation = planningValidation(input, planningResponse, allowNativeToolCalls)
       if (!validation) return fallback('The hosted model planning output was malformed or outside the bounded Advisor contract.')
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
+      if (validation.plan.turnKind === 'social' || validation.plan.turnKind === 'boundary') {
+        return conversation(validation.plan.turnKind, effectiveInput)
+      }
+
       let evidenceItems: AdvisorEvidence[] = []
       try { evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal) } catch (error) {
         if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
