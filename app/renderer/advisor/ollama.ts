@@ -1,6 +1,6 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES } from './privacy'
@@ -137,13 +137,32 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     throwIfAborted(signal)
     const definitions = toolDefinitions(input)
     const { fallbackPlan, guard } = runtimeGuardPlan(input)
-    if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') {
+    if (guard.authorization !== 'read-only') {
       return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
     }
     let activeRequestId: string | null = null
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
+      const conversation = async (kind: 'social' | 'boundary', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
+        try {
+          activeRequestId = requestId('advisor-conversation')
+          const response = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorConversationMessages(effectiveInput, kind), tools: [], stream: false }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, boundedModelText(response.message?.content), true, signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, signal)
+        }
+      }
+
+      if (guard.turnKind === 'social') return conversation('social', input)
+      if (guard.turnKind !== 'investigate') {
+        return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
+      }
+
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
         const deterministic = deterministicPlanningFallback(fallbackPlan, definitions)
         let evidenceItems: AdvisorEvidence[] = []
@@ -171,6 +190,10 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       const validation = planningValidation(input, planningResponse)
       if (!validation) return fallback('The model planning output was malformed or outside the bounded Advisor contract.')
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
+      if (validation.plan.turnKind === 'social' || validation.plan.turnKind === 'boundary') {
+        return conversation(validation.plan.turnKind, effectiveInput)
+      }
+
       let evidenceItems: AdvisorEvidence[] = []
       try {
         evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal)
