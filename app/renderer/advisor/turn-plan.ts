@@ -23,8 +23,16 @@ function isThanks(value: string): boolean {
   return /^(?:grazie|grazie mille|thanks|thank you|thankyou|much appreciated)[!.?,\s]*$/u.test(value)
 }
 
+function isHowAreYou(value: string): boolean {
+  return /^(?:come stai|how are you)[!?.,\s]*$/u.test(value)
+}
+
 function isSocial(value: string): boolean {
-  return isGreeting(value) || isThanks(value) || /^(?:come stai|how are you)[!?.,\s]*$/u.test(value)
+  if (isGreeting(value) || isThanks(value) || isHowAreYou(value)) return true
+  // Keep obvious compound greetings conversational even in the deterministic
+  // fallback. Unknown languages are handled by the model semantic planner; do
+  // not grow this into a language catalogue.
+  return /^(?:ciao|salve|buongiorno|buonasera|buon giorno|hello|hi|hey|good morning|good evening)\b[^\n]{0,48}\b(?:come stai|how are you)\b[!?.,\s]*$/u.test(value)
 }
 
 function isActionRequest(value: string): boolean {
