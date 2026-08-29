@@ -1,6 +1,8 @@
 # Metrora documentation
 
-Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate with Advisor; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
+Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate through the current conversational surface; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
+
+The product-facing direction for the conversational/operational surface is **Metrora Harness**. Current Desktop/code/contracts still use `Advisor` / `Advisor*` identifiers until a bounded implementation migration lands.
 
 This index separates user guidance, current product guarantees, public contracts and contributor-facing technical references.
 
@@ -8,37 +10,61 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Getting started](GETTING_STARTED.md) — install or build Metrora, run the first reports and understand the current distribution boundary.
 - [CLI reference](CLI_REFERENCE.md) — public commands grouped by task.
-- [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — bounded synthetic runtime evidence from an explicitly selected local Ollama model.
-- [Bench Core conformance v1](BENCH_TASK_PACK_V1.md) — bounded local conformance checks, model discovery, private history and factual comparison for Ollama.
+- [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) — public distinction between Performance, Compatibility/Runtime Health, future Coding Evaluation and future Agent/Harness Evaluation.
+- [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — shipped bounded runtime-timing/performance evidence from an explicitly selected local Ollama model.
+- [Bench Core Compatibility / Runtime Health v1](BENCH_TASK_PACK_V1.md) — shipped bounded local compatibility checks, model discovery, private history and factual comparison for Ollama.
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
 - [Provider discovery outcomes v1](PROVIDER_DISCOVERY_OUTCOMES_V1.md) — truthful success/empty/unavailable/failed/partial/cancelled semantics and never-lose cache publication rules.
 - [Provider documentation](providers/) — source locations, formats, limitations and parser notes for individual integrations.
 
 ## Connect devices locally
 
-- [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) — the accepted secure pairing foundation plus the implemented Mobile Product Foundation V1 and Activity Sessions/Pull Requests surfaces, Project scope and bounded Android limits; public Android distribution remains separate.
-- [Mobile Product Parity V1 inventory](MOBILE_PRODUCT_PARITY_V1.md) — the current Desktop/core and Android inventory, parity matrix, authority gaps and sequential implementation plan audited from `main`.
-- [Local companion API v1](LOCAL_COMPANION_API.md) — stable local HTTPS endpoints, capability discovery, Project scope and the content-minimal domain contracts used by first-party companions.
+- [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) — accepted secure pairing foundation plus implemented bounded mobile projections; public Android distribution remains separate.
+- [Mobile Product Parity V1 inventory](MOBILE_PRODUCT_PARITY_V1.md) — current Desktop/core and Android inventory, parity matrix, authority gaps and sequential implementation plan audited from `main`.
+- [Local companion API v1](LOCAL_COMPANION_API.md) — stable local HTTPS endpoints, capability discovery, Project scope and content-minimal domain contracts used by first-party companions.
 
 ## Understand the product
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
-- [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — read-only conversational investigation over bounded Metrora evidence, runtime/privacy boundaries, tests and license provenance.
-- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — design-only action boundary, first local Bench proposal, mobile projection and OSS reuse notes; no executor is added.
-- [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — factual-surface → Ask Advisor → contextual investigation scope handoff across supported Desktop surfaces.
+- [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) — product-facing chat/tools/ACT/Swarm direction grounded in the current read-only public foundation, with explicit shipped/planned boundaries.
+- [Advisor public implementation foundation](ADVISOR_PUBLIC_FOUNDATION.md) — exact current `Advisor*` tool/runtime/BYOK/privacy contracts that implement today's conversational foundation.
+- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — public trusted-action boundary, Core Compatibility first-action semantics and explicit non-implementation limits on current `main`.
+- [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — current factual-surface → Ask Advisor → contextual scope handoff used by the existing Desktop implementation.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
 - [Canonical history parity observer v1](CANONICAL_HISTORY_PARITY_OBSERVER_V1.md) — non-authoritative cache-to-shadow parity validation before snapshot publication.
-- [CLI status C3 dual-read v1](CANONICAL_HISTORY_CLI_DUAL_READ_V1.md) — the bounded terminal consumer, exact parity gate and legacy fallback boundary.
+- [CLI status C3 dual-read v1](CANONICAL_HISTORY_CLI_DUAL_READ_V1.md) — bounded terminal consumer, parity gate and legacy fallback boundary.
 - [Accounting and pricing](ACCOUNTING_AND_PRICING.md) — user-facing semantics for multidimensional pricing identity, evidence precedence, request conditions, durable totals and evidence-aware cost valuation.
 - [Cost assignment v1](COST_ASSIGNMENT_V1.md) — immutable per-call assignments, provenance, bounded charges and settled-history compatibility.
-- [Local pricing observations](LOCAL_PRICING_OBSERVATIONS.md) — private first-observed pricing evidence, deterministic/dynamic resolution and its history boundary.
+- [Local pricing observations](LOCAL_PRICING_OBSERVATIONS.md) — private first-observed pricing evidence, deterministic/dynamic resolution and history boundary.
 - [Pricing history](PRICING_HISTORY.md) — generated reviewed rate history and date-effective records used by the accounting path.
 - [Collector inventory v1](COLLECTOR_INVENTORY_V1.md) — generated technical inventory of registered collectors and signed-measurement eligibility.
 - [Public contracts v1](PUBLIC_CONTRACTS_V1.md) — public schemas, signed-data behavior and compatibility commitments.
 - [Technical identity compatibility](TECHNICAL_IDENTITY_COMPATIBILITY.md) — identifiers retained to protect local state and integrations.
+
+## Harness naming and current implementation
+
+The public product direction uses **Metrora Harness** for the conversational/operational surface.
+
+The current implementation still exposes stable names such as `AdvisorKernel`, `AdvisorToolV1`, `AdvisorActionProposalV1`, existing route/file names and the current `Ask Advisor` UI. Those remain truthful current implementation names until a separately reviewed UI/code migration lands.
+
+Do not treat documentation naming as proof that a runtime/UI rename, ACT executor, llama.cpp adapter or Swarm mode already ships.
+
+## Bench status
+
+Current public Bench evidence is intentionally separated:
+
+| Family | Current state |
+| --- | --- |
+| small runtime timing/performance evidence | **Shipped:** BenchRunV1 local Ollama |
+| Compatibility / Runtime Health | **Shipped:** Core Compatibility v1 |
+| broader hardware Performance | **Planned:** first native target llama.cpp/`llama-bench` |
+| Coding Evaluation | **Future / not shipped** |
+| Agent/Harness Evaluation | **Future / not shipped** |
+
+No current Bench result is a universal model-quality ranking.
 
 ## Local Workspace and evidence
 
@@ -49,35 +75,43 @@ This index separates user guidance, current product guarantees, public contracts
 - [Workspace recovery v1](WORKSPACE_RECOVERY_V1.md) — read-only inspection and explicit non-destructive recovery.
 - [Reviewed event factory v1](REVIEWED_EVENT_FACTORY_V1.md) — provenance-gated projection of normalized calls into public measurement events.
 
-Component references in this section explain bounded implementation responsibilities. They do not define product sequencing or a private roadmap; [Workspace v1](WORKSPACE_V1.md) is the current status authority.
+Component references in this section explain bounded implementation responsibilities. They do not define private product sequencing; [Workspace v1](WORKSPACE_V1.md) is the current status authority.
 
 ## Distribution and releases
 
 - [Windows distribution](WINDOWS_DISTRIBUTION.md) — canonical current Windows package, identity and publication boundary.
 - [Windows Store package identity v1](WINDOWS_STORE_IDENTITY_V1.md) — assigned package identity and separate AppX/MSIX build boundary.
-- [Windows Store local package test](WINDOWS_STORE_LOCAL_TEST_GUIDED.md) — bounded local installation/cleanup path, preserved RC10 → RC11 historical procedure and RC11 starting point for any separately selected future candidate.
+- [Windows Store local package test](WINDOWS_STORE_LOCAL_TEST_GUIDED.md) — bounded local installation/cleanup path and historical/candidate-specific procedure.
 - [Windows release candidate v1](WINDOWS_RELEASE_CANDIDATE_V1.md) — unsigned candidate manifest and independent verification contract.
 - [Windows format derivation v1](WINDOWS_FORMAT_DERIVATION_V1.md) — one-payload portable and installer derivation.
 - [Windows clean install v1](WINDOWS_CLEAN_INSTALL_V1.md) — isolated NSIS installation and state-preservation contract.
 - [Windows interrupted upgrade recovery v1](WINDOWS_INTERRUPTED_UPGRADE_RECOVERY_V1.md) — deterministic interruption fixture and recovery contract.
-- [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md) — current unsigned technical-preview source, candidate, physical and publication gates.
-- [Windows physical acceptance guided path](WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md) — two-profile guided execution for the current candidate.
-- [Windows physical acceptance R1.B.D](WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md) — historical `0.9.19` acceptance contract and evidence boundary.
+- [Windows GitHub pre-release acceptance v1](WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md) — technical-preview source/candidate/physical/publication gates.
+- [Windows physical acceptance guided path](WINDOWS_PHYSICAL_ACCEPTANCE_GUIDED.md) — guided execution for a declared candidate.
+- [Windows physical acceptance R1.B.D](WINDOWS_PHYSICAL_ACCEPTANCE_R1BD.md) — historical acceptance evidence boundary.
 - [Android public distribution v1](ANDROID_PUBLIC_DISTRIBUTION_V1.md) — source-bound direct APK contract, production-signing boundary and Founder-gated publication path.
 - [Versioning](VERSIONING.md) — release-candidate and platform build-version authority.
 - [Releasing Metrora](../RELEASING.md) — public release responsibilities and prohibitions.
 - [Changelog](../CHANGELOG.md) — Metrora-originated public changes.
 
-Historical and guided acceptance documents preserve reproducible public evidence for the source and artifact they name. They do not override the current release status in [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning](VERSIONING.md) or the root [README](../README.md).
+Historical/guided acceptance documents preserve reproducible evidence for the source/artifact they name. They do not override current release status in [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning](VERSIONING.md) or the root [README](../README.md).
 
 ## Contribute safely
 
 - [Contributing](../CONTRIBUTING.md) — contribution workflow and validation requirements.
 - [Contributing pricing data](CONTRIBUTING_PRICING.md) — evidence, identity, interval, policy and fail-closed rules for reviewed pricing changes.
 - [Security policy](../SECURITY.md) — private vulnerability reporting.
-- [Third-party notices](../THIRD_PARTY_NOTICES.md) — required licences and component notices.
+- [Third-party notices](../THIRD_PARTY_NOTICES.md) — licences/notices for software actually incorporated/distributed by the repository.
 - [Brand policy](../BRAND_POLICY.md) — product identity and permitted brand use.
+
+## OSS / provenance rule
+
+Public documentation records actual adopted dependencies, protocol contracts and required licence/provenance obligations.
+
+A planned integration such as future llama.cpp/`llama-bench` Performance work must still undergo an implementation-time version/licence/security review before code or binaries are incorporated. The repository does not publish an internal competitive watchlist as product documentation.
 
 ## Documentation rule
 
-Public documentation explains current behavior, stable guarantees, known limitations, reproducible contracts and contribution requirements. Internal staffing, budgets, private infrastructure, unpublished commercial plans, milestone codes and product sequencing do not belong in this repository.
+Public documentation explains current behavior, stable guarantees, known limitations, reproducible public contracts and contribution requirements. Future direction is labelled as planned/future and must not be confused with shipped runtime capability.
+
+Internal pricing, commercial moat design, private infrastructure, private evaluation strategy, competitive/upstream prioritization and unpublished proprietary implementation plans do not belong in this repository.
