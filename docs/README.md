@@ -1,6 +1,8 @@
 # Metrora documentation
 
-Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate with Advisor; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
+Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate through the current conversational surface; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
+
+The product-facing direction for the conversational/operational surface is **Metrora Harness**. Current Desktop/code/contracts still use `Advisor` / `Advisor*` identifiers until a bounded implementation migration lands.
 
 This index separates user guidance, current product guarantees, public contracts and contributor-facing technical references.
 
@@ -8,8 +10,9 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Getting started](GETTING_STARTED.md) — install or build Metrora, run the first reports and understand the current distribution boundary.
 - [CLI reference](CLI_REFERENCE.md) — public commands grouped by task.
-- [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — bounded synthetic runtime evidence from an explicitly selected local Ollama model.
-- [Bench Core conformance v1](BENCH_TASK_PACK_V1.md) — bounded local conformance checks, model discovery, private history and factual comparison for Ollama.
+- [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) — public distinction between Performance, Compatibility/Runtime Health, future Coding Evaluation and future Agent/Harness Evaluation.
+- [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — shipped bounded runtime-timing evidence from an explicitly selected local Ollama model.
+- [Bench Core Compatibility / Runtime Health v1](BENCH_TASK_PACK_V1.md) — shipped bounded local compatibility checks, model discovery, private history and factual comparison for Ollama.
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
 - [Provider discovery outcomes v1](PROVIDER_DISCOVERY_OUTCOMES_V1.md) — truthful success/empty/unavailable/failed/partial/cancelled semantics and never-lose cache publication rules.
 - [Provider documentation](providers/) — source locations, formats, limitations and parser notes for individual integrations.
@@ -24,9 +27,10 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
-- [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — read-only conversational investigation over bounded Metrora evidence, runtime/privacy boundaries, tests and license provenance.
-- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — design-only action boundary, first local Bench proposal, mobile projection and OSS reuse notes; no executor is added.
-- [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — factual-surface → Ask Advisor → contextual investigation scope handoff across supported Desktop surfaces.
+- [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) — product-facing chat/tools/ACT/Swarm direction grounded in the current read-only public foundation, with explicit shipped/planned boundaries.
+- [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — exact current `Advisor*` conversational/tool/runtime/privacy contracts and license provenance.
+- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — trusted-action design, Core Compatibility first-action semantics and explicit current-main non-implementation limits.
+- [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — current factual-surface → Ask Advisor → contextual investigation scope handoff across supported Desktop surfaces.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
@@ -39,6 +43,28 @@ This index separates user guidance, current product guarantees, public contracts
 - [Collector inventory v1](COLLECTOR_INVENTORY_V1.md) — generated technical inventory of registered collectors and signed-measurement eligibility.
 - [Public contracts v1](PUBLIC_CONTRACTS_V1.md) — public schemas, signed-data behavior and compatibility commitments.
 - [Technical identity compatibility](TECHNICAL_IDENTITY_COMPATIBILITY.md) — identifiers retained to protect local state and integrations.
+
+## Harness naming and current implementation
+
+The public product direction uses **Metrora Harness** for the conversational/operational surface.
+
+The current implementation still exposes stable names such as `AdvisorKernel`, `AdvisorToolV1`, `AdvisorActionProposalV1`, existing route/file names and the current `Ask Advisor` UI. Those remain truthful current implementation names until a separately reviewed UI/code migration lands.
+
+Do not treat the documentation name as proof that a runtime/UI rename, ACT executor, llama.cpp adapter or Swarm mode already ships.
+
+## Bench status
+
+Current public Bench evidence is intentionally separated:
+
+| Family | Current state |
+| --- | --- |
+| small runtime timing/performance evidence | **Shipped:** BenchRunV1 local Ollama |
+| Compatibility / Runtime Health | **Shipped:** Core Compatibility v1 |
+| broader hardware Performance | **Planned:** first native target llama.cpp/`llama-bench` |
+| Coding Evaluation | **Future / not shipped** |
+| Agent/Harness Evaluation | **Future / not shipped** |
+
+No current Bench result is a universal model-quality ranking.
 
 ## Local Workspace and evidence
 
@@ -80,4 +106,4 @@ Historical and guided acceptance documents preserve reproducible public evidence
 
 ## Documentation rule
 
-Public documentation explains current behavior, stable guarantees, known limitations, reproducible contracts and contribution requirements. Internal staffing, budgets, private infrastructure, unpublished commercial plans, milestone codes and product sequencing do not belong in this repository.
+Public documentation explains current behavior, stable guarantees, known limitations, reproducible contracts and contribution requirements. Future direction must be labelled as planned/future rather than presented as shipped runtime capability. Internal staffing, budgets, private infrastructure, unpublished commercial plans, milestone codes and private product sequencing do not belong in this repository.
