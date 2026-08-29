@@ -3,9 +3,56 @@ import { describe, expect, it } from 'vitest'
 
 import { buildSpendEvidence } from './evidence'
 import { createAdvisorConformanceFixture } from './conformance'
+import { createAdvisorKernel } from './kernel'
 import { HostedAdvisorRuntime, type HostedAdvisorTransport } from './hosted'
 
 describe('Hosted Advisor renderer runtime', () => {
+  it.each([
+    ['ciao come stai', 'Ciao! Sto bene, grazie.', 1],
+    ['Bonjour, comment ça va ?', 'Bonjour ! Je vais bien, merci.', 2],
+  ] as const)('keeps %s conversational without evidence or tools', async (question, responseText, expectedCalls) => {
+    const fixture = createAdvisorConformanceFixture()
+    const requests: Array<Record<string, unknown>> = []
+    const planning = JSON.stringify({
+      contractVersion: 'advisor-planning-draft-v1',
+      schemaVersion: 1,
+      turnKind: 'social',
+      questionFamily: 'unknown',
+      requestedEvidenceDomains: [],
+      toolRequests: [],
+      presentationIntent: 'text',
+      expertDetailRequested: false,
+      clarification: null,
+    })
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openrouter', available: true, models: [{ id: 'openrouter/auto', label: 'openrouter/auto', state: 'unverified', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        if (question.startsWith('Bonjour') && requests.length === 1) return { streamed: false, message: { content: planning } }
+        return { streamed: false, message: { content: responseText } }
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const runtime = new HostedAdvisorRuntime({
+      provider: 'openrouter',
+      model: 'openrouter/auto',
+      capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' },
+      consent: true,
+      transport,
+    })
+
+    const answer = await createAdvisorKernel(fixture.source, runtime).investigate({ question, scope: fixture.scope })
+
+    expect(requests).toHaveLength(expectedCalls)
+    expect(requests.map(request => request.tools)).toEqual(Array.from({ length: expectedCalls }, () => []))
+    expect(fixture.reads.overviews).toHaveLength(0)
+    expect(answer.plan?.turnKind).toBe('social')
+    expect(answer.evidence).toEqual([])
+    expect(answer.conclusion).toBe(responseText)
+    expect(answer.generatedByModel).toBe(true)
+  })
+
   it('runs a bounded tool round trip and keeps the deterministic answer authoritative', async () => {
     const fixture = createAdvisorConformanceFixture()
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)

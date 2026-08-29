@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   ProviderDiscoveryPartialError,
+  ProviderDiscoveryTimeoutError,
   classifyProviderDiscoveryOutcome,
 } from '../src/providers/discovery-outcome.js'
 import {
   discoverAllSessionsWithOutcomes,
+  discoverAllSessionsForFreshness,
   discoverProviderWithOutcome,
 } from '../src/providers/index.js'
 import type { Provider, SessionSource } from '../src/providers/types.js'
@@ -39,6 +41,11 @@ describe('provider discovery outcome v1', () => {
     expect(classifyProviderDiscoveryOutcome('alpha', { error: new ProviderDiscoveryPartialError([valid]) })).toMatchObject({ status: 'partial', complete: false, sourceCount: 1, diagnostic: { code: 'partial-discovery' } })
     expect(classifyProviderDiscoveryOutcome('alpha', { sources: [valid, { path: '', project: 'bad', provider: 'alpha' } as SessionSource] })).toMatchObject({ status: 'partial', complete: false, sourceCount: 1, diagnostic: { code: 'invalid-source' } })
     expect(classifyProviderDiscoveryOutcome('alpha', { sources: [valid], cancelled: true })).toMatchObject({ status: 'cancelled', complete: false, sourceCount: 1, diagnostic: { code: 'cancelled' } })
+    expect(classifyProviderDiscoveryOutcome('alpha', { error: new ProviderDiscoveryTimeoutError() })).toMatchObject({
+      status: 'timed-out',
+      complete: false,
+      diagnostic: { code: 'discovery-timeout' },
+    })
   })
 
   it('validates source providers against canonical collector authority', () => {
@@ -76,6 +83,42 @@ describe('provider discovery outcome v1', () => {
     const pending = discoverProviderWithOutcome(fakeProvider('slow', async () => await new Promise<SessionSource[]>(() => undefined)), controller.signal)
     controller.abort()
     await expect(pending).resolves.toMatchObject({ provider: 'slow', status: 'cancelled', complete: false })
+  })
+
+  it('returns a bounded timeout outcome for a provider that never resolves', async () => {
+    const startedAt = Date.now()
+    const outcome = await discoverProviderWithOutcome(
+      fakeProvider('hung', async () => await new Promise<SessionSource[]>(() => undefined)),
+      undefined,
+      20,
+    )
+    expect(outcome).toMatchObject({
+      provider: 'hung',
+      status: 'timed-out',
+      complete: false,
+      sourceCount: 0,
+      diagnostic: { code: 'discovery-timeout' },
+    })
+    expect(Date.now() - startedAt).toBeLessThan(500)
+  })
+
+  it('lets healthy freshness providers proceed while another provider is hung', async () => {
+    const startedAt = Date.now()
+    const result = await discoverAllSessionsForFreshness('all', [
+      fakeProvider('hung', async () => await new Promise<SessionSource[]>(() => undefined)),
+      fakeProvider('healthy', async () => [source('healthy', '/healthy.jsonl')]),
+    ], { providerTimeoutMs: 20 })
+
+    expect(result.sources.map(item => item.path)).toEqual(['/healthy.jsonl'])
+    expect(result.outcomes.find(item => item.provider === 'hung')).toMatchObject({
+      status: 'timed-out',
+      complete: false,
+    })
+    expect(result.outcomes.find(item => item.provider === 'healthy')).toMatchObject({
+      status: 'success',
+      complete: true,
+    })
+    expect(Date.now() - startedAt).toBeLessThan(500)
   })
 
   it('isolates providers and returns deterministic provider ordering', async () => {

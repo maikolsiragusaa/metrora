@@ -37,11 +37,14 @@ import { grok } from './grok.js'
 import { ensureProviderEnvFingerprintAuthorities } from '../provider-parse-authorities.js'
 import type { Provider, SessionSource } from './types.js'
 import { discoverCodexSessionPathsForFreshness } from './freshness-discovery.js'
+import { performance } from 'node:perf_hooks'
+import { traceReconciliation } from '../reconciliation-diagnostics.js'
 import {
   classifyProviderDiscoveryOutcome,
   PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION,
   providerDiscoveryIsComplete,
   providerDiscoveryProviderOrder,
+  ProviderDiscoveryTimeoutError,
   type ProviderDiscoveryOutcome,
 } from './discovery-outcome.js'
 
@@ -264,31 +267,79 @@ export const providers = coreProviders
 // diagnostic state instead of being collapsed into an empty provider.
 const warnedDiscoveryFailures = new Set<string>()
 
+// A provider that cannot finish discovery must not hold the whole fresh
+// reconciliation hostage. This is deliberately per-provider: healthy
+// providers continue to reconcile and their cached evidence remains usable.
+export const PROVIDER_DISCOVERY_TIMEOUT_MS = 20_000 as const
+
+export type ProviderDiscoveryOptions = {
+  providerTimeoutMs?: number
+}
+
+function boundedProviderDiscoveryTimeout(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value >= 0
+    ? value
+    : PROVIDER_DISCOVERY_TIMEOUT_MS
+}
+
 function warnDiscoveryOutcome(outcome: ProviderDiscoveryOutcome): void {
   if (outcome.complete || warnedDiscoveryFailures.has(outcome.provider)) return
   warnedDiscoveryFailures.add(outcome.provider)
   process.stderr.write('metrora: ' + outcome.provider + ' discovery ' + outcome.status + '; retained evidence was not reconciled' + String.fromCharCode(10))
 }
 
-function cancelled<T>(signal: AbortSignal): Promise<T> {
-  return new Promise<T>((_, reject) => {
-    const rejectCancelled = () => reject(new Error('provider discovery cancelled'))
-    if (signal.aborted) rejectCancelled()
-    else signal.addEventListener('abort', rejectCancelled, { once: true })
+function cancelled<T>(signal: AbortSignal): { promise: Promise<T>; cleanup: () => void } {
+  let rejectCancelled!: (reason?: unknown) => void
+  const rejectAndCleanup = () => rejectCancelled(new Error('provider discovery cancelled'))
+  const promise = new Promise<T>((_, reject) => {
+    rejectCancelled = reject
+    if (signal.aborted) rejectAndCleanup()
+    else signal.addEventListener('abort', rejectAndCleanup, { once: true })
   })
+  return {
+    promise,
+    cleanup: () => signal.removeEventListener('abort', rejectAndCleanup),
+  }
 }
 
-export async function discoverProviderWithOutcome(provider: Provider, signal?: AbortSignal): Promise<ProviderDiscoveryOutcome> {
+export async function discoverProviderWithOutcome(
+  provider: Provider,
+  signal?: AbortSignal,
+  timeoutMs: number = PROVIDER_DISCOVERY_TIMEOUT_MS,
+): Promise<ProviderDiscoveryOutcome> {
   if (signal?.aborted) return classifyProviderDiscoveryOutcome(provider.name, { cancelled: true })
+  const startedAt = performance.now()
+  let result: ProviderDiscoveryOutcome | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cancellation = signal ? cancelled<SessionSource[]>(signal) : undefined
+  const boundedTimeout = boundedProviderDiscoveryTimeout(timeoutMs)
   try {
-    const discovered: unknown = signal
-      ? await Promise.race([provider.discoverSessions(), cancelled<SessionSource[]>(signal)])
-      : await provider.discoverSessions()
-    return Array.isArray(discovered)
+    const discoveryPromise = Promise.resolve().then(() => provider.discoverSessions())
+    const pending: Promise<unknown>[] = [discoveryPromise]
+    if (cancellation) pending.push(cancellation.promise)
+    pending.push(new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new ProviderDiscoveryTimeoutError()), boundedTimeout)
+    }))
+    const discovered: unknown = await Promise.race(pending)
+    result = Array.isArray(discovered)
       ? classifyProviderDiscoveryOutcome(provider.name, { sources: discovered, cancelled: signal?.aborted === true })
       : classifyProviderDiscoveryOutcome(provider.name, { error: new Error('provider returned an invalid source list') })
+    return result
   } catch (error) {
-    return classifyProviderDiscoveryOutcome(provider.name, { error, cancelled: signal?.aborted === true })
+    result = classifyProviderDiscoveryOutcome(provider.name, { error, cancelled: signal?.aborted === true })
+    return result
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+    cancellation?.cleanup()
+    if (result) {
+      traceReconciliation('provider-discovery', {
+        provider: provider.name,
+        status: result.status,
+        complete: result.complete,
+        sourceCount: result.sourceCount,
+        elapsedMs: Math.round(performance.now() - startedAt),
+      })
+    }
   }
 }
 
@@ -301,7 +352,11 @@ export type ProviderDiscoveryRun = {
 
 export const PROVIDER_DISCOVERY_CONCURRENCY = 2 as const
 
-async function discoverProvidersBounded(providers: readonly Provider[], signal?: AbortSignal): Promise<ProviderDiscoveryOutcome[]> {
+async function discoverProvidersBounded(
+  providers: readonly Provider[],
+  signal?: AbortSignal,
+  providerTimeoutMs: number = PROVIDER_DISCOVERY_TIMEOUT_MS,
+): Promise<ProviderDiscoveryOutcome[]> {
   const outcomes: Array<ProviderDiscoveryOutcome | undefined> = new Array(providers.length)
   let cursor = 0
   const worker = async (): Promise<void> => {
@@ -314,7 +369,7 @@ async function discoverProvidersBounded(providers: readonly Provider[], signal?:
         continue
       }
       try {
-        outcomes[index] = await discoverProviderWithOutcome(provider, signal)
+        outcomes[index] = await discoverProviderWithOutcome(provider, signal, providerTimeoutMs)
       } catch (error) {
         outcomes[index] = classifyProviderDiscoveryOutcome(provider.name, { error, cancelled: signal?.aborted === true })
       }
@@ -325,14 +380,95 @@ async function discoverProvidersBounded(providers: readonly Provider[], signal?:
   return outcomes.map((outcome, index) => outcome ?? classifyProviderDiscoveryOutcome(providers[index]!.name, { cancelled: true }))
 }
 
+type FreshnessDiscoveryValue = {
+  provider: string
+  fast: boolean
+  sources: SessionSource[]
+  outcome: ProviderDiscoveryOutcome
+}
+
+async function boundedFreshnessTask<T>(task: () => Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      Promise.resolve().then(task),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new ProviderDiscoveryTimeoutError()), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+async function discoverProviderForFreshness(
+  provider: Provider,
+  providerTimeoutMs: number,
+): Promise<FreshnessDiscoveryValue> {
+  if (provider.name === 'codex' && provider.probeRoots) {
+    try {
+      const sources = await boundedFreshnessTask(
+        async () => discoverCodexSessionPathsForFreshness(await provider.probeRoots!()),
+        providerTimeoutMs,
+      )
+      const outcome = classifyProviderDiscoveryOutcome(provider.name, { sources })
+      warnDiscoveryOutcome(outcome)
+      return { provider: provider.name, fast: outcome.complete, sources, outcome }
+    } catch (error) {
+      if (error instanceof ProviderDiscoveryTimeoutError) {
+        const outcome = classifyProviderDiscoveryOutcome(provider.name, { error })
+        warnDiscoveryOutcome(outcome)
+        return { provider: provider.name, fast: false, sources: [], outcome }
+      }
+      // Fall back to the provider's full discovery path so a probe failure is
+      // represented as a real outcome instead of an empty fast scan.
+    }
+  }
+
+  const outcome = await discoverProviderWithOutcome(provider, undefined, providerTimeoutMs)
+  warnDiscoveryOutcome(outcome)
+  return { provider: provider.name, fast: false, sources: [...outcome.sources], outcome }
+}
+
+async function discoverFreshnessBounded(
+  providers: readonly Provider[],
+  providerTimeoutMs: number,
+): Promise<FreshnessDiscoveryValue[]> {
+  const discovered: Array<FreshnessDiscoveryValue | undefined> = new Array(providers.length)
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = cursor++
+      if (index >= providers.length) return
+      const provider = providers[index]!
+      try {
+        discovered[index] = await discoverProviderForFreshness(provider, providerTimeoutMs)
+      } catch (error) {
+        const outcome = classifyProviderDiscoveryOutcome(provider.name, { error })
+        warnDiscoveryOutcome(outcome)
+        discovered[index] = { provider: provider.name, fast: false, sources: [...outcome.sources], outcome }
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(PROVIDER_DISCOVERY_CONCURRENCY, providers.length) }, () => worker())
+  await Promise.all(workers)
+  return discovered.map((value, index) => value ?? {
+    provider: providers[index]!.name,
+    fast: false,
+    sources: [],
+    outcome: classifyProviderDiscoveryOutcome(providers[index]!.name, { cancelled: true }),
+  })
+}
+
 export async function discoverAllSessionsWithOutcomes(
   providerFilter?: string,
   providerList?: Provider[],
   signal?: AbortSignal,
+  options: ProviderDiscoveryOptions = {},
 ): Promise<ProviderDiscoveryRun> {
   const allProviders = providerList ?? await getAllProviders()
   const filtered = providerDiscoveryProviderOrder(allProviders.filter(provider => !providerFilter || providerFilter === 'all' || provider.name === providerFilter))
-  const outcomes = await discoverProvidersBounded(filtered, signal)
+  const outcomes = await discoverProvidersBounded(filtered, signal, boundedProviderDiscoveryTimeout(options.providerTimeoutMs))
   for (const outcome of outcomes) warnDiscoveryOutcome(outcome)
   return {
     schemaVersion: PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION,
@@ -342,8 +478,12 @@ export async function discoverAllSessionsWithOutcomes(
   }
 }
 
-export async function safeDiscoverSessions(provider: Provider, signal?: AbortSignal): Promise<SessionSource[]> {
-  const outcome = await discoverProviderWithOutcome(provider, signal)
+export async function safeDiscoverSessions(
+  provider: Provider,
+  signal?: AbortSignal,
+  options: ProviderDiscoveryOptions = {},
+): Promise<SessionSource[]> {
+  const outcome = await discoverProviderWithOutcome(provider, signal, boundedProviderDiscoveryTimeout(options.providerTimeoutMs))
   warnDiscoveryOutcome(outcome)
   return [...outcome.sources]
 }
@@ -352,8 +492,9 @@ export async function discoverAllSessions(
   providerFilter?: string,
   providerList?: Provider[],
   signal?: AbortSignal,
+  options: ProviderDiscoveryOptions = {},
 ): Promise<SessionSource[]> {
-  return (await discoverAllSessionsWithOutcomes(providerFilter, providerList, signal)).sources
+  return (await discoverAllSessionsWithOutcomes(providerFilter, providerList, signal, options)).sources
 }
 
 export type FreshnessDiscoveryResult = {
@@ -372,27 +513,11 @@ export type FreshnessDiscoveryResult = {
 export async function discoverAllSessionsForFreshness(
   providerFilter?: string,
   providerList?: Provider[],
+  options: ProviderDiscoveryOptions = {},
 ): Promise<FreshnessDiscoveryResult> {
   const allProviders = providerList ?? await getAllProviders()
   const filtered = providerDiscoveryProviderOrder(allProviders.filter(provider => !providerFilter || providerFilter === 'all' || provider.name === providerFilter))
-  const discovered: Array<{ provider: string; fast: boolean; sources: SessionSource[]; outcome: ProviderDiscoveryOutcome }> = []
-  for (const provider of filtered) {
-    if (provider.name === 'codex' && provider.probeRoots) {
-      try {
-        const sources = await discoverCodexSessionPathsForFreshness(await provider.probeRoots())
-        const outcome = classifyProviderDiscoveryOutcome(provider.name, { sources })
-        discovered.push({ provider: provider.name, fast: outcome.complete, sources, outcome })
-        warnDiscoveryOutcome(outcome)
-        continue
-      } catch {
-        // Fall back to the provider's full discovery path so the failure is
-        // represented as a real outcome instead of an empty fast scan.
-      }
-    }
-    const outcome = await discoverProviderWithOutcome(provider)
-    discovered.push({ provider: provider.name, fast: false, sources: [...outcome.sources], outcome })
-    warnDiscoveryOutcome(outcome)
-  }
+  const discovered = await discoverFreshnessBounded(filtered, boundedProviderDiscoveryTimeout(options.providerTimeoutMs))
   const outcomes = discovered.map(value => value.outcome)
   return {
     sources: discovered.flatMap(value => value.sources),

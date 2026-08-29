@@ -25,6 +25,22 @@ describe('session cache hydration completeness', () => {
     expect(value.complete).toBe(true)
   })
 
+  it('does not stamp a provider-scoped parse as a globally complete hydration', () => {
+    const value = cache(false)
+
+    expect(applySessionCacheDiscoveryCompleteness(value, true, 'provider')).toBe(false)
+    expect(value.complete).toBe(false)
+    expect((value as { _dirty?: boolean })._dirty).toBeUndefined()
+  })
+
+  it('publishes provider-scoped mutations without upgrading global completeness', () => {
+    const value = cache(false, true)
+
+    expect(applySessionCacheDiscoveryCompleteness(value, true, 'provider')).toBe(true)
+    expect(value.complete).toBe(false)
+    expect((value as { _dirty?: boolean })._dirty).toBe(true)
+  })
+
   it('still publishes ordinary dirty cache mutations', () => {
     const value = cache(true, true)
 

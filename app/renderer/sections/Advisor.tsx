@@ -266,6 +266,15 @@ export function Advisor({
   const [credentialSaving, setCredentialSaving] = useState(false)
   const hostedConfigRef = useRef({ runtimeChoice, hostedRuntime, hostedConsent })
   hostedConfigRef.current = { runtimeChoice, hostedRuntime, hostedConsent }
+  const hostedSubmitBlockReason = runtimeChoice === 'hosted'
+    ? !hostedRuntime
+      ? hostedProbe.reachability === 'checking'
+        ? 'Waiting for the hosted provider check to finish.'
+        : 'Connect a hosted provider credential and select a usable model before investigating.'
+      : !hostedConsent
+        ? 'Confirm the hosted-provider evidence sharing notice before investigating.'
+        : null
+    : null
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
   const [error, setError] = useState<string | null>(null)
   const [failedRequest, setFailedRequest] = useState<AdvisorFailedRequest | null>(null)
@@ -297,8 +306,8 @@ export function Advisor({
     const targetConversation = conversations.find(conversation => conversation.id === conversationId)
     if (!targetConversation) return
     const currentHosted = hostedConfigRef.current
-    if (currentHosted.runtimeChoice === 'hosted' && (!currentHosted.hostedRuntime || !currentHosted.hostedConsent)) {
-      setNotice(currentHosted.hostedRuntime ? 'Confirm the hosted-provider evidence sharing notice before investigating.' : 'Connect a hosted provider credential before investigating.')
+    if (currentHosted.runtimeChoice === 'hosted' && hostedSubmitBlockReason) {
+      setNotice(hostedSubmitBlockReason)
       return
     }
     invalidateAdvisorRequest()
@@ -366,7 +375,7 @@ export function Advisor({
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, contextualScopeMode, conversations, invalidateAdvisorRequest, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
+  }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -571,7 +580,11 @@ export function Advisor({
         </div>
         <form className="advisor-composer" onSubmit={submit}>
           <textarea aria-label="Ask Metrora Advisor" placeholder="Ask about spend, models, Projects, sessions, or quota…" value={composer} onChange={event => setComposer(event.target.value)} onKeyDown={composerKeyDown} disabled={Boolean(loadingQuestion)} rows={2} />
-          <div className="advisor-composer-foot"><span>Enter to investigate · Shift+Enter for a new line</span>{loadingQuestion ? <button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>Investigate <span>↗</span></button>}</div>
+          <div className="advisor-composer-foot">
+            <span>Enter to investigate · Shift+Enter for a new line</span>
+            {hostedSubmitBlockReason && composer.trim() && notice !== hostedSubmitBlockReason ? <span className="advisor-submit-note" role="status">{hostedSubmitBlockReason}</span> : null}
+            {loadingQuestion ? <button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>Investigate <span>↗</span></button>}
+          </div>
         </form>
       </main>
 

@@ -547,6 +547,7 @@ describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
     expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
     expect(opts[1]?.idleTimeoutMs).toBe(45_000)
     expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
+    expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_READ_MODE).toBe('')
     expect(typeof opts[1]?.onStderr).toBe('function')
     expect(typeof opts[1]?.onProgress).toBe('function')
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'done' })

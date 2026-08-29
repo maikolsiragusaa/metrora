@@ -1,6 +1,7 @@
 import { existsSync } from 'fs'
 import { readFile, readdir, stat } from 'fs/promises'
 import { dirname, join } from 'path'
+import { performance } from 'node:perf_hooks'
 import { isSessionHydrationComplete } from './parser.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
@@ -9,7 +10,8 @@ import { mergeDayEntriesByProviderCompleteness } from './daily-cache-merge.js'
 import { mergeTimezoneRebucketedDays } from './daily-cache-tz-reconcile.js'
 import * as core from './daily-cache-core.js'
 import { rememberDailyCachePayloadEvidenceV1 } from './cache-generation.js'
-import { hasLatestParserDiscoveryAuthority, latestParserDiscoveryProviderComplete } from './parser-discovery-state.js'
+import { hasLatestParserDiscoveryAuthority, latestParserDiscoveryGlobalComplete, latestParserDiscoveryProviderComplete } from './parser-discovery-state.js'
+import { traceReconciliation } from './reconciliation-diagnostics.js'
 
 export * from './daily-cache-core.js'
 
@@ -222,6 +224,13 @@ async function parseIsAuthoritative(
   // durable cache forever. Ordinary future hydrations keep the stricter
   // fingerprint authority below.
   if (allowDegradedSourceReconciliation) return true
+  // The parser has already completed a fresh all-provider discovery and the
+  // daily callback consumed that run. Re-checking every source fingerprint
+  // here made a bounded date-range hydration reject itself whenever an older
+  // source sat outside the backfill horizon, leaving the daily cache degraded
+  // and forcing the same expensive reconciliation on every Refresh.
+  const discoveryComplete = latestParserDiscoveryGlobalComplete()
+  if (discoveryComplete !== undefined) return discoveryComplete
   return await currentSessionSnapshotCompleteness('all') === 'complete'
 }
 
@@ -234,13 +243,14 @@ export async function ensureCacheHydrated(
     (projects, tz) => aggregateProjectsIntoDays(projects, iso => dateKeyInTz(iso, tz)),
   options: core.CacheHydrationOptions = {},
 ): Promise<DailyCache> {
+  const startedAt = performance.now()
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const yesterdayEnd = new Date(todayStart.getTime() - 1)
   const yesterdayStr = core.toDateString(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
   const allowDegradedSourceReconciliation = /modelIdentity=v[23](?:\u0002|$)/.test(savingsConfigHash)
 
-  return core.withDailyCacheLock(async () => {
+  const hydrated = await core.withDailyCacheLock(async () => {
     let cache = await loadDailyCache()
     const todayStr = core.toDateString(now)
     const tzKey = core.currentTzKey()
@@ -421,4 +431,12 @@ export async function ensureCacheHydrated(
 
     return cache
   })
+  traceReconciliation('daily-cache-publication', {
+    complete: hydrated.complete === true,
+    watermarkTrusted: hydrated.watermarkTrusted === true,
+    dayCount: hydrated.days.length,
+    lastComputedDate: hydrated.lastComputedDate,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  })
+  return hydrated
 }

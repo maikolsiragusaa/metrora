@@ -3,8 +3,8 @@ import { canonicalCollectorForStorageNamespace } from '../provider-parse-authori
 
 export const PROVIDER_DISCOVERY_OUTCOME_SCHEMA_VERSION = 'metrora.provider-discovery-outcome.v1' as const
 
-export type ProviderDiscoveryStatus = 'success' | 'empty' | 'unavailable' | 'failed' | 'partial' | 'cancelled'
-export type ProviderDiscoveryDiagnosticCode = 'provider-unavailable' | 'discovery-failed' | 'partial-discovery' | 'invalid-source' | 'cancelled'
+export type ProviderDiscoveryStatus = 'success' | 'empty' | 'unavailable' | 'failed' | 'partial' | 'cancelled' | 'timed-out'
+export type ProviderDiscoveryDiagnosticCode = 'provider-unavailable' | 'discovery-failed' | 'partial-discovery' | 'invalid-source' | 'cancelled' | 'discovery-timeout'
 export type ProviderDiscoveryDiagnostic = {
   code: ProviderDiscoveryDiagnosticCode
   message: string
@@ -30,6 +30,13 @@ export class ProviderDiscoveryUnavailableError extends Error {
   constructor(message = 'provider source is unavailable') {
     super(message)
     this.name = 'ProviderDiscoveryUnavailableError'
+  }
+}
+
+export class ProviderDiscoveryTimeoutError extends Error {
+  constructor(message = 'provider discovery exceeded its bounded time budget') {
+    super(message)
+    this.name = 'ProviderDiscoveryTimeoutError'
   }
 }
 
@@ -61,6 +68,10 @@ function isUnavailableError(error: unknown): boolean {
   return code === 'ENOENT' || code === 'EACCES' || code === 'EPERM' || code === 'ENOTDIR'
 }
 
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof ProviderDiscoveryTimeoutError
+}
+
 function isValidSource(providerName: string, source: unknown): source is SessionSource {
   if (!source || typeof source !== 'object') return false
   const value = source as Record<string, unknown>
@@ -83,6 +94,7 @@ function diagnostic(code: ProviderDiscoveryDiagnosticCode): ProviderDiscoveryDia
     'partial-discovery': 'provider discovery returned incomplete source evidence',
     'invalid-source': 'provider returned invalid source metadata',
     cancelled: 'provider discovery was cancelled before completion',
+    'discovery-timeout': 'provider discovery exceeded its bounded time budget',
   }
   return { code, message: messages[code] }
 }
@@ -115,6 +127,10 @@ export function classifyProviderDiscoveryOutcome(
 
   if (input.cancelled === true || isCancelledError(error)) {
     return outcome(providerName, 'cancelled', sources, diagnostic('cancelled'))
+  }
+
+  if (isTimeoutError(error)) {
+    return outcome(providerName, 'timed-out', sources, diagnostic('discovery-timeout'))
   }
 
   if (error instanceof ProviderDiscoveryPartialError) {

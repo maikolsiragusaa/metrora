@@ -48,6 +48,8 @@ export function TopBar({
   onProjectScopeSelect,
   capabilities = DEFAULT_CAPABILITIES,
   onAskAdvisor,
+  onRefresh,
+  refreshing = false,
 }: {
   title: ReactNode
   scope?: ReactNode
@@ -67,6 +69,8 @@ export function TopBar({
   onProjectScopeSelect?: (id: string) => void
   capabilities?: DesktopSectionCapabilities
   onAskAdvisor?: () => void
+  onRefresh?: () => void
+  refreshing?: boolean
 }) {
   return (
     <div className="bar">
@@ -76,6 +80,17 @@ export function TopBar({
       {onAskAdvisor && (
         <button type="button" className="btn btn-s ask-advisor-button" onClick={onAskAdvisor}>
           Ask Advisor <span aria-hidden="true">↗</span>
+        </button>
+      )}
+      {capabilities.globalRefresh && onRefresh && (
+        <button
+          type="button"
+          className="btn btn-s refresh-button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label={refreshing ? 'Refreshing' : 'Refresh'}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       )}
       {capabilities.period && (

@@ -174,9 +174,9 @@ function AppMain() {
         ) : section === 'advisor' ? (
           <Advisor period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} detectedProviders={detectedProviders} contextualLaunch={advisorLaunch} />
         ) : section === 'plans' ? (
-          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined} ready={ready} />
+          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined} onRefresh={refreshVisible} refreshing={overview.loading} ready={ready} />
         ) : section === 'settings' ? (
-          <Settings period={period} refreshToken={refreshToken} onNavigate={navigate} initialPane={settingsPane} claudeConfigs={claudeConfigs} claudeConfigSource={claudeConfigSource} onConfigMutated={onConfigMutated} />
+          <Settings period={period} refreshToken={refreshToken} onNavigate={navigate} initialPane={settingsPane} claudeConfigs={claudeConfigs} claudeConfigSource={claudeConfigSource} onConfigMutated={onConfigMutated} onRefresh={refreshVisible} refreshing={overview.loading} />
         ) : (
           <>
             <TopBar
@@ -198,10 +198,12 @@ function AppMain() {
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
               onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined}
+              onRefresh={refreshVisible}
+              refreshing={overview.loading}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
-                <OverviewContent period={period} provider={provider} range={customRange} overview={overview} onNavigate={navigate} ready={ready} />
+                <OverviewContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
               ) : section === 'sessions' ? (
                 <Sessions
                   period={period}
