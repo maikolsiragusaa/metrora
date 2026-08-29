@@ -80,7 +80,7 @@ function AnswerCard({ answer, selected, onSelect, onFollowUp }: {
   const limits = answer.materialLimits ?? []
   return (
     <article className={selected ? 'advisor-message assistant-message selected' : 'advisor-message assistant-message'} onClick={onSelect}>
-      <div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor <small>{answer.generatedByModel ? 'model-assisted investigation' : 'offline evidence'}</small></div>
+      <div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor <small>{answer.generatedByModel ? (answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat') : 'offline evidence'}</small></div>
       <p className="advisor-conclusion">{displayAnswer(answer)}</p>
       <div className="advisor-answer-meta"><span className={'advisor-coverage ' + answer.coverage.level}>{answer.coverage.label}</span><span>{answer.scopeLabel}</span></div>
       {answer.presentation?.length ? <PresentationBlocks blocks={answer.presentation} /> : null}
@@ -258,7 +258,7 @@ export function Advisor({
     void checkHostedRuntime()
     return () => hostedProbeController.current?.abort()
   }, [checkHostedRuntime, runtimeChoice])
-  const [conversations, setConversations] = useState<AdvisorConversation[]>(() => [{ id: makeId('chat'), title: 'New investigation', messages: [] }])
+  const [conversations, setConversations] = useState<AdvisorConversation[]>(() => [{ id: makeId('chat'), title: 'New chat', messages: [] }])
   const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]!.id)
   const [historyQuery, setHistoryQuery] = useState('')
   const [composer, setComposer] = useState('')
@@ -270,9 +270,9 @@ export function Advisor({
     ? !hostedRuntime
       ? hostedProbe.reachability === 'checking'
         ? 'Waiting for the hosted provider check to finish.'
-        : 'Connect a hosted provider credential and select a usable model before investigating.'
+        : 'Connect a hosted provider credential and select a usable model before sending a message.'
       : !hostedConsent
-        ? 'Confirm the hosted-provider evidence sharing notice before investigating.'
+        ? 'Confirm the hosted-provider prompt and evidence sharing notice before sending.'
         : null
     : null
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
@@ -286,7 +286,7 @@ export function Advisor({
     if (!normalizedContextualLaunch || !contextualScope) return
     setScope(contextualScope)
     setComposer(normalizedContextualLaunch.suggestedPrompt ?? '')
-    setNotice(`Context from ${advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)} loaded. Review the suggested investigation before sending.`)
+    setNotice(`Context from ${advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)} loaded. Review the suggested question before sending.`)
     setSelectedAnswerId(null)
   }, [contextualScope, normalizedContextualLaunch])
 
@@ -348,8 +348,18 @@ export function Advisor({
           && !overview.loading
           && !overview.switching ? overview.data : null,
         conversation: history,
+        uiContext: {
+          contractVersion: 'advisor-ui-context-v1',
+          schemaVersion: 1,
+          currentSurface: normalizedContextualLaunch?.originatingSection ?? 'Advisor',
+          period: requestedScope.period,
+          provider: requestedScope.provider,
+          project: requestedScope.projectName,
+          model: requestedScope.model,
+          relevantReferences: normalizedContextualLaunch?.suggestedPrompt ? [normalizedContextualLaunch.suggestedPrompt] : [],
+        },
         signal: controller.signal,
-        onToolEvent: event => { if (isCurrentRequest()) setToolStatus(event.status === 'started' ? 'Investigating ' + event.name.replaceAll('_', ' ') + '…' : null) },
+        onToolEvent: event => { if (isCurrentRequest()) setToolStatus(event.status === 'started' ? 'Reading ' + event.name.replaceAll('_', ' ') + '…' : null) },
         onDelta: text => { if (isCurrentRequest()) setStreamPreview(text) },
       })
       if (!isCurrentRequest()) return
@@ -358,7 +368,7 @@ export function Advisor({
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {
       if (!isCurrentRequest()) return
-      if (isCancelled(caught)) setNotice('Investigation cancelled. Your conversation stays local to this session.')
+      if (isCancelled(caught)) setNotice('Request cancelled. Your conversation stays local to this session.')
       else {
         setFailedRequest({
           question,
@@ -366,7 +376,7 @@ export function Advisor({
           conversationId,
           conversation: history.map(turn => ({ ...turn })),
         })
-        setError(caught instanceof Error ? caught.message : 'Advisor could not complete this investigation.')
+        setError(caught instanceof Error ? caught.message : 'Advisor could not complete this request.')
       }
     } finally {
       if (requestGenerationRef.current !== requestId) return
@@ -375,7 +385,7 @@ export function Advisor({
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
+  }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -389,10 +399,10 @@ export function Advisor({
   }
   const cancel = () => {
     invalidateAdvisorRequest()
-    setNotice('Cancelling investigation…')
+    setNotice('Cancelling request…')
   }
   const newConversation = () => {
-    const next: AdvisorConversation = { id: makeId('chat'), title: 'New investigation', messages: [] }
+    const next: AdvisorConversation = { id: makeId('chat'), title: 'New chat', messages: [] }
     setConversations(current => [next, ...current])
     setActiveConversationId(next.id)
     setSelectedAnswerId(null)
@@ -513,7 +523,7 @@ export function Advisor({
 
       <main className="advisor-main">
         <header className="advisor-main-head">
-          <div><p className="advisor-kicker">ADVISE · READ ONLY</p><h1>Ask Metrora</h1><p className="advisor-subtitle">Investigate measured usage, model efficiency, Projects, and provider capacity.</p></div>
+          <div><p className="advisor-kicker">ADVISE · READ ONLY</p><h1>Ask Metrora</h1><p className="advisor-subtitle">Talk naturally about Metrora evidence, your code, or anything you want to understand.</p></div>
           <AdvisorRuntimeControls
             runtimeChoice={runtimeChoice}
             runtimeId={runtimeId}
@@ -557,14 +567,14 @@ export function Advisor({
           )}
           <span className="advisor-read-only">Read-only · {contextualScopeLabel(scope, contextualScopeMode)}</span>
         </div>
-        {runtimeChoice !== 'hosted' && runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form model conversation and tool calls. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
+        {runtimeChoice !== 'hosted' && runtimeState.status === 'unavailable' ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form conversation and bounded evidence tools. <button type="button" onClick={() => void checkLocalRuntime()}>Try again</button></div> : null}
         {overview.error && !overview.data ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overview.error.message}</div> : null}
         <div className="advisor-thread" aria-live="polite">
           {messages.length === 0 ? (
             <div className="advisor-welcome">
               <span className="advisor-welcome-mark">M</span>
-              <p className="advisor-kicker">METRORA INVESTIGATION</p>
-              <h2>What should we look into?</h2>
+              <p className="advisor-kicker">METRORA ADVISOR</p>
+              <h2>What would you like to talk about?</h2>
               <p>Ask naturally. Advisor connects your question to Metrora factual evidence; a configured runtime can help explain it while verified details remain the authority.</p>
               <div className="advisor-prompt-grid">{PROMPTS.map(prompt => <button key={prompt.question} type="button" className="advisor-prompt" onClick={() => void ask(prompt.question)}><small>{prompt.eyebrow}</small><span>{prompt.label}</span><i>↗</i></button>)}</div>
             </div>
@@ -574,23 +584,23 @@ export function Advisor({
               : <AnswerCard key={message.id} answer={message.answer!} selected={selectedAnswerId === message.id} onSelect={() => setSelectedAnswerId(message.id)} onFollowUp={next => void ask(next)} />
             )
           )}
-          {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor</div><p className="advisor-tool-progress">{toolStatus ?? 'Investigating with Metrora evidence…'}</p>{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button></article> : null}
-          {error ? <div className="advisor-error" role="alert"><strong>Investigation unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequest) { setActiveConversationId(failedRequest.conversationId); void ask(failedRequest.question, failedRequest) } }}>Retry</button></div> : null}
+          {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Advisor</div><p className="advisor-tool-progress">{toolStatus ?? 'Thinking…'}</p>{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button></article> : null}
+          {error ? <div className="advisor-error" role="alert"><strong>Advisor unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequest) { setActiveConversationId(failedRequest.conversationId); void ask(failedRequest.question, failedRequest) } }}>Retry</button></div> : null}
           {notice ? <div className="advisor-notice" role="status">{notice}</div> : null}
         </div>
         <form className="advisor-composer" onSubmit={submit}>
-          <textarea aria-label="Ask Metrora Advisor" placeholder="Ask about spend, models, Projects, sessions, or quota…" value={composer} onChange={event => setComposer(event.target.value)} onKeyDown={composerKeyDown} disabled={Boolean(loadingQuestion)} rows={2} />
+          <textarea aria-label="Ask Metrora Advisor" placeholder="Ask Metrora Advisor anything…" value={composer} onChange={event => setComposer(event.target.value)} onKeyDown={composerKeyDown} disabled={Boolean(loadingQuestion)} rows={2} />
           <div className="advisor-composer-foot">
-            <span>Enter to investigate · Shift+Enter for a new line</span>
+            <span>Enter to send · Shift+Enter for a new line</span>
             {hostedSubmitBlockReason && composer.trim() && notice !== hostedSubmitBlockReason ? <span className="advisor-submit-note" role="status">{hostedSubmitBlockReason}</span> : null}
-            {loadingQuestion ? <button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>Investigate <span>↗</span></button>}
+            {loadingQuestion ? <button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>Send <span>↗</span></button>}
           </div>
         </form>
       </main>
 
       <aside className="advisor-evidence" aria-label="Advisor evidence">
         <div className="advisor-evidence-head"><p className="advisor-kicker">PROGRESSIVE DISCLOSURE</p><h2>Evidence</h2><span>Facts stay here. The model is not the authority.</span></div>
-        {latestAnswer ? <div className="advisor-evidence-body"><div className={'advisor-coverage-card ' + latestAnswer.coverage.level}><span>{latestAnswer.coverage.label}</span><p>{latestAnswer.coverage.detail}</p></div><div className="advisor-evidence-section"><h3>Scope</h3><p>{latestAnswer.scopeLabel}</p><p>{latestAnswer.periodLabel}</p></div><div className="advisor-evidence-section"><h3>Sources</h3>{latestAnswer.evidence.map(ref => <div className="advisor-ref" key={ref.id}><i />{ref.label}</div>)}</div><div className="advisor-evidence-section"><h3>Assumptions</h3>{latestAnswer.assumptions.map((item, index) => <p className="advisor-muted-line" key={index}>{item}</p>)}</div><div className="advisor-evidence-section"><h3>Unknown</h3>{latestAnswer.unknown.map((item, index) => <p className="advisor-muted-line" key={index}>{item}</p>)}</div>{latestAnswer.nextInvestigations.length ? <div className="advisor-evidence-section"><h3>Next investigation</h3>{latestAnswer.nextInvestigations.map(next => <button type="button" className="advisor-next-link" key={next} onClick={() => void ask(next)}>{next} <span>↗</span></button>)}</div> : null}</div> : <div className="advisor-evidence-empty"><span>✦</span><p>Ask a question to pin its evidence, scope, coverage, and unknowns here.</p></div>}
+        {latestAnswer ? <div className="advisor-evidence-body"><div className={'advisor-coverage-card ' + latestAnswer.coverage.level}><span>{latestAnswer.coverage.label}</span><p>{latestAnswer.coverage.detail}</p></div><div className="advisor-evidence-section"><h3>Scope</h3><p>{latestAnswer.scopeLabel}</p><p>{latestAnswer.periodLabel}</p></div><div className="advisor-evidence-section"><h3>Sources</h3>{latestAnswer.evidence.map(ref => <div className="advisor-ref" key={ref.id}><i />{ref.label}</div>)}</div><div className="advisor-evidence-section"><h3>Assumptions</h3>{latestAnswer.assumptions.map((item, index) => <p className="advisor-muted-line" key={index}>{item}</p>)}</div><div className="advisor-evidence-section"><h3>Unknown</h3>{latestAnswer.unknown.map((item, index) => <p className="advisor-muted-line" key={index}>{item}</p>)}</div>{latestAnswer.nextInvestigations.length ? <div className="advisor-evidence-section"><h3>Related next step</h3>{latestAnswer.nextInvestigations.map(next => <button type="button" className="advisor-next-link" key={next} onClick={() => void ask(next)}>{next} <span>↗</span></button>)}</div> : null}</div> : <div className="advisor-evidence-empty"><span>✦</span><p>Ask a question to pin its evidence, scope, coverage, and unknowns here.</p></div>}
       </aside>
     </section>
   )

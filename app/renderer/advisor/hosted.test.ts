@@ -8,27 +8,15 @@ import { HostedAdvisorRuntime, type HostedAdvisorTransport } from './hosted'
 
 describe('Hosted Advisor renderer runtime', () => {
   it.each([
-    ['ciao come stai', 'Ciao! Sto bene, grazie.', 1],
-    ['Bonjour, comment ça va ?', 'Bonjour ! Je vais bien, merci.', 2],
-  ] as const)('keeps %s conversational without evidence or tools', async (question, responseText, expectedCalls) => {
+    ['ciao come stai', 'Ciao! Sto bene, grazie.', 1, 'social'],
+    ['Bonjour, comment ça va ?', 'Bonjour ! Je vais bien, merci.', 1, 'investigate'],
+  ] as const)('keeps %s conversational without evidence or tools', async (question, responseText, expectedCalls, expectedTurnKind) => {
     const fixture = createAdvisorConformanceFixture()
     const requests: Array<Record<string, unknown>> = []
-    const planning = JSON.stringify({
-      contractVersion: 'advisor-planning-draft-v1',
-      schemaVersion: 1,
-      turnKind: 'social',
-      questionFamily: 'unknown',
-      requestedEvidenceDomains: [],
-      toolRequests: [],
-      presentationIntent: 'text',
-      expertDetailRequested: false,
-      clarification: null,
-    })
     const transport: HostedAdvisorTransport = {
       probe: async () => ({ provider: 'openrouter', available: true, models: [{ id: 'openrouter/auto', label: 'openrouter/auto', state: 'unverified', limitation: null }], detail: 'ready', credentialState: 'ready' }),
       chat: async (_requestId, payload) => {
         requests.push(payload)
-        if (question.startsWith('Bonjour') && requests.length === 1) return { streamed: false, message: { content: planning } }
         return { streamed: false, message: { content: responseText } }
       },
       cancel: async () => true,
@@ -47,7 +35,7 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(requests).toHaveLength(expectedCalls)
     expect(requests.map(request => request.tools)).toEqual(Array.from({ length: expectedCalls }, () => []))
     expect(fixture.reads.overviews).toHaveLength(0)
-    expect(answer.plan?.turnKind).toBe('social')
+    expect(answer.plan?.turnKind).toBe(expectedTurnKind)
     expect(answer.evidence).toEqual([])
     expect(answer.conclusion).toBe(responseText)
     expect(answer.generatedByModel).toBe(true)

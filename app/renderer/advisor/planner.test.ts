@@ -88,6 +88,13 @@ describe('Advisor bounded model planning contract', () => {
     })
   })
 
+  it('does not inject a spend read for an unknown conversational fallback', () => {
+    const fallbackPlan = createAdvisorTurnPlanV1('Tell me a joke', scope)
+    expect(fallbackPlan.questionFamily).toBe('unknown')
+    expect(deterministicPlanningFallback(fallbackPlan, ADVISOR_TOOL_DEFINITIONS).toolRequests).toEqual([])
+  })
+
+
   it('treats a native model-selected quota tool as the semantic family', () => {
     const fallbackPlan = createAdvisorTurnPlanV1('What changed in spend?', scope)
     const draft = planningDraftFromNativeToolCalls([{ function: { name: 'get_quota_snapshot', arguments: '{}' } }], fallbackPlan)

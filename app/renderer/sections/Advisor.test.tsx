@@ -60,7 +60,7 @@ const answer = {
 async function submitQuestion(question: string): Promise<void> {
   const previousCalls = investigate.mock.calls.length
   fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
-  fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Send/ }))
   await waitFor(() => expect(investigate.mock.calls).toHaveLength(previousCalls + 1))
 }
 
@@ -190,9 +190,9 @@ describe('Advisor workspace', () => {
     const question = 'Bonjour, comment ça va ?'
     const composer = screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })
     fireEvent.change(composer, { target: { value: question } })
-    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
 
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Confirm the hosted-provider evidence sharing notice before investigating.'))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Confirm the hosted-provider prompt and evidence sharing notice before sending.'))
     expect(composer).toHaveValue(question)
     expect(investigate).not.toHaveBeenCalled()
   })
@@ -247,7 +247,7 @@ describe('Advisor workspace', () => {
     const { container } = render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[{ id: 'codex', label: 'Codex' }]} />)
     const question = 'Inspect spend behavior'
     fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
-    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
     await screen.findByRole('alert')
     fireEvent.change(screen.getByLabelText('Advisor provider'), { target: { value: 'codex' } })
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
@@ -318,7 +318,7 @@ describe('Advisor workspace', () => {
   it('searches conversation titles, questions, and answers case-insensitively and can clear the query', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: 'Inspect spend behavior' } })
-    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
     await screen.findByText(answer.conclusion)
     fireEvent.click(screen.getByRole('button', { name: /New chat/ }))
     const search = screen.getByRole('textbox', { name: 'Search Advisor history' })

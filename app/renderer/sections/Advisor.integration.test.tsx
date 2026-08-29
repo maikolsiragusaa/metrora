@@ -82,7 +82,7 @@ describe('Advisor hosted submit integration', () => {
 
     const composer = screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })
     fireEvent.change(composer, { target: { value: 'ciao come stai' } })
-    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
 
     expect(await screen.findByText('Ciao! Sto bene, grazie.')).toBeInTheDocument()
     expect(composer).toHaveValue('')

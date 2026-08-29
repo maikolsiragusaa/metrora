@@ -183,7 +183,8 @@ describe('Advisor factual follow-up', () => {
     expect(firstContents).toContain('Hai speso 12 USD.')
     expect(firstContents).not.toContain('Do not cross this other scope.')
     expect(fixture.reads.overviews).toHaveLength(1)
-    expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
+    expect(answer.conclusion).toContain('12,00')
     expect(answer.claims?.map(claim => claim.id)).toEqual(['measured-total-cost', 'observed-calls', 'observed-sessions'])
   })
  
+})

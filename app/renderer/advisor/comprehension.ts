@@ -75,3 +75,22 @@ export function resolveAdvisorQuestion(
     usedDefaultScope,
   }
 }
+/**
+ * Guard used when a capable model is available. Deterministic comprehension
+ * remains a fallback hint, but social/unsupported/ambiguous wording must not
+ * prevent the model from answering or selecting a bounded read tool. Only an
+ * explicitly operational request keeps the proposal-required boundary.
+ */
+export function createAdvisorModelGuardV1(plan: AdvisorQuestionPlan): AdvisorGuardPlanV1 {
+  const action = plan.intent === 'action-proposal' || plan.plan.authorization === 'proposal-required'
+  return {
+    contractVersion: 'advisor-guard-plan-v1',
+    schemaVersion: 1,
+    turnKind: action ? 'boundary' : 'investigate',
+    scopeIntent: plan.plan.scopeIntent,
+    clarification: null,
+    authorization: action ? 'proposal-required' : 'read-only',
+    intent: action ? 'action-proposal' : 'unknown',
+    usedDefaultScope: plan.usedDefaultScope,
+  }
+}
