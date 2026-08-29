@@ -370,6 +370,109 @@ The Android Settings / Privacy surface links to the canonical policy at
 `https://metrora.eu/privacy`, which must remain live before any Store listing
 or submission.
 
+## Google Play Data Safety evidence map
+
+**Evidence snapshot:** `origin/main` at
+`8db16e19a898366647aa6088a07fa32a08db73b4` (refreshed 29 August 2026).
+This is a source-backed preparation map, not a Play Console declaration. It
+describes the Android app's current behavior; the Founder must still map the
+final signed AAB to the exact Play Console questions and review any SDK or
+platform disclosures required at submission time.
+
+**Permission inventory:** the source app manifest declares `INTERNET`,
+`ACCESS_NETWORK_STATE` and `CAMERA`; camera hardware is optional. There are no
+`debug` or product-flavor manifest overlays under `android/app/src`. Selected
+QR images use the system Photo Picker path and the app manifest declares no
+broad image/media/storage permission. The CI-produced release merged manifest
+inspected for this PR also contains AndroidX's app-scoped signature permission
+`eu.metrora.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. AndroidX
+ProfileInstaller uses `android.permission.DUMP` as a receiver permission; it is
+not a `uses-permission` requested by the app. Re-check the exact signed Play
+AAB merged manifest before entering Console declarations because dependencies
+can contribute merged-manifest entries.
+
+Google Play terminology is deliberately not used as a synonym for this table's
+observed flows. Current Play guidance defines collection around user data sent
+off device and separately describes exclusions such as qualifying end-to-end
+encryption. On-device QR/image processing and data received from Desktop do
+not, by themselves, settle a Play `collected` answer. Conversely, the current
+Android flow does send bounded pairing/authentication/request data to the
+selected Desktop. The Founder must map those exact values to Play's data types,
+purposes, required/optional status, ephemeral handling and any applicable
+sharing or end-to-end-encryption exclusion on the final candidate. TLS or
+fingerprint pinning alone must not be treated as proof that a Play exclusion
+applies.
+
+In this table, an observed recipient is the endpoint or SDK visible in current
+Android source. The paired Desktop is explicitly selected and approved by the
+user and is not a Metrora cloud relay. This operational description does not
+pre-decide whether Play's separate `sharing` definition or an exclusion applies.
+
+| Data type | Observed Android access / origin | Observed local / outbound flow | Purpose | Observed recipient / SDK | Retention | User control | Source evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Camera frames and selected QR image | Camera frames are accessed only after the user opens QR scanning and grants `CAMERA`; an imported image is selected through the system Photo Picker path. | Processed locally to extract one bounded QR value. The scanner/image-decoder paths do not persist or upload raw frames/images. | Discover the paired Desktop endpoint. | No network recipient in the decode path and no analytics/advertising SDK. | Transient for the scan/decode operation. | Deny or revoke `CAMERA`, cancel scanning, go back, or choose not to import an image. Image import does not require the camera permission. | `AndroidManifest.xml`, `QrScanner.kt`, `QrImageDecoder.kt`, `QrCodeDecoder.kt` |
+| Pairing and connection metadata | Host/port come from manual entry or QR; Desktop name and server fingerprint come from discovery; the client fingerprint comes from the local client certificate; pairing time is generated locally. The phone also derives a bounded display name from manufacturer/model. | Host/port select the direct TLS endpoint. After Desktop identity discovery, the pairing request sends the phone display name to that Desktop while the SAS is being shown; the local pairing credential is not saved until Desktop approval completes and the phone user confirms the SAS. Server/client fingerprints and pairing time are then stored in the encrypted local credential. | Bind the phone to one Desktop identity and scope authenticated requests. | The explicitly selected Desktop only; no Metrora cloud endpoint is implemented. | Stored credential metadata remains until replacement or successful local pairing cleanup. The underlying Keystore client identity is a separate lifetime described below. | The user can cancel the flow, compare the SAS before accepting local pairing, revoke Desktop access, or forget local state. Cancellation does not imply that an already-started discovery/pair request never reached the selected Desktop. | `PairingBootstrap.kt`, `MetroraApiClient.kt`, `TlsMetroraTransport.kt`, `PairingCredentials.kt`, `MetroraCoordinator.kt` |
+| Metrora account/profile data | No Android account-creation, email, phone, contacts or provider-login flow is present; the companion pairs to a Desktop instead. | No Metrora account data is transmitted or stored by this flow. Desktop name and device/pairing identity remain covered by the connection/credential rows above. | Avoid a Metrora cloud account while enabling the paired companion. | No Metrora identity service or social/advertising provider is configured. | Not applicable to a Metrora account; paired local state follows the cleanup behavior above. | There is no Metrora account in this Android flow to delete; forget/revoke the pairing or uninstall the app for app-local state. | `MetroraFirstRun.kt`, `MetroraApiClient.kt`, `AndroidManifest.xml`, `strings.xml` |
+| Pairing credential and device cryptographic material | The Desktop returns a pairing token. The phone creates an EC client identity in Android Keystore and a separate Keystore-backed AES key protects persisted app state. | The token is encrypted in local DataStore and sent as the bearer credential in authenticated TLS requests to the paired Desktop. The client public certificate is presented to the Desktop by mutual TLS. Current app code does not serialize, export or transmit the client private key or AES key; those key handles remain in Android Keystore. | Authenticate the paired phone, protect the Desktop API and encrypt local persisted state. | The paired Desktop receives the bearer token on authenticated requests and the client public certificate through TLS; no Metrora service or telemetry recipient is present. | Successful revoke/forget cleanup removes the persisted pairing credential and product-cache values from DataStore. It does **not** delete the client-identity or AES aliases from Android Keystore, so those cryptographic keys can persist across revoke/forget; their later OS/app lifecycle is an Android platform boundary. | `Revoke access on Desktop` first requests remote revocation and then performs local cleanup; `Forget on this phone` performs local cleanup only. There is no in-app private-key export or Keystore-identity deletion action. | `PairingCredentials.kt`, `SecureStore.kt`, `EncryptedStateCodec.kt`, `DeviceIdentity.kt`, `MetroraApiClient.kt`, `MetroraCoordinator.kt` |
+| Usage, cost, model, Project, Capacity and Activity projections | Received from the paired Desktop when the user refreshes or opens supported surfaces. The Android app does not independently collect provider-side source evidence. | Received and cached locally in encrypted bounded snapshots. Period, Project, provider, route, model, source, ordering and paging values needed for supported requests can be sent to the paired Desktop over TLS. Ordinary projections exclude prompts, responses, source files/code, patches/diffs, secrets, raw tool arguments and raw tool output. | Render the read-focused companion surfaces. | The paired Desktop is the intended data source/peer; no Metrora cloud relay, ad network or behavioral analytics path is implemented. | Each persisted domain is a bounded latest snapshot/cache and is replaced by newer compatible state. It remains until overwritten or successful pairing cleanup; there is no time-based Android retention promise. | Refresh, use the explicit revoke/forget controls, or uninstall. A failed local cleanup enters recovery handling rather than being described as successful deletion. | `UsageSnapshot.kt`, `MobileFoundationSnapshot.kt`, `CapacitySnapshot.kt`, `ActivitySnapshot.kt`, `ProjectCatalogSnapshot.kt`, `MetroraApiClient.kt`, `SecureStore.kt` |
+| Network and transport metadata | Accessed to connect to the endpoint supplied by the user/QR and to build bounded period, Project and Activity requests. | The app uses HTTPS/TLS and disables cleartext. Discovery checks certificate validity, captures the presented Desktop certificate fingerprint and requires the Desktop-advertised fingerprint to match it. SAS confirmation binds Desktop and client fingerprints; later requests pin the expected Desktop fingerprint and use the Keystore client identity for mutual TLS. The custom transport uses this fingerprint authority rather than conventional hostname identity as the pairing trust decision. | Secure direct Desktop pairing and data refresh. | The explicitly paired Desktop; the app has no configured Metrora relay or remote collection service. | Connection values stored in pairing state remain until successful cleanup. Response bodies are bounded and either used for the current operation or written into the bounded caches described above. | User chooses the endpoint, can cancel pairing, and can revoke or forget paired state. | `AndroidManifest.xml`, `network_security_config.xml`, `Protocol.kt`, `TlsMetroraTransport.kt`, `MetroraApiClient.kt` |
+| Demo Mode data | Built-in synthetic data is created locally; no real Desktop, account or pairing state is accessed. | Ephemeral in memory and Activity lifecycle state only; no network request and no write to the normal encrypted real-data caches. Automated Demo launch is accepted only when every real credential/cache read is missing, so paired, cached or recovery-state evidence remains authoritative. | Product exploration and reproducible screenshots/visual QA. | None. | Until the Demo session exits or its lifecycle state ends; it is not canonical product evidence. | `Exit demo` returns to the untouched unpaired real state; normal real-data stores are not cleared or overwritten by Demo Mode. | `MetroraDemoDatasetV1.kt`, `MetroraDemoLaunchSpec.kt`, `MetroraCoordinator.kt`, `MainActivity.kt`, `ANDROID_DEMO_MODE_V1.md` |
+| Advertising, behavioral analytics and crash/telemetry data | No Android source or declared dependency currently implements these flows. | No current transmission or local store is defined for them. | Not applicable to the current companion. | No advertising, behavioral-analytics or crash/telemetry SDK is declared in the Android dependency surface. | Not applicable. | No analytics opt-out is substituted for a feature that does not exist; revisit this map if dependencies or telemetry change. | `android/app/build.gradle.kts`, `android/gradle/libs.versions.toml`, source-wide dependency audit |
+| Android backup/device-transfer copy of app state | Repository configuration sets `allowBackup=false`, supplies legacy `fullBackupContent` exclusions, and supplies Android 12+ `dataExtractionRules` exclusions for cloud backup and device transfer across the app-private storage domains. | No Metrora backup service is configured. The XML rules exclude root, file, database, shared-preference and external domains, but platform/OEM backup and migration behavior remains an external boundary and must not be described as an absolute guarantee solely from `allowBackup=false`. | Keep pairing credentials and cached projections out of configured Android backup/device-transfer domains. | Android platform behavior only; no Metrora backup recipient is configured. | Local app retention only, subject to Android app-storage/Keystore lifecycle behavior. | Revoke/forget clears the app's persisted pairing/cache values on successful cleanup; uninstall/app-platform lifecycle is separate. | `AndroidManifest.xml`, `backup_rules.xml`, `data_extraction_rules.xml`, `SecureStore.kt` |
+
+### Play Console interpretation boundary
+
+Source proves the current Android flows above; it does not prove a completed
+Console questionnaire. Under current Play guidance, camera/photo data that is
+only processed on device is not collection merely because the app accessed it,
+and projections received from Desktop are not made into Android-originated
+collection merely by being cached locally. At the same time, current source
+has real outbound traffic to the paired Desktop: the bounded phone display
+name during pairing, the client public certificate at the TLS layer, the
+pairing bearer token on authenticated requests, and bounded request/filter
+values. Those outbound values require exact Console mapping rather than a
+blanket `no data collected` conclusion.
+
+Current source also supports these bounded directions for Founder review: no
+Metrora account-creation flow, no advertising/behavioral-analytics/crash SDK,
+no Metrora cloud relay, and encrypted transport for the paired Desktop flow.
+The Founder still owns the final Play decisions for enumerated data types,
+purposes, required versus optional handling, ephemeral processing, sharing
+exceptions, any end-to-end-encryption exclusion, SDK disclosures and the final
+signed AAB's merged manifest. Save/submit those answers in Play Console only
+after inspecting the exact candidate; this repository map is evidence, not the
+authoritative submitted form.
+
+The map intentionally does not infer retention or collection behavior for the
+user's paired Desktop, provider accounts, operating system logs, or future Play
+services. Those are separate authorities and must not be converted into
+claims about the current Android artifact without evidence.
+
+## Demo screenshot reproducibility
+
+The existing Demo Mode can launch each relevant shipped top-level surface from
+a clean unpaired install. Use a fixed date and the same dataset version for
+every capture. The debug application ID is `eu.metrora.app.debug`; a release
+or Play candidate uses `eu.metrora.app`. The exact Demo destination values are
+`home`, `activity`, `analyze`, `workspace` and `settings`; they are destination
+selectors, not screenshot filenames.
+
+For a real installed debug build, replace `PACKAGE` with
+`eu.metrora.app.debug`; for a release/Play artifact, replace it with
+`eu.metrora.app`:
+
+```text
+adb shell am force-stop PACKAGE
+adb shell am start -n PACKAGE/eu.metrora.app.MainActivity --ez metrora.demo true --es metrora.demo.dataset v1 --es metrora.demo.now 2026-08-29 --es metrora.demo.destination home
+```
+
+Replace `home` with another exact destination above to open the corresponding
+surface. The launch hint is one-shot and is honored only when all real
+credential/cache reads are missing; paired, cached or recovery-state evidence
+remains authoritative. Capture screenshots from the actual running artifact
+only. Do not fabricate screens or commit personal-device screenshots as public
+marketing evidence.
+
 ## Security and privacy regression boundary
 
 The distribution work does not change Android runtime authority or data
