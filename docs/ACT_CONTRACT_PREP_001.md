@@ -1,123 +1,173 @@
 # ACT Contract Preparation 001
 
-**Status:** design-only preparation; no new ACT executor is implemented by this document.
+**Status:** public design contract on current `main`; a separate Draft PR may implement part of this direction, but this document does not make that draft current product authority.
 
 ## Purpose
 
-ACT is the explicit, user-authorized boundary for operations that may run a
-controlled workload or change local state. Advisor remains read-only and may
-produce a proposal, but it does not execute an ACT contract. `AdvisorToolV1`
-is unchanged.
+ACT is the explicit trusted boundary for operations that run a controlled workload or change state.
 
-The public contract should keep the model in the role of interpreter and
-proposal author while Metrora owns scope, preconditions, confirmation,
-cancellation, budgets, result identity and evidence.
+The current conversational implementation remains read-only/proposal-only. Product-facing direction calls that surface **Metrora Harness**; current code/contracts still use `Advisor*` identifiers.
+
+Harness may understand a state-changing request and prepare a proposal. It does **not** authorize itself.
+
+Canonical relationship:
 
 ```text
-Advisor question
-    -> read-only evidence + proposal-only answer
-    -> explicit user confirmation in the owning surface
-    -> ActionContractV1 validation
-    -> bounded local executor
-    -> immutable result/evidence record
+Harness conversation / product workflow
+→ read-only evidence + proposal
+→ explicit trusted confirmation
+→ ActionContractV1 validation
+→ bounded executor
+→ lifecycle + canonical result/evidence
+→ Harness explanation
 ```
 
-## Proposed `ActionContractV1` shape
+ACT is an execution authority underneath product workflows, not a user-facing `Act` chat mode.
 
-The first public shape should be a strict JSON-safe envelope with:
+## ActionContractV1 shape
 
-- `contractVersion: "metrora.action.v1"` and `schemaVersion: 1`;
-- opaque `actionId`, `kind`, `status`, creation time and originating surface;
-- immutable scope: selected runtime/model, Project or Workspace scope where
-  applicable, task-pack identity, and provider/network boundary;
-- explicit `preconditions` and a bounded `effects` declaration;
-- required user confirmation and the exact confirmation summary shown;
-- bounded timeout, work-unit/cost limits, cancellation and expiry behavior;
-- deterministic result/evidence references and a failure/cancellation reason;
-- rollback semantics. If an action has no rollback, the contract says so
-  before confirmation.
+A public action contract should remain a strict JSON-safe envelope containing at least:
 
-The contract must reject undeclared fields, arbitrary shell/path input,
-unbounded prompts, provider-native credentials, remote endpoints and hidden
-side effects. A proposal is not an authorization and a successful HTTP call
-is not proof that the action satisfied its contract.
+- `contractVersion: "metrora.action.v1"` and schema version;
+- opaque action ID, kind, lifecycle status, creation time/originating surface;
+- immutable target/scope;
+- selected runtime/model/Project/Workspace where applicable;
+- declared network/filesystem/provider boundaries;
+- explicit preconditions/effects;
+- exact user confirmation summary/digest where implemented;
+- bounded timeout/work/resource/cost limits;
+- cancellation/expiry behavior;
+- deterministic result/evidence references;
+- explicit failure/cancel reason;
+- rollback semantics, including declared `none` before confirmation.
 
-Existing file-mutating ACT records under `src/act/` remain compatible. A
-controlled Bench run is a separate effect class: it creates bounded local
-Bench evidence and does not silently become a file-edit action or an Advisor
-tool result.
+The contract must reject undeclared fields, arbitrary shell/path input, unbounded prompts, provider-native credentials, arbitrary remote endpoints and hidden side effects.
 
-## First ACT candidate: Run Core Conformance Bench
+A proposal is not authorization. A successful process/HTTP call is not proof that the action satisfied the contract.
 
-This is a future action design, not an implementation claim. The candidate
-would wrap the existing local `bench task-pack` authority:
+## First narrow ACT operation: Core Compatibility
 
-- kind: `run-core-conformance-bench`;
-- runtime: local Ollama only for the first tranche;
-- model: selected explicitly by the user, never auto-selected;
-- pack: exact `metrora.bench.core@1.0.0` identity and digest;
-- generation policy: the existing fixed task-pack parameters;
-- effect: bounded local Bench history record, or an explicit no-save result;
-- no upload, managed compute, provider credential forwarding or user-content
-  workload;
-- cancellation, timeout, unavailable and malformed results remain distinct;
-- result is comparable only through the existing Bench compatibility rules.
+The first safe operation direction is the existing public Core Compatibility workflow previously called `Run Core Conformance Bench`.
 
-Confirmation must show the runtime, model, pack, local execution boundary,
-save/no-save choice, limits and the fact that this is controlled evidence, not
-a general model ranking. The action must not expose task prompts or generated
-text through Advisor or the mobile projection.
+Product classification:
+
+- Bench family: **Compatibility / Runtime Health**;
+- public pack: `metrora.bench.core@1.0.0`;
+- first runtime: local Ollama;
+- model: explicitly selected;
+- effect: bounded local Compatibility evidence/history;
+- no user-content workload;
+- no arbitrary prompt;
+- no provider credential forwarding;
+- no remote endpoint;
+- cancellation/timeout/unavailable/malformed stay distinct.
+
+This remains a useful first ACT proof because its external effect is narrow and evidence-oriented.
+
+It must **not** be treated as the definition of Metrora Bench. Mainstream Bench product direction is Performance-first; see [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md).
+
+A future Performance run may receive its own action kind only after a normalized Performance contract/executor is implemented. Do not broaden the first Core Compatibility action into arbitrary benchmark execution merely for convenience.
+
+## Confirmation UX
+
+Before execution the user should see material effects in ordinary language, for example:
+
+```text
+Core Compatibility
+Model       <selected model>
+Runtime     Ollama local
+Checks      6
+Network     Local only
+Writes      Local Bench history
+
+[Run] [Cancel]
+```
+
+A future implementation may expose more exact contract details under Details/Evidence.
+
+The model does not supply the trusted approval token merely by emitting `yes` or a tool call.
+
+## Lifecycle and observable progress
+
+ACT should expose authoritative lifecycle events without exposing hidden model reasoning:
+
+```text
+proposed
+→ ready/confirmed
+→ running
+→ completed | unavailable | failed | cancelled
+```
+
+Progress must be tied to actual executed work/result evidence.
+
+Metrora Harness may later display these events inline in the same observable style as read tools.
 
 ## Smartphone projection
 
-The smartphone surface may display a pending proposal, confirmation summary,
-progress state and bounded result through the existing local companion
-boundary when that capability is explicitly authorized. The first mobile
-projection should be read-only and content-minimal:
+A first mobile projection may display content-minimal action state only after the capability is explicitly authorized.
 
-- action id, kind, status, selected runtime/model and pack identity;
-- start/end time, cancellation or failure category;
-- pass/fail/unavailable/cancelled counts and nullable score/timing facts;
-- evidence digest and navigation to the local Bench view.
+Safe projected fields may include:
 
-It must not sync provider keys, task prompts, generated output, raw provider
-payloads, local paths or arbitrary execution requests. Remote smartphone
-execution, background execution and managed Bench remain separately gated.
+- action ID/kind/status;
+- runtime/model/pack identity;
+- start/end time;
+- progress counts;
+- cancellation/failure category;
+- bounded result counts;
+- evidence/result digest.
 
-## Follow-up: custom OpenAI-compatible endpoint
+Do not project:
 
-Do not add a custom endpoint field to this foundation. A future follow-up would
-need its own contract covering exact origin allowlisting, TLS/redirect policy,
-credential custody, model discovery, protocol selection, retention/privacy,
-tool capability, cancellation, conformance fixtures and mobile projection.
-“OpenAI-compatible” is not a compatibility guarantee and must not become an
-arbitrary URL escape hatch.
+- provider keys;
+- task prompts;
+- generated output;
+- arbitrary paths;
+- unrestricted execution arguments.
 
-## OSS reuse proposal
+Remote smartphone **execution/approval** is a separate stronger authority, not implied by a read-only projection.
 
-Metrora should reuse commodity OSS behind Metrora-owned contracts where a
-bounded review passes:
+## Provider/runtime endpoints
 
-- a chat UI substrate such as `assistant-ui` for accessible conversation and
-  streaming primitives;
-- provider transport helpers such as the Vercel AI SDK only inside direct,
-  fixed-origin Local BYOK adapters;
-- a replaceable chart renderer behind Metrora-owned presentation blocks;
-- AG-UI as a future interoperability candidate for remote/mobile workflows,
-  not as current authority.
+Do not add an arbitrary `OpenAI-compatible endpoint` escape hatch to ACT.
 
-Every adoption still requires a licence/NOTICE review, pinned version,
-security and replacement assessment, bounded cancellation and a test fixture
-that proves provider types do not leak through Metrora contracts. No OSS
-gateway is required for direct Local BYOK, and no dependency changes are
-authorized by this preparation alone.
+Any future provider/runtime adapter needs its own reviewed origin/auth/model-discovery/protocol/privacy/conformance contract.
 
-## Explicitly not implemented here
+`OpenAI-compatible` is not a compatibility or authorization guarantee.
 
-- ACT contract runtime validation or a new executor;
-- Advisor actions or automatic Bench execution;
+## OSS reuse rule
+
+ACT itself should stay Metrora-owned because it defines trust/authorization semantics.
+
+Commodity external runtimes, benchmark engines, sandboxes or UI primitives may be used behind bounded adapters after licence/security/provenance review.
+
+An external agent/harness framework must never bypass ActionContract/ACT authority merely because it exposes its own tool/approval system.
+
+No dependency is added by this document.
+
+## Explicitly not implemented by this document
+
+- new ACT runtime/executor on current `main`;
+- Harness automatic execution;
+- arbitrary shell/repository writes;
 - mobile write/execute routes;
-- remote or managed Bench;
-- custom provider URLs;
-- billing, entitlements or provider usage metering;
-- proprietary recommendations, ranking or playbooks.
+- managed Bench;
+- arbitrary provider URLs;
+- billing/entitlements;
+- Swarm/orchestration;
+- proprietary recommendation/routing policy.
+
+## Relationship to current Draft implementation work
+
+A Draft PR may contain a concrete `metrora.action.v1` implementation around Core Compatibility. Until that work is rebased/reviewed/merged against current `main`, public current authority remains the shipped read-only/proposal foundation plus this design contract.
+
+Any acceptance pass must ensure there is one ACT authority rather than separate `AdvisorActionProposal` and ACT execution systems that can diverge.
+
+## Ratified public principles
+
+1. Harness may propose; ACT authorizes/executes.
+2. ACT is not a chat mode.
+3. The first safe action is Core Compatibility, not arbitrary Bench execution.
+4. Mainstream Bench remains Performance-first.
+5. The model cannot self-authorize.
+6. External OSS cannot bypass Metrora action authority.
+7. State-changing execution requires explicit bounded effects, limits, cancellation and evidence.
