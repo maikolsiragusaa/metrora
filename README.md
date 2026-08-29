@@ -4,7 +4,7 @@
 
 ### The local-first control center for AI-assisted development
 
-Bring usage, cost, models, projects, provider capacity, comparisons and evidence-backed investigation into one coherent view — without putting a mandatory proxy between you and your AI tools.
+Bring usage, cost, models, projects, provider capacity, Bench and chat-first investigation into one coherent view — without putting a mandatory proxy between you and your AI tools.
 
 [Get Metrora for Windows](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Get the Android companion](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3) · [Build from source](docs/GETTING_STARTED.md)
 
@@ -29,7 +29,7 @@ Metrora brings fragmented AI-development evidence together without requiring a n
 | --- | --- |
 | **Observe** | Usage, Cost, Models, Projects and Activity from supported local tool evidence, with measured, derived, estimated and unavailable states kept distinct. |
 | **Compare** | Side-by-side model and provider views using observed economics, plus controlled local Bench evidence without inventing a universal quality ranking. |
-| **Advise** | Contextual, read-only Advisor investigation over Metrora evidence. Deterministic Metrora facts remain authoritative; the model interprets rather than replaces them. |
+| **Advise** | A chat-first, read-only conversational foundation currently surfaced as **Advisor**. A configured model can answer normally and call bounded Metrora read tools when user-specific facts are needed. |
 | **Control** | Provider-reported Capacity/quota, budgets, Project scope, local settings and explicit reversible controls where Metrora has deterministic authority. No autonomous routing or orchestration is implied. |
 
 Metrora is multi-tool and multi-provider by design. A supported collector can contribute useful local evidence without forcing the underlying AI request through Metrora.
@@ -38,9 +38,60 @@ Metrora is multi-tool and multi-provider by design. A supported collector can co
 
 - **No mandatory account for local use.** Install Metrora, read supported local evidence and use the core product without creating a Metrora account.
 - **No mandatory proxy or gateway.** Your AI traffic does not need to pass through Metrora for Metrora to observe supported usage evidence.
-- **Local evidence stays authoritative.** Canonical measurements, pricing provenance and evidence states are owned by Metrora's local factual surfaces; Advisor does not silently rewrite them.
+- **Local evidence stays authoritative.** Canonical measurements, pricing provenance and evidence states are owned by Metrora's local factual surfaces; the conversational model does not silently rewrite them.
 - **Unknown is not zero.** Missing, stale, partial or unavailable provider evidence remains explicit instead of being converted into a reassuring number.
 - **Companions consume bounded projections.** Android pairs locally with Desktop and does not become a second collector, pricing engine or accounting authority.
+
+## Metrora Harness direction
+
+The product-facing direction for Metrora's conversational and operational AI surface is **Metrora Harness**.
+
+The current shipped implementation and stable public contracts still use `Advisor` / `Advisor*` identifiers. That naming remains valid until a bounded migration is implemented; the documentation does not pretend the UI has already been renamed.
+
+The public direction is:
+
+```text
+Chat
+  ↓
+optional typed Metrora read tools
+  ↓
+verified evidence
+  ↓
+natural explanation
+  ↓
+later: explicit ACT authority for state changes
+  ↓
+later: Swarm as a separately gated Harness mode
+```
+
+Key rules:
+
+- ordinary conversation, coding help and reasoning do not require a Metrora evidence read;
+- user-specific Metrora facts come from bounded typed tools rather than model guesses;
+- a tool result is evidence, not automatically the entire answer — the model should explain useful drivers and limitations when the question asks for understanding;
+- future UI may show safe observable work such as tool start/completion, scope and progress, but not private chain-of-thought;
+- ACT remains the future trusted execution authority; a conversational request alone does not run shell commands, change repositories, launch agents or mutate state;
+- Swarm is a future mode and is not shipped;
+- current local runtimes are Ollama and LM Studio; llama.cpp / `llama-server` is a planned Community direction, not current support.
+
+See [Metrora Harness public foundation](docs/HARNESS_PUBLIC_FOUNDATION.md) and the current [Advisor implementation contract](docs/ADVISOR_PUBLIC_FOUNDATION.md).
+
+## Bench: Performance first, evidence families kept separate
+
+Metrora Bench is converging around the practical local question:
+
+> **How does this declared model/runtime/configuration run on this hardware?**
+
+Different Bench questions remain separate evidence families:
+
+- **Performance** — the primary product direction: throughput, latency, TTFT, memory and runtime/hardware configuration where reliably measurable;
+- **Compatibility / Runtime Health** — the current `core-v1` deterministic checks;
+- **Coding Evaluation** — future, under a separately versioned methodology and sandbox/licence review;
+- **Agent / Harness Evaluation** — future, only once real agent/Swarm execution exists.
+
+Current shipped Bench evidence already includes a small Ollama runtime-timing slice plus Core Compatibility. The broader hardware Performance path is planned; the first native engine target is llama.cpp `llama-bench` behind a Metrora-owned bounded adapter. No current result is presented as a universal model-quality or coding ranking.
+
+See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md), [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md) and [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md).
 
 ## Install Metrora
 
@@ -67,8 +118,8 @@ AI-assisted development is usually split across editors, desktop applications, C
 - Which tools, models and projects are driving usage and cost?
 - What provider Capacity or quota remains, when the provider exposes trustworthy evidence?
 - How do models or providers compare on observed economics in the selected scope?
-- What does a controlled local Bench run actually prove, and what remains unknown?
-- Why did a scoped period, model, Project or provider change, according to the evidence Advisor can inspect?
+- What does a controlled local Bench run actually measure, and what remains unknown?
+- Why did a scoped period, model, Project or provider change, according to the evidence the current Advisor/Harness foundation can inspect?
 - Which explicit local controls or reversible optimizations are supported by deterministic Metrora authority?
 
 Metrora does not require a wrapper around your AI requests, and it does not claim general model quality or autonomous control from incomplete evidence.
@@ -133,8 +184,8 @@ The root npm package is intentionally private and is not an official distributio
 | `metrora audit` | Compare provider evidence with displayed token and cost totals. |
 | `metrora doctor` | Diagnose provider discovery and parsing health. |
 | `metrora export` | Export usage as CSV or JSON. |
-| `metrora bench local --model <model>` | Run bounded synthetic runtime evidence against a local Ollama model; no quality or ranking score. |
-| `metrora bench task-pack --model <model>` | Run deterministic synthetic assertions against a local Ollama model; private history and factual comparison only. |
+| `metrora bench local --model <model>` | Run bounded synthetic local runtime-timing evidence against an Ollama model; no quality or ranking score. |
+| `metrora bench task-pack --model <model>` | Run deterministic Core Compatibility checks against a local Ollama model; private history and factual comparison only. |
 
 Most analytical commands support provider, project and date filters. The [CLI reference](docs/CLI_REFERENCE.md) groups the public commands by task and explains compatibility boundaries.
 
@@ -169,7 +220,7 @@ Historical API-equivalent pricing is date-effective and non-retroactive by defau
 
 | Surface | Role | Current status |
 | --- | --- | --- |
-| Desktop | Primary local control center for observation, comparison, Advisor, Capacity and configuration | **Available on Microsoft Store for Windows; RC11 current Store line** |
+| Desktop | Primary local control center for observation, comparison, current Advisor/Harness foundation, Capacity and configuration | **Available on Microsoft Store for Windows; RC11 current Store line** |
 | CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
 | Local web dashboard | Browser view served from the local machine | Available locally |
 | Android companion | Read-focused local-network companion for a paired Desktop | **Public GitHub pre-release `0.1.0-alpha.3`; Google Play release planned within 30 days** |
@@ -205,11 +256,13 @@ Start from the [documentation index](docs/README.md):
 
 - [Getting started](docs/GETTING_STARTED.md)
 - [CLI reference](docs/CLI_REFERENCE.md)
-- [Advisor public foundation](docs/ADVISOR_PUBLIC_FOUNDATION.md)
+- [Metrora Harness public foundation](docs/HARNESS_PUBLIC_FOUNDATION.md)
+- [Advisor implementation compatibility](docs/ADVISOR_PUBLIC_FOUNDATION.md)
 - [ACT contract preparation 001](docs/ACT_CONTRACT_PREP_001.md)
 - [Advisor contextual integration v1](docs/ADVISOR_CONTEXT_INTEGRATION_V1.md)
+- [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md)
 - [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)
-- [Bench Core conformance v1](docs/BENCH_TASK_PACK_V1.md)
+- [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)
 - [Product principles](docs/PRODUCT_PRINCIPLES.md)
 - [Pricing history](docs/PRICING_HISTORY.md)
