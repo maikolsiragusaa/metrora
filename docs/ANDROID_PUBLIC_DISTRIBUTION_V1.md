@@ -370,6 +370,59 @@ The Android Settings / Privacy surface links to the canonical policy at
 `https://metrora.eu/privacy`, which must remain live before any Store listing
 or submission.
 
+## Google Play Data Safety evidence map
+
+**Evidence snapshot:** `origin/main` at
+`8db16e19a898366647aa6088a07fa32a08db73b4` (refreshed 29 August 2026).
+This is a source-backed preparation map, not a Play Console declaration. It
+describes the Android app's current behavior; the Founder must still map the
+final signed AAB to the exact Play Console questions and review any SDK or
+platform disclosures required at submission time.
+
+In this table, "third party" means an intended external recipient or
+data-collecting SDK, not an ordinary open-source library linked into the app.
+The paired Desktop is the endpoint explicitly selected and approved by the
+user; it is not a Metrora cloud relay.
+
+| Data type | Collected/accessed? | Local/transmitted? | Purpose | Third party? | Retention | User control | Source evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Camera frames and selected QR image | Accessed only after the user chooses QR scanning or image import. | Processed locally to extract one bounded QR value. The scanner path does not persist or upload raw frames/images. | Discover the paired Desktop endpoint. | No intended recipient or analytics/advertising SDK. | Transient for the scan/decode operation. | Deny or revoke `CAMERA`, cancel scanning, go back, or choose not to import an image. | `AndroidManifest.xml`, `QrScanner.kt`, `QrImageDecoder.kt`, `QrCodeDecoder.kt` |
+| Pairing and connection metadata | Accessed/generated during pairing: user-selected host/port, Desktop name, server/client certificate fingerprints and pairing time. | Stored in the encrypted local store; connection metadata is used for TLS discovery, pairing and later requests to the selected Desktop. | Bind the phone to one Desktop identity and scope authenticated requests. | Sent only to the explicitly paired Desktop endpoint; no Metrora cloud endpoint is implemented. | Remains until the pairing is replaced or local pairing cleanup runs; no cloud retention period exists in the Android flow. | Pair only after the SAS code is compared and confirmed; use `Revoke access on Desktop` or `Forget on this phone`; uninstall also removes app-local state subject to Android behavior. | `PairingBootstrap.kt`, `MetroraApiClient.kt`, `TlsMetroraTransport.kt`, `PairingCredentials.kt`, `MetroraCoordinator.kt` |
+| Metrora account/profile data | No Android account-creation, email, phone, contacts or provider-login flow is present; the companion pairs to a Desktop instead. | No Metrora account data is transmitted or stored by this flow. Desktop name and device identity remain covered by the connection/credential rows above. | Avoid a cloud account while enabling the paired companion. | No Metrora identity service or social/advertising provider is configured. | Not applicable to an account; paired local state follows the cleanup behavior above. | No account deletion flow is required; forget/revoke the pairing or uninstall the app. | `MetroraFirstRun.kt`, `MetroraApiClient.kt`, `AndroidManifest.xml`, `strings.xml` |
+| Pairing credential and device key material | The Desktop returns a pairing token; the phone creates its client identity. The private key stays in Android Keystore. | The token is encrypted in local DataStore and sent in authenticated TLS requests to the paired Desktop. The private key is not serialized or sent as application data. | Authenticate the paired phone and protect the Desktop API. | No Metrora service or telemetry recipient; the paired Desktop is the intended peer. | Until revoke/forget/uninstall or replacement by a new pairing. | Revoke remotely with Desktop confirmation or forget locally; the app does not expose a credential export action. | `PairingCredentials.kt`, `SecureStore.kt`, `EncryptedStateCodec.kt`, `DeviceIdentity.kt`, `MetroraApiClient.kt` |
+| Usage, cost, model, Project, Capacity and Activity projections | Received from the paired Desktop when the user refreshes or opens supported surfaces. The Android app does not collect provider data independently. | Received and cached locally in encrypted bounded snapshots; refresh queries and filters are sent to the paired Desktop over TLS. Ordinary projections exclude prompts, responses, source files, patches, raw tool arguments and raw tool output. | Render the read-focused companion surfaces. | No Metrora cloud relay, ad network or behavioral analytics path. The paired Desktop is the intended data source/peer. | Latest compatible projections remain locally cached until overwritten or pairing cleanup; there is no time-based Android retention promise. | Refresh, use the explicit revoke/forget controls, or uninstall. | `UsageSnapshot.kt`, `MobileFoundationSnapshot.kt`, `CapacitySnapshot.kt`, `ActivitySnapshot.kt`, `ProjectCatalogSnapshot.kt`, `MetroraApiClient.kt`, `SecureStore.kt` |
+| Network and transport metadata | Accessed to connect to the endpoint supplied by the user/QR and to build bounded period, Project and Activity requests. | Transport is HTTPS/TLS with certificate-date and Desktop-fingerprint checks; cleartext traffic is disabled. | Secure local Desktop pairing and data refresh. | The app has no configured Metrora relay or remote collection service. | Connection values are part of local pairing state until cleanup; transport response bodies are bounded and used for the current operation/cache. | User chooses whether to pair, can cancel, revoke or forget. | `AndroidManifest.xml`, `network_security_config.xml`, `Protocol.kt`, `TlsMetroraTransport.kt` |
+| Demo Mode data | Built-in synthetic data is created locally; no real Desktop, account or pairing state is accessed. | Ephemeral in memory and Activity lifecycle state only; no network request and no write to the normal encrypted real-data caches. | Product exploration and reproducible screenshots/visual QA. | None. | Until the Demo session exits or the Activity lifecycle ends; it is not product evidence. | `Exit demo` returns to the unpaired state; normal paired data remains authoritative. | `MetroraDemoDatasetV1.kt`, `MetroraDemoLaunchSpec.kt`, `MetroraCoordinator.kt`, `MainActivity.kt`, `ANDROID_DEMO_MODE_V1.md` |
+| Advertising, behavioral analytics and crash/telemetry data | No Android source or declared dependency currently implements these flows. | No current transmission or local store is defined for them. | Not applicable to the current companion. | No advertising or behavioral-analytics SDK is declared. | Not applicable. | No analytics opt-out is substituted for a feature that does not exist; revisit this map if dependencies or telemetry change. | `android/app/build.gradle.kts`, `android/gradle/libs.versions.toml`, source-wide dependency audit |
+| Android backup/device-transfer copy of app state | The app opts out of backup/device-transfer domains for its private state. | No configured cloud/device-transfer copy of the app's local pairing or product caches. | Keep credentials and cached projections on the originating device. | Android platform behavior remains an external platform boundary; no Metrora backup service is configured. | Local app retention only, subject to Android uninstall/storage behavior. | Revoke/forget locally; uninstall. | `backup_rules.xml`, `data_extraction_rules.xml`, `SecureStore.kt` |
+
+The map intentionally does not infer retention or collection behavior for the
+user's paired Desktop, provider accounts, operating system logs, or future Play
+services. Those are separate authorities and must not be converted into
+claims about the current Android artifact without evidence.
+
+## Demo screenshot reproducibility
+
+The existing Demo Mode can launch each relevant shipped surface from a clean
+unpaired install. Use a fixed date and the same dataset version for every
+capture. The debug application ID is `eu.metrora.app.debug`; a release or Play
+candidate uses `eu.metrora.app`.
+
+For a real installed debug build, replace `PACKAGE` with the debug ID below;
+for a release/Play artifact, use `eu.metrora.app` instead:
+
+```text
+adb shell am force-stop PACKAGE
+adb shell am start -n PACKAGE/eu.metrora.app.MainActivity --ez metrora.demo true --es metrora.demo.dataset v1 --es metrora.demo.now 2026-08-29 --es metrora.demo.destination home
+```
+
+Replace `home` with `activity`, `analyze`, `workspace` or `settings` to open
+the corresponding surface. The launch hint is one-shot and is honored only
+when the real local store is empty; a paired or cached real state remains
+authoritative. Capture screenshots from the actual running artifact only.
+Do not fabricate screens or commit personal-device screenshots as public
+marketing evidence.
+
 ## Security and privacy regression boundary
 
 The distribution work does not change Android runtime authority or data
