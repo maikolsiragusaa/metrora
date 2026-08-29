@@ -1,4 +1,4 @@
-import type { MenubarPayload, ModelReportRow, QuotaProvider } from '../lib/types'
+import type { MenubarPayload, ModelReportRow, Period, QuotaProvider } from '../lib/types'
 import {
   ADVISOR_TOOL_CONTRACT,
   ADVISOR_TOOL_DEFINITIONS,
@@ -9,9 +9,11 @@ import {
   validateAdvisorToolArguments,
 } from './contract'
 import { buildModelEfficiencyEvidence, buildQuotaEvidence, buildSpendEvidence } from './evidence'
+import { buildBenchEvidence } from './special-evidence'
 import type {
   AdvisorDataSource,
   AdvisorEvidence,
+  AdvisorBenchEvidence,
   AdvisorJsonObject,
   AdvisorScope,
   AdvisorToolContract,
@@ -23,6 +25,7 @@ import type {
 import * as advisorPrivacy from './privacy'
 
 export { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_DEFINITIONS }
+const unavailableBench: AdvisorBenchEvidence = { state: 'UNAVAILABLE', runs: [], latest: null, comparison: null }
 
 function compactEvidence(evidence: AdvisorEvidence): { content: string; output: AdvisorJsonObject } {
   const content = boundedAdvisorJson(advisorPrivacy.contentMinimalEvidence(evidence))
@@ -54,6 +57,23 @@ function rethrowCancellation(error: unknown, signal?: AbortSignal): void {
 
 function nextToolScope(scope: AdvisorScope, name: AdvisorToolName, args: AdvisorJsonObject): AdvisorScope {
   const next = { ...scope, range: scope.range ? { ...scope.range } : null }
+  if (typeof args.period === 'string') {
+    if (args.period === 'yesterday') {
+      const date = new Date()
+      date.setHours(0, 0, 0, 0)
+      date.setDate(date.getDate() - 1)
+      const value = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0')
+      if (scope.range && (value < scope.range.from || value > scope.range.to)) throw new AdvisorToolContractError('invalid-scope', 'The requested relative period is outside the selected scope.')
+      next.period = 'today'
+      next.range = { from: value, to: value }
+    } else {
+      const periodOrder: Record<Period, number> = { today: 0, week: 1, '30days': 2, month: 3, all: 4, lifetime: 5 }
+      const requested = args.period as Period
+      if ((scope.range && requested !== scope.period) || periodOrder[requested] > periodOrder[scope.period]) throw new AdvisorToolContractError('invalid-scope', 'A model tool request cannot widen the selected Metrora scope.')
+      next.period = requested
+      if (requested !== scope.period) next.range = null
+    }
+  }
   if (name === 'get_spend_snapshot' || name === 'get_model_efficiency' || name === 'get_overview_snapshot') {
     if (Object.prototype.hasOwnProperty.call(args, 'model')) next.model = String(args.model)
   }
@@ -139,6 +159,18 @@ export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: Advi
       throwIfAborted(signal)
       const evidence = buildQuotaEvidence('tool: quota snapshot', nextScope, overview, await optionalQuota(source, signal))
       return resultFor(normalizedName, nextScope, normalizedArgs, evidence)
+    }
+    if (normalizedName === 'get_bench_evidence') {
+      let bench = unavailableBench
+      if (source.getBenchEvidence) {
+        try {
+          bench = await source.getBenchEvidence(nextScope, signal)
+          throwIfAborted(signal)
+        } catch (error) {
+          rethrowCancellation(error, signal)
+        }
+      }
+      return resultFor(normalizedName, nextScope, normalizedArgs, buildBenchEvidence('tool: Bench evidence', nextScope, bench))
     }
     throw new AdvisorToolContractError('unknown-tool', 'Unknown Advisor tool: ' + normalizedName)
   }

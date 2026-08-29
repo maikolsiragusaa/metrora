@@ -3021,9 +3021,8 @@ async function parseProviderSources(
         clearedPaths.add(source.path)
       }
 
-      const parser = provider.createSessionParser(source, parserDedup, dateRange)
-
       try {
+        const parser = provider.createSessionParser(source, parserDedup, dateRange)
         const providerCalls: ParsedProviderCall[] = []
         for await (const call of parser.parse()) {
           providerCalls.push(call)
@@ -3063,12 +3062,11 @@ async function parseProviderSources(
         didParse = true
         ;(diskCache as { _dirty?: boolean })._dirty = true
       } catch (err) {
+        const priorEntry = section.files[source.path] ?? cachedFallback
         if (isSqliteBusyError(err)) {
-          // A temporary SQLite lock must not turn an authority-triggered
-          // durable reparse into an apparent deletion. Preserve the prior
-          // entry with its old fingerprint so the next refresh retries it.
-          if (provider.durableSources && !section.files[source.path] && cachedFallback) {
-            section.files[source.path] = cachedFallback
+          // Retain prior evidence; the next refresh must retry this read.
+          if (priorEntry) {
+            section.files[source.path] = priorEntry
             ;(diskCache as { _dirty?: boolean })._dirty = true
           }
           warnProviderReadFailureOnce(providerName, err)
@@ -3080,9 +3078,9 @@ async function parseProviderSources(
         // current fingerprint so we don't re-read + re-throw this unchanged file
         // on every refresh; it re-parses only if it changes. Empty turns => no
         // usage contributed.
-        if (provider.durableSources && (section.files[source.path] ?? cachedFallback)) {
+        if (priorEntry) {
           section.files[source.path] = {
-            ...(section.files[source.path] ?? cachedFallback),
+            ...priorEntry,
             fingerprint: fp,
             failed: true,
           }
@@ -3775,7 +3773,7 @@ async function runParse(
   if (includeClaude) {
     if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'start' })
     try {
-      claudeProjects = await scanProjectDirs(claudeDirs, diskCache, dateRange, saveProgress, readOnly, providerDiscoveryComplete('claude'))
+      claudeProjects = await scanProjectDirs(claudeDirs, diskCache, dateRange, saveProgress, readOnly, providerDiscoveryComplete('claude') === true)
       if (claudeSources.length > 0) emitScanProgress({ kind: 'provider', provider: 'claude', state: 'done', files: claudeSources.length })
     } catch (err) {
       if (!isPermissionError(err)) throw err
@@ -3788,7 +3786,7 @@ async function runParse(
   for (const [providerName, sources] of providerGroups) {
     emitScanProgress({ kind: 'provider', provider: providerName, state: 'start' })
     try {
-      const projects = await parseProviderSources(providerName, sources, seenKeys, diskCache, dateRange, readOnly, providerDiscoveryComplete(providerName))
+      const projects = await parseProviderSources(providerName, sources, seenKeys, diskCache, dateRange, readOnly, providerDiscoveryComplete(providerName) === true)
       emitScanProgress({ kind: 'provider', provider: providerName, state: 'done', files: sources.length })
       otherProjects.push(...projects)
     } catch (err) {
@@ -3817,8 +3815,8 @@ async function runParse(
     // processes a durableSources provider) OR the static DURABLE_PROVIDER_NAMES
     // constant — both checks are O(1) and avoid a getProvider() dynamic-import
     // round-trip for every unprocessed provider in the disk cache.
-    if (!cachedOnly && !section.durable && !DURABLE_PROVIDER_NAMES.has(providerName) && !providerDiscoveryComplete(providerName)) continue
-    const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly, providerDiscoveryComplete(providerName))
+    if (!cachedOnly && !section.durable && !DURABLE_PROVIDER_NAMES.has(providerName) && providerDiscoveryComplete(providerName) === undefined) continue
+    const projects = await parseProviderSources(providerName, [], seenKeys, diskCache, dateRange, readOnly, providerDiscoveryComplete(providerName) === true)
     otherProjects.push(...projects)
   }
 
@@ -3830,7 +3828,8 @@ async function runParse(
     ;(diskCache as { _dirty?: boolean })._dirty = true
   }
 
-  const shouldPublishCompleteness = !readOnly && applySessionCacheDiscoveryCompleteness(diskCache, discoveryComplete)
+  const hydrationScope = providerFilter && providerFilter !== 'all' ? 'provider' : 'all'
+  const shouldPublishCompleteness = !readOnly && applySessionCacheDiscoveryCompleteness(diskCache, discoveryComplete, hydrationScope)
   if (shouldPublishCompleteness) {
     try {
       const published = await saveCache(diskCache, refreshLock?.verifyStillOwner)
@@ -3841,8 +3840,8 @@ async function runParse(
     }
   }
   if (!readOnly) {
-    sessionHydrationComplete = discoveryComplete
-    if (discoveryComplete) setLatestCompletedSessionCacheV1(diskCache)
+    sessionHydrationComplete = hydrationScope === 'all' && discoveryComplete
+    if (sessionHydrationComplete) setLatestCompletedSessionCacheV1(diskCache)
   }
 
   // Merge across providers by normalised project path so the same repository

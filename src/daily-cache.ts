@@ -1,13 +1,17 @@
 import { existsSync } from 'fs'
 import { readFile, readdir, stat } from 'fs/promises'
 import { dirname, join } from 'path'
+import { performance } from 'node:perf_hooks'
 import { isSessionHydrationComplete } from './parser.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
 import { aggregateProjectsIntoDays, dateKeyInTz } from './day-aggregator.js'
+import { mergeDayEntriesByProviderCompleteness } from './daily-cache-merge.js'
 import { mergeTimezoneRebucketedDays } from './daily-cache-tz-reconcile.js'
 import * as core from './daily-cache-core.js'
 import { rememberDailyCachePayloadEvidenceV1 } from './cache-generation.js'
+import { hasLatestParserDiscoveryAuthority, latestParserDiscoveryGlobalComplete, latestParserDiscoveryProviderComplete } from './parser-discovery-state.js'
+import { traceReconciliation } from './reconciliation-diagnostics.js'
 
 export * from './daily-cache-core.js'
 
@@ -134,6 +138,22 @@ function hasDailyData(day: core.DailyEntry): boolean {
     || Object.keys(day.providers).length > 0
 }
 
+function mergeDegradedFreshDays(
+  fresh: core.DailyEntry[],
+  baseline: core.DailyEntry[],
+  sessionComplete: () => boolean,
+): core.DailyEntry[] {
+  // The production parser records per-provider discovery outcomes even when the
+  // all-provider scan is degraded. Reconcile those independently: a healthy
+  // provider may advance, while an incomplete provider keeps its finalized
+  // baseline and cannot authorize a destructive replacement. Test/custom
+  // callers without that authority retain the older conservative merge.
+  if (sessionComplete === isSessionHydrationComplete && hasLatestParserDiscoveryAuthority()) {
+    return mergeDayEntriesByProviderCompleteness(fresh, baseline, latestParserDiscoveryProviderComplete)
+  }
+  return core.mergeDayEntries(baseline, fresh, false)
+}
+
 async function reconcileProviderDays(
   cache: DailyCache,
   parseSessions: (range: DateRange) => Promise<ProjectSummary[]>,
@@ -204,6 +224,13 @@ async function parseIsAuthoritative(
   // durable cache forever. Ordinary future hydrations keep the stricter
   // fingerprint authority below.
   if (allowDegradedSourceReconciliation) return true
+  // The parser has already completed a fresh all-provider discovery and the
+  // daily callback consumed that run. Re-checking every source fingerprint
+  // here made a bounded date-range hydration reject itself whenever an older
+  // source sat outside the backfill horizon, leaving the daily cache degraded
+  // and forcing the same expensive reconciliation on every Refresh.
+  const discoveryComplete = latestParserDiscoveryGlobalComplete()
+  if (discoveryComplete !== undefined) return discoveryComplete
   return await currentSessionSnapshotCompleteness('all') === 'complete'
 }
 
@@ -216,13 +243,14 @@ export async function ensureCacheHydrated(
     (projects, tz) => aggregateProjectsIntoDays(projects, iso => dateKeyInTz(iso, tz)),
   options: core.CacheHydrationOptions = {},
 ): Promise<DailyCache> {
+  const startedAt = performance.now()
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const yesterdayEnd = new Date(todayStart.getTime() - 1)
   const yesterdayStr = core.toDateString(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
   const allowDegradedSourceReconciliation = /modelIdentity=v[23](?:\u0002|$)/.test(savingsConfigHash)
 
-  return core.withDailyCacheLock(async () => {
+  const hydrated = await core.withDailyCacheLock(async () => {
     let cache = await loadDailyCache()
     const todayStr = core.toDateString(now)
     const tzKey = core.currentTzKey()
@@ -349,7 +377,7 @@ export async function ensureCacheHydrated(
       } else {
         days = parseWasComplete
           ? core.mergeDayEntries(freshDays, baseline, true)
-          : core.mergeDayEntries(baseline, freshDays, false)
+          : mergeDegradedFreshDays(freshDays, baseline, sessionComplete)
       }
 
       cache = withTrust({
@@ -382,13 +410,19 @@ export async function ensureCacheHydrated(
     if (gapStart.getTime() <= yesterdayEnd.getTime()) {
       const priorWatermark = cache.lastComputedDate
       const projects = await parseSessions({ start: gapStart, end: yesterdayEnd })
+      const freshDays = aggregateDays(projects)
       const parseWasComplete = await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)
-      cache = addNewDays(cache, aggregateDays(projects), yesterdayStr)
-      cache = withTrust({
-        ...cache,
-        lastComputedDate: parseWasComplete ? cache.lastComputedDate : priorWatermark,
-        complete: parseWasComplete,
-      }, parseWasComplete)
+      if (parseWasComplete) {
+        cache = addNewDays(cache, freshDays, yesterdayStr)
+        cache = withTrust({ ...cache, complete: true }, true)
+      } else {
+        cache = withTrust({
+          ...cache,
+          lastComputedDate: priorWatermark,
+          days: applyRetention(mergeDegradedFreshDays(freshDays, cache.days, sessionComplete), yesterdayStr),
+          complete: false,
+        }, false)
+      }
       await saveDailyCache(cache)
     } else if (cache.complete !== true && await parseIsAuthoritative(sessionComplete, allowDegradedSourceReconciliation)) {
       cache = withTrust({ ...cache, complete: true }, true)
@@ -397,4 +431,12 @@ export async function ensureCacheHydrated(
 
     return cache
   })
+  traceReconciliation('daily-cache-publication', {
+    complete: hydrated.complete === true,
+    watermarkTrusted: hydrated.watermarkTrusted === true,
+    dayCount: hydrated.days.length,
+    lastComputedDate: hydrated.lastComputedDate,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  })
+  return hydrated
 }

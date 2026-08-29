@@ -9,14 +9,16 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm, unlink } from 'fs/promises'
+import { unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createRequire } from 'node:module'
 
 import { isSqliteAvailable } from '../src/sqlite.js'
-import { clearSessionCache, parseAllSessions } from '../src/parser.js'
+import { clearSessionCache, isSessionHydrationComplete, parseAllSessions } from '../src/parser.js'
 import { loadCache, PROVIDER_PARSE_VERSIONS, saveCache, sessionCachePath } from '../src/session-cache.js'
 import type { SessionSource, SessionParser, ParsedProviderCall } from '../src/providers/types.js'
+import { getProvider } from '../src/providers/index.js'
 
 // ── Synthetic provider state ───────────────────────────────────────────────
 // Module-level so the vi.mock factory closure captures them by reference and
@@ -24,6 +26,8 @@ import type { SessionSource, SessionParser, ParsedProviderCall } from '../src/pr
 let _synthSources: SessionSource[] = []
 let _synthDurable = false
 let _synthYields: ParsedProviderCall[] = []
+let _synthParseError: Error | null = null
+let _synthDiscoveryComplete = true
 
 vi.mock('../src/providers/index.js', async (importOriginal) => {
   type Mod = typeof import('../src/providers/index.js')
@@ -48,15 +52,17 @@ vi.mock('../src/providers/index.js', async (importOriginal) => {
       const base = filter === 'test-synthetic'
         ? { schemaVersion: 'metrora.provider-discovery-outcome.v1' as const, complete: true, outcomes: [], sources: [] }
         : await actual.discoverAllSessionsWithOutcomes(filter)
-      const status = _synthSources.length > 0 ? 'success' as const : 'empty' as const
+      const status = !_synthDiscoveryComplete
+        ? 'failed' as const
+        : _synthSources.length > 0 ? 'success' as const : 'empty' as const
       const syntheticOutcome = {
         schemaVersion: 'metrora.provider-discovery-outcome.v1' as const,
         provider: 'test-synthetic',
         status,
-        complete: true,
+        complete: _synthDiscoveryComplete,
         sourceCount: _synthSources.length,
         sources: _synthSources,
-        diagnostic: null,
+        diagnostic: _synthDiscoveryComplete ? null : { code: 'discovery-failed' as const, message: 'synthetic discovery failed before completion' },
       }
       return {
         ...base,
@@ -76,6 +82,7 @@ vi.mock('../src/providers/index.js', async (importOriginal) => {
           createSessionParser(_s: SessionSource, _k: Set<string>): SessionParser {
             return {
               async *parse(): AsyncGenerator<ParsedProviderCall> {
+                if (_synthParseError) throw _synthParseError
                 for (const call of _synthYields) {
                   // Respect seenKeys so that when multiple sources share the same
                   // dedup key, only the first source yields it (mirrors real parsers).
@@ -121,6 +128,45 @@ function createOtelDb(dbPath: string): void {
       value   TEXT
     );
   `)
+  db.close()
+}
+
+function createOpenCodeDb(dbPath: string, outputTokens = 42): void {
+  const { DatabaseSync } = requireForTest('node:sqlite') as {
+    DatabaseSync: new (path: string) => TestDb
+  }
+  const db = new DatabaseSync(dbPath)
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      title TEXT NOT NULL,
+      time_created INTEGER
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER,
+      data TEXT NOT NULL
+    );
+    CREATE TABLE part (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      data TEXT NOT NULL
+    );
+  `)
+  db.prepare(
+    'INSERT INTO session (id, parent_id, directory, title, time_created) VALUES (?, ?, ?, ?, ?)',
+  ).run('race-session', null, '/home/user/race-project', 'Race session', 1700000000000)
+  db.prepare(
+    'INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)',
+  ).run('race-assistant', 'race-session', 1700000001000, JSON.stringify({
+    role: 'assistant',
+    modelID: 'claude-opus-4-6',
+    cost: 0.01,
+    tokens: { input: 10, output: outputTokens, reasoning: 0, cache: { read: 0, write: 0 } },
+  }))
   db.close()
 }
 
@@ -220,6 +266,8 @@ beforeEach(async () => {
   _synthSources = []
   _synthDurable = false
   _synthYields  = []
+  _synthParseError = null
+  _synthDiscoveryComplete = true
 })
 
 afterEach(async () => {
@@ -227,6 +275,8 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 
   _synthSources = []
+  _synthParseError = null
+  _synthDiscoveryComplete = true
 
   await rm(tmpHome,  { recursive: true, force: true })
   await rm(tmpCache, { recursive: true, force: true })
@@ -377,6 +427,124 @@ describe('(d) non-durable provider evicts deleted sources', () => {
     const proj2 = await parseAllSessions(undefined, 'test-synthetic')
     // A's cache entry must be evicted → total should be 0
     expect(totalOutput(proj2)).toBe(0)
+  })
+
+  it('retains the previous turns when a changed non-durable source fails to parse', async () => {
+    const synthFile = join(tmpHome, 'synth-failing.txt')
+    await writeFile(synthFile, 'v1')
+    _synthSources = [{ path: synthFile, project: 'test', provider: 'test-synthetic' }]
+    _synthYields = [{
+      provider: 'test-synthetic', model: 'gpt-4o',
+      inputTokens: 10, outputTokens: 42,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 0, cachedInputTokens: 0,
+      reasoningTokens: 0, webSearchRequests: 0, costUSD: 0.01,
+      tools: [], bashCommands: [], timestamp: '2026-08-01T00:00:00.000Z',
+      speed: 'standard', deduplicationKey: 'synth-retained-after-failure',
+      userMessage: 'retained', sessionId: 'synth-retained-session',
+    }]
+
+    expect(totalOutput(await parseAllSessions(undefined, 'test-synthetic'))).toBe(42)
+
+    clearSessionCache()
+    await writeFile(synthFile, 'v2-with-a-new-fingerprint')
+    _synthYields = []
+    _synthParseError = new Error('synthetic parser failure')
+
+    expect(totalOutput(await parseAllSessions(undefined, 'test-synthetic'))).toBe(42)
+    const cached = await loadCache()
+    const entry = cached.providers['test-synthetic']?.files[synthFile]
+    expect(entry?.failed).toBe(true)
+    expect(entry?.turns.flatMap(turn => turn.calls).map(call => call.deduplicationKey)).toEqual([
+      'synth-retained-after-failure',
+    ])
+  })
+
+  it.skipIf(!isSqliteAvailable())('retains cached OpenCode sessions when the database disappears before shared parsing', async () => {
+    const provider = await getProvider('opencode')
+    if (!provider) throw new Error('OpenCode provider is unavailable in the test runtime')
+    const dataDir = (await provider.probeRoots?.())?.[0]?.path
+    if (!dataDir) throw new Error('OpenCode provider did not expose a data root')
+    const dbPath = join(dataDir, 'opencode.db')
+    await mkdir(dataDir, { recursive: true })
+    createOpenCodeDb(dbPath)
+
+    const originalCreateSessionParser = provider.createSessionParser
+    let deleteBeforeParse = false
+    let deleted = false
+    provider.createSessionParser = (source, seenKeys, dateRange) => {
+      if (deleteBeforeParse && !deleted && source.path.startsWith(dbPath + ':')) {
+        unlinkSync(dbPath)
+        deleted = true
+      }
+      return originalCreateSessionParser.call(provider, source, seenKeys, dateRange)
+    }
+
+    try {
+      expect(totalOutput(await parseAllSessions(undefined, 'opencode'))).toBe(42)
+
+      clearSessionCache()
+      await rm(dbPath, { force: true })
+      createOpenCodeDb(dbPath, 43)
+      deleteBeforeParse = true
+      deleted = false
+      expect(totalOutput(await parseAllSessions(undefined, 'opencode'))).toBe(42)
+      const cached = await loadCache()
+      const entry = cached.providers.opencode?.files[dbPath + ':race-session']
+      expect(entry?.failed).toBe(true)
+      expect(entry?.turns.flatMap(turn => turn.calls).map(call => call.deduplicationKey)).toEqual([
+        'opencode:race-session:race-assistant',
+      ])
+
+      createOpenCodeDb(dbPath)
+      clearSessionCache()
+      deleteBeforeParse = false
+      expect(totalOutput(await parseAllSessions(undefined, 'opencode'))).toBe(42)
+    } finally {
+      provider.createSessionParser = originalCreateSessionParser
+      await rm(dbPath, { force: true })
+    }
+  })
+
+  it('retains cached sessions when non-durable discovery fails with no sources', async () => {
+    const synthFile = join(tmpHome, 'synth-discovery-timeout.txt')
+    await writeFile(synthFile, 'stable-source')
+    _synthSources = [{ path: synthFile, project: 'test', provider: 'test-synthetic' }]
+    _synthYields = [{
+      provider: 'test-synthetic', model: 'gpt-4o',
+      inputTokens: 10, outputTokens: 17,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 0, cachedInputTokens: 0,
+      reasoningTokens: 0, webSearchRequests: 0, costUSD: 0.01,
+      tools: [], bashCommands: [], timestamp: '2026-08-01T00:00:00.000Z',
+      speed: 'standard', deduplicationKey: 'synth-retained-after-discovery-failure',
+      userMessage: 'retained', sessionId: 'synth-discovery-session',
+    }]
+    expect(totalOutput(await parseAllSessions(undefined, 'test-synthetic'))).toBe(17)
+
+    clearSessionCache()
+    _synthSources = []
+    _synthYields = []
+    _synthDiscoveryComplete = false
+
+    expect(totalOutput(await parseAllSessions(undefined, 'test-synthetic'))).toBe(17)
+  })
+
+  it('does not report a provider-scoped parse as globally hydrated', async () => {
+    const synthFile = join(tmpHome, 'synth-scoped.txt')
+    await writeFile(synthFile, 'placeholder')
+    _synthSources = [{ path: synthFile, project: 'test', provider: 'test-synthetic' }]
+    _synthYields = [{
+      provider: 'test-synthetic', model: 'gpt-4o',
+      inputTokens: 1, outputTokens: 1,
+      cacheCreationInputTokens: 0, cacheReadInputTokens: 0, cachedInputTokens: 0,
+      reasoningTokens: 0, webSearchRequests: 0, costUSD: 0.001,
+      tools: [], bashCommands: [], timestamp: new Date().toISOString(), speed: 'standard',
+      deduplicationKey: 'synth-scoped', userMessage: '', sessionId: 'synth-scoped-session',
+    }]
+
+    await parseAllSessions(undefined, 'test-synthetic')
+
+    expect(isSessionHydrationComplete()).toBe(false)
+    expect((await loadCache()).complete).toBe(false)
   })
 })
 

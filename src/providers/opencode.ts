@@ -2,7 +2,8 @@ import { join } from 'path'
 import { homedir } from 'os'
 
 import { getShortModelName } from '../models.js'
-import { discoverSqliteSessions, createSqliteSessionParser, type SqliteProviderConfig } from './sqlite-session-parser.js'
+import { createSharedSqliteSessionParser, type SqliteProviderConfig } from './sqlite-session-parser.js'
+import { discoverSqliteSessions } from './sqlite-session-discovery.js'
 import { discoverOpenCodeFileSessions, createOpenCodeFileSessionParser } from './opencode-file-parser.js'
 import type { Provider, ProbeRoot, SessionSource, SessionParser } from './types.js'
 
@@ -58,6 +59,7 @@ function getSqliteConfig(dataDir?: string): SqliteProviderConfig {
 export function createOpenCodeProvider(dataDir?: string): Provider {
   const sqliteConfig = getSqliteConfig(dataDir)
   const resolvedDataDir = getDataDir(dataDir)
+  const createSqliteParser = createSharedSqliteSessionParser(sqliteConfig)
 
   return {
     name: 'opencode',
@@ -95,7 +97,7 @@ export function createOpenCodeProvider(dataDir?: string): Provider {
       if (source.path.endsWith('.json')) {
         return createOpenCodeFileSessionParser(source, seenKeys, resolvedDataDir, 'opencode')
       }
-      return createSqliteSessionParser(source, seenKeys, sqliteConfig)
+      return createSqliteParser(source, seenKeys)
     },
   }
 }

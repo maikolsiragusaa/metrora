@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload } from '../lib/types'
 import { createAdvisorContextualLaunch } from '../advisor/context'
-import type { AdvisorAnswer, AdvisorHostedModelState } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorHostedModelState, AdvisorHostedProviderId } from '../advisor/types'
 import { Advisor } from './Advisor'
 
 const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentialClear, investigate } = vi.hoisted(() => ({
@@ -14,8 +14,8 @@ const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentia
     : { available: false, models: [], detail: 'Ollama is not running.' }),
   investigate: vi.fn(),
   advisorHostedProbe: vi.fn(),
-  advisorCredentialSet: vi.fn(async (provider: 'openai' | 'anthropic' | 'gemini') => ({ provider, state: 'ready' as const })),
-  advisorCredentialClear: vi.fn(async (provider: 'openai' | 'anthropic' | 'gemini') => ({ provider, state: 'not-configured' as const })),
+  advisorCredentialSet: vi.fn(async (provider: AdvisorHostedProviderId) => ({ provider, state: 'ready' as const })),
+  advisorCredentialClear: vi.fn(async (provider: AdvisorHostedProviderId) => ({ provider, state: 'not-configured' as const })),
 }))
 vi.mock('../advisor/kernel', () => ({ createAdvisorKernel: () => ({ investigate }) }))
 vi.mock('../lib/ipc', async importOriginal => {
@@ -60,7 +60,7 @@ const answer = {
 async function submitQuestion(question: string): Promise<void> {
   const previousCalls = investigate.mock.calls.length
   fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
-  fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Send/ }))
   await waitFor(() => expect(investigate.mock.calls).toHaveLength(previousCalls + 1))
 }
 
@@ -69,14 +69,16 @@ describe('Advisor workspace', () => {
     advisorProbe.mockClear()
     advisorCredentialSet.mockClear()
     advisorCredentialClear.mockClear()
-    advisorHostedProbe.mockReset().mockImplementation(async (provider: 'openai' | 'anthropic' | 'gemini') => ({
+    advisorHostedProbe.mockReset().mockImplementation(async (provider: AdvisorHostedProviderId) => ({
       provider,
       available: true,
       models: provider === 'openai'
         ? [{ id: 'gpt-a', label: 'gpt-a', state: 'discovered', limitation: null }, { id: 'gpt-b', label: 'gpt-b', state: 'discovered', limitation: null }]
         : provider === 'anthropic'
           ? [{ id: 'claude-a', label: 'claude-a', state: 'discovered', limitation: null }]
-          : [{ id: 'gemini-a', label: 'gemini-a', state: 'discovered', limitation: null }],
+          : provider === 'gemini'
+            ? [{ id: 'gemini-a', label: 'gemini-a', state: 'discovered', limitation: null }]
+            : [{ id: 'openrouter/auto', label: 'openrouter/auto', state: 'unverified', limitation: 'Compatibility unverified.', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' } }],
       detail: 'Hosted provider is reachable.',
       credentialState: 'ready',
     }))
@@ -178,6 +180,38 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Evidence & details')).toBeInTheDocument()
   })
 
+  it('surfaces the hosted consent guard instead of silently swallowing a submit', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'openrouter' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openrouter/auto'))
+
+    const question = 'Bonjour, comment ça va ?'
+    const composer = screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })
+    fireEvent.change(composer, { target: { value: question } })
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Confirm the hosted-provider prompt and evidence sharing notice before sending.'))
+    expect(composer).toHaveValue(question)
+    expect(investigate).not.toHaveBeenCalled()
+  })
+
+  it('submits a ready OpenRouter hosted investigation and clears the composer', async () => {
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'openrouter' } })
+    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openrouter/auto'))
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeChecked())
+
+    await submitQuestion('Quanto ho speso con Codex negli ultimi giorni?')
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue(''))
+    expect(investigate).toHaveBeenCalledWith(expect.objectContaining({ question: 'Quanto ho speso con Codex negli ultimi giorni?' }))
+  })
+
   it('renders Metrora-owned presentation blocks inside the direct answer hierarchy', async () => {
     investigate.mockResolvedValueOnce({
       ...answer,
@@ -213,7 +247,7 @@ describe('Advisor workspace', () => {
     const { container } = render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[{ id: 'codex', label: 'Codex' }]} />)
     const question = 'Inspect spend behavior'
     fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
-    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
     await screen.findByRole('alert')
     fireEvent.change(screen.getByLabelText('Advisor provider'), { target: { value: 'codex' } })
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
@@ -284,7 +318,7 @@ describe('Advisor workspace', () => {
   it('searches conversation titles, questions, and answers case-insensitively and can clear the query', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: 'Inspect spend behavior' } })
-    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Send/ }))
     await screen.findByText(answer.conclusion)
     fireEvent.click(screen.getByRole('button', { name: /New chat/ }))
     const search = screen.getByRole('textbox', { name: 'Search Advisor history' })

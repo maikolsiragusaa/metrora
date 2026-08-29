@@ -1,6 +1,6 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES } from './privacy'
@@ -137,15 +137,26 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     throwIfAborted(signal)
     const definitions = toolDefinitions(input)
     const { fallbackPlan, guard } = runtimeGuardPlan(input)
-    if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') {
-      return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
-    }
     let activeRequestId: string | null = null
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
+      const conversation = async (kind: 'social' | 'boundary' | 'action', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
+        try {
+          activeRequestId = requestId('advisor-conversation')
+          const response = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorConversationMessages(effectiveInput, kind), tools: [], stream: false }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, boundedModelText(response.message?.content), true, signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, signal)
+        }
+      }
+
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
-        const deterministic = deterministicPlanningFallback(fallbackPlan, definitions)
+        const deterministic = deterministicPlanningFallback(fallbackPlan, definitions, input.question)
         let evidenceItems: AdvisorEvidence[] = []
         try {
           evidenceItems = await executeRequests(input, deterministic.toolRequests, signal)
@@ -156,21 +167,51 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: note }, signal)
       }
 
-      let planningResponse: LocalChatResponse
+      if (guard.authorization !== 'read-only') {
+        let actionResponse: LocalChatResponse
+        try {
+          activeRequestId = requestId('advisor-action-chat')
+          actionResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: [], stream: false }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return finalizeAdvisorConversationAnswer(this, input, 'action', '', false, signal)
+        }
+        if ((Array.isArray(actionResponse.message?.tool_calls) && actionResponse.message!.tool_calls!.length > 0) || parseAdvisorPlanningDraft(actionResponse.message?.content ?? '')) {
+          return finalizeAdvisorConversationAnswer(this, input, 'action', '', false, signal)
+        }
+        return finalizeAdvisorConversationAnswer(this, input, 'action', boundedModelText(actionResponse.message?.content), true, signal)
+      }
+
+      let firstResponse: LocalChatResponse
       try {
-        activeRequestId = requestId('advisor-planning')
-        planningResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorPlanningMessages(input, fallbackPlan, guard), tools: definitions, stream: false }, signal)
+        activeRequestId = requestId('advisor-chat')
+        firstResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: definitions, stream: false }, signal)
         activeRequestId = null
         throwIfAborted(signal)
       } catch (error) {
         activeRequestId = null
         if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return fallback('The model planning phase was unavailable; this answer uses the deterministic Metrora evidence path.')
+        return fallback('The model response was unavailable; this answer uses the deterministic Metrora evidence path.')
       }
 
-      const validation = planningValidation(input, planningResponse)
-      if (!validation) return fallback('The model planning output was malformed or outside the bounded Advisor contract.')
+      const validation = planningValidation(input, firstResponse)
+      if (!validation) {
+        if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message!.tool_calls!.length > 0) return fallback('The model requested a tool outside the bounded Advisor contract.')
+        const content = boundedModelText(firstResponse.message?.content)
+        const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
+        const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
+        if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
+        if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Advisor contract.')
+        return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, signal)
+      }
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
+      if (validation.plan.turnKind === 'social' || validation.plan.turnKind === 'boundary') {
+        return conversation(validation.plan.turnKind, effectiveInput)
+      }
+
       let evidenceItems: AdvisorEvidence[] = []
       try {
         evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal)

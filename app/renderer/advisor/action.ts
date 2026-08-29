@@ -20,7 +20,7 @@ export function createAdvisorActionProposalV1(input: {
     summary: input.summary.trim().slice(0, 500),
     target: input.target.trim().slice(0, 200),
     scope: { ...input.scope, range: input.scope.range ? { ...input.scope.range } : null },
-    allowedReadTools: ['get_overview_snapshot', 'get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot', 'get_project_drivers', 'get_session_highlights', 'get_coverage_report'],
+    allowedReadTools: ['get_overview_snapshot', 'get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot', 'get_project_drivers', 'get_session_highlights', 'get_coverage_report', 'get_bench_evidence'],
     permissions: ['read-canonical-evidence'],
     budget: { maxCalls: 0, maxCostUSD: null },
     timeoutMs: 0,

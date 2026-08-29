@@ -675,12 +675,9 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('returns empty for invalid db path', async () => {
+  it('rejects for an invalid db path so callers can retain cached evidence', async () => {
     const provider = createOpenCodeProvider(tmpDir)
-    const source = { path: '/nonexistent/db.db:sess-1', project: 'test', provider: 'opencode' }
-    const calls: ParsedProviderCall[] = []
-    for await (const call of provider.createSessionParser(source, new Set()).parse()) calls.push(call)
-    expect(calls).toHaveLength(0)
+    await expect(collectCalls(provider, '/nonexistent/db.db', 'sess-1')).rejects.toThrow(/database|snapshot|unavailable/i)
   })
 
   it('tracks user messages per assistant response', async () => {
@@ -709,6 +706,40 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0]!.userMessage).toBe('first question')
     expect(calls[1]!.userMessage).toBe('second question')
+  })
+
+  it('shares one database parse across virtual roots and invalidates on database changes', async () => {
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      insertSession(db, 'root-a', { directory: '/home/user/project-a' })
+      insertSession(db, 'root-b', { directory: '/home/user/project-b' })
+      insertMessage(db, 'msg-a1', 'root-a', 1700000001000, {
+        role: 'assistant', modelID: 'claude-opus-4-6', cost: 0.01,
+        tokens: { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      insertMessage(db, 'msg-b1', 'root-b', 1700000002000, {
+        role: 'assistant', modelID: 'claude-opus-4-6', cost: 0.02,
+        tokens: { input: 30, output: 40, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+    })
+
+    const provider = createOpenCodeProvider(tmpDir)
+    const callsA = await collectCalls(provider, dbPath, 'root-a')
+    const callsB = await collectCalls(provider, dbPath, 'root-b')
+    expect(callsA.map(call => call.deduplicationKey)).toEqual(['opencode:root-a:msg-a1'])
+    expect(callsB.map(call => call.deduplicationKey)).toEqual(['opencode:root-b:msg-b1'])
+
+    withTestDb(dbPath, (db) => {
+      insertMessage(db, 'msg-a2', 'root-a', 1700000003000, {
+        role: 'assistant', modelID: 'claude-opus-4-6', cost: 0.03,
+        tokens: { input: 50, output: 60, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+    })
+    const refreshedA = await collectCalls(provider, dbPath, 'root-a')
+    expect(refreshedA.map(call => call.deduplicationKey)).toEqual([
+      'opencode:root-a:msg-a1',
+      'opencode:root-a:msg-a2',
+    ])
   })
 
   it('attributes child and grandchild session calls back to the root session', async () => {

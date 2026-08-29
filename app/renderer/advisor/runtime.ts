@@ -40,8 +40,8 @@ function socialAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): Advisor
   if (/^(?:grazie|grazie mille|thanks|thank you|thankyou|much appreciated)[!.?,\s]*$/u.test(value)) {
     return { ...answer, conclusion: italian ? 'Di nulla. Quando vuoi, possiamo guardare un altro periodo o confronto.' : 'You’re welcome. Whenever you like, we can look at another period or comparison.' }
   }
-  if (/^(?:come stai|how are you)[!?.,\s]*$/u.test(value)) {
-    return { ...answer, conclusion: italian ? 'Bene, grazie. Sono qui per aiutarti a leggere i dati di Metrora.' : 'I’m well, thanks. I’m here to help you read your Metrora data.' }
+  if (/\b(?:come stai|how are you)\b/u.test(value)) {
+    return { ...answer, conclusion: italian ? 'Bene, grazie. Sono qui per aiutarti con Metrora.' : 'I’m well, thanks. I’m here to help with Metrora.' }
   }
   return { ...answer, conclusion: italian ? 'Buongiorno. Posso aiutarti a capire spesa, modelli, Projects, sessioni, quota e risultati Bench.' : 'Hello. I can help you understand spend, models, Projects, sessions, quota, and Bench results.' }
 }

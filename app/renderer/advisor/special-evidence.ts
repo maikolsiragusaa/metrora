@@ -14,6 +14,20 @@ export function buildSocialEvidence(question: string, scope: AdvisorScope): Advi
   }
 }
 
+/** Empty, neutral evidence for a capable model’s ordinary chat response. */
+export function buildConversationEvidence(question: string, scope: AdvisorScope): AdvisorEvidence {
+  return {
+    intent: 'social',
+    question,
+    scope,
+    refs: [],
+    coverage: { level: 'high', state: 'UNSUPPORTED', label: 'Conversation', detail: 'No Metrora evidence was used for this turn.' },
+    assumptions: [],
+    unknown: [],
+    nextInvestigations: [],
+  }
+}
+
 export function buildActionProposalEvidence(question: string, scope: AdvisorScope, boundary: string): AdvisorEvidence {
   const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   const kind = /\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value) ? 'run-bench' as const

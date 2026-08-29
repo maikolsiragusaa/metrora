@@ -218,7 +218,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(deltas).toEqual([])
   })
 
-  it('suppresses no-tool model narrative when the question has no valid mapped evidence', async () => {
+  it('keeps a direct no-tool model narrative for ordinary conversation', async () => {
     const unknown: AdvisorEvidence = {
       ...spendEvidence,
       intent: 'unknown',
@@ -230,7 +230,7 @@ describe('Ollama Advisor renderer state machine', () => {
     const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport: noToolTransport(narrative) }).generate({
       question: 'Tell me a joke', evidence: unknown, tools: [],
     })
-    expect(answer.conclusion).not.toContain(narrative)
+    expect(answer.conclusion).toContain(narrative)
     expect(answer.conclusion).not.toContain('Local model context')
   })
 

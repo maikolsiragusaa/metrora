@@ -22,6 +22,7 @@ const TOOL_NAMES = [
   'get_project_drivers',
   'get_session_highlights',
   'get_coverage_report',
+  'get_bench_evidence',
 ] as const
 
 function expectContractError(error: unknown, code: AdvisorToolContractError['code']): void {
@@ -57,7 +58,7 @@ function scriptedTransport(toolCalls: unknown[], finalContent = 'The observed pa
 }
 
 describe('AdvisorToolV1 reusable conformance suite', () => {
-  it('publishes the stable seven-tool identity, version, schemas, and JSON-safe contract', () => {
+  it('publishes the stable eight-tool identity, version, schemas, and JSON-safe contract', () => {
     expect(ADVISOR_TOOL_CONTRACT.contractVersion).toBe('advisor-tool-v1')
     expect(ADVISOR_TOOL_CONTRACT.schemaVersion).toBe(1)
     expect(ADVISOR_TOOL_DEFINITIONS.map(tool => tool.function.name)).toEqual(TOOL_NAMES)
@@ -92,6 +93,25 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
     expect(Object.isFrozen(registry.scope)).toBe(true)
     expect(Object.isFrozen(result.envelope?.scope)).toBe(true)
     expect(fixture.reads.overviews).toContainEqual({ ...fixture.scope, model: 'gpt-safe' })
+  })
+
+  it('narrows relative periods without widening the invocation scope', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const registry = createAdvisorToolRegistry(fixture.source, fixture.scope, fixture.overview)
+    const yesterday = new Date()
+    yesterday.setHours(0, 0, 0, 0)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const date = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0')
+
+    const result = await registry.execute('get_spend_snapshot', { period: 'yesterday' })
+
+    expect(result.evidence.scope).toMatchObject({ period: 'today', range: { from: date, to: date } })
+    expect(fixture.reads.overviews).toContainEqual({ ...fixture.scope, period: 'today', range: { from: date, to: date } })
+    await rejectsWithCode(registry.execute('get_spend_snapshot', { period: 'lifetime' }), 'invalid-scope')
+
+    const rangedScope: AdvisorScope = { ...fixture.scope, period: 'week', range: { from: date, to: date } }
+    const rangedRegistry = createAdvisorToolRegistry(fixture.source, rangedScope, null)
+    await rejectsWithCode(rangedRegistry.execute('get_spend_snapshot', { period: 'today' }), 'invalid-scope')
   })
 
   it('fails closed for unknown tools, wrong types, unsupported providers, malformed filters, and additional args', async () => {

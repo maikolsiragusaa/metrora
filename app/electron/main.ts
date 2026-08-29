@@ -121,8 +121,8 @@ export function ipcChannelAliases(channel: string): string[] {
   return [channel]
 }
 
-export function shouldInstallApplicationMenu(isDev: boolean, platform = process.platform): boolean {
-  return platform === 'darwin' || isDev
+export function shouldInstallApplicationMenu(_isDev: boolean, platform = process.platform): boolean {
+  return platform === 'darwin'
 }
 
 function registerHandlers(): void {

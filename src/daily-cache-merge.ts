@@ -16,6 +16,10 @@ function hasSliceData(slice: ProviderDaySlice): boolean {
     || (slice.cacheWriteTokens ?? 0) > 0
 }
 
+function hasSliceUsage(slice: ProviderDaySlice | undefined): slice is ProviderDaySlice {
+  return !!slice && (hasSliceData(slice) || (slice.sessions ?? 0) > 0)
+}
+
 function addProjectTokenEvidence(target: ProjectDayStats, source: ProjectDayStats, targetHadUsage: boolean): void {
   for (const field of PROJECT_TOKEN_FIELDS) {
     const sourceValue = source[field]
@@ -113,6 +117,25 @@ function addSliceIntoDay(day: DailyEntry, provider: string, slice: ProviderDaySl
   }
 }
 
+function emptyReconciledDay(date: string): DailyEntry {
+  return {
+    date,
+    cost: 0,
+    savingsUSD: 0,
+    calls: 0,
+    sessions: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    editTurns: 0,
+    oneShotTurns: 0,
+    models: {},
+    categories: {},
+    providers: {},
+  }
+}
+
 /// Assign via defineProperty so filesystem-derived keys like "__proto__" become
 /// ordinary own properties instead of mutating the prototype link.
 export function setOwn<T>(target: Record<string, T>, key: string, value: T): void {
@@ -151,4 +174,76 @@ export function mergeDayEntries(
     }
   }
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
+ * Merge a degraded fresh parse without letting one incomplete provider freeze
+ * every other provider or overwrite retained history with an undercount.
+ *
+ * A provider whose discovery is complete may advance from the fresh slice. An
+ * incomplete/unknown provider keeps its finalized baseline slice when one
+ * exists. Newly observed evidence with no baseline is still retained, while the
+ * caller keeps the overall cache marked degraded. Opaque legacy days remain
+ * baseline-authoritative because they cannot be reconciled per provider safely.
+ */
+export function mergeDayEntriesByProviderCompleteness(
+  fresh: DailyEntry[],
+  baseline: DailyEntry[],
+  providerComplete: (provider: string) => boolean | undefined,
+): DailyEntry[] {
+  const freshByDate = new Map(fresh.map(day => [day.date, day]))
+  const baselineByDate = new Map(baseline.map(day => [day.date, day]))
+  const dates = [...new Set([...freshByDate.keys(), ...baselineByDate.keys()])].sort()
+  const merged: DailyEntry[] = []
+
+  for (const date of dates) {
+    const freshDay = freshByDate.get(date)
+    const baselineDay = baselineByDate.get(date)
+    if (!baselineDay) {
+      if (freshDay) merged.push(structuredClone(freshDay))
+      continue
+    }
+    if (!freshDay) {
+      const copy = structuredClone(baselineDay)
+      copy.carried = true
+      merged.push(copy)
+      continue
+    }
+    if (isOpaqueDay(baselineDay) || isOpaqueDay(freshDay)) {
+      const copy = structuredClone(baselineDay)
+      copy.carried = true
+      merged.push(copy)
+      continue
+    }
+
+    const next = emptyReconciledDay(date)
+    let carried = false
+    const providers = new Set([...Object.keys(freshDay.providers), ...Object.keys(baselineDay.providers)])
+    for (const provider of providers) {
+      const freshSlice = Object.hasOwn(freshDay.providers, provider) ? freshDay.providers[provider] : undefined
+      const baselineSlice = Object.hasOwn(baselineDay.providers, provider) ? baselineDay.providers[provider] : undefined
+      const complete = providerComplete(provider)
+      let selected: ProviderDaySlice | undefined
+      let selectedFromBaseline = false
+
+      if (complete === true && hasSliceUsage(freshSlice)) {
+        selected = freshSlice
+      } else if (hasSliceUsage(baselineSlice)) {
+        selected = baselineSlice
+        selectedFromBaseline = true
+      } else if (hasSliceUsage(freshSlice)) {
+        // Partial discovery can still reveal genuinely new evidence. Keep it
+        // when no finalized slice exists, but do not let it replace history.
+        selected = freshSlice
+      }
+
+      if (!selected) continue
+      addSliceIntoDay(next, provider, selected)
+      if (selectedFromBaseline) carried = true
+    }
+    if (carried) next.carried = true
+    merged.push(next)
+  }
+
+  return merged
 }

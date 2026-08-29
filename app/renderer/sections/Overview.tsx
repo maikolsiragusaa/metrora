@@ -315,6 +315,7 @@ export function OverviewContent({
   provider = 'all',
   range = null,
   overview,
+  refreshToken = 0,
   onNavigate,
   ready = true,
 }: {
@@ -322,11 +323,12 @@ export function OverviewContent({
   provider?: string
   range?: DateRange | null
   overview: Polled<MenubarPayload>
+  refreshToken?: number
   onNavigate?: (section: 'optimize' | 'sessions') => void
   ready?: boolean
 }) {
-  const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [], { enabled: ready, memoKey: 'overview-act' })
-  const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
+  const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [refreshToken], { enabled: ready, memoKey: 'overview-act' })
+  const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider, refreshToken], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
   const [shareOpen, setShareOpen] = useState(false)
   const { data, error } = overview
   const modelIndex = useMemo(() => data ? buildModelIndex(data) : new Map<string, string>(), [data])

@@ -17,7 +17,7 @@ vi.stubGlobal('localStorage', {
 })
 
 const mocks = vi.hoisted(() => ({
-  getOverview: vi.fn<(period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean) => Promise<MenubarPayload>>(),
+  getOverview: vi.fn<(period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string) => Promise<MenubarPayload>>(),
   getSpendFlow: vi.fn<(period: string, provider: string, range?: DateRange) => Promise<SpendFlow>>(),
   getOptimizeReport: vi.fn<(period: string, provider: string, range?: DateRange) => Promise<OptimizeJsonReport>>(),
   getModels: vi.fn(),
@@ -249,6 +249,28 @@ describe('App shortcuts', () => {
     const overviewCalls = mocks.getOverview.mock.calls.length
     fireEvent.keyDown(document, { key: 'r', metaKey: true })
     await waitFor(() => expect(mocks.getOverview.mock.calls.length).toBeGreaterThan(overviewCalls))
+  })
+
+  it('uses the visible Refresh control for fresh Overview data and re-fetches section snapshots after publication', async () => {
+    render(<App />)
+
+    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(mocks.getActReport).toHaveBeenCalled()
+      expect(mocks.getYield).toHaveBeenCalled()
+    })
+    const overviewCalls = mocks.getOverview.mock.calls.length
+    const actCalls = mocks.getActReport.mock.calls.length
+    const yieldCalls = mocks.getYield.mock.calls.length
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() => expect(mocks.getOverview.mock.calls.length).toBeGreaterThan(overviewCalls))
+    expect(mocks.getOverview.mock.calls.at(-1)?.[5]).toBe(true)
+    await waitFor(() => {
+      expect(mocks.getActReport.mock.calls.length).toBeGreaterThan(actCalls)
+      expect(mocks.getYield.mock.calls.length).toBeGreaterThan(yieldCalls)
+    })
   })
 
   it('re-polls visible section data when period or provider changes', async () => {

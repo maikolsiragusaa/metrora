@@ -23,6 +23,7 @@ export const ADVISOR_TOOL_OUTPUT_MAX_BYTES = 32 * 1024
 export const ADVISOR_TOOL_MODEL_FILTER_MAX_LENGTH = 256
 
 const PERIOD_VALUES = ['today', 'week', '30days', 'month', 'all', 'lifetime'] as const
+const TOOL_PERIOD_VALUES = ['today', 'yesterday', 'week', '30days', 'month', 'all', 'lifetime'] as const
 const PROVIDER_FILTER_VALUES = ['all', 'claude', 'codex'] as const
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 
@@ -71,29 +72,42 @@ function definition(
 const definitions: readonly AdvisorToolDefinition[] = Object.freeze([
   definition('get_spend_snapshot', 'Read Metrora measured spend, daily trend, model and Project drivers, and coverage for the selected scope.', {
     model: { type: 'string', description: 'Optional exact model filter; bounded identifier.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope or request yesterday.' },
   }),
   definition('get_model_efficiency', 'Read canonical Metrora model rows and observed cost per call. Do not infer quality or comparable work.', {
     model: { type: 'string', description: 'Optional exact model filter; bounded identifier.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope.' },
   }),
   definition('get_quota_snapshot', 'Read provider-reported quota windows, reset timestamps, freshness, and credits. Never estimate quota from Metrora spend.', {
     provider: { type: 'string', enum: [...PROVIDER_FILTER_VALUES], description: 'Optional factual supported-provider filter.' },
   }),
   definition('get_overview_snapshot', 'Read the current canonical Metrora overview for the selected period, Project, provider, and model context.', {
     model: { type: 'string', description: 'Optional exact model filter; bounded identifier.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope or request yesterday.' },
   }),
-  definition('get_project_drivers', 'Read descriptive Project spend drivers from the canonical Metrora overview. Do not infer causality.'),
-  definition('get_session_highlights', 'Read content-minimal highest-cost session summaries from the canonical Metrora overview. No raw session content is exposed.'),
-  definition('get_coverage_report', 'Read Metrora evidence coverage, assumptions, and unknowns for the selected scope.'),
+  definition('get_project_drivers', 'Read descriptive Project spend drivers from the canonical Metrora overview. Do not infer causality.', {
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope or request yesterday.' },
+  }),
+  definition('get_session_highlights', 'Read content-minimal highest-cost session summaries from the canonical Metrora overview. No raw session content is exposed.', {
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope or request yesterday.' },
+  }),
+  definition('get_coverage_report', 'Read Metrora evidence coverage, assumptions, and unknowns for the selected scope.', {
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope or request yesterday.' },
+  }),
+  definition('get_bench_evidence', 'Read bounded canonical Bench history and compatible comparisons for the selected scope. Never start a Bench run.', {
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement for a follow-up; it may only narrow the selected scope.' },
+  }),
 ])
 
 const allowedFilters: Readonly<Record<AdvisorToolName, readonly AdvisorToolArgumentName[]>> = Object.freeze({
-  get_spend_snapshot: ['model'],
-  get_model_efficiency: ['model'],
+  get_spend_snapshot: ['model', 'period'],
+  get_model_efficiency: ['model', 'period'],
   get_quota_snapshot: ['provider'],
-  get_overview_snapshot: ['model'],
-  get_project_drivers: [],
-  get_session_highlights: [],
-  get_coverage_report: [],
+  get_overview_snapshot: ['model', 'period'],
+  get_project_drivers: ['period'],
+  get_session_highlights: ['period'],
+  get_coverage_report: ['period'],
+  get_bench_evidence: ['period'],
 })
 
 export const ADVISOR_TOOL_CONTRACT: AdvisorToolContract = Object.freeze({
@@ -178,6 +192,12 @@ function providerFilter(value: unknown): string {
   return value
 }
 
+function periodFilter(value: unknown): string {
+  if (typeof value !== 'string') throw new AdvisorToolContractError('invalid-argument-type', 'Advisor period filter must be a string.')
+  if (!(TOOL_PERIOD_VALUES as readonly string[]).includes(value)) throw new AdvisorToolContractError('invalid-argument-value', 'Advisor period filter is not supported by the bounded Advisor scope contract.')
+  return value
+}
+
 export function isAdvisorToolName(value: unknown): value is AdvisorToolName {
   return typeof value === 'string' && definitions.some(item => item.function.name === value)
 }
@@ -197,6 +217,7 @@ export function validateAdvisorToolArguments(name: unknown, value: unknown): Adv
   const normalized: AdvisorJsonObject = {}
   if (Object.prototype.hasOwnProperty.call(args, 'model')) normalized.model = modelFilter(args.model)
   if (Object.prototype.hasOwnProperty.call(args, 'provider')) normalized.provider = providerFilter(args.provider)
+  if (Object.prototype.hasOwnProperty.call(args, 'period')) normalized.period = periodFilter(args.period)
   return normalized
 }
 
@@ -220,6 +241,7 @@ export function normalizeAdvisorRuntimeToolCall(name: unknown, value: unknown, s
   const normalized: AdvisorJsonObject = {}
   for (const key of Object.keys(args)) {
     if (key === 'model') normalized.model = modelFilter(args.model)
+    else if (key === 'period') normalized.period = periodFilter(args.period)
     else if (key === 'provider') normalized.provider = providerFilter(args.provider)
     else throw new AdvisorToolContractError('additional-argument', 'Additional Advisor tool argument is not allowed: ' + key)
   }
@@ -273,7 +295,7 @@ export function snapshotAdvisorScope(scope: AdvisorScope): AdvisorScope {
 
 function authorityForTool(name: AdvisorToolName, evidence: AdvisorEvidence): AdvisorToolAuthority {
   if (name === 'get_quota_snapshot') return evidence.quota && evidence.spend ? 'mixed' : 'provider-reported'
-  return evidence.refs.some(ref => ref.source === 'overview' || ref.source === 'history' || ref.source === 'models') ? 'metrora-canonical' : 'unknown'
+  return evidence.refs.some(ref => ref.source === 'overview' || ref.source === 'history' || ref.source === 'models' || ref.source === 'bench') ? 'metrora-canonical' : 'unknown'
 }
 
 function freshnessForTool(name: AdvisorToolName, evidence: AdvisorEvidence): AdvisorToolFreshness {
@@ -295,6 +317,8 @@ function semanticsForTool(name: AdvisorToolName, evidence: AdvisorEvidence): Adv
   if (name === 'get_quota_snapshot') {
     semantics.push({ source: 'quota', authority: 'provider-reported', status: 'observed' })
     if (evidence.quota?.measuredSpendUSD !== null && evidence.quota?.measuredSpendUSD !== undefined) semantics.push({ source: 'overview', authority: 'metrora-canonical', status: 'observed' })
+  } else if (name === 'get_bench_evidence') {
+    semantics.push({ source: 'bench', authority: 'metrora-canonical', status: 'observed' })
   } else {
     semantics.push({ source: 'overview', authority: 'metrora-canonical', status: 'observed' })
     if (evidence.spend?.trend) semantics.push({ source: 'history', authority: 'metrora-canonical', status: 'derived' })
@@ -358,6 +382,7 @@ export function createContentMinimalAdvisorToolResultEnvelope(
   const safeArguments: AdvisorJsonObject = {}
   if (typeof args.model === 'string') safeArguments.model = sanitizeAdvisorDisplayText(args.model)
   if (args.provider === 'claude' || args.provider === 'codex') safeArguments.provider = args.provider
+  if (typeof args.period === 'string') safeArguments.period = args.period
   const safeCoverage = contentMinimalCoverage(evidence.coverage)
   const safeOutput = JSON.parse(boundedAdvisorJson(contentMinimalEvidence(evidence), ADVISOR_TOOL_OUTPUT_MAX_BYTES)) as AdvisorJsonObject
   const envelope: AdvisorToolResultEnvelope = {

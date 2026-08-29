@@ -73,7 +73,7 @@ function manualPlanSummaries(status: StatusJson): JsonPlanSummary[] {
   return planSummaries(status).filter(plan => plan.provider !== 'claude' && plan.provider !== 'codex')
 }
 
-export function Plans({ period, refreshToken = 0, onNavigate, onAskAdvisor, ready = true }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void; onAskAdvisor?: () => void; ready?: boolean }) {
+export function Plans({ period, refreshToken = 0, onNavigate, onAskAdvisor, onRefresh, refreshing = false, ready = true }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void; onAskAdvisor?: () => void; onRefresh?: () => void; refreshing?: boolean; ready?: boolean }) {
   // Force a fresh fetch (bypassing QuotaService's 5-min cache, and its keychain
   // guard) when the user hits ⌘R or clicks Refresh in the Connect affordance;
   // the steady 30s poll keeps serving cached quota.
@@ -95,6 +95,7 @@ export function Plans({ period, refreshToken = 0, onNavigate, onAskAdvisor, read
         <div className="t">Plans</div>
         <div className="sp" />
         {onAskAdvisor && <button type="button" className="btn btn-s ask-advisor-button" onClick={onAskAdvisor}>Ask Advisor <span aria-hidden="true">↗</span></button>}
+        {onRefresh && <button type="button" className="btn btn-s refresh-button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Refreshing' : 'Refresh'}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>}
         <button type="button" className="btn btn-s" onClick={() => onNavigate?.('settings', 'plans')}>
           Add plan…
         </button>

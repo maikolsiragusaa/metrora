@@ -25,13 +25,13 @@ function capturingRuntime(inputs: AdvisorRuntimeInput[]): AdvisorModelRuntime {
 }
 
 describe('Advisor model planning boundary', () => {
-  it('defers canonical evidence reads until after an investigative runtime plans', async () => {
+  it('passes neutral model context before any canonical evidence read', async () => {
     const data = source()
     const inputs: AdvisorRuntimeInput[] = []
     await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'What changed in spend?', scope })
 
     expect(data.getOverview).not.toHaveBeenCalled()
-    expect(inputs[0]?.evidence).toMatchObject({ intent: 'unknown', coverage: { level: 'unavailable' }, refs: [] })
+    expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
     expect(inputs[0]?.guard?.intent).toBe('unknown')
     expect(inputs[0]?.plan?.questionFamily).toBe('spend')
   })
@@ -42,6 +42,6 @@ describe('Advisor model planning boundary', () => {
     await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'Tell me a joke', scope })
 
     expect(data.getOverview).not.toHaveBeenCalled()
-    expect(inputs[0]?.evidence).toMatchObject({ intent: 'unknown', coverage: { level: 'unavailable' }, refs: [] })
+    expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
   })
 })

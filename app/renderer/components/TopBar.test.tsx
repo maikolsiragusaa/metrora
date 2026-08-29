@@ -13,7 +13,7 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: () => void) {
+function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: () => void, onRefresh?: () => void) {
   render(
     <TopBar
       title="Workspace"
@@ -34,6 +34,7 @@ function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: (
       onConfigSelect={vi.fn()}
       capabilities={capabilities}
       onAskAdvisor={onAskAdvisor}
+      onRefresh={onRefresh}
     />,
   )
 }
@@ -45,6 +46,15 @@ describe('TopBar scope capabilities', () => {
     expect(screen.getByLabelText('Choose date range')).toBeInTheDocument()
     expect(screen.getByText('All providers')).toBeInTheDocument()
     expect(screen.getByLabelText('Claude config source')).toBeInTheDocument()
+  })
+
+  it('wires the visible Refresh control only when the section exposes it', () => {
+    const onRefresh = vi.fn()
+    renderTopBar(full, undefined, onRefresh)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    expect(onRefresh).toHaveBeenCalledOnce()
   })
 
   it('keeps read-only scope context without implying Workspace filters', () => {

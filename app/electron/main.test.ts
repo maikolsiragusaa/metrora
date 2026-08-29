@@ -395,10 +395,13 @@ describe('createApplicationMenuTemplate', () => {
     expect(roles).not.toContain('forceReload')
   })
 
-  it('installs the menu for development on Windows but keeps packaged Windows apps menu-free', () => {
-    expect(shouldInstallApplicationMenu(true, 'win32')).toBe(true)
+  it('keeps Windows and Linux menu-free in dev and packaged builds while preserving the macOS menu', () => {
+    expect(shouldInstallApplicationMenu(true, 'win32')).toBe(false)
     expect(shouldInstallApplicationMenu(false, 'win32')).toBe(false)
+    expect(shouldInstallApplicationMenu(true, 'linux')).toBe(false)
+    expect(shouldInstallApplicationMenu(false, 'linux')).toBe(false)
     expect(shouldInstallApplicationMenu(false, 'darwin')).toBe(true)
+    expect(shouldInstallApplicationMenu(true, 'darwin')).toBe(true)
   })
 })
 
@@ -544,6 +547,7 @@ describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
     expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
     expect(opts[1]?.idleTimeoutMs).toBe(45_000)
     expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
+    expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_READ_MODE).toBe('')
     expect(typeof opts[1]?.onStderr).toBe('function')
     expect(typeof opts[1]?.onProgress).toBe('function')
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'done' })

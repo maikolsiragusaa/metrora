@@ -1,6 +1,6 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { finalizeModelAnswer, buildAdvisorPlanningMessages, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
@@ -128,15 +128,36 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
     const definitions = toolDefinitions(input)
     const { fallbackPlan, guard } = runtimeGuardPlan(input)
-    if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') {
+    if (guard.authorization !== 'read-only') {
       return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
     }
     let activeRequestId: string | null = null
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
+      const conversation = async (kind: 'social' | 'boundary', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
+        try {
+          activeRequestId = requestId('hosted-conversation')
+          const response = await this.transport.chat(activeRequestId, {
+            provider: this.provider,
+            model: this.model,
+            messages: buildAdvisorConversationMessages(effectiveInput, kind),
+            tools: [],
+            stream: false,
+            consent: true,
+          }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, response.message?.content ?? '', true, signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, signal)
+        }
+      }
+
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
-        const deterministic = deterministicPlanningFallback(fallbackPlan, definitions)
+        const deterministic = deterministicPlanningFallback(fallbackPlan, definitions, input.question)
         let evidenceItems: AdvisorEvidence[] = []
         try { evidenceItems = await executeRequests(input, deterministic.toolRequests, signal) } catch (error) {
           if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
@@ -145,14 +166,14 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: note }, signal)
       }
 
-      let planningResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
+      let firstResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
       const allowNativeToolCalls = this.capabilities.toolCall === 'supported'
       try {
-        activeRequestId = requestId('hosted-planning')
-        planningResponse = await this.transport.chat(activeRequestId, {
+        activeRequestId = requestId('hosted-chat')
+        firstResponse = await this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
-          messages: buildAdvisorPlanningMessages(input, fallbackPlan, guard),
+          messages: buildAdvisorChatMessages(input, fallbackPlan, guard),
           tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
@@ -162,12 +183,24 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       } catch (error) {
         activeRequestId = null
         if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return fallback('The hosted model planning phase was unavailable; this answer uses the deterministic Metrora evidence path.')
+        return fallback('The hosted model response was unavailable; this answer uses the deterministic Metrora evidence path.')
       }
 
-      const validation = planningValidation(input, planningResponse, allowNativeToolCalls)
-      if (!validation) return fallback('The hosted model planning output was malformed or outside the bounded Advisor contract.')
+      const validation = planningValidation(input, firstResponse, allowNativeToolCalls)
+      if (!validation) {
+        if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0) return fallback('The model requested a tool outside the bounded Advisor contract.')
+        const content = firstResponse.message?.content ?? ''
+        const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
+        const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
+        if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
+        if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Advisor contract.')
+        return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, signal)
+      }
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
+      if (validation.plan.turnKind === 'social' || validation.plan.turnKind === 'boundary') {
+        return conversation(validation.plan.turnKind, effectiveInput)
+      }
+
       let evidenceItems: AdvisorEvidence[] = []
       try { evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal) } catch (error) {
         if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error

@@ -25,7 +25,9 @@ const MAX_TEXT_BYTES = 512
 const QUESTION_FAMILIES: readonly AdvisorQuestionFamily[] = ['usage', 'spend', 'tokens', 'cache', 'reasoning', 'models', 'providers', 'projects', 'sessions', 'pricing', 'quota', 'bench', 'evidence', 'action', 'unknown']
 const EVIDENCE_DOMAINS: readonly AdvisorEvidenceDomain[] = ['usage-totals', 'usage-time-series', 'cost', 'tokens', 'cache', 'reasoning', 'models', 'providers', 'projects', 'sessions', 'pricing', 'freshness', 'provider-capacity', 'bench-history']
 const PRESENTATION_INTENTS: readonly AdvisorPresentationIntent[] = ['text', 'metric-cards', 'line-chart', 'bar-chart', 'comparison-table', 'quota-card', 'bench-summary', 'warning', 'evidence-disclosure']
-const TOOL_NAMES: readonly AdvisorToolName[] = ['get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot', 'get_overview_snapshot', 'get_project_drivers', 'get_session_highlights', 'get_coverage_report']
+const TOOL_NAMES: readonly AdvisorToolName[] = ['get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot', 'get_overview_snapshot', 'get_project_drivers', 'get_session_highlights', 'get_coverage_report', 'get_bench_evidence']
+
+export type AdvisorModelPlanningDraftV1 = AdvisorPlanningDraftV1 | (Omit<AdvisorPlanningDraftV1, 'turnKind'> & { turnKind: 'social' | 'boundary' })
 
 function bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength
@@ -76,7 +78,7 @@ function parseToolRequest(value: unknown): AdvisorToolRequestV1 | null {
   return { tool: value.tool as AdvisorToolName, arguments: value.arguments }
 }
 
-export function parseAdvisorPlanningDraft(value: unknown): AdvisorPlanningDraftV1 | null {
+export function parseAdvisorPlanningDraft(value: unknown): AdvisorModelPlanningDraftV1 | null {
   const parsed = typeof value === 'string' ? parseJsonText(value) : value
   if (!isRecord(parsed)) return null
   // A planning response is deliberately not a synthesis envelope. Treat
@@ -84,7 +86,7 @@ export function parseAdvisorPlanningDraft(value: unknown): AdvisorPlanningDraftV
   // cross the planning boundary.
   if (['conclusion', 'answer', 'why', 'details', 'claims'].some(key => Object.prototype.hasOwnProperty.call(parsed, key))) return null
   if (parsed.contractVersion !== 'advisor-planning-draft-v1' || parsed.schemaVersion !== 1) return null
-  if (parsed.turnKind !== 'investigate' && parsed.turnKind !== 'clarify') return null
+  if (parsed.turnKind !== 'investigate' && parsed.turnKind !== 'clarify' && parsed.turnKind !== 'social' && parsed.turnKind !== 'boundary') return null
   if (typeof parsed.questionFamily !== 'string' || !(QUESTION_FAMILIES as readonly string[]).includes(parsed.questionFamily)) return null
   if (!Array.isArray(parsed.requestedEvidenceDomains) || parsed.requestedEvidenceDomains.length > MAX_DOMAINS || parsed.requestedEvidenceDomains.some(domain => !(EVIDENCE_DOMAINS as readonly string[]).includes(domain))) return null
   if (!Array.isArray(parsed.toolRequests) || parsed.toolRequests.length > MAX_TOOL_REQUESTS) return null
@@ -104,7 +106,7 @@ export function parseAdvisorPlanningDraft(value: unknown): AdvisorPlanningDraftV
     presentationIntent: parsed.presentationIntent as AdvisorPresentationIntent,
     expertDetailRequested: parsed.expertDetailRequested,
     clarification,
-  }
+  } as AdvisorModelPlanningDraftV1
 }
 
 function nativeToolName(call: Record<string, unknown>): unknown {
@@ -134,6 +136,8 @@ export function planningDraftFromNativeToolCalls(calls: readonly Record<string, 
       ? 'models'
       : selectedTools.size === 1 && selectedTools.has('get_coverage_report')
         ? 'evidence'
+        : selectedTools.size === 1 && selectedTools.has('get_bench_evidence')
+          ? 'bench'
         : guardPlan.questionFamily
   return {
     contractVersion: 'advisor-planning-draft-v1',
@@ -152,8 +156,9 @@ function defaultToolForFamily(family: AdvisorQuestionFamily): AdvisorToolName | 
   if (family === 'quota' || family === 'providers') return 'get_quota_snapshot'
   if (family === 'models') return 'get_model_efficiency'
   if (family === 'evidence') return 'get_coverage_report'
-  if (family === 'bench') return null
+  if (family === 'bench') return 'get_bench_evidence'
   if (family === 'action') return null
+  if (family === 'unknown') return null
   return 'get_spend_snapshot'
 }
 
@@ -187,16 +192,19 @@ function asGuardPlan(plan: AdvisorGuardPlanV1 | AdvisorTurnPlanV1): AdvisorGuard
   return guardFromFallbackPlan(plan)
 }
 
-function planWithGuard(draft: AdvisorPlanningDraftV1, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1): AdvisorTurnPlanV1 {
-  const requestedDomains = draft.requestedEvidenceDomains.length ? draft.requestedEvidenceDomains : [...fallbackPlan.requestedEvidenceDomains]
+function planWithGuard(draft: AdvisorModelPlanningDraftV1, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1): AdvisorTurnPlanV1 {
+  const conversationalTurn = draft.turnKind === 'social' || draft.turnKind === 'boundary'
+  const requestedDomains = conversationalTurn
+    ? []
+    : draft.requestedEvidenceDomains.length ? draft.requestedEvidenceDomains : [...fallbackPlan.requestedEvidenceDomains]
   return {
     ...fallbackPlan,
-    turnKind: guard.turnKind === 'investigate' ? 'investigate' : fallbackPlan.turnKind,
-    questionFamily: draft.questionFamily,
+    turnKind: conversationalTurn ? draft.turnKind : guard.turnKind === 'investigate' ? 'investigate' : fallbackPlan.turnKind,
+    questionFamily: conversationalTurn ? 'unknown' : draft.questionFamily,
     requestedEvidenceDomains: requestedDomains,
-    presentationIntent: draft.presentationIntent,
-    expertDetailRequested: draft.expertDetailRequested,
-    clarification: guard.clarification,
+    presentationIntent: conversationalTurn ? 'text' : draft.presentationIntent,
+    expertDetailRequested: conversationalTurn ? false : draft.expertDetailRequested,
+    clarification: conversationalTurn ? null : guard.clarification,
     authorization: guard.authorization,
     scopeIntent: guard.scopeIntent,
   }
@@ -212,15 +220,23 @@ export function runtimeGuardPlan(input: AdvisorRuntimeInput): { fallbackPlan: Ad
 }
 
 export function validateAdvisorPlanningDraft(
-  draft: AdvisorPlanningDraftV1,
+  draft: AdvisorModelPlanningDraftV1,
   guardPlan: AdvisorGuardPlanV1 | AdvisorTurnPlanV1,
   scope: AdvisorScope,
   definitions: readonly AdvisorToolDefinition[],
 ): AdvisorPlanningValidation | null {
   const guard = asGuardPlan(guardPlan)
   const fallbackPlan = guardPlan.contractVersion === 'advisor-turn-plan-v1' ? guardPlan : createAdvisorTurnPlanV1('', scope)
-  // The deterministic guard owns all action and clarification boundaries.
+  // Deterministic guards still own action, explicit unsupported, and
+  // clarification boundaries. A model may only narrow an otherwise-safe unknown
+  // investigation into social/boundary, never widen authorization or scope.
   if (guard.authorization !== 'read-only' || guard.turnKind !== 'investigate') return null
+
+  if (draft.turnKind === 'social' || draft.turnKind === 'boundary') {
+    if (draft.questionFamily !== 'unknown' || draft.requestedEvidenceDomains.length !== 0 || draft.toolRequests.length !== 0 || draft.clarification !== null || draft.presentationIntent !== 'text') return null
+    return { plan: planWithGuard(draft, fallbackPlan, guard), toolRequests: [], modelAssisted: true }
+  }
+
   if (draft.turnKind !== 'investigate' || draft.questionFamily === 'action' || draft.clarification !== null) return null
   const names = definitionNames(definitions)
   const requests: AdvisorToolRequestV1[] = []
@@ -236,12 +252,27 @@ export function validateAdvisorPlanningDraft(
   return { plan: planWithGuard(draft, fallbackPlan, guard), toolRequests: requests.slice(0, MAX_TOOL_REQUESTS), modelAssisted: true }
 }
 
+function boundedPeriodHint(question: string): string | null {
+  const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (/\b(?:yesterday|ieri)\b/u.test(value)) return 'yesterday'
+  if (/\b(?:today|oggi)\b/u.test(value)) return 'today'
+  if (/(?:last|past|this)\s+7\s+days|ultimi\s+7\s+giorni|questa\s+settimana/u.test(value)) return 'week'
+  if (/(?:last|past)\s+30\s+days|ultimi\s+30\s+giorni/u.test(value)) return '30days'
+  if (/(?:this|last)\s+month|questo\s+mese|mese\s+scorso/u.test(value)) return 'month'
+  if (/(?:all\s+time|lifetime|sempre|tutta\s+la\s+vita)/u.test(value)) return 'lifetime'
+  return null
+}
+
 export function deterministicPlanningFallback(
   guardPlan: AdvisorTurnPlanV1,
   definitions: readonly AdvisorToolDefinition[],
+  question = '',
 ): AdvisorPlanningValidation {
+  if (guardPlan.turnKind !== 'investigate' || guardPlan.authorization !== 'read-only') return { plan: guardPlan, toolRequests: [], modelAssisted: false }
   const required = defaultToolForFamily(guardPlan.questionFamily)
   const names = definitionNames(definitions)
-  const toolRequests = required && names.has(required) ? [{ tool: required, arguments: {} }] : []
+  const period = boundedPeriodHint(question)
+  const fallbackArguments: AdvisorJsonObject = period ? { period } : {}
+  const toolRequests: AdvisorToolRequestV1[] = required && names.has(required) ? [{ tool: required, arguments: fallbackArguments }] : []
   return { plan: guardPlan, toolRequests, modelAssisted: false }
 }

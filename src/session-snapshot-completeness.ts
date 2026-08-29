@@ -21,6 +21,10 @@ function sameFingerprint(left: FileFingerprint, right: FileFingerprint): boolean
     && left.ino === right.ino
     && left.mtimeMs === right.mtimeMs
     && left.sizeBytes === right.sizeBytes
+    && (left.sqliteWal === undefined && right.sqliteWal === undefined
+      || left.sqliteWal !== undefined && right.sqliteWal !== undefined
+        && left.sqliteWal.mtimeMs === right.sqliteWal.mtimeMs
+        && left.sqliteWal.sizeBytes === right.sqliteWal.sizeBytes)
 }
 
 async function discoveredPaths(source: SessionSource): Promise<string[]> {

@@ -51,12 +51,15 @@ afterEach(async () => {
 describe('parseAllSessions warm refresh timeout', () => {
   it('serves the prior complete snapshot and leaves the holder cache untouched', async () => {
     await writeSession(50)
-    expect(output(await parseAllSessions(undefined, 'claude'))).toBe(50)
+    // Only an all-provider run establishes the global session-cache warm
+    // marker. A provider-scoped parse is intentionally not a complete
+    // snapshot for other providers.
+    expect(output(await parseAllSessions(undefined, 'all'))).toBe(50)
     const before = await readFile(sessionCachePath(), 'utf-8')
 
     await writeSession(5000)
     clearSessionCache()
-    expect(output(await parseAllSessions(undefined, 'claude'))).toBe(50)
+    expect(output(await parseAllSessions(undefined, 'all'))).toBe(50)
     expect(await readFile(sessionCachePath(), 'utf-8')).toBe(before)
   })
 })

@@ -2,7 +2,8 @@ import { join } from 'path'
 import { homedir } from 'os'
 
 import { discoverClineTasks, createClineParser } from './vscode-cline-parser.js'
-import { discoverSqliteSessions, createSqliteSessionParser, type SqliteProviderConfig } from './sqlite-session-parser.js'
+import { createSqliteSessionParser, type SqliteProviderConfig } from './sqlite-session-parser.js'
+import { discoverSqliteSessions } from './sqlite-session-discovery.js'
 import type { Provider, SessionSource, SessionParser } from './types.js'
 
 const EXTENSION_ID = 'kilocode.kilo-code'

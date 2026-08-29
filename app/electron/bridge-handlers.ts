@@ -230,7 +230,10 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
         timeoutMs: WARMUP_TIMEOUT_MS,
         idleTimeoutMs: PROGRESS_IDLE_TIMEOUT_MS,
         onProgress: () => {},
-        extraEnv: { METRORA_PROGRESS: '1' },
+        // Explicitly clear snapshot mode. The Electron process can inherit
+        // METRORA_READ_MODE from a developer shell; a fresh click must never
+        // accidentally become a read-only cache projection in that case.
+        extraEnv: { METRORA_PROGRESS: '1', METRORA_READ_MODE: '' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
       })
