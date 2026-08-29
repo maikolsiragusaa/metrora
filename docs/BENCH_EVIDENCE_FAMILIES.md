@@ -59,7 +59,7 @@ Any future native benchmark integration must pin/identify its tool version, pres
 
 ## Compatibility / Runtime Health
 
-The current [Bench Core conformance v1](BENCH_TASK_PACK_V1.md) belongs to this family.
+The current [Bench Core Compatibility / Runtime Health v1](BENCH_TASK_PACK_V1.md) belongs to this family.
 
 It answers narrow questions such as:
 
@@ -158,7 +158,7 @@ Model-weight licences remain independent of benchmark-engine licences.
 | Evidence family | Current state |
 | --- | --- |
 | Runtime timing / small Performance evidence | **Shipped:** BenchRunV1 local Ollama |
-| Compatibility / Runtime Health | **Shipped:** Core conformance v1 |
+| Compatibility / Runtime Health | **Shipped:** Core Compatibility v1 |
 | Broader hardware Performance | **Planned:** first native target llama.cpp/`llama-bench` |
 | Coding Evaluation | **Future / not shipped** |
 | Agent / Harness Evaluation | **Future / not shipped** |
