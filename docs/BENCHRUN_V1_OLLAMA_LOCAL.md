@@ -1,13 +1,15 @@
 # BenchRunV1 local Ollama
 
-BenchRunV1 is Metrora’s first small, public Bench slice. It records bounded
-local runtime evidence for one explicitly selected Ollama model using a fixed,
-versioned synthetic workload.
+**Evidence family:** bounded runtime-performance evidence  
+**Current status:** shipped public local contract  
 
-It is not a model-quality benchmark. It does not score accuracy, coding,
-reasoning, pass rate or “best” model; it does not rank or recommend models; it
-does not calculate cost or quota; and it does not read Metrora Usage records or
-real user work.
+See [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) for the distinction between Performance, Compatibility, future Coding Evaluation and future Agent/Harness Evaluation.
+
+BenchRunV1 is Metrora's first small public timing/runtime evidence slice. It records bounded local runtime evidence for one explicitly selected Ollama model using a fixed versioned synthetic workload.
+
+It is **not** a model-quality benchmark. It does not score coding, reasoning or accuracy, rank/recommend models, calculate cost/quota, read Metrora Usage or inspect real user work.
+
+Its timing/token observations are useful runtime-performance evidence, but they do not yet provide the broader hardware/configuration Performance surface planned for Bench.
 
 ## Run it
 
@@ -16,70 +18,60 @@ metrora bench local --model <ollama-model>
 metrora bench local --model <ollama-model> --format json --output ./benchrun.json
 ```
 
-The model is required and must be selected explicitly. The runtime boundary is
-fixed to `http://127.0.0.1:11434`; there is no V1 option for a remote or
-arbitrary OpenAI-compatible endpoint. Ollama must already be running locally.
-The default per-request timeout is 30 seconds. `--timeout-ms` may narrow or
-extend it only within the bounded 50–120000 ms range.
+The model is required and selected explicitly. The runtime boundary is fixed to `http://127.0.0.1:11434`; there is no V1 option for a remote or arbitrary OpenAI-compatible endpoint. Ollama must already be running locally.
 
-On an unavailable runtime, timeout, cancellation or malformed response, the
-CLI prints a bounded diagnostic and exits non-zero. `--format json` still
-emits the JSON-safe run contract when a run has partial or failed evidence.
+The default per-request timeout is 30 seconds. `--timeout-ms` may narrow or extend it only within the bounded 50–120000 ms range.
+
+On runtime unavailable, timeout, cancellation or malformed response, the CLI prints a bounded diagnostic and exits non-zero. `--format json` still emits the JSON-safe run contract when a run has partial/failed evidence.
 
 ## Fixed methodology
 
 - one warmup request followed by five measured requests;
-- the same `metrora.benchrun.synthetic.v1@1.0.0` fixture and request
-  parameters for every request;
-- generation parameters: `temperature: 0`, `seed: 1729`, `num_predict: 64`;
-- streaming `/api/generate` requests, with bounded response bytes, chunks,
-  events, NDJSON lines and generated output;
-- no dataset loading, filesystem prompt discovery, source-repository access or
-  user-content input.
+- same `metrora.benchrun.synthetic.v1@1.0.0` fixture/parameters;
+- `temperature: 0`, `seed: 1729`, `num_predict: 64`;
+- streaming `/api/generate` with bounded response bytes/chunks/events/NDJSON/output;
+- no dataset loading, filesystem prompt discovery, repository access or user-content input.
 
-Ollama/model support can still vary. A fixed seed and temperature do not prove
-cross-model or cross-version deterministic text generation; that limitation is
-retained as an evidence boundary rather than converted into a quality claim.
+A fixed seed and temperature do not prove cross-model or cross-version deterministic text generation. That remains an evidence limitation rather than being converted into a quality claim.
 
 ## BenchRunV1 contract
 
-The artifact uses schema `metrora.bench-run.v1` and runner
-`ollama-local-v1@1.0.0`. It contains:
+Schema: `metrora.bench-run.v1`  
+Runner: `ollama-local-v1@1.0.0`
 
-- run, runner, fixture, selected/reported model and local runtime identity;
+The artifact contains:
+
+- run/runner/fixture identity;
+- selected/reported model and local runtime identity;
 - factual environment identity limited to OS, architecture and Node version;
-- fixed generation parameters and the `1 + 5` methodology;
-- start/end timestamps and per-run success, failure or cancellation state;
-- Metrora-observed request latency, time to first streamed content, bounded
-  response/chunk/event counts, output character length and output digest;
-- nullable Ollama-reported duration and token fields;
-- measured-run aggregates using count, min, median, max and mean;
-- failures, unstarted-run exclusions, termination status and a result digest.
+- fixed generation parameters and `1 + 5` methodology;
+- start/end timestamps and per-run success/failure/cancel state;
+- Metrora-observed request latency and time to first streamed content;
+- bounded response/chunk/event counts, output length and output digest;
+- nullable Ollama duration/token fields;
+- measured-run aggregates: count/min/median/max/mean;
+- failures, unstarted exclusions, termination state and result digest.
 
-Observed timing and runtime-reported timing/token data remain separate. Ollama
-duration and token fields remain `null` when the runtime does not report them;
-they are never replaced with zero or an estimate. Raw generated text is not
-written to the artifact.
+Observed timing and runtime-reported timing/token data remain separate. Missing runtime fields stay `null`; they are not replaced with zero/estimates. Raw generated text is not written to the artifact.
 
-The result digest covers the versioned fixture, fixed generation contract,
-selected/reported model and per-run output/result metadata. It excludes run
-timestamps and timing values, so timing variation alone does not change the
-result identity. It is an evidence digest, not a reproducibility or quality
-guarantee.
+The result digest covers the versioned fixture, fixed generation contract, selected/reported model and per-run output/result metadata. It excludes timestamps/timing values, so timing variation alone does not change result identity. This is evidence identity, not a reproducibility/quality guarantee.
+
+## Relationship to broader Performance Bench
+
+The planned primary Bench direction is richer local **Performance** measurement of a declared model/runtime/hardware/configuration.
+
+That future surface may include prefill/decode throughput, TTFT, RAM/VRAM and configuration/hardware identity through additional versioned adapters.
+
+`BenchRunV1` remains a valid small Ollama runtime evidence contract; it is not silently reinterpreted as richer hardware evidence it never captured.
+
+The first planned native Performance engine target is llama.cpp `llama-bench`, but llama.cpp support is not implemented by this document.
 
 ## Runtime and provenance
 
-The implementation uses Node’s bounded HTTP `fetch` and no Ollama SDK or model
-provider dependency. The response shape follows the official Ollama
-[`/api/generate`](https://docs.ollama.com/api/generate),
-[`/api/version`](https://docs.ollama.com/api-reference/get-version) and
-[`streaming`](https://docs.ollama.com/api/streaming) documentation. Ollama’s
-reported duration values are nanoseconds, and the stream is newline-delimited
-JSON. No Ollama source code is copied into Metrora, so no third-party notice is
-added by this slice. Individual model weights remain subject to their own
-licenses and operator review.
+Implementation uses Node's bounded HTTP `fetch` and no Ollama SDK/provider package. Response semantics follow official Ollama `/api/generate`, `/api/version` and streaming documentation.
 
-An output artifact is written only when the user supplies `--output`; the
-write is local, bounded and atomic. There is no upload, publication, managed
-compute path, cloud credential, persistent Bench database or Desktop Bench
-navigation for `bench local` in V1. The separate [Bench task pack v1](BENCH_TASK_PACK_V1.md) surface adds its own versioned assertions, bounded private history and Desktop Bench route without changing the BenchRunV1 contract.
+No Ollama source is copied into Metrora by this slice, so no third-party notice is added by this contract. Individual model weights remain subject to their own licences and operator review.
+
+An artifact is written only with `--output`; the write is local, bounded and atomic. There is no upload, publication, managed compute path, cloud credential, persistent Bench database or Desktop navigation for `bench local` V1.
+
+The separate [Core Compatibility v1](BENCH_TASK_PACK_V1.md) surface adds versioned assertions, bounded private history and Desktop Bench routing without changing BenchRunV1.
