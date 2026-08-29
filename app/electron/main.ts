@@ -339,7 +339,7 @@ function bootstrap(): void {
     updateChecker = createUpdateChecker({ currentVersion: app.getVersion() })
     const runUpdateCheck = () => { void updateChecker?.check().then(broadcastUpdateStatus) }
     runUpdateCheck()
-    setInterval(runUpdateCheck, 24 * 60 * 60_000)
+    setInterval(runUpdateCheck, 24 * 60 * 60 * 1000)
   })
 
   app.on('window-all-closed', () => {

@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm, unlink } from 'fs/promises'
+import { unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createRequire } from 'node:module'
@@ -17,6 +18,7 @@ import { isSqliteAvailable } from '../src/sqlite.js'
 import { clearSessionCache, isSessionHydrationComplete, parseAllSessions } from '../src/parser.js'
 import { loadCache, PROVIDER_PARSE_VERSIONS, saveCache, sessionCachePath } from '../src/session-cache.js'
 import type { SessionSource, SessionParser, ParsedProviderCall } from '../src/providers/types.js'
+import { getProvider } from '../src/providers/index.js'
 
 // ── Synthetic provider state ───────────────────────────────────────────────
 // Module-level so the vi.mock factory closure captures them by reference and
@@ -126,6 +128,45 @@ function createOtelDb(dbPath: string): void {
       value   TEXT
     );
   `)
+  db.close()
+}
+
+function createOpenCodeDb(dbPath: string, outputTokens = 42): void {
+  const { DatabaseSync } = requireForTest('node:sqlite') as {
+    DatabaseSync: new (path: string) => TestDb
+  }
+  const db = new DatabaseSync(dbPath)
+  db.exec(`
+    CREATE TABLE session (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT,
+      directory TEXT NOT NULL,
+      title TEXT NOT NULL,
+      time_created INTEGER
+    );
+    CREATE TABLE message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      time_created INTEGER,
+      data TEXT NOT NULL
+    );
+    CREATE TABLE part (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      data TEXT NOT NULL
+    );
+  `)
+  db.prepare(
+    'INSERT INTO session (id, parent_id, directory, title, time_created) VALUES (?, ?, ?, ?, ?)',
+  ).run('race-session', null, '/home/user/race-project', 'Race session', 1700000000000)
+  db.prepare(
+    'INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)',
+  ).run('race-assistant', 'race-session', 1700000001000, JSON.stringify({
+    role: 'assistant',
+    modelID: 'claude-opus-4-6',
+    cost: 0.01,
+    tokens: { input: 10, output: outputTokens, reasoning: 0, cache: { read: 0, write: 0 } },
+  }))
   db.close()
 }
 
@@ -416,6 +457,52 @@ describe('(d) non-durable provider evicts deleted sources', () => {
     expect(entry?.turns.flatMap(turn => turn.calls).map(call => call.deduplicationKey)).toEqual([
       'synth-retained-after-failure',
     ])
+  })
+
+  it.skipIf(!isSqliteAvailable())('retains cached OpenCode sessions when the database disappears before shared parsing', async () => {
+    const provider = await getProvider('opencode')
+    if (!provider) throw new Error('OpenCode provider is unavailable in the test runtime')
+    const dataDir = (await provider.probeRoots?.())?.[0]?.path
+    if (!dataDir) throw new Error('OpenCode provider did not expose a data root')
+    const dbPath = join(dataDir, 'opencode.db')
+    await mkdir(dataDir, { recursive: true })
+    createOpenCodeDb(dbPath)
+
+    const originalCreateSessionParser = provider.createSessionParser
+    let deleteBeforeParse = false
+    let deleted = false
+    provider.createSessionParser = (source, seenKeys, dateRange) => {
+      if (deleteBeforeParse && !deleted && source.path.startsWith(dbPath + ':')) {
+        unlinkSync(dbPath)
+        deleted = true
+      }
+      return originalCreateSessionParser.call(provider, source, seenKeys, dateRange)
+    }
+
+    try {
+      expect(totalOutput(await parseAllSessions(undefined, 'opencode'))).toBe(42)
+
+      clearSessionCache()
+      await rm(dbPath, { force: true })
+      createOpenCodeDb(dbPath, 43)
+      deleteBeforeParse = true
+      deleted = false
+      expect(totalOutput(await parseAllSessions(undefined, 'opencode'))).toBe(42)
+      const cached = await loadCache()
+      const entry = cached.providers.opencode?.files[dbPath + ':race-session']
+      expect(entry?.failed).toBe(true)
+      expect(entry?.turns.flatMap(turn => turn.calls).map(call => call.deduplicationKey)).toEqual([
+        'opencode:race-session:race-assistant',
+      ])
+
+      createOpenCodeDb(dbPath)
+      clearSessionCache()
+      deleteBeforeParse = false
+      expect(totalOutput(await parseAllSessions(undefined, 'opencode'))).toBe(42)
+    } finally {
+      provider.createSessionParser = originalCreateSessionParser
+      await rm(dbPath, { force: true })
+    }
   })
 
   it('retains cached sessions when non-durable discovery fails with no sources', async () => {

@@ -366,8 +366,9 @@ export function createSharedSqliteSessionParser(
           db = openDatabase(identity.dbPath)
         } catch (err) {
           if (fingerprintKey === 'missing') {
-            process.stderr.write('metrora: cannot open ' + config.displayName + ' database\n')
-            return
+            failedDatabases.set(identity.dbPath, fingerprintKey)
+            process.stderr.write('metrora: cannot open ' + config.displayName + ' database; prior evidence was retained\n')
+            throw err
           }
           failedDatabases.set(identity.dbPath, fingerprintKey)
           process.stderr.write('metrora: cannot open ' + config.displayName + ' database; prior evidence was retained\n')

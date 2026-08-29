@@ -675,12 +675,9 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('returns empty for invalid db path', async () => {
+  it('rejects for an invalid db path so callers can retain cached evidence', async () => {
     const provider = createOpenCodeProvider(tmpDir)
-    const source = { path: '/nonexistent/db.db:sess-1', project: 'test', provider: 'opencode' }
-    const calls: ParsedProviderCall[] = []
-    for await (const call of provider.createSessionParser(source, new Set()).parse()) calls.push(call)
-    expect(calls).toHaveLength(0)
+    await expect(collectCalls(provider, '/nonexistent/db.db', 'sess-1')).rejects.toThrow(/database|snapshot|unavailable/i)
   })
 
   it('tracks user messages per assistant response', async () => {

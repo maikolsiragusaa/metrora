@@ -145,7 +145,7 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'metrora:removeDevice', args: ['studio-mac'], argv: ['devices', 'rm', 'studio-mac'] },
   { channel: 'metrora:setPlan', args: ['claude-max', 'claude'], argv: ['plan', 'set', 'claude-max', '--provider', 'claude'] },
   { channel: 'metrora:resetPlan', args: ['cursor'], argv: ['plan', 'reset', '--provider', 'cursor'] },
-  { channel: 'metrora:exportData', args: ['json', 'all', '/tmp/out'], argv: ['export', '-f', 'json', '-o', '/tmp/out', '--provider', 'all'] },
+  { channel: 'metrora:exportData', args: ['json', 'all', '/tmp/metrora-export'], argv: ['export', '-f', 'json', '-o', '/tmp/metrora-export', '--provider', 'all'] },
 ]
 
 function flattenMenuItems(items: any[]): any[] {

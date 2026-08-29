@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Polled } from '../hooks/usePolled'
 import { metrora } from '../lib/ipc'
@@ -16,6 +16,7 @@ import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTu
 import { AdvisorRuntimeControls, createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type AdvisorHostedProbePresentation, type AdvisorRuntimeChoice, type AdvisorRuntimeState } from './AdvisorRuntimeControls'
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { AdvisorChartBlock } from './advisor-chart'
+import { AdvisorComposer } from './AdvisorComposer'
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
@@ -387,16 +388,6 @@ export function Advisor({
     }
   }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, scope, updateConversation])
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    void ask(composer)
-  }
-  const composerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      void ask(composer)
-    }
-  }
   const cancel = () => {
     invalidateAdvisorRequest()
     setNotice('Cancelling request…')
@@ -588,14 +579,10 @@ export function Advisor({
           {error ? <div className="advisor-error" role="alert"><strong>Advisor unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequest) { setActiveConversationId(failedRequest.conversationId); void ask(failedRequest.question, failedRequest) } }}>Retry</button></div> : null}
           {notice ? <div className="advisor-notice" role="status">{notice}</div> : null}
         </div>
-        <form className="advisor-composer" onSubmit={submit}>
-          <textarea aria-label="Ask Metrora Advisor" placeholder="Ask Metrora Advisor anything…" value={composer} onChange={event => setComposer(event.target.value)} onKeyDown={composerKeyDown} disabled={Boolean(loadingQuestion)} rows={2} />
-          <div className="advisor-composer-foot">
-            <span>Enter to send · Shift+Enter for a new line</span>
-            {hostedSubmitBlockReason && composer.trim() && notice !== hostedSubmitBlockReason ? <span className="advisor-submit-note" role="status">{hostedSubmitBlockReason}</span> : null}
-            {loadingQuestion ? <button type="button" className="advisor-cancel" onClick={cancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>Send <span>↗</span></button>}
-          </div>
-        </form>
+        <AdvisorComposer
+          composer={composer} loadingQuestion={loadingQuestion} hostedSubmitBlockReason={hostedSubmitBlockReason}
+          notice={notice} onChange={setComposer} onAsk={question => void ask(question)} onCancel={cancel}
+        />
       </main>
 
       <aside className="advisor-evidence" aria-label="Advisor evidence">
