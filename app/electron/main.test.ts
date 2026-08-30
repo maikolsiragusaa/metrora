@@ -99,6 +99,10 @@ const CHANNELS = [
   'metrora:getBenchModelDiscovery',
   'metrora:getBenchComparison',
   'metrora:runBenchTaskPack',
+  'metrora:getPerformanceBenchHistory',
+  'metrora:getPerformanceBenchComparison',
+  'metrora:runPerformanceBench',
+  'metrora:cancelPerformanceBench',
 ] as const
 
 const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = [
@@ -107,6 +111,8 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'metrora:getBenchHistory', args: [], argv: ['bench', 'history', '--format', 'json', '--limit', '50'] },
   { channel: 'metrora:getBenchModelDiscovery', args: [], argv: ['bench', 'models', '--format', 'json'] },
   { channel: 'metrora:getBenchComparison', args: ['left-run', 'right-run'], argv: ['bench', 'compare', 'left-run', 'right-run', '--format', 'json'] },
+  { channel: 'metrora:getPerformanceBenchHistory', args: [], argv: ['bench', 'performance-history', '--format', 'json', '--limit', '50'] },
+  { channel: 'metrora:getPerformanceBenchComparison', args: ['left-run', 'right-run'], argv: ['bench', 'performance-compare', 'left-run', 'right-run', '--format', 'json'] },
   { channel: 'metrora:getPlans', args: ['week'], argv: ['status', '--format', 'json', '--period', 'week'] },
   { channel: 'metrora:getActReport', args: [], argv: ['act', 'report', '--json'] },
   { channel: 'metrora:getModels', args: ['week', 'claude', true], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'] },

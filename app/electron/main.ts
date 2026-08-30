@@ -213,6 +213,9 @@ function registerHandlers(): void {
     'metrora:harnessApproveCoreCompatibility',
     'metrora:harnessCancelCoreCompatibility',
     'metrora:harnessReadCoreCompatibility',
+    'metrora:runPerformanceBench',
+    'metrora:cancelPerformanceBench',
+    'metrora:chooseFile',
   ])
   function isTrustedRendererSender(event: { senderFrame?: { url?: string } | null }): boolean {
     const frameUrl = event.senderFrame?.url
@@ -255,6 +258,17 @@ function registerHandlers(): void {
     return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }
   }
   ipcMain.handle('metrora:chooseDirectory', chooseDirectory)
+  ipcMain.handle('metrora:chooseFile', async (event, kind: unknown) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    if (kind !== 'llama-bench' && kind !== 'gguf') return { ok: false, error: { kind: 'bad-args', message: 'invalid file picker kind' } }
+    const filters = kind === 'gguf'
+      ? [{ name: 'GGUF model', extensions: ['gguf'] }]
+      : process.platform === 'win32'
+        ? [{ name: 'llama-bench executable', extensions: ['exe'] }]
+        : []
+    const res = await dialog.showOpenDialog({ properties: ['openFile'], filters })
+    return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }
+  })
   ipcMain.handle('open-external', (_event, url: string) => {
     try {
       const { protocol } = new URL(url)

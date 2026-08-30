@@ -22,6 +22,24 @@ The CodexBar upstream work is MIT licensed. Its original copyright notice and co
 
 Source repository: `https://github.com/steipete/CodexBar`
 
+## llama.cpp runtime and benchmark provenance
+
+Metrora does not bundle or build llama.cpp. The local runtime adapter and native
+Performance adapter integrate with executables supplied by the user from the
+upstream `ggml-org/llama.cpp` project. The upstream project is MIT
+licensed; the applicable notice is preserved in
+[LICENSES/LLAMA-CPP-MIT.txt](LICENSES/LLAMA-CPP-MIT.txt).
+
+The adapter contracts were characterized against the upstream server and
+`llama-bench` documentation at the inspected master commit
+`9723942adc518b43c4b95dc4dce6906903eb5e09` and release tag `b10516`
+(`b95502ba9aa0eb73a2f4fc8878d7fbe6a847a0b9`). The selected executable
+remains the authority for its actual build/runtime identity; Metrora retains
+reported identity fields when available and does not claim that every
+llama.cpp build supports every optional capability.
+
+Source repository: `https://github.com/ggml-org/llama.cpp`
+
 ## RFC 8785 canonicalization
 
 `src/vendor/rfc8785-canonicalize.ts` is adapted from `erdtman/canonicalize` version `3.0.0`, exact upstream commit `63c3410a074d35950212a81fdb2bbb05607f3cd1`, originally published at `https://github.com/erdtman/canonicalize`.

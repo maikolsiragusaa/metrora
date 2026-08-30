@@ -361,7 +361,7 @@ export function spawnCli(
 /** Spawn a mutating CLI command without read coalescing. */
 export function spawnCliAction(
   args: string[],
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<ActionResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (shutdownRequested) {
@@ -385,17 +385,18 @@ export function spawnCliAction(
       if (shutdownRequested || reservation !== cancellationEpoch) {
         return { ok: false, stdout: '', stderr: shutdownRequested ? 'Metrora is shutting down' : 'Metrora cancelled', code: null }
       }
-      return await runAction(spec, args, timeoutMs)
+      return await runAction(spec, args, timeoutMs, opts.signal)
     } finally {
       releaseSlot()
     }
   })()
 }
 
-function runAction(spec: SpawnSpec, args: string[], timeoutMs: number): Promise<ActionResult> {
+function runAction(spec: SpawnSpec, args: string[], timeoutMs: number, signal?: AbortSignal): Promise<ActionResult> {
   return runBoundedProcess(spec, {
     absoluteTimeoutMs: timeoutMs,
     maxOutputBytes: MAX_OUTPUT_BYTES,
+    signal,
   }).then(result => {
     readCache.clear()
 

@@ -72,7 +72,7 @@ Key rules:
 - future UI may show safe observable work such as tool start/completion, scope and progress, but not private chain-of-thought;
 - ACT remains the future trusted execution authority; a conversational request alone does not run shell commands, change repositories, launch agents or mutate state;
 - Swarm is a future mode and is not shipped;
-- current local runtimes are Ollama and LM Studio; llama.cpp / `llama-server` is a planned Community direction, not current support.
+- current local runtimes are Ollama, LM Studio and an existing-binary-only loopback llama.cpp / `llama-server` adapter.
 
 See [Metrora Harness public foundation](docs/HARNESS_PUBLIC_FOUNDATION.md) and the current [Advisor implementation contract](docs/ADVISOR_PUBLIC_FOUNDATION.md).
 
@@ -89,7 +89,7 @@ Different Bench questions remain separate evidence families:
 - **Coding Evaluation** — future, under a separately versioned methodology and sandbox/licence review;
 - **Agent / Harness Evaluation** — future, only once real agent/Swarm execution exists.
 
-Current shipped Bench evidence already includes a small Ollama runtime-timing slice plus Core Compatibility. The broader hardware Performance path is planned; the first native engine target is llama.cpp `llama-bench` behind a Metrora-owned bounded adapter. No current result is presented as a universal model-quality or coding ranking.
+Current shipped Bench evidence includes a small Ollama runtime-timing slice, Core Compatibility and the first native llama.cpp `llama-bench` Performance adapter behind a Metrora-owned bounded runner. No current result is presented as a universal model-quality or coding ranking.
 
 See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md), [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md) and [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md).
 
@@ -186,6 +186,7 @@ The root npm package is intentionally private and is not an official distributio
 | `metrora export` | Export usage as CSV or JSON. |
 | `metrora bench local --model <model>` | Run bounded synthetic local runtime-timing evidence against an Ollama model; no quality or ranking score. |
 | `metrora bench task-pack --model <model>` | Run deterministic Core Compatibility checks against a local Ollama model; private history and factual comparison only. |
+| `metrora bench performance --executable <path> --model <path>` | Run bounded native llama.cpp `llama-bench` Performance evidence against existing executable/model files; no quality or universal score. |
 
 Most analytical commands support provider, project and date filters. The [CLI reference](docs/CLI_REFERENCE.md) groups the public commands by task and explains compatibility boundaries.
 
@@ -261,6 +262,7 @@ Start from the [documentation index](docs/README.md):
 - [ACT contract preparation 001](docs/ACT_CONTRACT_PREP_001.md)
 - [Advisor contextual integration v1](docs/ADVISOR_CONTEXT_INTEGRATION_V1.md)
 - [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md)
+- [Local runtime and Performance Wave 001](docs/LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md)
 - [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)
 - [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)

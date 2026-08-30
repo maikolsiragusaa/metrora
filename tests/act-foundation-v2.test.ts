@@ -33,6 +33,10 @@ import type { ActionPlan, ActionRecord } from '../src/act/types.js'
 const roots: string[] = []
 const NL = String.fromCharCode(10)
 const BASE_TIME = Date.parse('2026-08-30T12:00:00.000Z')
+// Success fixtures must leave room for bounded journal/progress I/O when the
+// complete Vitest suite is scheduler-throttled. The dedicated timeout tests
+// continue to exercise the canonical 50 ms minimum.
+const SUCCESS_TIMEOUT_MS = 1_000
 
 type Clock = { now: () => Date; advance: (milliseconds: number) => void }
 function clock(start = BASE_TIME): Clock {
@@ -190,7 +194,7 @@ describe('ACT foundation v2 proposal, lifecycle, and evidence', () => {
   it('executes the canonical six-check runner and records exact Bench evidence references', async () => {
     const time = clock()
     const { actionsDir, dataDir } = await dirs()
-    const value = contract('act-completed', time)
+    const value = contract('act-completed', time, SUCCESS_TIMEOUT_MS)
     const { authority: trusted, approved } = approve(value, time)
     const calls = { version: 0, generate: 0 }
     const record = await executeApprovedCoreCompatibility(approved, { authority: trusted, actionsDir, dataDir, now: time.now, fetchImpl: passFetch(calls) })
@@ -245,7 +249,7 @@ describe('ACT foundation v2 proposal, lifecycle, and evidence', () => {
   it('rejects terminal replay and leaves one canonical evidence record', async () => {
     const time = clock()
     const { actionsDir, dataDir } = await dirs()
-    const { authority: trusted, approved } = approve(contract('act-replay', time), time)
+    const { authority: trusted, approved } = approve(contract('act-replay', time, SUCCESS_TIMEOUT_MS), time)
     const first = await executeApprovedCoreCompatibility(approved, { authority: trusted, actionsDir, dataDir, now: time.now, fetchImpl: passFetch() })
     expect(first.status).toBe('completed')
     await expectCode(executeApprovedCoreCompatibility(approved, { authority: trusted, actionsDir, dataDir, now: time.now, fetchImpl: passFetch() }), 'replay')
@@ -500,7 +504,7 @@ describe('ACT foundation v2 journal strictness and legacy compatibility', () => 
   it('returns already-terminal for cancellation after completion and never appends duplicate evidence', async () => {
     const time = clock()
     const { actionsDir, dataDir } = await dirs()
-    const value = contract('act-terminal-cancel', time)
+    const value = contract('act-terminal-cancel', time, SUCCESS_TIMEOUT_MS)
     const { authority: trusted, approved } = approve(value, time)
     const completed = await executeApprovedCoreCompatibility(approved, { authority: trusted, actionsDir, dataDir, now: time.now, fetchImpl: passFetch() })
     const cancelled = await cancelCoreCompatibilityAction(value.actionId, { actionsDir, dataDir, now: time.now })

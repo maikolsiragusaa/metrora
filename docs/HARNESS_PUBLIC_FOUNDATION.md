@@ -28,7 +28,7 @@ This branch keeps the existing conversational foundation and productizes it behi
 - fixed read-only Metrora factual tools;
 - canonical fact/evidence verification;
 - proposal-only handling for state-changing requests;
-- Ollama and LM Studio local runtimes;
+- Ollama, LM Studio and existing-binary llama.cpp `llama-server` local runtimes;
 - supported direct BYOK provider adapters;
 - explicit hosted evidence-sharing consent;
 - bounded cancellation/error/privacy behavior.
@@ -56,7 +56,7 @@ This document does **not** add or claim:
 - autonomous model approval;
 - agents or Swarm;
 - managed Metrora inference;
-- llama.cpp support;
+- a bundled or automatically managed llama.cpp distribution;
 - an MCP server that can mutate state or bypass the canonical Tools boundary;
 - a hosted MCP service;
 - persistent cloud conversation memory.
@@ -123,7 +123,7 @@ Current local runtime support:
 - Ollama;
 - LM Studio.
 
-A future llama.cpp / `llama-server` adapter is a planned public Community direction, not current support.
+The existing-binary llama.cpp / `llama-server` adapter is a local Community runtime path; it connects only to the fixed loopback default and does not download, build or start llama.cpp.
 
 Any new runtime/provider still requires explicit endpoint, privacy, streaming, Tool and failure-semantics review. `OpenAI-compatible` by itself is not a compatibility guarantee.
 
@@ -210,6 +210,8 @@ An external AI/MCP caller may someday propose Swarm work, but it cannot directly
 Harness may read and explain canonical Bench evidence. It may not rescore or reinterpret a Bench family as something it does not measure.
 
 ACT may invoke a supported Bench operation, but Bench remains the canonical evidence/history owner.
+
+The Desktop Harness read path can inspect retained Performance evidence through the existing `get_bench_evidence` flow. The native `llama-bench` run itself remains a Bench/Desktop operation with no new ACT kind; Harness cannot start it from a read-only Tool call and cannot turn its throughput or latency into a quality claim.
 
 Public Bench evidence families are documented in [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md).
 

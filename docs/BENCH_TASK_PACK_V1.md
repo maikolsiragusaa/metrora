@@ -82,7 +82,7 @@ Core Compatibility
 
 Technical pack identity, digests, task evidence and retained metadata belong under Details/Evidence rather than being mistaken for the headline product value.
 
-Broader hardware Performance is a separate planned Bench direction; this contract does not add it.
+Broader hardware Performance is a separate native Bench path documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md); this Core Compatibility contract does not add or reinterpret it.
 
 ## Contract and provenance
 

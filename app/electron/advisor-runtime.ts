@@ -1,4 +1,5 @@
 import { chatLMStudioMain, probeLMStudioMain } from './lmstudio-runtime'
+import { chatLlamaServerMain, probeLlamaServerMain } from './llama-server-runtime'
 const LOOPBACK_ENDPOINT = 'http://127.0.0.1:11434'
 const PROBE_TIMEOUT_MS = 1500
 const CHAT_TIMEOUT_MS = 120_000
@@ -6,7 +7,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_STREAM_CHUNKS = 512
 const MAX_MALFORMED_CHUNKS = 16
 
-export type AdvisorRuntimeProbe = { runtime?: 'ollama' | 'lmstudio'; available: boolean; models: string[]; detail: string; discoveryState?: 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'; capabilities?: Array<Record<string, unknown>> }
+export type AdvisorRuntimeProbe = { runtime?: 'ollama' | 'lmstudio' | 'llama-server'; available: boolean; models: string[]; detail: string; discoveryState?: 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'; capabilities?: Array<Record<string, unknown>> }
 export type AdvisorRuntimeChatPayload = {
   model: string
   messages: Array<Record<string, unknown>>
@@ -273,8 +274,8 @@ export async function chatOllamaMain(fetchImpl: FetchLike, payload: AdvisorRunti
 function validRequestId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value)
 }
-type AdvisorRuntimeId = 'ollama' | 'lmstudio'
-function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' }
+type AdvisorRuntimeId = 'ollama' | 'lmstudio' | 'llama-server'
+function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' || value === 'llama-server' }
 function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
   const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
   return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState, capabilities: value.capabilities }
@@ -286,7 +287,11 @@ export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch, emitD
     'metrora:advisorProbe': async (runtime: AdvisorRuntimeId = 'ollama') => {
       if (!validRuntime(runtime)) return fail(new Error('Advisor runtime is invalid.'), 'validation')
       try {
-        const value = runtime === 'lmstudio' ? await probeLMStudioMain(fetchImpl) : ollamaProbeEnvelope(await probeOllamaMain(fetchImpl))
+        const value = runtime === 'lmstudio'
+          ? await probeLMStudioMain(fetchImpl)
+          : runtime === 'llama-server'
+            ? await probeLlamaServerMain(fetchImpl)
+            : ollamaProbeEnvelope(await probeOllamaMain(fetchImpl))
         return { ok: true, value }
       } catch (error) { return fail(error) }
     },
@@ -298,7 +303,9 @@ export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch, emitD
       try {
         const value = selectedRuntime === 'lmstudio'
           ? await chatLMStudioMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
-          : await chatOllamaMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
+          : selectedRuntime === 'llama-server'
+            ? await chatLlamaServerMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
+            : await chatOllamaMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
         return { ok: true, value }
       } catch (error) {
         return controller.signal.aborted ? fail(new Error('Advisor request cancelled.'), 'cancelled') : fail(error)

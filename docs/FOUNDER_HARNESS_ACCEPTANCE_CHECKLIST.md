@@ -36,10 +36,21 @@ Use this checklist against the packaged Desktop build from the Harness Productiz
 - [ ] Change/tamper the proposal digest, retry a completed action, restart with stale state, or cancel before confirmation. Verify each path fails closed or remains cancelled without duplicate execution.
 - [ ] Ask to run another operation such as an arbitrary Bench/Performance run, agent launch, routing change, policy change or shell/repository action. Verify Harness remains proposal-only and does not expose an executor.
 
+## Local llama.cpp runtime and Performance Bench
+
+- [ ] In Desktop runtime controls, select `llama.cpp server` and confirm discovery is limited to an existing loopback server at the fixed local default (`127.0.0.1:8080`); no download, build, start, credentials or remote endpoint flow appears.
+- [ ] With a reachable llama-server, confirm `/health` and `/v1/models` produce bounded model discovery and that normal chat supports streaming and cancellation through the existing Harness conversation loop.
+- [ ] Verify malformed, loading, unreachable and non-loopback server states remain explicit and do not fall back to a fabricated model or capability.
+- [ ] In Bench → Performance, select an existing `llama-bench` executable and `.gguf` model with the native pickers. Confirm the setup shows bounded repetitions/prompt/decode/batch/ubatch/GPU/Flash-Attention settings and no arbitrary command-line field.
+- [ ] Run and cancel a Performance measurement. Confirm progress, cancellation, timeout, malformed output, non-zero exit and unavailable executable states remain truthful and no late result replaces the current state.
+- [ ] Confirm the retained Performance record is separate from Core Compatibility history, keeps upstream throughput/timing and declared setup/build/hardware fields when available, leaves absent fields unknown and exposes no universal score.
+- [ ] Compare two retained Performance records. Confirm deltas appear only for compatible methodology/runner/setup/hardware/completed records; incompatible or incomplete records show a reason without invented numbers.
+- [ ] Ask Harness to explain the retained Performance evidence and confirm it reads through `get_bench_evidence` without launching a benchmark or adding a new ACT kind.
+
 ## Out of scope confirmation
 
-- [ ] No MCP server or MCP implementation is added by this slice.
-- [ ] No Swarm, Android, llama.cpp, Performance Bench, managed inference, arbitrary endpoint, repository/shell executor or broad README/artwork redesign is presented as shipped.
+- [ ] No new external MCP write path, Swarm, Android, managed inference, arbitrary endpoint, repository/shell executor or broad README/artwork redesign is presented as shipped.
+- [ ] llama.cpp support remains existing-binary-only and loopback-only for the server adapter; native Performance remains an explicit local Bench operation.
 - [ ] The canonical checkout remains untouched; this review uses one new isolated worktree and no subagents.
 
 ## Automated release gates

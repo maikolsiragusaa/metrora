@@ -8,6 +8,7 @@ import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
 import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
 import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
+import { LlamaServerAdvisorRuntime, probeLlamaServer } from '../advisor/llama-server'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { periodLabel, scopeLabel } from '../advisor/evidence'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
@@ -115,17 +116,24 @@ export function Advisor({
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
   const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
   const [lmStudioRuntime, setLMStudioRuntime] = useState<LMStudioAdvisorRuntime | null>(null)
-  const activeRuntime = runtimeChoice === 'hosted' ? hostedRuntime ?? fallbackRuntime : (runtimeId === 'lmstudio' ? lmStudioRuntime : ollamaRuntime) ?? fallbackRuntime
+  const [llamaServerRuntime, setLlamaServerRuntime] = useState<LlamaServerAdvisorRuntime | null>(null)
+  const activeRuntime = runtimeChoice === 'hosted'
+    ? hostedRuntime ?? fallbackRuntime
+    : (runtimeId === 'lmstudio' ? lmStudioRuntime : runtimeId === 'llama-server' ? llamaServerRuntime : ollamaRuntime) ?? fallbackRuntime
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
   const probeController = useRef<AbortController | null>(null)
   const checkLocalRuntime = useCallback(async (requestedRuntime: AdvisorLocalRuntimeId = runtimeId) => {
     probeController.current?.abort()
     const controller = new AbortController()
     probeController.current = controller
-    const runtimeName = requestedRuntime === 'lmstudio' ? 'LM Studio' : 'Ollama'
+    const runtimeName = requestedRuntime === 'lmstudio' ? 'LM Studio' : requestedRuntime === 'llama-server' ? 'llama.cpp server' : 'Ollama'
     setRuntimeState({ runtime: requestedRuntime, status: 'checking', detail: 'Checking for a local ' + runtimeName + ' model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
     try {
-      const result = requestedRuntime === 'lmstudio' ? await probeLMStudio(controller.signal) : await probeOllama(controller.signal)
+      const result = requestedRuntime === 'lmstudio'
+        ? await probeLMStudio(controller.signal)
+        : requestedRuntime === 'llama-server'
+          ? await probeLlamaServer(controller.signal)
+          : await probeOllama(controller.signal)
       if (controller.signal.aborted) return
       if (result.available && result.models[0]) {
         const selected = runtimeModel && result.models.includes(runtimeModel) ? runtimeModel : result.models[0]
@@ -133,9 +141,15 @@ export function Advisor({
         if (requestedRuntime === 'lmstudio') {
           setLMStudioRuntime(new LMStudioAdvisorRuntime({ model: selected, availability: 'ready' }))
           setOllamaRuntime(null)
+          setLlamaServerRuntime(null)
+        } else if (requestedRuntime === 'llama-server') {
+          setLlamaServerRuntime(new LlamaServerAdvisorRuntime({ model: selected, availability: 'ready' }))
+          setOllamaRuntime(null)
+          setLMStudioRuntime(null)
         } else {
           setOllamaRuntime(new OllamaAdvisorRuntime({ model: selected, availability: 'ready' }))
           setLMStudioRuntime(null)
+          setLlamaServerRuntime(null)
         }
         const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: AdvisorRuntimeState['toolCall'] }> }).capabilities ?? []
         const capability = capabilityProfiles.find(profile => profile.modelId === selected)
@@ -143,6 +157,7 @@ export function Advisor({
       } else {
         setRuntimeModel(null)
         if (requestedRuntime === 'lmstudio') setLMStudioRuntime(null)
+        else if (requestedRuntime === 'llama-server') setLlamaServerRuntime(null)
         else setOllamaRuntime(null)
         setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: result.detail, models: [], modelState: 'unavailable', toolCall: 'unknown' })
       }
@@ -466,6 +481,7 @@ export function Advisor({
     invalidateAdvisorRequest()
     setRuntimeModel(model)
     if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' }))
+    else if (runtimeId === 'llama-server') setLlamaServerRuntime(new LlamaServerAdvisorRuntime({ model, availability: 'ready' }))
     else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' }))
   }
   const saveHostedCredential = async () => {

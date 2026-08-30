@@ -12,8 +12,8 @@ import type {
   AdvisorVerifiedClaimAtomV1,
 } from './types'
 
-const CLAIM_KINDS: readonly AdvisorClaimKindV1[] = ['measured_total', 'observed_count', 'provider_quota_remaining', 'provider_quota_reset', 'model_identity', 'model_measured_cost', 'project_measured_cost', 'session_measured_cost', 'trend_direction', 'coverage_state', 'freshness_state', 'bench_score', 'bench_status', 'bench_comparability']
-const CLAIM_METRICS: readonly AdvisorClaimMetricV1[] = ['cost', 'cost_per_call', 'calls', 'sessions', 'tokens', 'remaining_percent', 'credits', 'reset', 'direction', 'coverage', 'freshness', 'score', 'status', 'comparability']
+const CLAIM_KINDS: readonly AdvisorClaimKindV1[] = ['measured_total', 'observed_count', 'provider_quota_remaining', 'provider_quota_reset', 'model_identity', 'model_measured_cost', 'project_measured_cost', 'session_measured_cost', 'trend_direction', 'coverage_state', 'freshness_state', 'bench_score', 'bench_status', 'bench_comparability', 'bench_performance_throughput', 'bench_performance_latency', 'bench_performance_status', 'bench_performance_comparability']
+const CLAIM_METRICS: readonly AdvisorClaimMetricV1[] = ['cost', 'cost_per_call', 'calls', 'sessions', 'tokens', 'remaining_percent', 'credits', 'reset', 'direction', 'coverage', 'freshness', 'score', 'status', 'comparability', 'throughput', 'latency']
 
 type MinimalEvidence = AdvisorJsonObject
 
@@ -70,7 +70,10 @@ function pathReferenceCandidates(path: string): readonly string[] {
   if (path.startsWith('bench.latest.')) return ['bench.latest']
   if (path.startsWith('bench.runs.')) return ['bench.history']
   if (path.startsWith('bench.comparison.')) return ['bench.comparison']
-  if (path === 'coverage.level' || path === 'coverage.state') return ['overview.current', 'overview.modelAccounting', 'models.report', 'quota.claude', 'quota.codex', 'bench.latest', 'bench.history', 'bench.comparison']
+  if (path.startsWith('bench.performance.latest.')) return ['bench.performance.latest']
+  if (path.startsWith('bench.performance.runs.')) return ['bench.performance.history']
+  if (path.startsWith('bench.performance.comparison.')) return ['bench.performance.comparison']
+  if (path === 'coverage.level' || path === 'coverage.state') return ['overview.current', 'overview.modelAccounting', 'models.report', 'quota.claude', 'quota.codex', 'bench.latest', 'bench.history', 'bench.comparison', 'bench.performance.latest', 'bench.performance.history', 'bench.performance.comparison']
   return []
 }
 
@@ -135,6 +138,11 @@ function addDirectNumber(atoms: AdvisorVerifiedClaimAtomV1[], evidence: AdvisorE
 function addDirectString(atoms: AdvisorVerifiedClaimAtomV1[], evidence: AdvisorEvidence, id: string, kind: AdvisorClaimKindV1, metric: AdvisorClaimMetricV1, value: unknown, path: string, subject: string | null = null): void {
   const string = stringValue(value)
   const next = string === null ? null : atom(id, kind, subject, metric, string, null, evidence, path)
+  if (next) atoms.push(next)
+}
+
+function addDirectBoolean(atoms: AdvisorVerifiedClaimAtomV1[], evidence: AdvisorEvidence, id: string, kind: AdvisorClaimKindV1, metric: AdvisorClaimMetricV1, value: unknown, path: string): void {
+  const next = typeof value === 'boolean' ? atom(id, kind, null, metric, value, null, evidence, path) : null
   if (next) atoms.push(next)
 }
 
@@ -241,6 +249,21 @@ export function buildAdvisorVerifiedClaimAtoms(evidence: AdvisorEvidence): Advis
   }
   const comparison = bench && isRecord(bench.comparison) ? bench.comparison : null
   if (comparison) addDirectString(atoms, evidence, 'bench-comparability', 'bench_comparability', 'comparability', comparison.compatibility, 'bench.comparison.compatibility')
+  const performance = bench && isRecord(bench.performance) ? bench.performance : null
+  const performanceLatest = performance && isRecord(performance.latest) ? performance.latest : null
+  if (performanceLatest && Array.isArray(performanceLatest.workloads)) {
+    performanceLatest.workloads.forEach((workload, index) => {
+      if (!isRecord(workload)) return
+      const subject = stringValue(workload.workload)
+      if (!subject || subject === 'unknown') return
+      const prefix = 'bench.performance.latest.workloads.' + index
+      addDirectNumber(atoms, evidence, 'bench-performance-throughput-' + subject, 'bench_performance_throughput', 'throughput', workload.throughputTokensPerSecond, prefix + '.throughputTokensPerSecond', 'tokens/s', subject)
+      addDirectNumber(atoms, evidence, 'bench-performance-latency-' + subject, 'bench_performance_latency', 'latency', workload.averageLatencyMs, prefix + '.averageLatencyMs', 'ms', subject)
+    })
+    addDirectString(atoms, evidence, 'bench-performance-status', 'bench_performance_status', 'status', performanceLatest.status, 'bench.performance.latest.status')
+  }
+  const performanceComparison = performance && isRecord(performance.comparison) ? performance.comparison : null
+  if (performanceComparison) addDirectBoolean(atoms, evidence, 'bench-performance-comparability', 'bench_performance_comparability', 'comparability', performanceComparison.compatible, 'bench.performance.comparison.compatible')
   return atoms
 }
 
@@ -259,11 +282,17 @@ function pathMatches(kind: AdvisorClaimKindV1, metric: AdvisorClaimMetricV1 | nu
   if (kind === 'bench_score') return metric === 'score' && path === 'bench.latest.aggregate.scoreValue'
   if (kind === 'bench_status') return metric === 'status' && path === 'bench.latest.status'
   if (kind === 'bench_comparability') return metric === 'comparability' && path === 'bench.comparison.compatibility'
+  if (kind === 'bench_performance_throughput') return metric === 'throughput' && /^bench\.performance\.latest\.workloads\.\d+\.throughputTokensPerSecond$/u.test(path)
+  if (kind === 'bench_performance_latency') return metric === 'latency' && /^bench\.performance\.latest\.workloads\.\d+\.averageLatencyMs$/u.test(path)
+  if (kind === 'bench_performance_status') return metric === 'status' && path === 'bench.performance.latest.status'
+  if (kind === 'bench_performance_comparability') return metric === 'comparability' && path === 'bench.performance.comparison.compatible'
   return false
 }
 
 function subjectMatches(atomValue: AdvisorVerifiedClaimAtomV1, minimal: MinimalEvidence): boolean {
   if (atomValue.subject === null) return true
+  const performanceMatch = atomValue.evidencePath.match(/^bench\.performance\.latest\.workloads\.(\d+)\.(?:workload|throughputTokensPerSecond|averageLatencyMs)$/u)
+  if (performanceMatch) return equalFact(getPath(minimal, 'bench.performance.latest.workloads.' + performanceMatch[1] + '.workload'), atomValue.subject)
   const match = atomValue.evidencePath.match(/^(spend\.(?:models|projects|sessionsByCost)|modelEfficiency\.rows|quota\.providers)\.(\d+)/u)
   if (!match) return false
   const index = match[2]
@@ -281,6 +310,8 @@ function unitMatches(atomValue: AdvisorVerifiedClaimAtomV1): boolean {
   if (atomValue.claimKind === 'provider_quota_remaining') return atomValue.metric === 'remaining_percent' ? atomValue.unit === '%' : atomValue.metric === 'credits' && atomValue.unit === 'USD'
   if (atomValue.claimKind === 'observed_count') return (atomValue.metric === 'calls' && atomValue.unit === 'calls') || (atomValue.metric === 'sessions' && atomValue.unit === 'sessions') || (atomValue.metric === 'tokens' && atomValue.unit === 'tokens')
   if (atomValue.claimKind === 'bench_score') return atomValue.unit === '%'
+  if (atomValue.claimKind === 'bench_performance_throughput') return atomValue.unit === 'tokens/s'
+  if (atomValue.claimKind === 'bench_performance_latency') return atomValue.unit === 'ms'
   return atomValue.unit === null
 }
 
@@ -348,6 +379,7 @@ const BENCH_STATUS_LABELS: Record<string, PresentationLabel> = {
   completed: { en: 'completed', it: 'completato' },
   unavailable: { en: 'unavailable', it: 'non disponibile' },
   cancelled: { en: 'cancelled', it: 'annullato' },
+  failed: { en: 'failed', it: 'fallito' },
 }
 
 const BENCH_COMPARABILITY_LABELS: Record<string, PresentationLabel> = {
@@ -407,6 +439,22 @@ export function renderAdvisorVerifiedClaimAtom(atomValue: AdvisorVerifiedClaimAt
   if (atomValue.claimKind === 'bench_comparability' && typeof value === 'string') {
     const label = presentationLabel(value, BENCH_COMPARABILITY_LABELS, language)
     if (label) return language === 'it' ? 'La comparabilità dei test controllati è ' + label + '.' : 'Controlled test comparability is ' + label + '.'
+  }
+  if (atomValue.claimKind === 'bench_performance_throughput' && typeof value === 'number') {
+    const workload = subject || 'Performance'
+    return language === 'it' ? 'Il throughput ' + workload + ' misurato è ' + value.toFixed(1) + ' token al secondo.' : 'Measured ' + workload + ' throughput was ' + value.toFixed(1) + ' tokens per second.'
+  }
+  if (atomValue.claimKind === 'bench_performance_latency' && typeof value === 'number') {
+    const workload = subject || 'Performance'
+    return language === 'it' ? 'Il tempo medio ' + workload + ' misurato è ' + value.toFixed(1) + ' millisecondi.' : 'Measured average ' + workload + ' time was ' + value.toFixed(1) + ' milliseconds.'
+  }
+  if (atomValue.claimKind === 'bench_performance_status' && typeof value === 'string') {
+    const label = presentationLabel(value, BENCH_STATUS_LABELS, language)
+    if (label) return language === 'it' ? 'Lo stato dell’ultima Performance nativa è ' + label + '.' : 'The latest native Performance status is ' + label + '.'
+  }
+  if (atomValue.claimKind === 'bench_performance_comparability' && typeof value === 'boolean') {
+    const label = value ? (language === 'it' ? 'comparabile' : 'comparable') : (language === 'it' ? 'non comparabile' : 'not comparable')
+    return language === 'it' ? 'La comparabilità delle Performance è ' + label + '.' : 'Performance comparability is ' + label + '.'
   }
   return language === 'it' ? 'Questa evidenza Metrora è disponibile.' : 'This Metrora evidence is available.'
 }

@@ -8,6 +8,22 @@ type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCr
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
 type AdvisorHostedProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorHostedProvider; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
+type PerformanceBenchRequest = {
+  executablePath: string
+  modelPath: string
+  repetitions?: number
+  promptTokens?: number
+  generationTokens?: number
+  batchSize?: number
+  ubatchSize?: number
+  threads?: number | null
+  gpuLayers?: number
+  flashAttention?: 'auto' | 'on' | 'off'
+  splitMode?: 'none' | 'layer' | 'row'
+  mainGpu?: number | null
+  warmup?: boolean
+  timeoutMs?: number
+}
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
@@ -20,8 +36,8 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 // immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  advisorProbe: (runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorProbe', runtime),
-  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
+  advisorProbe: (runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorProbe', runtime),
+  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
   advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
   advisorCredentialStatus: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialStatus', provider),
   advisorCredentialSet: (provider: AdvisorHostedProvider, secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),
@@ -33,6 +49,10 @@ const bridge = {
   getBenchModelDiscovery: () => invoke('metrora:getBenchModelDiscovery'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
   runBenchTaskPack: (model: string, pack?: string) => invoke('metrora:runBenchTaskPack', model, pack),
+  getPerformanceBenchHistory: () => invoke('metrora:getPerformanceBenchHistory'),
+  getPerformanceBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getPerformanceBenchComparison', leftRunId, rightRunId),
+  runPerformanceBench: (requestId: string, request: PerformanceBenchRequest) => invoke('metrora:runPerformanceBench', requestId, request),
+  cancelPerformanceBench: (requestId: string) => invoke('metrora:cancelPerformanceBench', requestId),
   getOverview: (period: string, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null) => invoke('metrora:getOverview', period, provider, range, configSource, background, fresh, projectScopeId),
   getProjects: () => invoke('metrora:getProjects'),
   createProject: (name: string, icon?: string, color?: string) => invoke('metrora:createProject', name, icon, color),
@@ -72,6 +92,7 @@ const bridge = {
   exportData: (format: string, provider: string, outPath: string) => invoke('metrora:exportData', format, provider, outPath),
   saveShareCardPng: (suggestedName: string, pngDataUrl: string) => invoke('metrora:saveShareCardPng', suggestedName, pngDataUrl),
   chooseDirectory: () => invoke('metrora:chooseDirectory'),
+  chooseFile: (kind: 'llama-bench' | 'gguf') => invoke('metrora:chooseFile', kind),
   cliStatus: () => invoke('metrora:cliStatus'),
 
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),

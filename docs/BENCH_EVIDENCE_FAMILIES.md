@@ -1,7 +1,7 @@
 # Metrora Bench evidence families
 
 **Status:** public product/evidence classification  
-**Current implementation:** runtime-timing evidence and Core Compatibility are shipped; the broader Performance direction described below is planned and not yet fully implemented.
+**Current implementation:** the local runtime-timing slice, Core Compatibility, and the first native llama.cpp/`llama-bench` Performance path are shipped as separate evidence families.
 
 ## Why this distinction exists
 
@@ -47,15 +47,13 @@ A Performance result is conditional on its exact configuration. It does not prov
 
 That contract remains valid and should be understood as an early **runtime-performance evidence slice**, not a quality benchmark.
 
-### Planned broader local Performance
+### Shipped native local Performance
 
-Metrora plans to expand local Performance evidence around the user's actual model/runtime/hardware configuration.
+The first native engine is now available through the official llama.cpp **`llama-bench`** tool, behind a Metrora-owned bounded adapter and normalized result contract. It connects to an executable and .gguf model selected by the user; it does not download, build or start llama.cpp.
 
-The first planned native engine target is the official llama.cpp **`llama-bench`** tool, behind a Metrora-owned bounded adapter and normalized result contract.
+The adapter records the declared methodology, setup, model identity, runtime/build fields, hardware fields and upstream throughput/timing fields when present. Missing upstream fields remain unknown. It accepts only known bounded arguments, spawns directly without a shell, bounds output/lifetime/cancellation, and stores Performance history separately from Core Compatibility history.
 
-This is a direction, not current llama.cpp support. Current public local runtime support remains documented by the actual Harness/Advisor runtime implementation.
-
-Any future native benchmark integration must pin/identify its tool version, preserve upstream licence/provenance and keep command arguments bounded by Metrora rather than accepting arbitrary shell input.
+This is local existing-binary support, not a bundled llama.cpp distribution. The executable's reported build identity remains part of the evidence where available, and the exact llama.cpp provenance/licence boundary is documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md).
 
 ## Compatibility / Runtime Health
 
@@ -159,7 +157,7 @@ Model-weight licences remain independent of benchmark-engine licences.
 | --- | --- |
 | Runtime timing / small Performance evidence | **Shipped:** BenchRunV1 local Ollama |
 | Compatibility / Runtime Health | **Shipped:** Core Compatibility v1 |
-| Broader hardware Performance | **Planned:** first native target llama.cpp/`llama-bench` |
+| Broader hardware Performance | **Shipped:** native llama.cpp/`llama-bench` adapter |
 | Coding Evaluation | **Future / not shipped** |
 | Agent / Harness Evaluation | **Future / not shipped** |
 
