@@ -16,6 +16,7 @@ import {
   computeActionProposalDigest, validateActionContractV1,
 } from './action-contract-v1.js'
 import { appendRecord, defaultActionsDir, readRecordHistoryStrict } from './journal.js'
+import { isCoreCompatibilityActionRecord } from './core-compatibility-types.js'
 import type { ActionRecord } from './types.js'
 import { BENCH_EVALUATION_SCHEMA_VERSION, type BenchEvaluationV1 } from '../bench/task-pack-run-v1.js'
 
@@ -203,6 +204,37 @@ function strictLegacyRecord(value: unknown): boolean {
   if (!isLegacyRecord(value)) return false
   const rec = value as ActionRecord
   return ['applied', 'undone'].includes(rec.status) && typeof rec.description === 'string' && Array.isArray(rec.changes)
+}
+export type ActJournalRecordClassification = {
+  legacy: ActionRecord[]
+  controlled: CoreCompatibilityActionRecordV1[]
+  malformed: unknown[]
+}
+function isSaneLegacyRecord(value: unknown): value is ActionRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as { at?: unknown; status?: unknown }
+  return typeof record.at === 'string' && typeof record.status === 'string' && !Number.isNaN(new Date(record.at).getTime())
+}
+export function classifyActJournalRecords(records: readonly unknown[]): ActJournalRecordClassification {
+  const legacy: ActionRecord[] = []
+  const controlled: CoreCompatibilityActionRecordV1[] = []
+  const malformed: unknown[] = []
+  for (const value of records) {
+    const object = value && typeof value === 'object' && !Array.isArray(value) ? value as { kind?: unknown; recordVersion?: unknown } : null
+    const hasRecordVersion = object !== null && Object.prototype.hasOwnProperty.call(object, 'recordVersion')
+    const controlledMarker = hasRecordVersion || object?.kind === ACTION_KIND_RUN_CORE_COMPATIBILITY
+    if (controlledMarker) {
+      if (!isCoreCompatibilityActionRecord(value)) {
+        malformed.push(value)
+        continue
+      }
+      try { controlled.push(parseCoreCompatibilityRecord(value)) } catch { malformed.push(value) }
+      continue
+    }
+    if (!isSaneLegacyRecord(value)) malformed.push(value)
+    else legacy.push(value)
+  }
+  return { legacy, controlled, malformed }
 }
 
 export async function readCoreCompatibilityRecords(actionsDir = defaultActionsDir()): Promise<CoreCompatibilityActionRecordV1[]> {

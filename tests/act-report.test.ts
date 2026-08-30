@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { journalPath } from '../src/act/journal.js'
+import { createCoreCompatibilityAction } from '../src/act/action-contract-v1.js'
+import { initialOperationState, makeRecord } from '../src/act/core-compatibility-state-v1.js'
 import {
   buildActReportJson,
   buildOptimizeAppliedHeader,
@@ -479,6 +481,19 @@ describe('journal robustness', () => {
     expect(report.rows).toHaveLength(1)
     expect(report.rows[0]!.realizedTokens).toBe(40_000)
     expect(renderActReport(report)).toMatch(/1 malformed record skipped/)
+  })
+
+  it('excludes valid Core Compatibility records without counting them as malformed', async () => {
+    const at = daysAgo(10)
+    const controlledContract = createCoreCompatibilityAction({ model: 'qwen3:8b', originatingSurface: 'cli', actionId: 'controlled-report-record', createdAt: at, timeoutMs: 50 })
+    const controlled = makeRecord(controlledContract, 'proposed', initialOperationState(controlledContract), () => NOW)
+    const actionsDir = await writeJournal([mcpRecord(), controlled, missingAt])
+    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+
+    expect(report.rows).toHaveLength(1)
+    expect(report.rows[0]!.id).toBe('a1')
+    expect(report.activeCount).toBe(1)
+    expect(report.malformedRecords).toBe(1)
   })
 })
 
