@@ -207,7 +207,7 @@ Conceptual branded illustrations are preferable to screenshots that would immedi
 
 ## Visual-asset provenance
 
-Metrora inherits source and historical provenance from CodeBurn. A 2026-08-30 audit confirmed that multiple old top-level repository marketing/screenshots in `assets/` are byte-identical to upstream CodeBurn assets.
+Metrora contains historical visual material inherited from the incorporated upstream snapshot. A 2026-08-30 audit confirmed that multiple old top-level repository marketing/screenshots in `assets/` are byte-identical to material from that incorporated upstream source.
 
 Those files should be audited before the README visual redesign:
 
