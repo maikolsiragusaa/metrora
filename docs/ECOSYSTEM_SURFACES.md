@@ -1,0 +1,238 @@
+# Metrora ecosystem surfaces
+
+**Status:** public product direction and implementation-status guide  
+**Decision revision:** 2026-08-30  
+**Authority reviewed:** `maikolsiragusaa/metrora@e0e2a8a6308880ebe2c794f04c54bc2c2fff5fbd`
+
+Metrora is a local-first control and intelligence system for AI-assisted development. Its product surfaces should compose around shared facts and contracts rather than grow into separate products that each calculate their own version of the truth.
+
+This page distinguishes what exists now from what is being built or remains planned.
+
+## How the ecosystem fits together
+
+```text
+Usage · Activity · Models · Capacity · Projects
+                  ↓
+             Metrora Tools
+        ┌─────────┼───────────┐
+        ↓         ↓           ↓
+     Harness     MCP      integrations
+        │
+        └─ state-changing request
+                  ↓
+             proposal only
+                  ↓
+                 ACT
+                  ↓
+          bounded execution
+
+Bench   = methodology-bound test/evidence system
+Widgets = shareable presentation of canonical evidence
+Wrapped = recap/share experience built on canonical evidence + Widgets
+Swarm   = future coordinated Harness capability behind trusted authority
+```
+
+Canonical rule:
+
+> **Tools expose capability. Harness and MCP consume capability. ACT grants execution authority.**
+
+ACT is not a chat mode and an MCP client is not trusted execution authority simply because it can discover a Metrora tool.
+
+## Current status
+
+| Surface | Product job | Status |
+| --- | --- | --- |
+| **Usage / Activity / Models / Capacity** | Factual local evidence, history, economics and provider-reported capacity | **Available** |
+| **Projects** | User-controlled context and scope across relevant evidence | **Available** |
+| **Tools** | Typed factual access to Metrora evidence | **Foundation available** — current implementation still contains `Advisor*` compatibility naming that will migrate |
+| **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Building** — current conversational foundation exists and is being converged from the older Advisor presentation |
+| **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available and expanding** |
+| **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Foundation available** — `metrora.action.v1` and `run-core-compatibility`; not a user-facing mode |
+| **MCP** | Standard external access to canonical Metrora Tools | **Planned** |
+| **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
+| **Wrapped** | Periodic recap/share experience using canonical evidence and Widgets | **Planned** |
+| **Swarm** | Coordinated multi-agent Harness capability | **Planned** |
+
+Status labels are intentionally conservative. A public direction is not presented as shipped until working product authority exists.
+
+## Tools
+
+Metrora already has typed read-only capabilities for questions such as:
+
+- spend/Usage snapshots;
+- model-efficiency evidence;
+- provider Capacity/quota snapshots;
+- overview evidence;
+- Project drivers;
+- Session highlights;
+- coverage information;
+- Bench evidence.
+
+Today much of this implementation still lives under `Advisor*` names. The product direction is to make these capabilities a reusable canonical Tools layer rather than keep them owned by one UI.
+
+This matters because the same factual capability should be reusable by Harness, a future MCP server and other bounded Metrora integrations without implementing parallel evidence paths.
+
+A tool result remains evidence. A caller or model may explain it, but cannot silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
+
+## Harness
+
+**Metrora Harness** is the product-facing conversational and operational AI surface.
+
+Harness should remain a capable normal chat experience. Metrora-specific facts are read through typed Tools only when needed. Observable tool activity may be shown to the user without exposing private chain-of-thought.
+
+For state-changing requests, the conversational layer may understand the request and prepare a bounded proposal, but it does not authorize itself.
+
+```text
+conversation
+→ optional factual Tools
+→ explanation
+→ action proposal when requested
+→ explicit trusted approval
+→ ACT
+```
+
+The older `Advisor` product name is being retired. Existing `Advisor*` implementation identifiers may survive temporarily while responsibilities are migrated to the correct Harness, Tools, provider/runtime or evidence modules.
+
+## MCP
+
+Metrora adopts the Model Context Protocol as an interoperability direction.
+
+The intended first product is a **local, read-only Metrora MCP Server** that exposes the same canonical factual Tools used by Harness.
+
+A compatible external AI client could then ask a question such as:
+
+> “How much did I spend today?”
+
+and use Metrora's factual evidence instead of guessing or requiring a new Metrora-specific model integration.
+
+Planned Local MCP principles:
+
+- local-first and account-optional;
+- public Community interoperability;
+- read-only first;
+- no duplicate MCP-specific accounting/evidence engine;
+- no arbitrary shell, filesystem, repository or secret access;
+- no ability to bypass Metrora privacy/scope contracts;
+- failure of MCP cannot corrupt canonical Metrora history.
+
+A future hosted MCP surface may be offered separately for managed remote access or other hosted capabilities, but Local MCP is not intended to be crippled merely to create a paid call counter.
+
+### Future actions through MCP
+
+External AI clients may later be able to **propose** bounded Metrora actions. They do not gain direct ACT or Swarm authority.
+
+```text
+external AI
+→ MCP
+→ bounded proposal
+→ Metrora trusted authority
+→ explicit user approval
+→ ACT
+→ bounded execution
+```
+
+Any future Swarm capability follows the same authority rule.
+
+## Bench
+
+Metrora Bench remains a separate evidence system rather than becoming a generic “AI score”.
+
+Primary direction:
+
+- **Performance** — how a declared model/runtime/configuration actually runs on declared hardware.
+
+Separate evidence families:
+
+- **Compatibility / Runtime Health** — including the current deterministic `core-v1` checks;
+- **Coding Evaluation** — future, separately versioned and methodology/licence gated;
+- **Agent / Harness Evaluation** — later, once real coordinated execution exists.
+
+ACT may invoke a supported Bench operation, but Bench remains the canonical owner of Bench evidence/history.
+
+## Widgets and Wrapped
+
+Metrora already has a local **Share Card** foundation. The broader direction is to evolve this into **Widgets**: reusable, privacy-aware visual presentations of canonical Metrora evidence.
+
+Possible future Widgets include:
+
+- Usage/cost cards;
+- model/provider mix;
+- Project or Activity summaries;
+- Bench Performance results;
+- Compatibility results;
+- methodology-labelled comparisons.
+
+Local static sharing should remain useful without requiring an account. Any future hosted/live sharing is a separate service decision.
+
+**Wrapped** is not a second analytics engine. It is a recap/share experience — for example monthly or annual — built from canonical Metrora evidence and Widget presentation primitives.
+
+## Naming
+
+Ordinary pages stay concise:
+
+`Usage · Activity · Models · Capacity · Projects · Settings`
+
+Systems with an independent interaction model or authority can carry a branded name when useful:
+
+- **Metrora Harness**;
+- **Metrora Bench**;
+- **Metrora MCP Server** on first/external mention.
+
+Within an established Metrora context, prefer:
+
+`Harness · Tools · MCP · Bench · Projects · Widgets`
+
+rather than repeating “Metrora” before every noun.
+
+`ACT` remains an execution authority, not a primary navigation item. `Swarm` remains future functionality until it actually ships.
+
+## Public README direction
+
+The repository README should become easier for both users and future contributors to understand at a glance.
+
+The ratified direction is:
+
+- immediate download/install actions near the top;
+- a concise product thesis;
+- an original visual ecosystem map;
+- large visual feature sections instead of long walls of documentation;
+- clear `Available`, `Building` and `Planned` labels;
+- local-first/privacy positioning;
+- supported-tools credibility;
+- obvious routes into documentation and contribution.
+
+Modern visual OSS READMEs such as LobeHub are useful composition references, but Metrora should create original artwork and copy rather than clone another project's images or page pixel-for-pixel.
+
+Conceptual branded illustrations are preferable to screenshots that would immediately become stale while the target Desktop UX is still moving.
+
+## Visual-asset provenance
+
+Metrora contains historical visual material inherited from the incorporated upstream snapshot. A 2026-08-30 audit confirmed that multiple old top-level repository marketing/screenshots in `assets/` are byte-identical to material from that incorporated upstream source.
+
+Those files should be audited before the README visual redesign:
+
+- remove obsolete inherited screenshots when proven unused;
+- do not use inherited marketing imagery as new Metrora brand artwork;
+- do not delete runtime/package assets without proving they are unused;
+- review provider logos/icons separately because trademark/asset rights are independent from repository code licensing;
+- replace README/marketing visuals progressively with original Metrora artwork or current truthful screenshots.
+
+Required upstream provenance and licence notices remain governed by `THIRD_PARTY_NOTICES.md` and `LICENSES/`.
+
+## Near-term progression
+
+This is a dependency-oriented direction, not a rigid roadmap gate:
+
+1. **Harness Productization** — establish Harness as the product identity, extract canonical Tools and connect action requests only through proposal → ACT.
+2. **Local MCP Server V1** — expose the same factual Tools read-only through MCP.
+3. **README / asset refresh** — simplify the repository story and replace stale inherited marketing imagery with original Metrora visuals.
+4. **Widgets V1** — evolve Share Card into reusable static, privacy-aware Widgets.
+5. Continue independent **llama.cpp runtime / Performance Bench** work where it is ready to proceed.
+6. External action proposals and **Swarm** remain later, separately authorized capability work.
+
+See also:
+
+- [`HARNESS_PUBLIC_FOUNDATION.md`](HARNESS_PUBLIC_FOUNDATION.md)
+- [`BENCH_EVIDENCE_FAMILIES.md`](BENCH_EVIDENCE_FAMILIES.md)
+- [`PRODUCT_PRINCIPLES.md`](PRODUCT_PRINCIPLES.md)
+- [`PUBLIC_CONTRACTS_V1.md`](PUBLIC_CONTRACTS_V1.md)
