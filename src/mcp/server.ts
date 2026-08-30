@@ -1,136 +1,195 @@
-import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { getDateRange } from '../cli-date.js'
+import { z } from 'zod'
+
 import { loadPricing } from '../models.js'
-import { buildMenubarPayloadForRange, type PeriodInfo } from '../usage-aggregator.js'
-import type { MenubarPayload } from '../menubar-json.js'
-import { redactProjectNames } from './redact.js'
-import { renderSummaryTable, renderBreakdownTable, renderSavingsTable, type BreakdownBy } from './tables.js'
-
-const PERIOD = { today: 'today', last_7_days: 'week', last_30_days: '30days', month_to_date: 'month', last_6_months: 'all' } as const
-type McpPeriod = keyof typeof PERIOD
-const periodSchema = z.enum(['today', 'last_7_days', 'last_30_days', 'month_to_date', 'last_6_months'])
-
-type Aggregate = (periodInfo: PeriodInfo, opts: { provider?: string; optimize?: boolean }) => Promise<MenubarPayload>
+import { boundedMetroraToolJson, MetroraToolContractError } from '../tools/contract.js'
+import { METRORA_TOOL_MODEL_FILTER_MAX_LENGTH } from '../tools/contract.js'
+import type { MetroraToolDefinition, MetroraToolRegistry } from '../tools/types.js'
+import { createMetroraToolRuntime, type MetroraMcpStartupOptions } from './runtime.js'
 
 const INSTRUCTIONS =
-  'Metrora exposes local AI-coding spend data. Use get_usage for spend/usage and breakdowns (fast); ' +
-  'use get_savings to find cost reductions (slower — runs a deeper analysis). Project names are pseudonymized ' +
-  'unless include_project_names is true. All data is read locally from this machine; last_6_months is the widest ' +
-  'window. Numbers reflect the most recent scan and may lag the current session by up to a few minutes.'
+  'Metrora provides local, read-only, content-minimal factual evidence from its canonical Tools registry. ' +
+  'The server uses stdio, keeps the selected scope bounded, and never exposes raw conversation content, ' +
+  'credentials, unrestricted session payloads, or provider proxy capability. Unavailable and stale evidence ' +
+  'remains labeled as such.'
 
-function breakdownRows(p: MenubarPayload, by: BreakdownBy, limit: number): Array<{ name: string; costUSD: number; estimatedCostUSD?: number }> {
-  const c = p.current
-  if (by === 'model') return c.topModels.slice(0, limit).map(m => ({ name: m.name, costUSD: m.cost, estimatedCostUSD: m.estimatedCostUSD ?? 0 }))
-  if (by === 'project') return c.topProjects.slice(0, limit).map(x => ({ name: x.name, costUSD: x.cost }))
-  if (by === 'task') return c.topActivities.slice(0, limit).map(a => ({ name: a.name, costUSD: a.cost }))
-  return Object.entries(c.providers).sort(([, a], [, b]) => b - a).slice(0, limit).map(([name, cost]) => ({ name, costUSD: cost }))
+const MAX_ACTIVE_CALLS = 2
+const MAX_QUEUED_CALLS = 8
+
+type JsonSchemaProperty = { type?: unknown; enum?: unknown[] }
+type ZodShape = Record<string, z.ZodTypeAny>
+
+function shapeFromDefinition(definition: MetroraToolDefinition): z.ZodObject<ZodShape> {
+  const properties = definition.function.parameters.properties
+  const shape: ZodShape = {}
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return z.object(shape).strict()
+
+  for (const [name, raw] of Object.entries(properties as Record<string, JsonSchemaProperty>)) {
+    if (Array.isArray(raw?.enum) && raw.enum.every(value => typeof value === 'string') && raw.enum.length > 0) {
+      const values = raw.enum as [string, ...string[]]
+      shape[name] = z.enum(values).optional()
+      continue
+    }
+    if (raw?.type === 'string') {
+      shape[name] = z.string().max(name === 'model' ? METRORA_TOOL_MODEL_FILTER_MAX_LENGTH : 256).optional()
+      continue
+    }
+    shape[name] = z.unknown().optional()
+  }
+  return z.object(shape).strict()
 }
 
-export function createServer(deps: { version: string; aggregate?: Aggregate }): McpServer {
-  const aggregate = deps.aggregate ?? buildMenubarPayloadForRange
-  const inflight = new Map<string, Promise<MenubarPayload>>()
+function abortError(): Error {
+  const error = new Error('Metrora tool call cancelled')
+  error.name = 'AbortError'
+  return error
+}
 
-  const getPayload = (period: McpPeriod, optimize: boolean): Promise<MenubarPayload> => {
-    const key = `${optimize ? 'sav' : 'use'}:${period}`
-    const existing = inflight.get(key)
-    if (existing) return existing
-    const { range, label } = getDateRange(PERIOD[period])
-    const p = aggregate({ range, label }, { provider: 'all', optimize }).finally(() => inflight.delete(key))
-    inflight.set(key, p)
-    return p
+type PendingCall<T> = {
+  signal?: AbortSignal
+  run: () => Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+  reject: (reason?: unknown) => void
+  cleanup?: () => void
+}
+
+/** Keep a local stdio server from creating an unbounded parser backlog. */
+function createCallLimiter() {
+  let active = 0
+  const pending: Array<PendingCall<unknown>> = []
+
+  const start = <T>(call: PendingCall<T>): void => {
+    call.cleanup?.()
+    active += 1
+    void call.run().then(call.resolve, call.reject).finally(() => {
+      active -= 1
+      pump()
+    })
   }
 
+  const pump = (): void => {
+    while (active < MAX_ACTIVE_CALLS && pending.length > 0) {
+      const call = pending.shift()!
+      call.cleanup?.()
+      if (call.signal?.aborted) {
+        call.reject(abortError())
+        continue
+      }
+      start(call)
+    }
+  }
+
+  const run = <T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    if (signal?.aborted) return Promise.reject(abortError())
+    if (active < MAX_ACTIVE_CALLS) {
+      return new Promise<T>((resolve, reject) => start({ signal, run: task, resolve, reject }))
+    }
+    if (pending.length >= MAX_QUEUED_CALLS) {
+      return Promise.reject(new Error('Metrora tool call queue is full'))
+    }
+    return new Promise<T>((resolve, reject) => {
+      const call: PendingCall<T> = { signal, run: task, resolve, reject }
+      const onAbort = (): void => {
+        const index = pending.indexOf(call as PendingCall<unknown>)
+        if (index >= 0) pending.splice(index, 1)
+        call.cleanup?.()
+        reject(abortError())
+      }
+      if (signal) {
+        call.cleanup = () => signal.removeEventListener('abort', onAbort)
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+      pending.push(call as PendingCall<unknown>)
+      pump()
+    })
+  }
+
+  return { run }
+}
+
+function safeErrorCode(error: unknown): string {
+  if (error instanceof MetroraToolContractError) return error.code
+  if (error instanceof Error && error.name === 'AbortError') return 'cancelled'
+  return 'unavailable'
+}
+
+function safeErrorText(error: unknown): string {
+  return `Metrora tool request rejected (${safeErrorCode(error)}).`
+}
+
+export function createServer(deps: { version: string; registry: MetroraToolRegistry }): McpServer {
+  const limiter = createCallLimiter()
   const server = new McpServer({ name: 'metrora', version: deps.version }, { instructions: INSTRUCTIONS })
 
-  server.registerTool(
-    'get_usage',
-    {
-      title: 'Metrora — usage & cost',
-      description:
-        'Show AI coding token spend and usage for a period. Omit `by` for a headline summary; set `by` to break ' +
-        'it down by project, model, task, or provider (Claude Code / Cursor / Codex). Fast. Local to this machine.',
-      inputSchema: {
-        period: periodSchema.default('today'),
-        by: z.enum(['project', 'model', 'task', 'provider']).optional(),
-        limit: z.number().int().min(1).max(100).default(20),
-        include_project_names: z.boolean().default(false),
+  // Discovery and registration are generated from the same canonical list used
+  // by the transport-neutral registry. There is no MCP-specific factual list.
+  for (const definition of deps.registry.definitions) {
+    const name = definition.function.name
+    const inputSchema = shapeFromDefinition(definition)
+    server.registerTool(
+      name,
+      {
+        title: `Metrora — ${name}`,
+        description: definition.function.description,
+        inputSchema,
+        annotations: { title: `Metrora — ${name}`, readOnlyHint: true, openWorldHint: false, idempotentHint: true },
       },
-      outputSchema: {
-        period: z.string(),
-        empty: z.boolean(),
-        totals: z.object({ costUSD: z.number(), estimatedCostUSD: z.number(), calls: z.number(), sessions: z.number(), cacheHitPercent: z.number(), oneShotRate: z.number().nullable() }),
-        breakdown: z.array(z.object({ name: z.string(), costUSD: z.number(), estimatedCostUSD: z.number().optional() })).nullable(),
-      },
-      annotations: { title: 'Metrora — usage & cost', readOnlyHint: true, openWorldHint: false, idempotentHint: true },
-    },
-    async ({ period, by, limit, include_project_names }) => {
-      try {
-        const payload = redactProjectNames(await getPayload(period, false), include_project_names)
-        const c = payload.current
-        const totals = { costUSD: c.cost, estimatedCostUSD: c.estimatedCostUSD ?? 0, calls: c.calls, sessions: c.sessions, cacheHitPercent: c.cacheHitPercent, oneShotRate: c.oneShotRate }
-        if (c.calls === 0) {
+      async (args, extra) => {
+        try {
+          const execution = await limiter.run(
+            () => deps.registry.execute(name, args as Record<string, unknown>, extra.signal),
+            extra.signal,
+          )
+          const envelope = execution.envelope ?? JSON.parse(execution.content) as Record<string, unknown>
+          const text = boundedMetroraToolJson(envelope)
           return {
-            content: [{ type: 'text' as const, text: `No usage recorded for ${c.label} yet — run some coding sessions and try again.` }],
-            structuredContent: { period: c.label, empty: true, totals, breakdown: null },
+            content: [{ type: 'text' as const, text }],
+            structuredContent: envelope,
           }
+        } catch (error) {
+          return { content: [{ type: 'text' as const, text: safeErrorText(error) }], isError: true }
         }
-        const text = by ? renderBreakdownTable(payload, by, limit) : renderSummaryTable(payload)
-        const breakdown = by ? breakdownRows(payload, by, limit) : null
-        return {
-          content: [{ type: 'text' as const, text }],
-          structuredContent: { period: c.label, empty: false, totals, breakdown },
-        }
-      } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: `metrora: failed to read usage — ${err instanceof Error ? err.message : String(err)}` }],
-          structuredContent: { period: 'unknown', empty: true, totals: { costUSD: 0, estimatedCostUSD: 0, calls: 0, sessions: 0, cacheHitPercent: 0, oneShotRate: null }, breakdown: null },
-          isError: true,
-        }
-      }
-    },
-  )
-
-  server.registerTool(
-    'get_savings',
-    {
-      title: 'Metrora — savings opportunities',
-      description:
-        'Find ways to reduce AI coding cost for a period: optimization findings, retry tax (money spent re-doing ' +
-        'work), and routing waste (what you would have saved on a cheaper model). Slower than get_usage.',
-      inputSchema: { period: periodSchema.default('last_7_days'), include_project_names: z.boolean().default(false) },
-      outputSchema: {
-        period: z.string(),
-        optimize: z.object({ findingCount: z.number(), savingsUSD: z.number(), topFindings: z.array(z.object({ title: z.string(), impact: z.string(), savingsUSD: z.number() })) }),
-        retryTaxUSD: z.number(),
-        routingWasteUSD: z.number(),
       },
-      annotations: { title: 'Metrora — savings opportunities', readOnlyHint: true, openWorldHint: false, idempotentHint: true },
-    },
-    async ({ period, include_project_names }) => {
-      try {
-        const payload = redactProjectNames(await getPayload(period, true), include_project_names)
-        const c = payload.current
-        return {
-          content: [{ type: 'text' as const, text: renderSavingsTable(payload) }],
-          structuredContent: { period: c.label, optimize: payload.optimize, retryTaxUSD: c.retryTax.totalUSD, routingWasteUSD: c.routingWaste.totalSavingsUSD },
-        }
-      } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: `metrora: failed to compute savings — ${err instanceof Error ? err.message : String(err)}` }],
-          structuredContent: { period: 'unknown', optimize: { findingCount: 0, savingsUSD: 0, topFindings: [] }, retryTaxUSD: 0, routingWasteUSD: 0 },
-          isError: true,
-        }
-      }
-    },
-  )
+    )
+  }
 
   return server
 }
 
-export async function startStdioServer(version: string): Promise<void> {
+function redirectProtocolLogs(): void {
+  const write = (...args: unknown[]): void => {
+    process.stderr.write(args.map(value => typeof value === 'string' ? value : String(value)).join(' ') + '\n')
+  }
+  console.log = write as typeof console.log
+  console.info = write as typeof console.info
+  console.debug = write as typeof console.debug
+  console.warn = write as typeof console.warn
+}
+
+export async function startStdioServer(version: string, options: MetroraMcpStartupOptions = {}): Promise<void> {
+  // The protocol owns stdout. Initialization is deliberately silent there.
+  redirectProtocolLogs()
   await loadPricing()
-  const server = createServer({ version })
-  await server.connect(new StdioServerTransport())
+  const registry = await createMetroraToolRuntime(options)
+  const server = createServer({ version, registry })
+  const transport = new StdioServerTransport()
+  let shuttingDown = false
+  const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return
+    shuttingDown = true
+    await server.close().catch(() => undefined)
+    await transport.close().catch(() => undefined)
+  }
+  const onSignal = (): void => { void shutdown() }
+  process.once('SIGINT', onSignal)
+  process.once('SIGTERM', onSignal)
+  try {
+    await server.connect(transport)
+  } catch (error) {
+    process.off('SIGINT', onSignal)
+    process.off('SIGTERM', onSignal)
+    await shutdown()
+    throw error
+  }
 }

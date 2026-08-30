@@ -129,7 +129,8 @@ Pairing is explicit and revocable. Combined-device reporting is separate from th
 | Command | Purpose |
 | --- | --- |
 | `metrora web` | Start the local browser dashboard. |
-| `metrora mcp` | Run the local stdio MCP server for supported usage and savings queries. |
+| `metrora mcp serve` | Run the local read-only stdio MCP server for canonical factual Tools. |
+| `metrora mcp info [--json]` | Print MCP V1 transport, contract, limits and discovered tool metadata. |
 | `metrora menubar` | Install the retained macOS menubar development surface. |
 | `metrora antigravity-hook` | Install or remove supported Antigravity CLI usage capture. |
 

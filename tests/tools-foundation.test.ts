@@ -38,6 +38,19 @@ function overview(): MetroraOverview {
   }
 }
 
+function measuredZeroOverview(): MetroraOverview {
+  const base = overview()
+  return {
+    ...base,
+    current: {
+      ...base.current!,
+      cost: 0,
+      calls: 0,
+      sessions: 0,
+    },
+  }
+}
+
 function source(overrides: Partial<MetroraToolDataSource> = {}): MetroraToolDataSource {
   return {
     getOverview: vi.fn(async () => overview()),
@@ -91,12 +104,39 @@ describe('canonical Metrora Tools foundation', () => {
     expect(result.content.length).toBeLessThanOrEqual(32 * 1024)
   })
 
+  it('keeps authoritative measured zero distinct from an unavailable source', async () => {
+    const zero = await createMetroraToolRegistry(source(), scope, measuredZeroOverview()).execute('get_spend_snapshot', {})
+    expect(zero.evidence.spend?.measuredCostUSD).toBe(0)
+    expect(zero.evidence.coverage.state).toBe('NO_DATA')
+    expect(zero.envelope).toMatchObject({ unavailable: false })
+
+    const unavailable = createMetroraToolRegistry(source({
+      getOverview: vi.fn(async () => { throw new Error('source unavailable') }),
+    }), scope)
+    const missing = await unavailable.execute('get_spend_snapshot', {})
+    expect(missing.evidence.spend?.measuredCostUSD).toBeNull()
+    expect(missing.evidence.coverage.state).toBe('UNAVAILABLE')
+    expect(missing.envelope).toMatchObject({ unavailable: true })
+  })
+
   it('rejects unknown/additional arguments and every scope-widening request', async () => {
     const registry = createMetroraToolRegistry(source(), scope)
     await expect(registry.execute('not-a-tool', {})).rejects.toMatchObject({ code: 'unknown-tool' })
     await expect(registry.execute('get_spend_snapshot', { prompt: 'raw content' })).rejects.toMatchObject({ code: 'additional-argument' })
     await expect(registry.execute('get_spend_snapshot', { period: 'month' })).rejects.toMatchObject({ code: 'invalid-scope' })
     await expect(registry.execute('get_quota_snapshot', { provider: 'copilot' })).rejects.toMatchObject({ code: 'invalid-argument-value' })
+    const todayRegistry = createMetroraToolRegistry(source(), { ...scope, period: 'today' })
+    await expect(todayRegistry.execute('get_spend_snapshot', { period: 'yesterday' })).rejects.toMatchObject({ code: 'invalid-scope' })
+  })
+
+  it('does not allow a constrained provider or model scope to be changed by a call', async () => {
+    const constrained = createMetroraToolRegistry(source(), {
+      ...scope,
+      provider: 'claude',
+      model: 'claude-sonnet-4-6',
+    })
+    await expect(constrained.execute('get_quota_snapshot', { provider: 'codex' })).rejects.toMatchObject({ code: 'invalid-scope' })
+    await expect(constrained.execute('get_spend_snapshot', { model: 'claude-opus-4-6' })).rejects.toMatchObject({ code: 'invalid-scope' })
   })
 
   it('stops before the data source when cancelled and preserves unavailable truth', async () => {
