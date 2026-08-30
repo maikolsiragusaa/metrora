@@ -43,7 +43,8 @@ export type BenchEvaluationV1 = {
   resultDigest: string
 }
 
-export type BenchTaskPackRunOptions = { model: string; packId?: string; fetchImpl?: BenchFetch; signal?: AbortSignal; timeoutMs?: number; now?: () => Date; monotonicNow?: () => number; runId?: string }
+export type BenchTaskPackProgressV1 = { planned: number; completed: number }
+export type BenchTaskPackRunOptions = { model: string; packId?: string; fetchImpl?: BenchFetch; signal?: AbortSignal; timeoutMs?: number; now?: () => Date; monotonicNow?: () => number; runId?: string; onProgress?: (progress: BenchTaskPackProgressV1) => void | Promise<void> }
 
 const EMPTY_RUNTIME_METRICS: RuntimeReportedMetricsV1 = { totalDurationNs: null, loadDurationNs: null, promptEvalCount: null, promptEvalDurationNs: null, evalCount: null, evalDurationNs: null }
 const isoNow = (now: () => Date): string => now().toISOString()
@@ -94,6 +95,11 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
   try { runtimeVersion = await fetchOllamaVersion({ fetchImpl: options.fetchImpl, signal: options.signal, timeoutMs }) } catch (error) { preflightFailure = asFailure(error) }
 
   const tasks: BenchTaskResultV1[] = []
+  const reportProgress = async (): Promise<void> => {
+    try { await options.onProgress?.({ planned: pack.tasks.length, completed: tasks.length }) } catch {
+      // Progress is advisory and must never change the canonical result.
+    }
+  }
   let reportedModel: string | null = null
   let reportedModelConflict = false
   for (let index = 0; index < pack.tasks.length; index++) {
@@ -102,9 +108,10 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
       const taskStatus: 'unavailable' | 'timeout' | 'cancelled' = preflightFailure.code === 'cancelled' ? 'cancelled' : preflightFailure.code === 'timeout' ? 'timeout' : 'unavailable'
       const taskCode: 'runtime-unavailable' | 'timeout' | 'cancelled' = preflightFailure.code === 'cancelled' ? 'cancelled' : preflightFailure.code === 'timeout' ? 'timeout' : 'runtime-unavailable'
       tasks.push(emptyTask(task.id, taskStatus, taskCode))
+      await reportProgress()
       continue
     }
-    if (options.signal?.aborted) { for (let rest = index; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
+    if (options.signal?.aborted) { for (let rest = index; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); await reportProgress(); break }
     try {
       const evidence = await runOllamaGenerate({ model, prompt: task.prompt, includeOutput: true, fetchImpl: options.fetchImpl, signal: options.signal, timeoutMs, monotonicNow })
       if (evidence.reportedModel !== null && !reportedModelConflict) {
@@ -117,12 +124,14 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
       if (evidence.output === undefined) throw new BenchOllamaError('malformed-response', 'The local runtime output was unavailable for transient scoring.')
       const scored = scoreBenchTaskV1(task, evidence.output)
       tasks.push({ taskId: task.id, attempted: true, status: scored.status, score: scored.score, outputDigest: scored.outputDigest, outputChars: scored.outputChars, requestLatencyMs: evidence.observed.requestLatencyMs, timeToFirstContentMs: evidence.observed.timeToFirstContentMs, runtimeReported: evidence.runtimeReported, failure: scored.status === 'passed' ? null : { code: scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed', message: failureMessage(scored.status === 'malformed' ? 'malformed-output' : 'scoring-failed') } })
+      await reportProgress()
     } catch (error) {
       const failure = asFailure(error)
       const status: BenchTaskRunStatusV1 = failure.code === 'cancelled' ? 'cancelled' : failure.code === 'timeout' ? 'timeout' : ['runtime-unavailable', 'transport-error', 'http-error', 'model-not-found', 'runtime-error', 'malformed-response', 'response-limit'].includes(failure.code) ? 'unavailable' : 'failed'
       tasks.push({ taskId: task.id, attempted: true, status, score: null, outputDigest: null, outputChars: null, requestLatencyMs: null, timeToFirstContentMs: null, runtimeReported: { ...EMPTY_RUNTIME_METRICS }, failure })
-      if (status === 'cancelled') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); break }
-      if (status === 'unavailable') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'unavailable', 'runtime-unavailable')); break }
+      await reportProgress()
+      if (status === 'cancelled') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'cancelled', 'cancelled')); await reportProgress(); break }
+      if (status === 'unavailable') { for (let rest = index + 1; rest < pack.tasks.length; rest++) tasks.push(emptyTask(pack.tasks[rest]!.id, 'unavailable', 'runtime-unavailable')); await reportProgress(); break }
     }
   }
 

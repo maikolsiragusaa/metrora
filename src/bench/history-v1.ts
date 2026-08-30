@@ -51,17 +51,17 @@ const Evaluation = EvaluationShape.superRefine((record, ctx) => {
   const expectedStatus = counts.cancelled > 0 ? 'cancelled' : counts.unavailable > 0 ? 'unavailable' : 'completed'
   if (record.status !== expectedStatus) issue(['status'], 'status does not match retained task outcomes')
   if (Date.parse(record.startedAt) > Date.parse(record.endedAt)) issue(['endedAt'], 'endedAt must not precede startedAt')
-  if (record.pack.digest !== CORE_TASK_PACK_V1.digest) issue(['pack', 'digest'], 'pack digest does not match the canonical Core conformance pack')
-  if (tasks.length !== CORE_TASK_PACK_V1.tasks.length) issue(['tasks'], 'task count does not match the canonical Core conformance pack')
+  if (record.pack.digest !== CORE_TASK_PACK_V1.digest) issue(['pack', 'digest'], 'pack digest does not match the canonical Core Compatibility pack')
+  if (tasks.length !== CORE_TASK_PACK_V1.tasks.length) issue(['tasks'], 'task count does not match the canonical Core Compatibility pack')
   for (const key of ['temperature', 'seed', 'numPredict'] as const) {
-    if (record.generation.parameters[key] !== FIXED_GENERATION_PARAMETERS[key]) issue(['generation', 'parameters', key], 'generation parameter does not match the fixed Core conformance policy')
+    if (record.generation.parameters[key] !== FIXED_GENERATION_PARAMETERS[key]) issue(['generation', 'parameters', key], 'generation parameter does not match the fixed Core Compatibility policy')
   }
 
   const taskIds = new Set<string>()
   tasks.forEach((task, index) => {
     if (taskIds.has(task.taskId)) issue(['tasks', index, 'taskId'], 'task ids must be unique')
     taskIds.add(task.taskId)
-    if (task.taskId !== CORE_TASK_PACK_V1.tasks[index]?.id) issue(['tasks', index, 'taskId'], 'task id or order does not match the canonical Core conformance pack')
+    if (task.taskId !== CORE_TASK_PACK_V1.tasks[index]?.id) issue(['tasks', index, 'taskId'], 'task id or order does not match the canonical Core Compatibility pack')
     if (!task.attempted && task.score !== null) issue(['tasks', index], 'an unattempted task cannot have a score')
     if (task.status === 'passed') {
       if (!task.attempted || task.score !== 1 || task.failure !== null || task.outputDigest === null || task.outputChars === null) issue(['tasks', index], 'passed tasks must contain a scored output')

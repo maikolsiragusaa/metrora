@@ -75,7 +75,7 @@ Examples of safe observable events:
 - tool started/completed/unavailable;
 - bounded scope used;
 - evidence freshness/coverage where material;
-- action proposal/progress when a real ACT path later exists.
+- action proposal/progress when the approved ACT path is invoked.
 
 Private chain-of-thought, hidden scratchpads and internal model reasoning are not product telemetry and should not be exposed.
 
@@ -127,7 +127,7 @@ Future tool growth should prefer useful bounded factual drill-downs over unrestr
 
 Harness may understand a state-changing request and prepare a proposal. It is not execution authority.
 
-Canonical future relationship:
+Canonical relationship for the implemented foundation (not wired to Harness UI):
 
 ```text
 Harness intent / proposal
@@ -139,7 +139,7 @@ Harness intent / proposal
 
 ACT is an execution authority underneath product workflows, not a chat mode the user must select first.
 
-Current public [ACT preparation](ACT_CONTRACT_PREP_001.md) describes that boundary. Draft implementation work is not current `main` authority until separately accepted.
+Current public [ACT preparation](ACT_CONTRACT_PREP_001.md) describes the bounded `metrora.action.v1` Core Compatibility executor. Harness/Advisor remains proposal-only; this branch does not add Harness UI or navigation integration.
 
 ## Swarm direction
 

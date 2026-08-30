@@ -1,6 +1,6 @@
 # ACT Contract Preparation 001
 
-**Status:** public design contract on current `main`; a separate Draft PR may implement part of this direction, but this document does not make that draft current product authority.
+**Status:** current-main-native ACT foundation v2 contract and implementation note; the bounded first executor is implemented on this branch for review.
 
 ## Purpose
 
@@ -47,7 +47,7 @@ A proposal is not authorization. A successful process/HTTP call is not proof tha
 
 ## First narrow ACT operation: Core Compatibility
 
-The first safe operation direction is the existing public Core Compatibility workflow previously called `Run Core Conformance Bench`.
+The first safe operation is the existing public Core Compatibility workflow; the historical command name was `Run Core Conformance Bench`.
 
 Product classification:
 
@@ -67,6 +67,14 @@ This remains a useful first ACT proof because its external effect is narrow and 
 It must **not** be treated as the definition of Metrora Bench. Mainstream Bench product direction is Performance-first; see [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md).
 
 A future Performance run may receive its own action kind only after a normalized Performance contract/executor is implemented. Do not broaden the first Core Compatibility action into arbitrary benchmark execution merely for convenience.
+
+## Implemented foundation boundary
+
+The v2 foundation currently binds `metrora.action.v1` to the single `run-core-compatibility` kind. Its strict JSON-safe contract fixes the local Ollama loopback runtime, explicit model, `core-v1` selector, canonical pack identity/digest, fixed generation parameters, bounded timeouts, cancellation precedence, declared journal/history writes, and no rollback capability.
+
+Approval is issued and verified by a trusted process using exact action, proposal, confirmation, execution, target, model, pack, and parameter digests. Stored `ready` authority is revalidated for freshness after restart; stale, malformed, forged, replayed, duplicate, or mismatched actions fail closed.
+
+Execution delegates to the existing canonical task-pack runner and history store. ACT persists lifecycle state, bounded progress/counts, digests and references only; task prompts, generated output, credentials, repository paths and shell operations are not persisted or accepted. Orphaned running state is recovered only from exact existing evidence, otherwise it reaches a terminal failure/cancellation without retry.
 
 ## Confirmation UX
 
@@ -144,9 +152,8 @@ An external agent/harness framework must never bypass ActionContract/ACT authori
 
 No dependency is added by this document.
 
-## Explicitly not implemented by this document
+## Explicitly outside this foundation
 
-- new ACT runtime/executor on current `main`;
 - Harness automatic execution;
 - arbitrary shell/repository writes;
 - mobile write/execute routes;
@@ -158,7 +165,7 @@ No dependency is added by this document.
 
 ## Relationship to current Draft implementation work
 
-A Draft PR may contain a concrete `metrora.action.v1` implementation around Core Compatibility. Until that work is rebased/reviewed/merged against current `main`, public current authority remains the shipped read-only/proposal foundation plus this design contract.
+This branch contains the concrete `metrora.action.v1` implementation around Core Compatibility for review against current `main`. The proposal-only Advisor/Harness surface remains data-only and cannot authorize or execute this operation. The implementation does not add a second runner, change mobile execution, or introduce Harness UI/navigation.
 
 Any acceptance pass must ensure there is one ACT authority rather than separate `AdvisorActionProposal` and ACT execution systems that can diverge.
 

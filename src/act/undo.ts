@@ -1,4 +1,5 @@
 import type { ActionRecord, FileChange } from './types.js'
+import { isCoreCompatibilityActionRecord } from './core-compatibility-types.js'
 import { appendRecord, defaultActionsDir, readRecords, shortId, withLock } from './journal.js'
 import { pathExists, revertChange, sha256File } from './backup.js'
 
@@ -51,7 +52,7 @@ export async function undoAction(
 ): Promise<ActionRecord> {
   const actionsDir = opts.actionsDir ?? defaultActionsDir()
   return withLock(actionsDir, async () => {
-    const records = await readRecords(actionsDir)
+    const records = (await readRecords(actionsDir)).filter((record): record is ActionRecord => !isCoreCompatibilityActionRecord(record))
     let record: ActionRecord | undefined
     if ('last' in selector) {
       record = records.filter(r => r.status === 'applied').at(-1)

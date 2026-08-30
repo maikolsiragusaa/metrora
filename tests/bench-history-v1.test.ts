@@ -103,7 +103,7 @@ describe('Bench history v1', () => {
 
     const scan = await scanBenchHistoryV1({ dataDir: dir })
     expect(scan.records).toHaveLength(0)
-    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('canonical Core conformance pack') }])
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('canonical Core Compatibility pack') }])
   })
 
   it('rejects a result digest that does not match retained task evidence', async () => {
@@ -141,7 +141,7 @@ describe('Bench history v1', () => {
 
     const scan = await scanBenchHistoryV1({ dataDir: dir })
     expect(scan.records).toHaveLength(0)
-    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('fixed Core conformance policy') }])
+    expect(scan.invalid).toEqual([{ file, reason: expect.stringContaining('fixed Core Compatibility policy') }])
   })
 
   it('bounds oversized corrupt files before parsing', async () => {

@@ -23,6 +23,7 @@ import { ARCHIVE_DEF_TOKENS, HONEST_FOOTER, MCP_KINDS } from './report-policy.js
 import { renderTable } from '../text-table.js'
 import { formatTokens } from '../format.js'
 import { formatCost } from '../currency.js'
+import { isCoreCompatibilityActionRecord } from './core-compatibility-types.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const WINDOW_CAP_DAYS = 30
@@ -393,7 +394,7 @@ function isSaneRecord(r: ActionRecord): boolean {
 export async function computeActReport(opts: ActReportOptions = {}): Promise<ActReport> {
   const now = opts.now ?? new Date()
   const rawRecords = await readRecords(opts.actionsDir ?? defaultActionsDir())
-  const records = rawRecords.filter(isSaneRecord)
+  const records = rawRecords.filter((record): record is ActionRecord => !isCoreCompatibilityActionRecord(record) && isSaneRecord(record))
   const malformedRecords = rawRecords.length - records.length
   const active = records.filter(r => r.status === 'applied')
 
