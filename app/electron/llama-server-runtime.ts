@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { AdvisorRuntimeChatPayload, AdvisorRuntimeChatResult } from './advisor-runtime'
 
 export const LLAMA_SERVER_RUNTIME_ID = 'llama-server' as const
@@ -11,11 +12,13 @@ const MAX_MESSAGE_BYTES = 32_000
 const MAX_STREAM_CHUNKS = 512
 const MAX_MALFORMED_CHUNKS = 16
 const MAX_TOOL_CALLS = 16
+const modelRoutes = new Map<string, string>()
 
 export type LlamaServerRuntimeProbe = {
   runtime: typeof LLAMA_SERVER_RUNTIME_ID
   available: boolean
   models: string[]
+  modelLabels: Record<string, string>
   detail: string
   discoveryState: 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'
   capabilities: Array<{
@@ -130,9 +133,35 @@ function validModelId(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && byteLength(value) <= 200 && !/[\u0000-\u001f\u007f]/u.test(value)
 }
 
-function modelRows(payload: RecordValue): string[] {
-  if (!Array.isArray(payload.data)) return []
-  return [...new Set(payload.data.flatMap(row => isRecord(row) && validModelId(row.id) ? [row.id.trim()] : []))].slice(0, 32)
+function safeModelAlias(value: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u.test(value)
+}
+
+function modelLabel(rawId: string): string {
+  if (safeModelAlias(rawId)) return rawId
+  const leaf = rawId.replaceAll('\\', '/').split('/').filter(Boolean).pop() ?? ''
+  const safe = leaf.replace(/[^A-Za-z0-9._:@+-]/gu, '_').replace(/^_+|_+$/gu, '').slice(0, 96)
+  return safe && safe !== '.' && safe !== '..' ? safe : 'Local model'
+}
+
+function modelHandle(rawId: string): string {
+  if (safeModelAlias(rawId)) return rawId
+  return 'llama-server:model:' + createHash('sha256').update(rawId).digest('hex').slice(0, 24)
+}
+
+function modelRows(payload: RecordValue): { models: string[]; labels: Record<string, string> } {
+  modelRoutes.clear()
+  if (!Array.isArray(payload.data)) return { models: [], labels: {} }
+  const projected = new Map<string, string>()
+  for (const row of payload.data) {
+    if (!isRecord(row) || !validModelId(row.id)) continue
+    const rawId = row.id.trim()
+    const handle = modelHandle(rawId)
+    if (!projected.has(handle)) projected.set(handle, modelLabel(rawId))
+    modelRoutes.set(handle, rawId)
+  }
+  const entries = [...projected.entries()].slice(0, 32)
+  return { models: entries.map(([handle]) => handle), labels: Object.fromEntries(entries) }
 }
 
 function capability(modelId: string): LlamaServerRuntimeProbe['capabilities'][number] {
@@ -149,19 +178,20 @@ function capability(modelId: string): LlamaServerRuntimeProbe['capabilities'][nu
 }
 
 export async function probeLlamaServerMain(fetchImpl: FetchLike = fetch, parent?: AbortSignal): Promise<LlamaServerRuntimeProbe> {
-  if (!fetchImpl) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], detail: 'Node fetch is unavailable.', discoveryState: 'runtime-unavailable', capabilities: [] }
+  modelRoutes.clear()
+  if (!fetchImpl) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail: 'Node fetch is unavailable.', discoveryState: 'runtime-unavailable', capabilities: [] }
   try {
     await fetchJson(fetchImpl, '/health', { method: 'GET' }, PROBE_TIMEOUT_MS, parent)
     const modelsPayload = await fetchJson(fetchImpl, '/v1/models', { method: 'GET' }, PROBE_TIMEOUT_MS, parent)
-    const models = modelRows(modelsPayload)
-    if (!models.length) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], detail: 'llama-server is reachable but has no loaded model.', discoveryState: 'no-models', capabilities: [] }
-    return { runtime: LLAMA_SERVER_RUNTIME_ID, available: true, models, detail: 'Local llama-server is reachable on loopback.', discoveryState: 'models-discovered', capabilities: models.map(capability) }
+    const projected = modelRows(modelsPayload)
+    if (!projected.models.length) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail: 'llama-server is reachable but has no loaded model.', discoveryState: 'no-models', capabilities: [] }
+    return { runtime: LLAMA_SERVER_RUNTIME_ID, available: true, models: projected.models, modelLabels: projected.labels, detail: 'Local llama-server is reachable on loopback.', discoveryState: 'models-discovered', capabilities: projected.models.map(capability) }
   } catch (error) {
     if (parent?.aborted) throw error
     const detail = error instanceof LlamaServerHttpError && error.status === 503
       ? 'llama-server is reachable but still loading a model.'
       : boundedError(error).message
-    return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], detail, discoveryState: 'runtime-unavailable', capabilities: [] }
+    return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail, discoveryState: 'runtime-unavailable', capabilities: [] }
   }
 }
 
@@ -303,11 +333,20 @@ function validatePayload(value: unknown): asserts value is AdvisorRuntimeChatPay
   }
 }
 
+function resolveModelRoute(value: string): string {
+  const model = value.trim()
+  const trusted = modelRoutes.get(model)
+  if (trusted) return trusted
+  if (safeModelAlias(model)) return model
+  throw new Error('Local llama-server model must be a discovered safe handle or bounded alias.')
+}
+
 export async function chatLlamaServerMain(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<AdvisorRuntimeChatResult> {
   if (!fetchImpl) throw new Error('Node fetch is unavailable.')
   validatePayload(payload)
+  const routedModel = resolveModelRoute(payload.model)
   const body = {
-    model: payload.model,
+    model: routedModel,
     messages: openAIMessageList(payload.messages),
     ...(payload.tools.length ? { tools: payload.tools } : {}),
     stream: payload.stream,

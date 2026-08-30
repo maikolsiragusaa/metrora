@@ -12,6 +12,7 @@ export const PERFORMANCE_HISTORY_VERSION = 1 as const
 
 export type PerformanceFlashAttentionV1 = 'auto' | 'on' | 'off'
 export type PerformanceSplitModeV1 = 'none' | 'layer' | 'row'
+export type PerformanceObservedSplitModeV1 = PerformanceSplitModeV1 | 'tensor'
 export type PerformanceTerminationStatusV1 = 'none' | 'timeout' | 'cancelled' | 'output-limit' | 'spawn-error' | 'malformed-output'
 export type PerformanceStatusV1 = 'completed' | 'unavailable' | 'failed' | 'cancelled'
 
@@ -33,17 +34,36 @@ export type PerformanceSetupV1 = {
   warmup: boolean
 }
 
+/**
+ * Values echoed by llama-bench for the actual native run. A null value means
+ * the upstream row did not expose that field; it is never filled from the
+ * declared setup just to make an evidence record look complete.
+ */
+export type PerformanceObservedConfigurationV1 = {
+  batchSize: number | null
+  ubatchSize: number | null
+  threads: number | null
+  gpuLayers: number | null
+  splitMode: PerformanceObservedSplitModeV1 | null
+  mainGpu: number | null
+  flashAttention: PerformanceFlashAttentionV1 | null
+  promptTokens: number | null
+  generationTokens: number | null
+  repetitions: number | null
+  depth: number | null
+}
+
 export type PerformanceWorkloadV1 = {
   workload: 'prefill' | 'decode' | 'mixed' | 'unknown'
   promptTokens: number | null
   generationTokens: number | null
-  contextSize: number | null
+  depth: number | null
   repetitions: number | null
   throughputTokensPerSecond: number | null
   throughputStddevTokensPerSecond: number | null
   averageTimeNs: number | null
   averageLatencyMs: number | null
-  testTimeSeconds: number | null
+  testTime: string | null
 }
 
 export type PerformanceRunV1 = {
@@ -60,7 +80,6 @@ export type PerformanceRunV1 = {
     selected: string
     reported: string | null
     type: string | null
-    quantization: string | null
     sizeBytes: number | null
     parameterCount: number | null
   }
@@ -79,6 +98,7 @@ export type PerformanceRunV1 = {
   status: PerformanceStatusV1
   termination: { status: PerformanceTerminationStatusV1 }
   failure: { code: string; message: string } | null
+  observedConfiguration: PerformanceObservedConfigurationV1 | null
   workloads: PerformanceWorkloadV1[]
   resultDigest: string
 }
@@ -98,6 +118,7 @@ export function performanceResultDigest(record: Pick<PerformanceRunV1, 'methodol
     status: record.status,
     termination: record.termination,
     failure: record.failure,
+    observedConfiguration: 'observedConfiguration' in record ? record.observedConfiguration : null,
     workloads: record.workloads,
   })
 }

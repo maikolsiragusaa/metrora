@@ -9,6 +9,8 @@ import { runBenchTaskPackV1, type BenchEvaluationV1 } from './task-pack-run-v1.j
 import { runBenchRunV1, validateBenchTimeoutMs } from './run-v1.js'
 import { comparePerformanceRunsV1 } from './performance-compare-v1.js'
 import { scanPerformanceHistoryV1, savePerformanceRunV1 } from './performance-history-v1.js'
+import { readCanonicalBenchEvidenceV1 } from './evidence-v1.js'
+import { parseDateRangeFlags, parsePeriodOrThrow } from '../cli-date.js'
 import {
   DEFAULT_PERFORMANCE_BATCH_SIZE,
   DEFAULT_PERFORMANCE_FLASH_ATTENTION,
@@ -75,6 +77,10 @@ function parsePerformanceInteger(value: string, label: string, min: number, max:
 
 function parsePerformanceTimeout(value: string): number {
   return validatePerformanceTimeoutMs(Number(value))
+}
+
+function localDateString(value: Date): string {
+  return [value.getFullYear(), String(value.getMonth() + 1).padStart(2, '0'), String(value.getDate()).padStart(2, '0')].join('-')
 }
 
 function renderPerformanceResult(result: PerformanceRunV1): string {
@@ -155,6 +161,37 @@ export function registerBenchCommands(program: Command): void {
   const bench = program
     .command('bench')
     .description('Run bounded synthetic local runtime evidence; no quality, ranking, or cost scoring')
+
+  bench
+    .command('evidence')
+    .description('Read canonical Core and native Performance Bench evidence without starting a run')
+    .option('--format <format>', 'Output format: json', 'json')
+    .option('--period <period>', 'Bounded period: today, week, 30days, month, all, lifetime', 'all')
+    .option('--from <date>', 'Inclusive local date YYYY-MM-DD')
+    .option('--to <date>', 'Inclusive local date YYYY-MM-DD')
+    .option('--provider <provider>', 'Optional exact provider scope', 'all')
+    .option('--project-id <id>', 'Optional exact Project scope', 'all')
+    .option('--model <model>', 'Optional exact selected or reported model filter')
+    .option('--limit <n>', 'Maximum records per Bench family (1-50)', parseHistoryLimit, 10)
+    .action(async (options: { format: string; period: string; from?: string; to?: string; provider: string; projectId: string; model?: string; limit: number }) => {
+      if (options.format.toLowerCase() !== 'json') {
+        process.stderr.write('metrora bench evidence: --format must be json.\n')
+        process.exitCode = 2
+        return
+      }
+      try {
+        const period = parsePeriodOrThrow(options.period)
+        const parsedRange = parseDateRangeFlags(options.from, options.to)
+        const range = parsedRange
+          ? { from: options.from ?? localDateString(parsedRange.start), to: options.to ?? localDateString(parsedRange.end) }
+          : null
+        const evidence = await readCanonicalBenchEvidenceV1({ period, range, provider: options.provider, projectId: options.projectId, model: options.model ?? null, limit: options.limit })
+        process.stdout.write(JSON.stringify(evidence, null, 2) + '\n')
+      } catch (error) {
+        process.stderr.write('metrora bench evidence: ' + (error instanceof Error ? error.message : String(error)) + '\n')
+        process.exitCode = 2
+      }
+    })
 
   bench
     .command('models')

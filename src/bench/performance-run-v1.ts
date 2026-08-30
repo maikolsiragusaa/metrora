@@ -11,6 +11,8 @@ import {
   PERFORMANCE_BENCH_RUNTIME_ID,
   PERFORMANCE_BENCH_SCHEMA_VERSION,
   type PerformanceFlashAttentionV1,
+  type PerformanceObservedConfigurationV1,
+  type PerformanceObservedSplitModeV1,
   type PerformanceRunV1,
   type PerformanceStatusV1,
   type PerformanceSetupV1,
@@ -170,9 +172,9 @@ export function buildLlamaBenchArgs(modelPath: string, setupInput: Partial<Perfo
     '-ub', String(setup.ubatchSize),
     '-ngl', String(setup.gpuLayers),
     '-fa', setup.flashAttention,
+    '-sm', setup.splitMode,
   ]
   if (setup.threads !== null) args.push('-t', String(setup.threads))
-  if (setup.splitMode !== 'none') args.push('-sm', setup.splitMode)
   if (setup.mainGpu !== null) args.push('-mg', String(setup.mainGpu))
   if (!setup.warmup) args.push('--no-warmup')
   return args
@@ -193,9 +195,9 @@ function nonNegativeNumber(value: unknown): number | null {
   return result !== null && result >= 0 ? result : null
 }
 
-function safeInteger(value: unknown): number | null {
+function safeInteger(value: unknown, minimum = 0): number | null {
   const result = finiteNumber(value)
-  return result !== null && Number.isSafeInteger(result) && result >= 0 ? result : null
+  return result !== null && Number.isSafeInteger(result) && result >= minimum ? result : null
 }
 
 function safeName(value: unknown, fallback: string): string {
@@ -216,6 +218,20 @@ function stringList(value: unknown): string[] {
       ? value.split(',')
       : []
   return [...new Set(values.map(item => boundedText(item, 160)).filter((item): item is string => item !== null))].slice(0, 32)
+}
+
+function timestamp(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 80) return null
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
+}
+
+function observedSplitMode(value: unknown): PerformanceObservedSplitModeV1 | null {
+  return value === 'none' || value === 'layer' || value === 'row' || value === 'tensor' ? value : null
+}
+
+function observedFlashAttention(value: unknown): PerformanceFlashAttentionV1 | null {
+  return value === 'auto' || value === 'on' || value === 'off' ? value : null
 }
 
 function workloadFromRow(row: Record<string, unknown>): PerformanceWorkloadV1['workload'] {
@@ -240,14 +256,83 @@ function normalizeWorkload(row: Record<string, unknown>, setup: PerformanceSetup
     workload: workloadFromRow(row),
     promptTokens,
     generationTokens,
-    contextSize: safeInteger(row.n_ctx),
+    depth: safeInteger(row.n_depth),
     repetitions: safeInteger(row.n_reps) ?? safeInteger(row.repetitions) ?? setup.repetitions,
     throughputTokensPerSecond: throughput,
     throughputStddevTokensPerSecond: standardDeviation,
     averageTimeNs,
     averageLatencyMs: averageTimeNs === null ? null : averageTimeNs / 1_000_000,
-    testTimeSeconds: nonNegativeNumber(row.test_time),
+    testTime: timestamp(row.test_time),
   }
+}
+
+function commonObserved<T>(rows: Record<string, unknown>[], read: (row: Record<string, unknown>) => T | null): { value: T | null; conflict: boolean } {
+  const values = rows.map(read).filter((value): value is T => value !== null)
+  const unique = [...new Set(values.map(value => JSON.stringify(value)))]
+  return { value: values[0] ?? null, conflict: unique.length > 1 }
+}
+
+function tokenObserved(rows: Record<string, unknown>[], read: (row: Record<string, unknown>) => number | null): { value: number | null; conflict: boolean } {
+  const values = rows.map(read).filter((value): value is number => value !== null)
+  const positive = values.filter(value => value > 0)
+  const selected = positive.length ? positive : values
+  const unique = [...new Set(selected)]
+  return { value: selected.length ? Math.max(...selected) : null, conflict: unique.length > 1 }
+}
+
+function observedConfiguration(rows: Record<string, unknown>[], setup: PerformanceSetupV1): { value: PerformanceObservedConfigurationV1; mismatches: string[] } {
+  const batchSize = commonObserved(rows, row => safeInteger(row.n_batch))
+  const ubatchSize = commonObserved(rows, row => safeInteger(row.n_ubatch))
+  const threads = commonObserved(rows, row => safeInteger(row.n_threads, 1))
+  const gpuLayers = commonObserved(rows, row => safeInteger(row.n_gpu_layers, -1))
+  const splitMode = commonObserved(rows, row => observedSplitMode(row.split_mode))
+  const mainGpu = commonObserved(rows, row => safeInteger(row.main_gpu))
+  const flashAttention = commonObserved(rows, row => observedFlashAttention(row.flash_attn))
+  const promptTokens = tokenObserved(rows, row => safeInteger(row.n_prompt))
+  const generationTokens = tokenObserved(rows, row => safeInteger(row.n_gen))
+  const repetitions = commonObserved(rows, row => safeInteger(row.n_reps) ?? safeInteger(row.repetitions))
+  const depth = commonObserved(rows, row => safeInteger(row.n_depth))
+  const value: PerformanceObservedConfigurationV1 = {
+    batchSize: batchSize.value,
+    ubatchSize: ubatchSize.value,
+    threads: threads.value,
+    gpuLayers: gpuLayers.value,
+    splitMode: splitMode.value,
+    mainGpu: mainGpu.value,
+    flashAttention: flashAttention.value,
+    promptTokens: promptTokens.value,
+    generationTokens: generationTokens.value,
+    repetitions: repetitions.value,
+    depth: depth.value,
+  }
+  const mismatches: string[] = []
+  const check = (field: string, observed: unknown, declared: unknown, allowDefault = false): void => {
+    if (observed === null || observed === undefined) return
+    if (allowDefault && declared === null) return
+    if (observed !== declared) mismatches.push(field)
+  }
+  check('n_batch', value.batchSize, setup.batchSize)
+  check('n_ubatch', value.ubatchSize, setup.ubatchSize)
+  check('n_threads', value.threads, setup.threads, true)
+  check('n_gpu_layers', value.gpuLayers, setup.gpuLayers)
+  check('split_mode', value.splitMode, setup.splitMode)
+  check('main_gpu', value.mainGpu, setup.mainGpu, true)
+  check('flash_attn', value.flashAttention, setup.flashAttention)
+  check('n_prompt', value.promptTokens, setup.promptTokens)
+  check('n_gen', value.generationTokens, setup.generationTokens)
+  check('n_reps', value.repetitions, setup.repetitions)
+  if (batchSize.conflict) mismatches.push('n_batch-conflict')
+  if (ubatchSize.conflict) mismatches.push('n_ubatch-conflict')
+  if (threads.conflict) mismatches.push('n_threads-conflict')
+  if (gpuLayers.conflict) mismatches.push('n_gpu_layers-conflict')
+  if (splitMode.conflict) mismatches.push('split_mode-conflict')
+  if (mainGpu.conflict) mismatches.push('main_gpu-conflict')
+  if (flashAttention.conflict) mismatches.push('flash_attn-conflict')
+  if (promptTokens.conflict) mismatches.push('n_prompt-conflict')
+  if (generationTokens.conflict) mismatches.push('n_gen-conflict')
+  if (repetitions.conflict) mismatches.push('n_reps-conflict')
+  if (depth.conflict) mismatches.push('n_depth-conflict')
+  return { value, mismatches: [...new Set(mismatches)] }
 }
 
 export type ParsedLlamaBenchJson = {
@@ -256,6 +341,8 @@ export type ParsedLlamaBenchJson = {
   model: PerformanceRunV1['model']
   runtime: PerformanceRunV1['runtime']
   hardware: PerformanceRunV1['hardware']
+  observedConfiguration: PerformanceObservedConfigurationV1
+  configurationMismatches: string[]
 }
 
 /** Normalize only fields defined by llama-bench's JSON output; absent fields stay null. */
@@ -269,13 +356,13 @@ export function parseLlamaBenchJson(value: unknown, modelPath: string, setupInpu
   if (!rows.length) throw new Error('llama-bench returned no JSON result rows')
   const workloads = rows.slice(0, MAX_WORKLOADS).map(row => normalizeWorkload(row, setup))
   if (!workloads.some(workload => workload.workload !== 'unknown')) throw new Error('llama-bench returned no recognized workload rows')
+  const observed = observedConfiguration(rows.slice(0, MAX_WORKLOADS), setup)
   const first = rows[0]!
   const modelReported = safeName(first.model_filename, safeName(modelPath, 'unknown-model'))
   const model = {
     selected: safeName(modelPath, 'unknown-model'),
     reported: modelReported,
     type: safeMetadata(first.model_type),
-    quantization: safeMetadata(first.model_quantization),
     sizeBytes: safeInteger(first.model_size),
     parameterCount: safeInteger(first.model_n_params),
   }
@@ -299,6 +386,8 @@ export function parseLlamaBenchJson(value: unknown, modelPath: string, setupInpu
       gpuInfo: safeMetadata(first.gpu_info),
       devices: stringList(first.devices),
     },
+    observedConfiguration: observed.value,
+    configurationMismatches: observed.mismatches,
   }
 }
 
@@ -396,7 +485,6 @@ function baseResult(options: PerformanceRunOptions, setup: PerformanceSetupV1, s
     selected: safeName(options.modelPath, 'unknown-model'),
     reported: null,
     type: null,
-    quantization: null,
     sizeBytes: null,
     parameterCount: null,
   }
@@ -423,6 +511,7 @@ function baseResult(options: PerformanceRunOptions, setup: PerformanceSetupV1, s
     status,
     termination: { status: termination },
     failure: failureValue,
+    observedConfiguration: parsed?.observedConfiguration ?? null,
     workloads: parsed?.workloads ?? [],
     resultDigest: '',
   }
@@ -451,6 +540,18 @@ export async function runPerformanceBenchV1(options: PerformanceRunOptions): Pro
     parsed = parseLlamaBenchJson(decoded, modelPath, setup)
   } catch {
     return baseResult({ ...options, executablePath, modelPath }, setup, startedAt, endedAt, 'failed', 'malformed-output', null, failure('malformed-output', 'llama-bench did not return recognized bounded JSON evidence'))
+  }
+  if (parsed.configurationMismatches.length) {
+    return baseResult(
+      { ...options, executablePath, modelPath },
+      setup,
+      startedAt,
+      endedAt,
+      'failed',
+      'none',
+      parsed,
+      failure('configuration-mismatch', 'llama-bench observed configuration differs from the declared setup: ' + parsed.configurationMismatches.join(', ')),
+    )
   }
   if (processResult.code !== 0) return baseResult({ ...options, executablePath, modelPath }, setup, startedAt, endedAt, 'failed', 'none', parsed, failure('nonzero-exit', 'llama-bench exited with a non-zero status after returning partial evidence'))
   return baseResult({ ...options, executablePath, modelPath }, setup, startedAt, endedAt, 'completed', 'none', parsed, null)

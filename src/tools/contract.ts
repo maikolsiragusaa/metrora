@@ -336,8 +336,8 @@ export function assertStrictBoundedMetroraToolContent(value: unknown): string {
 
 function containsUnsafeMetroraToolContent(value: unknown, key = ''): boolean {
   const normalizedKey = key.replace(/[^a-z0-9]/giu, '').toLowerCase()
-  const safeNumericToken = /^(?:inputtokens|outputtokens|totaltokens|cachereadtokens|cachewritetokens|reasoningtokens|additivereasoningtokens)$/u.test(normalizedKey)
-  if (/(?:password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|sessionid|internalid)/u.test(normalizedKey)) return true
+  const safeNumericToken = /^(?:inputtokens|outputtokens|totaltokens|cachereadtokens|cachewritetokens|reasoningtokens|additivereasoningtokens|prompttokens|generationtokens)$/u.test(normalizedKey)
+  if (!safeNumericToken && /(?:password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|sessionid|internalid)/u.test(normalizedKey)) return true
   if (/(?:token)/u.test(normalizedKey) && !safeNumericToken) return true
   if (value === null || typeof value === 'boolean' || typeof value === 'number') return false
   if (typeof value === 'string') return containsMetroraToolSensitiveText(value)

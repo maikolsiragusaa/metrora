@@ -33,7 +33,7 @@ Useful Performance evidence can include, where measured reliably:
 - request/total latency;
 - RAM/VRAM use;
 - hardware/runtime/backend identity;
-- context size;
+- depth/workload shape where the upstream runner reports it;
 - batch/thread/offload settings;
 - Flash Attention or equivalent runtime configuration;
 - concurrency/load profile;
@@ -51,7 +51,21 @@ That contract remains valid and should be understood as an early **runtime-perfo
 
 The first native engine is now available through the official llama.cpp **`llama-bench`** tool, behind a Metrora-owned bounded adapter and normalized result contract. It connects to an executable and .gguf model selected by the user; it does not download, build or start llama.cpp.
 
-The adapter records the declared methodology, setup, model identity, runtime/build fields, hardware fields and upstream throughput/timing fields when present. Missing upstream fields remain unknown. It accepts only known bounded arguments, spawns directly without a shell, bounds output/lifetime/cancellation, and stores Performance history separately from Core Compatibility history.
+The adapter records the declared methodology and the controlled upstream
+observed configuration (`n_batch`, `n_ubatch`, `n_threads`, `n_gpu_layers`,
+`split_mode`, `main_gpu`, `flash_attn`, `n_prompt`, `n_gen`, repetitions and
+`n_depth`) alongside model identity, runtime/build fields, hardware fields and
+throughput/timing fields when present. `test_time` is retained as an ISO
+timestamp; missing fields remain unknown. It accepts only known bounded
+arguments, always emits the declared split mode (including `none`), spawns
+directly without a shell, bounds output/lifetime/cancellation, fails closed on
+material declared/observed mismatch, and stores Performance history separately
+from Core Compatibility history.
+
+The factual aggregation is owned by the transport-neutral `src/bench` source.
+Desktop Harness and read-only MCP project the same retained records,
+comparisons and state; neither adapter recomputes truth and MCP has no Bench
+execution path.
 
 This is local existing-binary support, not a bundled llama.cpp distribution. The executable's reported build identity remains part of the evidence where available, and the exact llama.cpp provenance/licence boundary is documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md).
 
@@ -110,10 +124,12 @@ Compatibility may depend on fields such as:
 - runner/tool version;
 - task pack/version;
 - workload/request parameters;
-- model identity;
+- model identity (different models may be compared when the methodology and
+  runtime evidence are otherwise compatible);
 - runtime identity;
 - hardware/configuration where material;
-- context/batch/offload settings for Performance.
+- declared and observed batch/offload/split settings for Performance;
+- environment identity and the usable upstream configuration evidence.
 
 Metrora may display non-equivalent runs side-by-side, but must label them rather than fabricate a fair winner.
 

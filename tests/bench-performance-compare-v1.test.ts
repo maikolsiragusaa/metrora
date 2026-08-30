@@ -13,7 +13,7 @@ function run(runId: string, patch: Partial<PerformanceRunV1> = {}): PerformanceR
       setup: { repetitions: 3, promptTokens: 512, generationTokens: 128, batchSize: 2048, ubatchSize: 512, threads: null, gpuLayers: -1, flashAttention: 'auto', splitMode: 'none', mainGpu: null, warmup: true },
       argvDigest: 'a'.repeat(64),
     },
-    model: { selected: 'model.gguf', reported: 'model.gguf', type: '7B', quantization: 'Q4_K_M', sizeBytes: 4_000_000_000, parameterCount: 7_000_000_000 },
+    model: { selected: 'model.gguf', reported: 'model.gguf', type: '7B', sizeBytes: 4_000_000_000, parameterCount: 7_000_000_000 },
     executable: { name: 'llama-bench.exe' },
     runtime: { id: 'llama.cpp-native', buildCommit: 'abc', buildNumber: 1, version: 'abc', backends: ['CPU'] },
     hardware: { cpuInfo: 'CPU', gpuInfo: null, devices: [] },
@@ -23,9 +23,22 @@ function run(runId: string, patch: Partial<PerformanceRunV1> = {}): PerformanceR
     status: 'completed',
     termination: { status: 'none' },
     failure: null,
+    observedConfiguration: {
+      batchSize: 2048,
+      ubatchSize: 512,
+      threads: 8,
+      gpuLayers: -1,
+      splitMode: 'none',
+      mainGpu: 0,
+      flashAttention: 'auto',
+      promptTokens: 512,
+      generationTokens: 128,
+      repetitions: 3,
+      depth: 0,
+    },
     workloads: [
-      { workload: 'prefill', promptTokens: 512, generationTokens: 0, contextSize: null, repetitions: 3, throughputTokensPerSecond: 100, throughputStddevTokensPerSecond: 1, averageTimeNs: 10_000_000, averageLatencyMs: 10, testTimeSeconds: 1 },
-      { workload: 'decode', promptTokens: 0, generationTokens: 128, contextSize: null, repetitions: 3, throughputTokensPerSecond: 20, throughputStddevTokensPerSecond: 1, averageTimeNs: 50_000_000, averageLatencyMs: 50, testTimeSeconds: 2 },
+      { workload: 'prefill', promptTokens: 512, generationTokens: 0, depth: 0, repetitions: 3, throughputTokensPerSecond: 100, throughputStddevTokensPerSecond: 1, averageTimeNs: 10_000_000, averageLatencyMs: 10, testTime: '2026-08-30T10:00:01.000Z' },
+      { workload: 'decode', promptTokens: 0, generationTokens: 128, depth: 0, repetitions: 3, throughputTokensPerSecond: 20, throughputStddevTokensPerSecond: 1, averageTimeNs: 50_000_000, averageLatencyMs: 50, testTime: '2026-08-30T10:00:02.000Z' },
     ],
     resultDigest: '',
   }
@@ -41,11 +54,21 @@ describe('Performance comparison v1', () => {
       { ...run('left').workloads[1]!, throughputTokensPerSecond: 18, averageLatencyMs: 55 },
     ] }))
     expect(comparison).toMatchObject({ compatible: true, reason: 'compatible', deltas: { prefillThroughputTokensPerSecond: 20, decodeThroughputTokensPerSecond: -2, prefillLatencyMs: -1, decodeLatencyMs: 5 } })
+    expect(comparison.left).toMatchObject({
+      model: 'model.gguf',
+      runtime: { id: 'llama.cpp-native', backends: ['CPU'] },
+      environment: { os: 'test', arch: 'x64', node: 'v22' },
+      setup: { batchSize: 2048, ubatchSize: 512, splitMode: 'none' },
+      observedConfiguration: { batchSize: 2048, ubatchSize: 512, splitMode: 'none', threads: 8 },
+    })
+    expect(comparison).not.toHaveProperty('score')
   })
 
   it.each([
     ['setup-mismatch', { methodology: { ...run('x').methodology, setup: { ...run('x').methodology.setup, batchSize: 1024 } } }],
+    ['observed-config-mismatch', { observedConfiguration: { ...run('x').observedConfiguration!, batchSize: 1024 } }],
     ['hardware-mismatch', { hardware: { cpuInfo: 'different CPU', gpuInfo: null, devices: [] } }],
+    ['hardware-mismatch', { environment: { os: 'test', arch: 'x64', node: 'v23' } }],
     ['incomplete-run', { status: 'failed', termination: { status: 'malformed-output' }, failure: { code: 'malformed', message: 'bad output' }, workloads: [] }],
     ['missing-metrics', { workloads: [{ ...run('x').workloads[0]!, throughputTokensPerSecond: null, averageLatencyMs: null }, { ...run('x').workloads[1]!, throughputTokensPerSecond: null, averageLatencyMs: null }] }],
   ] as const)('returns %s instead of calculating unsupported deltas', (reason, patch) => {

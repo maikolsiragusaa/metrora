@@ -25,34 +25,51 @@ function output(): string {
     {
       build_commit: 'abc123',
       build_number: 10516,
-      backends: ['CPU', 'CUDA'],
+      backends: 'CUDA',
       cpu_info: 'fixture CPU',
       gpu_info: 'fixture GPU',
-      devices: ['GPU0'],
+      devices: 'auto',
       model_filename: 'fixture.gguf',
       model_type: '7B',
-      model_quantization: 'Q4_K_M',
       model_size: 4_000_000_000,
       model_n_params: 7_000_000_000,
+      n_batch: 2048,
+      n_ubatch: 512,
+      n_threads: 8,
+      n_gpu_layers: -1,
+      split_mode: 'none',
+      main_gpu: 0,
+      flash_attn: 'auto',
       n_prompt: 512,
       n_gen: 0,
+      n_depth: 0,
       n_reps: 3,
       avg_ts: 1200,
       stddev_ts: 12,
       avg_ns: 426_000_000,
-      test_time: 1.2,
+      stddev_ns: 4_000_000,
+      test_time: '2026-08-30T10:00:01Z',
     },
     {
       build_commit: 'abc123',
       build_number: 10516,
-      backends: ['CPU', 'CUDA'],
+      backends: 'CUDA',
+      n_batch: 2048,
+      n_ubatch: 512,
+      n_threads: 8,
+      n_gpu_layers: -1,
+      split_mode: 'none',
+      main_gpu: 0,
+      flash_attn: 'auto',
       n_prompt: 0,
       n_gen: 128,
+      n_depth: 0,
       n_reps: 3,
       avg_ts: 80,
       stddev_ts: 2,
       avg_ns: 1_600_000_000,
-      test_time: 2.4,
+      stddev_ns: 20_000_000,
+      test_time: '2026-08-30T10:00:02Z',
     },
   ])
 }
@@ -65,7 +82,7 @@ describe('Performance Bench v1', () => {
   it('builds a fixed known llama-bench argv with no free-form flags', () => {
     const { modelPath } = files()
     expect(buildLlamaBenchArgs(modelPath, { repetitions: 2, threads: 8, flashAttention: 'on', warmup: false })).toEqual([
-      '-m', modelPath, '-o', 'json', '-r', '2', '-p', '512', '-n', '128', '-b', '2048', '-ub', '512', '-ngl', '-1', '-fa', 'on', '-t', '8', '--no-warmup',
+      '-m', modelPath, '-o', 'json', '-r', '2', '-p', '512', '-n', '128', '-b', '2048', '-ub', '512', '-ngl', '-1', '-fa', 'on', '-sm', 'none', '-t', '8', '--no-warmup',
     ])
   })
 
@@ -73,13 +90,28 @@ describe('Performance Bench v1', () => {
     const { modelPath } = files()
     const parsed = parseLlamaBenchJson(JSON.parse(output()), modelPath)
     expect(parsed.workloads).toMatchObject([
-      { workload: 'prefill', promptTokens: 512, generationTokens: 0, throughputTokensPerSecond: 1200, averageLatencyMs: 426, repetitions: 3 },
-      { workload: 'decode', promptTokens: 0, generationTokens: 128, throughputTokensPerSecond: 80, averageLatencyMs: 1600, repetitions: 3 },
+      { workload: 'prefill', promptTokens: 512, generationTokens: 0, depth: 0, throughputTokensPerSecond: 1200, averageLatencyMs: 426, repetitions: 3, testTime: '2026-08-30T10:00:01.000Z' },
+      { workload: 'decode', promptTokens: 0, generationTokens: 128, depth: 0, throughputTokensPerSecond: 80, averageLatencyMs: 1600, repetitions: 3, testTime: '2026-08-30T10:00:02.000Z' },
     ])
-    expect(parsed.model).toMatchObject({ reported: 'fixture.gguf', type: '7B', quantization: 'Q4_K_M', sizeBytes: 4_000_000_000, parameterCount: 7_000_000_000 })
-    expect(parsed.runtime).toMatchObject({ buildCommit: 'abc123', buildNumber: 10516, backends: ['CPU', 'CUDA'] })
-    expect(parsed.hardware).toEqual({ cpuInfo: 'fixture CPU', gpuInfo: 'fixture GPU', devices: ['GPU0'] })
-    expect(parsed.workloads[1]).toHaveProperty('contextSize', null)
+    expect(parsed.model).toMatchObject({ reported: 'fixture.gguf', type: '7B', sizeBytes: 4_000_000_000, parameterCount: 7_000_000_000 })
+    expect(parsed.model).not.toHaveProperty('quantization')
+    expect(parsed.runtime).toMatchObject({ buildCommit: 'abc123', buildNumber: 10516, backends: ['CUDA'] })
+    expect(parsed.hardware).toEqual({ cpuInfo: 'fixture CPU', gpuInfo: 'fixture GPU', devices: ['auto'] })
+    expect(parsed.observedConfiguration).toEqual({
+      batchSize: 2048,
+      ubatchSize: 512,
+      threads: 8,
+      gpuLayers: -1,
+      splitMode: 'none',
+      mainGpu: 0,
+      flashAttention: 'auto',
+      promptTokens: 512,
+      generationTokens: 128,
+      repetitions: 3,
+      depth: 0,
+    })
+    expect(parsed.workloads[1]).not.toHaveProperty('contextSize')
+    expect(parsed.workloads[1]).not.toHaveProperty('testTimeSeconds')
   })
 
   it('returns a completed retained record through an injected native process runner', async () => {
@@ -91,9 +123,22 @@ describe('Performance Bench v1', () => {
     })
     const result = await runPerformanceBenchV1({ executablePath, modelPath, runId: 'perf-run-1', processRunner: runner, now: () => new Date('2026-08-30T10:00:00.000Z') })
     expect(runner).toHaveBeenCalledOnce()
-    expect(result).toMatchObject({ schemaVersion: 'metrora.bench.performance.v1', runId: 'perf-run-1', status: 'completed', termination: { status: 'none' }, failure: null, model: { selected: 'fixture.gguf' } })
+    expect(result).toMatchObject({ schemaVersion: 'metrora.bench.performance.v1', runId: 'perf-run-1', status: 'completed', termination: { status: 'none' }, failure: null, model: { selected: 'fixture.gguf' }, observedConfiguration: { splitMode: 'none', batchSize: 2048, ubatchSize: 512 } })
     expect(result.workloads.map(item => item.workload)).toEqual(['prefill', 'decode'])
     expect(result.resultDigest).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('fails closed when llama-bench reports a material setup mismatch', async () => {
+    const { executablePath, modelPath } = files()
+    const mismatched = JSON.parse(output()) as Array<Record<string, unknown>>
+    mismatched[0]!.n_batch = 1024
+    const result = await runPerformanceBenchV1({
+      executablePath,
+      modelPath,
+      processRunner: async () => ({ stdout: JSON.stringify(mismatched), stderr: '', code: 0 }),
+    })
+    expect(result).toMatchObject({ status: 'failed', termination: { status: 'none' }, failure: { code: 'configuration-mismatch' } })
+    expect(result.workloads).toHaveLength(2)
   })
 
   it.each([

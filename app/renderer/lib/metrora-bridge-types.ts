@@ -30,6 +30,7 @@ import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/type
 import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
+import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-v1'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
@@ -102,6 +103,7 @@ export type BenchComparison = {
   deltas: { score: number | null; passed: number; failed: number; unavailable: number; cancelled: number; medianRequestLatencyMs: number | null; medianFirstContentMs: number | null } | null
 }
 export type PerformanceHistoryReport = { schemaVersion: string; records: PerformanceRunV1[]; invalidCount: number }
+export type CanonicalBenchEvidenceReport = CanonicalBenchEvidenceV1
 export type PerformanceBenchRequest = {
   executablePath: string
   modelPath: string
@@ -139,6 +141,7 @@ export interface MetroraBridge extends ProjectBridge {
   getBenchHistory(): Promise<BenchHistoryReport>
   getBenchModelDiscovery(): Promise<BenchModelDiscovery>
   getBenchComparison(leftRunId: string, rightRunId: string): Promise<BenchComparison>
+  getBenchEvidence(period: Period, range?: DateRange, model?: string | null, provider?: string, projectId?: string | null): Promise<CanonicalBenchEvidenceReport>
   runBenchTaskPack(model: string, pack?: string): Promise<BenchEvaluation>
   getPerformanceBenchHistory(): Promise<PerformanceHistoryReport>
   getPerformanceBenchComparison(leftRunId: string, rightRunId: string): Promise<PerformanceComparisonV1>

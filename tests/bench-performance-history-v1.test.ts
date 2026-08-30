@@ -25,7 +25,54 @@ async function record(runId = 'history-run') {
     modelPath,
     runId,
     processRunner: async () => ({
-      stdout: JSON.stringify([{ n_prompt: 512, n_gen: 0, avg_ts: 100, avg_ns: 1_000_000 }]),
+      stdout: JSON.stringify([
+        {
+          build_commit: 'abc123',
+          build_number: 10516,
+          cpu_info: 'fixture CPU',
+          gpu_info: 'fixture GPU',
+          backends: 'CUDA',
+          devices: 'auto',
+          model_filename: 'model.gguf',
+          model_type: '7B',
+          model_size: 4_000_000_000,
+          model_n_params: 7_000_000_000,
+          n_batch: 2048,
+          n_ubatch: 512,
+          n_threads: 8,
+          n_gpu_layers: -1,
+          split_mode: 'none',
+          main_gpu: 0,
+          flash_attn: 'auto',
+          n_prompt: 512,
+          n_gen: 0,
+          n_depth: 0,
+          n_reps: 3,
+          avg_ts: 100,
+          stddev_ts: 1,
+          avg_ns: 1_000_000,
+          stddev_ns: 10_000,
+          test_time: '2026-08-30T10:00:01Z',
+        },
+        {
+          n_batch: 2048,
+          n_ubatch: 512,
+          n_threads: 8,
+          n_gpu_layers: -1,
+          split_mode: 'none',
+          main_gpu: 0,
+          flash_attn: 'auto',
+          n_prompt: 0,
+          n_gen: 128,
+          n_depth: 0,
+          n_reps: 3,
+          avg_ts: 20,
+          stddev_ts: 1,
+          avg_ns: 5_000_000,
+          stddev_ns: 50_000,
+          test_time: '2026-08-30T10:00:02Z',
+        },
+      ]),
       stderr: '',
       code: 0,
     }),
@@ -44,7 +91,8 @@ describe('Performance history v1', () => {
     expect(await savePerformanceRunV1(value, { dataDir: dir })).toMatchObject({ status: 'duplicate' })
     const scan = await scanPerformanceHistoryV1({ dataDir: dir })
     expect(scan.records).toHaveLength(1)
-    expect(scan.records[0]).toMatchObject({ runId: 'history-run', status: 'completed', workloads: [{ workload: 'prefill' }] })
+    expect(scan.records[0]).toMatchObject({ runId: 'history-run', status: 'completed' })
+    expect(scan.records[0]?.workloads.map(workload => workload.workload)).toEqual(['prefill', 'decode'])
     expect(scan.invalid).toEqual([])
   })
 

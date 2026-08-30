@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { chatLlamaServerMain, probeLlamaServerMain, validateLlamaServerEndpoint } from './llama-server-runtime'
 import type { AdvisorRuntimeChatPayload } from './advisor-runtime'
 
-function payload(stream: boolean): AdvisorRuntimeChatPayload {
-  return { model: 'fixture-model', messages: [{ role: 'user', content: 'hello' }], tools: [], stream }
+function payload(stream: boolean, model = 'fixture-model'): AdvisorRuntimeChatPayload {
+  return { model, messages: [{ role: 'user', content: 'hello' }], tools: [], stream }
 }
 
 describe('llama-server local runtime', () => {
@@ -28,6 +28,41 @@ describe('llama-server local runtime', () => {
     expect(result).toMatchObject({ runtime: 'llama-server', available: true, models: ['fixture-model'], discoveryState: 'models-discovered' })
     expect(result.capabilities[0]).toMatchObject({ modelId: 'fixture-model', streaming: 'supported', toolCall: 'unknown' })
     expect(calls).toEqual(['http://127.0.0.1:8080/health', 'http://127.0.0.1:8080/v1/models'])
+  })
+
+  it('projects upstream path model ids into safe renderer handles and routes chat through the trusted map', async () => {
+    const rawIds = [
+      'C:\\Users\\sirag\\models\\windows.gguf',
+      '/home/sirag/models/unix.gguf',
+      '../models/relative.gguf',
+      'alias-model',
+    ]
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input)
+      calls.push({ url, init })
+      if (url.endsWith('/health')) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+      if (url.endsWith('/v1/models')) return new Response(JSON.stringify({ data: rawIds.map(id => ({ id })) }), { status: 200 })
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'routed response' } }] }), { status: 200 })
+    }
+
+    const result = await probeLlamaServerMain(fetchImpl)
+    expect(result.models).toHaveLength(rawIds.length)
+    expect(result.models).not.toEqual(expect.arrayContaining(rawIds))
+    expect(JSON.stringify(result)).not.toContain('C:\\Users\\sirag')
+    expect(JSON.stringify(result)).not.toContain('/home/sirag')
+    expect(JSON.stringify(result)).not.toContain('../models')
+    expect(result.models).toContain('alias-model')
+    expect(result.capabilities.every(capability => capability.toolCall === 'unknown')).toBe(true)
+    expect(result.capabilities.map(capability => capability.modelId)).toEqual(result.models)
+    expect(Object.values(result.modelLabels)).toEqual(['windows.gguf', 'unix.gguf', 'relative.gguf', 'alias-model'])
+    expect(Object.values(result.modelLabels).join('|')).not.toMatch(/[\\/]/u)
+
+    const selectedHandle = result.models[0]!
+    await chatLlamaServerMain(fetchImpl, payload(false, selectedHandle))
+    const chatCall = calls.find(call => call.url.endsWith('/v1/chat/completions'))
+    expect(chatCall).toBeDefined()
+    expect(JSON.parse(String(chatCall?.init?.body))).toMatchObject({ model: rawIds[0], stream: false })
   })
 
   it('preserves normal chat responses and real SSE deltas/tool-call fragments', async () => {
@@ -68,6 +103,10 @@ describe('llama-server local runtime', () => {
     const pending = chatLlamaServerMain(pendingFetch, payload(false), controller.signal)
     controller.abort()
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+
+    const probeController = new AbortController()
+    probeController.abort()
+    await expect(probeLlamaServerMain(pendingFetch, probeController.signal)).rejects.toMatchObject({ name: 'AbortError' })
   })
 })
 

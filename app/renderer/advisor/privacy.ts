@@ -204,7 +204,6 @@ function contentMinimalPerformanceRun(run: import('./types').AdvisorPerformanceE
       selected: sanitizeAdvisorDisplayText(run.model.selected),
       reported: safePerformanceText(run.model.reported),
       type: safePerformanceText(run.model.type),
-      quantization: safePerformanceText(run.model.quantization),
       sizeBytes: typeof run.model.sizeBytes === 'number' && Number.isFinite(run.model.sizeBytes) ? run.model.sizeBytes : null,
       parameterCount: typeof run.model.parameterCount === 'number' && Number.isFinite(run.model.parameterCount) ? run.model.parameterCount : null,
     },
@@ -224,17 +223,18 @@ function contentMinimalPerformanceRun(run: import('./types').AdvisorPerformanceE
     status: run.status,
     termination: { status: run.termination.status },
     failure: run.failure === null ? null : { code: sanitizeAdvisorDisplayText(run.failure.code), message: sanitizeAdvisorDisplayText(run.failure.message) },
+    observedConfiguration: run.observedConfiguration,
     workloads: run.workloads.slice(0, 16).map(workload => ({
       workload: workload.workload,
       promptTokens: workload.promptTokens,
       generationTokens: workload.generationTokens,
-      contextSize: workload.contextSize,
+      depth: workload.depth,
       repetitions: workload.repetitions,
       throughputTokensPerSecond: workload.throughputTokensPerSecond,
       throughputStddevTokensPerSecond: workload.throughputStddevTokensPerSecond,
       averageTimeNs: workload.averageTimeNs,
       averageLatencyMs: workload.averageLatencyMs,
-      testTimeSeconds: workload.testTimeSeconds,
+      testTime: workload.testTime,
     })),
     resultDigest: safeBenchIdentifier(run.resultDigest, true),
   }
@@ -242,12 +242,33 @@ function contentMinimalPerformanceRun(run: import('./types').AdvisorPerformanceE
 
 function contentMinimalPerformanceComparison(value: import('./types').AdvisorPerformanceEvidence['comparison']): AdvisorJsonValue {
   if (!value) return null
+  const identity = (item: typeof value.left): AdvisorJsonObject => ({
+    runId: safeBenchIdentifier(item.runId),
+    model: sanitizeAdvisorDisplayText(item.model),
+    modelType: safePerformanceText(item.modelType),
+    executable: sanitizeAdvisorDisplayText(item.executable),
+    endedAt: contentMinimalTimestamp(item.endedAt) ?? REDACTION,
+    runtime: {
+      id: safeBenchIdentifier(item.runtime.id),
+      buildCommit: safePerformanceText(item.runtime.buildCommit),
+      buildNumber: typeof item.runtime.buildNumber === 'number' && Number.isFinite(item.runtime.buildNumber) ? item.runtime.buildNumber : null,
+      version: safePerformanceText(item.runtime.version),
+      backends: item.runtime.backends.slice(0, 16).map(entry => sanitizeAdvisorDisplayText(entry)),
+    },
+    environment: {
+      os: sanitizeAdvisorDisplayText(item.environment.os),
+      arch: sanitizeAdvisorDisplayText(item.environment.arch),
+      node: sanitizeAdvisorDisplayText(item.environment.node),
+    },
+    setup: item.setup,
+    observedConfiguration: item.observedConfiguration,
+  })
   return {
     schemaVersion: value.schemaVersion,
     compatible: value.compatible,
     reason: value.reason,
-    left: { runId: safeBenchIdentifier(value.left.runId), model: sanitizeAdvisorDisplayText(value.left.model), endedAt: contentMinimalTimestamp(value.left.endedAt) ?? REDACTION },
-    right: { runId: safeBenchIdentifier(value.right.runId), model: sanitizeAdvisorDisplayText(value.right.model), endedAt: contentMinimalTimestamp(value.right.endedAt) ?? REDACTION },
+    left: identity(value.left),
+    right: identity(value.right),
     deltas: value.deltas,
   }
 }

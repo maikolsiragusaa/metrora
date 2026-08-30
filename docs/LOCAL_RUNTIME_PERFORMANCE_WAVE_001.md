@@ -28,6 +28,13 @@ cancellation. Tool-call capability is reported as unknown unless a future
 runtime probe can verify it; the adapter does not claim universal OpenAI
 compatibility.
 
+Upstream model identifiers are treated as host-only routing data. When a
+`/v1/models` response exposes a filesystem path, Electron keeps the exact raw
+identifier only in its in-process route table so chat can address the selected
+model. Renderer, Harness, capabilities and diagnostics receive only a bounded
+opaque handle plus a safe basename-style label; Windows paths, Unix paths,
+relative traversal and other raw identifiers never cross that boundary.
+
 This is a connection adapter, not a second chat engine. It reuses the existing
 conversation loop, message/tool boundary, privacy projection and cancellation
 semantics.
@@ -67,10 +74,10 @@ versioned method `metrora.performance.llama-bench.v1` and evidence schema
 `metrora.bench.performance.v1`. It preserves, when supplied by the executable:
 
 - prefill/prompt, decode/generation and mixed workload rows;
-- throughput, standard deviation, average timing/latency and test time;
-- prompt/generation/context sizes and repetitions;
-- batch/ubatch/threads/GPU-layer/Flash-Attention/split/main-GPU setup;
-- model filename/type/quantization/size/parameter count;
+- throughput, standard deviation, average timing/latency and ISO `test_time`;
+- prompt/generation sizes, `n_depth`/depth and repetitions;
+- declared and observed batch/ubatch/threads/GPU-layer/Flash-Attention/split/main-GPU configuration;
+- model filename/type/size/parameter count (quantization is not inferred);
 - llama.cpp build identity, backend, CPU/GPU and device fields.
 
 Absent upstream fields remain `null` or empty; Metrora does not fabricate
@@ -79,14 +86,30 @@ are retained in the separate `bench-history/performance-v1/records` family.
 The record digest excludes timestamps and process diagnostics so retained
 evidence stays comparable without storing raw stdout/stderr or local paths.
 
+The native argv is fixed by the adapter: it always emits every declared
+setting, including `-sm none`, and never accepts arbitrary flags or shell
+syntax. After parsing, controlled upstream fields are normalized into
+`observedConfiguration`. A material declared/observed mismatch, conflicting
+rows or malformed evidence fails closed and cannot become a completed retained
+record.
+
 Performance comparison requires compatible method, runner version, exact setup,
-hardware identity and completed runs. Model identity may differ; if the
-comparison is not valid, the UI and CLI return a reason and no invented delta.
+observed configuration, hardware/environment identity and completed runs.
+Model identity may differ; if the comparison is not valid, the UI and CLI
+return the material identities, a reason and no invented delta.
+
+`bench evidence` is the canonical factual aggregation for both local Bench
+families. The Desktop Harness adapter and the read-only MCP adapter consume
+that same transport-neutral source for scope, latest/previous selection,
+comparison and state. MCP exposes retained evidence only; it cannot start a
+Performance run or grant execution authority.
 
 ## Harness and privacy boundary
 
 Harness can read completed Performance evidence through the existing
-`get_bench_evidence` path and explain observed throughput/timing/setup facts.
+`get_bench_evidence` path and explain observed throughput/timing/setup facts,
+including bounded observed configuration. MCP uses the same retained fixture
+and canonical source through its read-only `get_bench_evidence` tool.
 That read is side-effect free. Harness does not start `llama-bench`, and this
 wave adds no `run-performance` ACT kind. Core Compatibility remains the only
 existing ACT operation.

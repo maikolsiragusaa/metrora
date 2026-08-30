@@ -178,6 +178,7 @@ export type AdvisorRuntimeProbe = {
   runtime: AdvisorLocalRuntimeId
   available: boolean
   models: string[]
+  modelLabels?: Record<string, string>
   detail: string
   discoveryState?: AdvisorDiscoveryState
   capabilities?: AdvisorModelCapabilityProfileV1[]
@@ -237,4 +238,4 @@ export type AdvisorRuntimeInput = {
 }
 export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'llama-server-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> }
 export type AdvisorDataSource = { getOverview(context: AdvisorScope, signal?: AbortSignal): Promise<MenubarPayload>; getModels(context: AdvisorScope, signal?: AbortSignal): Promise<ModelReportRow[]>; getQuota(signal?: AbortSignal): Promise<QuotaProvider[]>; getBenchEvidence?(context: AdvisorScope, signal?: AbortSignal): Promise<AdvisorBenchEvidence> }
-export type AdvisorBridge = Pick<MetroraBridge, 'getOverview' | 'getModels' | 'getQuota' | 'getBenchHistory' | 'getBenchComparison' | 'getPerformanceBenchHistory' | 'getPerformanceBenchComparison'>
+export type AdvisorBridge = Pick<MetroraBridge, 'getOverview' | 'getModels' | 'getQuota' | 'getBenchEvidence'>

@@ -7,7 +7,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_STREAM_CHUNKS = 512
 const MAX_MALFORMED_CHUNKS = 16
 
-export type AdvisorRuntimeProbe = { runtime?: 'ollama' | 'lmstudio' | 'llama-server'; available: boolean; models: string[]; detail: string; discoveryState?: 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'; capabilities?: Array<Record<string, unknown>> }
+export type AdvisorRuntimeProbe = { runtime?: 'ollama' | 'lmstudio' | 'llama-server'; available: boolean; models: string[]; modelLabels?: Record<string, string>; detail: string; discoveryState?: 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'; capabilities?: Array<Record<string, unknown>> }
 export type AdvisorRuntimeChatPayload = {
   model: string
   messages: Array<Record<string, unknown>>
@@ -278,7 +278,7 @@ type AdvisorRuntimeId = 'ollama' | 'lmstudio' | 'llama-server'
 function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' || value === 'llama-server' }
 function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
   const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
-  return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState, capabilities: value.capabilities }
+  return { runtime: 'ollama', available: value.available, models: value.models, modelLabels: value.modelLabels, detail: value.detail, discoveryState, capabilities: value.capabilities }
 }
 export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch, emitDelta: (event: { requestId: string; text: string }) => void = () => {}): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>> {
   const flights = new Map<string, AbortController>()

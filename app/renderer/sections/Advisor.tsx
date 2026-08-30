@@ -6,31 +6,21 @@ import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
-import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
-import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
-import { LlamaServerAdvisorRuntime, probeLlamaServer } from '../advisor/llama-server'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { periodLabel, scopeLabel } from '../advisor/evidence'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
-import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type AdvisorHostedProbePresentation, type AdvisorRuntimeChoice, type AdvisorRuntimeState } from './AdvisorRuntimeControls'
+import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type AdvisorHostedProbePresentation, type AdvisorRuntimeChoice } from './AdvisorRuntimeControls'
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { harnessToolLabel, type HarnessToolActivity } from './AdvisorAnswerCard'
 import { AdvisorWorkspace } from './AdvisorWorkspace'
+import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
-}
-function isCancelled(error: unknown): boolean {
-  if (error instanceof Error) return error.name === 'AbortError' || error.name === 'AdvisorCancelledError' || /cancel|abort/i.test(error.message)
-  if (error && typeof error === 'object') {
-    const item = error as { kind?: unknown; message?: unknown }
-    return item.kind === 'cancelled' || (typeof item.message === 'string' && /cancel|abort/i.test(item.message))
-  }
-  return false
 }
 function providerLabel(provider: string): string {
   if (provider === 'all') return 'All providers'
@@ -100,7 +90,6 @@ export function Advisor({
   }, [modelOptions, scope.model])
   const source = useMemo(() => createAdvisorDataSource(metrora), [])
   const fallbackRuntime = useMemo(() => createAdvisorRuntime(), [])
-  const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
   const [runtimeChoice, setRuntimeChoice] = useState<AdvisorRuntimeChoice>('ollama')
   const [hostedProvider, setHostedProvider] = useState<AdvisorHostedProviderId>('openai')
   const hostedOperationGuardRef = useRef(new AdvisorHostedOperationGuard(hostedProvider))
@@ -111,64 +100,12 @@ export function Advisor({
   const [hostedProbe, setHostedProbe] = useState<AdvisorHostedProbePresentation>(() => createHostedProbeChecking('openai'))
   const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
   const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
-  const [runtimeState, setRuntimeState] = useState<AdvisorRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
   const [configureOpen, setConfigureOpen] = useState(false)
-  const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
-  const [ollamaRuntime, setOllamaRuntime] = useState<OllamaAdvisorRuntime | null>(null)
-  const [lmStudioRuntime, setLMStudioRuntime] = useState<LMStudioAdvisorRuntime | null>(null)
-  const [llamaServerRuntime, setLlamaServerRuntime] = useState<LlamaServerAdvisorRuntime | null>(null)
+  const { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, localRuntime, checkLocalRuntime, setLocalModel } = useAdvisorLocalRuntime()
   const activeRuntime = runtimeChoice === 'hosted'
     ? hostedRuntime ?? fallbackRuntime
-    : (runtimeId === 'lmstudio' ? lmStudioRuntime : runtimeId === 'llama-server' ? llamaServerRuntime : ollamaRuntime) ?? fallbackRuntime
+    : localRuntime ?? fallbackRuntime
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
-  const probeController = useRef<AbortController | null>(null)
-  const checkLocalRuntime = useCallback(async (requestedRuntime: AdvisorLocalRuntimeId = runtimeId) => {
-    probeController.current?.abort()
-    const controller = new AbortController()
-    probeController.current = controller
-    const runtimeName = requestedRuntime === 'lmstudio' ? 'LM Studio' : requestedRuntime === 'llama-server' ? 'llama.cpp server' : 'Ollama'
-    setRuntimeState({ runtime: requestedRuntime, status: 'checking', detail: 'Checking for a local ' + runtimeName + ' model…', models: [], modelState: 'unavailable', toolCall: 'unknown' })
-    try {
-      const result = requestedRuntime === 'lmstudio'
-        ? await probeLMStudio(controller.signal)
-        : requestedRuntime === 'llama-server'
-          ? await probeLlamaServer(controller.signal)
-          : await probeOllama(controller.signal)
-      if (controller.signal.aborted) return
-      if (result.available && result.models[0]) {
-        const selected = runtimeModel && result.models.includes(runtimeModel) ? runtimeModel : result.models[0]
-        setRuntimeModel(selected)
-        if (requestedRuntime === 'lmstudio') {
-          setLMStudioRuntime(new LMStudioAdvisorRuntime({ model: selected, availability: 'ready' }))
-          setOllamaRuntime(null)
-          setLlamaServerRuntime(null)
-        } else if (requestedRuntime === 'llama-server') {
-          setLlamaServerRuntime(new LlamaServerAdvisorRuntime({ model: selected, availability: 'ready' }))
-          setOllamaRuntime(null)
-          setLMStudioRuntime(null)
-        } else {
-          setOllamaRuntime(new OllamaAdvisorRuntime({ model: selected, availability: 'ready' }))
-          setLMStudioRuntime(null)
-          setLlamaServerRuntime(null)
-        }
-        const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: AdvisorRuntimeState['toolCall'] }> }).capabilities ?? []
-        const capability = capabilityProfiles.find(profile => profile.modelId === selected)
-        setRuntimeState({ runtime: requestedRuntime, status: 'ready', detail: result.detail, models: result.models, modelState: 'discovered', toolCall: capability?.toolCall ?? 'unknown' })
-      } else {
-        setRuntimeModel(null)
-        if (requestedRuntime === 'lmstudio') setLMStudioRuntime(null)
-        else if (requestedRuntime === 'llama-server') setLlamaServerRuntime(null)
-        else setOllamaRuntime(null)
-        setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: result.detail, models: [], modelState: 'unavailable', toolCall: 'unknown' })
-      }
-    } catch (error) {
-      if (!isCancelled(error)) setRuntimeState({ runtime: requestedRuntime, status: 'unavailable', detail: 'Local runtime probe was cancelled or failed.', models: [], modelState: 'unavailable', toolCall: 'unknown' })
-    }
-  }, [runtimeId, runtimeModel])
-  useEffect(() => {
-    void checkLocalRuntime()
-    return () => probeController.current?.abort()
-  }, [checkLocalRuntime])
   const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
   const [streamPreview, setStreamPreview] = useState('')
   const [toolStatus, setToolStatus] = useState<string | null>(null)
@@ -210,7 +147,7 @@ export function Advisor({
         setHostedConsent(false)
       }
     } catch (caught) {
-      if (isCurrentRequest() && !isCancelled(caught)) {
+      if (isCurrentRequest() && !isAdvisorCancelled(caught)) {
         setHostedModel(null)
         setHostedConsent(false)
         setHostedProbe(createHostedProbeFailure(requestedProvider))
@@ -378,7 +315,7 @@ export function Advisor({
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {
       if (!isCurrentRequest()) return
-      if (isCancelled(caught)) setNotice('Request cancelled. Your conversation stays local to this session.')
+      if (isAdvisorCancelled(caught)) setNotice('Request cancelled. Your conversation stays local to this session.')
       else {
         setFailedRequest({
           question,
@@ -479,10 +416,7 @@ export function Advisor({
   }
   const updateLocalModel = (model: string) => {
     invalidateAdvisorRequest()
-    setRuntimeModel(model)
-    if (runtimeId === 'lmstudio') setLMStudioRuntime(new LMStudioAdvisorRuntime({ model, availability: 'ready' }))
-    else if (runtimeId === 'llama-server') setLlamaServerRuntime(new LlamaServerAdvisorRuntime({ model, availability: 'ready' }))
-    else setOllamaRuntime(new OllamaAdvisorRuntime({ model, availability: 'ready' }))
+    setLocalModel(model)
   }
   const saveHostedCredential = async () => {
     if (!credentialEntry.trim() || credentialSaving) return

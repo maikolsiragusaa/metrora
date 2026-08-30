@@ -88,8 +88,8 @@ function safeValue(value: unknown, key = ''): MetroraToolJsonValue {
   const output: MetroraToolJsonObject = {}
   for (const [childKey, child] of Object.entries(value as Record<string, unknown>).slice(0, 64)) {
     const normalizedKey = childKey.replace(/[^a-z0-9]/giu, '').toLowerCase()
-    const numericToken = /^(?:inputtokens|outputtokens|totaltokens|cachereadtokens|cachewritetokens|reasoningtokens|additivereasoningtokens)$/u.test(normalizedKey)
-    if (/(?:password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|internalid)/u.test(normalizedKey)) continue
+    const numericToken = /^(?:inputtokens|outputtokens|totaltokens|cachereadtokens|cachewritetokens|reasoningtokens|additivereasoningtokens|prompttokens|generationtokens)$/u.test(normalizedKey)
+    if (!numericToken && /(?:password|secret|credential|path|rawprompt|rawresponse|rawsource|prompt|response|snippet|sourcecode|windowid|accountid|internalid)/u.test(normalizedKey)) continue
     if (/(?:token)/u.test(normalizedKey) && !numericToken) continue
     output[childKey] = safeValue(child, key + childKey)
   }

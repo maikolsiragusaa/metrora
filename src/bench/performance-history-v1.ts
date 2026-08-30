@@ -43,13 +43,27 @@ const Workload = z.object({
   workload: z.enum(['prefill', 'decode', 'mixed', 'unknown']),
   promptTokens: z.number().int().nonnegative().nullable(),
   generationTokens: z.number().int().nonnegative().nullable(),
-  contextSize: z.number().int().nonnegative().nullable(),
+  depth: z.number().int().nonnegative().nullable(),
   repetitions: z.number().int().nonnegative().nullable(),
   throughputTokensPerSecond: z.number().nonnegative().nullable(),
   throughputStddevTokensPerSecond: z.number().nonnegative().nullable(),
   averageTimeNs: z.number().nonnegative().nullable(),
   averageLatencyMs: z.number().nonnegative().nullable(),
-  testTimeSeconds: z.number().nonnegative().nullable(),
+  testTime: z.string().datetime({ offset: true }).nullable(),
+}).strict()
+
+const ObservedConfiguration = z.object({
+  batchSize: z.number().int().positive().nullable(),
+  ubatchSize: z.number().int().positive().nullable(),
+  threads: z.number().int().positive().nullable(),
+  gpuLayers: z.number().int().min(-1).max(512).nullable(),
+  splitMode: z.enum(['none', 'layer', 'row', 'tensor']).nullable(),
+  mainGpu: z.number().int().nonnegative().nullable(),
+  flashAttention: z.enum(['auto', 'on', 'off']).nullable(),
+  promptTokens: z.number().int().nonnegative().nullable(),
+  generationTokens: z.number().int().nonnegative().nullable(),
+  repetitions: z.number().int().nonnegative().nullable(),
+  depth: z.number().int().nonnegative().nullable(),
 }).strict()
 
 const Performance = z.object({
@@ -66,7 +80,6 @@ const Performance = z.object({
     selected: z.string().min(1).max(160),
     reported: z.string().min(1).max(160).nullable(),
     type: z.string().min(1).max(512).nullable(),
-    quantization: z.string().min(1).max(512).nullable(),
     sizeBytes: z.number().int().nonnegative().nullable(),
     parameterCount: z.number().int().nonnegative().nullable(),
   }).strict(),
@@ -89,12 +102,32 @@ const Performance = z.object({
   status: z.enum(['completed', 'unavailable', 'failed', 'cancelled']),
   termination: z.object({ status: z.enum(['none', 'timeout', 'cancelled', 'output-limit', 'spawn-error', 'malformed-output']) }).strict(),
   failure: z.object({ code: z.string().min(1).max(64), message: z.string().min(1).max(240) }).strict().nullable(),
+  observedConfiguration: ObservedConfiguration.nullable(),
   workloads: z.array(Workload).max(16),
   resultDigest: z.string().regex(/^[0-9a-f]{64}$/),
 }).strict().superRefine((record, ctx) => {
   if (Date.parse(record.startedAt) > Date.parse(record.endedAt)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['endedAt'], message: 'endedAt must not precede startedAt' })
   if (record.status === 'completed' && !record.workloads.some(workload => workload.workload !== 'unknown')) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['workloads'], message: 'completed Performance runs must retain a recognized workload' })
   if (record.status === 'cancelled' && record.termination.status !== 'cancelled') ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['termination', 'status'], message: 'cancelled runs must retain cancelled termination' })
+  if (record.status === 'completed' && record.observedConfiguration) {
+    const declared = record.methodology.setup
+    const observed = record.observedConfiguration
+    const checks: Array<[keyof typeof observed, number | string | null, number | string | null]> = [
+      ['batchSize', observed.batchSize, declared.batchSize],
+      ['ubatchSize', observed.ubatchSize, declared.ubatchSize],
+      ['gpuLayers', observed.gpuLayers, declared.gpuLayers],
+      ['splitMode', observed.splitMode, declared.splitMode],
+      ['flashAttention', observed.flashAttention, declared.flashAttention],
+      ['promptTokens', observed.promptTokens, declared.promptTokens],
+      ['generationTokens', observed.generationTokens, declared.generationTokens],
+      ['repetitions', observed.repetitions, declared.repetitions],
+    ]
+    if (declared.threads !== null) checks.push(['threads', observed.threads, declared.threads])
+    if (declared.mainGpu !== null) checks.push(['mainGpu', observed.mainGpu, declared.mainGpu])
+    for (const [field, actual, expected] of checks) {
+      if (actual !== null && actual !== expected) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['observedConfiguration', field], message: 'observed configuration does not match declared setup' })
+    }
+  }
   if (record.resultDigest !== performanceResultDigest(record as PerformanceRunV1)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['resultDigest'], message: 'result digest does not match retained Performance evidence' })
 })
 

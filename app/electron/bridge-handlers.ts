@@ -380,6 +380,15 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     'metrora:getBenchHistory': run(() => ['bench', 'history', '--format', 'json', '--limit', '50']),
     'metrora:getBenchModelDiscovery': run(() => ['bench', 'models', '--format', 'json']),
     'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
+    'metrora:getBenchEvidence': run((period: string, range?: DateRange, model?: string | null, provider = 'all', projectId?: string | null) => {
+      const validatedProjectId = projectId && projectId !== 'all' ? validateProjectScope(projectId) : null
+      return [
+        'bench', 'evidence', '--format', 'json', '--period', vPeriod(period), ...rangeArgs(vRange(range)),
+        ...(provider !== 'all' ? ['--provider', vProvider(provider)] : []),
+        ...(validatedProjectId ? ['--project-id', validatedProjectId] : []),
+        ...(model ? ['--model', vToken(model)] : []),
+      ]
+    }),
     'metrora:runBenchTaskPack': async (model: string, pack = 'core-v1') => {
       try {
         const result = await deps.spawnCliAction(['bench', 'task-pack', '--model', vToken(model), '--pack', vToken(pack), '--format', 'json', '--run-id', randomUUID()], { timeoutMs: 10 * 60_000 })

@@ -12,6 +12,7 @@ export type AdvisorRuntimeState = {
   status: 'checking' | 'ready' | 'unavailable'
   detail: string
   models: string[]
+  modelLabels?: Record<string, string>
   modelState: AdvisorRuntimeModelState
   toolCall: AdvisorToolCapability
 }
@@ -167,7 +168,7 @@ export function AdvisorRuntimeControls({
   const runtimeStatusKind = runtimeChoice === 'hosted' ? hostedRuntimeStatusKind(hostedProbe, hostedModelForPresentation) : runtimeState.status
   const runtimeIdentity = runtimeChoice === 'hosted'
     ? hostedProviderLabel(hostedProvider) + (selectedHostedModel ? ' · ' + selectedHostedModel.label : '')
-    : localRuntimeLabel(runtimeId) + (runtimeModel ? ' · ' + runtimeModel : '')
+    : localRuntimeLabel(runtimeId) + (runtimeModel ? ' · ' + (runtimeState.modelLabels?.[runtimeModel] ?? runtimeModel) : '')
   const runtimeAvailability = runtimeChoice === 'hosted'
     ? hostedAvailabilityLabel(hostedProbe, hostedModelForPresentation)
     : runtimeState.status === 'checking'
@@ -218,7 +219,7 @@ export function AdvisorRuntimeControls({
           </div>
           <div className="advisor-runtime-picker-row">
             <label className="advisor-runtime-picker">Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option><option value="llama-server">llama.cpp server</option></select></label>
-            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{runtimeState.modelLabels?.[model] ?? model}</option>)}</select></label> : null}
           </div>
           <div className="advisor-runtime-state-grid" aria-label="Local runtime state">
             <span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span>

@@ -48,6 +48,7 @@ const bridge = {
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
   getBenchModelDiscovery: () => invoke('metrora:getBenchModelDiscovery'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
+  getBenchEvidence: (period: string, range?: DateRange, model?: string | null, provider?: string, projectId?: string | null) => invoke('metrora:getBenchEvidence', period, range, model, provider, projectId),
   runBenchTaskPack: (model: string, pack?: string) => invoke('metrora:runBenchTaskPack', model, pack),
   getPerformanceBenchHistory: () => invoke('metrora:getPerformanceBenchHistory'),
   getPerformanceBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getPerformanceBenchComparison', leftRunId, rightRunId),
