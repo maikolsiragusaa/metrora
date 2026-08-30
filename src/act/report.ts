@@ -23,6 +23,7 @@ import { ARCHIVE_DEF_TOKENS, HONEST_FOOTER, MCP_KINDS } from './report-policy.js
 import { renderTable } from '../text-table.js'
 import { formatTokens } from '../format.js'
 import { formatCost } from '../currency.js'
+import { classifyActJournalRecords } from './core-compatibility-state-v1.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const WINDOW_CAP_DAYS = 30
@@ -383,18 +384,13 @@ async function computeRow(
 // Report
 // ---------------------------------------------------------------------------
 
-// A journal line can be any JSON; only records with a parseable `at` date and
-// a string status can be dated and filtered. Anything else is skipped and
-// counted, so a corrupt journal can never crash `act report` or optimize.
-function isSaneRecord(r: ActionRecord): boolean {
-  return typeof r.at === 'string' && typeof r.status === 'string' && !Number.isNaN(new Date(r.at).getTime())
-}
+// Journal records are classified by the ACT v2 boundary before legacy reporting.
 
 export async function computeActReport(opts: ActReportOptions = {}): Promise<ActReport> {
   const now = opts.now ?? new Date()
   const rawRecords = await readRecords(opts.actionsDir ?? defaultActionsDir())
-  const records = rawRecords.filter(isSaneRecord)
-  const malformedRecords = rawRecords.length - records.length
+  const { legacy: records, malformed } = classifyActJournalRecords(rawRecords)
+  const malformedRecords = malformed.length
   const active = records.filter(r => r.status === 'applied')
 
   const appliedByFinding: Record<string, string> = {}

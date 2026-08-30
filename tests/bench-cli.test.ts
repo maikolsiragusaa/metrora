@@ -43,7 +43,7 @@ describe('metrora bench local CLI', () => {
       endedAt: '2026-08-27T10:00:00.000Z',
     } as BenchEvaluationV1
     const output = renderBenchHistory([record])
-    expect(output).toContain('Core conformance unavailable')
+    expect(output).toContain('Core Compatibility unavailable')
     expect(output).toContain('no checks scored')
     expect(output).not.toContain('0/6 passed')
   })

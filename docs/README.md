@@ -29,7 +29,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
 - [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) — product-facing chat/tools/ACT/Swarm direction grounded in the current read-only public foundation, with explicit shipped/planned boundaries.
 - [Advisor public foundation](ADVISOR_PUBLIC_FOUNDATION.md) — exact current `Advisor*` conversational/tool/runtime/privacy contracts and license provenance.
-- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — trusted-action design, Core Compatibility first-action semantics and explicit current-main non-implementation limits.
+- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — trusted-action design, the current-main-native Core Compatibility first action, and its bounded implementation limits.
 - [Advisor contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — current factual-surface → Ask Advisor → contextual investigation scope handoff across supported Desktop surfaces.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
@@ -50,7 +50,7 @@ The public product direction uses **Metrora Harness** for the conversational/ope
 
 The current implementation still exposes stable names such as `AdvisorKernel`, `AdvisorToolV1`, `AdvisorActionProposalV1`, existing route/file names and the current `Ask Advisor` UI. Those remain truthful current implementation names until a separately reviewed UI/code migration lands.
 
-Do not treat the documentation name as proof that a runtime/UI rename, ACT executor, llama.cpp adapter or Swarm mode already ships.
+Do not treat the documentation name as proof that a runtime/UI rename, llama.cpp adapter or Swarm mode already ships.
 
 ## Bench status
 
