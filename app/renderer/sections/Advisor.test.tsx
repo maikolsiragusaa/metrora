@@ -4,18 +4,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload } from '../lib/types'
+import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorContextualLaunch } from '../advisor/context'
-import type { AdvisorAnswer, AdvisorHostedModelState, AdvisorHostedProviderId } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorHostedModelState, AdvisorHostedProviderId, AdvisorRuntimeProbe } from '../advisor/types'
 import { Advisor } from './Advisor'
 
-const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentialClear, investigate } = vi.hoisted(() => ({
-  advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama') => runtime === 'lmstudio'
-    ? { runtime: 'lmstudio' as const, available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered' as const, capabilities: [{ schemaVersion: 1 as const, runtime: 'lmstudio' as const, modelId: 'qwen/qwen3-8b', discovery: 'discovered' as const, conversational: 'available' as const, toolCall: 'unknown' as const, streaming: 'supported' as const, limitation: 'Tool support varies by model.' }] }
-    : { available: false, models: [], detail: 'Ollama is not running.' }),
+const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentialClear, investigate, harnessPropose, harnessApprove, harnessCancel, harnessEventSubscription } = vi.hoisted(() => ({
+  advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama'): Promise<AdvisorRuntimeProbe> => runtime === 'lmstudio'
+    ? { runtime: 'lmstudio', available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered', capabilities: [{ schemaVersion: 1, runtime: 'lmstudio', modelId: 'qwen/qwen3-8b', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool support varies by model.' }] }
+    : { runtime: 'ollama', available: false, models: [], detail: 'Ollama is not running.' }),
   investigate: vi.fn(),
   advisorHostedProbe: vi.fn(),
   advisorCredentialSet: vi.fn(async (provider: AdvisorHostedProviderId) => ({ provider, state: 'ready' as const })),
   advisorCredentialClear: vi.fn(async (provider: AdvisorHostedProviderId) => ({ provider, state: 'not-configured' as const })),
+  harnessPropose: vi.fn(),
+  harnessApprove: vi.fn(),
+  harnessCancel: vi.fn(),
+  harnessEventSubscription: vi.fn(() => () => {}),
 }))
 vi.mock('../advisor/kernel', () => ({ createAdvisorKernel: () => ({ investigate }) }))
 vi.mock('../lib/ipc', async importOriginal => {
@@ -31,6 +36,10 @@ vi.mock('../lib/ipc', async importOriginal => {
       advisorChat: vi.fn(),
       advisorCancel: vi.fn(async () => false),
       onAdvisorDelta: vi.fn(() => () => {}),
+      harnessProposeCoreCompatibility: harnessPropose,
+      harnessApproveCoreCompatibility: harnessApprove,
+      harnessCancelCoreCompatibility: harnessCancel,
+      onHarnessActionEvent: harnessEventSubscription,
     },
   }
 })
@@ -56,19 +65,69 @@ const answer = {
   evidence: [], coverage: { level: 'partial', label: 'Partial', detail: 'Test evidence.' }, assumptions: [], unknown: ['Unknown detail.'], nextInvestigations: ['Inspect the evidence'], details: ['Detailed evidence.'], why: ['Primary driver.'], materialLimits: ['Interpretation is bounded.'],
   runtime: { id: 'test', label: 'Test', mode: 'deterministic-local' },
 } satisfies AdvisorAnswer
+const coreCompatibilityAnswer = {
+  ...answer,
+  conclusion: 'Core Compatibility proposal ready.',
+  actionProposal: {
+    contractVersion: 'advisor-action-proposal-v1',
+    schemaVersion: 1,
+    kind: 'run-core-compatibility',
+    status: 'proposal-only',
+    summary: 'Review the bounded Core Compatibility proposal.',
+    target: 'canonical Core Compatibility task pack',
+    scope: { period: 'week', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null },
+    allowedReadTools: [],
+    permissions: ['read-canonical-evidence'],
+    budget: { maxCalls: 0, maxCostUSD: null },
+    timeoutMs: 0,
+    cancellation: 'required',
+  },
+} satisfies AdvisorAnswer
+const coreCompatibilityEvent = {
+  actionId: 'core-action-1',
+  kind: 'run-core-compatibility',
+  status: 'proposed',
+  model: 'qwen3:8b',
+  originatingSurface: 'desktop',
+  runtime: { id: 'ollama-local' },
+  proposalDigest: 'a'.repeat(64),
+  pack: { selector: 'core-v1', packId: 'core', version: '1', checks: 6, digest: 'b'.repeat(64) },
+  checks: { planned: 6, completed: 0 },
+  progress: { planned: 6, completed: 0 },
+  cancellation: { requested: false },
+  timeout: { perRequestMs: 1000, operationMs: 7000, triggered: false },
+  result: null,
+  evidence: null,
+  failure: null,
+  updatedAt: '2026-08-30T12:00:00.000Z',
+} satisfies MetroraHarnessActionEvent
+const completedCoreCompatibilityEvent = {
+  ...coreCompatibilityEvent,
+  status: 'completed' as const,
+  checks: { planned: 6, completed: 6 },
+  progress: { planned: 6, completed: 6 },
+  result: { history: 'saved' as const, counts: { planned: 6, attempted: 6, passed: 5, failed: 1, unavailable: 0, timedOut: 0, cancelled: 0 } },
+  evidence: { available: true, history: 'saved' as const },
+} satisfies MetroraHarnessActionEvent
 
 async function submitQuestion(question: string): Promise<void> {
   const previousCalls = investigate.mock.calls.length
-  fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Harness' }), { target: { value: question } })
   fireEvent.click(screen.getByRole('button', { name: /Send/ }))
   await waitFor(() => expect(investigate.mock.calls).toHaveLength(previousCalls + 1))
 }
 
 describe('Advisor workspace', () => {
   beforeEach(() => {
-    advisorProbe.mockClear()
+    advisorProbe.mockReset().mockImplementation(async (runtime: 'ollama' | 'lmstudio' = 'ollama'): Promise<AdvisorRuntimeProbe> => runtime === 'lmstudio'
+      ? { runtime: 'lmstudio', available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered', capabilities: [{ schemaVersion: 1, runtime: 'lmstudio', modelId: 'qwen/qwen3-8b', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool support varies by model.' }] }
+      : { runtime: 'ollama', available: false, models: [], detail: 'Ollama is not running.' })
     advisorCredentialSet.mockClear()
     advisorCredentialClear.mockClear()
+    harnessPropose.mockReset()
+    harnessApprove.mockReset()
+    harnessCancel.mockReset()
+    harnessEventSubscription.mockReset().mockReturnValue(() => {})
     advisorHostedProbe.mockReset().mockImplementation(async (provider: AdvisorHostedProviderId) => ({
       provider,
       available: true,
@@ -87,15 +146,17 @@ describe('Advisor workspace', () => {
   it('opens with useful prompt families, explicit scope, local history, and evidence rail', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
 
-    expect(screen.getByRole('heading', { name: 'Ask Metrora' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ask Harness' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Ask Metrora Harness' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /What changed in my spend recently/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /What quota remains/ })).toBeInTheDocument()
-    expect(screen.getByRole('complementary', { name: 'Advisor conversations' })).toHaveTextContent('Session-local history')
-    expect(screen.getByRole('complementary', { name: 'Advisor evidence' })).toHaveTextContent('Ask a question to pin its evidence')
+    expect(screen.getByRole('complementary', { name: 'Harness conversations' })).toHaveTextContent('Session-local history')
+    expect(screen.getByRole('complementary', { name: 'Harness evidence' })).toHaveTextContent('Ask a question to pin its evidence')
     expect(screen.getByRole('button', { name: 'Configure runtime' })).toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor runtime')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor hosted provider')).not.toBeInTheDocument()
+    expect(screen.getByText('HARNESS · TOOLS READ-ONLY')).toBeInTheDocument()
+    expect(screen.getByText(/Facts read-only · actions require confirmation/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness runtime')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness hosted provider')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
     expect(screen.getByText('Ollama')).toBeInTheDocument()
     expect(screen.getByText('Runtime unavailable')).toBeInTheDocument()
@@ -125,11 +186,11 @@ describe('Advisor workspace', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue('What changed in measured spend in this scope, and which drivers are visible?')
-      expect(screen.getByLabelText('Advisor period')).toHaveValue('30days')
-      expect(screen.getByLabelText('Advisor provider')).toHaveValue('codex')
-      expect(screen.getByLabelText('Advisor Project')).toHaveValue('project-a')
-      expect(screen.getByLabelText('Advisor model')).toHaveValue('gpt-safe')
+      expect(screen.getByRole('textbox', { name: 'Ask Metrora Harness' })).toHaveValue('What changed in measured spend in this scope, and which drivers are visible?')
+      expect(screen.getByLabelText('Harness period')).toHaveValue('30days')
+      expect(screen.getByLabelText('Harness provider')).toHaveValue('codex')
+      expect(screen.getByLabelText('Harness Project')).toHaveValue('project-a')
+      expect(screen.getByLabelText('Harness model')).toHaveValue('gpt-safe')
     })
     expect(screen.getByText('From Spend')).toBeInTheDocument()
     expect(investigate).not.toHaveBeenCalled()
@@ -157,13 +218,13 @@ describe('Advisor workspace', () => {
       />,
     )
 
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue('What current provider-reported capacity and reset windows are available across the connected providers?'))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Harness' })).toHaveValue('What current provider-reported capacity and reset windows are available across the connected providers?'))
     expect(screen.getByText('From Plans')).toBeInTheDocument()
     expect(screen.getByText(/Provider-reported now · All providers; Project and history do not scope Capacity/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor period')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor Project')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor provider')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor model')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness period')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness Project')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness provider')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness model')).not.toBeInTheDocument()
     expect(investigate).not.toHaveBeenCalled()
   })
   it('renders direct answer hierarchy while keeping deeper evidence in progressive disclosure', async () => {
@@ -180,15 +241,42 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Evidence & details')).toBeInTheDocument()
   })
 
+  it('shows the complete trusted Core Compatibility summary and confirms with only the action id and digest', async () => {
+    advisorProbe.mockImplementation(async (): Promise<AdvisorRuntimeProbe> => ({ runtime: 'ollama', available: true, models: ['qwen3:8b'], detail: 'Local Ollama is reachable.' }))
+    investigate.mockResolvedValueOnce(coreCompatibilityAnswer)
+    harnessPropose.mockResolvedValue(coreCompatibilityEvent)
+    harnessApprove.mockResolvedValue(completedCoreCompatibilityEvent)
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await waitFor(() => expect(screen.getByText('Ollama · qwen3:8b')).toBeInTheDocument())
+    await submitQuestion('Run Core Compatibility')
+
+    const confirmation = await screen.findByRole('region', { name: 'Harness Core Compatibility confirmation' })
+    expect(confirmation).toHaveTextContent('Core Compatibility / Runtime Health')
+    expect(confirmation).toHaveTextContent('Ollama local · canonical runtime')
+    expect(confirmation).toHaveTextContent('qwen3:8b')
+    expect(confirmation).toHaveTextContent('core-v1 · canonical Core Compatibility pack v1')
+    expect(confirmation).toHaveTextContent('6 canonical checks · 0 completed')
+    expect(confirmation).toHaveTextContent('Loopback-only execution; writes action journal + canonical Bench history only; no repository/filesystem mutation, shell, credentials, arbitrary prompts, or endpoints.')
+    expect(confirmation).toHaveTextContent('Up to 1s per request; 7s for the full operation.')
+    expect(confirmation).toHaveTextContent('Can be cancelled. Late results do not override terminal cancellation or timeout semantics.')
+    expect(screen.getByRole('button', { name: 'Confirm and run' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel operation' })).toBeInTheDocument()
+    expect(confirmation).not.toHaveTextContent(/ActionContractV1|approval token/i)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and run' }))
+    await waitFor(() => expect(harnessApprove).toHaveBeenCalledWith('core-action-1', 'a'.repeat(64)))
+    expect(harnessApprove.mock.calls[0]).toHaveLength(2)
+  })
+
   it('surfaces the hosted consent guard instead of silently swallowing a submit', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'openrouter' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openrouter/auto'))
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'openrouter' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('openrouter/auto'))
 
     const question = 'Bonjour, comment ça va ?'
-    const composer = screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })
+    const composer = screen.getByRole('textbox', { name: 'Ask Metrora Harness' })
     fireEvent.change(composer, { target: { value: question } })
     fireEvent.click(screen.getByRole('button', { name: /Send/ }))
 
@@ -201,14 +289,14 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'openrouter' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openrouter/auto'))
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'openrouter' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('openrouter/auto'))
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect(screen.getByRole('checkbox')).toBeChecked())
 
     await submitQuestion('Quanto ho speso con Codex negli ultimi giorni?')
 
-    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })).toHaveValue(''))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Harness' })).toHaveValue(''))
     expect(investigate).toHaveBeenCalledWith(expect.objectContaining({ question: 'Quanto ho speso con Codex negli ultimi giorni?' }))
   })
 
@@ -236,8 +324,8 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
-    fireEvent.change(screen.getByLabelText('Advisor runtime'), { target: { value: 'lmstudio' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor local runtime model')).toHaveValue('qwen/qwen3-8b'))
+    fireEvent.change(screen.getByLabelText('Harness runtime'), { target: { value: 'lmstudio' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness local runtime model')).toHaveValue('qwen/qwen3-8b'))
     expect(screen.getByText(/LM Studio · qwen\/qwen3-8b/)).toBeInTheDocument()
     expect(screen.getByText(/tool support varies by model/)).toBeInTheDocument()
   })
@@ -246,10 +334,10 @@ describe('Advisor workspace', () => {
     investigate.mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValueOnce(answer)
     const { container } = render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[{ id: 'codex', label: 'Codex' }]} />)
     const question = 'Inspect spend behavior'
-    fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: question } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Harness' }), { target: { value: question } })
     fireEvent.click(screen.getByRole('button', { name: /Send/ }))
     await screen.findByRole('alert')
-    fireEvent.change(screen.getByLabelText('Advisor provider'), { target: { value: 'codex' } })
+    fireEvent.change(screen.getByLabelText('Harness provider'), { target: { value: 'codex' } })
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     await screen.findByText(answer.conclusion)
 
@@ -273,8 +361,8 @@ describe('Advisor workspace', () => {
   it('keeps old messages visible but excludes factual context after a Project change', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overviewWithOptions} detectedProviders={[]} />)
     await submitQuestion('Project A question')
-    fireEvent.change(screen.getByLabelText('Advisor Project'), { target: { value: 'project-a' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor Project')).toHaveValue('project-a'))
+    fireEvent.change(screen.getByLabelText('Harness Project'), { target: { value: 'project-a' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness Project')).toHaveValue('project-a'))
     await submitQuestion('Project B question')
 
     expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
@@ -284,8 +372,8 @@ describe('Advisor workspace', () => {
   it('excludes factual context after a period change', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     await submitQuestion('Weekly question')
-    fireEvent.change(screen.getByLabelText('Advisor period'), { target: { value: '30days' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor period')).toHaveValue('30days'))
+    fireEvent.change(screen.getByLabelText('Harness period'), { target: { value: '30days' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness period')).toHaveValue('30days'))
     await submitQuestion('Thirty day question')
 
     expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
@@ -304,24 +392,24 @@ describe('Advisor workspace', () => {
   it('excludes factual context after provider and model changes', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overviewWithOptions} detectedProviders={[{ id: 'codex', label: 'Codex' }]} />)
     await submitQuestion('All provider question')
-    fireEvent.change(screen.getByLabelText('Advisor provider'), { target: { value: 'codex' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor provider')).toHaveValue('codex'))
+    fireEvent.change(screen.getByLabelText('Harness provider'), { target: { value: 'codex' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness provider')).toHaveValue('codex'))
     await submitQuestion('Codex question')
     expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
 
-    fireEvent.change(screen.getByLabelText('Advisor model'), { target: { value: 'gpt-safe' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor model')).toHaveValue('gpt-safe'))
+    fireEvent.change(screen.getByLabelText('Harness model'), { target: { value: 'gpt-safe' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness model')).toHaveValue('gpt-safe'))
     await submitQuestion('Model question')
     expect(investigate.mock.calls[2]?.[0].conversation).toEqual([])
   })
 
   it('searches conversation titles, questions, and answers case-insensitively and can clear the query', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Advisor' }), { target: { value: 'Inspect spend behavior' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Harness' }), { target: { value: 'Inspect spend behavior' } })
     fireEvent.click(screen.getByRole('button', { name: /Send/ }))
     await screen.findByText(answer.conclusion)
     fireEvent.click(screen.getByRole('button', { name: /New chat/ }))
-    const search = screen.getByRole('textbox', { name: 'Search Advisor history' })
+    const search = screen.getByRole('textbox', { name: 'Search Harness history' })
     fireEvent.change(search, { target: { value: 'response NEEDLE' } })
     expect(screen.getByRole('button', { name: /Inspect spend behavior/ })).toBeInTheDocument()
     fireEvent.change(search, { target: { value: 'not-present' } })
@@ -334,7 +422,7 @@ describe('Advisor workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
 
-    const model = await screen.findByLabelText('Advisor hosted model') as HTMLSelectElement
+    const model = await screen.findByLabelText('Harness hosted model') as HTMLSelectElement
     const consent = screen.getByRole('checkbox') as HTMLInputElement
     expect(model).toHaveValue('gpt-a')
     expect(consent.checked).toBe(false)
@@ -342,19 +430,19 @@ describe('Advisor workspace', () => {
     fireEvent.click(consent)
     await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
     fireEvent.click(screen.getByRole('button', { name: 'Refresh hosted models' }))
-    await waitFor(() => expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('gpt-a'))
+    await waitFor(() => expect((screen.getByLabelText('Harness hosted model') as HTMLSelectElement).value).toBe('gpt-a'))
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
 
     fireEvent.change(model, { target: { value: 'gpt-b' } })
-    await waitFor(() => expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('gpt-b'))
+    await waitFor(() => expect((screen.getByLabelText('Harness hosted model') as HTMLSelectElement).value).toBe('gpt-b'))
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
 
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'anthropic' } })
     await waitFor(() => {
-      expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic')
-      expect((screen.getByLabelText('Advisor hosted model') as HTMLSelectElement).value).toBe('claude-a')
+      expect(screen.getByLabelText('Harness hosted provider')).toHaveValue('anthropic')
+      expect((screen.getByLabelText('Harness hosted model') as HTMLSelectElement).value).toBe('claude-a')
     })
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
   })
@@ -371,10 +459,10 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Reachability: Unknown')).toBeInTheDocument()
     expect(screen.queryByText('Credential: Ready')).not.toBeInTheDocument()
     expect(screen.queryByText('Credential: Not configured')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Advisor hosted model')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness hosted model')).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Close runtime' }))
-    expect(screen.queryByLabelText('Advisor runtime configuration')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Harness runtime configuration')).not.toBeInTheDocument()
     expect(screen.getByText('OpenAI')).toBeInTheDocument()
     expect(screen.getByText('Runtime status unavailable')).toBeInTheDocument()
   })
@@ -390,7 +478,7 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'anthropic' } })
 
     await waitFor(() => expect(screen.getByText('Credential: Invalid')).toBeInTheDocument())
     expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
@@ -427,12 +515,12 @@ describe('Advisor workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
 
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openai-model'))
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('openai-model'))
     expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
     expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
     expect(screen.getByText('Model: Unverified')).toBeInTheDocument()
     expect(screen.getByText('Compatibility unverified')).toBeInTheDocument()
-    expect(screen.getByLabelText('Advisor runtime status')).toHaveClass('unknown')
+    expect(screen.getByLabelText('Harness runtime status')).toHaveClass('unknown')
   })
 
   it.each([
@@ -455,9 +543,9 @@ describe('Advisor workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
 
     await waitFor(() => expect(screen.getByText(expectedAvailability, { selector: '.advisor-runtime-availability' })).toBeInTheDocument())
-    expect(screen.getByLabelText('Advisor runtime status')).toHaveClass(expectedStatus)
+    expect(screen.getByLabelText('Harness runtime status')).toHaveClass(expectedStatus)
     expect(screen.getByText('Model: ' + expectedModelState)).toBeInTheDocument()
-    if (state === 'failed-conformance') expect(screen.queryByLabelText('Advisor hosted model')).not.toBeInTheDocument()
+    if (state === 'failed-conformance') expect(screen.queryByLabelText('Harness hosted model')).not.toBeInTheDocument()
   })
 
   it('ignores a stale credential operation after switching hosted providers', async () => {
@@ -469,15 +557,15 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    const entry = await screen.findByLabelText('Advisor provider key')
+    const entry = await screen.findByLabelText('Harness provider key')
     fireEvent.change(entry, { target: { value: 'test-key-value' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save key' }))
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic'))
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('claude-a'))
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'anthropic' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted provider')).toHaveValue('anthropic'))
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('claude-a'))
     resolveCredential?.({ provider: 'openai', state: 'ready' })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic'))
-    expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('claude-a')
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted provider')).toHaveValue('anthropic'))
+    expect(screen.getByLabelText('Harness hosted model')).toHaveValue('claude-a')
     expect(screen.queryByText('OpenAI · gpt-a')).not.toBeInTheDocument()
   })
 
@@ -487,12 +575,12 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    await screen.findByLabelText('Advisor hosted model')
+    await screen.findByLabelText('Harness hosted model')
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
     await submitQuestion('Do not retain this stale answer')
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'anthropic' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted provider')).toHaveValue('anthropic'))
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'anthropic' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted provider')).toHaveValue('anthropic'))
     resolveInvestigation?.(answer)
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(screen.queryByText(answer.conclusion)).not.toBeInTheDocument()
@@ -504,7 +592,7 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    await screen.findByLabelText('Advisor hosted model')
+    await screen.findByLabelText('Harness hosted model')
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
     await submitQuestion('Do not retain this stale answer after refresh')
@@ -522,7 +610,7 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    await screen.findByLabelText('Advisor hosted model')
+    await screen.findByLabelText('Harness hosted model')
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
     await submitQuestion('Do not retain this stale answer after credential removal')
@@ -537,10 +625,10 @@ describe('Advisor workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    await screen.findByLabelText('Advisor hosted model')
+    await screen.findByLabelText('Harness hosted model')
 
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'gemini' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('gemini-a'))
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'gemini' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('gemini-a'))
     expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
   })
 })

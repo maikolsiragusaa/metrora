@@ -378,7 +378,7 @@ export function toolArguments(value: unknown): string {
 }
 export function normalizeToolCall(id: unknown, name: unknown, args: unknown, fallbackId = 'tool-call'): AdvisorHostedToolCall {
   const normalizedName = toolName(name)
-  if (!normalizedName || !TOOL_NAMES.has(normalizedName)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
+  if (!normalizedName || !TOOL_NAMES.has(normalizedName)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Metrora tool.')
   const normalizedId = typeof id === 'string' && id.trim() ? id : fallbackId
   return { id: boundedString(normalizedId, 128, 'The provider returned an invalid tool call id.'), name: normalizedName, arguments: toolArguments(args ?? '{}') }
 }
@@ -388,14 +388,14 @@ export function emitToolCall(call: AdvisorHostedToolCall, requestId: string, pro
 }
 export function normalizeTools(tools: unknown): AdvisorHostedToolDefinition[] {
   if (tools === undefined) return []
-  if (!Array.isArray(tools) || tools.length > MAX_TOOLS) throw new HostedAdapterError('request-malformed', 'Advisor tools are malformed.')
+  if (!Array.isArray(tools) || tools.length > MAX_TOOLS) throw new HostedAdapterError('request-malformed', 'Metrora tools are malformed.')
   return tools.map(value => {
     if (!isRecord(value) || value.type !== 'function' || !isRecord(value.function)) throw new HostedAdapterError('request-malformed', 'Only Metrora function tools are supported.')
     const name = toolName(value.function.name)
-    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'Only Metrora read-only Advisor tools are supported.')
-    const description = value.function.description === undefined ? undefined : boundedString(value.function.description, 1024, 'Advisor tool description is too large.')
+    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'Only Metrora read-only tools are supported.')
+    const description = value.function.description === undefined ? undefined : boundedString(value.function.description, 1024, 'Metrora tool description is too large.')
     const parameters = value.function.parameters === undefined ? undefined : value.function.parameters
-    if (parameters !== undefined && !isRecord(parameters)) throw new HostedAdapterError('request-malformed', 'Advisor tool parameters are malformed.')
+    if (parameters !== undefined && !isRecord(parameters)) throw new HostedAdapterError('request-malformed', 'Metrora tool parameters are malformed.')
     return { type: 'function', function: { name, ...(description ? { description } : {}), ...(parameters ? { parameters } : {}) } }
   })
 }

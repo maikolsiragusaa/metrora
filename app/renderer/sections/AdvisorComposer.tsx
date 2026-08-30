@@ -32,7 +32,7 @@ export function AdvisorComposer({
 
   return (
     <form className="advisor-composer" onSubmit={submit}>
-      <textarea aria-label="Ask Metrora Advisor" placeholder="Ask Metrora Advisor anything…" value={composer} onChange={event => onChange(event.target.value)} onKeyDown={composerKeyDown} disabled={Boolean(loadingQuestion)} rows={2} />
+      <textarea aria-label="Ask Metrora Harness" placeholder="Ask Metrora Harness anything…" value={composer} onChange={event => onChange(event.target.value)} onKeyDown={composerKeyDown} disabled={Boolean(loadingQuestion)} rows={2} />
       <div className="advisor-composer-foot">
         <span>Enter to send · Shift+Enter for a new line</span>
         {hostedSubmitBlockReason && composer.trim() && notice !== hostedSubmitBlockReason ? <span className="advisor-submit-note" role="status">{hostedSubmitBlockReason}</span> : null}

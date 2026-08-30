@@ -30,20 +30,32 @@ export function buildConversationEvidence(question: string, scope: AdvisorScope)
 
 export function buildActionProposalEvidence(question: string, scope: AdvisorScope, boundary: string): AdvisorEvidence {
   const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  const kind = /\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value) ? 'run-bench' as const
-    : /\b(?:agent|agents|agenti|orchestrat)/u.test(value) ? 'launch-agents' as const
-      : /\b(?:routing|route|routing policy)\b/u.test(value) ? 'change-routing' as const
-        : 'apply-policy' as const
+  const kind = /\b(?:core[ -]?compatibility|compatibility[ -]?runtime|runtime health)\b/u.test(value) ? 'run-core-compatibility' as const
+    : /\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value) ? 'run-bench' as const
+      : /\b(?:agent|agents|agenti|orchestrat)/u.test(value) ? 'launch-agents' as const
+        : /\b(?:routing|route|routing policy)\b/u.test(value) ? 'change-routing' as const
+          : 'apply-policy' as const
   return {
     intent: 'action-proposal',
     question,
     scope,
     refs: [],
     coverage: { level: 'unavailable', state: 'UNSUPPORTED', label: 'Approval required', detail: boundary },
-    assumptions: ['Advisor read/investigate access is separate from action/execute authority.'],
+    assumptions: ['Harness read/investigate access is separate from action/execute authority.'],
     unknown: ['No action was prepared or executed from this conversation.'],
-    nextInvestigations: ['Ask Advisor to inspect an existing result, or use the dedicated authorized product surface for execution.'],
-    actionProposal: createAdvisorActionProposalV1({ kind, summary: boundary, target: kind === 'run-bench' ? 'selected Bench task pack' : kind === 'launch-agents' ? 'requested agent set' : 'selected Metrora policy surface', scope }),
+    nextInvestigations: ['Ask Harness to inspect an existing result, or use the dedicated authorized product surface for execution.'],
+    actionProposal: createAdvisorActionProposalV1({
+      kind,
+      summary: boundary,
+      target: kind === 'run-core-compatibility'
+        ? 'canonical Core Compatibility task pack'
+        : kind === 'run-bench'
+          ? 'selected Bench task pack'
+          : kind === 'launch-agents'
+            ? 'requested agent set'
+            : 'selected Metrora policy surface',
+      scope,
+    }),
   }
 }
 

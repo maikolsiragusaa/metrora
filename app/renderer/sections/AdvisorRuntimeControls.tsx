@@ -177,7 +177,7 @@ export function AdvisorRuntimeControls({
   const runtimeDetail = runtimeChoice === 'hosted' ? hostedProbe.detail : runtimeState.detail
 
   return (
-    <div className={'advisor-runtime-status ' + runtimeStatusKind} aria-label="Advisor runtime status">
+    <div className={'advisor-runtime-status ' + runtimeStatusKind} aria-label="Harness runtime status">
       <span className={'advisor-status-dot ' + runtimeStatusKind} aria-hidden="true" />
       <div className="advisor-runtime-summary-copy">
         <strong>{runtimeIdentity}</strong>
@@ -186,7 +186,7 @@ export function AdvisorRuntimeControls({
         <small className="advisor-runtime-detail">{runtimeDetail}</small>
       </div>
       <button type="button" className="advisor-configure-toggle" aria-expanded={configureOpen} aria-controls={configureOpen ? 'advisor-runtime-config' : undefined} onClick={onToggleConfigure}>{configureOpen ? 'Close runtime' : 'Configure runtime'}</button>
-      {configureOpen ? <div className="advisor-runtime-config" id="advisor-runtime-config" aria-label="Advisor runtime configuration">
+      {configureOpen ? <div className="advisor-runtime-config" id="advisor-runtime-config" aria-label="Harness runtime configuration">
         <div className="advisor-runtime-config-head"><strong>Runtime configuration</strong><span>Choose a local or hosted runtime. Technical state stays here while the conversation remains the focus.</span></div>
         {runtimeChoice === 'hosted' ? <div className="advisor-runtime-config-controls">
           <div className="advisor-runtime-config-actions">
@@ -194,8 +194,8 @@ export function AdvisorRuntimeControls({
             <button type="button" className="advisor-quiet-button" onClick={onActivateLocal}>Use local runtime</button>
           </div>
           <div className="advisor-runtime-picker-row">
-            <label className="advisor-runtime-picker">Provider<select aria-label="Advisor hosted provider" value={hostedProvider} onChange={event => onHostedProviderChange(event.target.value as AdvisorHostedProviderId)}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="opencode-zen">OpenCode Zen</option></select></label>
-            {selectableHostedModels.length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Advisor hosted model" value={hostedModel ?? selectableHostedModels[0]!.id} onChange={event => onHostedModelChange(event.target.value)}>{selectableHostedModels.map(model => <option key={model.id} value={model.id}>{model.label} · {modelStateLabel(model.state)}</option>)}</select></label> : null}
+            <label className="advisor-runtime-picker">Provider<select aria-label="Harness hosted provider" value={hostedProvider} onChange={event => onHostedProviderChange(event.target.value as AdvisorHostedProviderId)}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option><option value="opencode-zen">OpenCode Zen</option></select></label>
+            {selectableHostedModels.length ? <label className="advisor-runtime-picker">Hosted model<select aria-label="Harness hosted model" value={hostedModel ?? selectableHostedModels[0]!.id} onChange={event => onHostedModelChange(event.target.value)}>{selectableHostedModels.map(model => <option key={model.id} value={model.id}>{model.label} · {modelStateLabel(model.state)}</option>)}</select></label> : null}
           </div>
           <div className="advisor-runtime-state-grid" aria-label="Hosted runtime state">
             <span data-state="credential">Credential: {credentialStateLabel(hostedProbe.credentialState)}</span>
@@ -203,7 +203,7 @@ export function AdvisorRuntimeControls({
             <span data-state="model">Model: {modelStateLabel(hostedModelState)}</span>
             <span data-state="tool-call">Tool calls: {stateLabel(selectedHostedModel?.capabilities?.toolCall ?? 'unknown')}</span>
           </div>
-          {hostedProbe.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Advisor provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => onCredentialEntryChange(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={onSaveHostedCredential} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={onClearHostedCredential}>Remove key</button>}
+          {hostedProbe.credentialState !== 'ready' ? <div className="advisor-credential-entry"><input type="password" aria-label="Harness provider key" autoComplete="off" placeholder="Provider key (not stored in this form)" value={credentialEntry} onChange={event => onCredentialEntryChange(event.target.value)} /><button type="button" className="advisor-quiet-button" onClick={onSaveHostedCredential} disabled={credentialSaving || !credentialEntry.trim()}>{credentialSaving ? 'Saving…' : 'Save key'}</button></div> : <button type="button" className="advisor-quiet-button" onClick={onClearHostedCredential}>Remove key</button>}
           {hasHostedRuntime ? <label className="advisor-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => onHostedConsentChange(event.target.checked)} /><span>Before the first hosted message, send this question and any minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</span></label> : <p className="advisor-consent-unavailable">Consent appears after a usable hosted model is available. It is always explicit and starts unchecked.</p>}
         </div> : <div className="advisor-runtime-config-controls">
           <div className="advisor-runtime-config-actions">
@@ -211,8 +211,8 @@ export function AdvisorRuntimeControls({
             <button type="button" className="advisor-quiet-button" onClick={onActivateHosted}>Use hosted provider</button>
           </div>
           <div className="advisor-runtime-picker-row">
-            <label className="advisor-runtime-picker">Runtime<select aria-label="Advisor runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
-            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Advisor local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+            <label className="advisor-runtime-picker">Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
+            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
           </div>
           <div className="advisor-runtime-state-grid" aria-label="Local runtime state">
             <span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span>

@@ -37,7 +37,7 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
   optimize: { id: 'optimize', label: 'Insights', title: 'Insights', shortcut: '5' },
   models: { id: 'models', label: 'Models', title: 'Models', shortcut: '6' },
   compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '7' },
-  advisor: { id: 'advisor', label: 'Advisor', title: 'Advisor', shortcut: '' },
+  advisor: { id: 'advisor', label: 'Harness', title: 'Harness', shortcut: '' },
   bench: { id: 'bench', label: 'Bench', title: 'Local Bench', shortcut: '' },
   plans: { id: 'plans', label: 'Capacity', title: 'Provider plans', shortcut: '' },
   workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '8' },

@@ -211,7 +211,7 @@ function parseOpenAiStream(payload: Record<string, unknown>, state: StreamState,
     const itemId = boundedString(payload.item.id, 128, 'The provider returned an invalid tool call item id.')
     const id = boundedString(payload.item.call_id ?? itemId, 128, 'The provider returned an invalid tool call id.')
     const name = toolName(payload.item.name)
-    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
+    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Metrora tool.')
     if (state.openCalls.has(id)) throw new HostedAdapterError('tool-malformed', 'The provider returned a duplicate tool call.')
     ensureToolCallCapacity(state)
     state.openCalls.set(id, { id, name, arguments: '' })
@@ -232,7 +232,7 @@ function parseAnthropicStream(payload: Record<string, unknown>, state: StreamSta
     const key = String(payload.index)
     const id = boundedString(payload.content_block.id, 128, 'The provider returned an invalid tool call id.')
     const name = toolName(payload.content_block.name)
-    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
+    if (!name || !TOOL_NAMES.has(name)) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Metrora tool.')
     if (state.openCallKeys.has(key)) throw new HostedAdapterError('tool-malformed', 'The provider returned a duplicate tool call.')
     ensureToolCallCapacity(state)
     state.openCalls.set(id, { id, name, arguments: '' })
@@ -275,7 +275,7 @@ function startChatTool(state: StreamState, requestId: string, provider: AdvisorH
   const current = state.openCalls.get(id)!
   if (name) current.name = name
   const normalizedName = toolName(current.name)
-  if (current.name && (!normalizedName || !TOOL_NAMES.has(normalizedName))) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Advisor tool.')
+  if (current.name && (!normalizedName || !TOOL_NAMES.has(normalizedName))) throw new HostedAdapterError('tool-unsupported', 'The provider returned an unsupported Metrora tool.')
   if (normalizedName && !state.startedCalls.has(id)) {
     state.startedCalls.add(id)
     emit({ requestId, provider, model, kind: 'tool-call-start', callId: id, name: normalizedName })

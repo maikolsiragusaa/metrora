@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { Envelope } from './main'
+import type { HarnessActionEvent } from './act-bridge'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
@@ -111,6 +112,15 @@ const bridge = {
     const listener = (_event: unknown, event: AdvisorHostedRendererEvent) => cb(event)
     ipcRenderer.on('metrora:advisorHostedEvent', listener)
     return () => { ipcRenderer.removeListener('metrora:advisorHostedEvent', listener) }
+  },
+  harnessProposeCoreCompatibility: (model: string) => invoke('metrora:harnessProposeCoreCompatibility', model) as Promise<HarnessActionEvent>,
+  harnessApproveCoreCompatibility: (actionId: string, proposalDigest: string) => invoke('metrora:harnessApproveCoreCompatibility', actionId, proposalDigest) as Promise<HarnessActionEvent>,
+  harnessCancelCoreCompatibility: (actionId: string) => invoke('metrora:harnessCancelCoreCompatibility', actionId) as Promise<HarnessActionEvent | null>,
+  harnessReadCoreCompatibility: (actionId: string) => invoke('metrora:harnessReadCoreCompatibility', actionId) as Promise<HarnessActionEvent | null>,
+  onHarnessActionEvent: (cb: (event: HarnessActionEvent) => void) => {
+    const listener = (_event: unknown, event: HarnessActionEvent) => cb(event)
+    ipcRenderer.on('metrora:harnessActionEvent', listener)
+    return () => { ipcRenderer.removeListener('metrora:harnessActionEvent', listener) }
   },
   platform: process.platform,
   arch: process.arch,

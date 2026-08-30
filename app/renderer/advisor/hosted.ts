@@ -83,16 +83,22 @@ async function executeRequests(input: AdvisorRuntimeInput, requests: readonly Ad
   const evidence: AdvisorEvidence[] = []
   for (const request of requests) {
     throwIfAborted(signal)
-    if (!input.executeTool) throw new AdvisorToolContractError('authority-unavailable', 'Advisor tool execution is unavailable.')
+    if (!input.executeTool) throw new AdvisorToolContractError('authority-unavailable', 'Metrora Tools execution is unavailable.')
+    input.onToolEvent?.({ name: request.tool, status: 'queued' })
     input.onToolEvent?.({ name: request.tool, status: 'started' })
-    const result = await input.executeTool(request.tool, request.arguments, signal)
+    try {
+      const result = await input.executeTool(request.tool, request.arguments, signal)
     throwIfAborted(signal)
-    if (typeof result.content !== 'string' || result.content.length > 32 * 1024) throw new AdvisorToolContractError('output-too-large', 'Advisor tool content exceeded its safety limit.')
+    if (typeof result.content !== 'string' || result.content.length > 32 * 1024) throw new AdvisorToolContractError('output-too-large', 'Metrora tool content exceeded its safety limit.')
     // The renderer still validates content-minimal output locally; it is never
     // replayed as a provider-native tool result.
     assertStrictBoundedAdvisorToolContent(result.content)
     evidence.push(result.evidence)
-    input.onToolEvent?.({ name: request.tool, status: 'completed' })
+      input.onToolEvent?.({ name: request.tool, status: result.envelope?.unavailable || result.evidence.coverage.level === 'unavailable' ? 'unavailable' : 'completed' })
+    } catch (error) {
+      input.onToolEvent?.({ name: request.tool, status: signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message)) ? 'cancelled' : 'failed' })
+      throw error
+    }
   }
   return evidence
 }
@@ -188,12 +194,12 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
 
       const validation = planningValidation(input, firstResponse, allowNativeToolCalls)
       if (!validation) {
-        if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0) return fallback('The model requested a tool outside the bounded Advisor contract.')
+        if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0) return fallback('The model requested a tool outside the bounded Metrora Tools contract.')
         const content = firstResponse.message?.content ?? ''
         const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
         const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
         if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
-        if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Advisor contract.')
+        if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Metrora Tools contract.')
         return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, signal)
       }
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }

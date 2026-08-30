@@ -94,7 +94,7 @@ export function Plans({ period, refreshToken = 0, onNavigate, onAskAdvisor, onRe
       <div className="bar">
         <div className="t">Plans</div>
         <div className="sp" />
-        {onAskAdvisor && <button type="button" className="btn btn-s ask-advisor-button" onClick={onAskAdvisor}>Ask Advisor <span aria-hidden="true">↗</span></button>}
+        {onAskAdvisor && <button type="button" className="btn btn-s ask-advisor-button" onClick={onAskAdvisor}>Ask Harness <span aria-hidden="true">↗</span></button>}
         {onRefresh && <button type="button" className="btn btn-s refresh-button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Refreshing' : 'Refresh'}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>}
         <button type="button" className="btn btn-s" onClick={() => onNavigate?.('settings', 'plans')}>
           Add plan…

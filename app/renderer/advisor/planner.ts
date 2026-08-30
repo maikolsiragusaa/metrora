@@ -1,6 +1,7 @@
 import { normalizeAdvisorToolCall } from './contract'
 import { sanitizeAdvisorDisplayText } from './privacy'
 import { createAdvisorTurnPlanV1 } from './turn-plan'
+import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import type {
   AdvisorEvidenceDomain,
   AdvisorGuardPlanV1,
@@ -18,7 +19,7 @@ import type {
 } from './types'
 
 const MAX_PLANNING_BYTES = 12 * 1024
-const MAX_TOOL_REQUESTS = 8
+export const HARNESS_MAX_TOOL_REQUESTS = HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn
 const MAX_DOMAINS = 16
 const MAX_TEXT_BYTES = 512
 
@@ -89,7 +90,7 @@ export function parseAdvisorPlanningDraft(value: unknown): AdvisorModelPlanningD
   if (parsed.turnKind !== 'investigate' && parsed.turnKind !== 'clarify' && parsed.turnKind !== 'social' && parsed.turnKind !== 'boundary') return null
   if (typeof parsed.questionFamily !== 'string' || !(QUESTION_FAMILIES as readonly string[]).includes(parsed.questionFamily)) return null
   if (!Array.isArray(parsed.requestedEvidenceDomains) || parsed.requestedEvidenceDomains.length > MAX_DOMAINS || parsed.requestedEvidenceDomains.some(domain => !(EVIDENCE_DOMAINS as readonly string[]).includes(domain))) return null
-  if (!Array.isArray(parsed.toolRequests) || parsed.toolRequests.length > MAX_TOOL_REQUESTS) return null
+  if (!Array.isArray(parsed.toolRequests) || parsed.toolRequests.length > HARNESS_MAX_TOOL_REQUESTS) return null
   const toolRequests = parsed.toolRequests.map(parseToolRequest)
   if (toolRequests.some(request => request === null)) return null
   if (!PRESENTATION_INTENTS.includes(parsed.presentationIntent as AdvisorPresentationIntent)) return null
@@ -125,7 +126,7 @@ function nativeToolArguments(call: Record<string, unknown>): unknown {
 export function planningDraftFromNativeToolCalls(calls: readonly Record<string, unknown>[], guardPlan: AdvisorTurnPlanV1): AdvisorPlanningDraftV1 | null {
   if (!calls.length) return null
   const toolRequests: AdvisorToolRequestV1[] = []
-  for (const call of calls.slice(0, MAX_TOOL_REQUESTS)) {
+  for (const call of calls.slice(0, HARNESS_MAX_TOOL_REQUESTS)) {
     const normalized = normalizeAdvisorToolCall(nativeToolName(call), nativeToolArguments(call))
     toolRequests.push({ tool: normalized.name, arguments: normalized.arguments })
   }
@@ -249,7 +250,7 @@ export function validateAdvisorPlanningDraft(
   // tool. The fallback may choose a deterministic tool, but the guard never
   // injects one into an otherwise valid model plan.
   if (!requests.length) return null
-  return { plan: planWithGuard(draft, fallbackPlan, guard), toolRequests: requests.slice(0, MAX_TOOL_REQUESTS), modelAssisted: true }
+  return { plan: planWithGuard(draft, fallbackPlan, guard), toolRequests: requests.slice(0, HARNESS_MAX_TOOL_REQUESTS), modelAssisted: true }
 }
 
 function boundedPeriodHint(question: string): string | null {
@@ -269,10 +270,19 @@ export function deterministicPlanningFallback(
   question = '',
 ): AdvisorPlanningValidation {
   if (guardPlan.turnKind !== 'investigate' || guardPlan.authorization !== 'read-only') return { plan: guardPlan, toolRequests: [], modelAssisted: false }
-  const required = defaultToolForFamily(guardPlan.questionFamily)
   const names = definitionNames(definitions)
   const period = boundedPeriodHint(question)
   const fallbackArguments: AdvisorJsonObject = period ? { period } : {}
-  const toolRequests: AdvisorToolRequestV1[] = required && names.has(required) ? [{ tool: required, arguments: fallbackArguments }] : []
+  const required = defaultToolForFamily(guardPlan.questionFamily)
+  const toolNames: AdvisorToolName[] = []
+  if (required && names.has(required)) toolNames.push(required)
+  const normalizedQuestion = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const driverQuestion = /(?:why|cause|driver|drove|change|changed|spike|which project|which session|most expensive|aument|perche|picco|progetto|sessione)/u.test(normalizedQuestion)
+  if (driverQuestion && required === 'get_spend_snapshot') {
+    for (const tool of ['get_project_drivers', 'get_session_highlights'] as const) {
+      if (names.has(tool) && !toolNames.includes(tool)) toolNames.push(tool)
+    }
+  }
+  const toolRequests: AdvisorToolRequestV1[] = toolNames.slice(0, HARNESS_MAX_TOOL_REQUESTS).map(tool => ({ tool, arguments: fallbackArguments }))
   return { plan: guardPlan, toolRequests, modelAssisted: false }
 }

@@ -1,7 +1,7 @@
 # Metrora Harness public foundation
 
-**Status:** public product/architecture direction grounded in current `main`  
-**Implementation compatibility:** the current Desktop/code/contracts still use `Advisor` / `Advisor*` identifiers; a bounded semantic migration into Harness, Tools, provider/runtime and evidence ownership is not yet implemented by this document.
+**Status:** Harness Productization V2 implementation slice for review
+**Implementation compatibility:** the user-facing Desktop surface is now Metrora Harness. Stable `Advisor` / `Advisor*` identifiers remain as technical compatibility names where they still describe contracts, runtime adapters or file boundaries.
 
 See also [Metrora ecosystem surfaces](ECOSYSTEM_SURFACES.md) for the public composition/status map across Tools, Harness, MCP, ACT, Bench, Widgets, Wrapped and future Swarm.
 
@@ -19,7 +19,7 @@ The model is not Metrora's accounting, pricing, quota or action authority.
 
 ## Current public foundation
 
-Current public `main` already implements the conversational foundation under existing `Advisor*` names:
+This branch keeps the existing conversational foundation and productizes it behind the Metrora Harness identity:
 
 - chat-first behavior for capable configured runtimes;
 - ordinary conversation without requiring an evidence read;
@@ -32,6 +32,10 @@ Current public `main` already implements the conversational foundation under exi
 - supported direct BYOK provider adapters;
 - explicit hosted evidence-sharing consent;
 - bounded cancellation/error/privacy behavior.
+- compact bounded Tool activity with no prompts, secrets, paths or hidden reasoning;
+- immediate pending state and streamed conversational deltas where the selected runtime supports them;
+- a canonical `src/tools` registry/contract/evidence/privacy layer with a thin renderer compatibility adapter;
+- bounded multi-tool planning with a maximum of two rounds and four calls per turn.
 
 Current public `main` also now contains the separate **ACT V2 execution foundation**:
 
@@ -42,7 +46,7 @@ Current public `main` also now contains the separate **ACT V2 execution foundati
 - bounded cancellation/timeout/late-result behavior;
 - canonical Bench evidence ownership.
 
-ACT V2 is not yet presented as a general Harness action UI. The conversational proposal layer remains non-executing until a trusted host performs the explicit ACT mapping/confirmation path.
+The branch also exposes one narrow Harness action path for Core Compatibility. The renderer receives only a safe proposal/lifecycle projection; a trusted Electron host re-reads the proposal, canonicalizes the sole `ActionContractV1`, requires explicit confirmation, and delegates execution to ACT. No general action executor is exposed.
 
 See [Advisor implementation compatibility](ADVISOR_PUBLIC_FOUNDATION.md) for current `Advisor*` contract names and [ACT contract preparation](ACT_CONTRACT_PREP_001.md) for the controlled-action boundary.
 
@@ -94,9 +98,9 @@ Examples of safe observable events:
 
 Private chain-of-thought, hidden scratchpads and internal model reasoning are not product telemetry and should not be exposed.
 
-## Pending and streaming UX direction
+## Pending and streaming UX
 
-A future Harness UX tranche should make prompt processing unmistakable:
+The shipped Harness UX makes prompt processing unmistakable:
 
 ```text
 message sent
@@ -108,7 +112,7 @@ message sent
 
 Product language should remain simple, for example `Thinking…`, `Reading Usage…`, `Checking Activity…` rather than exposing planner/guard/schema terminology.
 
-The current public foundation already has bounded request/progress mechanics, but this document does not claim the future polished Harness presentation is implemented.
+Factual answers remain buffered behind the canonical evidence boundary; conversational runtime deltas are sanitized before they reach the renderer. Tool and action activity is compact, bounded and truthful.
 
 ## Runtime/model interaction direction
 
@@ -125,9 +129,7 @@ Any new runtime/provider still requires explicit endpoint, privacy, streaming, T
 
 ## Canonical Tools layer
 
-Current implementation uses the public `AdvisorToolV1` contract and still stores substantial Tool code under `advisor/` namespaces. Stable current identities remain documented in [Advisor implementation compatibility](ADVISOR_PUBLIC_FOUNDATION.md).
-
-The ratified product/architecture direction is to extract a reusable canonical **Metrora Tools** layer that is not owned by the Harness UI.
+The reusable canonical **Metrora Tools** layer is implemented in `src/tools`. It preserves the public `advisor-tool-v1` contract and exact eight tool identities while the renderer's `advisor/tools.ts` remains only a compatibility adapter. Harness does not own the factual registry.
 
 The Tool boundary stays:
 
@@ -140,7 +142,7 @@ The Tool boundary stays:
 
 Future Tool growth should prefer useful bounded factual drill-downs over unrestricted database/file access.
 
-The same canonical factual Tools are intended to be reusable by:
+The same canonical factual Tools are reusable by:
 
 - Metrora Harness;
 - a future local Metrora MCP Server;
@@ -172,7 +174,7 @@ Future state-changing requests from external clients must remain proposal-only u
 
 Harness may understand a state-changing request and prepare a proposal. It is not execution authority.
 
-Current canonical relationship:
+The shipped canonical relationship is:
 
 ```text
 Harness intent / proposal
@@ -188,6 +190,8 @@ Harness intent / proposal
 ACT is an execution authority underneath product workflows, not a chat mode the user must select first.
 
 Current public ACT V2 implements the first bounded Core Compatibility operation through canonical Bench authority. It deliberately does not make `AdvisorActionProposalV1` or another conversational proposal object executable.
+
+The Desktop bridge accepts only `run-core-compatibility`. It takes a model-selected proposal into a trusted host, returns a content-minimal action event, and exposes confirmation/cancellation/read operations without returning the internal contract or approval token to the renderer.
 
 Future MCP callers follow the same authority boundary.
 
@@ -225,6 +229,8 @@ Current public privacy rules remain:
 - direct BYOK credentials remain on the endpoint and use protected local custody;
 - raw prompts/responses/source/patches/secrets/unrestricted paths are outside factual Tool outputs;
 - hosted BYOK requires explicit evidence-sharing consent;
+- Harness action events contain only bounded status, progress, result and failure metadata;
+- contract material and ACT approval tokens stay in trusted host/ACT boundaries;
 - conversation state is currently client/session managed;
 - no Metrora managed inference gateway exists in the current public foundation;
 - no MCP server is currently shipped by this document.
@@ -235,14 +241,14 @@ The product direction is **Metrora Harness**.
 
 `Advisor` is no longer the long-term product identity.
 
-Current implementation names such as:
+Technical compatibility names such as:
 
 - `AdvisorKernel`;
 - `AdvisorToolV1`;
 - `AdvisorActionProposalV1`;
 - current route/file/schema identifiers;
 
-remain truthful compatibility names until a bounded migration lands.
+remain intentionally stable while ownership is migrated semantically; the current user-facing route labels and copy use Harness.
 
 The migration should be semantic rather than cosmetic:
 

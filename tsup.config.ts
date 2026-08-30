@@ -6,6 +6,7 @@ export default defineConfig({
     'desktop-local-state': 'src/desktop-local-state-entry.ts',
     'desktop-reviewed-production': 'src/desktop-reviewed-production-entry.ts',
     'desktop-share-runtime': 'src/desktop-share-runtime-entry.ts',
+    'act-desktop-bridge': 'src/act/desktop-bridge.ts',
   },
   format: ['esm'],
   target: 'node20',

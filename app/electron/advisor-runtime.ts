@@ -122,7 +122,7 @@ function messageResult(raw: Record<string, unknown>, streamed: boolean): Advisor
     streamed,
   }
 }
-function parseNdjsonText(text: string): AdvisorRuntimeChatResult {
+function parseNdjsonText(text: string, onDelta?: (text: string) => void): AdvisorRuntimeChatResult {
   let content = ''
   const toolCalls: Array<Record<string, unknown>> = []
   let malformed = 0
@@ -153,6 +153,7 @@ function parseNdjsonText(text: string): AdvisorRuntimeChatResult {
     if (message.content !== undefined) {
       if (typeof message.content !== 'string') throw new Error('Local runtime returned malformed message content.')
       content += message.content
+      onDelta?.(message.content)
       if (byteLength(content) > 32_000) throw new Error('Local runtime message exceeded the content limit.')
     }
     const calls = parseToolCalls(message.tool_calls)
@@ -161,9 +162,9 @@ function parseNdjsonText(text: string): AdvisorRuntimeChatResult {
   if (validMessages === 0) throw new Error('Local runtime stream contained no valid messages.')
   return { message: { content, tool_calls: toolCalls.slice(0, 16) }, streamed: true }
 }
-async function streamNdjsonResponse(response: Response): Promise<AdvisorRuntimeChatResult> {
+async function streamNdjsonResponse(response: Response, onDelta?: (text: string) => void): Promise<AdvisorRuntimeChatResult> {
   const reader = response.body?.getReader()
-  if (!reader) return parseNdjsonText(await boundedText(response))
+  if (!reader) return parseNdjsonText(await boundedText(response), onDelta)
   const decoder = new TextDecoder()
   let pending = ''
   let bytes = 0
@@ -198,6 +199,7 @@ async function streamNdjsonResponse(response: Response): Promise<AdvisorRuntimeC
     if (message.content !== undefined) {
       if (typeof message.content !== 'string') throw new Error('Local runtime returned malformed message content.')
       content += message.content
+      onDelta?.(message.content)
       if (byteLength(content) > 32_000) throw new Error('Local runtime message exceeded the content limit.')
     }
     const calls = parseToolCalls(message.tool_calls)
@@ -239,7 +241,7 @@ function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeCha
     if (tool.function.parameters !== undefined && !isRecord(tool.function.parameters)) throw new Error('Local runtime request contains malformed tool parameters.')
   }
 }
-async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal): Promise<AdvisorRuntimeChatResult> {
+async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<AdvisorRuntimeChatResult> {
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)
   try {
     throwIfAborted(timed.signal)
@@ -252,21 +254,21 @@ async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload
     })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new Error('Local runtime returned HTTP ' + response.status + '.')
-    if (payload.stream) return streamNdjsonResponse(response)
+    if (payload.stream) return streamNdjsonResponse(response, onDelta)
     const text = await boundedText(response)
     const value = JSON.parse(text) as unknown
     if (!value || typeof value !== 'object') throw new Error('Local runtime returned invalid JSON.')
     return messageResult(value as Record<string, unknown>, false)
   } finally { timed.dispose() }
 }
-export async function chatOllamaMain(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal): Promise<AdvisorRuntimeChatResult> {
+export async function chatOllamaMain(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<AdvisorRuntimeChatResult> {
   if (!fetchImpl) throw new Error('Node fetch is unavailable.')
   if (!payload || !validModel(payload.model)) throw new Error('Local runtime model is invalid.')
   validateChatPayload(payload)
   let encoded: string
   try { encoded = JSON.stringify(payload) } catch { throw new Error('Local runtime request is not JSON-safe.') }
   if (byteLength(encoded) > MAX_RESPONSE_BYTES) throw new Error('Local runtime request exceeded the safety limit.')
-  return chatOnce(fetchImpl, payload, parent)
+  return chatOnce(fetchImpl, payload, parent, onDelta)
 }
 function validRequestId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value)
@@ -277,7 +279,7 @@ function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
   const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
   return { runtime: 'ollama', available: value.available, models: value.models, detail: value.detail, discoveryState, capabilities: value.capabilities }
 }
-export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>> {
+export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch, emitDelta: (event: { requestId: string; text: string }) => void = () => {}): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>> {
   const flights = new Map<string, AbortController>()
   const fail = (error: unknown, kind = 'runtime') => ({ ok: false as const, error: { kind, message: boundedError(error).message } })
   return {
@@ -295,8 +297,8 @@ export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch): Reco
       flights.set(requestId, controller)
       try {
         const value = selectedRuntime === 'lmstudio'
-          ? await chatLMStudioMain(fetchImpl, payload, controller.signal)
-          : await chatOllamaMain(fetchImpl, payload, controller.signal)
+          ? await chatLMStudioMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
+          : await chatOllamaMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
         return { ok: true, value }
       } catch (error) {
         return controller.signal.aborted ? fail(new Error('Advisor request cancelled.'), 'cancelled') : fail(error)

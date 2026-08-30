@@ -27,6 +27,7 @@ import type {
 } from './types'
 import type { ProjectBridge } from './project-bridge-types'
 import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
+import type { HarnessActionEvent } from '../../electron/act-bridge'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
@@ -42,6 +43,7 @@ export type AdvisorHostedEventKind = 'started' | 'text-delta' | 'tool-call-start
 export type AdvisorHostedEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; text?: string; callId?: string; name?: string; delta?: string; arguments?: string; usage?: AdvisorHostedUsage | null; streamed?: boolean; toolCalls?: AdvisorHostedToolCall[]; code?: string; message?: string }
 /** Renderer-safe lifecycle projection; provider text and tool arguments never cross into renderer event listeners. */
 export type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; usage?: AdvisorHostedUsage | null; streamed?: boolean; code?: string }
+export type MetroraHarnessActionEvent = HarnessActionEvent
 export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type BenchTaskResult = {
   taskId: string
@@ -120,6 +122,11 @@ export interface MetroraBridge extends ProjectBridge {
   getBenchComparison(leftRunId: string, rightRunId: string): Promise<BenchComparison>
   runBenchTaskPack(model: string, pack?: string): Promise<BenchEvaluation>
   onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
+  harnessProposeCoreCompatibility(model: string): Promise<MetroraHarnessActionEvent>
+  harnessApproveCoreCompatibility(actionId: string, proposalDigest: string): Promise<MetroraHarnessActionEvent>
+  harnessCancelCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
+  harnessReadCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
+  onHarnessActionEvent(cb: (event: MetroraHarnessActionEvent) => void): () => void
   // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
   getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>

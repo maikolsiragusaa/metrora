@@ -52,8 +52,23 @@ export type AdvisorJsonObject = { [key: string]: AdvisorJsonValue }
 export type AdvisorDomainCoverageState = 'available' | 'partial' | 'unavailable' | 'not-authorized'
 export type AdvisorDomainCoverageV1 = { domain: AdvisorEvidenceDomain; state: AdvisorDomainCoverageState; detail: string; evidenceRefs: AdvisorEvidenceRef[] }
 export type AdvisorToolName = 'get_spend_snapshot' | 'get_model_efficiency' | 'get_quota_snapshot' | 'get_overview_snapshot' | 'get_project_drivers' | 'get_session_highlights' | 'get_coverage_report' | 'get_bench_evidence'
-export type AdvisorActionKindV1 = 'run-bench' | 'launch-agents' | 'change-routing' | 'apply-policy'
-export type AdvisorActionProposalV1 = { contractVersion: 'advisor-action-proposal-v1'; schemaVersion: 1; kind: AdvisorActionKindV1; status: 'proposal-only'; summary: string; target: string; scope: AdvisorScope; allowedReadTools: readonly AdvisorToolName[]; permissions: readonly string[]; budget: { maxCalls: number; maxCostUSD: number | null }; timeoutMs: number; cancellation: 'required' }
+export type AdvisorActionKindV1 = 'run-bench' | 'launch-agents' | 'change-routing' | 'apply-policy' | 'run-core-compatibility'
+export type AdvisorActionProposalV1 = {
+  contractVersion: 'advisor-action-proposal-v1'
+  schemaVersion: 1
+  kind: AdvisorActionKindV1
+  status: 'proposal-only'
+  summary: string
+  target: string
+  scope: AdvisorScope
+  allowedReadTools: readonly AdvisorToolName[]
+  permissions: readonly string[]
+  budget: { maxCalls: number; maxCostUSD: number | null }
+  timeoutMs: number
+  cancellation: 'required'
+  /** Filled only after the trusted host records a Core Compatibility proposal. */
+  harnessAction?: { actionId: string; proposalDigest: string; model: string; status: 'proposed' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled' | 'unavailable' }
+}
 export type AdvisorToolArgumentName = 'model' | 'provider' | 'period'
 export type AdvisorToolAuthority = 'metrora-canonical' | 'provider-reported' | 'mixed' | 'unknown'
 export type AdvisorToolFreshness = 'fresh' | 'stale' | 'mixed' | 'unavailable' | 'unknown'
@@ -190,6 +205,8 @@ export type AdvisorToolContract = {
 }
 export type AdvisorToolExecution = { content: string; evidence: AdvisorEvidence; envelope?: AdvisorToolResultEnvelope }
 export type AdvisorToolExecutor = (name: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<AdvisorToolExecution>
+export type AdvisorToolEventStatus = 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled'
+export type AdvisorToolEvent = { name: string; status: AdvisorToolEventStatus }
 export type AdvisorConversationTurn = { role: 'user' | 'assistant'; content: string; scopeFingerprint: string }
 export type AdvisorUiContextV1 = {
   contractVersion: 'advisor-ui-context-v1'
@@ -212,7 +229,7 @@ export type AdvisorRuntimeInput = {
   tools?: readonly AdvisorToolDefinition[]
   toolContract?: AdvisorToolContract
   executeTool?: AdvisorToolExecutor
-  onToolEvent?: (event: { name: string; status: 'started' | 'completed' }) => void
+  onToolEvent?: (event: { name: string; status: 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled' }) => void
   onDelta?: (text: string) => void
 }
 export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> }
