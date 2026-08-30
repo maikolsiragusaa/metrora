@@ -2,7 +2,8 @@
 
 **Status:** public product direction and implementation-status guide  
 **Decision revision:** 2026-08-30  
-**Authority reviewed:** `maikolsiragusaa/metrora@e0e2a8a6308880ebe2c794f04c54bc2c2fff5fbd`
+**Authority reviewed:** `maikolsiragusaa/metrora@7aef30742153a190a59bcec2b13d8635feb5b9db`
+**Productization slice:** `feat/harness-productization-v2-tools-boundary`
 
 Metrora is a local-first control and intelligence system for AI-assisted development. Its product surfaces should compose around shared facts and contracts rather than grow into separate products that each calculate their own version of the truth.
 
@@ -44,10 +45,10 @@ ACT is not a chat mode and an MCP client is not trusted execution authority simp
 | --- | --- | --- |
 | **Usage / Activity / Models / Capacity** | Factual local evidence, history, economics and provider-reported capacity | **Available** |
 | **Projects** | User-controlled context and scope across relevant evidence | **Available** |
-| **Tools** | Typed factual access to Metrora evidence | **Foundation available** — current implementation still contains `Advisor*` compatibility naming that will migrate |
-| **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Building** — current conversational foundation exists and is being converged from the older Advisor presentation |
+| **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer with `Advisor*` compatibility adapter |
+| **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Available in this slice** — product-facing Desktop surface, bounded Tool activity and one proposal-only Core Compatibility path |
 | **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available and expanding** |
-| **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Foundation available** — `metrora.action.v1` and `run-core-compatibility`; not a user-facing mode |
+| **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Available** — `metrora.action.v1`, `run-core-compatibility`, and the trusted Desktop bridge; not a user-facing mode |
 | **MCP** | Standard external access to canonical Metrora Tools | **Planned** |
 | **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
 | **Wrapped** | Periodic recap/share experience using canonical evidence and Widgets | **Planned** |
@@ -68,7 +69,7 @@ Metrora already has typed read-only capabilities for questions such as:
 - coverage information;
 - Bench evidence.
 
-Today much of this implementation still lives under `Advisor*` names. The product direction is to make these capabilities a reusable canonical Tools layer rather than keep them owned by one UI.
+The reusable implementation now lives in `src/tools`. The renderer's `Advisor*` files retain only compatibility adapters and stable contract names; the factual registry is not owned by one UI.
 
 This matters because the same factual capability should be reusable by Harness, a future MCP server and other bounded Metrora integrations without implementing parallel evidence paths.
 
@@ -78,9 +79,9 @@ A tool result remains evidence. A caller or model may explain it, but cannot sil
 
 **Metrora Harness** is the product-facing conversational and operational AI surface.
 
-Harness should remain a capable normal chat experience. Metrora-specific facts are read through typed Tools only when needed. Observable tool activity may be shown to the user without exposing private chain-of-thought.
+The shipped Harness slice is a capable normal chat experience. Metrora-specific facts are read through typed Tools only when needed. Observable Tool activity is compact and bounded without exposing private chain-of-thought, prompts, secrets or paths.
 
-For state-changing requests, the conversational layer may understand the request and prepare a bounded proposal, but it does not authorize itself.
+For state-changing requests, the conversational layer may understand the request and prepare a bounded proposal, but it does not authorize itself. The only accepted operation in this slice is Core Compatibility; confirmation is canonicalized and executed by the trusted host/ACT path.
 
 ```text
 conversation

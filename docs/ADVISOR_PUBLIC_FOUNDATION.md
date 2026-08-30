@@ -1,29 +1,29 @@
-# Metrora Advisor public foundation
+# Metrora Advisor implementation compatibility
 
-Metrora Advisor is a read-only, local-first conversational surface. It can answer normally, use bounded Metrora evidence when useful, and keep canonical facts separate from model prose. It does not execute actions, change provider settings, estimate billing, or act as an accounting authority.
+The technical `Advisor*` contracts remain the compatibility foundation behind the user-facing **Metrora Harness** surface. Harness can answer normally, use bounded Metrora evidence when useful, and keep canonical facts separate from model prose. It does not self-authorize actions, change provider settings, estimate billing, or act as an accounting authority.
 
 ## Public architecture
 
 The public path is deliberately replaceable:
 
   canonical Metrora records
-          -> deterministic evidence tools
-          -> Advisor Kernel
-          -> AdvisorModelRuntime
+          -> canonical Metrora Tools
+          -> Advisor Kernel compatibility adapter
+          -> AdvisorModelRuntime compatibility adapter
           -> verified local runtime (Ollama or LM Studio)
-          -> session-local Advisor UI
+          -> session-local Harness UI
 
 Deterministic guards own authorization, canonical scope, privacy, the fixed read-only allowlist, cancellation, and bounds at their respective boundaries. For a capable runtime, the deterministic EN/IT comprehension result is only a bounded fallback hint; the model receives conversation and optional typed tools first. It may answer directly, or request one or more bounded reads. Metrora executes only canonical read-only requests, merges same-scope evidence, and uses a fresh synthesis when factual evidence was read. Synthesis selects only Metrora-owned AdvisorVerifiedClaimAtomV1 IDs and presentation kinds; Metrora verifies the atom kind/path/value/scope relationship and renders material factual clauses in canonical EN/IT copy. Ordinary chat does not need an evidence bundle, and chart/table values are resolved by Metrora rather than model prose.
 
-## Shipped AdvisorToolV1 Community contract
+## Shipped AdvisorToolV1 compatibility contract
 
-The public tool boundary is versioned as `advisor-tool-v1` with schema version `1`. The contract keeps these eight identities stable: `get_spend_snapshot`, `get_model_efficiency`, `get_quota_snapshot`, `get_overview_snapshot`, `get_project_drivers`, `get_session_highlights`, `get_coverage_report`, and `get_bench_evidence`.
+The public tool boundary remains versioned as `advisor-tool-v1` with schema version `1`. The canonical implementation is now the `src/tools` registry and contract layer; renderer `advisor/*` modules adapt to it. The contract keeps these eight identities stable: `get_spend_snapshot`, `get_model_efficiency`, `get_quota_snapshot`, `get_overview_snapshot`, `get_project_drivers`, `get_session_highlights`, `get_coverage_report`, and `get_bench_evidence`.
 
 Metrora captures an immutable invocation scope before a runtime sees a tool call. Period, custom date range, Project, provider authority, and model context cannot be replaced by a model-supplied scope object. Bounded filters are an exact model identifier, a relative period refinement including yesterday where allowed, and a factual `all`/`claude`/`codex` provider filter on provider quota. Unknown tools, malformed or additional arguments, unsupported providers, scope widening, and pathological identifiers fail closed before an evidence read.
 
 Each result is bounded JSON and carries the tool identity, invocation scope, canonical authority, freshness, coverage, observed/derived/unknown semantics, evidence references, explicit unavailable state, and a `content-minimal` privacy classification. Metrora usage remains canonical measured/derived evidence; quota remains provider-reported evidence. Explicit zero remains zero, stale evidence remains labelled stale, and unavailable evidence is never converted into zero. The serialized tool payload is capped at 32 KiB and excludes raw prompts, responses, source, patches, secrets, credentials, account identifiers, and unrestricted local paths.
 
-The reusable synthetic conformance fixtures and suite live beside the Advisor contract in `app/renderer/advisor/conformance.ts` and `conformance.test.ts`. They run without a model, network, provider SDK, or Ollama installation and are also used to exercise the current Ollama adapter. Cancellation is checked before reads, after asynchronous reads, before the final runtime envelope, and on the local runtime boundary.
+The reusable synthetic conformance fixtures and suite remain beside the compatibility contract in `app/renderer/advisor/conformance.ts` and `conformance.test.ts`. They run without a model, network, provider SDK, or Ollama installation and are also used to exercise the current Ollama adapter. Cancellation is checked before reads, after asynchronous reads, before the final runtime envelope, and on the local runtime boundary.
 
 The first tool set covers:
 
@@ -32,13 +32,13 @@ The first tool set covers:
 - observed model cost-per-call rows;
 - provider-reported quota windows, freshness, reset boundaries, and credits;
 - coverage, assumptions, unknowns, and next investigations.
-- controlled Bench history and compatible comparisons; starting a Bench run remains an action outside Advisor;
+- controlled Bench history and compatible comparisons; starting a Bench run remains outside the general conversational action boundary;
 
 Tool outputs are compact JSON contracts. They do not include raw source content, prompts, local paths, secrets, or chain-of-thought.
 
 ## Runtime boundary
 
-The implemented local transport supports two selectable runtimes: Ollama and LM Studio. Both use the same Advisor Kernel, immutable evidence scope, eight-tool contract, chat-first model boundary, deterministic fact precedence, privacy projection, cancellation, and bounded output rules. The runtime/model selector is session-local and keeps the primary UX to “Runtime”, “Local model”, “Ready”, “Unavailable”, and “Tool support varies”.
+The implemented local transport supports two selectable runtimes: Ollama and LM Studio. Both use the same Advisor Kernel compatibility path, canonical Tools, immutable evidence scope, eight-tool contract, chat-first model boundary, deterministic fact precedence, privacy projection, cancellation, and bounded output rules. The runtime/model selector is session-local and keeps the primary UX compact.
 
 Electron main is the only process allowed to call either fixed loopback boundary:
 
@@ -67,7 +67,7 @@ The V2 provider boundary is a small Metrora-owned descriptor/adapter layer. Desc
 | OpenRouter | `GET https://openrouter.ai/api/v1/models?output_modalities=text` | Chat Completions `/api/v1/chat/completions` | `supported_parameters` advertises potential tool support; Advisor conformance remains separate; text-only models use a limited deterministic-tool path |
 | OpenCode Zen | `GET https://opencode.ai/zen/v1/models` | Protocol selected per model | Responses, Messages, OpenAI-compatible, and Gemini routes are explicit; unknown mappings fail closed |
 
-Discovery is not compatibility. A returned model receives a bounded state (`discovered`, `unverified`, `verified`, `limited`, `unsupported`, or `failed-conformance`) plus conversational, streaming and tool-call capability facts. The UI can select only models that are not `unsupported` or `failed-conformance`; unknown tool support never causes provider-native tools to be sent. The eight `AdvisorToolV1` identities, read-only authority, content-minimal evidence projection, direct chat path, and fresh factual synthesis boundary remain in force.
+Discovery is not compatibility. A returned model receives a bounded state (`discovered`, `unverified`, `verified`, `limited`, `unsupported`, or `failed-conformance`) plus conversational, streaming and tool-call capability facts. The UI can select only models that are not `unsupported` or `failed-conformance`; unknown tool support never causes provider-native tools to be sent. The eight `AdvisorToolV1` identities, canonical Tools authority, content-minimal evidence projection, direct chat path, and fresh factual synthesis boundary remain in force.
 
 Credentials remain in the existing Electron `safeStorage` file and are read only by the main-process adapter. Provider switching invalidates active requests, stale model/consent state and in-flight probe results. Evidence-sharing consent is explicit, starts unchecked, and resets on provider/model/authority changes. Credentials, raw provider bodies, and arbitrary endpoints do not cross the renderer boundary. Bounded normalized provider text and tool calls are returned transiently only to the renderer chat/tool validator and read-only dispatcher; they are not rendered as material facts, logged, persisted, included in evidence, or synchronized.
 
@@ -91,18 +91,18 @@ There is no Metrora gateway, managed inference service, or cloud billing path. D
 
 ## Conversation, synthesis, and presentation
 
-Each turn is represented by a versioned `AdvisorTurnPlanV1`, but for a capable runtime it is a bounded fallback hint rather than a conversation gate. The model receives the question, bounded same-scope history, bounded UI context, and the fixed eight-tool read contract; it may answer directly or request typed evidence. When evidence is read, Metrora verifies selected `AdvisorVerifiedClaimAtomV1` values and renders factual clauses from canonical data. Ordinary chat needs no evidence. Requests such as “run this benchmark”, “launch agents”, “change routing”, or “apply policy” remain proposal-only and expose no action executor from Advisor.
+Each turn is represented by a versioned `AdvisorTurnPlanV1`, but for a capable runtime it is a bounded fallback hint rather than a conversation gate. The model receives the question, bounded same-scope history, bounded UI context, and the fixed eight-tool read contract; it may answer directly or request typed evidence. When evidence is read, Metrora verifies selected `AdvisorVerifiedClaimAtomV1` values and renders factual clauses from canonical data. Ordinary chat needs no evidence. General operational requests remain proposal-only; the narrow Harness bridge accepts only `run-core-compatibility` and never gives the renderer an executor, contract or approval token.
 
 When a connected model supplies a synthesis draft, `AdvisorSynthesisDraftV1` conclusion/why/details blocks contain only ordered `{ claimIds, emphasis? }` selections; factual block text is not accepted. The selected IDs resolve to Metrora-owned `AdvisorVerifiedClaimAtomV1` values. Each atom has a closed `claimKind`, metric, subject, equality operator, canonical value/unit, exact evidence reference/path, and canonical scope. Metrora uses an explicit claim-kind-to-evidence mapping to verify the relationship, then renders the material factual clauses from EN/IT canonical renderers. This prevents a true value from laundering unsupported prose such as “cheapest”, “more efficient”, or a causal explanation, and prevents an extra unsupported clause from hiding in a valid block. The model owns semantic understanding and planning plus verified-atom selection, ordering, emphasis, and presentation selection. Metrora owns factual rendering and the current bounded follow-up suggestions; bounded conversational behavior remains product-controlled. `AdvisorPresentationBlockV1` values are built from canonical evidence for metric cards, native SVG charts, comparison tables, quota cards, Bench summaries, warnings, and evidence disclosure. Missing values remain unavailable rather than being zero-filled.
 
 ## Public/private boundary
 
-This branch publishes the reusable Advisor Kernel/contracts, deterministic evidence tools, safe local runtime rules, UI, tests, and this conformance/provenance description.
+This branch publishes the reusable canonical Tools layer, Advisor Kernel/runtime compatibility contracts, safe local runtime rules, Harness UI, the narrow ACT Desktop bridge, tests, and this conformance/provenance description.
 
 It does not publish proprietary ranking or recommendation systems, private evaluations or playbooks, personalized forecasting, advanced allocation/routing/automation, commercial strategy, or private roadmap material. The public UI is a conversational evidence reader, not a decision authority.
 
 ## Provenance and licenses
 
-The repository is MIT-licensed. This foundation adds no package dependency. Ollama core is MIT-licensed (see the official license link above); this branch incorporates no Ollama code or package, so THIRD_PARTY_NOTICES.md does not change. The shipped path uses Metrora-owned adapters, contracts, and native SVG presentation. The Ollama service/API are separate from each model's weights. Model weights may carry independent licenses and must be reviewed by the operator before use. The Advisor interaction pattern is an original Metrora implementation.
+The repository is MIT-licensed. This foundation adds no package dependency. Ollama core is MIT-licensed (see the official license link above); this branch incorporates no Ollama code or package, so THIRD_PARTY_NOTICES.md does not change. The shipped path uses Metrora-owned adapters, contracts, canonical Tools and native SVG presentation. The Ollama service/API are separate from each model's weights. Model weights may carry independent licenses and must be reviewed by the operator before use. The Harness interaction pattern is an original Metrora implementation; Advisor names are retained for compatibility.
 
 Synthetic conformance tests cover the fixed loopback endpoint, incremental NDJSON, cancellation, bounded errors, nullable evidence, mixed quota freshness, unavailable-provider privacy, multi-tool aggregation, deterministic fact authority, chat-first generic turns, bounded UI context/history, action safety, and the session-local welcome surface.

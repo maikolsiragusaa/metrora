@@ -72,15 +72,21 @@ async function executeRequests(input: AdvisorRuntimeInput, requests: readonly Ad
   const evidence: AdvisorEvidence[] = []
   for (const request of requests) {
     throwIfAborted(signal)
-    if (!input.executeTool) throw new AdvisorToolContractError('authority-unavailable', 'Advisor tool execution is unavailable.')
+    if (!input.executeTool) throw new AdvisorToolContractError('authority-unavailable', 'Metrora Tools execution is unavailable.')
+    input.onToolEvent?.({ name: request.tool, status: 'queued' })
     input.onToolEvent?.({ name: request.tool, status: 'started' })
-    const result = await input.executeTool(request.tool, request.arguments, signal)
-    throwIfAborted(signal)
-    // Validate the model-facing result even though it is not sent to a
-    // provider as a tool result. This keeps the canonical evidence boundary.
-    boundedToolContent(result.content)
-    evidence.push(result.evidence)
-    input.onToolEvent?.({ name: request.tool, status: 'completed' })
+    try {
+      const result = await input.executeTool(request.tool, request.arguments, signal)
+      throwIfAborted(signal)
+      // Validate the model-facing result even though it is not sent to a
+      // provider as a tool result. This keeps the canonical evidence boundary.
+      boundedToolContent(result.content)
+      evidence.push(result.evidence)
+      input.onToolEvent?.({ name: request.tool, status: result.envelope?.unavailable || result.evidence.coverage.level === 'unavailable' ? 'unavailable' : 'completed' })
+    } catch (error) {
+      input.onToolEvent?.({ name: request.tool, status: signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message)) ? 'cancelled' : 'failed' })
+      throw error
+    }
   }
   return evidence
 }
@@ -129,7 +135,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     this.transport = options.transport
     this.availability = options.availability ?? 'ready'
     this.label = options.label
-    this.unavailableMessage = options.unavailableMessage ?? 'Local Advisor model is not available.'
+    this.unavailableMessage = options.unavailableMessage ?? 'Local Harness model is not available.'
   }
 
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
@@ -138,18 +144,27 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     const definitions = toolDefinitions(input)
     const { fallbackPlan, guard } = runtimeGuardPlan(input)
     let activeRequestId: string | null = null
+    let streamingConversation = false
+    const removeDelta = this.transport.onDelta(event => {
+      if (streamingConversation && event.requestId === activeRequestId) input.onDelta?.(event.text)
+    })
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const conversation = async (kind: 'social' | 'boundary' | 'action', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
         try {
           activeRequestId = requestId('advisor-conversation')
-          const response = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorConversationMessages(effectiveInput, kind), tools: [], stream: false }, signal)
+          streamingConversation = kind === 'social' && Boolean(input.onDelta)
+          const response = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorConversationMessages(effectiveInput, kind), tools: [], stream: streamingConversation }, signal)
+          const wasStreaming = streamingConversation
           activeRequestId = null
+          streamingConversation = false
           throwIfAborted(signal)
-          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, boundedModelText(response.message?.content), true, signal)
+          const answer = await finalizeAdvisorConversationAnswer(this, effectiveInput, kind, boundedModelText(response.message?.content), true, signal)
+          return { ...answer, streamed: wasStreaming || response.streamed }
         } catch (error) {
           activeRequestId = null
+          streamingConversation = false
           if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
           return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, signal)
         }
@@ -199,12 +214,12 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
 
       const validation = planningValidation(input, firstResponse)
       if (!validation) {
-        if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message!.tool_calls!.length > 0) return fallback('The model requested a tool outside the bounded Advisor contract.')
+        if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message!.tool_calls!.length > 0) return fallback('The model requested a tool outside the bounded Metrora Tools contract.')
         const content = boundedModelText(firstResponse.message?.content)
         const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
         const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
         if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
-        if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Advisor contract.')
+        if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Metrora Tools contract.')
         return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, signal)
       }
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
@@ -239,6 +254,8 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       }
       return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: boundedModelText(synthesisResponse.message?.content), modelUsed: true }, signal)
     } finally {
+      streamingConversation = false
+      removeDelta()
       signal?.removeEventListener('abort', cancel)
     }
   }

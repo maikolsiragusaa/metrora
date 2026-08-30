@@ -76,7 +76,7 @@ Approval is issued and verified by a trusted process using exact action, proposa
 
 Execution delegates to the existing canonical task-pack runner and history store. ACT persists lifecycle state, bounded progress/counts, digests and references only; task prompts, generated output, credentials, repository paths and shell operations are not persisted or accepted. Orphaned running state is recovered only from exact existing evidence, otherwise it reaches a terminal failure/cancellation without retry.
 
-## Confirmation UX
+## Shipped confirmation UX
 
 Before execution the user should see material effects in ordinary language, for example:
 
@@ -91,13 +91,13 @@ Writes      Local Bench history
 [Run] [Cancel]
 ```
 
-A future implementation may expose more exact contract details under Details/Evidence.
+The current Harness action card exposes the selected model, pack identity, bounded checks/progress, proposal digest and safe lifecycle state. It does not expose the internal contract or approval token. The renderer sends only the action ID and proposal digest to the trusted Electron host.
 
 The model does not supply the trusted approval token merely by emitting `yes` or a tool call.
 
 ## Lifecycle and observable progress
 
-ACT should expose authoritative lifecycle events without exposing hidden model reasoning:
+ACT exposes authoritative lifecycle events without exposing hidden model reasoning:
 
 ```text
 proposed
@@ -108,7 +108,7 @@ proposed
 
 Progress must be tied to actual executed work/result evidence.
 
-Metrora Harness may later display these events inline in the same observable style as read tools.
+Metrora Harness displays the narrow Core Compatibility lifecycle inline in the same observable style as read tools. Tool/action activity remains compact and bounded.
 
 ## Smartphone projection
 
@@ -165,7 +165,7 @@ No dependency is added by this document.
 
 ## Relationship to current Draft implementation work
 
-This branch contains the concrete `metrora.action.v1` implementation around Core Compatibility for review against current `main`. The proposal-only Advisor/Harness surface remains data-only and cannot authorize or execute this operation. The implementation does not add a second runner, change mobile execution, or introduce Harness UI/navigation.
+This branch contains the concrete `metrora.action.v1` implementation around Core Compatibility for review against current `main`. Harness remains proposal-only at the product/model boundary: the renderer cannot authorize, construct or execute the action. A trusted Electron host re-reads the persisted proposal, canonicalizes the sole `ActionContractV1`, requires explicit confirmation, and delegates to ACT. The implementation does not add a second runner, change mobile execution, or introduce MCP.
 
 Any acceptance pass must ensure there is one ACT authority rather than separate `AdvisorActionProposal` and ACT execution systems that can diverge.
 

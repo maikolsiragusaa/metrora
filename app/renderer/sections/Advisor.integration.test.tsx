@@ -75,12 +75,12 @@ describe('Advisor hosted submit integration', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
-    fireEvent.change(screen.getByLabelText('Advisor hosted provider'), { target: { value: 'openrouter' } })
-    await waitFor(() => expect(screen.getByLabelText('Advisor hosted model')).toHaveValue('openrouter/auto'))
+    fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'openrouter' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('openrouter/auto'))
     fireEvent.click(screen.getByRole('checkbox'))
     await waitFor(() => expect(screen.getByRole('checkbox')).toBeChecked())
 
-    const composer = screen.getByRole('textbox', { name: 'Ask Metrora Advisor' })
+    const composer = screen.getByRole('textbox', { name: 'Ask Metrora Harness' })
     fireEvent.change(composer, { target: { value: 'ciao come stai' } })
     fireEvent.click(screen.getByRole('button', { name: /Send/ }))
 

@@ -373,9 +373,40 @@
 .advisor-followups button { padding: 4px 7px; border: 1px solid var(--advisor-line); border-radius: 5px; font-size: 9px; }
 .advisor-followups button:hover { border-color: var(--advisor-accent); }
 .advisor-tool-progress { margin: 0; color: var(--advisor-accent); font-size: 11px; font-weight: 700; }
+.advisor-tool-activity { display: grid; gap: 5px; margin-top: 9px; padding: 7px 8px; border: 1px solid var(--advisor-line); border-radius: 7px; color: var(--advisor-muted); background: var(--advisor-tint); font-size: 9px; }
+.advisor-tool-activity-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.advisor-tool-activity-row > span:not(.advisor-tool-activity-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.advisor-tool-activity-row small { margin-left: auto; color: var(--advisor-muted); font-size: 8px; white-space: nowrap; }
+.advisor-tool-activity-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--advisor-muted); }
+.advisor-tool-activity-dot.queued { background: var(--advisor-muted); }
+.advisor-tool-activity-dot.started { background: var(--advisor-accent); box-shadow: 0 0 0 3px var(--advisor-accent-soft); }
+.advisor-tool-activity-dot.completed { background: #269b6a; }
+.advisor-tool-activity-dot.unavailable,
+.advisor-tool-activity-dot.failed { background: #c25548; }
+.advisor-tool-activity-dot.cancelled { background: #a8782b; }
 .advisor-stream-preview { margin: 8px 0 0; color: var(--advisor-muted); font-size: 11px; line-height: 1.45; }
 .advisor-cancel { border: 1px solid var(--advisor-line); border-radius: 6px; padding: 5px 8px; color: var(--advisor-muted); background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
 .advisor-cancel:hover { color: var(--advisor-ink); background: var(--advisor-tint); }
+.advisor-harness-action { display: grid; gap: 8px; margin-top: 13px; padding: 11px; border: 1px solid var(--advisor-accent-soft); border-radius: 9px; background: color-mix(in srgb, var(--advisor-accent-soft) 55%, var(--advisor-surface)); }
+.advisor-harness-action-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.advisor-harness-action-head h4 { margin: 0; color: var(--advisor-ink); font-size: 10px; }
+.advisor-harness-action-head p { margin: 4px 0 0; color: var(--advisor-muted); font-size: 9px; }
+.advisor-harness-action-head strong { color: var(--advisor-ink); }
+.advisor-harness-action-status { flex: 0 0 auto; padding: 3px 6px; border-radius: 5px; color: var(--advisor-accent); background: var(--advisor-surface); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.advisor-harness-action-status.completed { color: #18704f; }
+.advisor-harness-action-status.failed,
+.advisor-harness-action-status.unavailable { color: #a23a34; }
+.advisor-harness-action-status.cancelled { color: #956000; }
+.advisor-harness-action-note,
+.advisor-harness-action-result,
+.advisor-harness-action-failure { margin: 0; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
+.advisor-harness-action-digest { margin: 0; color: var(--advisor-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }
+.advisor-harness-action-failure { color: #a23a34; }
+.advisor-harness-action-confirm,
+.advisor-harness-action-cancel { justify-self: start; border: 1px solid var(--advisor-accent); border-radius: 6px; padding: 6px 9px; color: #fff; background: var(--advisor-accent); font: inherit; font-size: 9px; font-weight: 750; cursor: pointer; }
+.advisor-harness-action-cancel { border-color: var(--advisor-line); color: var(--advisor-muted); background: transparent; }
+.advisor-harness-action-confirm:disabled,
+.advisor-harness-action-cancel:disabled { cursor: not-allowed; opacity: .5; }
 .advisor-error,
 .advisor-notice { padding: 10px 12px; border-radius: 8px; font-size: 10px; line-height: 1.45; }
 .advisor-error { color: #9b3932; background: rgba(194,56,47,.1); }

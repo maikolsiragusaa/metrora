@@ -39,7 +39,7 @@ function isActionRequest(value: string): boolean {
   if (/^(?:which|what|can|could|show|compare|are|is|how|perche|perché|quali|quale|come)\b/u.test(value)) return false
   const verb = /^(?:please\s+)?(?:run|start|launch|execute|change|apply|schedule|esegui|avvia|lancia|cambia|applica|programma)\b/u.test(value)
     || /\b(?:run|start|launch|execute|change|apply|schedule|esegui|avvia|lancia|cambia|applica|programma)\s+(?:this|that|a|the|il|la|un|una|bench|benchmark|agent|agents|routing|route|policy|politica)\b/u.test(value)
-  const target = /\b(?:bench|benchmark|task[ -]?pack|agent(?:s|i)?|routing|route|policy|polic(?:y|ies)|orchestrat)/u.test(value)
+  const target = /\b(?:bench|benchmark|task[ -]?pack|agent(?:s|i)?|routing|route|policy|polic(?:y|ies)|orchestrat|core[ -]?compat(?:ibility|ibilita)?)/u.test(value)
   return verb && target
 }
 

@@ -28,7 +28,7 @@ describe('desktop navigation authority', () => {
     }
   })
 
-  it('keeps Advisor in Analyze and Capacity in Control without exposing Capacity as a shortcut', () => {
+  it('keeps Harness in Analyze and Capacity in Control without exposing Capacity as a shortcut', () => {
     expect(DESKTOP_NAVIGATION_GROUPS).toEqual([
       { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
       { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
@@ -40,7 +40,7 @@ describe('desktop navigation authority', () => {
       'overview', 'sessions', 'pullRequests', 'spend', 'optimize', 'models', 'compare', 'advisor', 'bench', 'plans', 'workspace', 'settings',
     ])
     expect(DESKTOP_NAVIGATION_ITEMS.optimize.label).toBe('Insights')
-    expect(DESKTOP_NAVIGATION_ITEMS.advisor.label).toBe('Advisor')
+    expect(DESKTOP_NAVIGATION_ITEMS.advisor.label).toBe('Harness')
     expect(DESKTOP_NAVIGATION_ITEMS.bench.title).toBe('Local Bench')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.id).toBe('plans')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.label).toBe('Capacity')

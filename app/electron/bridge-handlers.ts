@@ -32,6 +32,10 @@ type Deps = {
   share?: DesktopShareRuntime | null
   advisorCredentials?: Pick<AdvisorCredentialStore, 'status' | 'set' | 'clear'>
   advisorHostedHandlers?: Record<string, Handler>
+  /** Trusted host handlers for the one accepted Harness action kind. */
+  harnessActHandlers?: Record<string, Handler>
+  /** Main-process projection for local conversational text deltas only. */
+  emitAdvisorDelta?: (event: { requestId: string; text: string }) => void
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -288,8 +292,9 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     },
     'metrora:getOverview': getOverview,
     ...createProjectBridgeHandlers({ spawnCli: deps.spawnCli, spawnCliAction: deps.spawnCliAction, snapshotEnv }),
-    ...createAdvisorRuntimeHandlers(),
+    ...createAdvisorRuntimeHandlers(fetch, deps.emitAdvisorDelta),
     ...(deps.advisorHostedHandlers ?? {}),
+    ...(deps.harnessActHandlers ?? {}),
     ...(deps.advisorCredentials ? {
       'metrora:advisorCredentialStatus': credentialStatus,
       'metrora:advisorCredentialSet': credentialSet,

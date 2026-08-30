@@ -166,7 +166,7 @@ function parseChatResponse(value: unknown): ChatResult {
   if (!isRecord(choice.message)) throw new Error('Local LM Studio response message was malformed.')
   return { message: normalizeMessage(choice.message), streamed: false }
 }
-function parseSseText(text: string): ChatResult {
+function parseSseText(text: string, onDelta?: (text: string) => void): ChatResult {
   let content = ''
   const toolCalls: Array<RecordValue> = []
   let chunks = 0
@@ -184,7 +184,7 @@ function parseSseText(text: string): ChatResult {
     const delta = isRecord(value.choices[0].delta) ? value.choices[0].delta : null
     if (!delta) continue
     valid = true
-    if (typeof delta.content === 'string') { content += delta.content; boundedMessageContent(content) }
+    if (typeof delta.content === 'string') { content += delta.content; onDelta?.(delta.content); boundedMessageContent(content) }
     if (Array.isArray(delta.tool_calls)) {
       for (const call of delta.tool_calls.slice(0, MAX_TOOL_CALLS)) {
         if (!isRecord(call) || typeof call.index !== 'number') throw new Error('Local runtime returned malformed streaming tool calls.')
@@ -200,9 +200,9 @@ function parseSseText(text: string): ChatResult {
   if (!valid) throw new Error('Local runtime stream contained no valid messages.')
   return { message: { content, tool_calls: parseToolCalls(toolCalls.filter(Boolean)) }, streamed: true }
 }
-async function streamResponse(response: Response): Promise<ChatResult> {
+async function streamResponse(response: Response, onDelta?: (text: string) => void): Promise<ChatResult> {
   const reader = response.body?.getReader()
-  if (!reader) return parseSseText(await boundedText(response))
+  if (!reader) return parseSseText(await boundedText(response), onDelta)
   const decoder = new TextDecoder()
   let pending = ''
   let bytes = 0
@@ -215,9 +215,9 @@ async function streamResponse(response: Response): Promise<ChatResult> {
     text += decoder.decode(part.value, { stream: true })
   }
   text += decoder.decode()
-  return parseSseText(text)
+  return parseSseText(text, onDelta)
 }
-export async function chatLMStudioMain(fetchImpl: FetchLike, payload: ChatPayload, parent?: AbortSignal): Promise<ChatResult> {
+export async function chatLMStudioMain(fetchImpl: FetchLike, payload: ChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<ChatResult> {
   if (!fetchImpl) throw new Error('Node fetch is unavailable.')
   validatePayload(payload)
   const body = { model: payload.model, messages: openAIMessageList(payload.messages), ...(payload.tools.length ? { tools: payload.tools } : {}), stream: payload.stream }
@@ -229,6 +229,6 @@ export async function chatLMStudioMain(fetchImpl: FetchLike, payload: ChatPayloa
     const response = await fetchImpl(LOOPBACK_ENDPOINT + '/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: encoded, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new Error('Local LM Studio server returned HTTP ' + response.status + '.')
-    return payload.stream ? await streamResponse(response) : parseChatResponse(JSON.parse(await boundedText(response)) as unknown)
+    return payload.stream ? await streamResponse(response, onDelta) : parseChatResponse(JSON.parse(await boundedText(response)) as unknown)
   } finally { timed.dispose() }
 }

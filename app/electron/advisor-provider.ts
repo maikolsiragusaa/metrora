@@ -159,11 +159,11 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
           ? 'This model does not advertise tool calls; Advisor can use deterministic evidence retrieval plus hosted synthesis.'
         : kind === 'openrouter' && toolCall === 'unknown'
           ? openRouterToolsAdvertised
-            ? 'This model advertises tool calls, but Metrora Advisor conformance is not verified; deterministic evidence retrieval remains authoritative.'
+            ? 'This model advertises tool calls, but Metrora Harness conformance is not verified; deterministic evidence retrieval remains authoritative.'
             : 'OpenRouter did not report tool-call capability for this model; Advisor will use deterministic evidence retrieval plus hosted synthesis until verified.'
           : kind === 'opencode-zen'
-            ? 'Discovered from OpenCode Zen; the model protocol is documented, but Metrora Advisor conformance and tool capability are not verified.'
-            : 'Discovered from the provider model listing; Metrora Advisor compatibility is not verified.'
+            ? 'Discovered from OpenCode Zen; the model protocol is documented, but Metrora Harness conformance and tool capability are not verified.'
+            : 'Discovered from the provider model listing; Metrora Harness compatibility is not verified.'
     models.push({
       id,
       label,

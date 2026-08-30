@@ -41,6 +41,13 @@ describe('Advisor deterministic comprehension', () => {
     expect(resolveAdvisorQuestion(question, scope).intent).toBe(intent)
   })
 
+  it.each(['Run Core Compatibility', 'Esegui il pack Core Compatibility'])('recognizes the single accepted Harness action as proposal-only: %s', question => {
+    const result = resolveAdvisorQuestion(question, scope)
+    expect(result.intent).toBe('action-proposal')
+    expect(result.plan.authorization).toBe('proposal-required')
+    expect(result.understanding.boundary).toMatch(/Core Compatibility|Compatibilita/u)
+  })
+
   it.each(['Claude', 'Codex'])('does not infer quota from a provider name alone: %s', question => {
     expect(resolveAdvisorQuestion(question, scope).intent).toBe('unknown')
   })

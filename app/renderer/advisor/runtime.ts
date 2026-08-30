@@ -7,7 +7,7 @@ import { renderDeterministicEvidenceAnswer } from './claim-atoms'
 
 export class AdvisorRuntimeUnavailableError extends Error {
   constructor() {
-    super('No verified Advisor model runtime is configured')
+    super('No verified Harness model runtime is configured')
     this.name = 'AdvisorRuntimeUnavailableError'
   }
 }
@@ -47,11 +47,16 @@ function socialAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): Advisor
 }
 
 function actionProposalAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer): AdvisorAnswer {
+  const coreCompatibility = evidence.actionProposal?.kind === 'run-core-compatibility'
   return {
     ...answer,
-    conclusion: evidence.understanding?.boundary ?? 'This request needs a separately authorized action proposal; no action was executed.',
-    materialLimits: ['Advisor can read and explain existing Metrora evidence here. It does not execute Bench runs, launch agents, change routing, or apply policy from conversation text.'],
-    details: ['Action state · proposal only', 'Execution · not requested from an authorized action surface'],
+    conclusion: coreCompatibility
+      ? 'Core Compatibility can be prepared as a bounded local proposal; confirm it below to run the canonical pack.'
+      : evidence.understanding?.boundary ?? 'This request needs a separately authorized action proposal; no action was executed.',
+    materialLimits: [coreCompatibility
+      ? 'Harness prepares the proposal only. The trusted desktop host must receive an explicit confirmation before ACT can run the canonical Core Compatibility pack.'
+      : 'Harness can read and explain existing Metrora evidence here. It does not execute Bench runs, launch agents, change routing, or apply policy from conversation text.'],
+    details: [coreCompatibility ? 'Core Compatibility · proposal only until confirmed' : 'Action state · proposal only', 'Execution · not requested from an authorized action surface'],
   }
 }
 function factualAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer, question: string): AdvisorAnswer {
@@ -66,7 +71,7 @@ function factualAnswer(evidence: AdvisorEvidence, answer: AdvisorAnswer, questio
 }
 export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
   readonly id = 'metrora-deterministic-local'
-  readonly label = 'Metrora local evidence runtime'
+  readonly label = 'Metrora Harness local evidence runtime'
   readonly mode = 'deterministic-local' as const
   readonly providerSupport = [] as const
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
@@ -96,7 +101,7 @@ export class DeterministicAdvisorRuntime implements AdvisorModelRuntime {
 /** Explicit placeholder for future verified local/BYOK adapters; it never pretends to support a provider. */
 export class UnsupportedAdvisorModelRuntime implements AdvisorModelRuntime {
   readonly id = 'unsupported-advisor-runtime'
-  readonly label = 'No verified model runtime'
+  readonly label = 'No verified Harness model runtime'
   readonly mode = 'unsupported' as const
   readonly providerSupport = [] as const
   async generate(_input: AdvisorRuntimeInput, _signal?: AbortSignal): Promise<AdvisorAnswer> {
