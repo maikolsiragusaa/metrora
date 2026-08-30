@@ -22,6 +22,7 @@ export type MetroraHarnessActionEvent = {
   status: MetroraHarnessActionStatus
   model: string
   originatingSurface: 'desktop'
+  runtime: { id: string }
   proposalDigest: string
   pack: ReturnType<typeof coreCompatibilityPackIdentity>
   checks: { planned: number; completed: number }
@@ -72,6 +73,7 @@ function project(record: CoreCompatibilityActionRecordV1): MetroraHarnessActionE
     status: record.status,
     model: record.contract.target.model,
     originatingSurface: 'desktop',
+    runtime: { id: record.contract.target.runtime.id },
     proposalDigest: computeActionProposalDigest(record.contract),
     pack: coreCompatibilityPackIdentity(),
     checks: { planned: record.operation.checksPlanned, completed: record.operation.checksCompleted },

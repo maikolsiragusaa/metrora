@@ -137,7 +137,7 @@ export function AdvisorWorkspace({
 
       <main className="advisor-main">
         <header className="advisor-main-head">
-          <div><p className="advisor-kicker">HARNESS · READ ONLY</p><h1>Ask Harness</h1><p className="advisor-subtitle">Talk naturally about Metrora evidence, your code, or anything you want to understand.</p></div>
+          <div><p className="advisor-kicker">HARNESS · TOOLS READ-ONLY</p><h1>Ask Harness</h1><p className="advisor-subtitle">Talk naturally about Metrora evidence, your code, or anything you want to understand. Actions require confirmation.</p></div>
           <AdvisorRuntimeControls {...runtimeControls} />
         </header>
         <div className="advisor-scope-bar" aria-label="Harness context">
@@ -153,7 +153,7 @@ export function AdvisorWorkspace({
               <label>Model<select aria-label="Harness model" value={scope.model ?? ''} onChange={event => onScopeChange(current => ({ ...current, model: event.target.value || null }))}><option value="">All models</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
             </>
           )}
-          <span className="advisor-read-only">Read-only · {scopeSummary}</span>
+          <span className="advisor-read-only">Facts read-only · actions require confirmation · {scopeSummary}</span>
         </div>
         {runtimeUnavailable ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form conversation and bounded evidence tools. <button type="button" onClick={onRetryRuntime}>Try again</button></div> : null}
         {overviewError ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overviewError}</div> : null}

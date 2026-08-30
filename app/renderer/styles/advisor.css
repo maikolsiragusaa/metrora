@@ -397,7 +397,10 @@
 .advisor-harness-action-status.failed,
 .advisor-harness-action-status.unavailable { color: #a23a34; }
 .advisor-harness-action-status.cancelled { color: #956000; }
-.advisor-harness-action-note,
+.advisor-harness-action-summary { display: grid; gap: 6px; margin: 0; }
+.advisor-harness-action-summary > div { display: grid; grid-template-columns: minmax(82px, .35fr) minmax(0, 1fr); gap: 8px; }
+.advisor-harness-action-summary dt { color: var(--advisor-muted); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.advisor-harness-action-summary dd { margin: 0; color: var(--advisor-ink); font-size: 9px; line-height: 1.4; }
 .advisor-harness-action-result,
 .advisor-harness-action-failure { margin: 0; color: var(--advisor-muted); font-size: 9px; line-height: 1.4; }
 .advisor-harness-action-digest { margin: 0; color: var(--advisor-muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }

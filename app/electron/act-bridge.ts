@@ -7,6 +7,7 @@ export type HarnessActionEvent = {
   status: 'proposed' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled' | 'unavailable'
   model: string
   originatingSurface: 'desktop'
+  runtime: { id: string }
   proposalDigest: string
   pack: { selector: string; packId: string; version: string; checks: number; digest: string }
   checks: { planned: number; completed: number }

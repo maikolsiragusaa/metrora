@@ -34,6 +34,11 @@ export function ToolActivity({ items, scope }: { items: readonly HarnessToolActi
 }
 
 type HarnessActionDisplay = Pick<MetroraHarnessActionEvent, 'actionId' | 'proposalDigest' | 'model' | 'status'> & {
+  runtime: MetroraHarnessActionEvent['runtime'] | null
+  pack: MetroraHarnessActionEvent['pack'] | null
+  checks: MetroraHarnessActionEvent['checks'] | null
+  timeout: MetroraHarnessActionEvent['timeout'] | null
+  cancellation: MetroraHarnessActionEvent['cancellation'] | null
   result: MetroraHarnessActionEvent['result'] | null
   failure: MetroraHarnessActionEvent['failure'] | null
 }
@@ -48,19 +53,45 @@ function harnessActionStatus(status: HarnessActionDisplay['status']): string {
   return 'Failed'
 }
 
+function durationLabel(milliseconds: number): string {
+  return milliseconds >= 1000 && milliseconds % 1000 === 0
+    ? String(milliseconds / 1000) + 's'
+    : String(milliseconds) + 'ms'
+}
+
+function runtimeLabel(runtime: HarnessActionDisplay['runtime']): string {
+  return runtime?.id === 'ollama-local' ? 'Ollama local · canonical runtime' : 'Canonical local runtime'
+}
+
+function packLabel(pack: HarnessActionDisplay['pack']): string {
+  return pack
+    ? pack.selector + ' · canonical Core Compatibility pack v' + pack.version
+    : 'Canonical Core Compatibility pack'
+}
+
 function HarnessActionBlock({ action, busy, onConfirm, onCancel }: {
   action: HarnessActionDisplay
   busy: boolean
   onConfirm: () => void
   onCancel: () => void
 }) {
-  const canCancel = action.status === 'ready' || action.status === 'running'
+  const canCancel = action.status === 'proposed' || action.status === 'ready' || action.status === 'running'
   const counts = action.result?.counts
+  const plannedChecks = action.checks?.planned ?? action.pack?.checks
   return (
-    <section className="advisor-harness-action" aria-label="Harness Core Compatibility proposal" onClick={event => event.stopPropagation()}>
-      <div className="advisor-harness-action-head"><div><h4>Harness proposal · Core Compatibility</h4><p>Canonical local pack on <strong>{action.model}</strong></p></div><span className={'advisor-harness-action-status ' + action.status}>{harnessActionStatus(action.status)}</span></div>
+    <section className="advisor-harness-action" aria-label="Harness Core Compatibility confirmation" onClick={event => event.stopPropagation()}>
+      <div className="advisor-harness-action-head"><div><h4>Core Compatibility · Runtime Health</h4><p>Review this canonical ACT proposal for <strong>{action.model}</strong></p></div><span className={'advisor-harness-action-status ' + action.status}>{harnessActionStatus(action.status)}</span></div>
+      <dl className="advisor-harness-action-summary">
+        <div><dt>Operation</dt><dd>Core Compatibility / Runtime Health</dd></div>
+        <div><dt>Runtime</dt><dd>{runtimeLabel(action.runtime)}</dd></div>
+        <div><dt>Model</dt><dd>{action.model}</dd></div>
+        <div><dt>Methodology / pack</dt><dd>{packLabel(action.pack)}</dd></div>
+        <div><dt>Checks planned</dt><dd>{plannedChecks === undefined ? 'Canonical pack count' : String(plannedChecks) + ' canonical checks' + (action.checks ? ' · ' + action.checks.completed + ' completed' : '')}</dd></div>
+        <div><dt>Bounded effects</dt><dd>Loopback-only execution; writes action journal + canonical Bench history only; no repository/filesystem mutation, shell, credentials, arbitrary prompts, or endpoints.</dd></div>
+        <div><dt>Timeout</dt><dd>{action.timeout ? 'Up to ' + durationLabel(action.timeout.perRequestMs) + ' per request; ' + durationLabel(action.timeout.operationMs) + ' for the full operation.' : 'Bounded per-request and full-operation timeouts.'}</dd></div>
+        <div><dt>Cancellation</dt><dd>{action.cancellation?.requested ? 'Cancellation requested. ' : 'Can be cancelled. '}Late results do not override terminal cancellation or timeout semantics.</dd></div>
+      </dl>
       <p className="advisor-harness-action-digest">Proposal digest · {action.proposalDigest.slice(0, 12)}…</p>
-      <p className="advisor-harness-action-note">No repository files, credentials, arbitrary prompts, or external mutations. ACT writes only its action journal and canonical Bench history.</p>
       {action.status === 'proposed' ? <button type="button" className="advisor-harness-action-confirm" disabled={busy} onClick={onConfirm}>{busy ? 'Confirming…' : 'Confirm and run'}</button> : null}
       {canCancel ? <button type="button" className="advisor-harness-action-cancel" disabled={busy} onClick={onCancel}>{busy ? 'Cancelling…' : 'Cancel operation'}</button> : null}
       {counts ? <p className="advisor-harness-action-result">Result · {counts.passed} passed · {counts.failed} failed · {counts.unavailable} unavailable · {counts.cancelled} cancelled</p> : null}
@@ -105,6 +136,11 @@ export function AnswerCard({ answer, selected, onSelect, onFollowUp, harnessActi
         proposalDigest: harnessAction?.proposalDigest ?? proposal!.proposalDigest,
         model: harnessAction?.model ?? proposal!.model,
         status: harnessAction?.status ?? proposal!.status,
+        runtime: harnessAction?.runtime ?? null,
+        pack: harnessAction?.pack ?? null,
+        checks: harnessAction?.checks ?? null,
+        timeout: harnessAction?.timeout ?? null,
+        cancellation: harnessAction?.cancellation ?? null,
         result: harnessAction?.result ?? null,
         failure: harnessAction?.failure ?? null,
       }

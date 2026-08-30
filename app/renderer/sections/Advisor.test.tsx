@@ -4,18 +4,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload } from '../lib/types'
+import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorContextualLaunch } from '../advisor/context'
-import type { AdvisorAnswer, AdvisorHostedModelState, AdvisorHostedProviderId } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorHostedModelState, AdvisorHostedProviderId, AdvisorRuntimeProbe } from '../advisor/types'
 import { Advisor } from './Advisor'
 
-const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentialClear, investigate } = vi.hoisted(() => ({
-  advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama') => runtime === 'lmstudio'
-    ? { runtime: 'lmstudio' as const, available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered' as const, capabilities: [{ schemaVersion: 1 as const, runtime: 'lmstudio' as const, modelId: 'qwen/qwen3-8b', discovery: 'discovered' as const, conversational: 'available' as const, toolCall: 'unknown' as const, streaming: 'supported' as const, limitation: 'Tool support varies by model.' }] }
-    : { available: false, models: [], detail: 'Ollama is not running.' }),
+const { advisorProbe, advisorHostedProbe, advisorCredentialSet, advisorCredentialClear, investigate, harnessPropose, harnessApprove, harnessCancel, harnessEventSubscription } = vi.hoisted(() => ({
+  advisorProbe: vi.fn(async (runtime: 'ollama' | 'lmstudio' = 'ollama'): Promise<AdvisorRuntimeProbe> => runtime === 'lmstudio'
+    ? { runtime: 'lmstudio', available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered', capabilities: [{ schemaVersion: 1, runtime: 'lmstudio', modelId: 'qwen/qwen3-8b', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool support varies by model.' }] }
+    : { runtime: 'ollama', available: false, models: [], detail: 'Ollama is not running.' }),
   investigate: vi.fn(),
   advisorHostedProbe: vi.fn(),
   advisorCredentialSet: vi.fn(async (provider: AdvisorHostedProviderId) => ({ provider, state: 'ready' as const })),
   advisorCredentialClear: vi.fn(async (provider: AdvisorHostedProviderId) => ({ provider, state: 'not-configured' as const })),
+  harnessPropose: vi.fn(),
+  harnessApprove: vi.fn(),
+  harnessCancel: vi.fn(),
+  harnessEventSubscription: vi.fn(() => () => {}),
 }))
 vi.mock('../advisor/kernel', () => ({ createAdvisorKernel: () => ({ investigate }) }))
 vi.mock('../lib/ipc', async importOriginal => {
@@ -31,6 +36,10 @@ vi.mock('../lib/ipc', async importOriginal => {
       advisorChat: vi.fn(),
       advisorCancel: vi.fn(async () => false),
       onAdvisorDelta: vi.fn(() => () => {}),
+      harnessProposeCoreCompatibility: harnessPropose,
+      harnessApproveCoreCompatibility: harnessApprove,
+      harnessCancelCoreCompatibility: harnessCancel,
+      onHarnessActionEvent: harnessEventSubscription,
     },
   }
 })
@@ -56,6 +65,50 @@ const answer = {
   evidence: [], coverage: { level: 'partial', label: 'Partial', detail: 'Test evidence.' }, assumptions: [], unknown: ['Unknown detail.'], nextInvestigations: ['Inspect the evidence'], details: ['Detailed evidence.'], why: ['Primary driver.'], materialLimits: ['Interpretation is bounded.'],
   runtime: { id: 'test', label: 'Test', mode: 'deterministic-local' },
 } satisfies AdvisorAnswer
+const coreCompatibilityAnswer = {
+  ...answer,
+  conclusion: 'Core Compatibility proposal ready.',
+  actionProposal: {
+    contractVersion: 'advisor-action-proposal-v1',
+    schemaVersion: 1,
+    kind: 'run-core-compatibility',
+    status: 'proposal-only',
+    summary: 'Review the bounded Core Compatibility proposal.',
+    target: 'canonical Core Compatibility task pack',
+    scope: { period: 'week', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null },
+    allowedReadTools: [],
+    permissions: ['read-canonical-evidence'],
+    budget: { maxCalls: 0, maxCostUSD: null },
+    timeoutMs: 0,
+    cancellation: 'required',
+  },
+} satisfies AdvisorAnswer
+const coreCompatibilityEvent = {
+  actionId: 'core-action-1',
+  kind: 'run-core-compatibility',
+  status: 'proposed',
+  model: 'qwen3:8b',
+  originatingSurface: 'desktop',
+  runtime: { id: 'ollama-local' },
+  proposalDigest: 'a'.repeat(64),
+  pack: { selector: 'core-v1', packId: 'core', version: '1', checks: 6, digest: 'b'.repeat(64) },
+  checks: { planned: 6, completed: 0 },
+  progress: { planned: 6, completed: 0 },
+  cancellation: { requested: false },
+  timeout: { perRequestMs: 1000, operationMs: 7000, triggered: false },
+  result: null,
+  evidence: null,
+  failure: null,
+  updatedAt: '2026-08-30T12:00:00.000Z',
+} satisfies MetroraHarnessActionEvent
+const completedCoreCompatibilityEvent = {
+  ...coreCompatibilityEvent,
+  status: 'completed' as const,
+  checks: { planned: 6, completed: 6 },
+  progress: { planned: 6, completed: 6 },
+  result: { history: 'saved' as const, counts: { planned: 6, attempted: 6, passed: 5, failed: 1, unavailable: 0, timedOut: 0, cancelled: 0 } },
+  evidence: { available: true, history: 'saved' as const },
+} satisfies MetroraHarnessActionEvent
 
 async function submitQuestion(question: string): Promise<void> {
   const previousCalls = investigate.mock.calls.length
@@ -66,9 +119,15 @@ async function submitQuestion(question: string): Promise<void> {
 
 describe('Advisor workspace', () => {
   beforeEach(() => {
-    advisorProbe.mockClear()
+    advisorProbe.mockReset().mockImplementation(async (runtime: 'ollama' | 'lmstudio' = 'ollama'): Promise<AdvisorRuntimeProbe> => runtime === 'lmstudio'
+      ? { runtime: 'lmstudio', available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered', capabilities: [{ schemaVersion: 1, runtime: 'lmstudio', modelId: 'qwen/qwen3-8b', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool support varies by model.' }] }
+      : { runtime: 'ollama', available: false, models: [], detail: 'Ollama is not running.' })
     advisorCredentialSet.mockClear()
     advisorCredentialClear.mockClear()
+    harnessPropose.mockReset()
+    harnessApprove.mockReset()
+    harnessCancel.mockReset()
+    harnessEventSubscription.mockReset().mockReturnValue(() => {})
     advisorHostedProbe.mockReset().mockImplementation(async (provider: AdvisorHostedProviderId) => ({
       provider,
       available: true,
@@ -94,6 +153,8 @@ describe('Advisor workspace', () => {
     expect(screen.getByRole('complementary', { name: 'Harness conversations' })).toHaveTextContent('Session-local history')
     expect(screen.getByRole('complementary', { name: 'Harness evidence' })).toHaveTextContent('Ask a question to pin its evidence')
     expect(screen.getByRole('button', { name: 'Configure runtime' })).toBeInTheDocument()
+    expect(screen.getByText('HARNESS · TOOLS READ-ONLY')).toBeInTheDocument()
+    expect(screen.getByText(/Facts read-only · actions require confirmation/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Harness runtime')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Harness hosted provider')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
@@ -178,6 +239,33 @@ describe('Advisor workspace', () => {
     expect(screen.getByText('Next step')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Inspect the evidence' })).toBeInTheDocument()
     expect(screen.getByText('Evidence & details')).toBeInTheDocument()
+  })
+
+  it('shows the complete trusted Core Compatibility summary and confirms with only the action id and digest', async () => {
+    advisorProbe.mockImplementation(async (): Promise<AdvisorRuntimeProbe> => ({ runtime: 'ollama', available: true, models: ['qwen3:8b'], detail: 'Local Ollama is reachable.' }))
+    investigate.mockResolvedValueOnce(coreCompatibilityAnswer)
+    harnessPropose.mockResolvedValue(coreCompatibilityEvent)
+    harnessApprove.mockResolvedValue(completedCoreCompatibilityEvent)
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await waitFor(() => expect(screen.getByText('Ollama · qwen3:8b')).toBeInTheDocument())
+    await submitQuestion('Run Core Compatibility')
+
+    const confirmation = await screen.findByRole('region', { name: 'Harness Core Compatibility confirmation' })
+    expect(confirmation).toHaveTextContent('Core Compatibility / Runtime Health')
+    expect(confirmation).toHaveTextContent('Ollama local · canonical runtime')
+    expect(confirmation).toHaveTextContent('qwen3:8b')
+    expect(confirmation).toHaveTextContent('core-v1 · canonical Core Compatibility pack v1')
+    expect(confirmation).toHaveTextContent('6 canonical checks · 0 completed')
+    expect(confirmation).toHaveTextContent('Loopback-only execution; writes action journal + canonical Bench history only; no repository/filesystem mutation, shell, credentials, arbitrary prompts, or endpoints.')
+    expect(confirmation).toHaveTextContent('Up to 1s per request; 7s for the full operation.')
+    expect(confirmation).toHaveTextContent('Can be cancelled. Late results do not override terminal cancellation or timeout semantics.')
+    expect(screen.getByRole('button', { name: 'Confirm and run' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel operation' })).toBeInTheDocument()
+    expect(confirmation).not.toHaveTextContent(/ActionContractV1|approval token/i)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and run' }))
+    await waitFor(() => expect(harnessApprove).toHaveBeenCalledWith('core-action-1', 'a'.repeat(64)))
+    expect(harnessApprove.mock.calls[0]).toHaveLength(2)
   })
 
   it('surfaces the hosted consent guard instead of silently swallowing a submit', async () => {

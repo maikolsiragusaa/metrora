@@ -28,12 +28,12 @@ function actionBoundary(question: string): string {
     if (/\bcore[ -]?compat(?:ibility|ibilita)?\b/u.test(value)) return 'Ho capito che vuoi eseguire il pack Core Compatibility. Harness può preparare una proposta; l’esecuzione richiede conferma esplicita.'
     if (/\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value)) return 'Ho capito che vuoi avviare un benchmark. Harness può leggere e spiegare risultati Bench esistenti, ma non può avviare un test da questa conversazione.'
     if (/\b(?:agent|agents|agenti|orchestrat)/u.test(value)) return 'Ho capito che vuoi avviare agenti. Harness può analizzare le evidenze Metrora, ma l’orchestrazione richiede una proposta autorizzata separatamente.'
-    return 'Ho capito che si tratta di un’operazione. Harness è in sola lettura; l’esecuzione richiede una proposta e un’autorizzazione esplicita.'
+    return 'Ho capito che si tratta di un’operazione. Gli strumenti fattuali di Harness sono in sola lettura; l’esecuzione richiede una proposta e un’autorizzazione esplicita.'
   }
   if (/\bcore[ -]?compat(?:ibility|ibilita)?\b/u.test(value)) return 'I understand you want to run the Core Compatibility pack. Harness can prepare a proposal; execution requires explicit confirmation.'
   if (/\b(?:bench|benchmark|task[ -]?pack)\b/u.test(value)) return 'I understand you want to run a benchmark. Harness can read and explain existing Bench results, but starting a run is not an authorized conversational action yet.'
   if (/\b(?:agent|agents|agenti|orchestrat)/u.test(value)) return 'I understand you want to launch agents. Harness can investigate existing Metrora evidence, but orchestration requires a separately approved action proposal and is not executable here.'
-  return 'I understand this is an operational request. Harness is read-only in this conversation; a future action proposal will require explicit user and policy authorization before execution.'
+  return 'I understand this is an operational request. Harness factual tools are read-only; execution requires an action proposal and explicit user and policy authorization.'
 }
 
 function understanding(intent: AdvisorIntent, usedDefaultScope: boolean, clarification: string | null, boundary: string | null): AdvisorQuestionUnderstanding {

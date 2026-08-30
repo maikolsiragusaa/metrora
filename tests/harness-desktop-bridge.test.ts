@@ -29,6 +29,7 @@ describe('Harness trusted desktop ACT bridge', () => {
       status: 'proposed',
       model: 'qwen3:8b',
       originatingSurface: 'desktop',
+      runtime: { id: 'ollama-local' },
       pack: { selector: 'core-v1', checks: 6 },
       checks: { planned: 6, completed: 0 },
       progress: { planned: 6, completed: 0 },

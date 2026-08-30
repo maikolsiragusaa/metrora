@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
 
 import { createHarnessActHandlers, harnessActBridgeModulePath, type HarnessActionEvent } from './act-bridge'
 
@@ -9,6 +10,7 @@ const event = {
   status: 'proposed',
   model: 'qwen3:8b',
   originatingSurface: 'desktop',
+  runtime: { id: 'ollama-local' },
   proposalDigest: 'a'.repeat(64),
   pack: { selector: 'core-v1', packId: 'core', version: '1', checks: 6, digest: 'b'.repeat(64) },
   checks: { planned: 6, completed: 0 },
@@ -24,9 +26,9 @@ const event = {
 describe('Electron Harness ACT bridge loader', () => {
   it('resolves the staged module in dev and packaged layouts', () => {
     expect(harnessActBridgeModulePath({ isPackaged: false, appPath: 'C:/repo/app', resourcesPath: 'unused' }))
-      .toBe('C:\\repo\\app\\build\\cli\\dist\\act-desktop-bridge.js')
+      .toBe(join('C:/repo/app', 'build', 'cli', 'dist', 'act-desktop-bridge.js'))
     expect(harnessActBridgeModulePath({ isPackaged: true, appPath: 'unused', resourcesPath: 'C:/resources' }))
-      .toBe('C:\\resources\\cli.asar\\dist\\act-desktop-bridge.js')
+      .toBe(join('C:/resources', 'cli.asar', 'dist', 'act-desktop-bridge.js'))
   })
 
   it('exposes only safe proposal/confirm/cancel/read handlers and lazy-loads once', async () => {
