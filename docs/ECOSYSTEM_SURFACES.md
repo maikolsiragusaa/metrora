@@ -49,7 +49,7 @@ ACT is not a chat mode and an MCP client is not trusted execution authority simp
 | **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Available in this slice** — product-facing Desktop surface, bounded Tool activity and one proposal-only Core Compatibility path |
 | **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available and expanding** |
 | **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Available** — `metrora.action.v1`, `run-core-compatibility`, and the trusted Desktop bridge; not a user-facing mode |
-| **MCP** | Standard external access to canonical Metrora Tools | **Planned** |
+| **MCP** | Standard external access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
 | **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
 | **Wrapped** | Periodic recap/share experience using canonical evidence and Widgets | **Planned** |
 | **Swarm** | Coordinated multi-agent Harness capability | **Planned** |
@@ -71,7 +71,7 @@ Metrora already has typed read-only capabilities for questions such as:
 
 The reusable implementation now lives in `src/tools`. The renderer's `Advisor*` files retain only compatibility adapters and stable contract names; the factual registry is not owned by one UI.
 
-This matters because the same factual capability should be reusable by Harness, a future MCP server and other bounded Metrora integrations without implementing parallel evidence paths.
+This matters because the same factual capability is reused by Harness, the Local MCP Server V1 and other bounded Metrora integrations without implementing parallel evidence paths.
 
 A tool result remains evidence. A caller or model may explain it, but cannot silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
 
@@ -98,7 +98,7 @@ The older `Advisor` product name is being retired. Existing `Advisor*` implement
 
 Metrora adopts the Model Context Protocol as an interoperability direction.
 
-The intended first product is a **local, read-only Metrora MCP Server** that exposes the same canonical factual Tools used by Harness.
+The shipped first product is a **local, read-only Metrora MCP Server V1** that exposes the same canonical factual Tools used by Harness.
 
 A compatible external AI client could then ask a question such as:
 
@@ -106,7 +106,7 @@ A compatible external AI client could then ask a question such as:
 
 and use Metrora's factual evidence instead of guessing or requiring a new Metrora-specific model integration.
 
-Planned Local MCP principles:
+Local MCP V1 principles:
 
 - local-first and account-optional;
 - public Community interoperability;
@@ -116,7 +116,7 @@ Planned Local MCP principles:
 - no ability to bypass Metrora privacy/scope contracts;
 - failure of MCP cannot corrupt canonical Metrora history.
 
-A future hosted MCP surface may be offered separately for managed remote access or other hosted capabilities, but Local MCP is not intended to be crippled merely to create a paid call counter.
+A future hosted MCP surface may be offered separately for managed remote access or other hosted capabilities. Local MCP remains a local read authority and is not a hosted metering product.
 
 ### Future actions through MCP
 
@@ -225,7 +225,7 @@ Required upstream provenance and licence notices remain governed by `THIRD_PARTY
 This is a dependency-oriented direction, not a rigid roadmap gate:
 
 1. **Harness Productization** — establish Harness as the product identity, extract canonical Tools and connect action requests only through proposal → ACT.
-2. **Local MCP Server V1** — expose the same factual Tools read-only through MCP.
+2. **Local MCP Server V1** — shipped in Interoperability Foundation Wave 001; expose the same factual Tools read-only through MCP.
 3. **README / asset refresh** — simplify the repository story and replace stale inherited marketing imagery with original Metrora visuals.
 4. **Widgets V1** — evolve Share Card into reusable static, privacy-aware Widgets.
 5. Continue independent **llama.cpp runtime / Performance Bench** work where it is ready to proceed.

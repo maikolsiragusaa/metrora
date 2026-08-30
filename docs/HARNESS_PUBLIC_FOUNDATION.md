@@ -57,7 +57,7 @@ This document does **not** add or claim:
 - agents or Swarm;
 - managed Metrora inference;
 - llama.cpp support;
-- a local MCP server;
+- an MCP server that can mutate state or bypass the canonical Tools boundary;
 - a hosted MCP service;
 - persistent cloud conversation memory.
 
@@ -145,16 +145,16 @@ Future Tool growth should prefer useful bounded factual drill-downs over unrestr
 The same canonical factual Tools are reusable by:
 
 - Metrora Harness;
-- a future local Metrora MCP Server;
+- the local Metrora MCP Server V1;
 - bounded CLI/integration surfaces where appropriate.
 
 Do not build a second MCP-specific accounting/evidence implementation.
 
 ## MCP relationship
 
-MCP is an adopted interoperability direction, not current shipped functionality.
+MCP is an adopted interoperability surface with a shipped local V1.
 
-The intended first product shape is a future **local, read-only Metrora MCP Server** exposing canonical factual Metrora Tools to compatible external AI clients.
+The shipped product shape is a **local, read-only Metrora MCP Server V1** exposing canonical factual Metrora Tools to compatible external AI clients.
 
 Example:
 
@@ -233,7 +233,7 @@ Current public privacy rules remain:
 - contract material and ACT approval tokens stay in trusted host/ACT boundaries;
 - conversation state is currently client/session managed;
 - no Metrora managed inference gateway exists in the current public foundation;
-- no MCP server is currently shipped by this document.
+- Local MCP Server V1 is shipped as a read-only stdio surface; hosted MCP remains outside this public wave.
 
 ## Naming compatibility and migration
 
@@ -272,12 +272,12 @@ It does not publish private commercial algorithms, private evaluation/playbook a
 2. `Advisor` is compatibility/migration debt, not a second long-term product.
 3. Capable runtimes may converse normally; conversation is not limited to Metrora analytics questions.
 4. User-specific Metrora facts come from bounded typed Tools.
-5. Canonical Tools should be reusable by Harness and future MCP instead of duplicated per caller.
+5. Canonical Tools are reusable by Harness and the Local MCP Server V1 instead of duplicated per caller.
 6. Tool results should be explained/synthesized when useful.
 7. Observable Tool/action activity may be shown; private chain-of-thought is not.
 8. Factual authority remains with Metrora evidence.
 9. ACT V2 is current trusted execution foundation; the model/proposal layer cannot self-authorize.
 10. ACT is not a user-facing chat mode.
-11. Local MCP is planned, read-only first and cannot bypass ACT.
+11. Local MCP V1 is read-only and cannot bypass ACT.
 12. Swarm is future and not shipped.
 13. Local Community remains useful without a managed Metrora AI service.

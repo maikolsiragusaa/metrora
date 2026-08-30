@@ -97,6 +97,18 @@ describe('canonical Metrora Tools foundation', () => {
     await expect(registry.execute('get_spend_snapshot', { prompt: 'raw content' })).rejects.toMatchObject({ code: 'additional-argument' })
     await expect(registry.execute('get_spend_snapshot', { period: 'month' })).rejects.toMatchObject({ code: 'invalid-scope' })
     await expect(registry.execute('get_quota_snapshot', { provider: 'copilot' })).rejects.toMatchObject({ code: 'invalid-argument-value' })
+    const todayRegistry = createMetroraToolRegistry(source(), { ...scope, period: 'today' })
+    await expect(todayRegistry.execute('get_spend_snapshot', { period: 'yesterday' })).rejects.toMatchObject({ code: 'invalid-scope' })
+  })
+
+  it('does not allow a constrained provider or model scope to be changed by a call', async () => {
+    const constrained = createMetroraToolRegistry(source(), {
+      ...scope,
+      provider: 'claude',
+      model: 'claude-sonnet-4-6',
+    })
+    await expect(constrained.execute('get_quota_snapshot', { provider: 'codex' })).rejects.toMatchObject({ code: 'invalid-scope' })
+    await expect(constrained.execute('get_spend_snapshot', { model: 'claude-opus-4-6' })).rejects.toMatchObject({ code: 'invalid-scope' })
   })
 
   it('stops before the data source when cancelled and preserves unavailable truth', async () => {

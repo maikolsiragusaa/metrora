@@ -212,8 +212,9 @@ export function buildMetroraSpendEvidence(question: string, scope: MetroraToolSc
     ? selectedModel ? { level: 'partial' as const, label: 'Model-scoped accounting available', detail: 'Canonical model cost and calls are available; model-specific sessions and daily history are not.' } : { level: 'unavailable' as const, state: 'UNAVAILABLE' as const, label: 'Model-scoped spend unavailable', detail: 'The Overview payload has no canonical accounting row for the requested model.' }
     : spendCoverage(data)
   const coverage = reconciliationCoverage(data, baseCoverage)
+  const noMeasuredActivity = finite(data.current?.calls) && data.current?.calls === 0 && finite(data.current?.cost) && data.current?.cost === 0
   const spend: MetroraToolSpendEvidence = {
-    measuredCostUSD: modelScoped ? selectedModel?.costUSD ?? null : numberOrNull(data.current?.cost),
+    measuredCostUSD: modelScoped ? selectedModel?.costUSD ?? null : noMeasuredActivity ? null : numberOrNull(data.current?.cost),
     calls: modelScoped ? selectedModel?.calls ?? null : numberOrNull(data.current?.calls),
     sessions: modelScoped ? null : numberOrNull(data.current?.sessions),
     inputTokens: modelScoped ? null : numberOrNull(data.current?.inputTokens),

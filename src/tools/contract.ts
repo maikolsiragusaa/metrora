@@ -262,6 +262,7 @@ export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolN
   const next = { ...scope, range: scope.range ? { ...scope.range } : null }
   if (typeof args.period === 'string') {
     if (args.period === 'yesterday') {
+      if (scope.period === 'today' && !scope.range) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen today to yesterday.')
       const date = new Date()
       date.setHours(0, 0, 0, 0)
       date.setDate(date.getDate() - 1)
@@ -278,9 +279,17 @@ export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolN
     }
   }
   if (name === 'get_spend_snapshot' || name === 'get_model_efficiency' || name === 'get_overview_snapshot') {
-    if (Object.prototype.hasOwnProperty.call(args, 'model')) next.model = String(args.model)
+    if (Object.prototype.hasOwnProperty.call(args, 'model')) {
+      const requested = String(args.model)
+      if (scope.model !== null && requested !== scope.model) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot change the selected model scope.')
+      next.model = requested
+    }
   }
-  if (name === 'get_quota_snapshot' && Object.prototype.hasOwnProperty.call(args, 'provider')) next.provider = String(args.provider)
+  if (name === 'get_quota_snapshot' && Object.prototype.hasOwnProperty.call(args, 'provider')) {
+    const requested = String(args.provider)
+    if (scope.provider !== 'all' && requested !== scope.provider) throw new MetroraToolContractError('invalid-scope', 'A Metrora quota request cannot change the selected provider scope.')
+    next.provider = requested
+  }
   return snapshotMetroraToolScope(next)
 }
 

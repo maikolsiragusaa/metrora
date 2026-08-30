@@ -2291,17 +2291,51 @@ program
     await runAgyStatusLineHook()
   })
 
-program
+const mcp = program
   .command('mcp')
-  .description('Run a Model Context Protocol server (stdio) exposing usage + savings to AI agents')
-  .action(async () => {
-    // stdout MUST carry only JSON-RPC; route stray logs to stderr.
-    // NOTE: only console.log is guarded here. process.stdout.write is left intact
-    // because the MCP StdioServerTransport relies on it for JSON-RPC output.
-    console.log = ((...args: unknown[]) => process.stderr.write(args.join(' ') + '\n')) as typeof console.log
+  .description('Run the local read-only MCP server')
+
+mcp
+  .command('serve')
+  .description('Run the local MCP server over stdio')
+  .option('--period <period>', 'Initial bounded period: today, week, 30days, month, all, lifetime', 'all')
+  .option('--provider <provider>', 'Initial provider scope: all, claude, codex', 'all')
+  .option('--project-id <projectId>', 'Initial user-owned Metrora Project scope', 'all')
+  .action(async opts => {
+    const periods = new Set<Period>(['today', 'week', '30days', 'month', 'all', 'lifetime'])
+    const providers = new Set(['all', 'claude', 'codex'])
+    if (!periods.has(opts.period)) {
+      process.stderr.write('metrora: unsupported MCP period.\n')
+      process.exitCode = 2
+      return
+    }
+    if (!providers.has(opts.provider)) {
+      process.stderr.write('metrora: unsupported MCP provider.\n')
+      process.exitCode = 2
+      return
+    }
     const { startStdioServer } = await import('./mcp/server.js')
-    await startStdioServer(version)
+    await startStdioServer(version, {
+      period: opts.period,
+      provider: opts.provider,
+      projectId: opts.projectId,
+    })
   })
+
+mcp
+  .command('info')
+  .description('Print the local MCP server contract and discovery metadata')
+  .option('--json', 'Output machine-readable JSON')
+  .action(async opts => {
+    const { renderMetroraMcpInfo } = await import('./mcp/info.js')
+    process.stdout.write(renderMetroraMcpInfo(version, Boolean(opts.json)))
+  })
+
+// Preserve the original bare mcp entry point as an alias for serve.
+mcp.action(async () => {
+  const { startStdioServer } = await import('./mcp/server.js')
+  await startStdioServer(version)
+})
 
 program
   .command('doctor')
