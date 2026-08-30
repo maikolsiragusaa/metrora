@@ -58,10 +58,11 @@ MCP adapter
 
 Results use the advisor-tool-v1 contract, JSON-safe content-minimal output,
 explicit coverage/freshness/unavailable semantics and a 32 KiB output bound.
-Arguments are bounded to 8 KiB. Provider quota is reported only when a
-provider-reported source exists; Metrora spend is never converted into an
-invented quota or burn-rate estimate. The current public source therefore
-returns quota as unavailable until that provider authority is implemented.
+Arguments are bounded to 8 KiB. Canonical provider-reported Capacity exists in
+the Desktop authority, but Local MCP V1's CLI/core runtime does not yet bind
+that authority through a reusable non-Electron source. `get_quota_snapshot`
+therefore truthfully returns unavailable in Local MCP V1. Metrora spend is
+never converted into an invented quota or burn-rate estimate.
 
 The server excludes raw conversations, prompts, responses, source content,
 credentials, unrestricted session payloads and local filesystem paths. Tool

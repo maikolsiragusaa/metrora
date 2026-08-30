@@ -255,9 +255,11 @@ export async function createMetroraToolRuntime(options: MetroraMcpStartupOptions
       throwIfAborted(signal)
       return rows.slice(0, 64).map(modelReportRow)
     },
-    // No canonical provider-reported quota source exists yet. Returning an
-    // empty source is intentional: the registry will label quota unavailable
-    // instead of turning Metrora spend into an invented capacity estimate.
+    // Desktop owns canonical provider-reported Capacity collectors and a
+    // sanitized quota projection. Local MCP V1's CLI/core runtime does not
+    // yet bind that authority through a reusable non-Electron source. Keep
+    // this source empty so MCP reports quota unavailable rather than turning
+    // Metrora spend into an invented capacity estimate.
     getQuota: async signal => {
       throwIfAborted(signal)
       return []

@@ -1,9 +1,11 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { describe, expect, it } from 'vitest'
+import { createMetroraToolRuntime } from '../src/mcp/runtime.js'
 
 const TOOL_NAMES = [
   'get_spend_snapshot',
@@ -17,9 +19,13 @@ const TOOL_NAMES = [
 ] as const
 
 const FORBIDDEN_TOOL_NAMES = [
+  'act',
+  'swarm',
   'approve_action',
   'execute_action',
+  'propose_action',
   'run_core_compatibility',
+  'run-core-compatibility',
   'run_bench',
   'launch_agent',
   'launch_swarm',
@@ -28,6 +34,19 @@ const FORBIDDEN_TOOL_NAMES = [
 ] as const
 
 type WireResult = Awaited<ReturnType<Client['callTool']>>
+
+function runCli(...args: string[]): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', join(process.cwd(), 'src', 'cli.ts'), ...args],
+    { cwd: process.cwd(), encoding: 'utf8' },
+  )
+  return {
+    status: result.status,
+    stdout: String(result.stdout ?? ''),
+    stderr: String(result.stderr ?? ''),
+  }
+}
 
 function textContent(result: WireResult): string {
   const entries = result.content.filter((entry): entry is { type: 'text'; text: string } => entry.type === 'text')
@@ -70,6 +89,41 @@ async function expectFailClosed(call: Promise<WireResult>, secret: string): Prom
 }
 
 describe('MCP V1 interoperability contract', () => {
+  it('reports truthful local stdio metadata and the canonical eight tool identities', () => {
+    const result = runCli('mcp', 'info', '--json')
+    expect(result.status).toBe(0)
+    expect(result.stderr).toBe('')
+    const info = JSON.parse(result.stdout) as {
+      transport: string
+      localOnly: boolean
+      readOnly: boolean
+      command: { command: string; args: string[] }
+      tools: string[]
+    }
+    expect(info).toMatchObject({
+      transport: 'stdio',
+      localOnly: true,
+      readOnly: true,
+      command: { command: 'metrora', args: ['mcp', 'serve'] },
+      tools: [...TOOL_NAMES],
+    })
+  })
+
+  it('rejects invalid startup period, provider, and Project scopes without leaking a stack or path', () => {
+    const cases = [
+      { args: ['mcp', 'serve', '--period', 'nope'], message: 'unsupported MCP period' },
+      { args: ['mcp', 'serve', '--provider', 'openai'], message: 'unsupported MCP provider' },
+      { args: ['mcp', 'serve', '--project-id', 'nope'], message: 'Project scope was not found' },
+    ]
+    for (const testCase of cases) {
+      const result = runCli(...testCase.args)
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain(testCase.message)
+      expect(result.stderr).not.toMatch(/(?:Node\.js|\bat |src[\\/]mcp[\\/]|C:\\Users\\|\/Users\/|\/home\/)/iu)
+    }
+  }, 30_000)
+
   it('negotiates over real stdio, exposes only the canonical read-only tools, and closes cleanly', async () => {
     await withStdioClient(async (client, stderr) => {
       const listed = await client.listTools()
@@ -107,7 +161,6 @@ describe('MCP V1 interoperability contract', () => {
       expect(spendWire).toContain('advisor-tool-v1')
       expect(spendWire).toContain('privacy')
       expect(spendWire).toContain('unavailable')
-      expect(spendWire).not.toContain('"measuredCostUSD":0')
       expect(stderr()).not.toContain('C:\\Users\\')
       expect(stderr()).not.toContain('/Users/')
       expect(stderr()).not.toContain('/home/')
@@ -126,6 +179,12 @@ describe('MCP V1 interoperability contract', () => {
 })
 
 describe('MCP and canonical Tools boundaries', () => {
+  it('keeps a constrained startup scope immutable when a Tool call asks to widen it', async () => {
+    const registry = await createMetroraToolRuntime({ period: 'today', provider: 'claude' })
+    await expect(registry.execute('get_spend_snapshot', { period: 'all' })).rejects.toMatchObject({ code: 'invalid-scope' })
+    await expect(registry.execute('get_quota_snapshot', { provider: 'codex' })).rejects.toMatchObject({ code: 'invalid-scope' })
+  })
+
   it('binds MCP to the canonical Tools registry instead of defining a second factual authority', () => {
     const mcpSources = readdirSync(join(process.cwd(), 'src', 'mcp'))
       .filter(name => name.endsWith('.ts'))

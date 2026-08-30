@@ -38,6 +38,19 @@ function overview(): MetroraOverview {
   }
 }
 
+function measuredZeroOverview(): MetroraOverview {
+  const base = overview()
+  return {
+    ...base,
+    current: {
+      ...base.current!,
+      cost: 0,
+      calls: 0,
+      sessions: 0,
+    },
+  }
+}
+
 function source(overrides: Partial<MetroraToolDataSource> = {}): MetroraToolDataSource {
   return {
     getOverview: vi.fn(async () => overview()),
@@ -89,6 +102,21 @@ describe('canonical Metrora Tools foundation', () => {
     expect(result.content).not.toContain('sk_test_12345678901234567890')
     expect(result.content).not.toContain('api_key=')
     expect(result.content.length).toBeLessThanOrEqual(32 * 1024)
+  })
+
+  it('keeps authoritative measured zero distinct from an unavailable source', async () => {
+    const zero = await createMetroraToolRegistry(source(), scope, measuredZeroOverview()).execute('get_spend_snapshot', {})
+    expect(zero.evidence.spend?.measuredCostUSD).toBe(0)
+    expect(zero.evidence.coverage.state).toBe('NO_DATA')
+    expect(zero.envelope).toMatchObject({ unavailable: false })
+
+    const unavailable = createMetroraToolRegistry(source({
+      getOverview: vi.fn(async () => { throw new Error('source unavailable') }),
+    }), scope)
+    const missing = await unavailable.execute('get_spend_snapshot', {})
+    expect(missing.evidence.spend?.measuredCostUSD).toBeNull()
+    expect(missing.evidence.coverage.state).toBe('UNAVAILABLE')
+    expect(missing.envelope).toMatchObject({ unavailable: true })
   })
 
   it('rejects unknown/additional arguments and every scope-widening request', async () => {

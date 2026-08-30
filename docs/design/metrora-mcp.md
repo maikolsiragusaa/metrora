@@ -41,9 +41,10 @@ and filesystem paths. It does not expose action, shell, repository, provider
 proxy or model-runner operations. MCP calls do not mutate usage/session/Bench
 history.
 
-Provider quota is returned only from a provider-reported source. Until that
-source exists in the public canonical runtime, quota evidence is explicitly
-unavailable rather than inferred from Metrora spend.
+Provider-reported Capacity exists in the public Desktop authority. Local MCP
+V1's CLI/core runtime does not yet bind that authority through a reusable
+non-Electron source, so its empty quota source truthfully produces unavailable
+quota evidence rather than inferring capacity from Metrora spend.
 
 ## Compatibility
 

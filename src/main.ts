@@ -46,6 +46,7 @@ import { clearPlan, readConfig, readPlan, readPlans, saveConfig, savePlan, getCo
 import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from './plan-usage.js'
 import { getPresetPlan, isPlanId, isPlanProvider, PLAN_IDS, PLAN_PROVIDERS, planDisplayName } from './plans.js'
 import { createRequire } from 'node:module'
+import { registerMetroraMcpCommands } from './mcp/cli.js'
 
 const require = createRequire(import.meta.url); const { version } = require('../package.json')
 import { loadCurrency, getCurrency, isValidCurrencyCode } from './currency.js'
@@ -2291,51 +2292,7 @@ program
     await runAgyStatusLineHook()
   })
 
-const mcp = program
-  .command('mcp')
-  .description('Run the local read-only MCP server')
-
-mcp
-  .command('serve')
-  .description('Run the local MCP server over stdio')
-  .option('--period <period>', 'Initial bounded period: today, week, 30days, month, all, lifetime', 'all')
-  .option('--provider <provider>', 'Initial provider scope: all, claude, codex', 'all')
-  .option('--project-id <projectId>', 'Initial user-owned Metrora Project scope', 'all')
-  .action(async opts => {
-    const periods = new Set<Period>(['today', 'week', '30days', 'month', 'all', 'lifetime'])
-    const providers = new Set(['all', 'claude', 'codex'])
-    if (!periods.has(opts.period)) {
-      process.stderr.write('metrora: unsupported MCP period.\n')
-      process.exitCode = 2
-      return
-    }
-    if (!providers.has(opts.provider)) {
-      process.stderr.write('metrora: unsupported MCP provider.\n')
-      process.exitCode = 2
-      return
-    }
-    const { startStdioServer } = await import('./mcp/server.js')
-    await startStdioServer(version, {
-      period: opts.period,
-      provider: opts.provider,
-      projectId: opts.projectId,
-    })
-  })
-
-mcp
-  .command('info')
-  .description('Print the local MCP server contract and discovery metadata')
-  .option('--json', 'Output machine-readable JSON')
-  .action(async opts => {
-    const { renderMetroraMcpInfo } = await import('./mcp/info.js')
-    process.stdout.write(renderMetroraMcpInfo(version, Boolean(opts.json)))
-  })
-
-// Preserve the original bare mcp entry point as an alias for serve.
-mcp.action(async () => {
-  const { startStdioServer } = await import('./mcp/server.js')
-  await startStdioServer(version)
-})
+registerMetroraMcpCommands(program, version)
 
 program
   .command('doctor')
