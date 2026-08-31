@@ -231,7 +231,12 @@ function observedSplitMode(value: unknown): PerformanceObservedSplitModeV1 | nul
 }
 
 function observedFlashAttention(value: unknown): PerformanceFlashAttentionV1 | null {
-  return value === 'auto' || value === 'on' || value === 'off' ? value : null
+  if (value === undefined) return null
+  if (value === -1) return 'auto'
+  if (value === 0) return 'off'
+  if (value === 1) return 'on'
+  if (value === 'auto' || value === 'on' || value === 'off') return value
+  throw new Error('llama-bench returned unsupported flash_attn evidence')
 }
 
 function workloadFromRow(row: Record<string, unknown>): PerformanceWorkloadV1['workload'] {

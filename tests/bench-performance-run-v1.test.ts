@@ -39,7 +39,7 @@ function output(): string {
       n_gpu_layers: -1,
       split_mode: 'none',
       main_gpu: 0,
-      flash_attn: 'auto',
+      flash_attn: -1,
       n_prompt: 512,
       n_gen: 0,
       n_depth: 0,
@@ -60,7 +60,7 @@ function output(): string {
       n_gpu_layers: -1,
       split_mode: 'none',
       main_gpu: 0,
-      flash_attn: 'auto',
+      flash_attn: -1,
       n_prompt: 0,
       n_gen: 128,
       n_depth: 0,
@@ -114,6 +114,28 @@ describe('Performance Bench v1', () => {
     expect(parsed.workloads[1]).not.toHaveProperty('testTimeSeconds')
   })
 
+  it.each([
+    { upstream: -1, normalized: 'auto' as const, declared: 'auto' as const },
+    { upstream: 0, normalized: 'off' as const, declared: 'off' as const },
+    { upstream: 1, normalized: 'on' as const, declared: 'on' as const },
+  ])('normalizes upstream flash_attn $upstream to $normalized and matches the declared setup', ({ upstream, normalized, declared }) => {
+    const { modelPath } = files()
+    const rows = JSON.parse(output()) as Array<Record<string, unknown>>
+    for (const row of rows) row.flash_attn = upstream
+    const parsed = parseLlamaBenchJson(rows, modelPath, { flashAttention: declared })
+    expect(parsed.observedConfiguration.flashAttention).toBe(normalized)
+    expect(parsed.configurationMismatches).not.toContain('flash_attn')
+  })
+
+  it('keeps an absent flash_attn field unavailable', () => {
+    const { modelPath } = files()
+    const rows = JSON.parse(output()) as Array<Record<string, unknown>>
+    for (const row of rows) delete row.flash_attn
+    const parsed = parseLlamaBenchJson(rows, modelPath)
+    expect(parsed.observedConfiguration.flashAttention).toBeNull()
+    expect(parsed.configurationMismatches).not.toContain('flash_attn')
+  })
+
   it('returns a completed retained record through an injected native process runner', async () => {
     const { executablePath, modelPath } = files()
     const runner = vi.fn(async (_executable: string, args: readonly string[]) => {
@@ -139,6 +161,33 @@ describe('Performance Bench v1', () => {
     })
     expect(result).toMatchObject({ status: 'failed', termination: { status: 'none' }, failure: { code: 'configuration-mismatch' } })
     expect(result.workloads).toHaveLength(2)
+  })
+
+  it('reports a semantic flash attention mismatch as configuration-mismatch', async () => {
+    const { executablePath, modelPath } = files()
+    const mismatched = JSON.parse(output()) as Array<Record<string, unknown>>
+    for (const row of mismatched) row.flash_attn = 1
+    const result = await runPerformanceBenchV1({
+      executablePath,
+      modelPath,
+      setup: { flashAttention: 'auto' },
+      processRunner: async () => ({ stdout: JSON.stringify(mismatched), stderr: '', code: 0 }),
+    })
+    expect(result).toMatchObject({ status: 'failed', termination: { status: 'none' }, failure: { code: 'configuration-mismatch' } })
+    expect(result.failure?.message).toContain('flash_attn')
+  })
+
+  it('fails closed on an unsupported upstream flash_attn value', async () => {
+    const { executablePath, modelPath } = files()
+    const malformed = JSON.parse(output()) as Array<Record<string, unknown>>
+    for (const row of malformed) row.flash_attn = 2
+    expect(() => parseLlamaBenchJson(malformed, modelPath)).toThrow(/unsupported flash_attn/u)
+    const result = await runPerformanceBenchV1({
+      executablePath,
+      modelPath,
+      processRunner: async () => ({ stdout: JSON.stringify(malformed), stderr: '', code: 0 }),
+    })
+    expect(result).toMatchObject({ status: 'failed', termination: { status: 'malformed-output' }, failure: { code: 'malformed-output' } })
   })
 
   it.each([

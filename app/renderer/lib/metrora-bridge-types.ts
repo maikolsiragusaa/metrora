@@ -30,7 +30,7 @@ import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/type
 import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
-import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-v1'
+import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'

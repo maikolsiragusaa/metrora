@@ -1,51 +1,38 @@
 import { getDateRange, type Period } from '../cli-date.js'
 import { scanBenchHistoryV1 } from './history-v1.js'
-import { compareBenchEvaluationsV1, type BenchComparisonV1 } from './compare-v1.js'
+import { compareBenchEvaluationsV1 } from './compare-v1.js'
 import { scanPerformanceHistoryV1 } from './performance-history-v1.js'
-import { comparePerformanceRunsV1, type PerformanceComparisonV1 } from './performance-compare-v1.js'
-import type { BenchEvaluationV1 } from './task-pack-run-v1.js'
-import type { PerformanceRunV1 } from './performance-contract-v1.js'
+import { comparePerformanceRunsV1 } from './performance-compare-v1.js'
+import {
+  BENCH_EVIDENCE_MAX_RECORDS,
+  BENCH_EVIDENCE_SCHEMA_VERSION,
+  type BenchComparisonV1,
+  type BenchEvidenceRangeV1,
+  type BenchEvidenceScopeV1,
+  type BenchEvidenceStateV1,
+  type BenchEvaluationV1,
+  type CanonicalBenchEvidenceOptionsV1,
+  type CanonicalBenchEvidenceV1,
+  type PerformanceComparisonV1,
+  type PerformanceRunV1,
+} from './evidence-contract-v1.js'
 
-export const BENCH_EVIDENCE_SCHEMA_VERSION = 'metrora.bench-evidence.v1' as const
-export const BENCH_EVIDENCE_MAX_RECORDS = 50
-
-export type BenchEvidenceRangeV1 = { from: string; to: string }
-export type BenchEvidenceScopeV1 = {
-  period: Period
-  range: BenchEvidenceRangeV1 | null
-  provider: string
-  projectId: string
-  model: string | null
-}
-export type BenchEvidenceStateV1 = 'NO_DATA' | 'UNAVAILABLE' | 'AVAILABLE' | 'PARTIAL' | 'NOT_COMPARABLE'
-export type CanonicalBenchEvidenceV1 = {
-  schemaVersion: typeof BENCH_EVIDENCE_SCHEMA_VERSION
-  scope: BenchEvidenceScopeV1
-  core: {
-    state: BenchEvidenceStateV1
-    latest: BenchEvaluationV1 | null
-    history: BenchEvaluationV1[]
-    comparison: BenchComparisonV1 | null
-    invalidCount: number
-  }
-  performance: {
-    state: BenchEvidenceStateV1
-    latest: PerformanceRunV1 | null
-    history: PerformanceRunV1[]
-    comparison: PerformanceComparisonV1 | null
-    invalidCount: number
-  }
-}
-
-export type CanonicalBenchEvidenceOptionsV1 = {
-  dataDir?: string
-  period?: Period
-  range?: BenchEvidenceRangeV1 | null
-  provider?: string
-  projectId?: string
-  model?: string | null
-  limit?: number
-}
+export {
+  BENCH_EVIDENCE_MAX_RECORDS,
+  BENCH_EVIDENCE_SCHEMA_VERSION,
+} from './evidence-contract-v1.js'
+export type {
+  BenchComparisonV1,
+  BenchEvidencePeriodV1,
+  BenchEvidenceRangeV1,
+  BenchEvidenceScopeV1,
+  BenchEvidenceStateV1,
+  BenchEvaluationV1,
+  CanonicalBenchEvidenceOptionsV1,
+  CanonicalBenchEvidenceV1,
+  PerformanceComparisonV1,
+  PerformanceRunV1,
+} from './evidence-contract-v1.js'
 
 function localDate(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return null
