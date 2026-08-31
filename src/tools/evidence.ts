@@ -362,9 +362,11 @@ export function buildMetroraQuotaEvidence(question: string, scope: MetroraToolSc
 
 export function buildMetroraBenchEvidence(question: string, scope: MetroraToolScope, bench: MetroraToolBenchEvidence): MetroraToolEvidence {
   const state = bench.state
-  const coverage: MetroraToolCoverage = state === 'UNAVAILABLE' || state === 'RUNTIME_UNAVAILABLE'
-    ? { level: 'unavailable', state: state ?? 'UNAVAILABLE', label: 'Bench evidence unavailable', detail: 'No compatible canonical Bench evidence was returned.' }
-    : { level: 'high', state: 'AVAILABLE', label: 'Canonical Bench evidence available', detail: 'Bench history was read without starting a run.' }
+  const coverage: MetroraToolCoverage = state === 'UNAVAILABLE' || state === 'RUNTIME_UNAVAILABLE' || state === 'NO_DATA'
+    ? { level: 'unavailable', state: state ?? 'UNAVAILABLE', label: 'Bench evidence unavailable', detail: 'No canonical Bench evidence was returned for the selected scope.' }
+    : state === 'NOT_COMPARABLE' || state === 'PARTIAL'
+      ? { level: 'partial', state, label: state === 'NOT_COMPARABLE' ? 'Bench evidence not comparable' : 'Bench evidence partial', detail: 'Canonical Bench history was read, but one or more records are incomplete or comparison-incompatible.' }
+      : { level: 'high', state: 'AVAILABLE', label: 'Canonical Bench evidence available', detail: 'Bench history was read without starting a run.' }
   return {
     intent: 'bench-result',
     question,
@@ -372,7 +374,7 @@ export function buildMetroraBenchEvidence(question: string, scope: MetroraToolSc
     refs: [{ id: 'bench.history', label: 'Canonical Bench history', source: 'bench' }],
     coverage,
     assumptions: ['Bench evidence is read-only; this tool never starts a Bench run.', 'Comparisons are shown only when the canonical Bench contract marks them compatible.'],
-    unknown: coverage.level === 'high' ? [] : ['No compatible Bench result is available in the selected scope.'],
+    unknown: coverage.level === 'high' ? [] : ['No complete compatible Bench result is available in the selected scope.'],
     nextInvestigations: ['Use the dedicated Bench surface to start a new controlled run after explicit user intent.'],
     bench,
     domainCoverage: buildMetroraToolDomainCoverage(null, [{ id: 'bench.history', label: 'Canonical Bench history', source: 'bench' }]),

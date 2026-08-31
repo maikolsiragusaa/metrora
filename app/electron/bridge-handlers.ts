@@ -20,7 +20,7 @@ type Handler = (...args: any[]) => Promise<Envelope>
 
 type Deps = {
   spawnCli: (args: string[], opts?: { timeoutMs?: number; idleTimeoutMs?: number; onStderr?: (chunk: string) => void; onProgress?: (event: TrustedProgressEvent) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority }) => Promise<unknown>
-  spawnCliAction: (args: string[], opts?: { timeoutMs?: number }) => Promise<ActionResult>
+  spawnCliAction: (args: string[], opts?: { timeoutMs?: number; signal?: AbortSignal }) => Promise<ActionResult>
   resolveMetroraPath: () => string | null
   getQuota?: typeof getQuota
   /** Forward cold-start scan-progress events to the renderer splash. */
@@ -111,6 +111,18 @@ function vOutPath(outPath: string): string {
   if (outPath.startsWith('-') || !path.isAbsolute(outPath)) throw new CliError('bad-args', 'export path must be absolute')
   return outPath
 }
+
+function vAbsoluteFile(value: unknown, label: string, extension?: string): string {
+  if (typeof value !== 'string' || !value.trim() || value.startsWith('-') || /[\u0000-\u001f\u007f]/u.test(value) || !path.isAbsolute(value)) throw new CliError('bad-args', `invalid ${label} path`)
+  if (extension && path.extname(value).toLowerCase() !== extension) throw new CliError('bad-args', `${label} path must use ${extension}`)
+  return value
+}
+
+function vOptionalInteger(value: unknown, label: string, min: number, max: number): number | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) throw new CliError('bad-args', `${label} is out of bounds`)
+  return value
+}
 // Price-override rates are USD per 1M tokens: every provided rate must be a
 // finite, strictly positive number before it becomes a CLI value.
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
@@ -155,6 +167,70 @@ function parseBenchTaskPackAction(result: ActionResult): unknown {
   throw new CliError('nonzero', result.stderr.trim() || `Metrora bench task-pack exited with code ${result.code ?? 'unknown'}`)
 }
 
+function isPerformancePayload(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && (value as { schemaVersion?: unknown }).schemaVersion === 'metrora.bench.performance.v1'
+}
+
+function parsePerformanceAction(result: ActionResult): unknown {
+  let value: unknown
+  try { value = JSON.parse(result.stdout) }
+  catch { throw new CliError('bad-json', 'Metrora Performance Bench returned invalid structured data') }
+  if (result.ok || isPerformancePayload(value)) return value
+  throw new CliError('nonzero', result.stderr.trim() || `Metrora bench performance exited with code ${result.code ?? 'unknown'}`)
+}
+
+function vPerformanceRequest(value: unknown): {
+  executablePath: string
+  modelPath: string
+  repetitions?: number
+  promptTokens?: number
+  generationTokens?: number
+  batchSize?: number
+  ubatchSize?: number
+  threads?: number | null
+  gpuLayers?: number
+  flashAttention?: 'auto' | 'on' | 'off'
+  splitMode?: 'none' | 'layer' | 'row'
+  mainGpu?: number | null
+  warmup?: boolean
+  timeoutMs?: number
+  runId?: string
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CliError('bad-args', 'Performance Bench request is invalid')
+  const input = value as Record<string, unknown>
+  const allowed = new Set(['executablePath', 'modelPath', 'repetitions', 'promptTokens', 'generationTokens', 'batchSize', 'ubatchSize', 'threads', 'gpuLayers', 'flashAttention', 'splitMode', 'mainGpu', 'warmup', 'timeoutMs', 'runId'])
+  if (Object.keys(input).some(key => !allowed.has(key))) throw new CliError('bad-args', 'Performance Bench request contains an unsupported field')
+  const executablePath = vAbsoluteFile(input.executablePath, 'llama-bench executable')
+  const modelPath = vAbsoluteFile(input.modelPath, 'GGUF model', '.gguf')
+  const bounded = (field: string, label: string, min: number, max: number): number | undefined => {
+    if (input[field] === undefined) return undefined
+    if (input[field] === null) throw new CliError('bad-args', `${label} is out of bounds`)
+    return vOptionalInteger(input[field], label, min, max) as number
+  }
+  if (input.flashAttention !== undefined && input.flashAttention !== 'auto' && input.flashAttention !== 'on' && input.flashAttention !== 'off') throw new CliError('bad-args', 'invalid flash attention mode')
+  if (input.splitMode !== undefined && input.splitMode !== 'none' && input.splitMode !== 'layer' && input.splitMode !== 'row') throw new CliError('bad-args', 'invalid split mode')
+  if (input.warmup !== undefined && typeof input.warmup !== 'boolean') throw new CliError('bad-args', 'invalid warmup flag')
+  const timeoutMs = bounded('timeoutMs', 'timeout', 1_000, 20 * 60_000)
+  if (input.runId !== undefined && (typeof input.runId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(input.runId))) throw new CliError('bad-args', 'invalid Performance Bench run id')
+  return {
+    executablePath,
+    modelPath,
+    repetitions: bounded('repetitions', 'repetitions', 1, 5),
+    promptTokens: bounded('promptTokens', 'prompt tokens', 1, 8192),
+    generationTokens: bounded('generationTokens', 'generation tokens', 1, 8192),
+    batchSize: bounded('batchSize', 'batch size', 1, 8192),
+    ubatchSize: bounded('ubatchSize', 'ubatch size', 1, 8192),
+    threads: input.threads === undefined ? undefined : vOptionalInteger(input.threads, 'threads', 1, 256),
+    gpuLayers: bounded('gpuLayers', 'GPU layers', -1, 512),
+    flashAttention: input.flashAttention as 'auto' | 'on' | 'off' | undefined,
+    splitMode: input.splitMode as 'none' | 'layer' | 'row' | undefined,
+    mainGpu: input.mainGpu === undefined ? undefined : vOptionalInteger(input.mainGpu, 'main GPU', 0, 64),
+    warmup: input.warmup as boolean | undefined,
+    timeoutMs,
+    runId: input.runId as string | undefined,
+  }
+}
+
 /**
  * Props for a `cli_error` telemetry event. Deliberately carries only
  * non-sensitive enums so the event is diagnosable without a repro yet leaks
@@ -188,6 +264,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
   // Latch cold_start to the first coalesced attempt in this app process.
   let coldStartEmitted = false
   let coldStartBegan: number | null = null
+  const performanceFlights = new Map<string, AbortController>()
   const emitColdStart = (timedOut: boolean): void => {
     if (coldStartEmitted) return
     coldStartEmitted = true
@@ -303,6 +380,15 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     'metrora:getBenchHistory': run(() => ['bench', 'history', '--format', 'json', '--limit', '50']),
     'metrora:getBenchModelDiscovery': run(() => ['bench', 'models', '--format', 'json']),
     'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
+    'metrora:getBenchEvidence': run((period: string, range?: DateRange, model?: string | null, provider = 'all', projectId?: string | null) => {
+      const validatedProjectId = projectId && projectId !== 'all' ? validateProjectScope(projectId) : null
+      return [
+        'bench', 'evidence', '--format', 'json', '--period', vPeriod(period), ...rangeArgs(vRange(range)),
+        ...(provider !== 'all' ? ['--provider', vProvider(provider)] : []),
+        ...(validatedProjectId ? ['--project-id', validatedProjectId] : []),
+        ...(model ? ['--model', vToken(model)] : []),
+      ]
+    }),
     'metrora:runBenchTaskPack': async (model: string, pack = 'core-v1') => {
       try {
         const result = await deps.spawnCliAction(['bench', 'task-pack', '--model', vToken(model), '--pack', vToken(pack), '--format', 'json', '--run-id', randomUUID()], { timeoutMs: 10 * 60_000 })
@@ -310,6 +396,50 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
       } catch (err) {
         return { ok: false, error: toEnvelopeError(err) }
       }
+    },
+    'metrora:getPerformanceBenchHistory': run(() => ['bench', 'performance-history', '--format', 'json', '--limit', '50']),
+    'metrora:getPerformanceBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'performance-compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),
+    'metrora:runPerformanceBench': async (requestId: string, input: unknown) => {
+      if (!/^[A-Za-z0-9._:-]{1,128}$/u.test(requestId)) return { ok: false, error: { kind: 'validation', message: 'Performance Bench request id is invalid' } }
+      let request: ReturnType<typeof vPerformanceRequest>
+      try { request = vPerformanceRequest(input) }
+      catch (err) { return { ok: false, error: toEnvelopeError(err) } }
+      const controller = new AbortController()
+      performanceFlights.set(requestId, controller)
+      const args = [
+        'bench', 'performance',
+        '--executable', request.executablePath,
+        '--model', request.modelPath,
+        '--format', 'json',
+        '--run-id', request.runId ?? randomUUID(),
+        '--repetitions', String(request.repetitions ?? 3),
+        '--prompt-tokens', String(request.promptTokens ?? 512),
+        '--generation-tokens', String(request.generationTokens ?? 128),
+        '--batch-size', String(request.batchSize ?? 2048),
+        '--ubatch-size', String(request.ubatchSize ?? 512),
+        '--gpu-layers', String(request.gpuLayers ?? -1),
+        '--flash-attention', request.flashAttention ?? 'auto',
+        '--split-mode', request.splitMode ?? 'none',
+        '--timeout-ms', String(request.timeoutMs ?? 10 * 60_000),
+      ]
+      if (request.threads !== undefined && request.threads !== null) args.push('--threads', String(request.threads))
+      if (request.mainGpu !== undefined && request.mainGpu !== null) args.push('--main-gpu', String(request.mainGpu))
+      if (request.warmup === false) args.push('--no-warmup')
+      try {
+        const result = await deps.spawnCliAction(args, { timeoutMs: (request.timeoutMs ?? 10 * 60_000) + 5_000, signal: controller.signal })
+        if (controller.signal.aborted && !result.stdout.trim()) throw new CliError('nonzero', 'Performance Bench was cancelled')
+        return { ok: true, value: parsePerformanceAction(result) }
+      } catch (err) {
+        return { ok: false, error: toEnvelopeError(err) }
+      } finally {
+        if (performanceFlights.get(requestId) === controller) performanceFlights.delete(requestId)
+      }
+    },
+    'metrora:cancelPerformanceBench': async (requestId: string) => {
+      if (!/^[A-Za-z0-9._:-]{1,128}$/u.test(requestId)) return { ok: false, error: { kind: 'validation', message: 'Performance Bench request id is invalid' } }
+      const controller = performanceFlights.get(requestId)
+      controller?.abort()
+      return { ok: true, value: Boolean(controller) }
     },
     'metrora:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
     'metrora:getActReport': run(() => ['act', 'report', '--json']),

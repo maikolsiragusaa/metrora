@@ -6,6 +6,7 @@ import type {
   AdvisorEvidenceRef,
   AdvisorJsonObject,
   AdvisorJsonValue,
+  AdvisorPerformanceEvidence,
   AdvisorPresentationBlockV1,
   AdvisorPresentationIntent,
   AdvisorScope,
@@ -38,7 +39,7 @@ const NUMERIC_CHARACTER_PATTERN = /\p{N}/u
 const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million|billion|first|second|third|uno|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|primo|secondo|terzo)\b/iu
 const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
 const CONTENT_MINIMAL_PROVIDER_NAMES = ['all', 'claude', 'codex', 'copilot', 'kimi', 'antigravity'] as const
-const SAFE_ANSWER_EVIDENCE_ID_PATTERN = /^(?:spend|quota|spend-(?:claude|codex)|overview\.(?:current|history\.daily|models|projects|sessions|modelAccounting)|models\.report|quota\.(?:claude|codex|copilot|kimi|antigravity)|bench\.(?:latest|history|comparison))$/u
+const SAFE_ANSWER_EVIDENCE_ID_PATTERN = /^(?:spend|quota|spend-(?:claude|codex)|overview\.(?:current|history\.daily|models|projects|sessions|modelAccounting)|models\.report|quota\.(?:claude|codex|copilot|kimi|antigravity)|bench\.(?:latest|history|comparison)|bench\.performance\.(?:latest|history|comparison))$/u
 const CLAIM_ID_PATTERN = /^[A-Za-z0-9._:-]{1,80}$/u
 
 function contentMinimalSource(value: unknown): typeof CONTENT_MINIMAL_EVIDENCE_SOURCES[number] | null {
@@ -184,6 +185,94 @@ function contentMinimalBenchRun(run: AdvisorBenchRun): AdvisorJsonObject {
   }
 }
 
+function safePerformanceText(value: string | null): string | null {
+  return value === null ? null : sanitizeAdvisorDisplayText(value)
+}
+
+function contentMinimalPerformanceRun(run: import('./types').AdvisorPerformanceEvidence['runs'][number]): AdvisorJsonObject {
+  return {
+    schemaVersion: run.schemaVersion,
+    runId: safeBenchIdentifier(run.runId),
+    runner: { id: safeBenchIdentifier(run.runner.id), version: safeBenchIdentifier(run.runner.version) },
+    methodology: {
+      id: safeBenchIdentifier(run.methodology.id),
+      version: safeBenchIdentifier(run.methodology.version),
+      setup: run.methodology.setup,
+      argvDigest: safeBenchIdentifier(run.methodology.argvDigest, true),
+    },
+    model: {
+      selected: sanitizeAdvisorDisplayText(run.model.selected),
+      reported: safePerformanceText(run.model.reported),
+      type: safePerformanceText(run.model.type),
+      sizeBytes: typeof run.model.sizeBytes === 'number' && Number.isFinite(run.model.sizeBytes) ? run.model.sizeBytes : null,
+      parameterCount: typeof run.model.parameterCount === 'number' && Number.isFinite(run.model.parameterCount) ? run.model.parameterCount : null,
+    },
+    executable: { name: sanitizeAdvisorDisplayText(run.executable.name) },
+    runtime: {
+      id: safeBenchIdentifier(run.runtime.id),
+      buildCommit: safePerformanceText(run.runtime.buildCommit),
+      buildNumber: typeof run.runtime.buildNumber === 'number' && Number.isFinite(run.runtime.buildNumber) ? run.runtime.buildNumber : null,
+      version: safePerformanceText(run.runtime.version),
+      backends: run.runtime.backends.slice(0, 16).map(value => sanitizeAdvisorDisplayText(value)),
+    },
+    // Hardware and process-environment strings are retained in the local
+    // Bench record for comparison, but are deliberately not model-facing:
+    // native executable output can contain machine/user identifiers.
+    startedAt: contentMinimalTimestamp(run.startedAt) ?? REDACTION,
+    endedAt: contentMinimalTimestamp(run.endedAt) ?? REDACTION,
+    status: run.status,
+    termination: { status: run.termination.status },
+    failure: run.failure === null ? null : { code: sanitizeAdvisorDisplayText(run.failure.code), message: sanitizeAdvisorDisplayText(run.failure.message) },
+    observedConfiguration: run.observedConfiguration,
+    workloads: run.workloads.slice(0, 16).map(workload => ({
+      workload: workload.workload,
+      promptTokens: workload.promptTokens,
+      generationTokens: workload.generationTokens,
+      depth: workload.depth,
+      repetitions: workload.repetitions,
+      throughputTokensPerSecond: workload.throughputTokensPerSecond,
+      throughputStddevTokensPerSecond: workload.throughputStddevTokensPerSecond,
+      averageTimeNs: workload.averageTimeNs,
+      averageLatencyMs: workload.averageLatencyMs,
+      testTime: workload.testTime,
+    })),
+    resultDigest: safeBenchIdentifier(run.resultDigest, true),
+  }
+}
+
+function contentMinimalPerformanceComparison(value: import('./types').AdvisorPerformanceEvidence['comparison']): AdvisorJsonValue {
+  if (!value) return null
+  const identity = (item: typeof value.left): AdvisorJsonObject => ({
+    runId: safeBenchIdentifier(item.runId),
+    model: sanitizeAdvisorDisplayText(item.model),
+    modelType: safePerformanceText(item.modelType),
+    executable: sanitizeAdvisorDisplayText(item.executable),
+    endedAt: contentMinimalTimestamp(item.endedAt) ?? REDACTION,
+    runtime: {
+      id: safeBenchIdentifier(item.runtime.id),
+      buildCommit: safePerformanceText(item.runtime.buildCommit),
+      buildNumber: typeof item.runtime.buildNumber === 'number' && Number.isFinite(item.runtime.buildNumber) ? item.runtime.buildNumber : null,
+      version: safePerformanceText(item.runtime.version),
+      backends: item.runtime.backends.slice(0, 16).map(entry => sanitizeAdvisorDisplayText(entry)),
+    },
+    environment: {
+      os: sanitizeAdvisorDisplayText(item.environment.os),
+      arch: sanitizeAdvisorDisplayText(item.environment.arch),
+      node: sanitizeAdvisorDisplayText(item.environment.node),
+    },
+    setup: item.setup,
+    observedConfiguration: item.observedConfiguration,
+  })
+  return {
+    schemaVersion: value.schemaVersion,
+    compatible: value.compatible,
+    reason: value.reason,
+    left: identity(value.left),
+    right: identity(value.right),
+    deltas: value.deltas,
+  }
+}
+
 export function contentMinimalEvidenceRefs(refs: AdvisorEvidenceRef[], options: { preserveIds?: boolean } = {}): AdvisorEvidenceRef[] {
   return refs.flatMap((ref, index) => {
     const source = contentMinimalSource(ref.source)
@@ -222,7 +311,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     if (Array.isArray(value)) return value.slice(0, 32).map(item => safeJsonValue(item, depth + 1))
     return Object.fromEntries(Object.entries(value).slice(0, 32).map(([key, child]) => [sanitizeAdvisorDisplayText(key, 80), safeJsonValue(child, depth + 1)]))
   }
-  const claimKinds = ['measured_total', 'observed_count', 'provider_quota_remaining', 'provider_quota_reset', 'model_identity', 'model_measured_cost', 'project_measured_cost', 'session_measured_cost', 'trend_direction', 'coverage_state', 'freshness_state', 'bench_score', 'bench_status', 'bench_comparability'] as const
+  const claimKinds = ['measured_total', 'observed_count', 'provider_quota_remaining', 'provider_quota_reset', 'model_identity', 'model_measured_cost', 'project_measured_cost', 'session_measured_cost', 'trend_direction', 'coverage_state', 'freshness_state', 'bench_score', 'bench_status', 'bench_comparability', 'bench_performance_throughput', 'bench_performance_latency', 'bench_performance_status', 'bench_performance_comparability'] as const
   const safeClaims = (claims: AdvisorVerifiedClaimAtomV1[] | undefined): AdvisorVerifiedClaimAtomV1[] | undefined => {
     if (!claims) return undefined
     return claims.flatMap(claim => {
@@ -253,7 +342,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     if (block.kind === 'line-chart' || block.kind === 'bar-chart') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), unit: safeText(block.unit), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), accessibilityLabel: safeText(block.accessibilityLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), series: block.series.slice(0, 8).map(series => ({ ...series, id: safeText(series.id), label: safeText(series.label), points: series.points.slice(-30).map(point => ({ label: safeText(point.label), value: point.value === null || Number.isFinite(point.value) ? point.value : null })) })) }]
     if (block.kind === 'comparison-table') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), table: { columns: block.table.columns.slice(0, 12).map(safeText), rows: block.table.rows.slice(0, 32).map(row => row.slice(0, 12).map(safeText)) } }]
     if (block.kind === 'quota-card') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), providers: block.providers.slice(0, 8).map(provider => ({ ...provider, planLabel: provider.planLabel === null ? null : safeText(provider.planLabel), observedAt: provider.observedAt === null ? null : safeText(provider.observedAt), windows: provider.windows.slice(0, 8).map((window, index) => ({ ...window, id: 'window-' + (index + 1), label: safeText(window.label), resetsAt: window.resetsAt === null ? null : safeText(window.resetsAt) })) })) }]
-    if (block.kind === 'bench-summary') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), run: block.run === null ? null : contentMinimalBenchRun(block.run) as unknown as AdvisorBenchRun }]
+    if (block.kind === 'bench-summary') return [{ ...block, title: safeText(block.title), summary: safeText(block.summary), scopeLabel: safeText(block.scopeLabel), periodLabel: safeText(block.periodLabel), evidenceRefs: safeEvidenceRefs(block.evidenceRefs), run: block.run === null ? null : contentMinimalBenchRun(block.run) as unknown as AdvisorBenchRun, ...(block.performance ? { performance: { state: block.performance.state, latest: block.performance.latest === null ? null : contentMinimalPerformanceRun(block.performance.latest), runs: block.performance.runs.slice(0, 10).map(contentMinimalPerformanceRun), comparison: contentMinimalPerformanceComparison(block.performance.comparison) } as unknown as AdvisorPerformanceEvidence } : {}) }]
     if (block.kind === 'warning' || block.kind === 'evidence-disclosure') return [{ ...block, title: safeText(block.title), text: safeText(block.text), evidenceRefs: safeEvidenceRefs(block.evidenceRefs) }]
     return []
   }) : undefined
@@ -399,6 +488,14 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence, options: { pre
         latest: evidence.bench.latest === null ? null : contentMinimalBenchRun(evidence.bench.latest),
         runs: evidence.bench.runs.slice(0, 10).map(contentMinimalBenchRun),
         comparison: evidence.bench.comparison === null ? null : { ...evidence.bench.comparison, comparedRunIds: evidence.bench.comparison.comparedRunIds.map(value => safeBenchIdentifier(value)) },
+        performance: evidence.bench.performance
+          ? {
+              state: evidence.bench.performance.state,
+              latest: evidence.bench.performance.latest === null ? null : contentMinimalPerformanceRun(evidence.bench.performance.latest),
+              runs: evidence.bench.performance.runs.slice(0, 10).map(contentMinimalPerformanceRun),
+              comparison: contentMinimalPerformanceComparison(evidence.bench.performance.comparison),
+            }
+          : null,
       }
     : null
   return {

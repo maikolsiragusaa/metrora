@@ -38,14 +38,22 @@ Tool outputs are compact JSON contracts. They do not include raw source content,
 
 ## Runtime boundary
 
-The implemented local transport supports two selectable runtimes: Ollama and LM Studio. Both use the same Advisor Kernel compatibility path, canonical Tools, immutable evidence scope, eight-tool contract, chat-first model boundary, deterministic fact precedence, privacy projection, cancellation, and bounded output rules. The runtime/model selector is session-local and keeps the primary UX compact.
+The implemented local transport supports three selectable runtimes: Ollama, LM Studio and an existing-binary-only loopback `llama-server` adapter. All use the same Advisor Kernel compatibility path, canonical Tools, immutable evidence scope, eight-tool contract, chat-first model boundary, deterministic fact precedence, privacy projection, cancellation, and bounded output rules. The runtime/model selector is session-local and keeps the primary UX compact.
 
 Electron main is the only process allowed to call either fixed loopback boundary:
 
 - Ollama: `http://127.0.0.1:11434/api/tags` for model discovery and `/api/chat` for chat;
 - LM Studio: `http://127.0.0.1:1234/api/v1/models` for model discovery and `/v1/chat/completions` for OpenAI-compatible chat and tool calls.
+- llama-server: fixed loopback `http://127.0.0.1:8080/health` and `/v1/models` for discovery, then `/v1/chat/completions`; only existing local servers are accepted.
 
 The LM Studio adapter reads language-model identifiers factually from the local `models` response and ignores embedding models. The default local server does not require a token; configurations that require authentication are unavailable in this Community V1 path because Metrora does not add credential management. Tokens are never logged, stored in renderer state, or synchronized. The endpoint, protocol, and port are not renderer-configurable: arbitrary URLs, LAN binding, remote OpenAI-compatible servers, and cloud fallback are not accepted.
+
+For llama-server, raw upstream model IDs that happen to be paths stay in the
+Electron host route table only. Renderer/Harness labels, model capabilities and
+diagnostics receive a bounded opaque handle and safe label; chat resolves that
+handle back to the exact raw ID only inside Electron. Tool-call capability
+remains `unknown` unless verified by the server contract; Metrora does not add
+regex-based tool routing.
 
 For a factual/tool turn, the first bounded model call receives same-scope conversation, UI context, and the fixed read-only tool definitions. It may answer directly or select typed tools; Metrora executes canonical reads locally and, when evidence was read, sends one fresh synthesis request with tools disabled and merged evidence in a new context. Ordinary chat can finish after the first call. No provider-native tool-result continuation is used. Ollama uses bounded NDJSON parsing; LM Studio uses bounded OpenAI-compatible SSE parsing. A discovered model is not treated as verified Advisor tool support: each discovered model receives a session-local `ModelCapabilityProfileV1` with conversational availability and streaming support facts, while tool support remains `unknown` until a bounded synthetic conformance check establishes more. Deterministic comprehension remains a fallback hint, same-scope history is bounded, UI context is referential only, and action language stays proposal-only.
 
@@ -81,7 +89,14 @@ Trend language is deliberately descriptive: latest returned day versus the avera
 
 ## Bench evidence
 
-Bench results are controlled evidence for a declared task pack. A clean completed run is available for that pack; incomplete, corrupt, or unavailable records remain partial or unavailable, and incompatible canonical comparisons remain not comparable. Even available Bench evidence does not establish universal model quality, ranking, or a purchase recommendation.
+Bench results are controlled evidence for a declared task pack or a declared
+native Performance configuration. Core Compatibility and Performance remain
+separate families. A clean completed run is available for its family;
+incomplete, corrupt, unavailable or declared/observed-mismatched records
+remain partial or unavailable, and incompatible canonical comparisons remain
+not comparable. The shared canonical Bench source feeds both Harness and the
+read-only MCP adapter; neither starts a run. Even available Bench evidence does
+not establish universal model quality, ranking, or a purchase recommendation.
 
 ## Privacy and storage
 

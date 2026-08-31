@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
 import { metrora, normalizeCliError } from '../lib/ipc'
-import type { BenchComparison, BenchEvaluation, BenchModelDiscovery, BenchTaskResult } from '../lib/metrora-bridge-types'
+import type { BenchComparison, BenchEvaluation, BenchModelDiscovery, BenchTaskResult, PerformanceBenchRequest, PerformanceHistoryReport } from '../lib/metrora-bridge-types'
+import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
+import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
+import { PerformanceBenchSection } from './bench/PerformanceBenchSection'
 
 function formatNumber(value: number): string {
   return value >= 100 || Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
@@ -304,6 +307,17 @@ export function Bench() {
   const [rightRunId, setRightRunId] = useState('')
   const [comparison, setComparison] = useState<BenchComparison | null>(null)
   const [comparisonLoading, setComparisonLoading] = useState(false)
+  const [performanceHistory, setPerformanceHistory] = useState<PerformanceRunV1[]>([])
+  const [performanceInvalidCount, setPerformanceInvalidCount] = useState(0)
+  const [performanceLoading, setPerformanceLoading] = useState(true)
+  const [performanceRunning, setPerformanceRunning] = useState(false)
+  const [performanceExecutable, setPerformanceExecutable] = useState('')
+  const [performanceModel, setPerformanceModel] = useState('')
+  const [performanceRequestId, setPerformanceRequestId] = useState<string | null>(null)
+  const [performanceLeftRunId, setPerformanceLeftRunId] = useState('')
+  const [performanceRightRunId, setPerformanceRightRunId] = useState('')
+  const [performanceComparison, setPerformanceComparison] = useState<PerformanceComparisonV1 | null>(null)
+  const [performanceComparisonLoading, setPerformanceComparisonLoading] = useState(false)
 
   const loadHistory = useCallback(async () => {
     try {
@@ -332,10 +346,80 @@ export function Bench() {
     } finally { setModelDiscoveryLoading(false) }
   }, [])
 
+  const loadPerformanceHistory = useCallback(async () => {
+    const reader = metrora.getPerformanceBenchHistory
+    if (typeof reader !== 'function') { setPerformanceLoading(false); return }
+    setPerformanceLoading(true)
+    try {
+      const report: PerformanceHistoryReport = await reader()
+      setPerformanceHistory(report.records)
+      setPerformanceInvalidCount(report.invalidCount)
+      setPerformanceLeftRunId(current => current && report.records.some(record => record.runId === current) ? current : report.records[1]?.runId ?? report.records[0]?.runId ?? '')
+      setPerformanceRightRunId(current => current && report.records.some(record => record.runId === current) ? current : report.records[0]?.runId ?? '')
+    } catch (cause) {
+      setError(normalizeCliError(cause).message)
+    } finally { setPerformanceLoading(false) }
+  }, [])
+
   useEffect(() => {
     void loadHistory()
     void loadModelDiscovery()
-  }, [loadHistory, loadModelDiscovery])
+    void loadPerformanceHistory()
+  }, [loadHistory, loadModelDiscovery, loadPerformanceHistory])
+
+  const choosePerformanceFile = async (kind: 'llama-bench' | 'gguf') => {
+    if (typeof metrora.chooseFile !== 'function') { setError('This desktop build does not expose the native file picker.'); return }
+    try {
+      const selected = await metrora.chooseFile(kind)
+      if (selected) {
+        if (kind === 'llama-bench') setPerformanceExecutable(selected)
+        else setPerformanceModel(selected)
+        setError(null)
+      }
+    } catch (cause) { setError(normalizeCliError(cause).message) }
+  }
+
+  const runPerformance = async () => {
+    if (!performanceExecutable || !performanceModel) { setError('Choose an existing llama-bench executable and .gguf model first.'); return }
+    if (typeof metrora.runPerformanceBench !== 'function') { setError('This desktop build does not expose native Performance Bench.'); return }
+    const requestId = `performance-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    setPerformanceRequestId(requestId)
+    setPerformanceRunning(true)
+    setError(null)
+    const request: PerformanceBenchRequest = {
+      executablePath: performanceExecutable,
+      modelPath: performanceModel,
+      repetitions: 3,
+      promptTokens: 512,
+      generationTokens: 128,
+      batchSize: 2048,
+      ubatchSize: 512,
+      threads: null,
+      gpuLayers: -1,
+      flashAttention: 'auto',
+      splitMode: 'none',
+      mainGpu: null,
+      warmup: true,
+      timeoutMs: 10 * 60_000,
+    }
+    try {
+      const record = await metrora.runPerformanceBench(requestId, request)
+      setPerformanceHistory(current => [record, ...current.filter(item => item.runId !== record.runId)].slice(0, 50))
+      setPerformanceLeftRunId(current => current || record.runId)
+      setPerformanceRightRunId(record.runId)
+    } catch (cause) {
+      if (!/cancel|abort/i.test(normalizeCliError(cause).message)) setError(normalizeCliError(cause).message)
+    } finally {
+      setPerformanceRequestId(current => current === requestId ? null : current)
+      setPerformanceRunning(false)
+    }
+  }
+
+  const cancelPerformance = async () => {
+    const requestId = performanceRequestId
+    if (!requestId || typeof metrora.cancelPerformanceBench !== 'function') return
+    try { await metrora.cancelPerformanceBench(requestId) } catch { /* terminal UI state remains cancelled */ }
+  }
 
   const latest = history[0] ?? null
   const run = async () => {
@@ -370,16 +454,55 @@ export function Bench() {
     return () => { active = false }
   }, [leftRunId, rightRunId])
 
+  useEffect(() => {
+    if (!performanceLeftRunId || !performanceRightRunId || performanceLeftRunId === performanceRightRunId) {
+      setPerformanceComparison(null)
+      setPerformanceComparisonLoading(false)
+      return
+    }
+    const reader = metrora.getPerformanceBenchComparison
+    if (typeof reader !== 'function') { setPerformanceComparison(null); setPerformanceComparisonLoading(false); return }
+    let active = true
+    setPerformanceComparison(null)
+    setPerformanceComparisonLoading(true)
+    void reader(performanceLeftRunId, performanceRightRunId).then(value => {
+      if (active) setPerformanceComparison(value)
+    }).catch(cause => {
+      if (active) setError(normalizeCliError(cause).message)
+    }).finally(() => {
+      if (active) setPerformanceComparisonLoading(false)
+    })
+    return () => { active = false }
+  }, [performanceLeftRunId, performanceRightRunId])
+
   return (
     <main className="bench-surface" aria-label="Local Bench">
       <header className="bench-header">
-        <div><p className="bench-kicker">MEASURE · LOCAL ONLY</p><h1>Bench</h1><p>Core conformance checks for bounded instruction following, structured responses, and local runtime responsiveness. This is not a general coding or model-quality evaluation.</p></div>
+        <div><p className="bench-kicker">MEASURE · LOCAL ONLY</p><h1>Bench</h1><p>Performance is the primary local measurement surface. Core conformance checks remain a separate bounded check for instruction following and structured responses; these surfaces are not a general coding or model-quality evaluation.</p></div>
         <div className="bench-run-control">
           <ModelPicker discovery={modelDiscovery} discoveryFailed={modelDiscoveryFailed} loading={modelDiscoveryLoading} manualEntry={manualEntry} model={model} onManualEntryChange={setManualEntry} onModelChange={setModel} onRefresh={() => void loadModelDiscovery()} />
           <button type="button" className="btn btn-p" onClick={() => void run()} disabled={running || !model.trim()}>{running ? 'Running…' : 'Run Core conformance'}</button>
         </div>
       </header>
       {error ? <p className="bench-alert" role="alert">{error}</p> : null}
+      <PerformanceBenchSection
+        history={performanceHistory}
+        invalidCount={performanceInvalidCount}
+        loading={performanceLoading}
+        executablePath={performanceExecutable}
+        modelPath={performanceModel}
+        running={performanceRunning}
+        comparison={performanceComparison}
+        comparisonLoading={performanceComparisonLoading}
+        leftRunId={performanceLeftRunId}
+        rightRunId={performanceRightRunId}
+        onChooseExecutable={() => void choosePerformanceFile('llama-bench')}
+        onChooseModel={() => void choosePerformanceFile('gguf')}
+        onRun={() => void runPerformance()}
+        onCancel={() => void cancelPerformance()}
+        onLeftRunChange={setPerformanceLeftRunId}
+        onRightRunChange={setPerformanceRightRunId}
+      />
       <div className="bench-note"><b>Core conformance</b> · canonical pack <code>core-v1</code> · Ollama local only · outputs are scored transiently; retained records keep digests, statuses, and measurements.</div>
       <div className="bench-grid">
         <EvidenceCard record={latest} />

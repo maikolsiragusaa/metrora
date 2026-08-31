@@ -68,6 +68,15 @@ function coverageForBench(state: AdvisorBenchEvidence['state']): AdvisorCoverage
   return { level: 'unavailable', state, label: 'Controlled result unavailable', detail: 'Bench evidence is not in a usable state for this request.' }
 }
 
+function coverageForPerformance(state: AdvisorBenchEvidence['state']): AdvisorCoverage {
+  if (state === 'NO_DATA') return { level: 'unavailable', state, label: 'No native Performance result yet', detail: 'Metrora has no completed native Performance result for this request.' }
+  if (state === 'UNAVAILABLE') return { level: 'unavailable', state, label: 'Native Performance unavailable', detail: 'Native Performance history did not provide a usable result; no throughput or latency is inferred.' }
+  if (state === 'NOT_COMPARABLE') return { level: 'partial', state, label: 'Performance runs are not comparable', detail: 'The selected native Performance runs differ in methodology, setup, runtime/hardware identity or usable metrics.' }
+  if (state === 'PARTIAL') return { level: 'partial', state, label: 'Bounded native Performance result', detail: 'A native Performance result exists, but its workload or comparable-history evidence remains limited.' }
+  if (state === 'AVAILABLE') return { level: 'high', state, label: 'Native Performance available', detail: 'The declared native Performance method completed; its throughput and timing remain conditional on the retained model/runtime/hardware configuration.' }
+  return { level: 'unavailable', state, label: 'Native Performance unavailable', detail: 'Performance evidence is not in a usable state for this request.' }
+}
+
 export function buildClarificationEvidence(question: string, scope: AdvisorScope, prompt: string): AdvisorEvidence {
   return {
     intent: 'clarification',
@@ -99,25 +108,40 @@ export function buildBenchEvidence(question: string, scope: AdvisorScope, bench:
   if (bench.latest) refs.push({ id: 'bench.latest', label: 'Latest controlled Bench result', source: 'bench' })
   if (bench.runs.length) refs.push({ id: 'bench.history', label: 'Bounded Bench history', source: 'bench' })
   if (bench.comparison) refs.push({ id: 'bench.comparison', label: 'Canonical Bench comparison', source: 'bench' })
-  const unknown = bench.state === 'NO_DATA'
-    ? ['No completed controlled result is available for this scope.']
-    : bench.state === 'UNAVAILABLE'
-      ? ['Bench history is unavailable; no score or task result is inferred.']
-      : bench.state === 'NOT_COMPARABLE'
-        ? ['The selected runs cannot be compared because their canonical identities differ.']
-        : bench.state === 'PARTIAL'
-          ? ['The controlled result is bounded; task or comparable-history coverage may be incomplete.']
-          : ['A controlled task pack does not establish universal model quality or a recommendation.']
+  const performance = bench.performance
+  if (performance?.latest) refs.push({ id: 'bench.performance.latest', label: 'Latest native Performance result', source: 'bench' })
+  if (performance?.runs.length) refs.push({ id: 'bench.performance.history', label: 'Bounded native Performance history', source: 'bench' })
+  if (performance?.comparison) refs.push({ id: 'bench.performance.comparison', label: 'Evidence-aware Performance comparison', source: 'bench' })
+  const performanceRequested = /\b(?:performance|throughput|latency|llama|prefill|decode|tokens\/?s)\b/u.test(question.toLowerCase())
+  const usePerformance = Boolean(performance && (performanceRequested || !bench.latest))
+  const effectiveState = usePerformance ? performance!.state : bench.state
+  const unknown = effectiveState === 'NO_DATA'
+    ? [usePerformance ? 'No completed native Performance result is available for this scope.' : 'No completed controlled result is available for this scope.']
+    : effectiveState === 'UNAVAILABLE'
+      ? [usePerformance ? 'Native Performance history is unavailable; no throughput or latency is inferred.' : 'Bench history is unavailable; no score or task result is inferred.']
+      : effectiveState === 'NOT_COMPARABLE'
+        ? [usePerformance ? 'The selected native Performance runs cannot be compared because their methodology, setup or hardware identities differ.' : 'The selected runs cannot be compared because their canonical identities differ.']
+        : effectiveState === 'PARTIAL'
+          ? [usePerformance ? 'The native Performance result is bounded; some workload or comparable-history coverage may be incomplete.' : 'The controlled result is bounded; task or comparable-history coverage may be incomplete.']
+          : [usePerformance ? 'Native Performance does not establish model quality; its figures are conditional on the retained setup and environment.' : 'Core conformance does not establish universal model quality; Performance figures are conditional on their retained setup and environment.']
+  const assumptions = usePerformance
+    ? [
+        'Native Performance throughput and timing are canonical controlled evidence, not Metrora-measured usage.',
+        'Only metrics reported by the retained llama-bench evidence are described; absent fields remain unknown.',
+        'This read-only path never starts a benchmark.',
+      ]
+    : [
+        'Bench scores and task outcomes are canonical controlled evidence, not Metrora-measured usage.',
+        'Latency and time-to-first-content are reported only where the controlled run recorded them.',
+        'Native Performance throughput and timing are read from retained llama-bench evidence; this read-only path never starts a benchmark.',
+      ]
   return {
     intent: 'bench-result',
     question,
     scope,
     refs,
-    coverage: coverageForBench(bench.state),
-    assumptions: [
-      'Bench scores and task outcomes are canonical controlled evidence, not Metrora-measured usage.',
-      'Latency and time-to-first-content are reported only where the controlled run recorded them.',
-    ],
+    coverage: usePerformance ? coverageForPerformance(effectiveState) : coverageForBench(effectiveState),
+    assumptions,
     unknown,
     nextInvestigations: ['Open the Bench surface for the full bounded task status and canonical comparison details.'],
     bench,

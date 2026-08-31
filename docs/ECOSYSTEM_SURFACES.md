@@ -47,7 +47,7 @@ ACT is not a chat mode and an MCP client is not trusted execution authority simp
 | **Projects** | User-controlled context and scope across relevant evidence | **Available** |
 | **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer with `Advisor*` compatibility adapter |
 | **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Available in this slice** — product-facing Desktop surface, bounded Tool activity and one proposal-only Core Compatibility path |
-| **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available and expanding** |
+| **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available** — native llama.cpp/`llama-bench` Performance and Core Compatibility are separate bounded paths |
 | **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Available** — `metrora.action.v1`, `run-core-compatibility`, and the trusted Desktop bridge; not a user-facing mode |
 | **MCP** | Standard external access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
 | **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
@@ -228,7 +228,7 @@ This is a dependency-oriented direction, not a rigid roadmap gate:
 2. **Local MCP Server V1** — shipped in Interoperability Foundation Wave 001; expose the same factual Tools read-only through MCP.
 3. **README / asset refresh** — simplify the repository story and replace stale inherited marketing imagery with original Metrora visuals.
 4. **Widgets V1** — evolve Share Card into reusable static, privacy-aware Widgets.
-5. Continue independent **llama.cpp runtime / Performance Bench** work where it is ready to proceed.
+5. Maintain the independent **llama.cpp runtime / Performance Bench** path with focused compatibility, provenance and acceptance work.
 6. External action proposals and **Swarm** remain later, separately authorized capability work.
 
 See also:

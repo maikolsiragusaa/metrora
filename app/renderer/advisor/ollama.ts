@@ -16,7 +16,7 @@ export type LocalAdvisorTransport = {
   cancel: (requestId: string) => Promise<boolean>
   onDelta: (callback: (event: { requestId: string; text: string }) => void) => () => void
 }
-export type OllamaProbeResult = { available: boolean; models: string[]; detail: string }
+export type OllamaProbeResult = { available: boolean; models: string[]; modelLabels?: Record<string, string>; detail: string }
 export type OllamaTransport = LocalAdvisorTransport & {
   probe: (signal?: AbortSignal) => Promise<OllamaProbeResult>
 }

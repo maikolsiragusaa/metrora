@@ -1,12 +1,11 @@
+import { aggregateModels } from '../models-report.js'
 import type { DateRange } from '../types.js'
 import { getDateRange } from '../cli-date.js'
-import { aggregateModels } from '../models-report.js'
 import type { ModelAccountingRow } from '../model-accounting-types.js'
 import type { MenubarPayload } from '../menubar-json.js'
 import { parseProjectsForMetroraScope } from '../project-scope-cli.js'
 import { readProjectRegistry } from '../project-registry.js'
-import { compareBenchEvaluationsV1 } from '../bench/compare-v1.js'
-import { scanBenchHistoryV1 } from '../bench/history-v1.js'
+import { readCanonicalBenchEvidenceV1, type CanonicalBenchEvidenceV1 } from '../bench/evidence-v1.js'
 import { createMetroraToolRegistry } from '../tools/registry.js'
 import type {
   MetroraModelReportRow,
@@ -28,10 +27,20 @@ export type MetroraMcpStartupOptions = {
   period?: MetroraToolPeriod
   provider?: MetroraMcpProvider
   projectId?: string
+  dataDir?: string
 }
 
 const PERIODS: readonly MetroraToolPeriod[] = ['today', 'week', '30days', 'month', 'all', 'lifetime']
 const PROVIDERS: readonly MetroraMcpProvider[] = ['all', 'claude', 'codex']
+
+function localDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year!, month! - 1, day!)
+}
+
+function endOfDay(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999)
+}
 
 export class MetroraMcpStartupError extends Error {
   constructor(message: string) {
@@ -48,22 +57,6 @@ function isProvider(value: unknown): value is MetroraMcpProvider {
   return typeof value === 'string' && (PROVIDERS as readonly string[]).includes(value)
 }
 
-function localDate(value: string): Date {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year!, month! - 1, day!)
-}
-
-function endOfDay(value: Date): Date {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999)
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return
-  const error = new Error('Metrora tool call cancelled')
-  error.name = 'AbortError'
-  throw error
-}
-
 type RuntimePeriodInfo = { range: DateRange; label: string }
 
 function periodInfoForScope(scope: MetroraToolScope): RuntimePeriodInfo {
@@ -74,6 +67,13 @@ function periodInfoForScope(scope: MetroraToolScope): RuntimePeriodInfo {
     ? 'Selected day (' + scope.range.from + ')'
     : scope.range.from + ' to ' + scope.range.to
   return { range: { start, end }, label }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Metrora tool call cancelled')
+  error.name = 'AbortError'
+  throw error
 }
 
 function mapAccountingRow(row: ModelAccountingRow): MetroraOverviewModelAccountingRow {
@@ -176,28 +176,100 @@ function safeBenchRecord(record: {
   }
 }
 
-async function benchEvidence(scope: MetroraToolScope, signal?: AbortSignal): Promise<MetroraToolBenchEvidence> {
-  throwIfAborted(signal)
-  const scan = await scanBenchHistoryV1()
-  throwIfAborted(signal)
-  const info = periodInfoForScope(scope)
-  const start = info.range.start.getTime()
-  const end = info.range.end.getTime()
-  const records = scan.records
-    .filter(record => {
-      const ended = Date.parse(record.endedAt)
-      return Number.isFinite(ended) && ended >= start && ended <= end
-    })
-    .slice(0, 10)
-  const latest = records[0]
-  const previous = records[1]
-  const comparison = latest && previous ? compareBenchEvaluationsV1(previous, latest) : null
+function safePerformanceRecord(record: CanonicalBenchEvidenceV1['performance']['history'][number]): MetroraToolJsonObject {
   return {
-    state: latest ? 'AVAILABLE' : 'UNAVAILABLE',
-    latest: latest ? safeBenchRecord(latest) : null,
-    history: records.map(safeBenchRecord),
-    comparison: comparison as unknown as MetroraToolJsonValue,
-    invalidCount: scan.invalid.length,
+    runId: record.runId,
+    model: record.model.selected,
+    reportedModel: record.model.reported,
+    modelType: record.model.type,
+    executable: record.executable.name,
+    method: record.methodology.id + '@' + record.methodology.version,
+    setup: record.methodology.setup as unknown as MetroraToolJsonValue,
+    observedConfiguration: record.observedConfiguration as unknown as MetroraToolJsonValue,
+    runtime: {
+      id: record.runtime.id,
+      buildCommit: record.runtime.buildCommit,
+      buildNumber: record.runtime.buildNumber,
+      version: record.runtime.version,
+      backends: record.runtime.backends as unknown as MetroraToolJsonValue,
+    } as unknown as MetroraToolJsonValue,
+    environment: {
+      os: record.environment.os,
+      arch: record.environment.arch,
+      node: record.environment.node,
+    } as unknown as MetroraToolJsonValue,
+    startedAt: record.startedAt,
+    endedAt: record.endedAt,
+    status: record.status,
+    termination: record.termination.status,
+    failure: record.failure as unknown as MetroraToolJsonValue,
+    workloads: record.workloads as unknown as MetroraToolJsonValue,
+    resultDigest: record.resultDigest,
+  }
+}
+
+function safePerformanceComparison(comparison: CanonicalBenchEvidenceV1['performance']['comparison']): MetroraToolJsonValue {
+  if (!comparison) return null
+  const identity = (value: typeof comparison.left): MetroraToolJsonObject => ({
+    runId: value.runId,
+    model: value.model,
+    modelType: value.modelType,
+    executable: value.executable,
+    endedAt: value.endedAt,
+    runtime: value.runtime as unknown as MetroraToolJsonValue,
+    environment: value.environment as unknown as MetroraToolJsonValue,
+    setup: value.setup as unknown as MetroraToolJsonValue,
+    observedConfiguration: value.observedConfiguration as unknown as MetroraToolJsonValue,
+  })
+  return {
+    schemaVersion: comparison.schemaVersion,
+    compatible: comparison.compatible,
+    reason: comparison.reason,
+    left: identity(comparison.left),
+    right: identity(comparison.right),
+    deltas: comparison.deltas as unknown as MetroraToolJsonValue,
+  }
+}
+
+function combinedBenchState(evidence: CanonicalBenchEvidenceV1): NonNullable<MetroraToolBenchEvidence['state']> {
+  const states = [evidence.core.state, evidence.performance.state]
+  if (states.includes('AVAILABLE')) return states.includes('PARTIAL') || states.includes('NOT_COMPARABLE') ? 'PARTIAL' : 'AVAILABLE'
+  if (states.includes('PARTIAL')) return 'PARTIAL'
+  if (states.includes('NOT_COMPARABLE')) return 'NOT_COMPARABLE'
+  if (states.includes('UNAVAILABLE')) return 'UNAVAILABLE'
+  return 'NO_DATA'
+}
+
+async function benchEvidence(scope: MetroraToolScope, signal?: AbortSignal, dataDir?: string): Promise<MetroraToolBenchEvidence> {
+  throwIfAborted(signal)
+  const evidence = await readCanonicalBenchEvidenceV1({
+    dataDir,
+    period: scope.period,
+    range: scope.range,
+    provider: scope.provider,
+    projectId: scope.projectId,
+    model: scope.model,
+    limit: 10,
+  })
+  throwIfAborted(signal)
+  return {
+    state: combinedBenchState(evidence),
+    schemaVersion: evidence.schemaVersion,
+    scope: evidence.scope as unknown as MetroraToolJsonValue,
+    core: {
+      state: evidence.core.state,
+      latest: evidence.core.latest ? safeBenchRecord(evidence.core.latest) : null,
+      history: evidence.core.history.map(safeBenchRecord),
+      comparison: evidence.core.comparison as unknown as MetroraToolJsonValue,
+      invalidCount: evidence.core.invalidCount,
+    } as unknown as MetroraToolJsonValue,
+    performance: {
+      state: evidence.performance.state,
+      latest: evidence.performance.latest ? safePerformanceRecord(evidence.performance.latest) : null,
+      history: evidence.performance.history.map(safePerformanceRecord),
+      comparison: safePerformanceComparison(evidence.performance.comparison),
+      invalidCount: evidence.performance.invalidCount,
+    } as unknown as MetroraToolJsonValue,
   }
 }
 
@@ -264,7 +336,7 @@ export async function createMetroraToolRuntime(options: MetroraMcpStartupOptions
       throwIfAborted(signal)
       return []
     },
-    getBenchEvidence: (context, signal) => benchEvidence(context, signal),
+    getBenchEvidence: (context, signal) => benchEvidence(context, signal, options.dataDir),
   }
 
   return createMetroraToolRegistry(source, scope)

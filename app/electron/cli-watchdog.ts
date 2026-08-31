@@ -41,6 +41,7 @@ export type BoundedProcessOptions = {
   idleTimeoutMs?: number
   graceMs?: number
   maxOutputBytes?: number
+  signal?: AbortSignal
   onStderr?: (chunk: string) => void
   onProgress?: (event: TrustedProgressEvent) => void
 }
@@ -216,6 +217,10 @@ export function runBoundedProcess(
   const maxOutputBytes = normalizeTimeout(options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_BYTES)
 
   return new Promise<BoundedProcessResult>(resolve => {
+    if (options.signal?.aborted) {
+      resolve({ stdout: '', stderr: '', code: null, reason: 'cancelled' })
+      return
+    }
     let child: ChildProcess
     try {
       child = spawn(spec.bin, spec.args, {
@@ -247,6 +252,7 @@ export function runBoundedProcess(
       if (killTimer !== undefined) clearTimeout(killTimer)
       if (fallbackTimer !== undefined) clearTimeout(fallbackTimer)
       activeProcesses.delete(processId)
+      options.signal?.removeEventListener('abort', onAbort)
       resolve({
         stdout,
         stderr,
@@ -267,6 +273,7 @@ export function runBoundedProcess(
         fallbackTimer = setTimeout(() => finish(null, null), DEFAULT_HARD_KILL_FALLBACK_MS)
       }, graceMs)
     }
+    const onAbort = () => requestTermination('cancelled')
 
     const resetIdleTimer = (): void => {
       if (idleTimeoutMs === undefined || settled || termination) return
@@ -312,6 +319,7 @@ export function runBoundedProcess(
     child.stderr?.on('data', handleStderr)
     child.on('error', error => finish(null, null, asError(error)))
     child.on('close', (code, signal) => finish(code, signal))
+    options.signal?.addEventListener('abort', onAbort, { once: true })
 
     absoluteTimer = setTimeout(() => requestTermination('timeout'), absoluteTimeoutMs)
     resetIdleTimer()

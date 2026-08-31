@@ -28,6 +28,9 @@ import type {
 import type { ProjectBridge } from './project-bridge-types'
 import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
 import type { HarnessActionEvent } from '../../electron/act-bridge'
+import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
+import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
+import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
@@ -99,6 +102,24 @@ export type BenchComparison = {
   right: { runId: string; model: string; endedAt: string }
   deltas: { score: number | null; passed: number; failed: number; unavailable: number; cancelled: number; medianRequestLatencyMs: number | null; medianFirstContentMs: number | null } | null
 }
+export type PerformanceHistoryReport = { schemaVersion: string; records: PerformanceRunV1[]; invalidCount: number }
+export type CanonicalBenchEvidenceReport = CanonicalBenchEvidenceV1
+export type PerformanceBenchRequest = {
+  executablePath: string
+  modelPath: string
+  repetitions?: number
+  promptTokens?: number
+  generationTokens?: number
+  batchSize?: number
+  ubatchSize?: number
+  threads?: number | null
+  gpuLayers?: number
+  flashAttention?: 'auto' | 'on' | 'off'
+  splitMode?: 'none' | 'layer' | 'row'
+  mainGpu?: number | null
+  warmup?: boolean
+  timeoutMs?: number
+}
 
 export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to cold-start scan progress; returns an unsubscribe fn. */
@@ -120,7 +141,12 @@ export interface MetroraBridge extends ProjectBridge {
   getBenchHistory(): Promise<BenchHistoryReport>
   getBenchModelDiscovery(): Promise<BenchModelDiscovery>
   getBenchComparison(leftRunId: string, rightRunId: string): Promise<BenchComparison>
+  getBenchEvidence(period: Period, range?: DateRange, model?: string | null, provider?: string, projectId?: string | null): Promise<CanonicalBenchEvidenceReport>
   runBenchTaskPack(model: string, pack?: string): Promise<BenchEvaluation>
+  getPerformanceBenchHistory(): Promise<PerformanceHistoryReport>
+  getPerformanceBenchComparison(leftRunId: string, rightRunId: string): Promise<PerformanceComparisonV1>
+  runPerformanceBench(requestId: string, request: PerformanceBenchRequest): Promise<PerformanceRunV1>
+  cancelPerformanceBench(requestId: string): Promise<boolean>
   onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
   harnessProposeCoreCompatibility(model: string): Promise<MetroraHarnessActionEvent>
   harnessApproveCoreCompatibility(actionId: string, proposalDigest: string): Promise<MetroraHarnessActionEvent>
@@ -163,6 +189,7 @@ export interface MetroraBridge extends ProjectBridge {
   exportData(format: string, provider: string, outPath: string): Promise<ActionResult>
   saveShareCardPng(suggestedName: string, pngDataUrl: string): Promise<boolean>
   chooseDirectory(): Promise<string | null>
+  chooseFile(kind: 'llama-bench' | 'gguf'): Promise<string | null>
   cliStatus(): Promise<{ found: boolean; path: string | null; error?: string }>
   telemetryStatus(): Promise<TelemetryStatus | null>
   setTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus | null>

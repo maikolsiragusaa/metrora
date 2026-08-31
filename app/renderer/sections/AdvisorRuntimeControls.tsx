@@ -12,6 +12,7 @@ export type AdvisorRuntimeState = {
   status: 'checking' | 'ready' | 'unavailable'
   detail: string
   models: string[]
+  modelLabels?: Record<string, string>
   modelState: AdvisorRuntimeModelState
   toolCall: AdvisorToolCapability
 }
@@ -39,6 +40,12 @@ function reachabilityLabel(value: AdvisorProviderReachability): string {
 
 function credentialStateLabel(value: AdvisorHostedCredentialState): string {
   return stateLabel(value)
+}
+
+function localRuntimeLabel(value: AdvisorLocalRuntimeId): string {
+  if (value === 'lmstudio') return 'LM Studio'
+  if (value === 'llama-server') return 'llama.cpp server'
+  return 'Ollama'
 }
 
 export function hostedReachability(result: HostedAdvisorProbeResult): AdvisorProviderReachability {
@@ -161,7 +168,7 @@ export function AdvisorRuntimeControls({
   const runtimeStatusKind = runtimeChoice === 'hosted' ? hostedRuntimeStatusKind(hostedProbe, hostedModelForPresentation) : runtimeState.status
   const runtimeIdentity = runtimeChoice === 'hosted'
     ? hostedProviderLabel(hostedProvider) + (selectedHostedModel ? ' · ' + selectedHostedModel.label : '')
-    : (runtimeId === 'lmstudio' ? 'LM Studio' : 'Ollama') + (runtimeModel ? ' · ' + runtimeModel : '')
+    : localRuntimeLabel(runtimeId) + (runtimeModel ? ' · ' + (runtimeState.modelLabels?.[runtimeModel] ?? runtimeModel) : '')
   const runtimeAvailability = runtimeChoice === 'hosted'
     ? hostedAvailabilityLabel(hostedProbe, hostedModelForPresentation)
     : runtimeState.status === 'checking'
@@ -172,7 +179,7 @@ export function AdvisorRuntimeControls({
   const runtimeDescription = runtimeChoice === 'hosted'
     ? 'Hosted provider account · minimum evidence sent directly · no Metrora proxy'
     : runtimeState.status === 'ready'
-      ? (runtimeId === 'lmstudio' ? 'Local LM Studio model' : 'Local Ollama model') + ' · read-only evidence tools · tool support varies by model'
+      ? ({ ollama: 'Local Ollama model', lmstudio: 'Local LM Studio model', 'llama-server': 'Local llama.cpp server model' }[runtimeId]) + ' · read-only evidence tools · tool support varies by model'
       : 'Offline evidence fallback'
   const runtimeDetail = runtimeChoice === 'hosted' ? hostedProbe.detail : runtimeState.detail
 
@@ -211,8 +218,8 @@ export function AdvisorRuntimeControls({
             <button type="button" className="advisor-quiet-button" onClick={onActivateHosted}>Use hosted provider</button>
           </div>
           <div className="advisor-runtime-picker-row">
-            <label className="advisor-runtime-picker">Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label>
-            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{model}</option>)}</select></label> : null}
+            <label className="advisor-runtime-picker">Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option><option value="llama-server">llama.cpp server</option></select></label>
+            {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{runtimeState.modelLabels?.[model] ?? model}</option>)}</select></label> : null}
           </div>
           <div className="advisor-runtime-state-grid" aria-label="Local runtime state">
             <span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span>

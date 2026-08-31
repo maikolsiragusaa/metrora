@@ -9,7 +9,7 @@ BenchRunV1 is Metrora's first small public timing/runtime evidence slice. It rec
 
 It is **not** a model-quality benchmark. It does not score coding, reasoning or accuracy, rank/recommend models, calculate cost/quota, read Metrora Usage or inspect real user work.
 
-Its timing/token observations are useful runtime-performance evidence, but they do not yet provide the broader hardware/configuration Performance surface planned for Bench.
+Its timing/token observations are useful runtime-performance evidence, but this contract does not provide the broader hardware/configuration Performance fields captured by the separate native llama.cpp adapter.
 
 ## Run it
 
@@ -58,13 +58,13 @@ The result digest covers the versioned fixture, fixed generation contract, selec
 
 ## Relationship to broader Performance Bench
 
-The planned primary Bench direction is richer local **Performance** measurement of a declared model/runtime/hardware/configuration.
+The primary Bench direction is richer local **Performance** measurement of a declared model/runtime/hardware/configuration.
 
 That future surface may include prefill/decode throughput, TTFT, RAM/VRAM and configuration/hardware identity through additional versioned adapters.
 
 `BenchRunV1` remains a valid small Ollama runtime evidence contract; it is not silently reinterpreted as richer hardware evidence it never captured.
 
-The first planned native Performance engine target is llama.cpp `llama-bench`, but llama.cpp support is not implemented by this document.
+The native Performance engine is available through the separate bounded llama.cpp `llama-bench` adapter documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md); this BenchRunV1 contract does not add or reinterpret those fields.
 
 ## Runtime and provenance
 

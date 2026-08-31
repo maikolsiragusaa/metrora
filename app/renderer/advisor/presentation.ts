@@ -126,7 +126,7 @@ export function buildAdvisorPresentationBlocks(evidence: AdvisorEvidence, plan: 
   } else if (requested === 'quota-card' && evidence.quota) {
     blocks.push({ kind: 'quota-card', title: 'Provider quota', summary: 'Provider-reported quota is separate from Metrora-measured usage.', providers: evidence.quota.providers, scopeLabel: scopeLabel(evidence.scope), periodLabel: periodLabel(evidence.scope), evidenceRefs: evidence.refs })
   } else if (requested === 'bench-summary' && evidence.bench) {
-    blocks.push({ kind: 'bench-summary', title: 'Controlled Bench result', summary: evidence.coverage.detail, run: evidence.bench.latest, comparison: evidence.bench.comparison, scopeLabel: scopeLabel(evidence.scope), periodLabel: periodLabel(evidence.scope), evidenceRefs: evidence.refs })
+    blocks.push({ kind: 'bench-summary', title: 'Controlled Bench result', summary: evidence.coverage.detail, run: evidence.bench.latest, comparison: evidence.bench.comparison, performance: evidence.bench.performance, scopeLabel: scopeLabel(evidence.scope), periodLabel: periodLabel(evidence.scope), evidenceRefs: evidence.refs })
   } else if (requested === 'evidence-disclosure') {
     blocks.push({ kind: 'evidence-disclosure', title: 'How Metrora knows', text: evidence.coverage.detail + (evidence.assumptions.length ? ' ' + evidence.assumptions[0] : ''), evidenceRefs: evidence.refs })
   }

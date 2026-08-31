@@ -98,7 +98,12 @@ const CHANNELS = [
   'metrora:getBenchHistory',
   'metrora:getBenchModelDiscovery',
   'metrora:getBenchComparison',
+  'metrora:getBenchEvidence',
   'metrora:runBenchTaskPack',
+  'metrora:getPerformanceBenchHistory',
+  'metrora:getPerformanceBenchComparison',
+  'metrora:runPerformanceBench',
+  'metrora:cancelPerformanceBench',
 ] as const
 
 const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = [
@@ -107,6 +112,10 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'metrora:getBenchHistory', args: [], argv: ['bench', 'history', '--format', 'json', '--limit', '50'] },
   { channel: 'metrora:getBenchModelDiscovery', args: [], argv: ['bench', 'models', '--format', 'json'] },
   { channel: 'metrora:getBenchComparison', args: ['left-run', 'right-run'], argv: ['bench', 'compare', 'left-run', 'right-run', '--format', 'json'] },
+  { channel: 'metrora:getBenchEvidence', args: ['all'], argv: ['bench', 'evidence', '--format', 'json', '--period', 'all'] },
+  { channel: 'metrora:getBenchEvidence', args: ['month', { from: '2026-07-01', to: '2026-07-11' }, 'model-a', 'claude', 'mp_1234567890123456'], argv: ['bench', 'evidence', '--format', 'json', '--period', 'month', '--from', '2026-07-01', '--to', '2026-07-11', '--provider', 'claude', '--project-id', 'mp_1234567890123456', '--model', 'model-a'] },
+  { channel: 'metrora:getPerformanceBenchHistory', args: [], argv: ['bench', 'performance-history', '--format', 'json', '--limit', '50'] },
+  { channel: 'metrora:getPerformanceBenchComparison', args: ['left-run', 'right-run'], argv: ['bench', 'performance-compare', 'left-run', 'right-run', '--format', 'json'] },
   { channel: 'metrora:getPlans', args: ['week'], argv: ['status', '--format', 'json', '--period', 'week'] },
   { channel: 'metrora:getActReport', args: [], argv: ['act', 'report', '--json'] },
   { channel: 'metrora:getModels', args: ['week', 'claude', true], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'] },
