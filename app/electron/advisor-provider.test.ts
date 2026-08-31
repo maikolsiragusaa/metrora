@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { advisorHostedProviderDescriptors, createAdvisorHostedHandlers, type AdvisorHostedEvent, type AdvisorHostedProviderId } from './advisor-provider'
+import { resolveOpenCodeZenProtocolFromMetadata } from './advisor-provider-contract'
 
 const providers: AdvisorHostedProviderId[] = ['openai', 'anthropic', 'gemini']
 const request = (provider: AdvisorHostedProviderId, stream = false) => ({
@@ -446,6 +447,7 @@ describe('Advisor hosted provider authority', () => {
       { model: 'gpt-5.6-sol', path: '/zen/v1/responses', header: 'Authorization', payload: textPayload('openai') },
       { model: 'claude-sonnet-5', path: '/zen/v1/messages', header: 'x-api-key', payload: textPayload('anthropic') },
       { model: 'deepseek-v4-pro', path: '/zen/v1/chat/completions', header: 'Authorization', payload: { choices: [{ message: { content: 'Zen chat response.' } }], usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } } },
+      { model: 'ling-3.0-flash-fin-free', path: '/zen/v1/chat/completions', header: 'Authorization', payload: { choices: [{ message: { content: 'Zen free model response.' } }] } },
       { model: 'gemini-3.6-flash', path: '/zen/v1/models/gemini-3.6-flash:generateContent', header: 'x-goog-api-key', payload: textPayload('gemini') },
     ] as const
     for (const item of cases) {
@@ -478,5 +480,87 @@ describe('Advisor hosted provider authority', () => {
     }) as { ok: boolean; error: { kind: string } }
     expect(result).toMatchObject({ ok: false, error: { kind: 'model-unavailable' } })
     expect(chatFetch).not.toHaveBeenCalled()
+  })
+
+  it('accepts only explicit OpenCode Zen protocol metadata and rejects changed or malformed identities', () => {
+    expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: 'openai-responses' })).toBe('openai-responses')
+    expect(resolveOpenCodeZenProtocolFromMetadata({ endpointPath: '/zen/v1/messages' })).toBe('anthropic-messages')
+    expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: 'future-protocol' })).toBeNull()
+    expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: { name: 'openai-chat' } })).toBeNull()
+    expect(resolveOpenCodeZenProtocolFromMetadata({ endpoint: 'https://evil.example/zen/v1/responses' })).toBeNull()
+    expect(resolveOpenCodeZenProtocolFromMetadata(undefined)).toBeUndefined()
+  })
+
+  it('promotes a discovered OpenCode Zen model to verified only after a successful bounded request', async () => {
+    let chat = false
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/zen/v1/models')) return jsonResponse({ data: [{ id: 'gpt-5.6-sol', protocol: 'openai-responses' }] })
+      chat = true
+      return jsonResponse(textPayload('openai'))
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const initial = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(initial.value.models[0]).toMatchObject({ state: 'unverified', capabilities: { conversational: 'available' } })
+    await expect(handlers['metrora:advisorHostedChat']!('zen-verified', {
+      provider: 'opencode-zen', model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'Verify the bounded path.' }], consent: true,
+    })).resolves.toMatchObject({ ok: true })
+    expect(chat).toBe(true)
+    const verified = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(verified.value.models[0]).toMatchObject({ state: 'verified', capabilities: { conversational: 'available' } })
+  })
+
+  it('invalidates prior conformance when provider metadata changes the protocol identity', async () => {
+    let metadata: 'responses' | 'chat' = 'responses'
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/zen/v1/models')) {
+        return jsonResponse({ data: [{ id: 'gpt-5.6-sol', protocol: metadata === 'responses' ? 'openai-responses' : 'openai-chat' }] })
+      }
+      return metadata === 'responses'
+        ? jsonResponse(textPayload('openai'))
+        : jsonResponse({ choices: [{ message: { content: 'Changed protocol response.' } }] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    await handlers['metrora:advisorHostedProbe']!('opencode-zen')
+    await expect(handlers['metrora:advisorHostedChat']!('zen-protocol-change', {
+      provider: 'opencode-zen', model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'Verify once.' }], consent: true,
+    })).resolves.toMatchObject({ ok: true })
+    const verified = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(verified.value.models[0]).toMatchObject({ state: 'verified' })
+
+    metadata = 'chat'
+    const changed = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(changed.value.models[0]).toMatchObject({ state: 'unverified', capabilities: { conversational: 'available' } })
+  })
+
+  it('keeps explicit changed and malformed OpenCode Zen metadata unavailable', async () => {
+    const fetchImpl = (async () => jsonResponse({ data: [
+      { id: 'changed-model', protocol: 'future-protocol' },
+      { id: 'malformed-model', protocol: { name: 'openai-chat' } },
+      { id: 'explicit-message-model', endpointPath: '/zen/v1/messages' },
+    ] })) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(result.value.models).toEqual([
+      expect.objectContaining({ id: 'changed-model', state: 'unsupported' }),
+      expect.objectContaining({ id: 'malformed-model', state: 'unsupported' }),
+      expect.objectContaining({ id: 'explicit-message-model', state: 'unverified' }),
+    ])
+  })
+
+  it('marks a malformed real response as failed conformance on the next probe', async () => {
+    let mode: 'probe' | 'chat' = 'probe'
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/zen/v1/models')) return jsonResponse({ data: [{ id: 'gpt-5.6-sol' }] })
+      mode = 'chat'
+      return jsonResponse({ choices: [] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    await handlers['metrora:advisorHostedProbe']!('opencode-zen')
+    const failed = await handlers['metrora:advisorHostedChat']!('zen-failed', {
+      provider: 'opencode-zen', model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'Fail closed.' }], consent: true,
+    }) as { ok: boolean; error: { kind: string } }
+    expect(mode).toBe('chat')
+    expect(failed).toMatchObject({ ok: false, error: { kind: 'response-malformed' } })
+    const probe = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(probe.value.models[0]).toMatchObject({ state: 'failed-conformance' })
   })
 })

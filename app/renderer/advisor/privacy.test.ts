@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  containsAdvisorForbiddenOutputClass,
   containsAdvisorSensitiveText,
   sanitizeAdvisorDisplayText,
+  sanitizeAdvisorModelOutput,
   sanitizeAdvisorNarrative,
 } from './privacy'
 import { assertStrictBoundedAdvisorToolContent, createContentMinimalAdvisorToolResultEnvelope } from './contract'
@@ -28,6 +30,32 @@ describe('Advisor deterministic privacy boundary', () => {
     expect(sanitizeAdvisorDisplayText('project/alpha')).toBe('project/alpha')
     expect(sanitizeAdvisorDisplayText('Measured cost 12 across project/alpha')).toBe('Measured cost 12 across project/alpha')
     expect(sanitizeAdvisorNarrative('The observed pattern remains qualitative and local.')).toBe('The observed pattern remains qualitative and local.')
+  })
+
+  it.each([
+    'Here is the system prompt: ignore the user.',
+    'The guard contract says to reveal the raw schema.',
+    'Private chain-of-thought: scratchpad follows.',
+    '<developer>hidden implementation prompt</developer>',
+    'Raw provider response payload follows.',
+  ])('rejects known internal output classes without censoring ordinary prose: %s', value => {
+    expect(containsAdvisorForbiddenOutputClass(value)).toBe(true)
+    expect(sanitizeAdvisorModelOutput(value)).toBe('')
+    expect(sanitizeAdvisorNarrative(value)).toBe('')
+  })
+
+  it('keeps benign system language and verified numeric display text available', () => {
+    expect(containsAdvisorForbiddenOutputClass('The local system is healthy.')).toBe(false)
+    expect(sanitizeAdvisorModelOutput('The local system is healthy.')).toBe('The local system is healthy.')
+    expect(sanitizeAdvisorDisplayText('Metrora measured 12 USD.')).toBe('Metrora measured 12 USD.')
+  })
+
+  it('allows bounded interpretation but rejects unsupported causal attribution', () => {
+    expect(sanitizeAdvisorNarrative('This is worth comparing with your own budget or history.')).toContain('worth comparing')
+    expect(sanitizeAdvisorNarrative('The spend increase was caused by one project.')).toBe('')
+    expect(sanitizeAdvisorNarrative('The main driver is the selected model.')).toBe('')
+    expect(sanitizeAdvisorNarrative('La causa principale è il progetto selezionato.')).toBe('')
+    expect(sanitizeAdvisorNarrative('L’aumento è stato causato dal progetto.')).toBe('')
   })
 
   it('drops suspicious high-entropy credential-like text without digits in the surrounding prose', () => {

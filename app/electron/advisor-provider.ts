@@ -9,6 +9,7 @@ import type {
   AdvisorHostedEvent,
   AdvisorHostedModel,
   AdvisorHostedModelCapabilities,
+  AdvisorHostedProtocol,
   AdvisorHostedProbe,
   AdvisorHostedProviderId,
   AdvisorHostedUsage,
@@ -110,7 +111,19 @@ function unsupportedCapabilities(): AdvisorHostedModelCapabilities {
   return { conversational: 'unavailable', streaming: 'unsupported', toolCall: 'unsupported' }
 }
 
-function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, unknown>, models: AdvisorHostedModel[], seen: Set<string>): string | null {
+type HostedProtocolRegistry = Map<string, AdvisorHostedProtocol | null>
+type HostedConformanceRegistry = Map<string, { state: 'verified' | 'failed'; toolCall: AdvisorHostedCapabilityState; protocol: AdvisorHostedProtocol }>
+
+function modelKey(provider: AdvisorHostedProviderId, model: string): string { return provider + '\u0000' + model }
+
+function modelRows(
+  provider: AdvisorHostedProviderId,
+  payload: Record<string, unknown>,
+  models: AdvisorHostedModel[],
+  seen: Set<string>,
+  protocols?: HostedProtocolRegistry,
+  conformance?: HostedConformanceRegistry,
+): string | null {
   const kind = DESCRIPTORS[provider].modelListKind
   const rows = kind === 'gemini' ? payload.models : payload.data
   if (!Array.isArray(rows)) throw new HostedAdapterError('response-malformed', 'The provider model listing was malformed.')
@@ -123,7 +136,11 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
     const methods = kind === 'gemini' && Array.isArray(row.supportedGenerationMethods)
       ? row.supportedGenerationMethods.filter(item => typeof item === 'string')
       : []
-    const protocol = DESCRIPTORS[provider].protocolForModel(id)
+    const key = modelKey(provider, id)
+    const protocol = DESCRIPTORS[provider].protocolForModel(id, row)
+    protocols?.set(key, protocol)
+    const verifiedCandidate = conformance?.get(key)
+    const verified = verifiedCandidate?.protocol === protocol ? verifiedCandidate : undefined
     const supported = kind !== 'gemini' || methods.length === 0 || methods.includes('generateContent')
     const openRouterParameters = kind === 'openrouter' && Array.isArray(row.supported_parameters)
       ? row.supported_parameters.filter(item => typeof item === 'string')
@@ -135,15 +152,22 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
     const streaming: AdvisorHostedModelCapabilities['streaming'] = kind === 'gemini'
       ? methods.length === 0 ? 'unknown' : methods.includes('streamGenerateContent') ? 'supported' : 'unsupported'
       : 'unknown'
-    const toolCall = kind === 'openrouter'
+    const advertisedToolCall = kind === 'openrouter'
       ? openRouterParameters === null ? 'unknown' : openRouterToolsAdvertised ? 'unknown' : 'unsupported'
       : kind === 'opencode-zen' ? protocol ? 'unknown' : 'unsupported'
         : 'unknown'
-    const capabilities = supported && protocol ? baseCapabilities(conversational, streaming, toolCall as AdvisorHostedCapabilityState) : unsupportedCapabilities()
+    const toolCall = verified?.state === 'verified' ? verified.toolCall : advertisedToolCall
+    const capabilities = supported && protocol
+      ? baseCapabilities(verified?.state === 'verified' ? 'available' : conversational, streaming, toolCall as AdvisorHostedCapabilityState)
+      : unsupportedCapabilities()
     const state: AdvisorHostedModel['state'] = !supported
       ? 'unsupported'
       : kind === 'opencode-zen' && !protocol
         ? 'unsupported'
+        : verified?.state === 'failed'
+          ? 'failed-conformance'
+          : verified?.state === 'verified'
+            ? 'verified'
         : kind === 'openrouter' && toolCall === 'unsupported'
           ? 'limited'
           : kind === 'openrouter' && toolCall === 'unknown'
@@ -155,6 +179,10 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
       ? 'The provider listing does not report the required text generation capability.'
       : kind === 'opencode-zen' && !protocol
         ? 'OpenCode Zen did not publish a reviewed protocol mapping for this model.'
+        : verified?.state === 'failed'
+          ? 'The model failed a bounded Metrora Harness conformance request; retry after checking the provider model metadata.'
+          : verified?.state === 'verified'
+            ? 'A bounded Metrora Harness request completed successfully for this model.'
         : kind === 'openrouter' && toolCall === 'unsupported'
           ? 'This model does not advertise tool calls; Advisor can use deterministic evidence retrieval plus hosted synthesis.'
         : kind === 'openrouter' && toolCall === 'unknown'
@@ -277,7 +305,14 @@ async function readSse(response: Response, onPayload: (payload: Record<string, u
     throw error
   } finally { signal?.removeEventListener('abort', onAbort) }
 }
-async function discover(provider: AdvisorHostedProviderId, secret: string, fetchImpl: FetchLike, parent?: AbortSignal): Promise<AdvisorHostedModel[]> {
+async function discover(
+  provider: AdvisorHostedProviderId,
+  secret: string,
+  fetchImpl: FetchLike,
+  parent?: AbortSignal,
+  protocols?: HostedProtocolRegistry,
+  conformance?: HostedConformanceRegistry,
+): Promise<AdvisorHostedModel[]> {
   const descriptor = DESCRIPTORS[provider]
   const models: AdvisorHostedModel[] = []
   const seen = new Set<string>()
@@ -295,18 +330,29 @@ async function discover(provider: AdvisorHostedProviderId, secret: string, fetch
     const request = await fetchResponse(fetchImpl, providerUrl(provider, url.pathname + url.search), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
     try {
       statusCheck(request.response)
-      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen)
+      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen, protocols, conformance)
     } finally { request.dispose() }
     if (!nextToken || seenTokens.has(nextToken)) break
     seenTokens.add(nextToken)
   }
   return models
 }
-async function hostedChat(provider: AdvisorHostedProviderId, secret: string, requestId: string, request: AdvisorHostedChatRequest, fetchImpl: FetchLike, emit: EventEmitter, parent?: AbortSignal): Promise<AdvisorHostedChatResult> {
+async function hostedChat(
+  provider: AdvisorHostedProviderId,
+  secret: string,
+  requestId: string,
+  request: AdvisorHostedChatRequest,
+  fetchImpl: FetchLike,
+  emit: EventEmitter,
+  parent?: AbortSignal,
+  protocols?: HostedProtocolRegistry,
+  conformance?: HostedConformanceRegistry,
+): Promise<AdvisorHostedChatResult> {
   const stream = request.stream === true
-  const protocol = DESCRIPTORS[provider].protocolForModel(request.model)
+  const key = modelKey(provider, request.model)
+  const protocol = protocols?.has(key) ? protocols.get(key) ?? null : DESCRIPTORS[provider].protocolForModel(request.model)
   if (!protocol) throw new HostedAdapterError('model-unavailable', 'The selected provider model has no approved Advisor protocol.')
-   const adapter = protocolAdapter(protocol)
+  const adapter = protocolAdapter(protocol)
   const result = await fetchResponse(fetchImpl, providerUrl(provider, DESCRIPTORS[provider].chatPath(request.model, stream, protocol)), {
     method: 'POST',
     headers: requestHeaders(provider, secret, stream, protocol),
@@ -341,6 +387,7 @@ async function hostedChat(provider: AdvisorHostedProviderId, secret: string, req
       usage,
       streamed: stream,
     }
+    conformance?.set(key, { state: 'verified', toolCall: value.message.tool_calls.length ? 'supported' : 'unknown', protocol })
     emit({ requestId, provider, model: request.model, kind: 'completed', streamed: stream, usage, toolCalls: value.message.tool_calls })
     return value
   } finally { result.dispose() }
@@ -355,6 +402,11 @@ export function createAdvisorHostedHandlers(options: {
   const fetchImpl = options.fetchImpl ?? fetch
   const emitEvent = options.emitEvent ?? (() => {})
   const flights = new Map<string, AbortController>()
+  // Discovery establishes the protocol identity for the exact provider/model
+  // pair. Chat is not allowed to replace an explicit null with a guessed
+  // protocol. The cache also lets a later probe reflect real conformance.
+  const protocols: HostedProtocolRegistry = new Map()
+  const conformance: HostedConformanceRegistry = new Map()
   const fail = (error: unknown, fallback: string): AdvisorHostedEnvelope => {
     const safe = safeError(error)
     return { ok: false, error: { kind: error instanceof HostedAdapterError ? safe.code : fallback, message: safe.message } }
@@ -383,7 +435,7 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller?.signal)
         if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
-        const models = await discover(providerValue, secret, fetchImpl, controller?.signal)
+        const models = await discover(providerValue, secret, fetchImpl, controller?.signal, protocols, conformance)
         return { ok: true, value: { provider: providerValue, available: true, models, detail: models.length ? providerDetail(providerValue) : 'The provider is reachable but returned no usable models.', credentialState: 'ready' } satisfies AdvisorHostedProbe }
       } catch (error) {
         if (controller?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
@@ -417,13 +469,17 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller.signal)
         if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
-        return { ok: true, value: await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal) }
+        return { ok: true, value: await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, conformance) }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
           emit({ requestId: parsed.requestId, provider: parsed.request.provider, model: parsed.request.model, kind: 'cancelled' })
           return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
         }
         const safe = safeError(error)
+        if (error instanceof HostedAdapterError && ['response-malformed', 'tool-malformed', 'model-unavailable'].includes(safe.code)) {
+          const failedProtocol = protocols.get(modelKey(parsed.request.provider, parsed.request.model)) ?? DESCRIPTORS[parsed.request.provider].protocolForModel(parsed.request.model)
+          if (failedProtocol) conformance.set(modelKey(parsed.request.provider, parsed.request.model), { state: 'failed', toolCall: 'failed-conformance', protocol: failedProtocol })
+        }
         emit({ requestId: parsed.requestId, provider: parsed.request.provider, model: parsed.request.model, kind: 'failed', code: safe.code, message: safe.message })
         return { ok: false, error: { kind: safe.code, message: safe.message } }
       } finally {

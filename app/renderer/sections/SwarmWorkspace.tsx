@@ -1,6 +1,7 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo } from 'react'
 import type { SwarmEventV1, SwarmRunResultV1 } from '../../../src/swarm/contract-v1'
 import type { SwarmRunState } from '../swarm/useSwarmRun'
+import { sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
 
 type SwarmWorkspaceProps = {
   enabled: boolean
@@ -8,7 +9,10 @@ type SwarmWorkspaceProps = {
   modelLabel: string
   state: SwarmRunState
   onRun: (task: string, workerCount?: number) => void
+  workerCount: number
+  onWorkerCountChange: (count: number) => void
   onCancel: () => void
+  showFinalResult?: boolean
 }
 
 type WorkerRow = {
@@ -17,6 +21,8 @@ type WorkerRow = {
   status: string
   tools: Array<{ name: string; status: string }>
   detail: string
+  answer: string
+  evidenceSummary: string
 }
 
 function statusLabel(status: string): string {
@@ -30,6 +36,14 @@ function statusLabel(status: string): string {
   return 'Failed'
 }
 
+function visibleDiagnostic(value: string): string {
+  if (/abort|cancel/i.test(value)) return 'Worker cancelled.'
+  if (/timeout|deadline/i.test(value)) return 'Worker timed out.'
+  if (/unavailable|not available|runtime/i.test(value)) return 'Worker runtime unavailable.'
+  if (/tool|contract|allowlist|bound|scope/i.test(value)) return 'Worker request was rejected by the bounded Tool contract.'
+  return 'Worker failed; diagnostic details were withheld.'
+}
+
 function eventRows(events: readonly SwarmEventV1[], result: SwarmRunResultV1 | null): WorkerRow[] {
   const workers = new Map<string, WorkerRow>()
   for (const event of events) {
@@ -40,9 +54,11 @@ function eventRows(events: readonly SwarmEventV1[], result: SwarmRunResultV1 | n
       status: 'queued',
       tools: [],
       detail: '',
+      answer: '',
+      evidenceSummary: '',
     }
     current.status = event.status
-    current.detail = event.detail ?? current.detail
+    current.detail = event.detail ? sanitizeAdvisorDisplayText(event.detail, 240) : current.detail
     if (event.toolName) {
       const previous = current.tools.find(tool => tool.name === event.toolName)
       if (previous) previous.status = event.status
@@ -57,42 +73,39 @@ function eventRows(events: readonly SwarmEventV1[], result: SwarmRunResultV1 | n
       status: worker.status,
       tools: [],
       detail: '',
+      answer: '',
+      evidenceSummary: '',
     }
-    current.status = worker.status
-    current.tools = worker.toolActivity.map(tool => ({ name: tool.name, status: tool.status }))
-    current.detail = worker.errors[0] ?? current.detail
-    workers.set(worker.workerId, current)
+      current.status = worker.status
+      current.tools = worker.toolActivity.map(tool => ({ name: tool.name, status: tool.status }))
+      current.detail = worker.errors[0] ? visibleDiagnostic(worker.errors[0]) : current.detail
+      current.answer = sanitizeAdvisorModelOutput(worker.answer, 8 * 1024)
+      current.evidenceSummary = sanitizeAdvisorDisplayText(worker.evidenceSummary, 1 * 1024)
+      workers.set(worker.workerId, current)
   }
   return [...workers.values()].sort((left, right) => left.workerId.localeCompare(right.workerId))
 }
 
-export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun, onCancel }: SwarmWorkspaceProps) {
-  const [task, setTask] = useState('')
-  const [workerCount, setWorkerCount] = useState(2)
+export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, workerCount, onWorkerCountChange, onCancel, showFinalResult = true }: SwarmWorkspaceProps) {
   const rows = useMemo(() => eventRows(state.events, state.result), [state.events, state.result])
   const completeCount = rows.filter(row => row.status === 'completed').length
   const running = state.running
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    onRun(task, workerCount)
-    if (task.trim()) setTask('')
-  }
 
   if (!enabled) {
     return (
       <div className="swarm-disabled" aria-label="Swarm unavailable">
-        <span className="swarm-badge muted">Swarm - Soon</span>
-        <h2>Experimental Swarm is not enabled</h2>
-        <p>This development foundation is disabled in production builds until explicitly enabled.</p>
+        <span className="swarm-badge muted">Swarm unavailable</span>
+        <h2>Swarm is not enabled</h2>
+        <p>This manual execution strategy is disabled by the current deployment configuration.</p>
       </div>
     )
   }
 
   return (
-    <div className="swarm-surface" aria-label="Experimental Swarm">
+    <div className="swarm-surface" aria-label="Manual Swarm">
       <div className="swarm-head">
         <div>
-          <span className="swarm-badge">Swarm - Experimental</span>
+          <span className="swarm-badge">Swarm · Manual and bounded</span>
           <h2>Run a bounded multi-worker investigation</h2>
           <p>Bounded transparent workers use the selected Harness runtime and canonical read-only Metrora Tools. No worker can execute actions.</p>
         </div>
@@ -104,28 +117,19 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun
         </div>
       </div>
 
-      <form className="swarm-task-form" onSubmit={submit}>
-        <label htmlFor="swarm-task">Task</label>
-        <textarea
-          id="swarm-task"
-          aria-label="Swarm task"
-          placeholder="What should the workers investigate?"
-          value={task}
-          onChange={event => setTask(event.target.value)}
-          disabled={running}
-        />
+      <div className="swarm-task-form">
         <div className="swarm-task-foot">
           <label htmlFor="swarm-worker-count">
             Workers
-            <select id="swarm-worker-count" aria-label="Swarm worker count" value={workerCount} onChange={event => setWorkerCount(Number(event.target.value))} disabled={running}>
+            <select id="swarm-worker-count" aria-label="Swarm worker count" value={workerCount} onChange={event => onWorkerCountChange(Number(event.target.value))} disabled={running}>
               <option value={2}>2 - default</option>
               <option value={3}>3 - maximum</option>
             </select>
           </label>
           <span>Read-only Tools - max 4 Tool calls/worker - max 1 Tool round/worker</span>
-          <button className="advisor-send" type="submit" disabled={running || !task.trim()}>Start Swarm</button>
+          <span>Use the shared Harness composer below to start this run.</span>
         </div>
-      </form>
+      </div>
 
       {state.error ? <div className="advisor-error" role="alert">{state.error}</div> : null}
 
@@ -152,6 +156,11 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun
                   </div>
                 ) : null}
                 {row.detail ? <p>{row.detail}</p> : null}
+                {row.answer ? <details>
+                  <summary>Worker result</summary>
+                  <p>{row.answer}</p>
+                  {row.evidenceSummary ? <small>{row.evidenceSummary}</small> : null}
+                </details> : null}
               </article>
             ))}
           </div>
@@ -163,14 +172,14 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun
         </div>
       )}
 
-      {state.result ? (
+      {showFinalResult && state.result ? (
         <section className="swarm-result" aria-label="Swarm synthesis">
           <div className="swarm-result-head">
             <span className="swarm-badge">Final synthesis</span>
             <span>{state.result.status === 'partial' ? 'Partial evidence' : statusLabel(state.result.status)}</span>
           </div>
-          {state.result.synthesis?.answer ? <p>{state.result.synthesis.answer}</p> : <p>No final synthesis was available; worker status and evidence are retained.</p>}
-          {state.result.synthesis?.evidenceSummary ? <small>{state.result.synthesis.evidenceSummary}</small> : null}
+          {state.result.synthesis?.answer && sanitizeAdvisorModelOutput(state.result.synthesis.answer) ? <p>{sanitizeAdvisorModelOutput(state.result.synthesis.answer)}</p> : <p>No final synthesis was available; worker status and evidence are retained.</p>}
+          {state.result.synthesis?.evidenceSummary ? <small>{sanitizeAdvisorDisplayText(state.result.synthesis.evidenceSummary, 1 * 1024)}</small> : null}
           {state.result.status === 'partial' ? <div className="swarm-partial-note">Some workers did not complete. The answer above is limited to the worker evidence that was available.</div> : null}
           <details>
             <summary>Evidence record</summary>

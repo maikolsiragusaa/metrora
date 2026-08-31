@@ -31,8 +31,11 @@ import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
+import type { ComponentInstallEvent, ComponentStatus } from '../../electron/component-manager'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
+export type AdvisorLlamaServerOptions = { port?: number }
+export type { ComponentInstallEvent, ComponentStatus }
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
@@ -129,8 +132,8 @@ export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
-  advisorProbe(runtime?: AdvisorLocalRuntimeId): Promise<AdvisorRuntimeProbe>
-  advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
+  advisorProbe(runtime?: AdvisorLocalRuntimeId, options?: AdvisorLlamaServerOptions): Promise<AdvisorRuntimeProbe>
+  advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId, options?: AdvisorLlamaServerOptions): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
   advisorCancel(requestId: string): Promise<boolean>
   advisorHostedProbe(provider: AdvisorCredentialProvider, requestId?: string): Promise<AdvisorHostedProbe>
   advisorHostedChat(requestId: string, payload: Record<string, unknown>): Promise<AdvisorHostedChatResult>
@@ -147,8 +150,12 @@ export interface MetroraBridge extends ProjectBridge {
   getPerformanceBenchComparison(leftRunId: string, rightRunId: string): Promise<PerformanceComparisonV1>
   runPerformanceBench(requestId: string, request: PerformanceBenchRequest): Promise<PerformanceRunV1>
   cancelPerformanceBench(requestId: string): Promise<boolean>
+  getComponentStatus?(id?: 'llama-bench'): Promise<ComponentStatus>
+  installComponent?(id?: 'llama-bench'): Promise<ComponentStatus>
+  cancelComponentInstall?(id?: 'llama-bench'): Promise<boolean>
+  onComponentEvent?(cb: (event: ComponentInstallEvent) => void): () => void
   onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
-  harnessProposeCoreCompatibility(model: string): Promise<MetroraHarnessActionEvent>
+  harnessProposeCoreCompatibility(model: string, target?: 'ollama-local' | 'llama-server'): Promise<MetroraHarnessActionEvent>
   harnessApproveCoreCompatibility(actionId: string, proposalDigest: string): Promise<MetroraHarnessActionEvent>
   harnessCancelCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
   harnessReadCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>

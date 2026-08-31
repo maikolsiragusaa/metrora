@@ -12,6 +12,7 @@ import type {
   AdvisorScope,
   AdvisorSynthesisBlockV1,
   AdvisorSynthesisDraftV1,
+  AdvisorSynthesisNarrativeV1,
   AdvisorVerifiedClaimAtomV1,
 } from './types'
 
@@ -35,6 +36,15 @@ const SECRET_ASSIGNMENT_PATTERN = /\b(?:api[-_ ]?key|access[-_ ]?token|auth(?:en
 const BEARER_PATTERN = /\bbearer\s+[^\s,;]+/giu
 const KEY_PREFIX_PATTERN = /\b(?:sk|rk|pk|gh[pousr]|xox[baprs]-)[-_A-Za-z0-9]{12,}\b/giu
 const RAW_CONTENT_MARKER_PATTERN = /(?<![\p{L}\p{N}])(?:raw[_ -]?(?:prompt|response|source)(?:[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak))*|(?:prompt|response|source)[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak)(?:[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak))*|source[_ -]?(?:code|snippet|content|snippets?)(?:[_ -]?(?:marker|text|content|snippet|should[_ -]?not[_ -]?leak))*)(?![\p{L}\p{N}])/giu
+// This is intentionally a small known-class boundary, not a general prose
+// censor. It catches common model leakage labels while allowing ordinary
+// language such as "the system is healthy".
+const FORBIDDEN_OUTPUT_CLASS_PATTERN = /\b(?:system\s+prompt|hidden\s+prompt|developer\s+message|implementation\s+prompt|guard\s+(?:contract|plan|object)|raw\s+(?:schema|provider\s+(?:response|payload)|evidence\s+blob|tool\s+payload)|private\s+(?:chain[- ]of[- ]thought|scratchpad)|chain[- ]of[- ]thought|internal\s+scratchpad)\b|<\/?(?:system|developer|thinking|analysis|scratchpad)(?:\s|>)/iu
+// Natural reasoning is allowed, but the public evidence contract does not
+// support causal attribution. Keep this boundary narrow: it targets explicit
+// causal assertions while leaving comparisons, interpretation and advice
+// available to the model.
+const UNSUPPORTED_CAUSAL_PATTERN = /\b(?:caused|causes|due\s+to|because\s+of|reason\s+(?:is|was)|(?:main|primary)\s+driver|a\s+causa\s+di|causat[oaie]\s+da(?:l(?:la|le|li|lo)?|gli|i|un[ao]?|una)?\b|causa\s+principale|(?:il|la)\s+(?:motivo|ragione)\s+(?:è|e))\b/iu
 const NUMERIC_CHARACTER_PATTERN = /\p{N}/u
 const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million|billion|first|second|third|uno|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|primo|secondo|terzo)\b/iu
 const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
@@ -88,6 +98,13 @@ function resetPatterns(): void {
   RAW_CONTENT_MARKER_PATTERN.lastIndex = 0
 }
 
+export function containsAdvisorForbiddenOutputClass(value: string): boolean {
+  if (!value) return false
+  const matched = FORBIDDEN_OUTPUT_CLASS_PATTERN.test(value)
+  FORBIDDEN_OUTPUT_CLASS_PATTERN.lastIndex = 0
+  return matched
+}
+
 function replaceSensitiveSegments(value: string): string {
   let result = value
   result = result.replace(PATH_PATTERN, REDACTION)
@@ -111,7 +128,8 @@ export function containsAdvisorSensitiveText(value: string): boolean {
 export function sanitizeAdvisorDisplayText(value: string, maxLength = ADVISOR_CONTENT_MINIMAL_TEXT_MAX_LENGTH): string {
   const normalized = value.replace(CONTROL_CHARACTERS, ' ').trim()
   if (!normalized) return REDACTION
-  const redacted = replaceSensitiveSegments(normalized).replace(/\s{2,}/gu, ' ').trim()
+  const redacted = replaceSensitiveSegments(normalized).replace(FORBIDDEN_OUTPUT_CLASS_PATTERN, REDACTION).replace(/\s{2,}/gu, ' ').trim()
+  FORBIDDEN_OUTPUT_CLASS_PATTERN.lastIndex = 0
   if (!redacted) return REDACTION
   if (redacted.length <= maxLength) return redacted
   return redacted.slice(0, Math.max(0, maxLength - 1)).trimEnd() + '…'
@@ -123,11 +141,32 @@ export function sanitizeAdvisorDisplayText(value: string, maxLength = ADVISOR_CO
  */
 export function sanitizeAdvisorNarrative(value: string, maxBytes = ADVISOR_MODEL_NARRATIVE_MAX_BYTES): string {
   const normalized = value.replace(CONTROL_CHARACTERS, ' ').trim()
-  if (!normalized || containsAdvisorNumericClaim(normalized) || containsAdvisorSensitiveText(normalized)) return ''
+  if (!normalized || containsAdvisorNumericClaim(normalized) || containsAdvisorSensitiveText(normalized) || containsAdvisorForbiddenOutputClass(normalized) || UNSUPPORTED_CAUSAL_PATTERN.test(normalized)) {
+    UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
+    return ''
+  }
+  UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
   const safe = sanitizeAdvisorDisplayText(normalized, Number.MAX_SAFE_INTEGER)
-  if (safe === REDACTION || containsAdvisorSensitiveText(safe) || containsAdvisorNumericClaim(safe)) return ''
+  if (safe === REDACTION || containsAdvisorSensitiveText(safe) || containsAdvisorNumericClaim(safe) || containsAdvisorForbiddenOutputClass(safe) || UNSUPPORTED_CAUSAL_PATTERN.test(safe)) {
+    UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
+    return ''
+  }
+  UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
   if (byteLength(safe) <= maxBytes) return safe
   return ''
+}
+
+/**
+ * Final boundary for model-authored plain text. Structured planning and
+ * synthesis envelopes are parsed before this function is used; this keeps
+ * their contract fields available to the validator while preventing known
+ * internal classes from reaching normal UI prose.
+ */
+export function sanitizeAdvisorModelOutput(value: string, maxLength = ADVISOR_ANSWER_TEXT_MAX_BYTES): string {
+  const normalized = value.replace(CONTROL_CHARACTERS, ' ').trim()
+  if (!normalized || containsAdvisorForbiddenOutputClass(normalized)) return ''
+  const safe = sanitizeAdvisorDisplayText(normalized, maxLength)
+  return safe === REDACTION || containsAdvisorForbiddenOutputClass(safe) ? '' : boundedAdvisorText(safe, maxLength)
 }
 
 export function boundedAdvisorText(value: string, maxBytes = ADVISOR_ANSWER_TEXT_MAX_BYTES): string {
@@ -352,6 +391,18 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     claimIds: block.claimIds.slice(0, 24),
     ...(block.emphasis ? { emphasis: block.emphasis } : {}),
   })
+  const safeSynthesisNarrative = (narrative: AdvisorSynthesisNarrativeV1 | undefined): AdvisorSynthesisNarrativeV1 | undefined => {
+    if (!narrative) return undefined
+    const interpretation = narrative.interpretation ? sanitizeAdvisorNarrative(narrative.interpretation) : ''
+    const recommendation = narrative.recommendation ? sanitizeAdvisorNarrative(narrative.recommendation) : ''
+    const caveats = (narrative.caveats ?? []).map(item => sanitizeAdvisorNarrative(item)).filter(Boolean).slice(0, 6)
+    if (!interpretation && !recommendation && !caveats.length) return undefined
+    return {
+      ...(interpretation ? { interpretation } : {}),
+      ...(recommendation ? { recommendation } : {}),
+      ...(caveats.length ? { caveats } : {}),
+    }
+  }
   const synthesis = answer.synthesis ? {
     ...answer.synthesis,
     conclusion: safeSynthesisBlock(answer.synthesis.conclusion),
@@ -360,6 +411,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
     claims: synthesisClaims ?? [],
     presentationRequests: answer.synthesis.presentationRequests.filter(request => presentationKinds.includes(request.kind)).slice(0, 8).map(request => ({ ...request, ...(request.title ? { title: safeText(request.title) } : {}), ...(request.evidenceRefs ? { evidenceRefs: request.evidenceRefs.map(ref => evidenceIdMap.get(ref) ?? ref).filter(ref => evidence.some(item => item.id === ref)) } : {}) })),
     ...(answer.synthesis.expertDetail ? { expertDetail: answer.synthesis.expertDetail.map(safeText).slice(0, 8) } : {}),
+    ...(safeSynthesisNarrative(answer.synthesis.narrative) ? { narrative: safeSynthesisNarrative(answer.synthesis.narrative) } : {}),
   } : undefined
   return {
     ...answer,

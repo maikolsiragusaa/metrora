@@ -73,12 +73,12 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(messages.map(message => message.role)).toEqual(['system', 'user'])
     expect(messages.some(message => message.content.includes('measuredCostUSD'))).toBe(false)
     const finalPayload = requests[1]!
-    expect(finalPayload.tools).toEqual([])
+    expect(finalPayload.tools).toHaveLength(1)
     expect(finalPayload.model).toBe('gpt-test')
     expect(finalPayload.stream).toBe(false)
     const finalMessages = finalPayload.messages as Array<Record<string, unknown>>
-    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'system'])
-    expect(finalMessages[2]?.content).toContain('measuredCostUSD')
+    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user'])
+    expect(finalMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
     expect(finalMessages.some(message => message.role === 'tool')).toBe(false)
     expect(deltas).toEqual([])
     await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')

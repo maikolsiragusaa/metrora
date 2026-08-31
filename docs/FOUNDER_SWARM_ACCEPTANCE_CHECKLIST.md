@@ -1,29 +1,31 @@
-# Founder Swarm Foundation 001 acceptance checklist
+# Founder Harness Swarm V2 acceptance checklist
 
-This checklist exercises the public, experimental Swarm foundation stacked on
-the local-runtime and Performance foundation. It is not a claim about the
-future private Swarm controller.
+This checklist exercises the public manual, bounded Swarm strategy stacked on
+the local-runtime and Performance foundation. It is not a claim about private
+adaptive orchestration or Smart Auto.
 
 ## Before starting
 
-- Build from branch 'feat/swarm-foundation-001' with base
-  'feat/local-runtime-performance-wave-001'.
-- Confirm the dependency commit is
-  '49ac04601bc00c396b53a43ab4166f2f97e71c98'.
-- Run the desktop development build, or use a production build only with
-  VITE_METRORA_SWARM_EXPERIMENTAL=1.
+- Build from branch `feat/harness-orchestration-v2` at the reviewed authority
+  base `b08e139ff460ab442b13d166b1798e5daa664a29`.
+- Run the desktop development or production build. The public manual strategy
+  is enabled by default unless the deployment explicitly disables it.
 - Have Ollama or llama-server available where possible and select a discovered
   model in Harness runtime controls.
 
 ## A. Basic local Swarm
 
 - Open Metrora Harness and confirm the default mode is Chat.
-- Confirm the mode switch labels the opt-in surface 'Swarm - Experimental'.
+- Confirm the mode switch labels the strategy `Swarm`.
+- Confirm Chat and Swarm use the same conversation history and shared Harness
+  composer; worker count is a bounded Swarm setting, not a second task input.
 - Submit a simple factual Metrora question with the default two workers.
 - Confirm the Investigator and Verifier rows become queued, running, and
   complete.
 - Confirm the selected runtime and model labels are visible.
 - Confirm the final synthesis is conversational and bounded.
+- Confirm a completed Swarm result is added to the same thread as a normal
+  Harness assistant result.
 
 ## B. Tool-backed Swarm
 
@@ -48,6 +50,8 @@ future private Swarm controller.
 - Confirm every worker reaches a terminal cancelled state.
 - Confirm the final run is cancelled and no late worker result changes the UI.
 - Confirm no worker remains active after the run is cancelled.
+- Confirm a synthesis timeout produces a terminal fallback and retains worker
+  results.
 
 ## E. Runtime and model identity
 
@@ -87,7 +91,8 @@ future private Swarm controller.
 ## Regression
 
 - Harness Chat still works without selecting Swarm.
-- Ollama and llama-server runtime selection/probing remains unchanged.
+- Ollama and llama-server runtime selection/probing remains bounded; a custom
+  loopback port is accepted and non-loopback endpoints are rejected.
 - Performance Bench still loads and retains its existing evidence semantics.
 - MCP still exposes factual/read-only access only.
 - Core Compatibility still requires the existing explicit ACT confirmation.

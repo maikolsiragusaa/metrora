@@ -49,7 +49,7 @@ That contract remains valid and should be understood as an early **runtime-perfo
 
 ### Shipped native local Performance
 
-The first native engine is now available through the official llama.cpp **`llama-bench`** tool, behind a Metrora-owned bounded adapter and normalized result contract. It connects to an executable and .gguf model selected by the user; it does not download, build or start llama.cpp.
+The first native engine is now available through the official llama.cpp **`llama-bench`** tool, behind a Metrora-owned bounded adapter and normalized result contract. Desktop can explicitly install the pinned compatible artifact through the Metrora Component Manager, with visible progress, checksum verification and retained provenance; choosing an existing executable remains supported. It never downloads, builds or starts a llama-server runtime.
 
 The adapter records the declared methodology and the controlled upstream
 observed configuration (`n_batch`, `n_ubatch`, `n_threads`, `n_gpu_layers`,
@@ -67,7 +67,7 @@ Desktop Harness and read-only MCP project the same retained records,
 comparisons and state; neither adapter recomputes truth and MCP has no Bench
 execution path.
 
-This is local existing-binary support, not a bundled llama.cpp distribution. The executable's reported build identity remains part of the evidence where available, and the exact llama.cpp provenance/licence boundary is documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md).
+This is a Metrora-managed optional component, not a bundled llama.cpp runtime distribution. The executable's reported build identity remains part of the evidence where available, and the exact llama.cpp provenance/licence boundary is documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md).
 
 ## Compatibility / Runtime Health
 

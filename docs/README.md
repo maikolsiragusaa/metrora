@@ -11,7 +11,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [Getting started](GETTING_STARTED.md) — install or build Metrora, run the first reports and understand the current distribution boundary.
 - [CLI reference](CLI_REFERENCE.md) — public commands grouped by task.
 - [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) — public distinction between shipped Performance, Compatibility/Runtime Health, future Coding Evaluation and future Agent/Harness Evaluation.
-- [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md) — shipped existing-binary-only llama.cpp server/Harness integration, native `llama-bench` setup, evidence, safety bounds and acceptance path.
+- [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md) — shipped loopback-only llama.cpp server/Harness integration with a bounded configurable port, native `llama-bench` setup, explicit Component Manager acquisition, evidence, safety bounds and acceptance path.
 - [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — shipped bounded runtime-timing evidence from an explicitly selected local Ollama model.
 - [Bench Core Compatibility / Runtime Health v1](BENCH_TASK_PACK_V1.md) — shipped bounded local compatibility checks, model discovery, private history and factual comparison for Ollama.
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
@@ -52,7 +52,7 @@ The public product direction uses **Metrora Harness** for the conversational/ope
 
 The current implementation uses stable technical names such as `AdvisorKernel`, `AdvisorToolV1`, `AdvisorActionProposalV1`, existing route/file names and compatibility schemas. The user-facing Desktop surface is `Ask Harness`; the technical names remain for compatibility and are not a second product.
 
-Do not treat the documentation name as proof that a runtime/UI rename or Swarm mode already ships. The separately documented llama.cpp adapter is existing-binary-only and does not imply a bundled distribution.
+Do not treat the documentation name as proof that every runtime/UI rename already ships. The separately documented llama.cpp server adapter remains existing-server-only and loopback-only; Desktop Performance has a separate explicit, provenance-tracked Component Manager path for the pinned optional llama-bench component.
 
 ## Bench status
 

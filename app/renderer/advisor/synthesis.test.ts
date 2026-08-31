@@ -145,6 +145,43 @@ describe('Advisor typed verified claim atoms', () => {
     expect(rendered.conclusion.indexOf('local-safe')).toBeLessThan(rendered.conclusion.indexOf('gpt-safe'))
   })
 
+  it('keeps the verified fact authoritative while allowing bounded interpretation and recommendation', () => {
+    const draft = parseAdvisorSynthesisDraft(JSON.stringify({
+      contractVersion: 'advisor-synthesis-draft-v1',
+      schemaVersion: 1,
+      conclusion: { claimIds: ['measured-total-cost'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'measured-total-cost' }],
+      narrative: {
+        interpretation: 'This is meaningful relative to the available evidence.',
+        recommendation: 'Review the provider breakdown before changing your setup.',
+      },
+      presentationRequests: [],
+    }))
+    const verification = verifyAdvisorSynthesis(draft!, evidence)
+    expect(verification.valid).toBe(true)
+    const rendered = renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'Is this a lot?')
+    expect(rendered.conclusion).toContain('Metrora measured $12.00')
+    expect(rendered.conclusion).toContain('This is meaningful relative to the available evidence.')
+    expect(rendered.conclusion).toContain('Review the provider breakdown')
+  })
+
+  it('can state that a comparison basis is unavailable without inventing a judgment', () => {
+    const draft = parseAdvisorSynthesisDraft(JSON.stringify({
+      contractVersion: 'advisor-synthesis-draft-v1',
+      schemaVersion: 1,
+      conclusion: { claimIds: ['measured-total-cost'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'measured-total-cost' }],
+      narrative: { interpretation: 'Metrora does not have a comparison basis for calling this high or low.' },
+      presentationRequests: [],
+    }))
+    expect(draft?.narrative?.interpretation).toContain('comparison basis')
+    expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(true)
+  })
+
   it('renders the canonical measured total in both supported languages', () => {
     const draft = parsedDraft({ claims: ['measured-total-cost'], conclusionClaimIds: ['measured-total-cost'], whyClaimIds: [], detailsClaimIds: [] })
     const verification = verifyAdvisorSynthesis(draft!, evidence)

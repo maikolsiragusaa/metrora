@@ -21,7 +21,7 @@ export type HarnessActionEvent = {
 }
 
 type HarnessActBridge = {
-  proposeCoreCompatibility(model: string): Promise<HarnessActionEvent>
+  proposeCoreCompatibility(model: string, target?: 'ollama-local' | 'llama-server'): Promise<HarnessActionEvent>
   approveAndExecuteCoreCompatibility(input: { actionId: string; proposalDigest: string; signal?: AbortSignal }): Promise<HarnessActionEvent>
   cancelCoreCompatibility(actionId: string): Promise<HarnessActionEvent | null>
   readCoreCompatibility(actionId: string): Promise<HarnessActionEvent | null>
@@ -93,7 +93,13 @@ export function createHarnessActHandlers(options: HarnessActHandlerOptions): Rec
     }
   }
   return {
-    'metrora:harnessProposeCoreCompatibility': async (model: unknown) => call(bridge => bridge.proposeCoreCompatibility(typeof model === 'string' ? model : '')),
+    'metrora:harnessProposeCoreCompatibility': async (model: unknown, target: unknown) => {
+      if (target !== undefined && target !== 'ollama-local' && target !== 'llama-server') {
+        return { ok: false, error: { kind: 'validation', message: 'Unsupported Harness action target.' } }
+      }
+      const selectedTarget: 'ollama-local' | 'llama-server' = target === 'llama-server' ? 'llama-server' : 'ollama-local'
+      return call(bridge => bridge.proposeCoreCompatibility(typeof model === 'string' ? model : '', selectedTarget))
+    },
     'metrora:harnessApproveCoreCompatibility': async (actionId: unknown, proposalDigest: unknown) => call(bridge => bridge.approveAndExecuteCoreCompatibility({
       actionId: typeof actionId === 'string' ? actionId : '',
       proposalDigest: typeof proposalDigest === 'string' ? proposalDigest : '',

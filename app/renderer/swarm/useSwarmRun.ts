@@ -12,6 +12,7 @@ import type {
   SwarmScopeV1,
 } from '../../../src/swarm/contract-v1'
 import { sanitizeSwarmIdentity, sanitizeSwarmText } from '../../../src/swarm/evidence-v1'
+import { sanitizeAdvisorDisplayText } from '../advisor/privacy'
 import {
   NATIVE_SWARM_TOOL_NAMES,
   NativeHarnessWorkerAdapter,
@@ -41,6 +42,7 @@ export type SwarmRunController = {
   state: SwarmRunState
   run: (task: string, workerCount?: number) => void
   cancel: () => void
+  clear: () => void
 }
 
 const INITIAL_STATE: SwarmRunState = {
@@ -84,14 +86,21 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
       : current)
   }, [])
 
+  const clear = useCallback(() => {
+    generationRef.current += 1
+    handleRef.current?.cancel()
+    handleRef.current = null
+    setState(INITIAL_STATE)
+  }, [])
+
   const run = useCallback((rawTask: string, workerCount = 2) => {
     if (!enabled) return
+    if (handleRef.current) return
     const task = sanitizeSwarmText(rawTask, 8 * 1024).trim()
     if (!task) {
-      setState(current => ({ ...current, error: 'Enter a task for the experimental Swarm.', status: 'idle', running: false }))
+      setState(current => ({ ...current, error: 'Enter a task for the manual Swarm.', status: 'idle', running: false }))
       return
     }
-    handleRef.current?.cancel()
     const generation = ++generationRef.current
     setState({ runId: null, status: 'idle', events: [], result: null, error: null, running: true })
     const handle = coordinator.start({
@@ -119,7 +128,8 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
     }).catch(error => {
       if (generationRef.current !== generation) return
       handleRef.current = null
-      setState(current => ({ ...current, status: 'failed', running: false, error: error instanceof Error ? error.message : 'Swarm could not complete this task.' }))
+      const diagnostic = error instanceof Error ? sanitizeAdvisorDisplayText(error.message, 240) : ''
+      setState(current => ({ ...current, status: 'failed', running: false, error: diagnostic === '[redacted]' ? 'Swarm could not complete this task.' : diagnostic || 'Swarm could not complete this task.' }))
     })
   }, [coordinator, enabled, modelId, modelLabel, runtime.id, runtime.label, scope])
 
@@ -129,8 +139,8 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
   }, [coordinator])
 
   useEffect(() => {
-    cancel()
-  }, [cancel, runtime.id, modelId, scope.period, scope.provider, scope.projectId, scope.model])
+    clear()
+  }, [clear, enabled, modelId, modelLabel, runtime.id, runtime.label, scope.period, scope.range?.from, scope.range?.to, scope.provider, scope.projectId, scope.projectName, scope.model])
 
-  return { state, run, cancel }
+  return { state, run, cancel, clear }
 }

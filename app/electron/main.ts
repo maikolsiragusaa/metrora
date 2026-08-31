@@ -13,6 +13,7 @@ import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { AdvisorCredentialStore } from './advisor-credentials'
 import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
+import { createComponentManager, type ComponentInstallEvent } from './component-manager'
 
 export { createApplicationMenuTemplate } from './menu'
 export { createBridgeHandlers, makeProgressReader } from './bridge-handlers'
@@ -88,6 +89,7 @@ export const UPDATE_CHANNEL = 'metrora:update'
 export const ADVISOR_DELTA_CHANNEL = 'metrora:advisorDelta'
 // Renderer-safe lifecycle projection for the single accepted Harness action.
 export const HARNESS_ACTION_EVENT_CHANNEL = 'metrora:harnessActionEvent'
+export const COMPONENT_EVENT_CHANNEL = 'metrora:componentEvent'
 
 function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -118,6 +120,13 @@ function broadcastHarnessActionEvent(event: HarnessActionEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(HARNESS_ACTION_EVENT_CHANNEL, event)
+  }
+}
+
+function broadcastComponentEvent(event: ComponentInstallEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.webContents.send(COMPONENT_EVENT_CHANNEL, event)
   }
 }
 
@@ -188,6 +197,12 @@ function registerHandlers(): void {
     appPath: app.getAppPath(),
     emit: broadcastHarnessActionEvent,
   })
+  const componentManager = createComponentManager({
+    rootDir: app.getPath('userData'),
+    platform: process.platform,
+    arch: process.arch,
+    onEvent: broadcastComponentEvent,
+  })
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
@@ -216,6 +231,9 @@ function registerHandlers(): void {
     'metrora:runPerformanceBench',
     'metrora:cancelPerformanceBench',
     'metrora:chooseFile',
+    'metrora:getComponentStatus',
+    'metrora:installComponent',
+    'metrora:cancelComponentInstall',
   ])
   function isTrustedRendererSender(event: { senderFrame?: { url?: string } | null }): boolean {
     const frameUrl = event.senderFrame?.url
@@ -229,6 +247,29 @@ function registerHandlers(): void {
       return false
     }
   }
+  const componentId = (value: unknown): value is 'llama-bench' => value === 'llama-bench'
+  const componentError = (error: unknown) => ({
+    ok: false as const,
+    error: {
+      kind: 'component',
+      message: (error instanceof Error ? error.message : 'Component Manager request failed.').replace(/[\r\n]+/gu, ' ').slice(0, 240),
+    },
+  })
+  ipcMain.handle('metrora:getComponentStatus', async (event, id: unknown) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    if (!componentId(id)) return { ok: false, error: { kind: 'bad-args', message: 'Unknown component.' } }
+    try { return { ok: true, value: await componentManager.getStatus(id) } } catch (error) { return componentError(error) }
+  })
+  ipcMain.handle('metrora:installComponent', async (event, id: unknown) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    if (!componentId(id)) return { ok: false, error: { kind: 'bad-args', message: 'Unknown component.' } }
+    try { return { ok: true, value: await componentManager.install(id) } } catch (error) { return componentError(error) }
+  })
+  ipcMain.handle('metrora:cancelComponentInstall', async (event, id: unknown) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    if (!componentId(id)) return { ok: false, error: { kind: 'bad-args', message: 'Unknown component.' } }
+    return { ok: true, value: componentManager.cancel(id) }
+  })
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (event, ...args) => {

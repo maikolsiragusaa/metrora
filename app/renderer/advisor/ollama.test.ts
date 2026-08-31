@@ -122,7 +122,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(contents).not.toContain('different factual answer')
   })
 
-  it('runs one tool-planning request, one final request, and retains all evidence domains', async () => {
+  it('runs one bounded tool-planning request and continuation, retaining all evidence domains', async () => {
     const events: string[] = []
     const transport = transportFor(events, [[
       { function: { name: 'get_spend_snapshot', arguments: '{}' } },
@@ -145,7 +145,7 @@ describe('Ollama Advisor renderer state machine', () => {
     })
 
     expect(JSON.parse(events[0]!).stream).toBe(false)
-    expect(JSON.parse(events[0]!).tools).toEqual([])
+    expect(JSON.parse(events[0]!).tools).toHaveLength(2)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.streamed).toBe(false)
     expect(answer.evidence.map(ref => ref.id)).toEqual(['spend', 'quota'])

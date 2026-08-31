@@ -1,9 +1,11 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { buildAdvisorChatMessages, buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
+import { parseAdvisorSynthesisDraft } from './synthesis'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
 export type HostedAdvisorProbeResult = {
@@ -66,13 +68,13 @@ function toolDefinitions(input: AdvisorRuntimeInput): readonly AdvisorToolDefini
 }
 
 function planningValidation(input: AdvisorRuntimeInput, response: { message: { content: string; tool_calls?: Array<Record<string, unknown>> } }, allowNativeToolCalls = true): AdvisorPlanningValidation | null {
-  const { fallbackPlan, guard } = runtimeGuardPlan(input)
-  let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
-  if (!draft && allowNativeToolCalls && Array.isArray(response.message?.tool_calls)) {
-    draft = planningDraftFromNativeToolCalls(response.message.tool_calls, fallbackPlan)
-  }
-  if (!draft) return null
   try {
+    const { fallbackPlan, guard } = runtimeGuardPlan(input)
+    let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
+    if (!draft && allowNativeToolCalls && Array.isArray(response.message?.tool_calls)) {
+      draft = planningDraftFromNativeToolCalls(response.message.tool_calls, fallbackPlan)
+    }
+    if (!draft) return null
     return validateAdvisorPlanningDraft(draft, guard, input.evidence.scope, input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : [])
   } catch {
     return null
@@ -208,36 +210,98 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       }
 
       let evidenceItems: AdvisorEvidence[] = []
-      try { evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal) } catch (error) {
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return fallback('The hosted model requested evidence that could not be executed; this answer uses the deterministic Metrora evidence path.')
-      }
-      throwIfAborted(signal)
-      const effectiveEvidenceItems = evidenceItems.length ? evidenceItems : [input.evidence]
-      if (hasMixedEvidenceScopes(effectiveEvidenceItems)) {
-        return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: '', modelUsed: true, fallbackNote: 'Conflicting tool scopes were rejected; no cross-scope synthesis was attempted.' }, signal)
-      }
+      let currentInput = effectiveInput
+      let currentPlan = validation.plan
+      let currentResponse = firstResponse
+      let toolRound = 0
+      let totalToolCalls = 0
+      const firstResponseUsedNativeToolCall = Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0
+      const firstResponseWasSingleBareNativeToolCall = firstResponseUsedNativeToolCall && firstResponse.message!.tool_calls!.length === 1 && !(firstResponse.message?.content ?? '').trim()
+      const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({
+        runtime: this,
+        input: currentInput,
+        evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence],
+        finalContent,
+        modelUsed: true,
+        fallbackNote: note,
+      }, signal)
 
-      activeRequestId = requestId('hosted-synthesis')
-      let synthesisResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
-      try {
-        const mergedEvidence = mergeEvidence(effectiveEvidenceItems, input.evidence)
-        synthesisResponse = await this.transport.chat(activeRequestId, {
-          provider: this.provider,
-          model: this.model,
-          messages: buildAdvisorSynthesisMessages(effectiveInput, validation.plan, mergedEvidence),
-          tools: [],
-          stream: false,
-          consent: true,
-        }, signal)
-        activeRequestId = null
+      while (true) {
+        const nextValidation = toolRound === 0 ? validation : planningValidation(currentInput, currentResponse, allowNativeToolCalls)
+        if (!nextValidation) {
+          if (Array.isArray(currentResponse.message?.tool_calls) && currentResponse.message.tool_calls.length > 0) {
+            return fallbackFromEvidence('The model requested a tool outside the bounded Metrora Tools contract; verified facts are shown instead.')
+          }
+          const finalContent = currentResponse.message?.content ?? ''
+          if (toolRound > 0 && finalContent.trim()) {
+            const structured = /^(?:\{|\[)/u.test(finalContent.trim()) || finalContent.trim().startsWith(String.fromCharCode(96))
+            const validDraft = structured && Boolean(parseAdvisorSynthesisDraft(finalContent))
+            return fallbackFromEvidence(structured && !validDraft ? 'The model synthesis was malformed; verified facts are shown instead.' : '', finalContent)
+          }
+          return fallbackFromEvidence('The model continuation was malformed or outside the bounded Metrora Tools contract; verified facts are shown instead.')
+        }
+        currentPlan = nextValidation.plan
+        currentInput = { ...currentInput, plan: currentPlan }
+        const requestedCalls = nextValidation.toolRequests.length
+        if (requestedCalls === 0 || requestedCalls > HARNESS_TOOL_LOOP_LIMITS.maxCallsPerRound || toolRound >= HARNESS_TOOL_LOOP_LIMITS.maxRounds || totalToolCalls + requestedCalls > HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
+          return fallbackFromEvidence('The bounded Metrora Tool loop limit was reached; verified facts are shown instead.')
+        }
+        currentInput.onToolRound?.(toolRound + 1)
+        try {
+          const roundEvidence = await executeRequests(currentInput, nextValidation.toolRequests, signal)
+          evidenceItems.push(...roundEvidence)
+        } catch (error) {
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return fallbackFromEvidence('The hosted model requested evidence that could not be executed; verified facts are shown instead.')
+        }
         throwIfAborted(signal)
-      } catch (error) {
-        activeRequestId = null
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: '', modelUsed: true, fallbackNote: 'The fresh hosted synthesis phase was unavailable; verified Metrora facts are shown instead.' }, signal)
+        totalToolCalls += requestedCalls
+        toolRound += 1
+        const effectiveEvidenceItems = evidenceItems.length ? evidenceItems : [input.evidence]
+        if (hasMixedEvidenceScopes(effectiveEvidenceItems)) return fallbackFromEvidence('Conflicting tool scopes were rejected; no cross-scope synthesis was attempted.')
+        const mergedEvidence = mergeEvidence(effectiveEvidenceItems, input.evidence)
+
+        if (toolRound < HARNESS_TOOL_LOOP_LIMITS.maxRounds && totalToolCalls < HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
+          activeRequestId = requestId('hosted-tool-continuation')
+          try {
+            currentResponse = await this.transport.chat(activeRequestId, {
+              provider: this.provider,
+              model: this.model,
+              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1),
+              tools: allowNativeToolCalls && !(firstResponseWasSingleBareNativeToolCall && toolRound === 1) ? definitions : [],
+              stream: false,
+              consent: true,
+            }, signal)
+            activeRequestId = null
+            throwIfAborted(signal)
+            continue
+          } catch (error) {
+            activeRequestId = null
+            if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+            return fallbackFromEvidence('The bounded hosted evidence continuation was unavailable; verified facts are shown instead.')
+          }
+        }
+
+        activeRequestId = requestId('hosted-synthesis')
+        let synthesisResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
+        try {
+          synthesisResponse = await this.transport.chat(activeRequestId, {
+            provider: this.provider,
+            model: this.model,
+            messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence),
+            tools: [],
+            stream: false,
+            consent: true,
+          }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return fallbackFromEvidence('The fresh hosted synthesis phase was unavailable; verified Metrora facts are shown instead.')
+        }
+        return fallbackFromEvidence('', synthesisResponse.message?.content ?? '')
       }
-      return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: synthesisResponse.message?.content ?? '', modelUsed: true }, signal)
     } finally {
       signal?.removeEventListener('abort', cancel)
     }

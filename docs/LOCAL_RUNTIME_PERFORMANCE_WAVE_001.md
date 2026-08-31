@@ -5,20 +5,25 @@
 This wave adds two bounded local capabilities while preserving Metrora's existing
 Harness, Tools and ACT boundaries:
 
-- an existing-binary-only llama.cpp `llama-server` adapter in the shared Harness
+- an existing-server-only llama.cpp `llama-server` adapter in the shared Harness
   conversation loop;
 - a native llama.cpp `llama-bench` Performance adapter, separate from Core
   Compatibility / Runtime Health.
 
-Neither path downloads, builds or starts a runtime. Neither path connects to
-hosted inference.
+The llama-server path never downloads, builds or starts a runtime and neither
+path connects to hosted inference. Desktop Performance may explicitly acquire
+the pinned official llama-bench artifact through the Metrora Component Manager;
+that is a separate user-triggered component install, never a silent runtime
+install or server start.
 
 ## llama.cpp server runtime
 
 The Desktop runtime selector exposes `llama.cpp server`. The adapter connects
-only to the fixed local default `http://127.0.0.1:8080`; accepted loopback
-host spellings are `127.0.0.1`, `localhost` and `::1`. Credentials,
-paths, queries, fragments, arbitrary hostnames/IPs and remote URLs are rejected.
+only to HTTP loopback at a user-selected validated port, defaulting to
+`http://127.0.0.1:8080`; accepted loopback host spellings are
+`127.0.0.1`, `localhost` and `::1`. Ports are bounded to `1` through
+`65535`. Credentials, paths, queries, fragments, arbitrary hostnames/IPs and
+remote URLs are rejected.
 
 The adapter uses bounded `GET /health` and `GET /v1/models` discovery, then the
 OpenAI-compatible `/v1/chat/completions` endpoint through the existing Harness
@@ -125,10 +130,12 @@ not converted into zero throughput or a successful result.
 
 ## Upstream provenance
 
-Metrora does not ship llama.cpp binaries. The integration was characterized
-against the upstream server and `llama-bench` documentation at master commit
-`9723942adc518b43c4b95dc4dce6906903eb5e09` and release tag `b10516`
-(`b95502ba9aa0eb73a2f4fc8878d7fbe6a847a0b9`). See the upstream
+Metrora does not bundle llama.cpp binaries in the application. Desktop can
+explicitly install the official pinned `llama-bench` release `b10621` into
+its Metrora-owned component directory after HTTPS download and checksum
+verification; provenance is retained and the CLI continues to require an
+existing executable path. The integration was characterized against the
+upstream server and `llama-bench` documentation. See the upstream
 [llama.cpp repository](https://github.com/ggml-org/llama.cpp), its
 [server documentation](https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md)
 and [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).

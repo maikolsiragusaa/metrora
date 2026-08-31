@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
 import { metrora, normalizeCliError } from '../lib/ipc'
-import type { BenchComparison, BenchEvaluation, BenchModelDiscovery, BenchTaskResult, PerformanceBenchRequest, PerformanceHistoryReport } from '../lib/metrora-bridge-types'
+import type { BenchComparison, BenchEvaluation, BenchModelDiscovery, BenchTaskResult, ComponentInstallEvent, ComponentStatus, PerformanceBenchRequest, PerformanceHistoryReport } from '../lib/metrora-bridge-types'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import { PerformanceBenchSection } from './bench/PerformanceBenchSection'
@@ -313,6 +313,7 @@ export function Bench() {
   const [performanceRunning, setPerformanceRunning] = useState(false)
   const [performanceExecutable, setPerformanceExecutable] = useState('')
   const [performanceModel, setPerformanceModel] = useState('')
+  const [performanceComponent, setPerformanceComponent] = useState<ComponentStatus | null>(null)
   const [performanceRequestId, setPerformanceRequestId] = useState<string | null>(null)
   const [performanceLeftRunId, setPerformanceLeftRunId] = useState('')
   const [performanceRightRunId, setPerformanceRightRunId] = useState('')
@@ -361,11 +362,32 @@ export function Bench() {
     } finally { setPerformanceLoading(false) }
   }, [])
 
+  const loadPerformanceComponent = useCallback(async () => {
+    const reader = metrora.getComponentStatus
+    if (typeof reader !== 'function') return
+    try { setPerformanceComponent(await reader('llama-bench')) } catch { setPerformanceComponent(null) }
+  }, [])
+
   useEffect(() => {
     void loadHistory()
     void loadModelDiscovery()
     void loadPerformanceHistory()
-  }, [loadHistory, loadModelDiscovery, loadPerformanceHistory])
+    void loadPerformanceComponent()
+  }, [loadHistory, loadModelDiscovery, loadPerformanceComponent, loadPerformanceHistory])
+
+  useEffect(() => {
+    const subscribe = metrora.onComponentEvent
+    if (typeof subscribe !== 'function') return
+    return subscribe((event: ComponentInstallEvent) => {
+      if (event.id === 'llama-bench') setPerformanceComponent(event)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (performanceComponent?.state === 'installed' && performanceComponent.executablePath) {
+      setPerformanceExecutable(performanceComponent.executablePath)
+    }
+  }, [performanceComponent])
 
   const choosePerformanceFile = async (kind: 'llama-bench' | 'gguf') => {
     if (typeof metrora.chooseFile !== 'function') { setError('This desktop build does not expose the native file picker.'); return }
@@ -380,7 +402,12 @@ export function Bench() {
   }
 
   const runPerformance = async () => {
-    if (!performanceExecutable || !performanceModel) { setError('Choose an existing llama-bench executable and .gguf model first.'); return }
+    if (!performanceExecutable || !performanceModel) {
+      setError(!performanceExecutable
+        ? 'Install the official llama-bench component (or choose an existing executable), then choose a .gguf model.'
+        : 'Choose a .gguf model before running Performance.')
+      return
+    }
     if (typeof metrora.runPerformanceBench !== 'function') { setError('This desktop build does not expose native Performance Bench.'); return }
     const requestId = `performance-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     setPerformanceRequestId(requestId)
@@ -413,6 +440,23 @@ export function Bench() {
       setPerformanceRequestId(current => current === requestId ? null : current)
       setPerformanceRunning(false)
     }
+  }
+
+  const installPerformanceComponent = async () => {
+    if (typeof metrora.installComponent !== 'function') { setError('This desktop build does not expose the managed llama-bench component installer.'); return }
+    setError(null)
+    try {
+      const status = await metrora.installComponent('llama-bench')
+      setPerformanceComponent(status)
+      if (status.state === 'installed' && status.executablePath) setPerformanceExecutable(status.executablePath)
+    } catch (cause) {
+      setError(normalizeCliError(cause).message)
+    }
+  }
+
+  const cancelPerformanceComponent = async () => {
+    if (typeof metrora.cancelComponentInstall !== 'function') return
+    try { await metrora.cancelComponentInstall('llama-bench') } catch { /* the lifecycle event remains authoritative */ }
   }
 
   const cancelPerformance = async () => {
@@ -491,6 +535,7 @@ export function Bench() {
         loading={performanceLoading}
         executablePath={performanceExecutable}
         modelPath={performanceModel}
+        component={performanceComponent}
         running={performanceRunning}
         comparison={performanceComparison}
         comparisonLoading={performanceComparisonLoading}
@@ -498,6 +543,8 @@ export function Bench() {
         rightRunId={performanceRightRunId}
         onChooseExecutable={() => void choosePerformanceFile('llama-bench')}
         onChooseModel={() => void choosePerformanceFile('gguf')}
+        onInstallComponent={() => void installPerformanceComponent()}
+        onCancelComponent={() => void cancelPerformanceComponent()}
         onRun={() => void runPerformance()}
         onCancel={() => void cancelPerformance()}
         onLeftRunChange={setPerformanceLeftRunId}

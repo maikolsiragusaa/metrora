@@ -67,6 +67,19 @@
 .bench-surface-heading p { max-width: 700px; margin: 0; color: var(--mut); font-size: 11px; line-height: 1.5; }
 .bench-surface-badge { flex: 0 0 auto; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-text); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .bench-performance-setup { display: grid; gap: 10px; padding: 13px; border: 1px solid var(--line2); border-radius: 8px; background: var(--phead); }
+.bench-component-card { display: grid; gap: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-radius: 7px; background: var(--panel); }
+.bench-component-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.bench-component-heading > div { display: grid; gap: 3px; }
+.bench-component-heading b { color: var(--ink); font-size: 11px; }
+.bench-component-heading small, .bench-component-detail, .bench-component-progress span { color: var(--mut2); font-size: 10.5px; line-height: 1.4; }
+.bench-component-status { color: var(--mut2); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.bench-component-status-installed { color: var(--accent-text); }
+.bench-component-status-failed, .bench-component-status-cancelled, .bench-component-status-unsupported { color: var(--bad); }
+.bench-component-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.bench-component-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.bench-component-progress span { grid-column: 1 / -1; }
+.bench-component-detail { margin: 0; }
+.bench-component-detail p { margin: 0 0 7px; }
 .bench-performance-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
 .bench-performance-file-row label { display: grid; min-width: 0; gap: 6px; color: var(--mut2); font-size: 10.5px; font-weight: 600; }
 .bench-performance-file-row input { min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); font: inherit; font-size: 11px; }

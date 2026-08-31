@@ -38,21 +38,27 @@ Use this checklist against the packaged Desktop build from the Harness Productiz
 
 ## Local llama.cpp runtime and Performance Bench
 
-- [ ] In Desktop runtime controls, select `llama.cpp server` and confirm discovery is limited to an existing loopback server at the fixed local default (`127.0.0.1:8080`); no download, build, start, credentials or remote endpoint flow appears.
+- [ ] In Desktop runtime controls, select `llama.cpp server` and confirm discovery is limited to an existing HTTP loopback server at the selected bounded port (default `127.0.0.1:8080`); no server download, build, start, credentials or remote endpoint flow appears.
 - [ ] With a reachable llama-server, confirm `/health` and `/v1/models` produce bounded model discovery and that normal chat supports streaming and cancellation through the existing Harness conversation loop.
 - [ ] Use upstream model IDs containing Windows paths, Unix paths, `../` and a safe alias. Confirm renderer labels/capabilities/diagnostics contain no raw path, while chat still routes the selected opaque handle to the exact host-only model ID; `toolCall` remains unknown.
 - [ ] Verify malformed, loading, unreachable and non-loopback server states remain explicit and do not fall back to a fabricated model or capability.
-- [ ] In Bench → Performance, select an existing `llama-bench` executable and `.gguf` model with the native pickers. Confirm the setup shows bounded repetitions/prompt/decode/batch/ubatch/GPU/Flash-Attention settings and no arbitrary command-line field.
+- [ ] In Bench → Performance, confirm the managed official `llama-bench` component starts as Not installed, offers an explicit Install component action with progress/cancel/retry, and after installation is used automatically; choosing an existing executable remains available. Confirm the setup shows bounded repetitions/prompt/decode/batch/ubatch/GPU/Flash-Attention settings and no arbitrary command-line field.
 - [ ] Run and cancel a Performance measurement. Confirm progress, cancellation, timeout, malformed output, non-zero exit and unavailable executable states remain truthful and no late result replaces the current state.
 - [ ] Confirm the retained Performance record is separate from Core Compatibility history, keeps upstream throughput/timing and declared setup/build/hardware fields when available, leaves absent fields unknown and exposes no universal score.
 - [ ] Inspect the native invocation/evidence: `-sm none` is present when declared, `test_time` is ISO text, `n_depth` is retained as depth, and observed batch/ubatch/thread/GPU/split/Flash-Attention/token fields are visible without quantization invention. A material declared/observed mismatch must not complete or persist as a successful record.
 - [ ] Compare two retained Performance records. Confirm deltas appear only for compatible methodology/runner/setup/hardware/completed records; incompatible or incomplete records show a reason without invented numbers.
 - [ ] Ask Harness and the read-only MCP `get_bench_evidence` tool to explain the same retained Performance fixture. Confirm scope/latest/comparison/state are shared, neither recomputes a second truth, and neither launches a benchmark or adds a new ACT kind.
 
+## Manual Swarm in the same Harness conversation
+
+- [ ] Switch Chat → Swarm without creating a second history, use the shared Harness composer, and confirm the selected worker count is the only additional Swarm control.
+- [ ] Run a bounded factual Swarm and confirm worker activity/results remain inspectable while the final result is added as a normal Harness assistant message.
+- [ ] Cancel or let synthesis time out, then switch back to Chat and send a new prompt. Confirm the old run is terminal and cannot mutate the new turn; New chat clears the worker state.
+
 ## Out of scope confirmation
 
-- [ ] No new external MCP write path, Swarm, Android, managed inference, arbitrary endpoint, repository/shell executor or broad README/artwork redesign is presented as shipped.
-- [ ] llama.cpp support remains existing-binary-only and loopback-only for the server adapter; native Performance remains an explicit local Bench operation.
+- [ ] No new external MCP write path, Smart Auto, Android, managed inference, arbitrary endpoint, repository/shell executor or broad README/artwork redesign is presented as shipped.
+- [ ] llama.cpp server support remains loopback-only and existing-server-only; native Performance remains an explicit local Bench operation, with optional explicit installation of the pinned managed llama-bench component.
 - [ ] The canonical checkout remains untouched; this review uses one new isolated worktree and no subagents.
 
 ## Automated release gates

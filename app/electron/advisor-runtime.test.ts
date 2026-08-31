@@ -137,4 +137,33 @@ describe('Electron Advisor local runtime', () => {
     await expect(handlers['metrora:advisorCancel']('collision')).resolves.toEqual({ ok: true, value: true })
     await expect(second).resolves.toMatchObject({ ok: false, error: { kind: 'cancelled' } })
   })
+
+  it('routes llama-server IPC probe and chat through a validated custom loopback port', async () => {
+    const calls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/health')) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+      if (url.endsWith('/v1/models')) return new Response(JSON.stringify({ data: [{ id: 'fixture-model' }] }), { status: 200 })
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ready' } }] }), { status: 200 })
+    }) as typeof fetch
+    const handlers = createAdvisorRuntimeHandlers(fetchImpl)
+    const probe = await handlers['metrora:advisorProbe']('llama-server', { port: 9091 })
+    expect(probe).toMatchObject({ ok: true, value: { available: true, models: ['fixture-model'] } })
+    const chat = await handlers['metrora:advisorChat']('llama-custom', { model: 'fixture-model', messages: [{ role: 'user', content: 'hello' }], tools: [], stream: false }, 'llama-server', { port: 9091 })
+    expect(chat).toMatchObject({ ok: true, value: { message: { content: 'ready' } } })
+    expect(calls).toEqual([
+      'http://127.0.0.1:9091/health',
+      'http://127.0.0.1:9091/v1/models',
+      'http://127.0.0.1:9091/v1/chat/completions',
+    ])
+  })
+
+  it('rejects malformed llama-server port options before network use', async () => {
+    const fetchImpl = vi.fn(async () => textOnlyResponse('{}')) as typeof fetch
+    const handlers = createAdvisorRuntimeHandlers(fetchImpl)
+    await expect(handlers['metrora:advisorProbe']('llama-server', { port: 70000 })).resolves.toMatchObject({ ok: false, error: { kind: 'validation' } })
+    await expect(handlers['metrora:advisorProbe']('llama-server', { port: '9090' })).resolves.toMatchObject({ ok: false, error: { kind: 'validation' } })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
 })

@@ -126,6 +126,37 @@ export function AdvisorWorkspace({
   latestAnswer,
   onNextInvestigation,
 }: AdvisorWorkspaceProps) {
+  const strategyAsk = mode === 'swarm'
+    ? (question: string) => swarm.onRun(question, swarm.workerCount)
+    : onAsk
+  const strategyLoadingQuestion = mode === 'swarm'
+    ? swarm.state.running ? 'Swarm running' : null
+    : loadingQuestion
+  const strategyCancel = mode === 'swarm' ? swarm.onCancel : onCancel
+  const renderMessages = () => messages.length === 0 ? (
+    <div className="advisor-welcome">
+      <span className="advisor-welcome-mark">M</span>
+      <p className="advisor-kicker">METRORA HARNESS</p>
+      <h2>What would you like to talk about?</h2>
+      <p>Ask naturally. Harness connects your question to Metrora factual evidence; a configured runtime can help explain it while verified details remain the authority.</p>
+      <div className="advisor-prompt-grid">{PROMPTS.map(prompt => <button key={prompt.question} type="button" className="advisor-prompt" onClick={() => strategyAsk(prompt.question)}><small>{prompt.eyebrow}</small><span>{prompt.label}</span><i>↗</i></button>)}</div>
+    </div>
+  ) : (
+    messages.map(message => message.role === 'user'
+      ? <article key={message.id} className="advisor-message user-message"><div className="advisor-message-label">You</div><p>{message.text}</p></article>
+      : <AnswerCard
+        key={message.id}
+        answer={message.answer!}
+        selected={selectedAnswerId === message.id}
+        onSelect={() => onSelectAnswer(message.id)}
+        onFollowUp={onFollowUp}
+        harnessAction={message.answer?.actionProposal?.harnessAction ? harnessActions[message.answer.actionProposal.harnessAction.actionId] ?? null : null}
+        actionBusy={harnessActionBusyId === message.answer?.actionProposal?.harnessAction?.actionId}
+        onConfirmHarnessAction={onConfirmHarnessAction}
+        onCancelHarnessAction={onCancelHarnessAction}
+      />
+    )
+  )
   return (
     <section className="advisor-workspace" aria-label="Metrora Harness">
       <aside className="advisor-history" aria-label="Harness conversations">
@@ -150,7 +181,7 @@ export function AdvisorWorkspace({
           <div className="advisor-main-head-actions">
             <div className="advisor-mode-switch" role="tablist" aria-label="Harness mode">
               <button type="button" role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => onModeChange('chat')}>Chat</button>
-              <button type="button" role="tab" aria-selected={mode === 'swarm'} className={mode === 'swarm' ? 'active' : ''} disabled={!swarmExperimentalEnabled} onClick={() => onModeChange('swarm')}>Swarm - {swarmExperimentalEnabled ? 'Experimental' : 'Soon'}</button>
+              <button type="button" role="tab" aria-selected={mode === 'swarm'} className={mode === 'swarm' ? 'active' : ''} disabled={!swarmExperimentalEnabled} onClick={() => onModeChange('swarm')}>Swarm</button>
             </div>
             <AdvisorRuntimeControls {...runtimeControls} />
           </div>
@@ -173,38 +204,16 @@ export function AdvisorWorkspace({
         {runtimeUnavailable ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form conversation and bounded evidence tools. <button type="button" onClick={onRetryRuntime}>Try again</button></div> : null}
         {overviewError ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overviewError}</div> : null}
         <div className="advisor-thread" aria-live="polite">
-          {mode === 'swarm' ? <SwarmWorkspace {...swarm} /> : messages.length === 0 ? (
-            <div className="advisor-welcome">
-              <span className="advisor-welcome-mark">M</span>
-              <p className="advisor-kicker">METRORA HARNESS</p>
-              <h2>What would you like to talk about?</h2>
-              <p>Ask naturally. Harness connects your question to Metrora factual evidence; a configured runtime can help explain it while verified details remain the authority.</p>
-              <div className="advisor-prompt-grid">{PROMPTS.map(prompt => <button key={prompt.question} type="button" className="advisor-prompt" onClick={() => onAsk(prompt.question)}><small>{prompt.eyebrow}</small><span>{prompt.label}</span><i>↗</i></button>)}</div>
-            </div>
-          ) : (
-            messages.map(message => message.role === 'user'
-              ? <article key={message.id} className="advisor-message user-message"><div className="advisor-message-label">You</div><p>{message.text}</p></article>
-              : <AnswerCard
-                key={message.id}
-                answer={message.answer!}
-                selected={selectedAnswerId === message.id}
-                onSelect={() => onSelectAnswer(message.id)}
-                onFollowUp={onFollowUp}
-                harnessAction={message.answer?.actionProposal?.harnessAction ? harnessActions[message.answer.actionProposal.harnessAction.actionId] ?? null : null}
-                actionBusy={harnessActionBusyId === message.answer?.actionProposal?.harnessAction?.actionId}
-                onConfirmHarnessAction={onConfirmHarnessAction}
-                onCancelHarnessAction={onCancelHarnessAction}
-              />
-            )
-          )}
-          {loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Harness</div><p className="advisor-tool-progress">{toolStatus ?? 'Thinking…'}</p><ToolActivity items={toolActivity} scope={scope} />{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={onCancel}>Cancel</button></article> : null}
+          {mode === 'swarm' ? <><SwarmWorkspace {...swarm} showFinalResult={false} />{renderMessages()}</> : renderMessages()}
+          {mode === 'chat' && loadingQuestion ? <article className="advisor-message assistant-message pending"><div className="advisor-message-label"><span className="advisor-mini-mark">M</span> Metrora Harness</div><p className="advisor-tool-progress">{toolStatus ?? 'Thinking…'}</p><ToolActivity items={toolActivity} scope={scope} />{streamPreview ? <p className="advisor-stream-preview">{streamPreview}</p> : null}<button type="button" className="advisor-cancel" onClick={onCancel}>Cancel</button></article> : null}
           {error ? <div className="advisor-error" role="alert"><strong>Harness unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequestPresent) onRetry() }}>Retry</button></div> : null}
           {notice ? <div className="advisor-notice" role="status">{notice}</div> : null}
         </div>
-        {mode === 'chat' ? <AdvisorComposer
-          composer={composer} loadingQuestion={loadingQuestion} hostedSubmitBlockReason={hostedSubmitBlockReason}
-          notice={notice} onChange={onComposerChange} onAsk={onAsk} onCancel={onCancel}
-        /> : null}
+        <AdvisorComposer
+          composer={composer} loadingQuestion={strategyLoadingQuestion} hostedSubmitBlockReason={hostedSubmitBlockReason}
+          notice={notice} onChange={onComposerChange} onAsk={strategyAsk} onCancel={strategyCancel}
+          submitLabel={mode === 'swarm' ? 'Start Swarm' : 'Send'}
+        />
       </main>
 
       <aside className="advisor-evidence" aria-label="Harness evidence">

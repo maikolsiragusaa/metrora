@@ -1,5 +1,5 @@
 import { normalizeAdvisorToolCall } from './contract'
-import { sanitizeAdvisorDisplayText } from './privacy'
+import { containsAdvisorForbiddenOutputClass, sanitizeAdvisorDisplayText } from './privacy'
 import { createAdvisorTurnPlanV1 } from './turn-plan'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import type {
@@ -51,7 +51,7 @@ function isJsonObject(value: unknown): value is AdvisorJsonObject {
 }
 
 function boundedText(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim() || bytes(value) > MAX_TEXT_BYTES) return null
+  if (typeof value !== 'string' || !value.trim() || bytes(value) > MAX_TEXT_BYTES || containsAdvisorForbiddenOutputClass(value)) return null
   const safe = sanitizeAdvisorDisplayText(value, MAX_TEXT_BYTES)
   return safe === '[redacted]' ? null : safe
 }

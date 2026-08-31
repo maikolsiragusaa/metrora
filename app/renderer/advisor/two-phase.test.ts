@@ -29,15 +29,7 @@ const planningContent = JSON.stringify({
   clarification: null,
 })
 
-const synthesisContent = JSON.stringify({
-  contractVersion: 'advisor-synthesis-draft-v1',
-  schemaVersion: 1,
-  conclusion: { claimIds: ['measured-total-cost'] },
-  why: [{ claimIds: ['observed-calls'] }],
-  details: [{ claimIds: ['observed-sessions'] }],
-  claims: [{ id: 'measured-total-cost' }, { id: 'observed-calls' }, { id: 'observed-sessions' }],
-  presentationRequests: [],
-})
+const continuationContent = 'The verified Metrora evidence is sufficient to answer the question.'
 
 function localTransport(payloads: Array<Record<string, unknown>>, events: string[]): OllamaTransport {
   let calls = 0
@@ -49,7 +41,7 @@ function localTransport(payloads: Array<Record<string, unknown>>, events: string
       events.push('chat-' + calls)
       return calls === 1
         ? { streamed: false, message: { content: planningContent, tool_calls: [] } }
-        : { streamed: false, message: { content: synthesisContent, tool_calls: [] } }
+        : { streamed: false, message: { content: continuationContent, tool_calls: [] } }
     },
     cancel: async () => true,
     onDelta: () => () => {},
@@ -64,7 +56,7 @@ function hostedTransport(provider: 'openai' | 'anthropic' | 'gemini', payloads: 
       payloads.push(payload)
       calls += 1
       events.push('chat-' + calls)
-      return { streamed: false, message: { content: calls === 1 ? planningContent : synthesisContent, tool_calls: [] } }
+      return { streamed: false, message: { content: calls === 1 ? planningContent : continuationContent, tool_calls: [] } }
     },
     cancel: async () => true,
     onEvent: () => () => {},
@@ -74,12 +66,12 @@ function hostedTransport(provider: 'openai' | 'anthropic' | 'gemini', payloads: 
 function expectFreshPayloads(payloads: Array<Record<string, unknown>>): void {
   expect(payloads).toHaveLength(2)
   expect(payloads[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
-  expect(payloads[1]?.tools).toEqual([])
   const planningMessages = payloads[0]?.messages as Array<Record<string, unknown>>
-  const synthesisMessages = payloads[1]?.messages as Array<Record<string, unknown>>
+  const continuationMessages = payloads[1]?.messages as Array<Record<string, unknown>>
   expect(planningMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(false)
-  expect(synthesisMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
-  for (const message of [...planningMessages, ...synthesisMessages]) {
+  expect(payloads[1]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
+  expect(continuationMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
+  for (const message of [...planningMessages, ...continuationMessages]) {
     expect(message.role).not.toBe('tool')
     expect(message).not.toHaveProperty('tool_calls')
     expect(message).not.toHaveProperty('tool_call_id')
@@ -87,7 +79,7 @@ function expectFreshPayloads(payloads: Array<Record<string, unknown>>): void {
   }
 }
 
-describe('Advisor independent planning and synthesis phases', () => {
+describe('Advisor bounded planning and continuation phases', () => {
   const fixture = createAdvisorConformanceFixture()
   const evidence = buildSpendEvidence('What changed in spend?', scope, fixture.overview)
   const tool = { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }
@@ -96,7 +88,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     const payloads: Array<Record<string, unknown>> = []
     let calls = 0
     const quotaPlanning = JSON.stringify({ ...JSON.parse(planningContent) as Record<string, unknown>, questionFamily: 'quota', requestedEvidenceDomains: ['provider-capacity', 'freshness'], toolRequests: [{ tool: 'get_quota_snapshot', arguments: {} }], presentationIntent: 'quota-card' })
-    const quotaSynthesis = JSON.stringify({ contractVersion: 'advisor-synthesis-draft-v1', schemaVersion: 1, conclusion: { claimIds: ['quota-remaining-claude-0'] }, why: [], details: [], claims: [{ id: 'quota-remaining-claude-0' }], presentationRequests: [{ kind: 'quota-card' }] })
+    const quotaContinuation = 'The verified quota evidence is sufficient for this answer.'
     const fixture = createAdvisorConformanceFixture()
     const runtime = new OllamaAdvisorRuntime({
       model: 'fixture-override',
@@ -105,7 +97,7 @@ describe('Advisor independent planning and synthesis phases', () => {
         chat: async (_requestId, payload) => {
           payloads.push(payload)
           calls += 1
-          return { streamed: false, message: { content: calls === 1 ? quotaPlanning : quotaSynthesis, tool_calls: [] } }
+          return { streamed: false, message: { content: calls === 1 ? quotaPlanning : quotaContinuation, tool_calls: [] } }
         },
         cancel: async () => true,
         onDelta: () => () => {},
@@ -119,13 +111,13 @@ describe('Advisor independent planning and synthesis phases', () => {
     })
     expect(payloads).toHaveLength(2)
     expect(answer.plan?.questionFamily).toBe('quota')
-    expect(answer.conclusion).toContain('quota remaining')
+    expect(answer.conclusion).toContain('Claude quota')
   })
 
   it.each([
     ['Ollama', (transport: OllamaTransport) => new OllamaAdvisorRuntime({ model: 'fixture-ollama', transport })],
     ['LM Studio', (transport: OllamaTransport) => new LMStudioAdvisorRuntime({ model: 'fixture-lmstudio', transport })],
-  ] as const)('%s performs planning, canonical execution, and one fresh synthesis call', async (_label, createRuntime) => {
+  ] as const)('%s performs planning, canonical execution, and bounded continuation', async (_label, createRuntime) => {
     const payloads: Array<Record<string, unknown>> = []
     const events: string[] = []
     const runtime = createRuntime(localTransport(payloads, events))
@@ -142,7 +134,8 @@ describe('Advisor independent planning and synthesis phases', () => {
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
     expectFreshPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
-    expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
+    expect(answer.conclusion).toContain('Metrora measured $12.00 in the selected period.')
+    expect(answer.conclusion).toContain('The verified Metrora evidence is sufficient to answer the question.')
   })
 
   it.each([
@@ -167,7 +160,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     expect(payloads).toHaveLength(1)
   })
 
-  it.each(['openai', 'anthropic', 'gemini'] as const)('%s performs the same two independent calls without tool-result replay', async provider => {
+  it.each(['openai', 'anthropic', 'gemini'] as const)('%s performs the same bounded continuation without tool-result replay', async provider => {
     const payloads: Array<Record<string, unknown>> = []
     const events: string[] = []
     const runtime = new HostedAdvisorRuntime({ provider, model: provider + '-test', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport: hostedTransport(provider, payloads, events) })
@@ -184,7 +177,8 @@ describe('Advisor independent planning and synthesis phases', () => {
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
     expectFreshPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
-    expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
+    expect(answer.conclusion).toContain('Metrora measured $12.00 in the selected period.')
+    expect(answer.conclusion).toContain('The verified Metrora evidence is sufficient to answer the question.')
   })
 
   it.each(['openai', 'anthropic', 'gemini'] as const)('%s cancels before a third call when evidence execution aborts', async provider => {

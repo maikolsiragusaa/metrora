@@ -179,6 +179,24 @@ describe('public Swarm baseline coordinator', () => {
     expectDigestIdentity(output)
   })
 
+  it('retains successful worker results when model synthesis fails and permits a subsequent run', async () => {
+    const adapter = new FixtureAdapter()
+    const failing = coordinator(adapter, {
+      synthesize: async () => { throw new Error('fixture synthesis failure') },
+    })
+    const first = await failing.run(input)
+    expect(first.status).toBe('completed')
+    expect(first.workers.every(worker => worker.status === 'completed')).toBe(true)
+    expect(first.synthesis?.status).toBe('completed')
+    expect(first.synthesis?.answer).toContain('Observed evidence is available.')
+    expect(first.synthesis?.errors).toContain('fixture synthesis failure')
+    expectDigestIdentity(first)
+
+    const second = await failing.run({ ...input, task: 'Can the coordinator start another turn?' })
+    expect(second.status).toBe('completed')
+    expect(second.workers).toHaveLength(2)
+  })
+
   it('marks complete failure as failed without inventing a synthesis answer', async () => {
     const output = await coordinator(new FixtureAdapter({ 1: 'unavailable', 2: 'failed' })).run(input)
     expect(output.status).toBe('failed')
@@ -259,5 +277,32 @@ describe('public Swarm baseline coordinator', () => {
     expect(output.status).toBe('cancelled')
     expect(output.synthesis?.status).toBe('cancelled')
     expect(output.synthesis?.answer).toBe('')
+  })
+
+  it('bounds synthesis, falls back deterministically, and marks the run terminal', async () => {
+    vi.useFakeTimers()
+    try {
+      let markSynthesisStarted!: () => void
+      const synthesisStarted = new Promise<void>(resolve => { markSynthesisStarted = resolve })
+      const handle = coordinator(new FixtureAdapter(), {
+        synthesisTimeoutMs: 1_000,
+        synthesize: async () => {
+          markSynthesisStarted()
+          return await new Promise<never>(() => {})
+        },
+      }).start(input)
+      await synthesisStarted
+      await vi.advanceTimersByTimeAsync(1_001)
+      const output = await handle.result
+      expect(output.status).toBe('timeout')
+      expect(output.workers.every(worker => worker.status === 'completed')).toBe(true)
+      expect(output.synthesis?.status).toBe('completed')
+      expect(output.synthesis?.answer).toContain('Observed evidence is available.')
+      expect(output.synthesis?.errors.some(error => /bounded deadline/i.test(error))).toBe(true)
+      expect(output.evidence.timeout).toBe(true)
+      expectDigestIdentity(output)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

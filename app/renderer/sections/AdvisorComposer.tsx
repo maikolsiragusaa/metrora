@@ -8,6 +8,7 @@ type AdvisorComposerProps = {
   onChange: (value: string) => void
   onAsk: (question: string) => void
   onCancel: () => void
+  submitLabel?: string
 }
 
 export function AdvisorComposer({
@@ -18,6 +19,7 @@ export function AdvisorComposer({
   onChange,
   onAsk,
   onCancel,
+  submitLabel = 'Send',
 }: AdvisorComposerProps) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -36,7 +38,7 @@ export function AdvisorComposer({
       <div className="advisor-composer-foot">
         <span>Enter to send · Shift+Enter for a new line</span>
         {hostedSubmitBlockReason && composer.trim() && notice !== hostedSubmitBlockReason ? <span className="advisor-submit-note" role="status">{hostedSubmitBlockReason}</span> : null}
-        {loadingQuestion ? <button type="button" className="advisor-cancel" onClick={onCancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>Send <span>↗</span></button>}
+        {loadingQuestion ? <button type="button" className="advisor-cancel" onClick={onCancel}>Cancel</button> : <button type="submit" className="advisor-send" disabled={!composer.trim()}>{submitLabel} <span>↗</span></button>}
       </div>
     </form>
   )

@@ -2,6 +2,7 @@ import { buildConversationEvidence } from '../advisor/special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from '../advisor/comprehension'
 import { ADVISOR_TOOL_CONTRACT } from '../advisor/contract'
 import { createAdvisorToolRegistry } from '../advisor/tools'
+import { sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
 import type {
   AdvisorAnswer,
   AdvisorDataSource,
@@ -62,14 +63,23 @@ function isCancellation(error: unknown, signal: AbortSignal): boolean {
 }
 
 function safeToolName(value: string): string {
-  return sanitizeSwarmText(value, 96)
+  return sanitizeAdvisorDisplayText(sanitizeSwarmText(value, 96), 96)
 }
 
 function safeRefs(refs: readonly AdvisorEvidenceRef[]): Array<{ id: string; label: string }> {
   return refs.slice(0, 16).map(ref => ({
-    id: sanitizeSwarmText(ref.id, 120),
-    label: sanitizeSwarmText(ref.label, 240),
+    id: sanitizeAdvisorDisplayText(sanitizeSwarmText(ref.id, 120), 120),
+    label: sanitizeAdvisorDisplayText(sanitizeSwarmText(ref.label, 240), 240),
   }))
+}
+
+function safeWorkerError(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+  if (/abort|cancel/i.test(message)) return 'Worker cancelled.'
+  if (/timeout|deadline/i.test(message)) return 'Worker timed out.'
+  if (/unavailable|not available|runtime/i.test(message)) return 'Worker runtime unavailable.'
+  if (/tool|contract|allowlist|bound|scope/i.test(message)) return 'Worker request was rejected by the bounded Tool contract.'
+  return 'Worker failed; diagnostic details were withheld.'
 }
 
 function filteredToolContract(
@@ -108,13 +118,14 @@ function toolActivityFromEvents(events: readonly AdvisorToolEvent[]): SwarmToolA
 
 function safeAnswer(answer: AdvisorAnswer, maxBytes = 8 * 1024): { answer: string; evidenceSummary: string; refs: Array<{ id: string; label: string }> } {
   const refs = safeRefs(answer.evidence)
-  const evidenceSummary = boundedSwarmText([
+  const evidenceSummary = boundedSwarmText(sanitizeAdvisorDisplayText([
     answer.coverage.label,
     answer.coverage.detail,
     refs.map(ref => ref.label).join('; '),
-  ].filter(Boolean).join(' - '))
+  ].filter(Boolean).join(' - ')))
+  const safeConclusion = sanitizeAdvisorModelOutput(sanitizeSwarmText(answer.conclusion), maxBytes)
   return {
-    answer: boundedSwarmText(sanitizeSwarmText(answer.conclusion), maxBytes),
+    answer: safeConclusion,
     evidenceSummary,
     refs,
   }
@@ -138,7 +149,7 @@ function baseResult(request: SwarmWorkerRequestV1, status: SwarmWorkerResultV1['
     evidenceSummary: boundedSwarmText(evidenceSummary),
     answer: boundedSwarmText(answer),
     artifactSummary: null,
-    errors: errors.slice(0, 4).map(error => boundedSwarmText(error, 400)),
+    errors: errors.slice(0, 4).map(safeWorkerError),
     usage: null,
     resultDigest: '',
   }
@@ -253,14 +264,10 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       const definitions = registry.definitions.filter(definition => allowed.has(definition.function.name)).slice(0, 16)
       const contract = filteredToolContract(registry.contract, definitions)
       let toolCalls = 0
-      // The existing Harness runtime has one bounded planning/Tool phase
-      // followed by synthesis. V1 does not implement a second model loop.
-      const toolRounds = 1
-      const ensureToolRoundAllowed = () => {
-        if (toolRounds > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
+      const onToolRound = (round: number) => {
+        if (!Number.isInteger(round) || round < 1 || round > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
       }
       const onToolEvent = (event: AdvisorToolEvent) => {
-        if (event.status === 'queued' || event.status === 'started') ensureToolRoundAllowed()
         activityEvents.push(event)
         if (event.status === 'started' || event.status === 'queued') {
           observe({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: request.runId, workerId: request.workerId, role: request.role, status: 'tool-started', at: this.now(), toolName: safeToolName(event.name) })
@@ -272,7 +279,6 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         throwIfAborted(signal)
         if (!allowed.has(name) || !definitions.some(definition => definition.function.name === name)) throw new SwarmBoundsError('Worker requested a Tool outside its immutable allowlist.')
         if (toolCalls >= request.limits.maxToolCalls) throw new SwarmBoundsError('Worker Tool-call limit reached.')
-        ensureToolRoundAllowed()
         toolCalls += 1
         return registry.execute(name, args, toolSignal ?? signal)
       }
@@ -285,6 +291,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         tools: definitions,
         toolContract: contract,
         executeTool,
+        onToolRound,
         onToolEvent,
       }, signal)
       throwIfAborted(signal)
@@ -323,31 +330,29 @@ export function createNativeHarnessSwarmSynthesizer(runtime: AdvisorModelRuntime
       return { status: 'unavailable', answer: '', evidenceSummary: 'The selected Harness runtime is unavailable for synthesis.', errors: ['No usable synthesis runtime was available.'] }
     }
     throwIfAborted(signal)
-    const scope = input.scope as unknown as AdvisorScope
-    const plan = resolveAdvisorQuestion(input.task, scope)
-    const reports = input.workers.map(worker => [
-      worker.role + ' - ' + worker.status,
-      'Runtime: ' + sanitizeSwarmIdentity(worker.runtime).label,
-      'Model: ' + sanitizeSwarmIdentity(worker.model).label,
-      'Answer: ' + boundedSwarmText(worker.answer, 4 * 1024),
-      'Evidence: ' + boundedSwarmText(worker.evidenceSummary, 1 * 1024),
-    ].join('\n')).join('\n\n')
-    const question = boundedSwarmText('Synthesize this bounded worker evidence for the original user task. Do not reveal hidden reasoning. State partial or unavailable evidence plainly.\n\nOriginal task:\n' + input.task + '\n\nWorker reports:\n' + reports, 8 * 1024)
-    const answer = await runtime.generate({
-      question,
-      evidence: buildConversationEvidence(input.task, scope),
-      plan: plan.plan,
-      guard: createAdvisorModelGuardV1(plan),
-      fallbackIntent: plan.intent,
-      tools: [],
-      toolContract: { ...ADVISOR_TOOL_CONTRACT, tools: [] },
-    }, signal)
+    const reports = input.workers.map(worker => ({
+      role: worker.role,
+      status: worker.status,
+      answer: sanitizeAdvisorModelOutput(boundedSwarmText(sanitizeSwarmText(worker.answer), 4 * 1024), 4 * 1024),
+      evidenceSummary: sanitizeAdvisorDisplayText(boundedSwarmText(sanitizeSwarmText(worker.evidenceSummary), 1 * 1024), 1 * 1024),
+    }))
+    if (!runtime.generateSwarmSynthesis) {
+      const available = reports.filter(report => report.status === 'completed' || report.status === 'partial')
+      return {
+        status: available.length ? 'completed' : 'unavailable',
+        answer: boundedSwarmText(available.map(report => report.answer).filter(Boolean).join('\n\n')),
+        evidenceSummary: 'Hosted Swarm keeps worker reports local and used the deterministic bounded report path.',
+        errors: [],
+      }
+    }
+    const result = await runtime.generateSwarmSynthesis({ question: input.task, scope: input.scope as unknown as AdvisorScope, workers: reports }, signal)
     throwIfAborted(signal)
-    const safe = safeAnswer(answer)
+    const answer = sanitizeAdvisorModelOutput(boundedSwarmText(sanitizeSwarmText(result.answer)), 8 * 1024)
+    const evidenceSummary = sanitizeAdvisorDisplayText(boundedSwarmText(sanitizeSwarmText(result.evidenceSummary)), 1 * 1024)
     return {
-      status: safe.answer ? 'completed' : 'unavailable',
-      answer: safe.answer,
-      evidenceSummary: safe.evidenceSummary || 'Synthesis used bounded worker results and statuses only.',
+      status: answer.trim() ? 'completed' : 'unavailable',
+      answer,
+      evidenceSummary: evidenceSummary || 'Synthesis used bounded worker results and statuses only.',
       errors: [],
     }
   }

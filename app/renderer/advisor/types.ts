@@ -125,8 +125,10 @@ export type AdvisorVerifiedClaimAtomV1 = {
 }
 export type AdvisorClaimSelectionV1 = { contractVersion: 'advisor-claim-selection-v1'; schemaVersion: 1; id: string }
 export type AdvisorSynthesisBlockV1 = { claimIds: string[]; emphasis?: 'primary' | 'supporting' | 'detail' }
+/** Model-owned interpretation is intentionally separate from verified fact blocks. */
+export type AdvisorSynthesisNarrativeV1 = { interpretation?: string; recommendation?: string; caveats?: string[] }
 export type AdvisorPresentationRequestV1 = { kind: AdvisorPresentationIntent; title?: string; evidenceRefs?: string[] }
-export type AdvisorSynthesisDraftV1 = { contractVersion: 'advisor-synthesis-draft-v1'; schemaVersion: 1; conclusion: AdvisorSynthesisBlockV1; why: AdvisorSynthesisBlockV1[]; details: AdvisorSynthesisBlockV1[]; claims: AdvisorClaimSelectionV1[]; presentationRequests: AdvisorPresentationRequestV1[]; expertDetail?: string[] }
+export type AdvisorSynthesisDraftV1 = { contractVersion: 'advisor-synthesis-draft-v1'; schemaVersion: 1; conclusion: AdvisorSynthesisBlockV1; why: AdvisorSynthesisBlockV1[]; details: AdvisorSynthesisBlockV1[]; claims: AdvisorClaimSelectionV1[]; presentationRequests: AdvisorPresentationRequestV1[]; expertDetail?: string[]; narrative?: AdvisorSynthesisNarrativeV1 }
 export type AdvisorToolRequestV1 = { tool: AdvisorToolName; arguments: AdvisorJsonObject }
 export type AdvisorPlanningDraftV1 = {
   contractVersion: 'advisor-planning-draft-v1'
@@ -233,9 +235,17 @@ export type AdvisorRuntimeInput = {
   tools?: readonly AdvisorToolDefinition[]
   toolContract?: AdvisorToolContract
   executeTool?: AdvisorToolExecutor
+  /** Called before each bounded read-tool round; policy adapters may reject a round. */
+  onToolRound?: (round: number) => void
   onToolEvent?: (event: { name: string; status: 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled' }) => void
   onDelta?: (text: string) => void
 }
-export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'llama-server-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> }
+export type AdvisorSwarmSynthesisInput = {
+  question: string
+  scope: AdvisorScope
+  workers: ReadonlyArray<{ role: string; status: string; answer: string; evidenceSummary: string }>
+}
+export type AdvisorSwarmSynthesisResult = { answer: string; evidenceSummary: string }
+export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'llama-server-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer>; generateSwarmSynthesis?(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> }
 export type AdvisorDataSource = { getOverview(context: AdvisorScope, signal?: AbortSignal): Promise<MenubarPayload>; getModels(context: AdvisorScope, signal?: AbortSignal): Promise<ModelReportRow[]>; getQuota(signal?: AbortSignal): Promise<QuotaProvider[]>; getBenchEvidence?(context: AdvisorScope, signal?: AbortSignal): Promise<AdvisorBenchEvidence> }
 export type AdvisorBridge = Pick<MetroraBridge, 'getOverview' | 'getModels' | 'getQuota' | 'getBenchEvidence'>

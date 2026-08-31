@@ -30,7 +30,7 @@ Metrora brings fragmented AI-development evidence together without requiring a n
 | **Observe** | Usage, Cost, Models, Projects and Activity from supported local tool evidence, with measured, derived, estimated and unavailable states kept distinct. |
 | **Compare** | Side-by-side model and provider views using observed economics, plus controlled local Bench evidence without inventing a universal quality ranking. |
 | **Advise** | A chat-first, read-only conversational foundation currently surfaced as **Advisor**. A configured model can answer normally and call bounded Metrora read tools when user-specific facts are needed. |
-| **Control** | Provider-reported Capacity/quota, budgets, Project scope, local settings and explicit reversible controls where Metrora has deterministic authority. No autonomous routing or orchestration is implied. |
+| **Control** | Provider-reported Capacity/quota, budgets, Project scope, local settings and explicit reversible controls where Metrora has deterministic authority. Manual bounded Swarm is available; no autonomous routing or Smart Auto is implied. |
 
 Metrora is multi-tool and multi-provider by design. A supported collector can contribute useful local evidence without forcing the underlying AI request through Metrora.
 
@@ -59,9 +59,9 @@ verified evidence
   ↓
 natural explanation
   ↓
-later: explicit ACT authority for state changes
+  explicit ACT authority for supported state changes
   ↓
-later: Swarm as a separately gated Harness mode
+  manual bounded Swarm in the same Harness conversation
 ```
 
 Key rules:
@@ -69,10 +69,10 @@ Key rules:
 - ordinary conversation, coding help and reasoning do not require a Metrora evidence read;
 - user-specific Metrora facts come from bounded typed tools rather than model guesses;
 - a tool result is evidence, not automatically the entire answer — the model should explain useful drivers and limitations when the question asks for understanding;
-- future UI may show safe observable work such as tool start/completion, scope and progress, but not private chain-of-thought;
-- ACT remains the future trusted execution authority; a conversational request alone does not run shell commands, change repositories, launch agents or mutate state;
-- Swarm is a future mode and is not shipped;
-- current local runtimes are Ollama, LM Studio and an existing-binary-only loopback llama.cpp / `llama-server` adapter.
+- UI shows safe observable work such as tool start/completion, scope and progress, but not private chain-of-thought;
+- ACT is the trusted execution authority for the narrow supported action path; a conversational request alone does not run shell commands, change repositories, launch agents or mutate state;
+- Swarm is a manual, fixed-role, bounded strategy in the same Harness conversation. It is not autonomous routing or Smart Auto;
+- current local runtimes are Ollama, LM Studio and a loopback-only llama.cpp / `llama-server` adapter with a bounded configurable port.
 
 See [Metrora Harness public foundation](docs/HARNESS_PUBLIC_FOUNDATION.md) and the current [Advisor implementation contract](docs/ADVISOR_PUBLIC_FOUNDATION.md).
 
@@ -87,9 +87,9 @@ Different Bench questions remain separate evidence families:
 - **Performance** — the primary product direction: throughput, latency, TTFT, memory and runtime/hardware configuration where reliably measurable;
 - **Compatibility / Runtime Health** — the current `core-v1` deterministic checks;
 - **Coding Evaluation** — future, under a separately versioned methodology and sandbox/licence review;
-- **Agent / Harness Evaluation** — future, only once real agent/Swarm execution exists.
+- **Agent / Harness Evaluation** — future, separately versioned; manual Swarm is not presented as an evaluation score.
 
-Current shipped Bench evidence includes a small Ollama runtime-timing slice, Core Compatibility and the first native llama.cpp `llama-bench` Performance adapter behind a Metrora-owned bounded runner. No current result is presented as a universal model-quality or coding ranking.
+Current shipped Bench evidence includes a small Ollama runtime-timing slice, Core Compatibility and the first native llama.cpp `llama-bench` Performance adapter behind a Metrora-owned bounded runner. Desktop can explicitly install the pinned official component with progress, checksum and provenance; the CLI still accepts an existing executable path. No current result is presented as a universal model-quality or coding ranking.
 
 See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md), [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md) and [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md).
 

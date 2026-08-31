@@ -2,6 +2,7 @@ import { EmptyNote } from '../../components/EmptyState'
 import { Panel } from '../../components/Panel'
 import type { PerformanceComparisonV1 } from '../../../../src/bench/performance-compare-v1'
 import type { PerformanceRunV1 } from '../../../../src/bench/performance-contract-v1'
+import type { ComponentStatus } from '../../lib/metrora-bridge-types'
 
 function formatNumber(value: number): string {
   return value >= 100 || Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
@@ -71,25 +72,37 @@ function observedConfigurationLabel(record: Pick<PerformanceRunV1, 'observedConf
 }
 
 function PerformanceSetup({
+  component,
   executablePath,
   modelPath,
   running,
+  onCancelComponent,
   onChooseExecutable,
   onChooseModel,
+  onInstallComponent,
   onRun,
   onCancel,
 }: {
+  component: ComponentStatus | null
   executablePath: string
   modelPath: string
   running: boolean
+  onCancelComponent: () => void
   onChooseExecutable: () => void
   onChooseModel: () => void
+  onInstallComponent: () => void
   onRun: () => void
   onCancel: () => void
 }) {
+  const componentBusy = component?.state === 'installing'
+  const componentCanInstall = component?.state === 'not-installed' || component?.state === 'failed' || component?.state === 'cancelled'
   return <div className="bench-performance-setup">
+    <div className="bench-component-card" aria-label="Managed llama-bench component">
+      <div className="bench-component-heading"><div><b>llama.cpp benchmark runtime</b><small>Official Metrora-managed component</small></div><span className={'bench-component-status bench-component-status-' + (component?.state ?? 'checking')}>{component?.state === 'installed' ? 'Installed ✓' : component?.state === 'installing' ? 'Installing…' : component?.state === 'unsupported' ? 'Unavailable' : component?.state === 'failed' ? 'Install failed' : component?.state === 'cancelled' ? 'Cancelled' : component ? 'Not installed' : 'Checking…'}</span></div>
+      {componentBusy ? <div className="bench-component-progress"><progress max={100} value={component.progress ?? undefined} aria-label="llama-bench installation progress" />{component.progress === null ? <span>{component.detail}</span> : <span>{component.detail}</span>}<button type="button" className="bench-secondary-button" onClick={onCancelComponent}>Cancel install</button></div> : component?.state === 'installed' ? <p className="bench-component-detail">{component.detail} Version <code>{component.version}</code>. Performance uses this executable automatically.</p> : component?.state === 'unsupported' ? <p className="bench-component-detail">{component.detail} Choose an existing executable below if one is already available.</p> : component?.state === 'failed' || component?.state === 'cancelled' ? <div className="bench-component-detail"><p>{component.error ?? component.detail}</p><button type="button" className="bench-secondary-button" onClick={onInstallComponent}>Retry install</button></div> : componentCanInstall ? <div className="bench-component-detail"><p>{component.detail}</p><button type="button" className="bench-secondary-button" onClick={onInstallComponent}>Install component</button></div> : <p className="bench-component-detail">{component?.detail ?? 'Checking the managed component…'}</p>}
+    </div>
     <div className="bench-performance-file-row">
-      <label>llama-bench executable<input aria-label="llama-bench executable" value={executablePath} readOnly placeholder="Choose an existing llama-bench executable" /></label>
+      <label>llama-bench executable<input aria-label="llama-bench executable" value={executablePath} readOnly placeholder="Install the managed component or choose an executable" /></label>
       <button type="button" className="bench-secondary-button" onClick={onChooseExecutable} disabled={running}>Choose executable</button>
     </div>
     <div className="bench-performance-file-row">
@@ -237,6 +250,7 @@ export function PerformanceBenchSection({
   loading,
   executablePath,
   modelPath,
+  component,
   running,
   comparison,
   comparisonLoading,
@@ -244,6 +258,8 @@ export function PerformanceBenchSection({
   rightRunId,
   onChooseExecutable,
   onChooseModel,
+  onInstallComponent,
+  onCancelComponent,
   onRun,
   onCancel,
   onLeftRunChange,
@@ -254,6 +270,7 @@ export function PerformanceBenchSection({
   loading: boolean
   executablePath: string
   modelPath: string
+  component: ComponentStatus | null
   running: boolean
   comparison: PerformanceComparisonV1 | null
   comparisonLoading: boolean
@@ -261,6 +278,8 @@ export function PerformanceBenchSection({
   rightRunId: string
   onChooseExecutable: () => void
   onChooseModel: () => void
+  onInstallComponent: () => void
+  onCancelComponent: () => void
   onRun: () => void
   onCancel: () => void
   onLeftRunChange: (value: string) => void
@@ -269,10 +288,10 @@ export function PerformanceBenchSection({
   const latest = history[0] ?? null
   return <section className="bench-performance-section" aria-labelledby="bench-performance-title">
     <div className="bench-surface-heading">
-      <div><p className="bench-kicker">PRIMARY · NATIVE LLAMA.CPP</p><h2 id="bench-performance-title">Performance</h2><p>Run the bounded <code>llama-bench</code> adapter against an existing executable and GGUF model. Results retain upstream throughput, timing, setup, runtime, and hardware evidence without a universal score.</p></div>
+      <div><p className="bench-kicker">PRIMARY · NATIVE LLAMA.CPP</p><h2 id="bench-performance-title">Performance</h2><p>Run the bounded <code>llama-bench</code> adapter against a managed official component or an existing executable and GGUF model. Results retain upstream throughput, timing, setup, runtime, and hardware evidence without a universal score.</p></div>
       <span className="bench-surface-badge">{history.length ? history.length + ' retained' : 'No retained runs'}</span>
     </div>
-    <PerformanceSetup executablePath={executablePath} modelPath={modelPath} running={running} onChooseExecutable={onChooseExecutable} onChooseModel={onChooseModel} onRun={onRun} onCancel={onCancel} />
+    <PerformanceSetup component={component} executablePath={executablePath} modelPath={modelPath} running={running} onChooseExecutable={onChooseExecutable} onChooseModel={onChooseModel} onInstallComponent={onInstallComponent} onCancelComponent={onCancelComponent} onRun={onRun} onCancel={onCancel} />
     <div className="bench-grid">
       <PerformanceEvidenceCard record={latest} />
       <Panel title="Recent Performance runs" right={invalidCount ? <span className="bench-invalid">{invalidCount} invalid retained record{invalidCount === 1 ? '' : 's'} skipped</span> : null}>

@@ -111,6 +111,7 @@ export type AdvisorRuntimeControlsProps = {
   runtimeId: AdvisorLocalRuntimeId
   runtimeModel: string | null
   runtimeState: AdvisorRuntimeState
+  llamaServerPort: number
   hostedProvider: AdvisorHostedProviderId
   hostedModel: string | null
   hostedProbe: AdvisorHostedProbePresentation
@@ -132,6 +133,7 @@ export type AdvisorRuntimeControlsProps = {
   onActivateHosted: () => void
   onLocalRuntimeChange: (runtime: AdvisorLocalRuntimeId) => void
   onLocalModelChange: (model: string) => void
+  onLlamaServerPortChange: (port: number) => void
 }
 
 export function AdvisorRuntimeControls({
@@ -139,6 +141,7 @@ export function AdvisorRuntimeControls({
   runtimeId,
   runtimeModel,
   runtimeState,
+  llamaServerPort,
   hostedProvider,
   hostedModel,
   hostedProbe,
@@ -160,6 +163,7 @@ export function AdvisorRuntimeControls({
   onActivateHosted,
   onLocalRuntimeChange,
   onLocalModelChange,
+  onLlamaServerPortChange,
 }: AdvisorRuntimeControlsProps) {
   const selectableHostedModels = hostedProbe.models.filter(model => model.state !== 'unsupported' && model.state !== 'failed-conformance')
   const selectedHostedModel = selectableHostedModels.find(model => model.id === hostedModel) ?? null
@@ -220,7 +224,9 @@ export function AdvisorRuntimeControls({
           <div className="advisor-runtime-picker-row">
             <label className="advisor-runtime-picker">Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option><option value="llama-server">llama.cpp server</option></select></label>
             {runtimeState.models.length ? <label className="advisor-runtime-picker">Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{runtimeState.modelLabels?.[model] ?? model}</option>)}</select></label> : null}
+            {runtimeId === 'llama-server' ? <label className="advisor-runtime-picker">Loopback port<input aria-label="llama-server loopback port" type="number" min="1" max="65535" step="1" value={llamaServerPort} onChange={event => { const value = Number(event.target.value); if (Number.isSafeInteger(value) && value >= 1 && value <= 65535) onLlamaServerPortChange(value) }} /></label> : null}
           </div>
+          {runtimeId === 'llama-server' ? <small className="advisor-runtime-detail">HTTP loopback only: 127.0.0.1 / localhost / ::1. Default port is 8080.</small> : null}
           <div className="advisor-runtime-state-grid" aria-label="Local runtime state">
             <span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span>
             <span data-state="model">Model: {modelStateLabel(runtimeState.modelState)}</span>

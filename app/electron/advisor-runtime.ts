@@ -1,5 +1,5 @@
 import { chatLMStudioMain, probeLMStudioMain } from './lmstudio-runtime'
-import { chatLlamaServerMain, probeLlamaServerMain } from './llama-server-runtime'
+import { chatLlamaServerMain, probeLlamaServerMain, validateLlamaServerPort, type LlamaServerRuntimeOptions } from './llama-server-runtime'
 const LOOPBACK_ENDPOINT = 'http://127.0.0.1:11434'
 const PROBE_TIMEOUT_MS = 1500
 const CHAT_TIMEOUT_MS = 120_000
@@ -276,6 +276,11 @@ function validRequestId(value: unknown): value is string {
 }
 type AdvisorRuntimeId = 'ollama' | 'lmstudio' | 'llama-server'
 function validRuntime(value: unknown): value is AdvisorRuntimeId { return value === 'ollama' || value === 'lmstudio' || value === 'llama-server' }
+function parseLlamaServerOptions(value: unknown): LlamaServerRuntimeOptions {
+  if (value === undefined) return {}
+  if (!isRecord(value) || Object.keys(value).some(key => key !== 'port')) throw new Error('llama-server runtime options are invalid')
+  return { port: validateLlamaServerPort(value.port) }
+}
 function ollamaProbeEnvelope(value: AdvisorRuntimeProbe): AdvisorRuntimeProbe {
   const discoveryState = value.models.length ? 'models-discovered' : value.detail.includes('has no local models') ? 'no-models' : 'runtime-unavailable'
   return { runtime: 'ollama', available: value.available, models: value.models, modelLabels: value.modelLabels, detail: value.detail, discoveryState, capabilities: value.capabilities }
@@ -284,27 +289,37 @@ export function createAdvisorRuntimeHandlers(fetchImpl: FetchLike = fetch, emitD
   const flights = new Map<string, AbortController>()
   const fail = (error: unknown, kind = 'runtime') => ({ ok: false as const, error: { kind, message: boundedError(error).message } })
   return {
-    'metrora:advisorProbe': async (runtime: AdvisorRuntimeId = 'ollama') => {
+    'metrora:advisorProbe': async (runtime: AdvisorRuntimeId = 'ollama', runtimeOptions?: unknown) => {
       if (!validRuntime(runtime)) return fail(new Error('Advisor runtime is invalid.'), 'validation')
+      let llamaOptions: LlamaServerRuntimeOptions = {}
+      try {
+        if (runtime === 'llama-server') llamaOptions = parseLlamaServerOptions(runtimeOptions)
+        else if (runtimeOptions !== undefined) throw new Error('Runtime options are only supported for llama-server.')
+      } catch (error) { return fail(error, 'validation') }
       try {
         const value = runtime === 'lmstudio'
           ? await probeLMStudioMain(fetchImpl)
           : runtime === 'llama-server'
-            ? await probeLlamaServerMain(fetchImpl)
+            ? await probeLlamaServerMain(fetchImpl, undefined, llamaOptions)
             : ollamaProbeEnvelope(await probeOllamaMain(fetchImpl))
         return { ok: true, value }
       } catch (error) { return fail(error) }
     },
-    'metrora:advisorChat': async (requestId: string, payload: AdvisorRuntimeChatPayload, runtime: AdvisorRuntimeId | ((text: string) => void) = 'ollama') => {
+    'metrora:advisorChat': async (requestId: string, payload: AdvisorRuntimeChatPayload, runtime: AdvisorRuntimeId | ((text: string) => void) = 'ollama', runtimeOptions?: unknown) => {
       const selectedRuntime = typeof runtime === 'function' ? 'ollama' : runtime
       if (!validRequestId(requestId) || !validRuntime(selectedRuntime)) return fail(new Error('Advisor request is invalid.'), 'validation')
+      let llamaOptions: LlamaServerRuntimeOptions = {}
+      try {
+        if (selectedRuntime === 'llama-server') llamaOptions = parseLlamaServerOptions(runtimeOptions)
+        else if (runtimeOptions !== undefined) throw new Error('Runtime options are only supported for llama-server.')
+      } catch (error) { return fail(error, 'validation') }
       const controller = new AbortController()
       flights.set(requestId, controller)
       try {
         const value = selectedRuntime === 'lmstudio'
           ? await chatLMStudioMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
           : selectedRuntime === 'llama-server'
-            ? await chatLlamaServerMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
+            ? await chatLlamaServerMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined, llamaOptions)
             : await chatOllamaMain(fetchImpl, payload, controller.signal, payload.stream ? text => emitDelta({ requestId, text }) : undefined)
         return { ok: true, value }
       } catch (error) {

@@ -1,10 +1,12 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { buildAdvisorChatMessages, buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorSwarmSynthesisMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES } from './privacy'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
+import { parseAdvisorSynthesisDraft } from './synthesis'
+import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 
 export { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 
@@ -91,16 +93,25 @@ async function executeRequests(input: AdvisorRuntimeInput, requests: readonly Ad
   return evidence
 }
 
-function planningValidation(input: AdvisorRuntimeInput, response: LocalChatResponse): AdvisorPlanningValidation | null {
-  const { fallbackPlan, guard } = runtimeGuardPlan(input)
-  let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
-  if (!draft && Array.isArray(response.message?.tool_calls)) {
-    draft = planningDraftFromNativeToolCalls(response.message.tool_calls as Array<Record<string, unknown>>, fallbackPlan)
-  }
-  if (!draft) return null
+function requiresVerifiedEvidence(input: AdvisorRuntimeInput): boolean {
+  const intent = input.fallbackIntent ?? input.evidence.intent
+  return intent === 'spend-change' || intent === 'model-efficiency' || intent === 'quota-capacity' || intent === 'bench-result'
+}
+
+function planningValidation(input: AdvisorRuntimeInput, response: LocalChatResponse, strictContractErrors = requiresVerifiedEvidence(input)): AdvisorPlanningValidation | null {
   try {
+    const { fallbackPlan, guard } = runtimeGuardPlan(input)
+    let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
+    if (!draft && Array.isArray(response.message?.tool_calls)) {
+      draft = planningDraftFromNativeToolCalls(response.message.tool_calls as Array<Record<string, unknown>>, fallbackPlan)
+    }
+    if (!draft) return null
     return validateAdvisorPlanningDraft(draft, guard, input.evidence.scope, input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : [])
-  } catch {
+  } catch (error) {
+    // Contract errors from provider-native calls are terminal for this turn.
+    // Do not let a malformed or unknown tool request reach a read executor or
+    // get silently converted into a different model plan.
+    if (error instanceof AdvisorToolContractError && strictContractErrors) throw error
     return null
   }
 }
@@ -136,6 +147,28 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     this.availability = options.availability ?? 'ready'
     this.label = options.label
     this.unavailableMessage = options.unavailableMessage ?? 'Local Harness model is not available.'
+  }
+
+  async generateSwarmSynthesis(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> {
+    if (this.availability !== 'ready') throw new Error(this.unavailableMessage)
+    throwIfAborted(signal)
+    const activeRequestId = requestId('swarm-synthesis')
+    const cancel = () => { void this.transport.cancel(activeRequestId).catch(() => {}) }
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      const response = await this.transport.chat(activeRequestId, {
+        model: this.model,
+        messages: buildAdvisorSwarmSynthesisMessages(input),
+        tools: [],
+        stream: false,
+      }, signal)
+      throwIfAborted(signal)
+      const answer = boundedModelText(response.message?.content)
+      if (!answer.trim()) throw new Error('Swarm synthesis returned no usable answer.')
+      return { answer, evidenceSummary: 'Dedicated bounded synthesis over ' + input.workers.length + ' worker report(s).' }
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   }
 
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
@@ -216,9 +249,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       if (!validation) {
         if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message!.tool_calls!.length > 0) return fallback('The model requested a tool outside the bounded Metrora Tools contract.')
         const content = boundedModelText(firstResponse.message?.content)
-        const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
-        const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
-        if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
+        if (requiresVerifiedEvidence(input)) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
         if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Metrora Tools contract.')
         return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, signal)
       }
@@ -228,31 +259,95 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       }
 
       let evidenceItems: AdvisorEvidence[] = []
-      try {
-        evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal)
-      } catch (error) {
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return fallback('The model requested evidence that could not be executed; this answer uses the deterministic Metrora evidence path.')
-      }
-      throwIfAborted(signal)
-      const effectiveEvidenceItems = evidenceItems.length ? evidenceItems : [input.evidence]
-      if (hasMixedEvidenceScopes(effectiveEvidenceItems)) {
-        return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: '', modelUsed: true, fallbackNote: 'Conflicting tool scopes were rejected; no cross-scope synthesis was attempted.' }, signal)
-      }
+      let currentInput = effectiveInput
+      let currentPlan = validation.plan
+      let currentResponse = firstResponse
+      let toolRound = 0
+      let totalToolCalls = 0
+      const firstResponseUsedNativeToolCall = Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0
+      const firstResponseWasSingleBareNativeToolCall = firstResponseUsedNativeToolCall && firstResponse.message!.tool_calls!.length === 1 && !boundedModelText(firstResponse.message?.content).trim()
 
-      activeRequestId = requestId('advisor-synthesis')
-      let synthesisResponse: LocalChatResponse
-      try {
-        const mergedEvidence = mergeEvidence(effectiveEvidenceItems, input.evidence)
-        synthesisResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorSynthesisMessages(effectiveInput, validation.plan, mergedEvidence), tools: [], stream: false }, signal)
-        activeRequestId = null
+      const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({
+        runtime: this,
+        input: currentInput,
+        evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence],
+        finalContent,
+        modelUsed: true,
+        fallbackNote: note,
+      }, signal)
+
+      while (true) {
+        const nextValidation = toolRound === 0 ? validation : planningValidation(currentInput, currentResponse)
+        if (!nextValidation) {
+          if (Array.isArray(currentResponse.message?.tool_calls) && currentResponse.message.tool_calls.length > 0) {
+            return fallbackFromEvidence('The model requested a tool outside the bounded Metrora Tools contract; verified facts are shown instead.')
+          }
+          const finalContent = boundedModelText(currentResponse.message?.content)
+          if (toolRound > 0 && finalContent.trim()) {
+            const structured = /^(?:\{|\[)/u.test(finalContent.trim()) || finalContent.trim().startsWith(String.fromCharCode(96))
+            const validDraft = structured && Boolean(parseAdvisorSynthesisDraft(finalContent))
+            return fallbackFromEvidence(structured && !validDraft ? 'The model synthesis was malformed; verified facts are shown instead.' : '', finalContent)
+          }
+          return fallbackFromEvidence('The model continuation was malformed or outside the bounded Metrora Tools contract; verified facts are shown instead.')
+        }
+        currentPlan = nextValidation.plan
+        currentInput = { ...currentInput, plan: currentPlan }
+        const requestedCalls = nextValidation.toolRequests.length
+        if (requestedCalls === 0 || requestedCalls > HARNESS_TOOL_LOOP_LIMITS.maxCallsPerRound || toolRound >= HARNESS_TOOL_LOOP_LIMITS.maxRounds || totalToolCalls + requestedCalls > HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
+          return fallbackFromEvidence('The bounded Metrora Tool loop limit was reached; verified facts are shown instead.')
+        }
+        currentInput.onToolRound?.(toolRound + 1)
+        try {
+          const roundEvidence = await executeRequests(currentInput, nextValidation.toolRequests, signal)
+          evidenceItems.push(...roundEvidence)
+        } catch (error) {
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return fallbackFromEvidence('The model requested evidence that could not be executed; verified facts are shown instead.')
+        }
         throwIfAborted(signal)
-      } catch (error) {
-        activeRequestId = null
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: '', modelUsed: true, fallbackNote: 'The fresh synthesis phase was unavailable; verified Metrora facts are shown instead.' }, signal)
+        totalToolCalls += requestedCalls
+        toolRound += 1
+        const effectiveEvidenceItems = evidenceItems.length ? evidenceItems : [input.evidence]
+        if (hasMixedEvidenceScopes(effectiveEvidenceItems)) {
+          return fallbackFromEvidence('Conflicting tool scopes were rejected; no cross-scope synthesis was attempted.')
+        }
+        const mergedEvidence = mergeEvidence(effectiveEvidenceItems, input.evidence)
+
+        if (toolRound < HARNESS_TOOL_LOOP_LIMITS.maxRounds && totalToolCalls < HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
+          activeRequestId = requestId('advisor-tool-continuation')
+          try {
+            currentResponse = await this.transport.chat(activeRequestId, {
+              model: this.model,
+              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1),
+              // A single bare native call has completed the provider planning
+              // phase. Review it without replaying schemas; another bounded
+              // round can still be requested as a typed plan.
+              tools: firstResponseWasSingleBareNativeToolCall && toolRound === 1 ? [] : definitions,
+              stream: false,
+            }, signal)
+            activeRequestId = null
+            throwIfAborted(signal)
+            continue
+          } catch (error) {
+            activeRequestId = null
+            if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+            return fallbackFromEvidence('The bounded evidence continuation was unavailable; verified facts are shown instead.')
+          }
+        }
+
+        activeRequestId = requestId('advisor-synthesis')
+        let synthesisResponse: LocalChatResponse
+        try {
+          synthesisResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence), tools: [], stream: false }, signal)
+          activeRequestId = null
+          throwIfAborted(signal)
+        } catch (error) {
+          activeRequestId = null
+          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+          return fallbackFromEvidence('The fresh synthesis phase was unavailable; verified Metrora facts are shown instead.')
+        }
+        return fallbackFromEvidence('', boundedModelText(synthesisResponse.message?.content))
       }
-      return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: boundedModelText(synthesisResponse.message?.content), modelUsed: true }, signal)
     } finally {
       streamingConversation = false
       removeDelta()

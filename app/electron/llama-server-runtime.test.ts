@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatLlamaServerMain, probeLlamaServerMain, validateLlamaServerEndpoint } from './llama-server-runtime'
+import { chatLlamaServerMain, probeLlamaServerMain, resolveLlamaServerEndpoint, validateLlamaServerEndpoint, validateLlamaServerPort } from './llama-server-runtime'
 import type { AdvisorRuntimeChatPayload } from './advisor-runtime'
 
 function payload(stream: boolean, model = 'fixture-model'): AdvisorRuntimeChatPayload {
@@ -8,12 +8,34 @@ function payload(stream: boolean, model = 'fixture-model'): AdvisorRuntimeChatPa
 
 describe('llama-server local runtime', () => {
   it('accepts only explicit loopback HTTP endpoints', () => {
+    expect(resolveLlamaServerEndpoint()).toBe('http://127.0.0.1:8080')
+    expect(resolveLlamaServerEndpoint({ port: 9090 })).toBe('http://127.0.0.1:9090')
+    expect(validateLlamaServerPort(1)).toBe(1)
+    for (const port of [0, -1, 1.5, 65_536, '9090', null]) expect(() => validateLlamaServerPort(port)).toThrow()
     expect(validateLlamaServerEndpoint()).toBe('http://127.0.0.1:8080')
     expect(validateLlamaServerEndpoint('http://localhost:9090')).toBe('http://localhost:9090')
     expect(validateLlamaServerEndpoint('http://[::1]:8080')).toBe('http://[::1]:8080')
     for (const endpoint of ['https://127.0.0.1:8080', 'http://192.168.1.2:8080', 'http://127.0.0.1:8080/v1', 'http://user:pass@127.0.0.1:8080', 'http://127.0.0.1:8080?token=x']) {
       expect(() => validateLlamaServerEndpoint(endpoint)).toThrow()
     }
+  })
+
+  it('probes and chats through a user-selected bounded loopback port', async () => {
+    const calls: string[] = []
+    const fetchImpl: typeof fetch = async input => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/health')) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+      if (url.endsWith('/v1/models')) return new Response(JSON.stringify({ data: [{ id: 'custom-model' }] }), { status: 200 })
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'custom response' } }] }), { status: 200 })
+    }
+    const result = await probeLlamaServerMain(fetchImpl, undefined, { port: 9090 })
+    await chatLlamaServerMain(fetchImpl, payload(false, result.models[0]!), undefined, undefined, { port: 9090 })
+    expect(calls).toEqual([
+      'http://127.0.0.1:9090/health',
+      'http://127.0.0.1:9090/v1/models',
+      'http://127.0.0.1:9090/v1/chat/completions',
+    ])
   })
 
   it('probes health and model metadata on the fixed default endpoint', async () => {

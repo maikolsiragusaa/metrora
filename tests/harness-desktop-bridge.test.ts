@@ -55,4 +55,11 @@ describe('Harness trusted desktop ACT bridge', () => {
     const cancelled = await bridge.cancelCoreCompatibility(proposal.actionId)
     expect(cancelled).toMatchObject({ actionId: proposal.actionId, status: 'cancelled', cancellation: { requested: true } })
   })
+
+  it('fails closed for llama-server because the canonical pack has Ollama-only semantics', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'metrora-harness-bridge-target-'))
+    roots.push(root)
+    const bridge = createMetroraHarnessActBridge({ actionsDir: join(root, 'actions'), now })
+    await expect(bridge.proposeCoreCompatibility('fixture-model', 'llama-server')).rejects.toThrow(/Ollama.*llama-server/u)
+  })
 })

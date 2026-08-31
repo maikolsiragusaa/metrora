@@ -79,3 +79,45 @@ describe('Electron Harness ACT bridge loader', () => {
     }
   })
 })
+
+describe('Harness ACT IPC target boundary', () => {
+  it('rejects an unknown target before loading the ACT authority', async () => {
+    const importModule = vi.fn()
+    const handlers = createHarnessActHandlers({
+      isPackaged: false,
+      resourcesPath: 'C:/resources',
+      appPath: 'C:/app',
+      importModule: importModule as never,
+    })
+
+    await expect(handlers['metrora:harnessProposeCoreCompatibility']!('fixture-model', 'remote-runtime')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'validation', message: 'Unsupported Harness action target.' },
+    })
+    expect(importModule).not.toHaveBeenCalled()
+  })
+
+  it('passes an explicitly supported target to ACT without approving it', async () => {
+    let selected: { model: string; target?: 'ollama-local' | 'llama-server' } | null = null
+    const importModule = vi.fn(async () => ({
+      createMetroraHarnessActBridge: () => ({
+        proposeCoreCompatibility: vi.fn(async (model: string, target?: 'ollama-local' | 'llama-server') => {
+          selected = { model, target }
+          return { status: 'proposed' } as never
+        }),
+        approveAndExecuteCoreCompatibility: vi.fn(),
+        cancelCoreCompatibility: vi.fn(),
+        readCoreCompatibility: vi.fn(),
+      }),
+    }))
+    const handlers = createHarnessActHandlers({
+      isPackaged: false,
+      resourcesPath: 'C:/resources',
+      appPath: 'C:/app',
+      importModule,
+    })
+
+    await expect(handlers['metrora:harnessProposeCoreCompatibility']!('fixture-model', 'llama-server')).resolves.toMatchObject({ ok: true })
+    expect(selected).toEqual({ model: 'fixture-model', target: 'llama-server' })
+  })
+})

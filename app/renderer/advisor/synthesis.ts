@@ -1,6 +1,6 @@
-import { containsAdvisorSensitiveText, sanitizeAdvisorDisplayText } from './privacy'
+import { containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText, sanitizeAdvisorNarrative } from './privacy'
 import { buildAdvisorVerifiedClaimAtoms, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
-import type { AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorVerifiedClaimAtomV1 } from './types'
+import type { AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorSynthesisNarrativeV1, AdvisorVerifiedClaimAtomV1 } from './types'
 
 const PRESENTATION_KINDS: readonly AdvisorPresentationIntent[] = ['text', 'metric-cards', 'line-chart', 'bar-chart', 'comparison-table', 'quota-card', 'bench-summary', 'warning', 'evidence-disclosure']
 const MAX_DRAFT_BYTES = 16 * 1024
@@ -19,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function boundedText(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim() || bytes(value) > MAX_TEXT_BYTES || containsAdvisorSensitiveText(value)) return null
+  if (typeof value !== 'string' || !value.trim() || bytes(value) > MAX_TEXT_BYTES || containsAdvisorSensitiveText(value) || containsAdvisorForbiddenOutputClass(value)) return null
   const safe = sanitizeAdvisorDisplayText(value, 1_500)
   return safe === '[redacted]' ? null : safe
 }
@@ -29,6 +29,28 @@ function stringList(value: unknown, limit = 12): string[] | null {
   if (!Array.isArray(value) || value.length > limit) return null
   const result = value.map(item => boundedText(item))
   return result.every((item): item is string => Boolean(item)) ? result : null
+}
+
+function narrativeText(value: unknown): string | null {
+  if (typeof value !== 'string' || bytes(value) > MAX_TEXT_BYTES) return null
+  const safe = sanitizeAdvisorNarrative(value)
+  return safe || null
+}
+
+function parseNarrative(value: unknown): AdvisorSynthesisNarrativeV1 | null {
+  if (!isRecord(value) || !onlyKeys(value, ['interpretation', 'recommendation', 'caveats'])) return null
+  const interpretation = value.interpretation === undefined ? undefined : narrativeText(value.interpretation)
+  const recommendation = value.recommendation === undefined ? undefined : narrativeText(value.recommendation)
+  const caveats = stringList(value.caveats, 6)
+  if (value.interpretation !== undefined && !interpretation) return null
+  if (value.recommendation !== undefined && !recommendation) return null
+  if (value.caveats !== undefined && !caveats) return null
+  if (!interpretation && !recommendation && !caveats?.length) return null
+  return {
+    ...(interpretation ? { interpretation } : {}),
+    ...(recommendation ? { recommendation } : {}),
+    ...(caveats?.length ? { caveats } : {}),
+  }
 }
 
 function parseJsonText(value: string): unknown {
@@ -104,6 +126,8 @@ export function parseAdvisorSynthesisDraft(value: unknown): AdvisorSynthesisDraf
   if (claims.some(claim => claim === null) || presentationRequests.some(request => request === null)) return null
   const expertDetail = stringList(parsed.expertDetail, 8)
   if (parsed.expertDetail !== undefined && !expertDetail) return null
+  const narrative = parsed.narrative === undefined ? undefined : parseNarrative(parsed.narrative)
+  if (parsed.narrative !== undefined && !narrative) return null
   return {
     contractVersion: 'advisor-synthesis-draft-v1',
     schemaVersion: 1,
@@ -113,6 +137,7 @@ export function parseAdvisorSynthesisDraft(value: unknown): AdvisorSynthesisDraf
     claims: claims as AdvisorClaimSelectionV1[],
     presentationRequests: presentationRequests as AdvisorPresentationRequestV1[],
     ...(expertDetail?.length ? { expertDetail } : {}),
+    ...(narrative ? { narrative } : {}),
   }
 }
 

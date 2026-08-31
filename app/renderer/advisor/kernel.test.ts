@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { MenubarPayload } from '../lib/types'
 import { createAdvisorKernel } from './kernel'
+import { ADVISOR_TURN_TIMEOUT_MS } from './kernel'
 import { DeterministicAdvisorRuntime } from './runtime'
 import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope } from './types'
 
@@ -43,5 +44,49 @@ describe('Advisor model planning boundary', () => {
 
     expect(data.getOverview).not.toHaveBeenCalled()
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
+  })
+
+  it('applies one bounded timeout to a stalled model turn', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime: AdvisorModelRuntime = {
+        id: 'stalled',
+        label: 'stalled',
+        mode: 'ollama-local',
+        providerSupport: [],
+        generate: async () => new Promise<never>(() => {}),
+      }
+      const pending = createAdvisorKernel(source(), runtime).investigate({ question: 'What changed in spend?', scope })
+      const rejection = expect(pending).rejects.toMatchObject({ name: 'AdvisorTimeoutError' })
+
+      await vi.advanceTimersByTimeAsync(ADVISOR_TURN_TIMEOUT_MS)
+
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels a stalled model turn without waiting for the global timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime: AdvisorModelRuntime = {
+        id: 'stalled',
+        label: 'stalled',
+        mode: 'ollama-local',
+        providerSupport: [],
+        generate: async () => new Promise<never>(() => {}),
+      }
+      const controller = new AbortController()
+      const pending = createAdvisorKernel(source(), runtime).investigate({ question: 'What changed in spend?', scope, signal: controller.signal })
+      const rejection = expect(pending).rejects.toMatchObject({ name: 'AdvisorCancelledError' })
+
+      controller.abort()
+
+      await rejection
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

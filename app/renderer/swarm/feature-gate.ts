@@ -1,9 +1,8 @@
 /**
- * Swarm is intentionally not a production-default surface yet.
- *
- * Vite development builds are founder-enabled. A production build can only
- * opt in explicitly through the bounded VITE flag.
+ * Swarm is a public, manual execution strategy. Keep one explicit kill switch
+ * for staged deployments, but do not ship a misleading "Soon" state by
+ * default now that the bounded lifecycle is part of the product surface.
  */
 export function isSwarmExperimentalEnabled(): boolean {
-  return Boolean(import.meta.env.DEV || import.meta.env.VITE_METRORA_SWARM_EXPERIMENTAL === '1')
+  return import.meta.env.VITE_METRORA_SWARM_EXPERIMENTAL !== '0'
 }

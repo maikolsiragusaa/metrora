@@ -3,7 +3,7 @@
 **Status:** Harness Productization V2 implementation slice for review
 **Implementation compatibility:** the user-facing Desktop surface is now Metrora Harness. Stable `Advisor` / `Advisor*` identifiers remain as technical compatibility names where they still describe contracts, runtime adapters or file boundaries.
 
-See also [Metrora ecosystem surfaces](ECOSYSTEM_SURFACES.md) for the public composition/status map across Tools, Harness, MCP, ACT, Bench, Widgets, Wrapped and future Swarm.
+See also [Metrora ecosystem surfaces](ECOSYSTEM_SURFACES.md) for the public composition/status map across Tools, Harness, MCP, ACT, Bench, Widgets, Wrapped and Swarm.
 
 ## What Metrora Harness means
 
@@ -28,14 +28,15 @@ This branch keeps the existing conversational foundation and productizes it behi
 - fixed read-only Metrora factual tools;
 - canonical fact/evidence verification;
 - proposal-only handling for state-changing requests;
-- Ollama, LM Studio and existing-binary llama.cpp `llama-server` local runtimes;
+- Ollama, LM Studio and loopback-only llama.cpp `llama-server` local runtime with a bounded configurable port;
 - supported direct BYOK provider adapters;
 - explicit hosted evidence-sharing consent;
 - bounded cancellation/error/privacy behavior.
 - compact bounded Tool activity with no prompts, secrets, paths or hidden reasoning;
 - immediate pending state and streamed conversational deltas where the selected runtime supports them;
 - a canonical `src/tools` registry/contract/evidence/privacy layer with a thin renderer compatibility adapter;
-- bounded multi-tool planning with a maximum of two rounds and four calls per turn.
+- bounded iterative multi-tool planning with a maximum of two read rounds, four total calls per turn and four calls per round;
+- a manual fixed-role Swarm strategy in the same Harness thread, with bounded workers, retained worker evidence and terminal fallback behavior.
 
 Current public `main` also now contains the separate **ACT V2 execution foundation**:
 
@@ -54,9 +55,9 @@ This document does **not** add or claim:
 
 - arbitrary shell or repository access;
 - autonomous model approval;
-- agents or Swarm;
+- autonomous/private agent orchestration or recursive spawning; manual bounded Swarm is covered below;
 - managed Metrora inference;
-- a bundled or automatically managed llama.cpp distribution;
+- an unattended package manager or silent runtime installation; Desktop's Component Manager handles only explicit pinned optional components;
 - an MCP server that can mutate state or bypass the canonical Tools boundary;
 - a hosted MCP service;
 - persistent cloud conversation memory.
@@ -123,7 +124,7 @@ Current local runtime support:
 - Ollama;
 - LM Studio.
 
-The existing-binary llama.cpp / `llama-server` adapter is a local Community runtime path; it connects only to the fixed loopback default and does not download, build or start llama.cpp.
+The llama.cpp / `llama-server` adapter is a local Community runtime path; it connects only to `127.0.0.1`, `localhost` or `::1` over HTTP, accepts a validated port from `1` through `65535`, and does not download, build or start the server. Performance Bench has a separate explicit Component Manager path for the pinned official `llama-bench` artifact; it never installs silently.
 
 Any new runtime/provider still requires explicit endpoint, privacy, streaming, Tool and failure-semantics review. `OpenAI-compatible` by itself is not a compatibility guarantee.
 
@@ -197,13 +198,11 @@ Future MCP callers follow the same authority boundary.
 
 ## Swarm direction
 
-**Swarm** is the name reserved for a future Harness mode/capability that coordinates multiple workers/subagents under explicit policy and action authority.
+**Swarm** is a manual Community execution strategy in the same Harness conversation. It uses fixed transparent roles, a user-selected worker count bounded by the UI, canonical read-only Tools, a bounded worker lifecycle, synthesis timeout/cancellation and deterministic fallback. Completed worker results remain inspectable even when another worker or synthesis fails.
 
-No Swarm implementation is shipped by this document.
+Workers cannot self-authorize actions, recursively spawn, or bypass ACT. The final Swarm result is committed as a normal Harness assistant result; switching Chat ↔ Swarm does not create a second history. Hosted Swarm keeps worker reports local to Metrora and uses deterministic local joining when the selected hosted runtime has no approved local synthesis path.
 
-A future `Swarm · Soon` UI can be truthful only when clearly disabled/unavailable and must not imply autonomous repository execution already exists.
-
-An external AI/MCP caller may someday propose Swarm work, but it cannot directly authorize or execute the controller.
+This public Swarm is not Smart Auto, adaptive private decomposition, commercial routing or a managed Metrora AI service.
 
 ## Bench relationship
 
@@ -281,5 +280,5 @@ It does not publish private commercial algorithms, private evaluation/playbook a
 9. ACT V2 is current trusted execution foundation; the model/proposal layer cannot self-authorize.
 10. ACT is not a user-facing chat mode.
 11. Local MCP V1 is read-only and cannot bypass ACT.
-12. Swarm is future and not shipped.
+12. Swarm is manual, bounded and in the same Harness conversation; autonomous/private orchestration remains excluded.
 13. Local Community remains useful without a managed Metrora AI service.

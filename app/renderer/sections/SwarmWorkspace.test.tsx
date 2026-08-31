@@ -14,14 +14,13 @@ const emptyState: SwarmRunState = {
 }
 
 describe('Swarm Harness surface', () => {
-  it('shows Soon and disables the surface when the experimental gate is off', () => {
-    render(<SwarmWorkspace enabled={false} runtimeLabel="Ollama local" modelLabel="model-a" state={emptyState} onRun={vi.fn()} onCancel={vi.fn()} />)
-    expect(screen.getByText('Swarm - Soon')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Experimental Swarm is not enabled' })).toBeInTheDocument()
+  it('shows an unavailable state when the deployment gate is off', () => {
+    render(<SwarmWorkspace enabled={false} runtimeLabel="Ollama local" modelLabel="model-a" state={emptyState} onRun={vi.fn()} workerCount={2} onWorkerCountChange={vi.fn()} onCancel={vi.fn()} />)
+    expect(screen.getByText('Swarm unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Swarm is not enabled' })).toBeInTheDocument()
   })
 
-  it('shows experimental bounded controls and observable worker activity', () => {
-    const onRun = vi.fn()
+  it('shows manual bounded controls and observable worker activity', () => {
     const onCancel = vi.fn()
     const state: SwarmRunState = {
       ...emptyState,
@@ -32,8 +31,8 @@ describe('Swarm Harness surface', () => {
         { contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: 'run-ui', workerId: 'run-ui-worker-2', role: 'verifier', status: 'queued', at: '2026-08-31T00:00:00.000Z' },
       ],
     }
-    render(<SwarmWorkspace enabled runtimeLabel="Ollama local" modelLabel="model-a" state={state} onRun={onRun} onCancel={onCancel} />)
-    expect(screen.getByText('Swarm - Experimental')).toBeInTheDocument()
+    render(<SwarmWorkspace enabled runtimeLabel="Ollama local" modelLabel="model-a" state={state} onRun={vi.fn()} workerCount={2} onWorkerCountChange={vi.fn()} onCancel={onCancel} />)
+    expect(screen.getByText('Swarm · Manual and bounded')).toBeInTheDocument()
     expect(screen.getByText(/Bounded transparent workers use the selected Harness runtime/)).toBeInTheDocument()
     expect(screen.getByText('Read-only Tools - max 4 Tool calls/worker - max 1 Tool round/worker')).toBeInTheDocument()
     expect(screen.getByText('get_spend_snapshot - Running')).toBeInTheDocument()
@@ -42,12 +41,11 @@ describe('Swarm Harness surface', () => {
     expect(onCancel).toHaveBeenCalledOnce()
   })
 
-  it('submits a user task with the selected bounded worker count', () => {
-    const onRun = vi.fn()
-    render(<SwarmWorkspace enabled runtimeLabel="Ollama local" modelLabel="model-a" state={emptyState} onRun={onRun} onCancel={vi.fn()} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Swarm task' }), { target: { value: 'Investigate current spend' } })
+  it('keeps worker selection in the Swarm panel while the shared composer owns the task', () => {
+    const onWorkerCountChange = vi.fn()
+    render(<SwarmWorkspace enabled runtimeLabel="Ollama local" modelLabel="model-a" state={emptyState} onRun={vi.fn()} workerCount={2} onWorkerCountChange={onWorkerCountChange} onCancel={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Swarm worker count' }), { target: { value: '3' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Start Swarm' }))
-    expect(onRun).toHaveBeenCalledWith('Investigate current spend', 3)
+    expect(onWorkerCountChange).toHaveBeenCalledWith(3)
+    expect(screen.getByText('Use the shared Harness composer below to start this run.')).toBeInTheDocument()
   })
 })

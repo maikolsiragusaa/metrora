@@ -2,8 +2,8 @@
 
 **Status:** public product direction and implementation-status guide  
 **Decision revision:** 2026-08-30  
-**Authority reviewed:** `maikolsiragusaa/metrora@7aef30742153a190a59bcec2b13d8635feb5b9db`
-**Productization slice:** `feat/harness-productization-v2-tools-boundary`
+**Authority reviewed:** `maikolsiragusaa/metrora@b08e139ff460ab442b13d166b1798e5daa664a29`
+**Productization slice:** `feat/harness-orchestration-v2`
 
 Metrora is a local-first control and intelligence system for AI-assisted development. Its product surfaces should compose around shared facts and contracts rather than grow into separate products that each calculate their own version of the truth.
 
@@ -30,7 +30,7 @@ Usage · Activity · Models · Capacity · Projects
 Bench   = methodology-bound test/evidence system
 Widgets = shareable presentation of canonical evidence
 Wrapped = recap/share experience built on canonical evidence + Widgets
-Swarm   = future coordinated Harness capability behind trusted authority
+Swarm   = manual bounded Harness strategy in the same conversation
 ```
 
 Canonical rule:
@@ -46,13 +46,13 @@ ACT is not a chat mode and an MCP client is not trusted execution authority simp
 | **Usage / Activity / Models / Capacity** | Factual local evidence, history, economics and provider-reported capacity | **Available** |
 | **Projects** | User-controlled context and scope across relevant evidence | **Available** |
 | **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer with `Advisor*` compatibility adapter |
-| **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Available in this slice** — product-facing Desktop surface, bounded Tool activity and one proposal-only Core Compatibility path |
+| **Harness** | Chat-first investigation, reasoning, Metrora-aware Tool use and manual Swarm | **Available in this slice** — one conversation, bounded Tool activity, one proposal-only Core Compatibility path and manual Swarm lifecycle |
 | **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available** — native llama.cpp/`llama-bench` Performance and Core Compatibility are separate bounded paths |
 | **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Available** — `metrora.action.v1`, `run-core-compatibility`, and the trusted Desktop bridge; not a user-facing mode |
 | **MCP** | Standard external access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
 | **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
 | **Wrapped** | Periodic recap/share experience using canonical evidence and Widgets | **Planned** |
-| **Swarm** | Coordinated multi-agent Harness capability | **Planned** |
+| **Swarm** | Manual bounded multi-worker Harness strategy | **Available in this slice** — fixed roles, read-only Tools, terminal fallback and retained worker evidence |
 
 Status labels are intentionally conservative. A public direction is not presented as shipped until working product authority exists.
 
@@ -185,7 +185,7 @@ Within an established Metrora context, prefer:
 
 rather than repeating “Metrora” before every noun.
 
-`ACT` remains an execution authority, not a primary navigation item. `Swarm` remains future functionality until it actually ships.
+`ACT` remains an execution authority, not a primary navigation item. `Swarm` is a manual bounded strategy; autonomous/private orchestration remains outside this public slice.
 
 ## Public README direction
 
@@ -229,7 +229,7 @@ This is a dependency-oriented direction, not a rigid roadmap gate:
 3. **README / asset refresh** — simplify the repository story and replace stale inherited marketing imagery with original Metrora visuals.
 4. **Widgets V1** — evolve Share Card into reusable static, privacy-aware Widgets.
 5. Maintain the independent **llama.cpp runtime / Performance Bench** path with focused compatibility, provenance and acceptance work.
-6. External action proposals and **Swarm** remain later, separately authorized capability work.
+6. Manual **Swarm** is available as a separately bounded strategy; external action proposals still require the existing ACT path and autonomous/private orchestration remains excluded.
 
 See also:
 

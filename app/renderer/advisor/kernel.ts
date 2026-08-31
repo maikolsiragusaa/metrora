@@ -9,6 +9,10 @@ import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, Advi
 export class AdvisorCancelledError extends Error {
   constructor() { super('Advisor investigation cancelled'); this.name = 'AdvisorCancelledError' }
 }
+export class AdvisorTimeoutError extends Error {
+  constructor() { super('Harness turn exceeded its bounded timeout.'); this.name = 'AdvisorTimeoutError' }
+}
+export const ADVISOR_TURN_TIMEOUT_MS = 180_000
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new AdvisorCancelledError()
 }
@@ -56,33 +60,72 @@ function attachPlan(evidence: AdvisorEvidence, plan: ReturnType<typeof resolveAd
 export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorModelRuntime): AdvisorKernel {
   return {
     async investigate({ question, scope, overview: suppliedOverview = null, conversation = [], uiContext, signal, onToolEvent, onDelta }) {
-      throwIfAborted(signal)
-      const plan = resolveAdvisorQuestion(question, scope, conversation)
-      const modelReady = runtime.mode !== 'deterministic-local' && runtime.availability !== 'unavailable' && runtime.mode !== 'unsupported'
-      const modelEvidence = plan.intent === 'action-proposal'
-        ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
-        : buildConversationEvidence(question, scope)
-      const modelInputEvidence = attachPlan(modelEvidence, plan)
-      if (!modelReady) {
-        const evidence = await deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, signal)
-        const inputEvidence = attachPlan(evidence, plan)
-        return new DeterministicAdvisorRuntime().generate({ question, evidence: inputEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard }, signal)
+      const deadline = new AbortController()
+      let timedOut = false
+      let rejectDeadline: ((reason?: unknown) => void) | null = null
+      const deadlinePromise = new Promise<never>((_, reject) => { rejectDeadline = reject })
+      const timer = setTimeout(() => {
+        timedOut = true
+        deadline.abort()
+        rejectDeadline?.(new AdvisorTimeoutError())
+      }, ADVISOR_TURN_TIMEOUT_MS)
+      timer.unref?.()
+      const forwardAbort = () => {
+        deadline.abort()
+        rejectDeadline?.(new AdvisorCancelledError())
       }
-      const modelGuard = createAdvisorModelGuardV1(plan)
-      const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
+      let turnOpen = true
+      if (signal?.aborted) forwardAbort()
+      else signal?.addEventListener('abort', forwardAbort, { once: true })
+      const turnSignal = deadline.signal
+      const withDeadline = <T>(operation: Promise<T>): Promise<T> => Promise.race([operation, deadlinePromise])
+      const guardedOnToolEvent = (event: AdvisorToolEvent) => {
+        if (turnOpen && !turnSignal.aborted) onToolEvent?.(event)
+      }
+      const guardedOnDelta = (text: string) => {
+        if (turnOpen && !turnSignal.aborted) onDelta?.(text)
+      }
       try {
-        return await runtime.generate({ question, evidence: modelInputEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: modelGuard, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onToolEvent, onDelta }, signal)
+        throwIfAborted(turnSignal)
+        const plan = resolveAdvisorQuestion(question, scope, conversation)
+        const modelReady = runtime.mode !== 'deterministic-local' && runtime.availability !== 'unavailable' && runtime.mode !== 'unsupported'
+        const modelEvidence = plan.intent === 'action-proposal'
+          ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
+          : buildConversationEvidence(question, scope)
+        const modelInputEvidence = attachPlan(modelEvidence, plan)
+        if (!modelReady) {
+          const evidence = await withDeadline(deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, turnSignal))
+          const inputEvidence = attachPlan(evidence, plan)
+          return await withDeadline(new DeterministicAdvisorRuntime().generate({ question, evidence: inputEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard }, turnSignal))
+        }
+        const modelGuard = createAdvisorModelGuardV1(plan)
+        const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview)
+        const executeTool = async (name: string, args: Record<string, unknown>, _executionSignal?: AbortSignal) => {
+          throwIfAborted(turnSignal)
+          if (!turnOpen) throw new AdvisorCancelledError()
+          const result = await toolRegistry.execute(name, args, turnSignal)
+          throwIfAborted(turnSignal)
+          if (!turnOpen) throw new AdvisorCancelledError()
+          return result
+        }
+        return await withDeadline(runtime.generate({ question, evidence: modelInputEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: modelGuard, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool, onToolEvent: guardedOnToolEvent, onDelta: guardedOnDelta }, turnSignal))
       } catch (error) {
-        rethrowCancellation(error, signal)
+        if (timedOut) throw new AdvisorTimeoutError()
+        rethrowCancellation(error, turnSignal)
+        const plan = resolveAdvisorQuestion(question, scope, conversation)
         const fallbackBase = plan.intent === 'action-proposal'
           ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
-          : await deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, signal)
+          : await withDeadline(deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, turnSignal))
         const fallbackEvidence = attachPlan(fallbackBase, plan)
-        const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: fallbackEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard }, signal)
+        const fallback = await withDeadline(new DeterministicAdvisorRuntime().generate({ question, evidence: fallbackEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard }, turnSignal))
         return {
           ...fallback,
           materialLimits: [...(fallback.materialLimits ?? []), 'The explanatory model was unavailable, so this answer uses Metrora deterministic evidence.'],
         }
+      } finally {
+        turnOpen = false
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', forwardAbort)
       }
     },
   }

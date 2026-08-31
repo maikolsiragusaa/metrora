@@ -43,6 +43,8 @@ export type MetroraHarnessActBridgeOptions = {
   emit?: (event: MetroraHarnessActionEvent) => void
 }
 
+export type CoreCompatibilityTargetId = 'ollama-local' | 'llama-server'
+
 function boundedMessage(value: unknown): string {
   const raw = value instanceof Error ? value.message : String(value)
   return raw
@@ -105,7 +107,10 @@ export function createMetroraHarnessActBridge(options: MetroraHarnessActBridgeOp
     const record = await readRecord(action)
     return record ? emit(record) : null
   }
-  async function proposeCoreCompatibility(model: string): Promise<MetroraHarnessActionEvent> {
+  async function proposeCoreCompatibility(model: string, target: CoreCompatibilityTargetId = 'ollama-local'): Promise<MetroraHarnessActionEvent> {
+    if (target !== 'ollama-local') {
+      throw new Error('Core Compatibility exact semantics are currently supported only for Ollama; llama-server uses a different runtime contract and no action was prepared.')
+    }
     if (typeof model !== 'string' || !model.trim()) throw new Error('An explicit local Ollama model is required for Core Compatibility.')
     const contract = createCoreCompatibilityAction({ model: model.trim(), originatingSurface: 'desktop' })
     const record = await recordCoreCompatibilityProposal(contract, { actionsDir: options.actionsDir, now })

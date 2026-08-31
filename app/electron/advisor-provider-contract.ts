@@ -56,7 +56,7 @@ export type AdvisorHostedProviderDescriptor = {
   origin: string
   modelsPath: string
   modelListKind: AdvisorHostedModelListKind
-  protocolForModel: (model: string) => AdvisorHostedProtocol | null
+  protocolForModel: (model: string, metadata?: Record<string, unknown>) => AdvisorHostedProtocol | null
   chatPath: (model: string, stream: boolean, protocol: AdvisorHostedProtocol) => string
 }
 
@@ -144,14 +144,51 @@ const OPENCODE_ZEN_PROTOCOLS: Readonly<Record<string, AdvisorHostedProtocol>> = 
   'kimi-k3': 'openai-chat',
   'big-pickle': 'openai-chat',
   'mimo-v2.5-free': 'openai-chat',
-  'hy3-free': 'openai-chat',
+  'ling-3.0-flash-fin-free': 'openai-chat',
   'nemotron-3-ultra-free': 'openai-chat',
   'nemotron-3.5-lightning-free': 'openai-chat',
   'muse-spark-1.2-contributor-free': 'openai-responses',
 }
 
 function openCodeZenModelId(model: string): string { return model.replace(/^models\//u, '') }
-function openCodeZenProtocol(model: string): AdvisorHostedProtocol | null { return OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null }
+
+/**
+ * Provider metadata may override a reviewed static mapping only when it names
+ * one of the exact protocols or endpoint paths Metrora implements. Unknown or
+ * malformed metadata is deliberately represented as null so discovery fails
+ * closed instead of guessing from a model name.
+ */
+export function resolveOpenCodeZenProtocolFromMetadata(metadata: Record<string, unknown> | undefined): AdvisorHostedProtocol | null | undefined {
+  if (!metadata) return undefined
+  const rawProtocol = metadata.protocol ?? metadata.protocol_id ?? metadata.protocolId
+  const rawEndpoint = metadata.endpointPath ?? metadata.endpoint ?? metadata.chatPath
+  if (rawProtocol !== undefined) {
+    if (rawProtocol === 'openai-responses') return 'openai-responses'
+    if (rawProtocol === 'openai-chat') return 'openai-chat'
+    if (rawProtocol === 'anthropic-messages') return 'anthropic-messages'
+    if (rawProtocol === 'gemini-content') return 'gemini-content'
+    return null
+  }
+  if (rawEndpoint !== undefined) {
+    if (typeof rawEndpoint !== 'string') return null
+    try {
+      const parsed = new URL(rawEndpoint, 'https://opencode.ai')
+      if (parsed.origin !== 'https://opencode.ai' || parsed.search || parsed.hash || parsed.username || parsed.password) return null
+      const path = parsed.pathname
+      if (path === '/zen/v1/responses') return 'openai-responses'
+      if (path === '/zen/v1/messages') return 'anthropic-messages'
+      if (path === '/zen/v1/chat/completions') return 'openai-chat'
+      if (/^\/zen\/v1\/models\/[^/]+:generateContent$/u.test(path)) return 'gemini-content'
+    } catch { return null }
+    return null
+  }
+  return undefined
+}
+
+function openCodeZenProtocol(model: string, metadata?: Record<string, unknown>): AdvisorHostedProtocol | null {
+  const explicit = resolveOpenCodeZenProtocolFromMetadata(metadata)
+  return explicit === undefined ? OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null : explicit
+}
 
 function openCodeZenChatPath(model: string, stream: boolean, protocol: AdvisorHostedProtocol): string {
   if (protocol === 'openai-responses') return '/zen/v1/responses'

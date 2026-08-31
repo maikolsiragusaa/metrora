@@ -14,6 +14,7 @@ import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { harnessToolLabel, type HarnessToolActivity } from './AdvisorAnswerCard'
 import { AdvisorWorkspace } from './AdvisorWorkspace'
+import { sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
 import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
 import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
@@ -23,6 +24,14 @@ type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+}
+function advisorRequestErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === 'AdvisorTimeoutError') return 'Harness turn reached its bounded timeout.'
+    if (error.name === 'AdvisorRuntimeUnavailableError') return 'No verified Harness model runtime is configured.'
+    if (error.name === 'AdvisorToolContractError') return 'The request could not be completed within the bounded Metrora Tools contract.'
+  }
+  return 'Harness could not complete this request. No action was executed.'
 }
 function providerLabel(provider: string): string {
   if (provider === 'all') return 'All providers'
@@ -40,6 +49,35 @@ function answerForMessage(messages: AdvisorMessage[], id: string | null): Adviso
   }
   return [...messages].reverse().find(message => message.answer)?.answer ?? null
 }
+function answerFromSwarmResult(result: import('../../../src/swarm/contract-v1').SwarmRunResultV1, scope: AdvisorScope, runtime: AdvisorModelRuntimeLike): AdvisorAnswer {
+  const workerRefs = result.workers.flatMap(worker => worker.evidenceRefs.slice(0, 4).map(ref => ({ id: ref.id, label: ref.label, source: 'overview' as const })))
+  const evidence = workerRefs.filter((ref, index, refs) => refs.findIndex(candidate => candidate.id === ref.id) === index).slice(0, 16)
+  const coverage = result.status === 'completed'
+    ? { level: 'high' as const, label: 'High coverage', detail: 'All bounded Swarm workers completed.' }
+    : result.status === 'partial'
+      ? { level: 'partial' as const, label: 'Partial coverage', detail: 'Some bounded Swarm workers did not complete.' }
+      : { level: 'unavailable' as const, label: 'Swarm unavailable', detail: result.status === 'cancelled' ? 'The Swarm run was cancelled.' : 'No complete Swarm synthesis was available.' }
+  const workerDetails = result.workers.map(worker => sanitizeAdvisorDisplayText(worker.role, 64) + ': ' + sanitizeAdvisorDisplayText(worker.status, 32)).slice(0, 6)
+  const errors = result.workers.flatMap(worker => worker.errors).concat(result.synthesis?.errors ?? []).slice(0, 8).map(error => sanitizeAdvisorDisplayText(error, 240))
+  const synthesisAnswer = result.synthesis?.answer ? sanitizeAdvisorModelOutput(result.synthesis.answer, 8 * 1024) : ''
+  const synthesisSummary = result.synthesis?.evidenceSummary ? sanitizeAdvisorDisplayText(result.synthesis.evidenceSummary, 1 * 1024) : ''
+  return {
+    conclusion: synthesisAnswer || (result.status === 'cancelled' ? 'Swarm was cancelled; completed worker results remain inspectable.' : 'No final Swarm synthesis was available; worker status and evidence remain inspectable.'),
+    scopeLabel: scopeLabel(scope),
+    periodLabel: periodLabel(scope),
+    evidence,
+    coverage,
+    assumptions: ['Manual Swarm uses fixed transparent roles and bounded read-only Tools.'],
+    unknown: errors.length ? errors : result.status === 'completed' ? [] : ['The final Swarm synthesis is unavailable.'],
+    nextInvestigations: [],
+    details: workerDetails,
+    why: synthesisSummary ? [synthesisSummary] : [],
+    runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
+    generatedByModel: result.synthesis?.status === 'completed' && Boolean(result.synthesis.answer),
+    streamed: false,
+  }
+}
+type AdvisorModelRuntimeLike = { id: string; label: string; mode: AdvisorAnswer['runtime']['mode'] }
 export function Advisor({
   period,
   provider,
@@ -103,13 +141,14 @@ export function Advisor({
   const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
   const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
   const [configureOpen, setConfigureOpen] = useState(false)
-  const { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, localRuntime, checkLocalRuntime, setLocalModel } = useAdvisorLocalRuntime()
+  const { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, llamaServerPort, localRuntime, checkLocalRuntime, setLocalModel, setLlamaServerPort } = useAdvisorLocalRuntime()
   const activeRuntime = runtimeChoice === 'hosted'
     ? hostedRuntime ?? fallbackRuntime
     : localRuntime ?? fallbackRuntime
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
   const swarmExperimentalEnabled = isSwarmExperimentalEnabled()
   const [mode, setMode] = useState<'chat' | 'swarm'>('chat')
+  const [swarmWorkerCount, setSwarmWorkerCount] = useState(2)
   const swarm = useSwarmRun({
     source,
     runtime: activeRuntime,
@@ -119,6 +158,8 @@ export function Advisor({
     modelLabel: runtimeChoice === 'hosted' ? hostedModelForRuntime?.label ?? activeRuntime.label : runtimeModel ?? activeRuntime.label,
     enabled: swarmExperimentalEnabled,
   })
+  const swarmConversationRef = useRef<string | null>(null)
+  const swarmCommittedRef = useRef<string | null>(null)
   const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
   const [streamPreview, setStreamPreview] = useState('')
   const [toolStatus, setToolStatus] = useState<string | null>(null)
@@ -172,6 +213,37 @@ export function Advisor({
     void checkHostedRuntime()
     return () => hostedProbeController.current?.abort()
   }, [checkHostedRuntime, runtimeChoice])
+  useEffect(() => {
+    const subscribe = metrora.onAdvisorHostedEvent
+    if (typeof subscribe !== 'function') return
+    return subscribe(event => {
+      if (event.provider !== hostedProvider) return
+      setHostedProbe(current => {
+        if (current.provider !== event.provider) return current
+        const models = current.models.map(model => {
+          if (model.id !== event.model) return model
+          if (event.kind === 'completed') {
+            return {
+              ...model,
+              state: 'verified' as const,
+              limitation: 'A bounded Metrora Harness request completed successfully for this model.',
+              capabilities: {
+                conversational: 'available' as const,
+                streaming: event.streamed ? 'supported' as const : model.capabilities?.streaming ?? 'unknown' as const,
+                toolCall: model.capabilities?.toolCall ?? 'unknown' as const,
+              },
+            }
+          }
+          if (event.kind === 'failed' && ['response-malformed', 'tool-malformed', 'model-unavailable'].includes(event.code ?? '')) {
+            return { ...model, state: 'failed-conformance' as const, limitation: 'The model failed a bounded Metrora Harness conformance request.' }
+          }
+          return model
+        })
+        if (models.every((model, index) => model === current.models[index])) return current
+        return { ...current, available: true, models }
+      })
+    })
+  }, [hostedProvider])
   const [conversations, setConversations] = useState<AdvisorConversation[]>(() => [{ id: makeId('chat'), title: 'New chat', messages: [] }])
   const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]!.id)
   const [historyQuery, setHistoryQuery] = useState('')
@@ -215,6 +287,40 @@ export function Advisor({
   const updateConversation = useCallback((conversationId: string, update: (conversation: AdvisorConversation) => AdvisorConversation) => {
     setConversations(current => current.map(conversation => conversation.id === conversationId ? update(conversation) : conversation))
   }, [])
+  const runSwarm = useCallback((rawTask: string, workerCount?: number) => {
+    const task = rawTask.trim()
+    if (!task || loadingQuestion || swarm.state.running) return
+    invalidateAdvisorRequest()
+    const conversationId = activeConversationId
+    const fingerprint = advisorScopeFingerprint(scope)
+    const userMessage: AdvisorMessage = { id: makeId('user'), role: 'user', text: task, scopeFingerprint: fingerprint }
+    updateConversation(conversationId, conversation => ({
+      ...conversation,
+      title: conversation.messages.length === 0 ? task.slice(0, 42) : conversation.title,
+      messages: [...conversation.messages, userMessage],
+    }))
+    swarmConversationRef.current = conversationId
+    swarmCommittedRef.current = null
+    setSelectedAnswerId(null)
+    setError(null)
+    setNotice(null)
+    setComposer('')
+    swarm.run(task, workerCount)
+  }, [activeConversationId, invalidateAdvisorRequest, loadingQuestion, scope, swarm, updateConversation])
+  useEffect(() => {
+    const result = swarm.state.result
+    const conversationId = swarmConversationRef.current
+    if (!result || swarm.state.running || !conversationId || swarmCommittedRef.current === result.runId) return
+    swarmCommittedRef.current = result.runId
+    const assistantMessage: AdvisorMessage = {
+      id: makeId('assistant'),
+      role: 'assistant',
+      answer: answerFromSwarmResult(result, scope, activeRuntime),
+      scopeFingerprint: advisorScopeFingerprint(scope),
+    }
+    updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
+    if (conversationId === activeConversationId) setSelectedAnswerId(assistantMessage.id)
+  }, [activeConversationId, activeRuntime, scope, swarm.state.result, swarm.state.running, updateConversation])
   const ask = useCallback(async (rawQuestion: string, retryRequest?: AdvisorFailedRequest) => {
     const question = rawQuestion.trim()
     if (!question || loadingQuestion) return
@@ -294,7 +400,9 @@ export function Advisor({
               ...(answer.materialLimits ?? []),
               typeof bridge !== 'function'
                 ? 'This desktop build has no trusted Core Compatibility action bridge; no action was prepared.'
-                : 'Core Compatibility needs an explicitly selected Ollama model; no action was prepared.',
+                : runtimeChoice === 'llama-server'
+                  ? 'Core Compatibility exact semantics currently support Ollama only; llama-server uses a different runtime contract, so no action was prepared.'
+                  : 'Core Compatibility needs an explicitly selected Ollama model; no action was prepared.',
             ],
           }
         } else {
@@ -336,7 +444,7 @@ export function Advisor({
           conversationId,
           conversation: history.map(turn => ({ ...turn })),
         })
-        setError(caught instanceof Error ? caught.message : 'Harness could not complete this request.')
+        setError(advisorRequestErrorMessage(caught))
       }
     } finally {
       if (requestGenerationRef.current !== requestId) return
@@ -383,30 +491,39 @@ export function Advisor({
     setNotice('Cancelling request…')
   }
   const newConversation = () => {
+    invalidateAdvisorRequest()
+    swarm.clear()
+    swarmConversationRef.current = null
+    swarmCommittedRef.current = null
     const next: AdvisorConversation = { id: makeId('chat'), title: 'New chat', messages: [] }
     setConversations(current => [next, ...current])
     setActiveConversationId(next.id)
     setSelectedAnswerId(null)
+    setComposer('')
     setError(null)
     setNotice(null)
   }
   const activateHosted = () => {
     invalidateAdvisorRequest()
+    swarm.clear()
     setRuntimeChoice('hosted')
     setHostedConsent(false)
     void checkHostedRuntime()
   }
   const activateLocal = () => {
     invalidateAdvisorRequest()
+    swarm.clear()
     setRuntimeChoice(runtimeId)
     setHostedConsent(false)
   }
   const updateHostedConsent = (consent: boolean) => {
     invalidateAdvisorRequest()
+    swarm.clear()
     setHostedConsent(consent)
   }
   const updateHostedProvider = (next: AdvisorHostedProviderId) => {
     invalidateAdvisorRequest()
+    swarm.clear()
     hostedOperationGuardRef.current.setProvider(next)
     hostedProbeController.current?.abort()
     setHostedProvider(next)
@@ -417,11 +534,13 @@ export function Advisor({
   }
   const updateHostedModel = (model: string) => {
     invalidateAdvisorRequest()
+    swarm.clear()
     setHostedModel(model)
     setHostedConsent(false)
   }
   const updateLocalRuntime = (next: AdvisorLocalRuntimeId) => {
     invalidateAdvisorRequest()
+    swarm.clear()
     setRuntimeId(next)
     setRuntimeModel(null)
     setHostedConsent(false)
@@ -429,8 +548,19 @@ export function Advisor({
   }
   const updateLocalModel = (model: string) => {
     invalidateAdvisorRequest()
+    swarm.clear()
     setLocalModel(model)
   }
+  const updateLlamaServerPort = (port: number) => {
+    invalidateAdvisorRequest()
+    swarm.clear()
+    setRuntimeModel(null)
+    setLlamaServerPort(port)
+  }
+  const updateScope = useCallback((update: (current: AdvisorScope) => AdvisorScope) => {
+    swarm.clear()
+    setScope(update)
+  }, [swarm])
   const saveHostedCredential = async () => {
     if (!credentialEntry.trim() || credentialSaving) return
     const requestedProvider = hostedProvider
@@ -486,6 +616,7 @@ export function Advisor({
     runtimeId,
     runtimeModel,
     runtimeState,
+    llamaServerPort,
     hostedProvider,
     hostedModel,
     hostedProbe,
@@ -507,6 +638,7 @@ export function Advisor({
     onActivateHosted: activateHosted,
     onLocalRuntimeChange: updateLocalRuntime,
     onLocalModelChange: updateLocalModel,
+    onLlamaServerPortChange: updateLlamaServerPort,
   }
   const retryFailedRequest = () => {
     if (failedRequest) {
@@ -518,9 +650,21 @@ export function Advisor({
     if (next === 'swarm' && !swarmExperimentalEnabled) return
     if (next === mode) return
     invalidateAdvisorRequest()
+    if (mode === 'swarm' && next !== 'swarm') {
+      swarmConversationRef.current = null
+      swarmCommittedRef.current = null
+    }
     swarm.cancel()
     setMode(next)
     setNotice(null)
+  }
+  const selectConversation = (conversationId: string) => {
+    if (conversationId === activeConversationId) return
+    swarm.clear()
+    swarmConversationRef.current = null
+    swarmCommittedRef.current = null
+    setActiveConversationId(conversationId)
+    setSelectedAnswerId(null)
   }
   return (
     <AdvisorWorkspace
@@ -532,7 +676,9 @@ export function Advisor({
         runtimeLabel: activeRuntime.label,
         modelLabel: runtimeChoice === 'hosted' ? hostedModelForRuntime?.label ?? activeRuntime.label : runtimeModel ?? activeRuntime.label,
         state: swarm.state,
-        onRun: swarm.run,
+        onRun: runSwarm,
+        workerCount: swarmWorkerCount,
+        onWorkerCountChange: setSwarmWorkerCount,
         onCancel: swarm.cancel,
       }}
       projectOptions={projectOptions}
@@ -542,7 +688,7 @@ export function Advisor({
       contextualScopeMode={contextualScopeMode}
       contextualOrigin={normalizedContextualLaunch ? advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection) : null}
       scopeSummary={contextualScopeLabel(scope, contextualScopeMode)}
-      onScopeChange={update => setScope(update)}
+      onScopeChange={updateScope}
       runtimeUnavailable={runtimeChoice !== 'hosted' && runtimeState.status === 'unavailable'}
       onRetryRuntime={() => void checkLocalRuntime()}
       overviewError={overview.error && !overview.data ? overview.error.message : null}
@@ -551,7 +697,7 @@ export function Advisor({
       activeConversationId={activeConversationId}
       historyQuery={historyQuery}
       onNewChat={newConversation}
-      onConversationSelect={setActiveConversationId}
+      onConversationSelect={selectConversation}
       onHistoryQueryChange={setHistoryQuery}
       messages={messages}
       selectedAnswerId={selectedAnswerId}

@@ -466,9 +466,13 @@ function renderBlock(block: { claimIds: string[] }, atoms: Map<string, AdvisorVe
 export function renderAdvisorVerifiedSynthesis(draft: AdvisorSynthesisDraftV1, atoms: AdvisorVerifiedClaimAtomV1[], question: string): { conclusion: string; why: string[]; details: string[] } {
   const language = advisorCopyLanguage(question)
   const atomMap = new Map(atoms.map(item => [item.id, item]))
+  const narrative = draft.narrative
+  const interpretation = narrative?.interpretation ?? null
+  const recommendation = narrative?.recommendation ?? null
+  const caveats = narrative?.caveats ?? []
   return {
-    conclusion: renderBlock(draft.conclusion, atomMap, language),
-    why: draft.why.map(block => renderBlock(block, atomMap, language)).filter(Boolean),
+    conclusion: [renderBlock(draft.conclusion, atomMap, language), interpretation, recommendation].filter(Boolean).join(' '),
+    why: [...draft.why.map(block => renderBlock(block, atomMap, language)).filter(Boolean), ...caveats].filter(Boolean),
     details: draft.details.map(block => renderBlock(block, atomMap, language)).filter(Boolean),
   }
 }
