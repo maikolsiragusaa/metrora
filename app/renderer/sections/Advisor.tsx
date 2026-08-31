@@ -14,6 +14,8 @@ import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { harnessToolLabel, type HarnessToolActivity } from './AdvisorAnswerCard'
 import { AdvisorWorkspace } from './AdvisorWorkspace'
+import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
+import { useSwarmRun } from '../swarm/useSwarmRun'
 import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
@@ -106,6 +108,17 @@ export function Advisor({
     ? hostedRuntime ?? fallbackRuntime
     : localRuntime ?? fallbackRuntime
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
+  const swarmExperimentalEnabled = isSwarmExperimentalEnabled()
+  const [mode, setMode] = useState<'chat' | 'swarm'>('chat')
+  const swarm = useSwarmRun({
+    source,
+    runtime: activeRuntime,
+    scope,
+    overview: !overview.loading && !overview.switching ? overview.data ?? null : null,
+    modelId: runtimeChoice === 'hosted' ? hostedModel ?? activeRuntime.id : runtimeModel ?? activeRuntime.id,
+    modelLabel: runtimeChoice === 'hosted' ? hostedModelForRuntime?.label ?? activeRuntime.label : runtimeModel ?? activeRuntime.label,
+    enabled: swarmExperimentalEnabled,
+  })
   const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
   const [streamPreview, setStreamPreview] = useState('')
   const [toolStatus, setToolStatus] = useState<string | null>(null)
@@ -501,8 +514,27 @@ export function Advisor({
       void ask(failedRequest.question, failedRequest)
     }
   }
+  const changeMode = (next: 'chat' | 'swarm') => {
+    if (next === 'swarm' && !swarmExperimentalEnabled) return
+    if (next === mode) return
+    invalidateAdvisorRequest()
+    swarm.cancel()
+    setMode(next)
+    setNotice(null)
+  }
   return (
     <AdvisorWorkspace
+      mode={mode}
+      swarmExperimentalEnabled={swarmExperimentalEnabled}
+      onModeChange={changeMode}
+      swarm={{
+        enabled: swarmExperimentalEnabled,
+        runtimeLabel: activeRuntime.label,
+        modelLabel: runtimeChoice === 'hosted' ? hostedModelForRuntime?.label ?? activeRuntime.label : runtimeModel ?? activeRuntime.label,
+        state: swarm.state,
+        onRun: swarm.run,
+        onCancel: swarm.cancel,
+      }}
       projectOptions={projectOptions}
       modelOptions={modelOptions}
       providerOptions={providerOptions}
