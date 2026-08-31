@@ -6,78 +6,16 @@ import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
-import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
-import { periodLabel, scopeLabel } from '../advisor/evidence'
-import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
-import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type AdvisorHostedProbePresentation, type AdvisorRuntimeChoice } from './AdvisorRuntimeControls'
-import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
+import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1 } from '../advisor/context'
+import { advisorScopeFingerprint, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
+import { type AdvisorRuntimeChoice } from './AdvisorRuntimeControls'
 import { harnessToolLabel, type HarnessToolActivity } from './AdvisorAnswerCard'
 import { AdvisorWorkspace } from './AdvisorWorkspace'
-import { sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
 import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
 import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
-type DetectedProvider = { id: string; label: string }
-type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
-type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
-type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
-function makeId(prefix: string): string {
-  return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
-}
-function advisorRequestErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    if (error.name === 'AdvisorTimeoutError') return 'Harness turn reached its bounded timeout.'
-    if (error.name === 'AdvisorRuntimeUnavailableError') return 'No verified Harness model runtime is configured.'
-    if (error.name === 'AdvisorToolContractError') return 'The request could not be completed within the bounded Metrora Tools contract.'
-  }
-  return 'Harness could not complete this request. No action was executed.'
-}
-function providerLabel(provider: string): string {
-  if (provider === 'all') return 'All providers'
-  return provider.split(/[-\s]+/).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
-}
-function contextualScopeLabel(scope: AdvisorScope, mode: AdvisorContextualScopeMode | null): string {
-  if (mode === 'capacity') return 'Provider-reported current capacity · All providers'
-  if (mode === 'compare') return `Compare page scope · ${periodLabel(scope)} · ${providerLabel(scope.provider)}`
-  return scopeLabel(scope)
-}
-function answerForMessage(messages: AdvisorMessage[], id: string | null): AdvisorAnswer | null {
-  if (id) {
-    const selected = messages.find(message => message.id === id)
-    if (selected?.answer) return selected.answer
-  }
-  return [...messages].reverse().find(message => message.answer)?.answer ?? null
-}
-function answerFromSwarmResult(result: import('../../../src/swarm/contract-v1').SwarmRunResultV1, scope: AdvisorScope, runtime: AdvisorModelRuntimeLike): AdvisorAnswer {
-  const workerRefs = result.workers.flatMap(worker => worker.evidenceRefs.slice(0, 4).map(ref => ({ id: ref.id, label: ref.label, source: 'overview' as const })))
-  const evidence = workerRefs.filter((ref, index, refs) => refs.findIndex(candidate => candidate.id === ref.id) === index).slice(0, 16)
-  const coverage = result.status === 'completed'
-    ? { level: 'high' as const, label: 'High coverage', detail: 'All bounded Swarm workers completed.' }
-    : result.status === 'partial'
-      ? { level: 'partial' as const, label: 'Partial coverage', detail: 'Some bounded Swarm workers did not complete.' }
-      : { level: 'unavailable' as const, label: 'Swarm unavailable', detail: result.status === 'cancelled' ? 'The Swarm run was cancelled.' : 'No complete Swarm synthesis was available.' }
-  const workerDetails = result.workers.map(worker => sanitizeAdvisorDisplayText(worker.role, 64) + ': ' + sanitizeAdvisorDisplayText(worker.status, 32)).slice(0, 6)
-  const errors = result.workers.flatMap(worker => worker.errors).concat(result.synthesis?.errors ?? []).slice(0, 8).map(error => sanitizeAdvisorDisplayText(error, 240))
-  const synthesisAnswer = result.synthesis?.answer ? sanitizeAdvisorModelOutput(result.synthesis.answer, 8 * 1024) : ''
-  const synthesisSummary = result.synthesis?.evidenceSummary ? sanitizeAdvisorDisplayText(result.synthesis.evidenceSummary, 1 * 1024) : ''
-  return {
-    conclusion: synthesisAnswer || (result.status === 'cancelled' ? 'Swarm was cancelled; completed worker results remain inspectable.' : 'No final Swarm synthesis was available; worker status and evidence remain inspectable.'),
-    scopeLabel: scopeLabel(scope),
-    periodLabel: periodLabel(scope),
-    evidence,
-    coverage,
-    assumptions: ['Manual Swarm uses fixed transparent roles and bounded read-only Tools.'],
-    unknown: errors.length ? errors : result.status === 'completed' ? [] : ['The final Swarm synthesis is unavailable.'],
-    nextInvestigations: [],
-    details: workerDetails,
-    why: synthesisSummary ? [synthesisSummary] : [],
-    runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
-    generatedByModel: result.synthesis?.status === 'completed' && Boolean(result.synthesis.answer),
-    streamed: false,
-  }
-}
-type AdvisorModelRuntimeLike = { id: string; label: string; mode: AdvisorAnswer['runtime']['mode'] }
+import { advisorRequestErrorMessage, answerForMessage, answerFromSwarmResult, contextualScopeLabel, makeId, type AdvisorConversation, type AdvisorFailedRequest, type AdvisorMessage, type DetectedProvider } from './advisor-session'
+import { useAdvisorHostedRuntime } from './useAdvisorHostedRuntime'
 export function Advisor({
   period,
   provider,
@@ -131,17 +69,37 @@ export function Advisor({
   const source = useMemo(() => createAdvisorDataSource(metrora), [])
   const fallbackRuntime = useMemo(() => createAdvisorRuntime(), [])
   const [runtimeChoice, setRuntimeChoice] = useState<AdvisorRuntimeChoice>('ollama')
-  const [hostedProvider, setHostedProvider] = useState<AdvisorHostedProviderId>('openai')
-  const hostedOperationGuardRef = useRef(new AdvisorHostedOperationGuard(hostedProvider))
-  const [hostedModel, setHostedModel] = useState<string | null>(null)
-  const hostedModelRef = useRef<string | null>(null)
-  hostedModelRef.current = hostedModel
-  const [hostedConsent, setHostedConsent] = useState(false)
-  const [hostedProbe, setHostedProbe] = useState<AdvisorHostedProbePresentation>(() => createHostedProbeChecking('openai'))
-  const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
-  const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
   const [configureOpen, setConfigureOpen] = useState(false)
   const { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, llamaServerPort, localRuntime, checkLocalRuntime, setLocalModel, setLlamaServerPort } = useAdvisorLocalRuntime()
+  const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
+  const [streamPreview, setStreamPreview] = useState('')
+  const [toolStatus, setToolStatus] = useState<string | null>(null)
+  const [toolActivity, setToolActivity] = useState<HarnessToolActivity[]>([])
+  const requestController = useRef<AbortController | null>(null)
+  const requestGenerationRef = useRef(0)
+  const invalidateAdvisorRequest = useCallback(() => {
+    requestGenerationRef.current += 1
+    requestController.current?.abort()
+    requestController.current = null
+    setLoadingQuestion(null)
+    setStreamPreview('')
+    setToolStatus(null)
+    setToolActivity([])
+  }, [])
+  const {
+    hostedProvider,
+    setHostedProvider,
+    hostedModel,
+    setHostedModel,
+    hostedConsent,
+    setHostedConsent,
+    hostedProbe,
+    hostedModelForRuntime,
+    hostedRuntime,
+    hostedSubmitBlockReason,
+    hostedOperationGuard,
+    checkHostedRuntime,
+  } = useAdvisorHostedRuntime({ runtimeChoice, invalidateAdvisorRequest })
   const activeRuntime = runtimeChoice === 'hosted'
     ? hostedRuntime ?? fallbackRuntime
     : localRuntime ?? fallbackRuntime
@@ -160,90 +118,6 @@ export function Advisor({
   })
   const swarmConversationRef = useRef<string | null>(null)
   const swarmCommittedRef = useRef<string | null>(null)
-  const [loadingQuestion, setLoadingQuestion] = useState<string | null>(null)
-  const [streamPreview, setStreamPreview] = useState('')
-  const [toolStatus, setToolStatus] = useState<string | null>(null)
-  const [toolActivity, setToolActivity] = useState<HarnessToolActivity[]>([])
-  const requestController = useRef<AbortController | null>(null)
-  const requestGenerationRef = useRef(0)
-  const invalidateAdvisorRequest = useCallback(() => {
-    requestGenerationRef.current += 1
-    requestController.current?.abort()
-    requestController.current = null
-    setLoadingQuestion(null)
-    setStreamPreview('')
-    setToolStatus(null)
-    setToolActivity([])
-  }, [])
-  const hostedProbeController = useRef<AbortController | null>(null)
-  const checkHostedRuntime = useCallback(async (requestedProvider: AdvisorHostedProviderId = hostedProvider, resetSelection = false) => {
-    if (!hostedOperationGuardRef.current.isCurrentProvider(requestedProvider)) return
-    invalidateAdvisorRequest()
-    hostedProbeController.current?.abort()
-    const requestId = hostedOperationGuardRef.current.startProbe(requestedProvider)
-    if (requestId === null) return
-    const controller = new AbortController()
-    hostedProbeController.current = controller
-    const isCurrentRequest = () => !controller.signal.aborted && hostedOperationGuardRef.current.isCurrentProbe(requestedProvider, requestId)
-    setHostedProbe(current => createHostedProbeChecking(requestedProvider, current))
-    try {
-      const result = await probeHostedAdvisor(requestedProvider, controller.signal)
-      if (!isCurrentRequest()) return
-      setHostedProbe(presentHostedProbe(result))
-      const selectable = result.models.find(isSelectableHostedModel)
-      if (result.available && selectable) {
-        const currentModel = resetSelection ? null : hostedModelRef.current
-        const next = currentModel && result.models.some(model => model.id === currentModel && isSelectableHostedModel(model)) ? currentModel : selectable.id
-        setHostedModel(next)
-        if (next !== currentModel) setHostedConsent(false)
-      } else {
-        setHostedModel(null)
-        setHostedConsent(false)
-      }
-    } catch (caught) {
-      if (isCurrentRequest() && !isAdvisorCancelled(caught)) {
-        setHostedModel(null)
-        setHostedConsent(false)
-        setHostedProbe(createHostedProbeFailure(requestedProvider))
-      }
-    }
-  }, [hostedProvider, invalidateAdvisorRequest])
-  useEffect(() => {
-    if (runtimeChoice !== 'hosted') return
-    void checkHostedRuntime()
-    return () => hostedProbeController.current?.abort()
-  }, [checkHostedRuntime, runtimeChoice])
-  useEffect(() => {
-    const subscribe = metrora.onAdvisorHostedEvent
-    if (typeof subscribe !== 'function') return
-    return subscribe(event => {
-      if (event.provider !== hostedProvider) return
-      setHostedProbe(current => {
-        if (current.provider !== event.provider) return current
-        const models = current.models.map(model => {
-          if (model.id !== event.model) return model
-          if (event.kind === 'completed') {
-            return {
-              ...model,
-              state: 'verified' as const,
-              limitation: 'A bounded Metrora Harness request completed successfully for this model.',
-              capabilities: {
-                conversational: 'available' as const,
-                streaming: event.streamed ? 'supported' as const : model.capabilities?.streaming ?? 'unknown' as const,
-                toolCall: model.capabilities?.toolCall ?? 'unknown' as const,
-              },
-            }
-          }
-          if (event.kind === 'failed' && ['response-malformed', 'tool-malformed', 'model-unavailable'].includes(event.code ?? '')) {
-            return { ...model, state: 'failed-conformance' as const, limitation: 'The model failed a bounded Metrora Harness conformance request.' }
-          }
-          return model
-        })
-        if (models.every((model, index) => model === current.models[index])) return current
-        return { ...current, available: true, models }
-      })
-    })
-  }, [hostedProvider])
   const [conversations, setConversations] = useState<AdvisorConversation[]>(() => [{ id: makeId('chat'), title: 'New chat', messages: [] }])
   const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]!.id)
   const [historyQuery, setHistoryQuery] = useState('')
@@ -252,15 +126,6 @@ export function Advisor({
   const [credentialSaving, setCredentialSaving] = useState(false)
   const hostedConfigRef = useRef({ runtimeChoice, hostedRuntime, hostedConsent })
   hostedConfigRef.current = { runtimeChoice, hostedRuntime, hostedConsent }
-  const hostedSubmitBlockReason = runtimeChoice === 'hosted'
-    ? !hostedRuntime
-      ? hostedProbe.reachability === 'checking'
-        ? 'Waiting for the hosted provider check to finish.'
-        : 'Connect a hosted provider credential and select a usable model before sending a message.'
-      : !hostedConsent
-        ? 'Confirm the hosted-provider prompt and evidence sharing notice before sending.'
-        : null
-    : null
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
   const [error, setError] = useState<string | null>(null)
   const [failedRequest, setFailedRequest] = useState<AdvisorFailedRequest | null>(null)
@@ -524,8 +389,7 @@ export function Advisor({
   const updateHostedProvider = (next: AdvisorHostedProviderId) => {
     invalidateAdvisorRequest()
     swarm.clear()
-    hostedOperationGuardRef.current.setProvider(next)
-    hostedProbeController.current?.abort()
+    hostedOperationGuard.setProvider(next)
     setHostedProvider(next)
     setHostedModel(null)
     setHostedConsent(false)
@@ -564,19 +428,19 @@ export function Advisor({
   const saveHostedCredential = async () => {
     if (!credentialEntry.trim() || credentialSaving) return
     const requestedProvider = hostedProvider
-    const operationId = hostedOperationGuardRef.current.startCredential(requestedProvider)
+    const operationId = hostedOperationGuard.startCredential(requestedProvider)
     if (operationId === null) return
     setCredentialSaving(true)
     try {
       const status = await metrora.advisorCredentialSet(requestedProvider, credentialEntry)
-      if (!hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) return
+      if (!hostedOperationGuard.isCurrentCredential(requestedProvider, operationId)) return
       invalidateAdvisorRequest()
       setNotice(status.state === 'ready' ? 'Provider credential saved in protected local storage.' : 'Provider credential was not saved: ' + status.state + '.')
       await checkHostedRuntime(requestedProvider)
     } catch {
-      if (hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) setNotice('Provider credential could not be saved. Enter it again.')
+      if (hostedOperationGuard.isCurrentCredential(requestedProvider, operationId)) setNotice('Provider credential could not be saved. Enter it again.')
     } finally {
-      if (hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) {
+      if (hostedOperationGuard.isCurrentCredential(requestedProvider, operationId)) {
         setCredentialEntry('')
         setCredentialSaving(false)
       }
@@ -584,17 +448,17 @@ export function Advisor({
   }
   const clearHostedCredential = async () => {
     const requestedProvider = hostedProvider
-    const operationId = hostedOperationGuardRef.current.startCredential(requestedProvider)
+    const operationId = hostedOperationGuard.startCredential(requestedProvider)
     if (operationId === null) return
     try {
       await metrora.advisorCredentialClear(requestedProvider)
-      if (!hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) return
+      if (!hostedOperationGuard.isCurrentCredential(requestedProvider, operationId)) return
       invalidateAdvisorRequest()
       setHostedConsent(false)
       setNotice('Provider credential removed from this device.')
       await checkHostedRuntime(requestedProvider)
     } catch {
-      if (hostedOperationGuardRef.current.isCurrentCredential(requestedProvider, operationId)) setNotice('Provider credential could not be removed.')
+      if (hostedOperationGuard.isCurrentCredential(requestedProvider, operationId)) setNotice('Provider credential could not be removed.')
     }
   }
   const normalizedHistoryQuery = historyQuery.trim().toLowerCase()

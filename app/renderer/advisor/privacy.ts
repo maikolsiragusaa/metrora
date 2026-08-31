@@ -41,10 +41,11 @@ const RAW_CONTENT_MARKER_PATTERN = /(?<![\p{L}\p{N}])(?:raw[_ -]?(?:prompt|respo
 // language such as "the system is healthy".
 const FORBIDDEN_OUTPUT_CLASS_PATTERN = /\b(?:system\s+prompt|hidden\s+prompt|developer\s+message|implementation\s+prompt|guard\s+(?:contract|plan|object)|raw\s+(?:schema|provider\s+(?:response|payload)|evidence\s+blob|tool\s+payload)|private\s+(?:chain[- ]of[- ]thought|scratchpad)|chain[- ]of[- ]thought|internal\s+scratchpad)\b|<\/?(?:system|developer|thinking|analysis|scratchpad)(?:\s|>)/iu
 // Natural reasoning is allowed, but the public evidence contract does not
-// support causal attribution. Keep this boundary narrow: it targets explicit
-// causal assertions while leaving comparisons, interpretation and advice
-// available to the model.
-const UNSUPPORTED_CAUSAL_PATTERN = /\b(?:caused|causes|due\s+to|because\s+of|reason\s+(?:is|was)|(?:main|primary)\s+driver|a\s+causa\s+di|causat[oaie]\s+da(?:l(?:la|le|li|lo)?|gli|i|un[ao]?|una)?\b|causa\s+principale|(?:il|la)\s+(?:motivo|ragione)\s+(?:è|e))\b/iu
+// support causal attribution. Keep this boundary narrow: explicit causal
+// assertions are blocked while contribution/ranking language is checked
+// later against selected canonical cost atoms.
+const UNSUPPORTED_CAUSAL_PATTERN = /\b(?:caused|causes|due\s+to|because\s+of|reason\s+(?:is|was)|driver\s+of|a\s+causa\s+di|causat[oaie]\s+da(?:l(?:la|le|li|lo)?|gli|i|un[ao]?|una)?\b|causa\s+principale|(?:il|la)\s+(?:motivo|ragione)\s+(?:è|e))\b/iu
+const CONTRIBUTION_LANGUAGE_PATTERN = /\b(?:(?:main|primary|top)\s+)?(?:driver|drivers|contributor|contributors|contribution|contributions|ranking|ranked)\b/iu
 const NUMERIC_CHARACTER_PATTERN = /\p{N}/u
 const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million|billion|first|second|third|uno|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|primo|secondo|terzo)\b/iu
 const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
@@ -103,6 +104,11 @@ export function containsAdvisorForbiddenOutputClass(value: string): boolean {
   const matched = FORBIDDEN_OUTPUT_CLASS_PATTERN.test(value)
   FORBIDDEN_OUTPUT_CLASS_PATTERN.lastIndex = 0
   return matched
+}
+
+export function containsAdvisorContributionLanguage(value: string): boolean {
+  if (!value) return false
+  return CONTRIBUTION_LANGUAGE_PATTERN.test(value)
 }
 
 function replaceSensitiveSegments(value: string): string {

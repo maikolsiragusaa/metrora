@@ -404,7 +404,7 @@ export function Bench() {
   const runPerformance = async () => {
     if (!performanceExecutable || !performanceModel) {
       setError(!performanceExecutable
-        ? 'Install the official llama-bench component (or choose an existing executable), then choose a .gguf model.'
+        ? 'Install the official CPU llama-bench component (or choose an existing executable), then choose a .gguf model.'
         : 'Choose a .gguf model before running Performance.')
       return
     }

@@ -89,7 +89,7 @@ Different Bench questions remain separate evidence families:
 - **Coding Evaluation** — future, under a separately versioned methodology and sandbox/licence review;
 - **Agent / Harness Evaluation** — future, separately versioned; manual Swarm is not presented as an evaluation score.
 
-Current shipped Bench evidence includes a small Ollama runtime-timing slice, Core Compatibility and the first native llama.cpp `llama-bench` Performance adapter behind a Metrora-owned bounded runner. Desktop can explicitly install the pinned official component with progress, checksum and provenance; the CLI still accepts an existing executable path. No current result is presented as a universal model-quality or coding ranking.
+Current shipped Bench evidence includes a small Ollama runtime-timing slice, Core Compatibility and the first native llama.cpp `llama-bench` Performance adapter behind a Metrora-owned bounded runner. Desktop can explicitly install the pinned official CPU component with progress, checksum and backend/variant provenance; accelerated builds remain available through the existing executable path. No current result is presented as a universal model-quality or coding ranking.
 
 See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md), [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md) and [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md).
 

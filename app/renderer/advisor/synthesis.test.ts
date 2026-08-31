@@ -145,6 +145,32 @@ describe('Advisor typed verified claim atoms', () => {
     expect(rendered.conclusion.indexOf('local-safe')).toBeLessThan(rendered.conclusion.indexOf('gpt-safe'))
   })
 
+  it('allows contribution language only when canonical spend atoms support it', () => {
+    const withoutContributionAtom = parseAdvisorSynthesisDraft(JSON.stringify({
+      contractVersion: 'advisor-synthesis-draft-v1',
+      schemaVersion: 1,
+      conclusion: { claimIds: ['measured-total-cost'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'measured-total-cost' }],
+      narrative: { interpretation: 'The main drivers are visible in the spend breakdown.' },
+      presentationRequests: [],
+    }))
+    expect(verifyAdvisorSynthesis(withoutContributionAtom!, evidence).reason).toContain('contribution atom')
+
+    const withContributionAtom = parseAdvisorSynthesisDraft(JSON.stringify({
+      contractVersion: 'advisor-synthesis-draft-v1',
+      schemaVersion: 1,
+      conclusion: { claimIds: ['model-measured-cost-0'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'model-measured-cost-0' }],
+      narrative: { interpretation: 'The main drivers are visible in the spend breakdown.' },
+      presentationRequests: [],
+    }))
+    expect(verifyAdvisorSynthesis(withContributionAtom!, evidence).valid).toBe(true)
+  })
+
   it('keeps the verified fact authoritative while allowing bounded interpretation and recommendation', () => {
     const draft = parseAdvisorSynthesisDraft(JSON.stringify({
       contractVersion: 'advisor-synthesis-draft-v1',

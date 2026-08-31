@@ -53,7 +53,8 @@ describe('Advisor deterministic privacy boundary', () => {
   it('allows bounded interpretation but rejects unsupported causal attribution', () => {
     expect(sanitizeAdvisorNarrative('This is worth comparing with your own budget or history.')).toContain('worth comparing')
     expect(sanitizeAdvisorNarrative('The spend increase was caused by one project.')).toBe('')
-    expect(sanitizeAdvisorNarrative('The main driver is the selected model.')).toBe('')
+    expect(sanitizeAdvisorNarrative('The main driver is the selected model.')).toBe('The main driver is the selected model.')
+    expect(sanitizeAdvisorNarrative('The selected model is a driver of the increase.')).toBe('')
     expect(sanitizeAdvisorNarrative('La causa principale è il progetto selezionato.')).toBe('')
     expect(sanitizeAdvisorNarrative('L’aumento è stato causato dal progetto.')).toBe('')
   })

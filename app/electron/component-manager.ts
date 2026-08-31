@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { gunzipSync, inflateRawSync } from 'node:zlib'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { join, relative, resolve, sep } from 'node:path'
+import { ComponentArchiveError, extractArchive, safeRelativePath, type ArchiveFormat } from './component-archive'
 
 export const COMPONENT_MANAGER_SCHEMA_VERSION = 'metrora.component.v1' as const
 export const LLAMA_BENCH_COMPONENT_ID = 'llama-bench' as const
@@ -10,19 +10,15 @@ export const LLAMA_BENCH_COMPONENT_VERSION = 'b10621' as const
 
 const COMPONENT_DIRECTORY = 'components'
 const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
-const MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
-const MAX_ARCHIVE_ENTRIES = 512
-const MAX_MEMBER_BYTES = 256 * 1024 * 1024
-const MAX_MEMBER_NAME_BYTES = 512
 const MAX_REDIRECTS = 3
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u
-
-type ArchiveFormat = 'zip' | 'tar.gz'
 
 type LlamaBenchAsset = {
   assetName: string
   archiveFormat: ArchiveFormat
   checksum: string
+  backend: 'cpu'
+  variant: 'cpu'
 }
 
 const LLAMA_BENCH_ASSETS: Record<string, LlamaBenchAsset> = {
@@ -30,37 +26,51 @@ const LLAMA_BENCH_ASSETS: Record<string, LlamaBenchAsset> = {
     assetName: 'llama-b10621-bin-win-cpu-x64.zip',
     archiveFormat: 'zip',
     checksum: '0e8b65e650e369f70f8307d890508886f171ef4fb00facccddd4a1b7ffdaca51',
+    backend: 'cpu',
+    variant: 'cpu',
   },
   'win32-arm64': {
     assetName: 'llama-b10621-bin-win-cpu-arm64.zip',
     archiveFormat: 'zip',
     checksum: 'c072e8bb057751587243c1e0ed28d82e23c7e0544a426e0d476f1e77792bf3ce',
+    backend: 'cpu',
+    variant: 'cpu',
   },
   'darwin-x64': {
     assetName: 'llama-b10621-bin-macos-x64.tar.gz',
     archiveFormat: 'tar.gz',
     checksum: '33c44e036e0e223f71a29fc74a0ab3e130ca9eadeb032ecc1c7af25985b8b91b',
+    backend: 'cpu',
+    variant: 'cpu',
   },
   'darwin-arm64': {
     assetName: 'llama-b10621-bin-macos-arm64.tar.gz',
     archiveFormat: 'tar.gz',
     checksum: '429c8270608600188035e5e92f7d78dffb7900904fe7dd7e6a84f48068cd13cf',
+    backend: 'cpu',
+    variant: 'cpu',
   },
   'linux-x64': {
     assetName: 'llama-b10621-bin-ubuntu-x64.tar.gz',
     archiveFormat: 'tar.gz',
     checksum: '91d7b03ddae498a39f28fdb85d84d2b4a0fd3838d10b4f897e0ef8975bb9b583',
+    backend: 'cpu',
+    variant: 'cpu',
   },
   'linux-arm64': {
     assetName: 'llama-b10621-bin-ubuntu-arm64.tar.gz',
     archiveFormat: 'tar.gz',
     checksum: '95940151be63492f70f659da420b268244cc83a6ee70e310d2600ccdb7ea4deb',
+    backend: 'cpu',
+    variant: 'cpu',
   },
 }
 
 const EXECUTABLE_NAMES = ['llama-bench', 'llama-bench.exe'] as const
 
 export type ComponentId = typeof LLAMA_BENCH_COMPONENT_ID
+export type ComponentBackend = 'cpu'
+export type ComponentVariant = 'cpu'
 export type ComponentInstallState = 'not-installed' | 'installing' | 'installed' | 'failed' | 'cancelled' | 'unsupported'
 export type ComponentInstallPhase = 'idle' | 'downloading' | 'verifying' | 'extracting' | 'installed' | 'failed' | 'cancelled'
 
@@ -70,6 +80,8 @@ export type ComponentProvenance = {
   version: string
   checksum: string
   checksumVerified: true
+  backend: ComponentBackend
+  variant: ComponentVariant
   installedAt: string
 }
 
@@ -80,6 +92,8 @@ export type ComponentStatus = {
   state: ComponentInstallState
   phase: ComponentInstallPhase
   version: string | null
+  backend: ComponentBackend | null
+  variant: ComponentVariant | null
   progress: number | null
   detail: string
   executablePath: string | null
@@ -97,6 +111,8 @@ export type ComponentCatalogEntry = {
   source: string
   checksum: string
   archiveFormat: ArchiveFormat
+  backend: ComponentBackend
+  variant: ComponentVariant
   executableNames: readonly string[]
   platform: string
   arch: string
@@ -167,6 +183,8 @@ function entryFor(platform: string, arch: string): ComponentCatalogEntry | null 
     source: sourceFor(asset.assetName),
     checksum: 'sha256:' + asset.checksum,
     archiveFormat: asset.archiveFormat,
+    backend: asset.backend,
+    variant: asset.variant,
     executableNames: EXECUTABLE_NAMES,
     platform,
     arch,
@@ -192,19 +210,6 @@ export function validateComponentSource(source: string, expected?: ComponentCata
   return match
 }
 
-function safeRelativePath(raw: string): string {
-  if (typeof raw !== 'string' || !raw || raw.length > MAX_MEMBER_NAME_BYTES) throw new ComponentManagerError('archive-invalid', 'Component archive contains an invalid path.')
-  const normalized = raw.replaceAll('\\', '/')
-  if (normalized.startsWith('/') || /^[A-Za-z]:/u.test(normalized) || normalized.includes('\u0000')) {
-    throw new ComponentManagerError('archive-invalid', 'Component archive contains an unsafe path.')
-  }
-  const parts = normalized.split('/').filter(part => part && part !== '.')
-  if (!parts.length || parts.some(part => part === '..' || part.includes('\u0000'))) {
-    throw new ComponentManagerError('archive-invalid', 'Component archive contains an unsafe path.')
-  }
-  return parts.join(sep)
-}
-
 function ensureInside(root: string, candidate: string): void {
   const rootPath = resolve(root)
   const candidatePath = resolve(candidate)
@@ -212,164 +217,6 @@ function ensureInside(root: string, candidate: string): void {
   if (rest === '..' || rest.startsWith('..' + sep) || rest.startsWith(sep) || /^[A-Za-z]:/u.test(rest)) {
     throw new ComponentManagerError('archive-invalid', 'Component archive escaped its managed directory.')
   }
-}
-
-function crc32(value: Uint8Array): number {
-  let crc = 0xffffffff
-  for (const byte of value) {
-    crc ^= byte
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
-  }
-  return (crc ^ 0xffffffff) >>> 0
-}
-
-function decodeArchiveName(value: Uint8Array, utf8: boolean): string {
-  try {
-    return utf8
-      ? new TextDecoder('utf-8', { fatal: true }).decode(value)
-      : Buffer.from(value).toString('utf8')
-  } catch {
-    throw new ComponentManagerError('archive-invalid', 'Component archive contains an invalid filename.')
-  }
-}
-
-async function writeMember(destinationRoot: string, rawName: string, data: Uint8Array, written: Set<string>, total: { value: number }, executableNames: readonly string[]): Promise<string> {
-  const member = safeRelativePath(rawName)
-  if (written.has(member)) throw new ComponentManagerError('archive-invalid', 'Component archive contains duplicate files.')
-  if (data.byteLength > MAX_MEMBER_BYTES || total.value + data.byteLength > MAX_EXTRACTED_BYTES) {
-    throw new ComponentManagerError('archive-invalid', 'Component archive is too large.')
-  }
-  written.add(member)
-  total.value += data.byteLength
-  const destination = join(destinationRoot, member)
-  ensureInside(destinationRoot, destination)
-  await mkdir(dirname(destination), { recursive: true })
-  await writeFile(destination, data)
-  if (executableNames.some(name => name.toLowerCase() === basename(member).toLowerCase())) {
-    await chmod(destination, 0o755).catch(() => undefined)
-  }
-  return member
-}
-
-async function extractZip(input: Uint8Array, destinationRoot: string, executableNames: readonly string[]): Promise<string[]> {
-  const bytes = Buffer.from(input)
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  let end = -1
-  for (let offset = Math.max(0, bytes.length - 65_557); offset <= bytes.length - 22; offset++) {
-    if (view.getUint32(offset, true) === 0x06054b50) end = offset
-  }
-  if (end < 0) throw new ComponentManagerError('archive-invalid', 'Component archive is not a supported ZIP file.')
-  const entryCount = view.getUint16(end + 10, true)
-  const centralSize = view.getUint32(end + 12, true)
-  const centralOffset = view.getUint32(end + 16, true)
-  const centralEnd = centralOffset + centralSize
-  if (entryCount > MAX_ARCHIVE_ENTRIES || centralEnd > bytes.length) {
-    throw new ComponentManagerError('archive-invalid', 'Component archive has invalid directory bounds.')
-  }
-  const written = new Set<string>()
-  const files: string[] = []
-  const total = { value: 0 }
-  let cursor = centralOffset
-  for (let index = 0; index < entryCount; index++) {
-    if (cursor + 46 > centralEnd || view.getUint32(cursor, true) !== 0x02014b50) throw new ComponentManagerError('archive-invalid', 'Component archive has an invalid directory entry.')
-    const madeBy = view.getUint16(cursor + 4, true)
-    const flags = view.getUint16(cursor + 8, true)
-    const method = view.getUint16(cursor + 10, true)
-    const expectedCrc = view.getUint32(cursor + 16, true)
-    const compressedSize = view.getUint32(cursor + 20, true)
-    const uncompressedSize = view.getUint32(cursor + 24, true)
-    const nameSize = view.getUint16(cursor + 28, true)
-    const extraSize = view.getUint16(cursor + 30, true)
-    const commentSize = view.getUint16(cursor + 32, true)
-    const externalAttributes = view.getUint32(cursor + 38, true)
-    const localOffset = view.getUint32(cursor + 42, true)
-    const nameStart = cursor + 46
-    const nameEnd = nameStart + nameSize
-    if (nameSize > MAX_MEMBER_NAME_BYTES || nameEnd + extraSize + commentSize > centralEnd) throw new ComponentManagerError('archive-invalid', 'Component archive has an invalid filename entry.')
-    const rawName = decodeArchiveName(bytes.subarray(nameStart, nameEnd), Boolean(flags & 0x800))
-    const isDirectory = rawName.endsWith('/')
-    if (flags & 1) throw new ComponentManagerError('archive-invalid', 'Encrypted component archives are not supported.')
-    const mode = externalAttributes >>> 16
-    if ((madeBy >>> 8) === 3 && (mode & 0xf000) === 0xa000) throw new ComponentManagerError('archive-invalid', 'Component archives may not contain symbolic links.')
-    if (!isDirectory) {
-      if (uncompressedSize > MAX_MEMBER_BYTES || total.value + uncompressedSize > MAX_EXTRACTED_BYTES) throw new ComponentManagerError('archive-invalid', 'Component archive is too large.')
-      if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) throw new ComponentManagerError('archive-invalid', 'Component archive has an invalid local entry.')
-      const localNameSize = view.getUint16(localOffset + 26, true)
-      const localExtraSize = view.getUint16(localOffset + 28, true)
-      const dataStart = localOffset + 30 + localNameSize + localExtraSize
-      if (dataStart + compressedSize > bytes.length) throw new ComponentManagerError('archive-invalid', 'Component archive has invalid compressed data bounds.')
-      const compressed = bytes.subarray(dataStart, dataStart + compressedSize)
-      let data: Uint8Array
-      try {
-        data = method === 0 ? compressed : method === 8 ? inflateRawSync(compressed) : (() => { throw new Error('method') })()
-      } catch {
-        throw new ComponentManagerError('archive-invalid', 'Component archive contains unsupported or corrupt compressed data.')
-      }
-      if (data.byteLength !== uncompressedSize || crc32(data) !== expectedCrc) throw new ComponentManagerError('archive-invalid', 'Component archive checksum is invalid.')
-      files.push(await writeMember(destinationRoot, rawName, data, written, total, executableNames))
-    } else {
-      const directory = safeRelativePath(rawName)
-      ensureInside(destinationRoot, join(destinationRoot, directory))
-      await mkdir(join(destinationRoot, directory), { recursive: true })
-    }
-    cursor = nameEnd + extraSize + commentSize
-  }
-  if (cursor > centralEnd) throw new ComponentManagerError('archive-invalid', 'Component archive directory bounds are inconsistent.')
-  return files
-}
-
-function parseTarSize(value: Uint8Array): number {
-  const raw = Buffer.from(value).toString('ascii').replace(/\0/g, '').trim()
-  if (!raw || !/^[0-7]+$/u.test(raw)) throw new ComponentManagerError('archive-invalid', 'Component archive contains an invalid TAR size.')
-  const parsed = Number.parseInt(raw, 8)
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new ComponentManagerError('archive-invalid', 'Component archive contains an invalid TAR size.')
-  return parsed
-}
-
-async function extractTarGz(input: Uint8Array, destinationRoot: string, executableNames: readonly string[]): Promise<string[]> {
-  let bytes: Buffer
-  try { bytes = gunzipSync(input) } catch { throw new ComponentManagerError('archive-invalid', 'Component archive is not a supported gzip file.') }
-  if (bytes.byteLength > MAX_EXTRACTED_BYTES) throw new ComponentManagerError('archive-invalid', 'Component archive is too large.')
-  const written = new Set<string>()
-  const files: string[] = []
-  const total = { value: 0 }
-  let cursor = 0
-  let entries = 0
-  while (cursor + 512 <= bytes.length) {
-    const header = bytes.subarray(cursor, cursor + 512)
-    if (header.every(value => value === 0)) break
-    entries += 1
-    if (entries > MAX_ARCHIVE_ENTRIES) throw new ComponentManagerError('archive-invalid', 'Component archive contains too many entries.')
-    const name = Buffer.from(header.subarray(0, 100)).toString('utf8').replace(/\0.*$/u, '')
-    const prefix = Buffer.from(header.subarray(345, 500)).toString('utf8').replace(/\0.*$/u, '')
-    const rawName = prefix ? prefix + '/' + name : name
-    const size = parseTarSize(header.subarray(124, 136))
-    const type = header[156] ?? 0
-    const dataStart = cursor + 512
-    const paddedSize = Math.ceil(size / 512) * 512
-    if (dataStart + paddedSize > bytes.length) throw new ComponentManagerError('archive-invalid', 'Component archive has invalid TAR bounds.')
-    if (type === 0 || type === 48) {
-      if (size > MAX_MEMBER_BYTES || total.value + size > MAX_EXTRACTED_BYTES) throw new ComponentManagerError('archive-invalid', 'Component archive is too large.')
-      files.push(await writeMember(destinationRoot, rawName, bytes.subarray(dataStart, dataStart + size), written, total, executableNames))
-    } else if (type === 5) {
-      const directory = safeRelativePath(rawName)
-      ensureInside(destinationRoot, join(destinationRoot, directory))
-      await mkdir(join(destinationRoot, directory), { recursive: true })
-    } else {
-      throw new ComponentManagerError('archive-invalid', 'Component archives may contain only regular files and directories.')
-    }
-    cursor = dataStart + paddedSize
-  }
-  return files
-}
-
-async function extractArchive(input: Uint8Array, format: ArchiveFormat, destinationRoot: string, executableNames: readonly string[]): Promise<string> {
-  const files = format === 'zip'
-    ? await extractZip(input, destinationRoot, executableNames)
-    : await extractTarGz(input, destinationRoot, executableNames)
-  const executable = files.find(value => executableNames.some(name => name.toLowerCase() === basename(value).toLowerCase()))
-  if (!executable) throw new ComponentManagerError('archive-invalid', 'The official component archive did not contain llama-bench.')
-  return executable
 }
 
 function statusBase(entry: ComponentCatalogEntry | null, state: ComponentInstallState, phase: ComponentInstallPhase, detail: string, error: string | null = null, progress: number | null = null, executablePath: string | null = null, provenance: ComponentProvenance | null = null): ComponentStatus {
@@ -380,6 +227,8 @@ function statusBase(entry: ComponentCatalogEntry | null, state: ComponentInstall
     state,
     phase,
     version: entry?.version ?? null,
+    backend: entry?.backend ?? null,
+    variant: entry?.variant ?? null,
     progress,
     detail,
     executablePath,
@@ -466,7 +315,7 @@ async function fetchArtifact(entry: ComponentCatalogEntry, signal: AbortSignal, 
 function manifestFrom(value: unknown): ComponentManifest | null {
   if (!isRecord(value) || value.schemaVersion !== COMPONENT_MANAGER_SCHEMA_VERSION || value.id !== LLAMA_BENCH_COMPONENT_ID || value.version !== LLAMA_BENCH_COMPONENT_VERSION || typeof value.executableRelativePath !== 'string' || !isRecord(value.provenance)) return null
   const provenance = value.provenance
-  if (provenance.repository !== 'https://github.com/ggml-org/llama.cpp' || typeof provenance.source !== 'string' || typeof provenance.version !== 'string' || typeof provenance.checksum !== 'string' || provenance.checksumVerified !== true || typeof provenance.installedAt !== 'string') return null
+  if (provenance.repository !== 'https://github.com/ggml-org/llama.cpp' || typeof provenance.source !== 'string' || typeof provenance.version !== 'string' || typeof provenance.checksum !== 'string' || provenance.checksumVerified !== true || provenance.backend !== 'cpu' || provenance.variant !== 'cpu' || typeof provenance.installedAt !== 'string') return null
   try { safeRelativePath(value.executableRelativePath) } catch { return null }
   try { validateComponentSource(provenance.source) } catch { return null }
   if (!/^sha256:[0-9a-f]{64}$/u.test(provenance.checksum)) return null
@@ -517,14 +366,14 @@ export class ComponentManager {
     try {
       const raw = JSON.parse(await readFile(this.manifestPath(entry), 'utf8')) as unknown
       const manifest = manifestFrom(raw)
-      if (!manifest || manifest.provenance.source !== entry.source || manifest.provenance.version !== entry.version || manifest.provenance.checksum !== entry.checksum) return null
+      if (!manifest || manifest.provenance.source !== entry.source || manifest.provenance.version !== entry.version || manifest.provenance.checksum !== entry.checksum || manifest.provenance.backend !== entry.backend || manifest.provenance.variant !== entry.variant) return null
       const installDir = join(this.componentRoot(), entry.version)
       const executableRelativePath = safeRelativePath(manifest.executableRelativePath)
       const executablePath = join(installDir, executableRelativePath)
       ensureInside(installDir, executablePath)
       const info = await stat(executablePath)
       if (!info.isFile()) return null
-      return statusBase(entry, 'installed', 'installed', 'Managed llama-bench component is installed and checksum-verified.', null, 100, executablePath, manifest.provenance)
+      return statusBase(entry, 'installed', 'installed', 'Managed llama-bench CPU component is installed and checksum-verified.', null, 100, executablePath, manifest.provenance)
     } catch {
       return null
     }
@@ -533,14 +382,14 @@ export class ComponentManager {
   async getStatus(id: string = LLAMA_BENCH_COMPONENT_ID): Promise<ComponentStatus> {
     if (id !== LLAMA_BENCH_COMPONENT_ID) throw new ComponentManagerError('invalid-component', 'Unknown component.')
     const active = this.flights.get(LLAMA_BENCH_COMPONENT_ID)
-    if (active) return this.statuses.get(LLAMA_BENCH_COMPONENT_ID) ?? statusBase(this.entry(), 'installing', 'downloading', 'Preparing component download.', null, 0)
+    if (active) return this.statuses.get(LLAMA_BENCH_COMPONENT_ID) ?? statusBase(this.entry(), 'installing', 'downloading', 'Preparing official CPU component download.', null, 0)
     const remembered = this.statuses.get(LLAMA_BENCH_COMPONENT_ID)
     if (remembered?.state === 'failed' || remembered?.state === 'cancelled') return { ...remembered, provenance: remembered.provenance ? { ...remembered.provenance } : null }
     const entry = this.entry()
     if (!entry) return statusBase(null, 'unsupported', 'idle', 'No official llama-bench artifact is available for this platform.', null, null)
     const installed = await this.installedStatus(entry)
     if (installed) return this.emit(installed)
-    return this.emit(statusBase(entry, 'not-installed', 'idle', 'llama-bench is not installed. Install the official Metrora-managed component.', null, null))
+    return this.emit(statusBase(entry, 'not-installed', 'idle', 'The official Metrora-managed llama-bench CPU component is not installed.', null, null))
   }
 
   async install(id: string = LLAMA_BENCH_COMPONENT_ID): Promise<ComponentStatus> {
@@ -575,7 +424,7 @@ export class ComponentManager {
     const staging = join(this.componentRoot(), '.staging-' + process.pid + '-' + Date.now().toString(36))
     let installedDir: string | null = null
     const emit = (status: ComponentStatus): ComponentStatus => this.emit(status)
-    emit(statusBase(entry, 'installing', 'downloading', 'Preparing official component download.', null, 0))
+    emit(statusBase(entry, 'installing', 'downloading', 'Preparing official CPU component download.', null, 0))
     try {
       await rm(staging, { recursive: true, force: true })
       await mkdir(staging, { recursive: true })
@@ -584,10 +433,16 @@ export class ComponentManager {
       emit(statusBase(entry, 'installing', 'verifying', 'Verifying the official component checksum.', null, 94))
       const digest = createHash('sha256').update(bytes).digest('hex')
       if (!SHA256_PATTERN.test(digest) || 'sha256:' + digest !== entry.checksum) throw new ComponentManagerError('checksum-mismatch', 'The downloaded component checksum did not match the authoritative checksum.')
-      emit(statusBase(entry, 'installing', 'extracting', 'Extracting and validating the managed component.', null, 97))
+      emit(statusBase(entry, 'installing', 'extracting', 'Extracting and validating the managed CPU component.', null, 97))
       const payload = join(staging, 'payload')
       await mkdir(payload, { recursive: true })
-      const executableRelativePath = await extractArchive(bytes, entry.archiveFormat, payload, entry.executableNames)
+      let executableRelativePath: string
+      try {
+        executableRelativePath = await extractArchive(bytes, entry.archiveFormat, payload, entry.executableNames)
+      } catch (error) {
+        if (error instanceof ComponentArchiveError) throw new ComponentManagerError('archive-invalid', error.message)
+        throw error
+      }
       if (controller.signal.aborted) throw abortError()
       const installDir = join(this.componentRoot(), entry.version)
       ensureInside(this.componentRoot(), installDir)
@@ -600,12 +455,14 @@ export class ComponentManager {
         version: entry.version,
         checksum: entry.checksum,
         checksumVerified: true,
+        backend: entry.backend,
+        variant: entry.variant,
         installedAt: this.now().toISOString(),
       }
       const manifest: ComponentManifest = { schemaVersion: COMPONENT_MANAGER_SCHEMA_VERSION, id: entry.id, version: entry.version, executableRelativePath, provenance }
       await writeFile(join(installDir, 'component.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8')
       const executablePath = join(installDir, executableRelativePath)
-      const installed = statusBase(entry, 'installed', 'installed', 'Managed llama-bench component installed and verified.', null, 100, executablePath, provenance)
+      const installed = statusBase(entry, 'installed', 'installed', 'Managed llama-bench CPU component installed and verified.', null, 100, executablePath, provenance)
       emit(installed)
       await rm(staging, { recursive: true, force: true })
       return installed

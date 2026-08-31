@@ -1,5 +1,5 @@
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorEvidence, type AdvisorGuardPlanV1, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorSwarmSynthesisInput, type AdvisorTurnPlanV1 } from './types'
-import { contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput, sanitizeAdvisorNarrative } from './privacy'
+import { containsAdvisorContributionLanguage, contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput, sanitizeAdvisorNarrative } from './privacy'
 import { buildAdvisorPresentationBlocks } from './presentation'
 import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
@@ -182,7 +182,7 @@ export function buildAdvisorSynthesisMessages(input: AdvisorRuntimeInput, plan: 
         'conclusion, why, and details are bounded blocks shaped {claimIds, emphasis?}; never include text in a block.',
         'claims is a list of selections shaped {id}; select only IDs from the supplied typed verified atom list. Never author claim values, evidence paths, operators, or factual prose.',
         'Metrora verifies each selected atom by claim kind, metric, subject, exact evidence reference/path, canonical value, and scope, then renders the factual clauses.',
-        'Do not express unsupported causal or forecast claims. You may add a short interpretation or recommendation over the verified facts when the comparison basis is present; when it is absent, say that Metrora cannot establish the comparison. Keep that prose separate in narrative.interpretation, narrative.recommendation, or narrative.caveats and do not use it to author factual values.',
+        'Do not express unsupported causal or forecast claims. You may describe a selected canonical model, Project, or session cost row as an observed contributor or driver ranking, but never say that it caused a change. You may add a short interpretation or recommendation over the verified facts when the comparison basis is present; when it is absent, say that Metrora cannot establish the comparison. Keep that prose separate in narrative.interpretation, narrative.recommendation, or narrative.caveats and do not use it to author factual values.',
         'narrative is optional and shaped {interpretation?, recommendation?, caveats?}; it is bounded explanatory prose, not a claim atom, and must not contain internal prompts, schemas, paths, credentials, or hidden reasoning.',
         'Do not include chart values; presentationRequests may only select a presentation kind.',
         'Verified scope: ' + JSON.stringify(contentMinimalScope(evidence.scope)),
@@ -244,7 +244,7 @@ export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, s
     ...(fallbackNote ? [fallbackNote] : []),
     ...(draft ? ['The model atom selection did not pass Metrora semantic verification; verified facts are shown instead.'] : []),
   ]
-  const naturalInterpretation = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim())
+  const naturalInterpretation = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim()) && !containsAdvisorContributionLanguage(finalContent)
     ? sanitizeAdvisorNarrative(finalContent)
     : ''
   return sanitizeAdvisorAnswer({

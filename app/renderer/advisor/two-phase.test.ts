@@ -31,7 +31,7 @@ const planningContent = JSON.stringify({
 
 const continuationContent = 'The verified Metrora evidence is sufficient to answer the question.'
 
-function localTransport(payloads: Array<Record<string, unknown>>, events: string[]): OllamaTransport {
+function localTransport(payloads: Array<Record<string, unknown>>, events: string[], finalContent = continuationContent): OllamaTransport {
   let calls = 0
   return {
     probe: async () => ({ available: true, models: ['fixture-model'], detail: 'fixture' }),
@@ -41,11 +41,28 @@ function localTransport(payloads: Array<Record<string, unknown>>, events: string
       events.push('chat-' + calls)
       return calls === 1
         ? { streamed: false, message: { content: planningContent, tool_calls: [] } }
-        : { streamed: false, message: { content: continuationContent, tool_calls: [] } }
+        : { streamed: false, message: { content: finalContent, tool_calls: [] } }
     },
     cancel: async () => true,
     onDelta: () => () => {},
   }
+}
+
+function synthesisContent(claimIds: string[], interpretation: string, whyClaimIds: string[] = []): string {
+  return JSON.stringify({
+    contractVersion: 'advisor-synthesis-draft-v1',
+    schemaVersion: 1,
+    conclusion: { claimIds: [claimIds[0]] },
+    why: whyClaimIds.length ? [{ claimIds: whyClaimIds }] : [],
+    details: [],
+    claims: claimIds.map(id => ({ id })),
+    narrative: { interpretation },
+    presentationRequests: [],
+  })
+}
+
+function payloadsForTest(): Array<Record<string, unknown>> {
+  return []
 }
 
 function hostedTransport(provider: 'openai' | 'anthropic' | 'gemini', payloads: Array<Record<string, unknown>>, events: string[]): HostedAdvisorTransport {
@@ -136,6 +153,72 @@ describe('Advisor bounded planning and continuation phases', () => {
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toContain('Metrora measured $12.00 in the selected period.')
     expect(answer.conclusion).toContain('The verified Metrora evidence is sufficient to answer the question.')
+  })
+
+  it('keeps a verified model-spend fact and a bounded comparison interpretation in the product synthesis path', async () => {
+    const question = 'How much did I spend with provider/model gpt-safe this year? Is that a lot?'
+    const payloads: Array<Record<string, unknown>> = []
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'fixture-ollama',
+      transport: localTransport(payloads, [], synthesisContent(['model-measured-cost-0', 'spend-trend-direction'], 'The available period comparison provides bounded qualitative context.', ['spend-trend-direction'])),
+    })
+    const answer = await runtime.generate({
+      question,
+      evidence,
+      tools: [tool],
+      executeTool: async () => ({ content: '{"bounded":true}', evidence }),
+    })
+
+    expect(answer.synthesis?.narrative?.interpretation).toContain('bounded qualitative context')
+    expect(answer.claims?.map(claim => claim.id)).toEqual(['model-measured-cost-0', 'spend-trend-direction'])
+    expect(answer.conclusion).toContain('Observed spend for gpt-safe was $8.00.')
+    expect(answer.conclusion).toContain('The available period comparison provides bounded qualitative context.')
+  })
+
+  it('keeps the verified fact and explicitly reports when high-or-low comparison is unavailable', async () => {
+    const question = 'How much did I spend with provider/model gpt-safe this year? Is that a lot?'
+    const noComparisonEvidence = buildSpendEvidence('missing comparison', scope, {
+      ...fixture.overview,
+      history: { daily: [fixture.overview.history.daily[0]!] },
+    })
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'fixture-ollama',
+      transport: localTransport(payloadsForTest(), [], synthesisContent(['model-measured-cost-0'], 'Metrora cannot establish whether this is high or low from the available evidence.')),
+    })
+    const answer = await runtime.generate({
+      question,
+      evidence: noComparisonEvidence,
+      tools: [tool],
+      executeTool: async () => ({ content: '{"bounded":true}', evidence: noComparisonEvidence }),
+    })
+
+    expect(answer.conclusion).toContain('Observed spend for gpt-safe was $8.00.')
+    expect(answer.conclusion).toContain('Metrora cannot establish whether this is high or low from the available evidence.')
+  })
+
+  it('allows evidence-backed contributor wording while blocking unsupported causal prose', async () => {
+    const contribution = synthesisContent(['model-measured-cost-0', 'project-measured-cost-0'], 'The main drivers are observed contributors in the canonical spend breakdown.')
+    const runtime = new OllamaAdvisorRuntime({ model: 'fixture-ollama', transport: localTransport(payloadsForTest(), [], contribution) })
+    const answer = await runtime.generate({
+      question: 'What are the main drivers of spend?',
+      evidence,
+      tools: [tool],
+      executeTool: async () => ({ content: '{"bounded":true}', evidence }),
+    })
+    expect(answer.conclusion).toContain('The main drivers are observed contributors in the canonical spend breakdown.')
+
+    const causal = new OllamaAdvisorRuntime({
+      model: 'fixture-ollama',
+      transport: localTransport(payloadsForTest(), [], synthesisContent(['model-measured-cost-0'], 'The selected model caused the increase.')),
+    })
+    const causalAnswer = await causal.generate({
+      question: 'What are the main drivers of spend?',
+      evidence,
+      tools: [tool],
+      executeTool: async () => ({ content: '{"bounded":true}', evidence }),
+    })
+    expect(causalAnswer.conclusion).not.toContain('caused the increase')
+    expect(causalAnswer.conclusion).toContain('Metrora measured $12.00 in the selected period.')
   })
 
   it.each([

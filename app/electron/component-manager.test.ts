@@ -88,7 +88,13 @@ afterEach(async () => {
 describe('Metrora Component Manager V1', () => {
   it('reports not installed before acquisition and rejects non-approved sources', async () => {
     const manager = new ComponentManager({ rootDir: await root(), platform: 'win32', arch: 'x64' })
-    await expect(manager.getStatus()).resolves.toMatchObject({ id: 'llama-bench', state: 'not-installed', executablePath: null })
+    await expect(manager.getStatus()).resolves.toMatchObject({ id: 'llama-bench', state: 'not-installed', executablePath: null, backend: 'cpu', variant: 'cpu' })
+    expect(getLlamaBenchCatalogEntry('win32', 'x64')).toMatchObject({
+      source: 'https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip',
+      backend: 'cpu',
+      variant: 'cpu',
+      checksum: 'sha256:0e8b65e650e369f70f8307d890508886f171ef4fb00facccddd4a1b7ffdaca51',
+    })
     expect(() => validateComponentSource('https://example.com/llama-bench.zip')).toThrowError(ComponentManagerError)
     expect(() => validateComponentSource('https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip?redirect=1')).toThrowError(/not approved/u)
   })
@@ -109,7 +115,7 @@ describe('Metrora Component Manager V1', () => {
     const installed = await manager.install()
     expect(installed).toMatchObject({ state: 'installed', phase: 'installed', version: 'b10621', progress: 100 })
     expect(installed.executablePath).toContain('llama-bench.exe')
-    expect(installed.provenance).toMatchObject({ repository: 'https://github.com/ggml-org/llama.cpp', version: 'b10621', checksumVerified: true })
+    expect(installed.provenance).toMatchObject({ repository: 'https://github.com/ggml-org/llama.cpp', version: 'b10621', checksumVerified: true, backend: 'cpu', variant: 'cpu' })
     await expect(readFile(installed.executablePath!, 'utf8')).resolves.toBe('MZ fixture')
     expect(events).toEqual(expect.arrayContaining(['downloading:0', 'verifying:94', 'extracting:97', 'installed:100']))
     await expect(manager.getStatus()).resolves.toMatchObject({ state: 'installed', executablePath: installed.executablePath, provenance: installed.provenance })

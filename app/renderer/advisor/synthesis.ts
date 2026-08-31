@@ -1,4 +1,4 @@
-import { containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText, sanitizeAdvisorNarrative } from './privacy'
+import { containsAdvisorContributionLanguage, containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText, sanitizeAdvisorNarrative } from './privacy'
 import { buildAdvisorVerifiedClaimAtoms, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
 import type { AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorSynthesisNarrativeV1, AdvisorVerifiedClaimAtomV1 } from './types'
 
@@ -155,6 +155,18 @@ function verifyBlock(block: AdvisorSynthesisBlockV1, selected: Set<string>, avai
 
 export type AdvisorSynthesisVerification = { valid: boolean; claims: AdvisorVerifiedClaimAtomV1[]; reason: string | null }
 
+function hasContributionLanguage(narrative: AdvisorSynthesisNarrativeV1 | undefined): boolean {
+  if (!narrative) return false
+  return [narrative.interpretation, narrative.recommendation, ...(narrative.caveats ?? [])]
+    .some(value => typeof value === 'string' && containsAdvisorContributionLanguage(value))
+}
+
+function isCanonicalContributionAtom(atom: AdvisorVerifiedClaimAtomV1): boolean {
+  return (atom.claimKind === 'model_measured_cost' && /^spend\.models\.\d+\.costUSD$/u.test(atom.evidencePath))
+    || (atom.claimKind === 'project_measured_cost' && /^spend\.projects\.\d+\.costUSD$/u.test(atom.evidencePath))
+    || (atom.claimKind === 'session_measured_cost' && /^spend\.sessionsByCost\.\d+\.costUSD$/u.test(atom.evidencePath))
+}
+
 export function verifyAdvisorSynthesis(draft: AdvisorSynthesisDraftV1, evidence: AdvisorEvidence): AdvisorSynthesisVerification {
   const available = new Map(buildAdvisorVerifiedClaimAtoms(evidence).map(atom => [atom.id, atom]))
   const selectedIds = draft.claims.map(selection => selection.id)
@@ -174,10 +186,14 @@ export function verifyAdvisorSynthesis(draft: AdvisorSynthesisDraftV1, evidence:
   const blockErrors = [draft.conclusion, ...draft.why, ...draft.details]
     .map(block => verifyBlock(block, selected, available))
     .filter((item): item is string => Boolean(item))
-  const valid = !reason && blockErrors.length === 0 && draft.conclusion.claimIds.length > 0 && selectedAtoms.length > 0
+  const contributionError = hasContributionLanguage(draft.narrative) && !selectedAtoms.some(isCanonicalContributionAtom)
+    ? 'Contribution language requires a selected canonical spend contribution atom.'
+    : null
+  const verificationError = reason ?? blockErrors[0] ?? contributionError
+  const valid = !verificationError && draft.conclusion.claimIds.length > 0 && selectedAtoms.length > 0
   return {
     valid,
     claims: selectedAtoms,
-    reason: valid ? null : reason ?? blockErrors[0] ?? 'The synthesis did not contain a verified claim-atom graph.',
+    reason: valid ? null : verificationError ?? 'The synthesis did not contain a verified claim-atom graph.',
   }
 }
