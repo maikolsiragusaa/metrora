@@ -122,7 +122,7 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun
               <option value={3}>3 - maximum</option>
             </select>
           </label>
-          <span>Read-only Tools - max 4 calls/worker - max 1 round/worker</span>
+          <span>Read-only Tools - max 4 Tool calls/worker - max 1 Tool round/worker</span>
           <button className="advisor-send" type="submit" disabled={running || !task.trim()}>Start Swarm</button>
         </div>
       </form>
