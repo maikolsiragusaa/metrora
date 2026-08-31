@@ -71,6 +71,10 @@ function observedConfigurationLabel(record: Pick<PerformanceRunV1, 'observedConf
   return value.length ? value.join(' · ') : 'Not reported'
 }
 
+export function managedComponentVariantLabel(variant: ComponentStatus['variant']): string {
+  return variant === 'metal-capable' ? 'Metal-capable' : variant === 'cpu' ? 'CPU' : 'managed'
+}
+
 function PerformanceSetup({
   component,
   executablePath,
@@ -96,10 +100,15 @@ function PerformanceSetup({
 }) {
   const componentBusy = component?.state === 'installing'
   const componentCanInstall = component?.state === 'not-installed' || component?.state === 'failed' || component?.state === 'cancelled'
+  const variantLabel = managedComponentVariantLabel(component?.variant ?? null)
+  const heading = component ? 'llama.cpp benchmark runtime · ' + variantLabel : 'llama.cpp benchmark runtime'
+  const subtitle = component ? 'Official Metrora-managed ' + variantLabel + ' artifact' : 'Official Metrora-managed artifact'
+  const progressLabel = 'llama-bench ' + variantLabel + ' installation progress'
+  const installLabel = 'Install ' + variantLabel + ' component'
   return <div className="bench-performance-setup">
     <div className="bench-component-card" aria-label="Managed llama-bench component">
-      <div className="bench-component-heading"><div><b>llama.cpp benchmark runtime · CPU</b><small>Official Metrora-managed CPU component</small></div><span className={'bench-component-status bench-component-status-' + (component?.state ?? 'checking')}>{component?.state === 'installed' ? 'Installed ✓' : component?.state === 'installing' ? 'Installing…' : component?.state === 'unsupported' ? 'Unavailable' : component?.state === 'failed' ? 'Install failed' : component?.state === 'cancelled' ? 'Cancelled' : component ? 'Not installed' : 'Checking…'}</span></div>
-      {componentBusy ? <div className="bench-component-progress"><progress max={100} value={component.progress ?? undefined} aria-label="llama-bench CPU installation progress" /><span>{component.detail}</span><button type="button" className="bench-secondary-button" onClick={onCancelComponent}>Cancel install</button></div> : component?.state === 'installed' ? <p className="bench-component-detail">{component.detail} Version <code>{component.version}</code>. This managed variant is CPU-only; choose an existing accelerated executable below when GPU/native backend coverage is required.</p> : component?.state === 'unsupported' ? <p className="bench-component-detail">{component.detail} The managed CPU variant is unavailable here; choose an existing executable below if one is already available.</p> : component?.state === 'failed' || component?.state === 'cancelled' ? <div className="bench-component-detail"><p>{component.error ?? component.detail}</p><button type="button" className="bench-secondary-button" onClick={onInstallComponent}>Retry install</button></div> : componentCanInstall ? <div className="bench-component-detail"><p>{component.detail} The managed install is CPU-only. Use the executable picker below for an existing accelerated build.</p><button type="button" className="bench-secondary-button" onClick={onInstallComponent}>Install CPU component</button></div> : <p className="bench-component-detail">{component?.detail ?? 'Checking the managed CPU component…'}</p>}
+      <div className="bench-component-heading"><div><b>{heading}</b><small>{subtitle}</small></div><span className={'bench-component-status bench-component-status-' + (component?.state ?? 'checking')}>{component?.state === 'installed' ? 'Installed ✓' : component?.state === 'installing' ? 'Installing…' : component?.state === 'unsupported' ? 'Unavailable' : component?.state === 'failed' ? 'Install failed' : component?.state === 'cancelled' ? 'Cancelled' : component ? 'Not installed' : 'Checking…'}</span></div>
+      {componentBusy ? <div className="bench-component-progress"><progress max={100} value={component.progress ?? undefined} aria-label={progressLabel} /><span>{component.detail}</span><button type="button" className="bench-secondary-button" onClick={onCancelComponent}>Cancel install</button></div> : component?.state === 'installed' ? <p className="bench-component-detail">{component.detail} Version <code>{component.version}</code>. This managed artifact is {variantLabel}; artifact capability does not prove the backend or offload used by a run. Retained Performance evidence remains authoritative for observed execution.</p> : component?.state === 'unsupported' ? <p className="bench-component-detail">{component.detail} The managed artifact is unavailable here; choose an existing executable below if one is already available.</p> : component?.state === 'failed' || component?.state === 'cancelled' ? <div className="bench-component-detail"><p>{component.error ?? component.detail}</p><button type="button" className="bench-secondary-button" onClick={onInstallComponent}>Retry install</button></div> : componentCanInstall ? <div className="bench-component-detail"><p>{component.detail} The managed artifact capability is {variantLabel}. Use the executable picker below for an existing build when another backend is required.</p><button type="button" className="bench-secondary-button" onClick={onInstallComponent}>{installLabel}</button></div> : <p className="bench-component-detail">{component?.detail ?? 'Checking the managed component…'}</p>}
     </div>
     <div className="bench-performance-file-row">
       <label>llama-bench executable<input aria-label="llama-bench executable" value={executablePath} readOnly placeholder="Install the managed component or choose an executable" /></label>

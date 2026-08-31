@@ -133,28 +133,31 @@ not converted into zero throughput or a successful result.
 Metrora does not bundle llama.cpp binaries in the application. Desktop can
 explicitly install the official pinned `llama-bench` release `b10621` into
 its Metrora-owned component directory after HTTPS download and checksum
-verification; provenance records the exact `cpu` backend and `cpu` variant.
-The managed catalog is deliberately CPU-only: it is a truthful portable
-benchmark fallback, not a claim of native GPU coverage. Its exact official
-release assets and SHA-256 values are:
+verification; provenance records the exact artifact capability. The current
+managed fallback is CPU on Windows and Linux, CPU on macOS x64, and
+Metal-capable on macOS arm64 because the official arm64 artifact embeds the
+Metal backend. The upstream `b10621` release is commit
+`c1d0e7a004015f23bc0233470b747b596f29b264`; its release matrix enables
+embedded Metal for macOS arm64 and disables Metal for macOS x64. Its exact
+official release assets, capabilities and SHA-256 values are:
 
-| Platform | Official asset | SHA-256 |
-| --- | --- | --- |
-| Windows x64 | `llama-b10621-bin-win-cpu-x64.zip` | `0e8b65e650e369f70f8307d890508886f171ef4fb00facccddd4a1b7ffdaca51` |
-| Windows arm64 | `llama-b10621-bin-win-cpu-arm64.zip` | `c072e8bb057751587243c1e0ed28d82e23c7e0544a426e0d476f1e77792bf3ce` |
-| macOS x64 | `llama-b10621-bin-macos-x64.tar.gz` | `33c44e036e0e223f71a29fc74a0ab3e130ca9eadeb032ecc1c7af25985b8b91b` |
-| macOS arm64 | `llama-b10621-bin-macos-arm64.tar.gz` | `429c8270608600188035e5e92f7d78dffb7900904fe7dd7e6a84f48068cd13cf` |
-| Linux x64 | `llama-b10621-bin-ubuntu-x64.tar.gz` | `91d7b03ddae498a39f28fdb85d84d2b4a0fd3838d10b4f897e0ef8975bb9b583` |
-| Linux arm64 | `llama-b10621-bin-ubuntu-arm64.tar.gz` | `95940151be63492f70f659da420b268244cc83a6ee70e310d2600ccdb7ea4deb` |
+| Platform | Artifact capability | Official asset | SHA-256 |
+| --- | --- | --- | --- |
+| Windows x64 | CPU | `llama-b10621-bin-win-cpu-x64.zip` | `0e8b65e650e369f70f8307d890508886f171ef4fb00facccddd4a1b7ffdaca51` |
+| Windows arm64 | CPU | `llama-b10621-bin-win-cpu-arm64.zip` | `c072e8bb057751587243c1e0ed28d82e23c7e0544a426e0d476f1e77792bf3ce` |
+| macOS x64 | CPU | `llama-b10621-bin-macos-x64.tar.gz` | `33c44e036e0e223f71a29fc74a0ab3e130ca9eadeb032ecc1c7af25985b8b91b` |
+| macOS arm64 | Metal-capable | `llama-b10621-bin-macos-arm64.tar.gz` | `429c8270608600188035e5e92f7d78dffb7900904fe7dd7e6a84f48068cd13cf` |
+| Linux x64 | CPU | `llama-b10621-bin-ubuntu-x64.tar.gz` | `91d7b03ddae498a39f28fdb85d84d2b4a0fd3838d10b4f897e0ef8975bb9b583` |
+| Linux arm64 | CPU | `llama-b10621-bin-ubuntu-arm64.tar.gz` | `95940151be63492f70f659da420b268244cc83a6ee70e310d2600ccdb7ea4deb` |
 
-The same upstream `b10621` release publishes backend-specific Windows CUDA,
-Vulkan, OpenVINO, SYCL and ROCm assets. The CUDA packages are paired with
-separate `cudart`/cuBLAS DLL archives, so selecting one safely would require
-trusted local backend detection plus an atomic multi-asset install. This wave
-has neither a trusted pre-install hardware detector nor that transaction
-contract; it therefore does not auto-download or imply accelerated coverage.
-Users can still select an existing accelerated `llama-bench` executable
-manually. See the upstream [b10621 release](https://github.com/ggml-org/llama.cpp/releases/tag/b10621),
+The catalog/provenance capability is not an observation of a particular
+Performance execution. The retained run's reported backend, runtime and
+observed configuration remain authoritative for what actually ran. The same
+upstream release publishes Windows CUDA, Vulkan, OpenVINO, SYCL and ROCm
+assets; CUDA also has companion runtime archives. Trusted hardware selection
+and atomic multi-asset acquisition remain out of scope, so this wave does not
+auto-download those variants. Users can still select an existing accelerated
+`llama-bench` executable manually. See the upstream [b10621 release](https://github.com/ggml-org/llama.cpp/releases/tag/b10621),
 [release attestation](https://github.com/ggml-org/llama.cpp/attestations/42818481)
 and [release packaging workflow](https://raw.githubusercontent.com/ggml-org/llama.cpp/master/.github/workflows/release.yml)
 for the characterized asset composition. Provenance is retained and the CLI

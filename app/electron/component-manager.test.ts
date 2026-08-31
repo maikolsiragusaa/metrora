@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { gzipSync } from 'node:zlib'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -77,6 +78,16 @@ function fixtureCatalog(data: Uint8Array) {
   return { ...base, checksum: 'sha256:' + createHash('sha256').update(data).digest('hex') }
 }
 
+function tarGz(name: string, data: Uint8Array): Uint8Array {
+  const header = Buffer.alloc(512)
+  Buffer.from(name, 'utf8').copy(header, 0)
+  Buffer.from(data.byteLength.toString(8).padStart(11, '0'), 'ascii').copy(header, 124)
+  header[156] = 48
+  const body = Buffer.from(data)
+  const padding = Buffer.alloc((512 - (body.length % 512)) % 512)
+  return gzipSync(Buffer.concat([header, body, padding, Buffer.alloc(1024)]))
+}
+
 function responseFor(data: Uint8Array): Response {
   return new Response(Buffer.from(data), { status: 200, headers: { 'content-length': String(data.byteLength) } })
 }
@@ -97,6 +108,31 @@ describe('Metrora Component Manager V1', () => {
     })
     expect(() => validateComponentSource('https://example.com/llama-bench.zip')).toThrowError(ComponentManagerError)
     expect(() => validateComponentSource('https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cpu-x64.zip?redirect=1')).toThrowError(/not approved/u)
+  })
+
+  it('classifies the managed artifact capability per platform', async () => {
+    expect(getLlamaBenchCatalogEntry('win32', 'x64')).toMatchObject({ backend: 'cpu', variant: 'cpu' })
+    expect(getLlamaBenchCatalogEntry('linux', 'arm64')).toMatchObject({ backend: 'cpu', variant: 'cpu' })
+    expect(getLlamaBenchCatalogEntry('darwin', 'x64')).toMatchObject({ backend: 'cpu', variant: 'cpu' })
+    expect(getLlamaBenchCatalogEntry('darwin', 'arm64')).toMatchObject({
+      source: 'https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-macos-arm64.tar.gz',
+      backend: 'metal',
+      variant: 'metal-capable',
+      checksum: 'sha256:429c8270608600188035e5e92f7d78dffb7900904fe7dd7e6a84f48068cd13cf',
+    })
+
+    const archive = tarGz('bin/llama-bench', Buffer.from('fixture'))
+    const base = getLlamaBenchCatalogEntry('darwin', 'arm64')!
+    const manager = new ComponentManager({
+      rootDir: await root(),
+      platform: 'darwin',
+      arch: 'arm64',
+      catalog: { ...base, checksum: 'sha256:' + createHash('sha256').update(archive).digest('hex') },
+      fetchImpl: vi.fn(async () => responseFor(archive)),
+    })
+    const installed = await manager.install()
+    expect(installed.provenance).toMatchObject({ backend: 'metal', variant: 'metal-capable', checksumVerified: true })
+    await expect(manager.getStatus()).resolves.toMatchObject({ backend: 'metal', variant: 'metal-capable', provenance: installed.provenance })
   })
 
   it('downloads, verifies, extracts, and retains official provenance', async () => {

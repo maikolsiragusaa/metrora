@@ -6,7 +6,7 @@ import { metrora, normalizeCliError } from '../lib/ipc'
 import type { BenchComparison, BenchEvaluation, BenchModelDiscovery, BenchTaskResult, ComponentInstallEvent, ComponentStatus, PerformanceBenchRequest, PerformanceHistoryReport } from '../lib/metrora-bridge-types'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
-import { PerformanceBenchSection } from './bench/PerformanceBenchSection'
+import { managedComponentVariantLabel, PerformanceBenchSection } from './bench/PerformanceBenchSection'
 
 function formatNumber(value: number): string {
   return value >= 100 || Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
@@ -404,7 +404,7 @@ export function Bench() {
   const runPerformance = async () => {
     if (!performanceExecutable || !performanceModel) {
       setError(!performanceExecutable
-        ? 'Install the official CPU llama-bench component (or choose an existing executable), then choose a .gguf model.'
+        ? 'Install the official ' + managedComponentVariantLabel(performanceComponent?.variant ?? null) + ' llama-bench component (or choose an existing executable), then choose a .gguf model.'
         : 'Choose a .gguf model before running Performance.')
       return
     }

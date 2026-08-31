@@ -17,8 +17,8 @@ type LlamaBenchAsset = {
   assetName: string
   archiveFormat: ArchiveFormat
   checksum: string
-  backend: 'cpu'
-  variant: 'cpu'
+  backend: ComponentBackend
+  variant: ComponentVariant
 }
 
 const LLAMA_BENCH_ASSETS: Record<string, LlamaBenchAsset> = {
@@ -47,8 +47,8 @@ const LLAMA_BENCH_ASSETS: Record<string, LlamaBenchAsset> = {
     assetName: 'llama-b10621-bin-macos-arm64.tar.gz',
     archiveFormat: 'tar.gz',
     checksum: '429c8270608600188035e5e92f7d78dffb7900904fe7dd7e6a84f48068cd13cf',
-    backend: 'cpu',
-    variant: 'cpu',
+    backend: 'metal',
+    variant: 'metal-capable',
   },
   'linux-x64': {
     assetName: 'llama-b10621-bin-ubuntu-x64.tar.gz',
@@ -69,8 +69,9 @@ const LLAMA_BENCH_ASSETS: Record<string, LlamaBenchAsset> = {
 const EXECUTABLE_NAMES = ['llama-bench', 'llama-bench.exe'] as const
 
 export type ComponentId = typeof LLAMA_BENCH_COMPONENT_ID
-export type ComponentBackend = 'cpu'
-export type ComponentVariant = 'cpu'
+/** Managed artifact capability metadata; this is not the observed backend of a Performance run. */
+export type ComponentBackend = 'cpu' | 'metal'
+export type ComponentVariant = 'cpu' | 'metal-capable'
 export type ComponentInstallState = 'not-installed' | 'installing' | 'installed' | 'failed' | 'cancelled' | 'unsupported'
 export type ComponentInstallPhase = 'idle' | 'downloading' | 'verifying' | 'extracting' | 'installed' | 'failed' | 'cancelled'
 
@@ -80,6 +81,7 @@ export type ComponentProvenance = {
   version: string
   checksum: string
   checksumVerified: true
+  /** Capability compiled into the managed artifact, not observed run telemetry. */
   backend: ComponentBackend
   variant: ComponentVariant
   installedAt: string
@@ -92,6 +94,7 @@ export type ComponentStatus = {
   state: ComponentInstallState
   phase: ComponentInstallPhase
   version: string | null
+  /** Capability compiled into the managed artifact, not observed run telemetry. */
   backend: ComponentBackend | null
   variant: ComponentVariant | null
   progress: number | null
@@ -111,6 +114,7 @@ export type ComponentCatalogEntry = {
   source: string
   checksum: string
   archiveFormat: ArchiveFormat
+  /** Capability compiled into the managed artifact, not observed run telemetry. */
   backend: ComponentBackend
   variant: ComponentVariant
   executableNames: readonly string[]
@@ -189,6 +193,14 @@ function entryFor(platform: string, arch: string): ComponentCatalogEntry | null 
     platform,
     arch,
   }
+}
+
+function isArtifactCapabilityPair(backend: unknown, variant: unknown): backend is ComponentBackend {
+  return (backend === 'cpu' && variant === 'cpu') || (backend === 'metal' && variant === 'metal-capable')
+}
+
+function artifactVariantLabel(variant: ComponentVariant | null | undefined): string {
+  return variant === 'metal-capable' ? 'Metal-capable' : variant === 'cpu' ? 'CPU' : 'managed'
 }
 
 export function getLlamaBenchCatalogEntry(platform: string = process.platform, arch: string = process.arch): ComponentCatalogEntry | null {
@@ -315,7 +327,7 @@ async function fetchArtifact(entry: ComponentCatalogEntry, signal: AbortSignal, 
 function manifestFrom(value: unknown): ComponentManifest | null {
   if (!isRecord(value) || value.schemaVersion !== COMPONENT_MANAGER_SCHEMA_VERSION || value.id !== LLAMA_BENCH_COMPONENT_ID || value.version !== LLAMA_BENCH_COMPONENT_VERSION || typeof value.executableRelativePath !== 'string' || !isRecord(value.provenance)) return null
   const provenance = value.provenance
-  if (provenance.repository !== 'https://github.com/ggml-org/llama.cpp' || typeof provenance.source !== 'string' || typeof provenance.version !== 'string' || typeof provenance.checksum !== 'string' || provenance.checksumVerified !== true || provenance.backend !== 'cpu' || provenance.variant !== 'cpu' || typeof provenance.installedAt !== 'string') return null
+  if (provenance.repository !== 'https://github.com/ggml-org/llama.cpp' || typeof provenance.source !== 'string' || typeof provenance.version !== 'string' || typeof provenance.checksum !== 'string' || provenance.checksumVerified !== true || !isArtifactCapabilityPair(provenance.backend, provenance.variant) || typeof provenance.installedAt !== 'string') return null
   try { safeRelativePath(value.executableRelativePath) } catch { return null }
   try { validateComponentSource(provenance.source) } catch { return null }
   if (!/^sha256:[0-9a-f]{64}$/u.test(provenance.checksum)) return null
@@ -373,7 +385,7 @@ export class ComponentManager {
       ensureInside(installDir, executablePath)
       const info = await stat(executablePath)
       if (!info.isFile()) return null
-      return statusBase(entry, 'installed', 'installed', 'Managed llama-bench CPU component is installed and checksum-verified.', null, 100, executablePath, manifest.provenance)
+      return statusBase(entry, 'installed', 'installed', 'Managed llama-bench ' + artifactVariantLabel(entry.variant) + ' component is installed and checksum-verified.', null, 100, executablePath, manifest.provenance)
     } catch {
       return null
     }
@@ -382,14 +394,17 @@ export class ComponentManager {
   async getStatus(id: string = LLAMA_BENCH_COMPONENT_ID): Promise<ComponentStatus> {
     if (id !== LLAMA_BENCH_COMPONENT_ID) throw new ComponentManagerError('invalid-component', 'Unknown component.')
     const active = this.flights.get(LLAMA_BENCH_COMPONENT_ID)
-    if (active) return this.statuses.get(LLAMA_BENCH_COMPONENT_ID) ?? statusBase(this.entry(), 'installing', 'downloading', 'Preparing official CPU component download.', null, 0)
+    if (active) {
+      const entry = this.entry()
+      return this.statuses.get(LLAMA_BENCH_COMPONENT_ID) ?? statusBase(entry, 'installing', 'downloading', 'Preparing official ' + artifactVariantLabel(entry?.variant) + ' component download.', null, 0)
+    }
     const remembered = this.statuses.get(LLAMA_BENCH_COMPONENT_ID)
     if (remembered?.state === 'failed' || remembered?.state === 'cancelled') return { ...remembered, provenance: remembered.provenance ? { ...remembered.provenance } : null }
     const entry = this.entry()
     if (!entry) return statusBase(null, 'unsupported', 'idle', 'No official llama-bench artifact is available for this platform.', null, null)
     const installed = await this.installedStatus(entry)
     if (installed) return this.emit(installed)
-    return this.emit(statusBase(entry, 'not-installed', 'idle', 'The official Metrora-managed llama-bench CPU component is not installed.', null, null))
+    return this.emit(statusBase(entry, 'not-installed', 'idle', 'The official Metrora-managed llama-bench ' + artifactVariantLabel(entry.variant) + ' component is not installed.', null, null))
   }
 
   async install(id: string = LLAMA_BENCH_COMPONENT_ID): Promise<ComponentStatus> {
@@ -424,7 +439,8 @@ export class ComponentManager {
     const staging = join(this.componentRoot(), '.staging-' + process.pid + '-' + Date.now().toString(36))
     let installedDir: string | null = null
     const emit = (status: ComponentStatus): ComponentStatus => this.emit(status)
-    emit(statusBase(entry, 'installing', 'downloading', 'Preparing official CPU component download.', null, 0))
+    const variantLabel = artifactVariantLabel(entry.variant)
+    emit(statusBase(entry, 'installing', 'downloading', 'Preparing official ' + variantLabel + ' component download.', null, 0))
     try {
       await rm(staging, { recursive: true, force: true })
       await mkdir(staging, { recursive: true })
@@ -433,7 +449,7 @@ export class ComponentManager {
       emit(statusBase(entry, 'installing', 'verifying', 'Verifying the official component checksum.', null, 94))
       const digest = createHash('sha256').update(bytes).digest('hex')
       if (!SHA256_PATTERN.test(digest) || 'sha256:' + digest !== entry.checksum) throw new ComponentManagerError('checksum-mismatch', 'The downloaded component checksum did not match the authoritative checksum.')
-      emit(statusBase(entry, 'installing', 'extracting', 'Extracting and validating the managed CPU component.', null, 97))
+      emit(statusBase(entry, 'installing', 'extracting', 'Extracting and validating the managed ' + variantLabel + ' component.', null, 97))
       const payload = join(staging, 'payload')
       await mkdir(payload, { recursive: true })
       let executableRelativePath: string
@@ -462,7 +478,7 @@ export class ComponentManager {
       const manifest: ComponentManifest = { schemaVersion: COMPONENT_MANAGER_SCHEMA_VERSION, id: entry.id, version: entry.version, executableRelativePath, provenance }
       await writeFile(join(installDir, 'component.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8')
       const executablePath = join(installDir, executableRelativePath)
-      const installed = statusBase(entry, 'installed', 'installed', 'Managed llama-bench CPU component installed and verified.', null, 100, executablePath, provenance)
+      const installed = statusBase(entry, 'installed', 'installed', 'Managed llama-bench ' + variantLabel + ' component installed and verified.', null, 100, executablePath, provenance)
       emit(installed)
       await rm(staging, { recursive: true, force: true })
       return installed
