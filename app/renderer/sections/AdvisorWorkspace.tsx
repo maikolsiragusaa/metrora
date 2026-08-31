@@ -8,6 +8,7 @@ import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { AdvisorComposer } from './AdvisorComposer'
 import { AdvisorRuntimeControls } from './AdvisorRuntimeControls'
 import { AnswerCard, ToolActivity, type HarnessToolActivity } from './AdvisorAnswerCard'
+import { SwarmWorkspace } from './SwarmWorkspace'
 
 type AdvisorWorkspaceMessage = {
   id: string
@@ -23,6 +24,10 @@ type AdvisorWorkspaceConversation = {
 }
 
 type AdvisorWorkspaceProps = {
+  mode: 'chat' | 'swarm'
+  swarmExperimentalEnabled: boolean
+  onModeChange: (mode: 'chat' | 'swarm') => void
+  swarm: ComponentProps<typeof SwarmWorkspace>
   projectOptions: Array<{ id: string; name: string }>
   modelOptions: string[]
   providerOptions: Array<{ id: string; label: string }>
@@ -75,6 +80,10 @@ const PROMPTS = [
 ]
 
 export function AdvisorWorkspace({
+  mode,
+  swarmExperimentalEnabled,
+  onModeChange,
+  swarm,
   projectOptions,
   modelOptions,
   providerOptions,
@@ -138,7 +147,13 @@ export function AdvisorWorkspace({
       <main className="advisor-main">
         <header className="advisor-main-head">
           <div><p className="advisor-kicker">HARNESS · TOOLS READ-ONLY</p><h1>Ask Harness</h1><p className="advisor-subtitle">Talk naturally about Metrora evidence, your code, or anything you want to understand. Actions require confirmation.</p></div>
-          <AdvisorRuntimeControls {...runtimeControls} />
+          <div className="advisor-main-head-actions">
+            <div className="advisor-mode-switch" role="tablist" aria-label="Harness mode">
+              <button type="button" role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => onModeChange('chat')}>Chat</button>
+              <button type="button" role="tab" aria-selected={mode === 'swarm'} className={mode === 'swarm' ? 'active' : ''} disabled={!swarmExperimentalEnabled} onClick={() => onModeChange('swarm')}>Swarm - {swarmExperimentalEnabled ? 'Experimental' : 'Soon'}</button>
+            </div>
+            <AdvisorRuntimeControls {...runtimeControls} />
+          </div>
         </header>
         <div className="advisor-scope-bar" aria-label="Harness context">
           <span className="advisor-scope-label">Context</span>
@@ -158,7 +173,7 @@ export function AdvisorWorkspace({
         {runtimeUnavailable ? <div className="advisor-runtime-note"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback; connect a supported local runtime to unlock free-form conversation and bounded evidence tools. <button type="button" onClick={onRetryRuntime}>Try again</button></div> : null}
         {overviewError ? <div className="advisor-runtime-note warning"><strong>Canonical Metrora data is unavailable.</strong> {overviewError}</div> : null}
         <div className="advisor-thread" aria-live="polite">
-          {messages.length === 0 ? (
+          {mode === 'swarm' ? <SwarmWorkspace {...swarm} /> : messages.length === 0 ? (
             <div className="advisor-welcome">
               <span className="advisor-welcome-mark">M</span>
               <p className="advisor-kicker">METRORA HARNESS</p>
@@ -186,10 +201,10 @@ export function AdvisorWorkspace({
           {error ? <div className="advisor-error" role="alert"><strong>Harness unavailable.</strong> {error}<button type="button" onClick={() => { if (failedRequestPresent) onRetry() }}>Retry</button></div> : null}
           {notice ? <div className="advisor-notice" role="status">{notice}</div> : null}
         </div>
-        <AdvisorComposer
+        {mode === 'chat' ? <AdvisorComposer
           composer={composer} loadingQuestion={loadingQuestion} hostedSubmitBlockReason={hostedSubmitBlockReason}
           notice={notice} onChange={onComposerChange} onAsk={onAsk} onCancel={onCancel}
-        />
+        /> : null}
       </main>
 
       <aside className="advisor-evidence" aria-label="Harness evidence">
