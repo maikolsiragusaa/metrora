@@ -91,6 +91,33 @@ export async function digestWorkerResult(result: SwarmWorkerResultV1): Promise<s
   })
 }
 
+/**
+ * Return a new bounded worker result with its canonical digest finalized.
+ * The digest excludes the digest field itself, so every publication path can
+ * reuse this helper without mutating an already-returned result.
+ */
+export async function finalizeSwarmWorkerResult(result: SwarmWorkerResultV1): Promise<SwarmWorkerResultV1> {
+  const canonical: SwarmWorkerResultV1 = {
+    ...result,
+    runtime: sanitizeSwarmIdentity(result.runtime),
+    model: sanitizeSwarmIdentity(result.model),
+    toolActivity: result.toolActivity.slice(0, SWARM_EVIDENCE_MAX_REFS).map(item => ({
+      name: sanitizeSwarmText(item.name, 96),
+      status: item.status,
+    })),
+    evidenceRefs: result.evidenceRefs.slice(0, SWARM_EVIDENCE_MAX_REFS).map(ref => ({
+      id: sanitizeSwarmText(ref.id, 120),
+      label: sanitizeSwarmText(ref.label, 240),
+    })),
+    evidenceSummary: boundedSwarmText(result.evidenceSummary),
+    answer: boundedSwarmText(result.answer),
+    artifactSummary: result.artifactSummary === null ? null : boundedSwarmText(result.artifactSummary),
+    errors: result.errors.slice(0, 4).map(error => boundedSwarmText(error, 400)),
+    resultDigest: '',
+  }
+  return { ...canonical, resultDigest: await digestWorkerResult(canonical) }
+}
+
 export async function buildSwarmEvidenceV1(input: {
   request: Pick<SwarmWorkerRequestV1, 'runId' | 'task' | 'scope' | 'allowedToolNames'>
   workers: readonly SwarmWorkerResultV1[]
@@ -102,20 +129,23 @@ export async function buildSwarmEvidenceV1(input: {
   const synthesis = input.synthesis
   const taskDigest = await createSwarmDigest(boundedSwarmText(input.request.task, SWARM_EVIDENCE_MAX_TASK_BYTES))
   const scopeDigest = await createSwarmDigest(input.request.scope)
-  const workers = await Promise.all(input.workers.map(async worker => ({
-    workerId: worker.workerId,
-    role: worker.role,
-    runtime: sanitizeSwarmIdentity(worker.runtime),
-    model: sanitizeSwarmIdentity(worker.model),
-    status: worker.status,
-    allowedToolNames: input.request.allowedToolNames.slice(0, 16),
-    toolNamesUsed: [...new Set(worker.toolActivity.map(item => item.name))].slice(0, 16),
-    startedAt: worker.startedAt,
-    endedAt: worker.endedAt,
-    resultDigest: /^[0-9a-f]{64}$/u.test(worker.resultDigest) ? worker.resultDigest : await digestWorkerResult(worker),
-    answerDigest: await createSwarmDigest(boundedSwarmText(worker.answer)),
-    usage: boundedUsage(worker.usage),
-  })))
+  const workers = await Promise.all(input.workers.map(async worker => {
+    const canonical = await finalizeSwarmWorkerResult(worker)
+    return {
+      workerId: canonical.workerId,
+      role: canonical.role,
+      runtime: canonical.runtime,
+      model: canonical.model,
+      status: canonical.status,
+      allowedToolNames: input.request.allowedToolNames.slice(0, 16),
+      toolNamesUsed: [...new Set(canonical.toolActivity.map(item => item.name))].slice(0, 16),
+      startedAt: canonical.startedAt,
+      endedAt: canonical.endedAt,
+      resultDigest: canonical.resultDigest,
+      answerDigest: await createSwarmDigest(boundedSwarmText(canonical.answer)),
+      usage: boundedUsage(canonical.usage),
+    }
+  }))
   const synthesisStatus = synthesis?.status ?? 'not-requested'
   const answerDigest = synthesis ? await createSwarmDigest(boundedSwarmText(synthesis.answer)) : null
   const evidenceDigest = synthesis ? await createSwarmDigest(boundedSwarmText(synthesis.evidenceSummary)) : null

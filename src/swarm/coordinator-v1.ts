@@ -13,13 +13,13 @@ import type {
   SwarmWorkerProfileV1,
 } from './contract-v1'
 import { workerEventStatusForResult, safeSwarmEvent } from './events-v1'
-import { buildSwarmEvidenceV1, boundedSwarmText, sanitizeSwarmIdentity, SWARM_EVIDENCE_MAX_TASK_BYTES } from './evidence-v1'
+import { buildSwarmEvidenceV1, boundedSwarmText, finalizeSwarmWorkerResult, sanitizeSwarmIdentity, SWARM_EVIDENCE_MAX_TASK_BYTES } from './evidence-v1'
 import type { WorkerAdapterV1, WorkerExecutionV1 } from './worker-adapter-v1'
 
 export const SWARM_DEFAULT_WORKERS = 2
 export const SWARM_MAX_WORKERS = 3
 export const SWARM_DEFAULT_MAX_TOOL_CALLS = 4
-export const SWARM_DEFAULT_MAX_TOOL_ROUNDS = 2
+export const SWARM_DEFAULT_MAX_TOOL_ROUNDS = 1
 export const SWARM_DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024
 export const SWARM_DEFAULT_WORKER_TIMEOUT_MS = 120_000
 export const SWARM_DEFAULT_RUN_TIMEOUT_MS = 180_000
@@ -287,9 +287,10 @@ export function createBaselineSwarmCoordinator(options: BaselineSwarmCoordinator
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
-    const results = Array.isArray(outcome)
+    const rawResults = Array.isArray(outcome)
       ? outcome
       : requests.map(request => workerResults.get(request.workerId) ?? terminalWorkerResult(request, cancelled ? 'cancelled' : 'timeout', now(), 'Worker did not return before the Swarm deadline.'))
+    const results = await Promise.all(rawResults.map(finalizeSwarmWorkerResult))
     const successCount = results.filter(successful).length
     const allWorkerTimeout = results.length > 0 && results.every(result => result.status === 'timeout')
     let finalStatus: SwarmRunStatusV1 = cancelled

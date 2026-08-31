@@ -3,10 +3,12 @@ import {
   createBaselineSwarmCoordinator,
   createBaselineWorkerRequests,
   SWARM_DEFAULT_WORKERS,
+  SWARM_DEFAULT_MAX_TOOL_ROUNDS,
   SWARM_MAX_WORKERS,
 } from '../src/swarm/coordinator-v1'
 import type {
   SwarmEventV1,
+  SwarmRunResultV1,
   SwarmWorkerRequestV1,
   SwarmWorkerResultV1,
 } from '../src/swarm/contract-v1'
@@ -47,6 +49,14 @@ function result(request: SwarmWorkerRequestV1, status: SwarmWorkerResultV1['stat
     usage: null,
     resultDigest: 'fixture-' + request.workerId,
   }
+}
+
+function expectDigestIdentity(output: SwarmRunResultV1): void {
+  expect(output.workers).toHaveLength(output.evidence.workers.length)
+  output.workers.forEach((worker, index) => {
+    expect(worker.resultDigest).toMatch(/^[0-9a-f]{64}$/u)
+    expect(output.evidence.workers[index]?.resultDigest).toBe(worker.resultDigest)
+  })
 }
 
 class FixtureAdapter implements WorkerAdapterV1 {
@@ -135,6 +145,8 @@ describe('public Swarm baseline coordinator', () => {
     expect(requests).toHaveLength(SWARM_DEFAULT_WORKERS)
     expect(requests.map(request => request.role)).toEqual(['investigator', 'verifier'])
     expect(requests.map(request => request.profile)).toEqual(['fixed-investigator-v1', 'fixed-verifier-v1'])
+    expect(requests[0]?.limits.maxToolRounds).toBe(SWARM_DEFAULT_MAX_TOOL_ROUNDS)
+    expect(() => createBaselineWorkerRequests({ ...input, runId: 'two-rounds', limits: { maxToolRounds: 2 } })).toThrow()
     const safeIdentity = createBaselineWorkerRequests({
       ...input,
       runId: 'run-safe-identity',
@@ -156,6 +168,7 @@ describe('public Swarm baseline coordinator', () => {
     expect(adapter.maxActive).toBe(2)
     expect(events.some(event => event.kind === 'worker' && event.status === 'tool-started')).toBe(true)
     expect(events.at(-1)).toMatchObject({ kind: 'swarm', status: 'completed' })
+    expectDigestIdentity(output)
   })
 
   it('isolates one failed worker and returns truthful partial completion', async () => {
@@ -163,6 +176,7 @@ describe('public Swarm baseline coordinator', () => {
     expect(output.status).toBe('partial')
     expect(output.workers.map(worker => worker.status)).toEqual(['completed', 'failed'])
     expect(output.synthesis?.answer).toContain('Partial evidence')
+    expectDigestIdentity(output)
   })
 
   it('marks complete failure as failed without inventing a synthesis answer', async () => {
@@ -170,6 +184,7 @@ describe('public Swarm baseline coordinator', () => {
     expect(output.status).toBe('failed')
     expect(output.synthesis).toBeNull()
     expect(output.evidence.finalStatus).toBe('failed')
+    expectDigestIdentity(output)
   })
 
   it('fans cancellation out and suppresses a late worker result/event', async () => {
@@ -183,6 +198,7 @@ describe('public Swarm baseline coordinator', () => {
     expect(output.status).toBe('cancelled')
     expect(output.workers.every(worker => worker.status === 'cancelled')).toBe(true)
     expect(adapter.cancelled.length).toBeGreaterThanOrEqual(2)
+    expectDigestIdentity(output)
     adapter.resolveLate()
     await Promise.resolve()
     expect(events).toHaveLength(eventCount)
@@ -197,6 +213,7 @@ describe('public Swarm baseline coordinator', () => {
       const output = await promise
       expect(output.status).toBe('timeout')
       expect(output.workers.every(worker => worker.status === 'timeout')).toBe(true)
+      expectDigestIdentity(output)
       adapter.resolveLate()
     } finally {
       vi.useRealTimers()
@@ -217,6 +234,7 @@ describe('public Swarm baseline coordinator', () => {
       expect(output.status).toBe('timeout')
       expect(output.workers.every(worker => worker.status === 'timeout')).toBe(true)
       expect(output.synthesis).toBeNull()
+      expectDigestIdentity(output)
       adapter.resolveLate()
     } finally {
       vi.useRealTimers()

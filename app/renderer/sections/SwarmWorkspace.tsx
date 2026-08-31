@@ -94,7 +94,7 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun
         <div>
           <span className="swarm-badge">Swarm - Experimental</span>
           <h2>Run a bounded multi-worker investigation</h2>
-          <p>Two transparent workers use the selected Harness runtime and canonical read-only Metrora Tools. No worker can execute actions.</p>
+          <p>Bounded transparent workers use the selected Harness runtime and canonical read-only Metrora Tools. No worker can execute actions.</p>
         </div>
         <div className="swarm-runtime-identity">
           <span>Runtime</span>
@@ -122,7 +122,7 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, onRun
               <option value={3}>3 - maximum</option>
             </select>
           </label>
-          <span>Read-only Tools - max 4 calls/worker - max 2 rounds</span>
+          <span>Read-only Tools - max 4 calls/worker - max 1 round/worker</span>
           <button className="advisor-send" type="submit" disabled={running || !task.trim()}>Start Swarm</button>
         </div>
       </form>

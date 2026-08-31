@@ -78,8 +78,10 @@ future private Swarm controller.
 
 - Confirm the default is two workers and the UI maximum is three.
 - Confirm more than three workers is rejected by the coordinator.
-- Confirm each worker is limited to four Tool calls, two Tool rounds, bounded
-  output, an individual timeout, and the bounded whole-run timeout.
+- Confirm each worker is limited to four Tool calls and one planning/Tool round,
+  bounded output, an individual timeout, and the bounded whole-run timeout.
+- Confirm the native V1 worker does not add a second planning or replanning loop;
+  future multi-round workers require a separately defined lifecycle contract.
 - Confirm there is no recursive spawning and no unbounded retry loop.
 
 ## Regression

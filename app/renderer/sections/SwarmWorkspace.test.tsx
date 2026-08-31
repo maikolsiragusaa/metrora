@@ -34,6 +34,8 @@ describe('Swarm Harness surface', () => {
     }
     render(<SwarmWorkspace enabled runtimeLabel="Ollama local" modelLabel="model-a" state={state} onRun={onRun} onCancel={onCancel} />)
     expect(screen.getByText('Swarm - Experimental')).toBeInTheDocument()
+    expect(screen.getByText(/Bounded transparent workers use the selected Harness runtime/)).toBeInTheDocument()
+    expect(screen.getByText('Read-only Tools - max 4 calls/worker - max 1 round/worker')).toBeInTheDocument()
     expect(screen.getByText('get_spend_snapshot - Running')).toBeInTheDocument()
     expect(screen.getByText('2 workers - 0 complete - Cancel available')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))

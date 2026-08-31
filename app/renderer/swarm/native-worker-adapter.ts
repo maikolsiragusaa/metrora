@@ -16,8 +16,7 @@ import type {
 import type { MenubarPayload } from '../lib/types'
 import {
   boundedSwarmText,
-  createSwarmDigest,
-  digestWorkerResult,
+  finalizeSwarmWorkerResult,
   sanitizeSwarmIdentity,
   sanitizeSwarmText,
 } from '../../../src/swarm/evidence-v1'
@@ -230,8 +229,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
     const activityEvents: AdvisorToolEvent[] = []
     const activity = () => toolActivityFromEvents(activityEvents)
     const finish = async (result: SwarmWorkerResultV1): Promise<SwarmWorkerResultV1> => {
-      const withDigest = { ...result, resultDigest: '' }
-      return { ...withDigest, resultDigest: await digestWorkerResult(withDigest) }
+      return finalizeSwarmWorkerResult(result)
     }
     try {
       throwIfAborted(signal)
@@ -255,12 +253,14 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       const definitions = registry.definitions.filter(definition => allowed.has(definition.function.name)).slice(0, 16)
       const contract = filteredToolContract(registry.contract, definitions)
       let toolCalls = 0
-      let toolRounds = 0
+      // The existing Harness runtime has one bounded planning/Tool phase
+      // followed by synthesis. V1 does not implement a second model loop.
+      const toolRounds = 1
+      const ensureToolRoundAllowed = () => {
+        if (toolRounds > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
+      }
       const onToolEvent = (event: AdvisorToolEvent) => {
-        if (event.status === 'queued') {
-          if (toolRounds === 0) toolRounds = 1
-          if (toolRounds > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
-        }
+        if (event.status === 'queued' || event.status === 'started') ensureToolRoundAllowed()
         activityEvents.push(event)
         if (event.status === 'started' || event.status === 'queued') {
           observe({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: request.runId, workerId: request.workerId, role: request.role, status: 'tool-started', at: this.now(), toolName: safeToolName(event.name) })
@@ -272,8 +272,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         throwIfAborted(signal)
         if (!allowed.has(name) || !definitions.some(definition => definition.function.name === name)) throw new SwarmBoundsError('Worker requested a Tool outside its immutable allowlist.')
         if (toolCalls >= request.limits.maxToolCalls) throw new SwarmBoundsError('Worker Tool-call limit reached.')
-        if (toolRounds === 0) toolRounds = 1
-        if (toolRounds > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
+        ensureToolRoundAllowed()
         toolCalls += 1
         return registry.execute(name, args, toolSignal ?? signal)
       }
@@ -362,5 +361,5 @@ export function nativeWorkerToolContract(): AdvisorToolContract {
 }
 
 export async function nativeWorkerResultDigest(result: SwarmWorkerResultV1): Promise<string> {
-  return result.resultDigest || createSwarmDigest(result)
+  return (await finalizeSwarmWorkerResult(result)).resultDigest
 }
