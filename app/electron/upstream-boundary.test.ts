@@ -38,7 +38,8 @@ describe('desktop upstream-service boundary', () => {
 
   it('keeps the visible desktop identity on Metrora', () => {
     expect(readFileSync(join(APP_ROOT, 'renderer', 'index.html'), 'utf8')).toContain('<title>Metrora</title>')
-    expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'Sidebar.tsx'), 'utf8')).toContain('<b>Metrora</b>')
+    expect(readFileSync(join(APP_ROOT, 'renderer', 'shell', 'sidebar', 'MetroraSidebar.tsx'), 'utf8')).toContain('Metrora')
+    expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'MetroraMark.tsx'), 'utf8')).toContain('metrora-mark.svg')
     expect(readFileSync(join(APP_ROOT, 'renderer', 'components', 'AboutModal.tsx'), 'utf8')).toContain('>Metrora</div>')
   })
 })

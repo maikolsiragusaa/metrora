@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error, stack } = this.state
     if (!error) return this.props.children
     return (
-      <div className="error-boundary">
+      <div className="error-boundary" data-ui-state="error" role="alert">
         <div className="panel error-card">
           <h3 className="error-title">This screen hit an error</h3>
           <p className="error-msg">{error.message || String(error)}</p>

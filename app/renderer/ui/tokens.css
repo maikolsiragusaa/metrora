@@ -1,0 +1,249 @@
+/*
+ * Metrora UI foundation tokens.
+ *
+ * The semantic scoped-token idea was reviewed against
+ * OpenHands/OpenHands@1a34e0222ee9e3c1f8c13fc16d28e69361a022ff
+ * (src/styles/agent-server-ui-style-scope.ts). This file is a Metrora-owned
+ * reimplementation: it intentionally carries no upstream variable names,
+ * selectors, theme keys, assets, or runtime dependencies.
+ */
+
+:root {
+  color-scheme: light;
+
+  --metrora-color-graphite: #0F1115;
+  --metrora-color-warm: #FAF7F2;
+  --metrora-color-cyan: #00D4FF;
+  --metrora-color-cyan-deep: #007A99;
+  --metrora-color-cyan-soft: #E6F9FD;
+  --metrora-color-slate: #47505A;
+  --metrora-color-panel-gray: #E6E9EE;
+
+  --metrora-surface-app: #F7F8FA;
+  --metrora-surface-sidebar: #FBFCFD;
+  --metrora-surface-panel: #FFFFFF;
+  --metrora-surface-raised: #F1F3F5;
+  --metrora-surface-inset: #EEF1F4;
+  --metrora-surface-selected: #E6F9FD;
+  --metrora-text-primary: #0F1115;
+  --metrora-text-secondary: #47505A;
+  --metrora-text-muted: #6B7780;
+  --metrora-text-subtle: #8A959D;
+  --metrora-text-on-accent: #FFFFFF;
+  --metrora-border: #E0E5E9;
+  --metrora-border-subtle: #E9EDF0;
+  --metrora-border-strong: #C7D0D6;
+  --metrora-accent: #007A99;
+  --metrora-accent-bright: #00D4FF;
+  --metrora-accent-soft: #E6F9FD;
+  --metrora-accent-text: #00657D;
+  --metrora-focus: #007A99;
+  --metrora-status-success: #147A57;
+  --metrora-status-warning: #9A6400;
+  --metrora-status-danger: #B93631;
+  --metrora-status-info: #007A99;
+  --metrora-scrollbar: rgba(71, 80, 90, .25);
+  --metrora-scrollbar-hover: rgba(71, 80, 90, .42);
+  --metrora-shadow-panel: 0 1px 2px rgba(15, 17, 21, .05), 0 8px 24px rgba(15, 17, 21, .035);
+  --metrora-shadow-overlay: 0 24px 72px rgba(15, 17, 21, .22), 0 4px 18px rgba(15, 17, 21, .12);
+
+  --metrora-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --metrora-font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --metrora-text-xs: 10px;
+  --metrora-text-sm: 11.5px;
+  --metrora-text-md: 12.5px;
+  --metrora-text-lg: 14px;
+  --metrora-text-xl: 17px;
+  --metrora-text-2xl: 22px;
+  --metrora-weight-normal: 450;
+  --metrora-weight-medium: 550;
+  --metrora-weight-semibold: 620;
+  --metrora-weight-bold: 700;
+
+  --metrora-space-1: 4px;
+  --metrora-space-2: 8px;
+  --metrora-space-3: 12px;
+  --metrora-space-4: 16px;
+  --metrora-space-5: 20px;
+  --metrora-space-6: 24px;
+  --metrora-space-7: 32px;
+  --metrora-sidebar-expanded: 236px;
+  --metrora-sidebar-collapsed: 64px;
+  --metrora-radius-sm: 6px;
+  --metrora-radius-md: 9px;
+  --metrora-radius-lg: 12px;
+  --metrora-control-height: 32px;
+  --metrora-focus-ring: 0 0 0 2px var(--metrora-surface-app), 0 0 0 4px color-mix(in srgb, var(--metrora-focus) 78%, transparent);
+  --metrora-motion-fast: 120ms;
+  --metrora-motion-normal: 180ms;
+  --metrora-motion-shell: 220ms;
+
+  /* Compatibility aliases let existing Metrora surfaces migrate incrementally. */
+  --canvas: var(--metrora-surface-app);
+  --side: var(--metrora-surface-sidebar);
+  --panel: var(--metrora-surface-panel);
+  --phead: var(--metrora-surface-raised);
+  --bg: var(--metrora-surface-app);
+  --line: var(--metrora-border);
+  --line2: var(--metrora-border-subtle);
+  --ink: var(--metrora-text-primary);
+  --mut: var(--metrora-text-secondary);
+  --mut2: var(--metrora-text-muted);
+  --accent: var(--metrora-accent);
+  --accent-text: var(--metrora-accent-text);
+  --accent-control-ink: var(--metrora-text-on-accent);
+  --ok: var(--metrora-status-success);
+  --warn: var(--metrora-status-warning);
+  --bad: var(--metrora-status-danger);
+  --fill: var(--metrora-surface-inset);
+  --hover: var(--metrora-surface-selected);
+  --bar: var(--metrora-border-strong);
+  --bar-hi: var(--metrora-text-secondary);
+  --tip-bg: var(--metrora-color-graphite);
+  --tip-ink: var(--metrora-color-warm);
+  --card-shadow: var(--metrora-shadow-panel);
+  --grad: var(--metrora-accent);
+  --grad-bar: linear-gradient(to top, var(--metrora-color-cyan-deep), var(--metrora-color-cyan));
+  --pg: var(--metrora-surface-app);
+  --pg-ink: var(--metrora-text-primary);
+  --pg-mut: var(--metrora-text-muted);
+  --mono: var(--metrora-font-mono);
+  --sans: var(--metrora-font-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --metrora-surface-app: #0F1115;
+    --metrora-surface-sidebar: #111318;
+    --metrora-surface-panel: #171A20;
+    --metrora-surface-raised: #1D2229;
+    --metrora-surface-inset: #15191E;
+    --metrora-surface-selected: rgba(0, 212, 255, .12);
+    --metrora-text-primary: #FAF7F2;
+    --metrora-text-secondary: #C0C9D0;
+    --metrora-text-muted: #929DA6;
+    --metrora-text-subtle: #6E7982;
+    --metrora-text-on-accent: #0F1115;
+    --metrora-border: #2B333B;
+    --metrora-border-subtle: #222930;
+    --metrora-border-strong: #3B4650;
+    --metrora-accent: #00D4FF;
+    --metrora-accent-text: #66E6FF;
+    --metrora-accent-soft: rgba(0, 212, 255, .12);
+    --metrora-focus: #00D4FF;
+    --metrora-status-success: #55D69D;
+    --metrora-status-warning: #E7B755;
+    --metrora-status-danger: #FF7B73;
+    --metrora-status-info: #00D4FF;
+    --metrora-scrollbar: rgba(192, 201, 208, .25);
+    --metrora-scrollbar-hover: rgba(192, 201, 208, .46);
+    --metrora-shadow-panel: 0 1px 2px rgba(0, 0, 0, .25), 0 12px 30px rgba(0, 0, 0, .16);
+    --metrora-shadow-overlay: 0 24px 72px rgba(0, 0, 0, .52), 0 4px 18px rgba(0, 0, 0, .3);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --metrora-surface-app: #0F1115;
+  --metrora-surface-sidebar: #111318;
+  --metrora-surface-panel: #171A20;
+  --metrora-surface-raised: #1D2229;
+  --metrora-surface-inset: #15191E;
+  --metrora-surface-selected: rgba(0, 212, 255, .12);
+  --metrora-text-primary: #FAF7F2;
+  --metrora-text-secondary: #C0C9D0;
+  --metrora-text-muted: #929DA6;
+  --metrora-text-subtle: #6E7982;
+  --metrora-text-on-accent: #0F1115;
+  --metrora-border: #2B333B;
+  --metrora-border-subtle: #222930;
+  --metrora-border-strong: #3B4650;
+  --metrora-accent: #00D4FF;
+  --metrora-accent-text: #66E6FF;
+  --metrora-accent-soft: rgba(0, 212, 255, .12);
+  --metrora-focus: #00D4FF;
+  --metrora-status-success: #55D69D;
+  --metrora-status-warning: #E7B755;
+  --metrora-status-danger: #FF7B73;
+  --metrora-status-info: #00D4FF;
+  --metrora-scrollbar: rgba(192, 201, 208, .25);
+  --metrora-scrollbar-hover: rgba(192, 201, 208, .46);
+  --metrora-shadow-panel: 0 1px 2px rgba(0, 0, 0, .25), 0 12px 30px rgba(0, 0, 0, .16);
+  --metrora-shadow-overlay: 0 24px 72px rgba(0, 0, 0, .52), 0 4px 18px rgba(0, 0, 0, .3);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--metrora-surface-app);
+  color: var(--metrora-text-primary);
+  font-family: var(--metrora-font-sans);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--metrora-focus-ring);
+}
+
+::selection {
+  color: var(--metrora-text-on-accent);
+  background: var(--metrora-accent-bright);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--metrora-scrollbar);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--metrora-scrollbar-hover);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --metrora-motion-fast: 0ms;
+    --metrora-motion-normal: 0ms;
+    --metrora-motion-shell: 0ms;
+  }
+}

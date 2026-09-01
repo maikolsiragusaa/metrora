@@ -23,12 +23,12 @@ describe('Sidebar', () => {
       'Insights⌘5',
       'Models⌘6',
       'Compare⌘7',
-      'Harness⌘',
-      'Bench⌘',
+      'Harness',
+      'Bench',
     ])
-    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Capacity⌘', 'Workspace⌘8'])
+    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Capacity', 'Workspace⌘8'])
     expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(12)
+    expect(screen.getAllByRole('button')).toHaveLength(14)
   })
 
   it('routes by click and keyboard without changing section ids', async () => {
@@ -60,8 +60,8 @@ describe('Sidebar', () => {
 
   it('renders the static Metrora vector mark instead of the inherited flame asset', () => {
     const { container } = render(<Sidebar active="overview" onNavigate={() => {}} />)
-    const mark = container.querySelector('.app svg')
-    expect(mark?.tagName.toLowerCase()).toBe('svg')
+    const mark = container.querySelector('.app img.metrora-mark-light')
+    expect(mark?.tagName.toLowerCase()).toBe('img')
     expect(container.querySelector('.flamemark')).toBeNull()
     expect(container.querySelector('.fm-flicker')).toBeNull()
     expect(container.querySelector('.app')?.textContent).toContain('Metrora')

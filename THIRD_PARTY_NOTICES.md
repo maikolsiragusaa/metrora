@@ -40,6 +40,35 @@ llama.cpp build supports every optional capability.
 
 Source repository: `https://github.com/ggml-org/llama.cpp`
 
+## OpenHands Agent Canvas UI primitives
+
+Metrora Wave 001 adapts small, generic UI mechanics from
+`OpenHands/OpenHands` at exact commit
+`1a34e0222ee9e3c1f8c13fc16d28e69361a022ff`. The upstream root licence is MIT;
+the original copyright and complete permission notice are preserved in
+[`LICENSES/OPENHANDS-MIT.txt`](LICENSES/OPENHANDS-MIT.txt).
+
+Adapted source mapping:
+
+| Upstream path | Metrora destination | Status |
+| --- | --- | --- |
+| `src/components/features/sidebar/sidebar-layout.ts` | `app/renderer/ui/primitives/sidebar-layout.ts` | Modified/adapted |
+| `src/components/features/sidebar/sidebar-collapsed-icon-slot.tsx` | `app/renderer/shell/sidebar/SidebarIconSlot.tsx` | Modified/adapted |
+| `src/ui/typography.tsx` | `app/renderer/ui/primitives/Typography.tsx` | Modified/adapted |
+| `src/ui/divider.tsx` | `app/renderer/ui/primitives/Divider.tsx` | Modified/adapted |
+| `src/ui/context-menu.tsx` | `app/renderer/ui/primitives/ContextMenu.tsx` | Modified/adapted |
+| `src/components/shared/modals/modal-backdrop.tsx` | `app/renderer/ui/overlays/MetroraDialog.tsx` | Modified/adapted |
+| `src/components/shared/modals/modal-body.tsx` | `app/renderer/ui/overlays/MetroraModalBody.tsx` | Modified/adapted |
+| `src/components/shared/buttons/modal-button.tsx` | `app/renderer/ui/primitives/MetroraModalButton.tsx` | Modified/adapted |
+
+The `src/styles/agent-server-ui-style-scope.ts` anchor was reference-only; the
+semantic token vocabulary was independently reimplemented in
+`app/renderer/ui/tokens.css`. Metrora removed Tailwind, HeroUI, OpenHands
+router/store/client/backend, telemetry, fonts, logos and other product assets.
+The adapted primitives expose Metrora-owned contracts and can be removed or
+replaced without changing Metrora facts, navigation state, ACT, Shield,
+Harness semantics or evidence authority.
+
 ## RFC 8785 canonicalization
 
 `src/vendor/rfc8785-canonicalize.ts` is adapted from `erdtman/canonicalize` version `3.0.0`, exact upstream commit `63c3410a074d35950212a81fdb2bbb05607f3cd1`, originally published at `https://github.com/erdtman/canonicalize`.

@@ -1,0 +1,961 @@
+/* Metrora's shared desktop frame and foundation primitives. */
+
+.metrora-shell {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--metrora-surface-app);
+  color: var(--metrora-text-primary);
+  letter-spacing: -.004em;
+}
+
+.metrora-shell__main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--metrora-surface-app);
+}
+
+.metrora-shell__main > .ct {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Canonical Signal Grid assets. Both are kept in the DOM so explicit theme
+   choices override system preference without changing the asset itself. */
+.metrora-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.metrora-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.metrora-mark-inverse { display: none !important; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .metrora-mark-light { display: none; }
+  :root:not([data-theme='light']) .metrora-mark-inverse { display: block !important; }
+}
+
+:root[data-theme='dark'] .metrora-mark-light { display: none; }
+:root[data-theme='dark'] .metrora-mark-inverse { display: block !important; }
+:root[data-theme='light'] .metrora-mark-light { display: block; }
+:root[data-theme='light'] .metrora-mark-inverse { display: none !important; }
+
+/* Sidebar */
+.metrora-sidebar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex: 0 0 var(--metrora-sidebar-expanded);
+  width: var(--metrora-sidebar-expanded);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--metrora-border);
+  background: var(--metrora-surface-sidebar);
+  transition: width var(--metrora-motion-shell) ease, flex-basis var(--metrora-motion-shell) ease;
+}
+
+.metrora-sidebar[data-collapsed='true'] {
+  flex-basis: var(--metrora-sidebar-collapsed);
+  width: var(--metrora-sidebar-collapsed);
+}
+
+.metrora-sidebar__surface {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 10px 10px;
+}
+
+.metrora-sidebar__header-row {
+  display: flex;
+  width: 100%;
+  height: 42px;
+  flex: 0 0 auto;
+  min-height: 42px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 4px 0 8px;
+}
+
+.metrora-sidebar__header-row.is-collapsed {
+  justify-content: center;
+  padding: 0;
+}
+
+.metrora-sidebar__brand {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 9px;
+  overflow: hidden;
+  color: var(--metrora-text-primary);
+  font-size: 14px;
+  font-weight: var(--metrora-weight-semibold);
+  letter-spacing: -.02em;
+  white-space: nowrap;
+}
+
+.metrora-sidebar__brand .metrora-mark {
+  width: 24px;
+  height: 24px;
+}
+
+.metrora-sidebar__header-row.is-collapsed .metrora-sidebar__brand {
+  flex: 0 0 auto;
+}
+
+.metrora-sidebar__collapse-button,
+.metrora-sidebar__search,
+.metrora-sidebar__nav-item,
+.metrora-sidebar__footer a {
+  -webkit-app-region: no-drag;
+}
+
+.metrora-sidebar__collapse-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--metrora-radius-sm);
+  background: transparent;
+  color: var(--metrora-text-muted);
+  cursor: pointer;
+}
+
+.metrora-sidebar__collapse-button:hover {
+  border-color: var(--metrora-border-subtle);
+  background: var(--metrora-surface-raised);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-sidebar__collapse-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.metrora-sidebar__search {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 10px;
+  padding: 0 10px;
+  border: 1px solid var(--metrora-border-subtle);
+  border-radius: var(--metrora-radius-md);
+  background: var(--metrora-surface-inset);
+  color: var(--metrora-text-muted);
+  font-size: var(--metrora-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.metrora-sidebar__search:hover {
+  border-color: var(--metrora-border-strong);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-sidebar__search svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.7;
+}
+
+.metrora-sidebar__search kbd,
+.metrora-command-menu kbd {
+  display: inline-flex;
+  min-height: 19px;
+  align-items: center;
+  border: 1px solid var(--metrora-border);
+  border-radius: 4px;
+  background: var(--metrora-surface-panel);
+  color: var(--metrora-text-muted);
+  font-family: var(--metrora-font-mono);
+  font-size: 9px;
+  line-height: 1;
+  padding: 0 5px;
+}
+
+.metrora-sidebar__search kbd { margin-left: auto; }
+
+.metrora-divider {
+  flex: 0 0 auto;
+  min-width: 0;
+  background: var(--metrora-border);
+}
+
+.metrora-divider--horizontal {
+  width: 100%;
+  height: 1px;
+}
+
+.metrora-divider--vertical {
+  width: 1px;
+  height: 100%;
+}
+
+.metrora-divider--menu {
+  position: relative;
+  height: 13px;
+  background: transparent;
+}
+
+.metrora-divider--menu::after {
+  position: absolute;
+  top: 6px;
+  right: -4px;
+  left: -4px;
+  height: 1px;
+  background: var(--metrora-border);
+  content: '';
+}
+
+.metrora-sidebar__divider {
+  margin: 0 4px;
+}
+
+.metrora-sidebar__navigation {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding-top: 10px;
+}
+
+.metrora-sidebar__nav-scroll {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--metrora-scrollbar) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.metrora-sidebar__nav-scroll::-webkit-scrollbar { width: 6px; }
+.metrora-sidebar__nav-scroll::-webkit-scrollbar-thumb {
+  border-radius: 6px;
+  background: var(--metrora-scrollbar);
+}
+.metrora-sidebar__nav-scroll::-webkit-scrollbar-thumb:hover { background: var(--metrora-scrollbar-hover); }
+
+.metrora-sidebar__nav-primary,
+.metrora-sidebar__nav-utility {
+  display: flex;
+  width: 100%;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.metrora-sidebar__nav-group {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metrora-sidebar .nav-group-label {
+  padding: 5px 10px 4px;
+  color: var(--metrora-text-subtle);
+  font-size: 9px;
+  font-weight: var(--metrora-weight-semibold);
+  letter-spacing: .09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.metrora-sidebar__nav-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 36px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--metrora-radius-sm);
+  background: transparent;
+  color: var(--metrora-text-muted);
+  font: inherit;
+  font-size: var(--metrora-text-md);
+  font-weight: var(--metrora-weight-normal);
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--metrora-motion-fast) ease, color var(--metrora-motion-fast) ease;
+}
+
+.metrora-sidebar__nav-item:hover,
+.metrora-sidebar__nav-item.is-idle:hover {
+  background: var(--metrora-surface-raised);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-sidebar__nav-item.on {
+  background: var(--metrora-accent-soft);
+  color: var(--metrora-text-primary);
+  font-weight: var(--metrora-weight-medium);
+}
+
+.metrora-sidebar__nav-item.on::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--metrora-accent);
+  content: '';
+}
+
+.metrora-sidebar__icon-slot {
+  display: inline-flex;
+  width: 18px;
+  height: 20px;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+}
+
+.metrora-sidebar__nav-item svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.65;
+}
+
+.metrora-sidebar__nav-item.on svg { stroke: var(--metrora-accent); }
+
+.metrora-sidebar__nav-item .metrora-sidebar__label {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrora-sidebar__nav-item .k {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--metrora-border-subtle);
+  border-radius: 4px;
+  color: var(--metrora-text-subtle);
+  font-family: var(--metrora-font-mono);
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.metrora-sidebar__nav-utility-region {
+  min-height: 0;
+  flex: 0 0 auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--metrora-border-subtle);
+}
+
+.metrora-sidebar__status {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 33px;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 8px 0;
+  color: var(--metrora-text-muted);
+  font-family: var(--metrora-font-mono);
+  font-size: var(--metrora-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metrora-sidebar__status b { color: var(--metrora-text-primary); font-weight: var(--metrora-weight-medium); }
+
+.metrora-sidebar__footer-divider { margin-top: 8px; }
+
+.metrora-sidebar__footer {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 0;
+}
+
+.metrora-sidebar__footer .about,
+.metrora-sidebar__footer .social a {
+  color: var(--metrora-text-muted);
+  text-decoration: none;
+}
+
+.metrora-sidebar__footer .about {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--metrora-radius-sm);
+  font-size: var(--metrora-text-sm);
+}
+
+.metrora-sidebar__footer .about:hover,
+.metrora-sidebar__footer .social a:hover {
+  background: var(--metrora-surface-raised);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-sidebar__footer .about svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+
+.metrora-sidebar__footer .social {
+  display: flex;
+  margin-left: auto;
+  gap: 2px;
+}
+
+.metrora-sidebar__footer .social a {
+  display: inline-flex;
+  padding: 6px;
+  border-radius: var(--metrora-radius-sm);
+}
+
+.metrora-sidebar__footer .social svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__search {
+  justify-content: center;
+  padding: 0;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__search kbd,
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__nav-item .k {
+  display: none;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__nav-item {
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__nav-item.on::before {
+  top: 10px;
+  bottom: 10px;
+}
+
+.metrora-sidebar__collapsed-icon-slot {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+}
+
+.metrora-sidebar__collapsed-icon-bg {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: var(--metrora-radius-sm);
+  background: transparent;
+}
+
+.metrora-sidebar__nav-item:hover .metrora-sidebar__collapsed-icon-bg.is-idle {
+  background: var(--metrora-surface-raised);
+}
+
+.metrora-sidebar__collapsed-icon-bg.is-active { background: var(--metrora-accent-soft); }
+
+.metrora-sidebar__collapsed-icon-glyph {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--metrora-text-muted);
+}
+
+.metrora-sidebar__collapsed-icon-glyph.is-active { color: var(--metrora-accent); }
+
+.metrora-sidebar__collapsed-icon-glyph svg { flex: 0 0 auto; }
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__footer {
+  justify-content: center;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__footer .about {
+  padding: 6px;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__footer .social { display: none; }
+
+.metrora-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Existing Metrora content lives inside .ct; this layer only changes the
+   frame, spacing, and control geometry around it. */
+.metrora-shell .ct {
+  display: flex;
+  flex-direction: column;
+  background: var(--metrora-surface-app);
+}
+
+/* The inherited wireframe stylesheet has a page-document section offset.
+   Reset it at the application boundary so content starts under the integrated
+   Metrora top bar while component-specific spacing remains local. */
+.metrora-shell section { margin-top: 0; }
+
+.metrora-shell .bar {
+  min-height: 58px;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 24px 12px;
+  border-bottom: 1px solid var(--metrora-border);
+  background: var(--metrora-surface-app);
+}
+
+.metrora-shell .bar .t {
+  color: var(--metrora-text-primary);
+  font-size: 15px;
+  font-weight: var(--metrora-weight-semibold);
+  letter-spacing: -.015em;
+}
+
+.metrora-shell .bar .scope {
+  max-width: min(42vw, 460px);
+  overflow: hidden;
+  color: var(--metrora-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrora-shell .bar .sp { min-width: 12px; }
+
+.metrora-shell .bar .btn,
+.metrora-shell .bar .pop,
+.metrora-shell .bar .calendar-trigger,
+.metrora-shell .bar .seg {
+  min-height: var(--metrora-control-height);
+}
+
+.metrora-shell .bar .btn,
+.metrora-shell .bar .pop,
+.metrora-shell .bar .calendar-trigger {
+  border-color: var(--metrora-border);
+  background: var(--metrora-surface-panel);
+  color: var(--metrora-text-secondary);
+}
+
+.metrora-shell .bar .btn:hover,
+.metrora-shell .bar .pop:hover,
+.metrora-shell .bar .calendar-trigger:hover {
+  border-color: var(--metrora-border-strong);
+  background: var(--metrora-surface-raised);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-shell .bar .ask-advisor-button {
+  color: var(--metrora-accent-text);
+}
+
+.metrora-shell .bar .refresh-button:disabled { opacity: .65; }
+
+.metrora-shell .body {
+  align-items: stretch;
+  padding: 22px clamp(18px, 3vw, 34px) 24px;
+  background: var(--metrora-surface-app);
+}
+
+.metrora-shell .body > * {
+  max-width: 1240px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.metrora-shell .hint {
+  min-height: 34px;
+  align-items: center;
+  padding: 7px 24px 9px;
+  border-top: 1px solid var(--metrora-border-subtle);
+  background: var(--metrora-surface-app);
+}
+
+.metrora-shell .switch-line.on {
+  background: linear-gradient(90deg, transparent, var(--metrora-accent), transparent);
+}
+
+/* Typography */
+.metrora-type { margin: 0; }
+.metrora-type--display { color: var(--metrora-text-primary); font-size: 28px; font-weight: var(--metrora-weight-semibold); letter-spacing: -.025em; line-height: 1.15; }
+.metrora-type--title { color: var(--metrora-text-primary); font-size: var(--metrora-text-xl); font-weight: var(--metrora-weight-semibold); letter-spacing: -.018em; line-height: 1.25; }
+.metrora-type--subtitle { color: var(--metrora-text-secondary); font-size: var(--metrora-text-lg); font-weight: var(--metrora-weight-semibold); line-height: 1.35; }
+.metrora-type--body { color: var(--metrora-text-secondary); font-size: var(--metrora-text-md); line-height: 1.55; }
+.metrora-type--label { color: var(--metrora-text-primary); font-size: var(--metrora-text-sm); line-height: 1.4; }
+.metrora-type--code { color: var(--metrora-text-secondary); font-family: var(--metrora-font-mono); font-size: var(--metrora-text-sm); white-space: pre-wrap; }
+
+/* Shared states converge old section components on the shell vocabulary. */
+.metrora-shell .empty-note {
+  color: var(--metrora-text-muted);
+  font-size: var(--metrora-text-md);
+  line-height: 1.55;
+}
+
+.metrora-shell .error-boundary {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.metrora-shell .error-card {
+  width: min(620px, 100%);
+  border-color: color-mix(in srgb, var(--metrora-status-danger) 40%, var(--metrora-border));
+  background: var(--metrora-surface-panel);
+}
+
+.metrora-shell .error-title { color: var(--metrora-text-primary); }
+.metrora-shell .error-msg { color: var(--metrora-text-secondary); }
+.metrora-shell .error-stack { color: var(--metrora-text-muted); }
+
+/* Modal/overlay foundation */
+.metrora-dialog-layer {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.metrora-dialog-layer.is-elevated { z-index: 1100; }
+
+.metrora-dialog-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: rgba(8, 11, 15, .66);
+}
+
+.metrora-dialog-positioner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  max-width: 100%;
+  max-height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.metrora-dialog {
+  width: min(520px, calc(100vw - 48px));
+  max-width: 100%;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid var(--metrora-border);
+  border-radius: var(--metrora-radius-lg);
+  outline: none;
+  background: var(--metrora-surface-panel);
+  color: var(--metrora-text-primary);
+  box-shadow: var(--metrora-shadow-overlay);
+  animation: metrora-dialog-in var(--metrora-motion-normal) ease-out;
+}
+
+.metrora-dialog:focus-visible { box-shadow: var(--metrora-shadow-overlay), var(--metrora-focus-ring); }
+
+.metrora-dialog--wide { width: min(720px, calc(100vw - 48px)); }
+
+.metrora-modal-body {
+  display: flex;
+  width: min(384px, calc(100vw - 48px));
+  max-width: 100%;
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding: 24px;
+  background: var(--metrora-surface-panel);
+}
+
+.metrora-modal-body--md { width: min(520px, calc(100vw - 48px)); }
+.metrora-modal-body--lg { width: min(640px, calc(100vw - 48px)); }
+.metrora-modal-body--xl { width: min(720px, calc(100vw - 48px)); }
+
+.metrora-modal-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--metrora-border);
+  border-radius: var(--metrora-radius-sm);
+  background: var(--metrora-surface-panel);
+  color: var(--metrora-text-primary);
+  font-size: var(--metrora-text-md);
+  font-weight: var(--metrora-weight-medium);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.metrora-modal-button:hover:not(:disabled) {
+  border-color: var(--metrora-accent);
+  color: var(--metrora-accent-text);
+}
+
+.metrora-modal-button.is-text-like {
+  min-height: 28px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--metrora-text-muted);
+  font-size: var(--metrora-text-sm);
+  font-weight: var(--metrora-weight-medium);
+}
+
+.metrora-modal-button.is-text-like:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--metrora-surface-raised);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-modal-button.is-disabled,
+.metrora-modal-button:disabled { cursor: not-allowed; opacity: .55; }
+
+.about-modal-backdrop { background: transparent; }
+.about-modal-backdrop .metrora-dialog-positioner { width: 100%; }
+.about-modal-backdrop .about-modal { width: min(720px, 100%); }
+
+/* Command/search surface */
+.metrora-command-dialog {
+  width: auto;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.metrora-command-menu { gap: 14px; }
+
+.metrora-command-menu__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.metrora-command-menu__hint { margin-top: 5px; color: var(--metrora-text-muted); }
+
+.metrora-command-menu__close {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 20px;
+  font-weight: var(--metrora-weight-normal);
+}
+
+.metrora-command-menu__input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--metrora-border);
+  border-radius: var(--metrora-radius-md);
+  outline: none;
+  background: var(--metrora-surface-inset);
+  color: var(--metrora-text-primary);
+  font-size: var(--metrora-text-md);
+}
+
+.metrora-command-menu__input::placeholder { color: var(--metrora-text-subtle); }
+.metrora-command-menu__input:focus { border-color: var(--metrora-focus); box-shadow: var(--metrora-focus-ring); }
+
+.metrora-command-menu__results {
+  display: flex;
+  max-height: min(360px, 42vh);
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+}
+
+.metrora-context-menu { list-style: none; margin: 0; }
+.metrora-context-menu--default,
+.metrora-context-menu--popover { padding: 4px; border: 1px solid var(--metrora-border); border-radius: var(--metrora-radius-md); background: var(--metrora-surface-panel); box-shadow: var(--metrora-shadow-panel); }
+.metrora-context-menu--naked { padding: 0; }
+
+.metrora-command-menu__result {
+  display: block;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.metrora-command-menu__result button {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--metrora-radius-sm);
+  background: transparent;
+  color: var(--metrora-text-secondary);
+  font: inherit;
+  font-size: var(--metrora-text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.metrora-command-menu__result button:hover,
+.metrora-command-menu__result.is-highlighted button {
+  border-color: var(--metrora-border-subtle);
+  background: var(--metrora-surface-raised);
+  color: var(--metrora-text-primary);
+}
+
+.metrora-command-menu__result-glyph {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border: 1px solid var(--metrora-border-strong);
+  border-radius: 50%;
+}
+
+.metrora-command-menu__result.is-current .metrora-command-menu__result-glyph { border-color: var(--metrora-accent); background: var(--metrora-accent); }
+.metrora-command-menu__current { margin-left: auto; color: var(--metrora-accent-text); font-size: var(--metrora-text-xs); }
+.metrora-command-menu__result button kbd { margin-left: auto; }
+.metrora-command-menu__result.is-current button kbd { margin-left: 0; }
+
+.metrora-command-menu__empty { padding: 16px 4px; color: var(--metrora-text-muted); }
+
+.metrora-command-menu__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--metrora-text-muted);
+  font-size: var(--metrora-text-xs);
+}
+
+.metrora-command-menu__footer kbd { margin-right: 3px; }
+
+@keyframes metrora-dialog-in {
+  from { opacity: 0; transform: translateY(5px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 900px) {
+  .metrora-shell .bar { padding-right: 18px; padding-left: 18px; }
+  .metrora-shell .body { padding-right: 18px; padding-left: 18px; }
+  .metrora-shell .hint { padding-right: 18px; padding-left: 18px; }
+}
+
+@media (max-width: 720px) {
+  .metrora-sidebar:not([data-collapsed='true']) {
+    flex-basis: var(--metrora-sidebar-collapsed);
+    width: var(--metrora-sidebar-collapsed);
+  }
+
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__header-row { justify-content: center; padding: 0; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__brand { flex: 0 0 auto; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__collapse-button { position: absolute; top: 18px; right: 0; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__search { justify-content: center; padding: 0; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__search kbd,
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__label,
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__nav-item .k,
+  .metrora-sidebar:not([data-collapsed='true']) .nav-group-label,
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__status { display: none; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__nav-item { justify-content: center; gap: 0; padding: 0; overflow: visible; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__footer { justify-content: center; }
+  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__footer .social { display: none; }
+  .metrora-shell .bar { flex-wrap: wrap; }
+  .metrora-shell .bar .sp { display: none; }
+  .metrora-shell .bar .scope { max-width: 100%; }
+  .metrora-shell .body { padding: 16px 12px 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metrora-sidebar,
+  .metrora-sidebar__nav-item,
+  .metrora-dialog { transition: none; animation: none; }
+}
+
+/* Keep native window drag affordance only on the non-interactive shell chrome. */
+:root[data-platform='darwin'] .metrora-sidebar,
+:root[data-platform='darwin'] .metrora-shell .bar { -webkit-app-region: drag; }
+
+:root[data-platform='darwin'] .metrora-sidebar button,
+:root[data-platform='darwin'] .metrora-sidebar a,
+:root[data-platform='darwin'] .metrora-shell .bar button,
+:root[data-platform='darwin'] .metrora-shell .bar input,
+:root[data-platform='darwin'] .metrora-shell .bar [role='button'] { -webkit-app-region: no-drag; }
