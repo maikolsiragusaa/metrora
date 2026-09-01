@@ -78,9 +78,16 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
   )
 
   const cancel = useCallback(() => {
-    handleRef.current?.cancel()
+    const handle = handleRef.current
+    if (!handle) return
+    // Invalidate event/result callbacks before asking the adapter to stop. A
+    // provider may ignore AbortSignal, but it must not keep the composer busy
+    // or overwrite the next run in this conversation.
+    generationRef.current += 1
+    handleRef.current = null
+    handle.cancel()
     setState(current => current.running
-      ? { ...current, status: 'cancelled' }
+      ? { ...current, status: 'cancelled', running: false }
       : current)
   }, [])
 

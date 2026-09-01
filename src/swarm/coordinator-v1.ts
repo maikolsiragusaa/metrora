@@ -23,6 +23,7 @@ export const SWARM_DEFAULT_MAX_TOOL_ROUNDS = 1
 export const SWARM_DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024
 export const SWARM_DEFAULT_WORKER_TIMEOUT_MS = 120_000
 export const SWARM_DEFAULT_RUN_TIMEOUT_MS = 180_000
+export const SWARM_DEFAULT_SYNTHESIS_TIMEOUT_MS = 60_000
 export const SWARM_HARD_RUN_TIMEOUT_MS = 10 * 60 * 1000
 export const SWARM_MAX_ALLOWED_TOOLS = 16
 
@@ -67,7 +68,7 @@ export function createBaselineWorkerRequests(input: BaselineWorkerRequestInputV1
   if (allowedToolNames.length > SWARM_MAX_ALLOWED_TOOLS) throw new RangeError('Swarm allowed Tool count exceeds the public baseline limit.')
   const now = input.now ?? (() => new Date().toISOString())
   const startedAt = now()
-  const timeoutMs = boundedInteger(input.limits?.timeoutMs, SWARM_DEFAULT_WORKER_TIMEOUT_MS, 1_000, SWARM_HARD_RUN_TIMEOUT_MS)
+  const timeoutMs = boundedInteger(input.limits?.timeoutMs, SWARM_DEFAULT_WORKER_TIMEOUT_MS, 1, SWARM_HARD_RUN_TIMEOUT_MS)
   const limits: SwarmLimitsV1 = freeze({
     maxToolCalls: boundedInteger(input.limits?.maxToolCalls, SWARM_DEFAULT_MAX_TOOL_CALLS, 0, SWARM_DEFAULT_MAX_TOOL_CALLS),
     maxToolRounds: boundedInteger(input.limits?.maxToolRounds, SWARM_DEFAULT_MAX_TOOL_ROUNDS, 0, SWARM_DEFAULT_MAX_TOOL_ROUNDS),
@@ -111,6 +112,7 @@ export type BaselineSwarmCoordinatorOptionsV1 = {
   now?: () => string
   createRunId?: () => string
   cancellationGraceMs?: number
+  synthesisTimeoutMs?: number
 }
 
 export type SwarmRunHandleV1 = {
@@ -178,10 +180,75 @@ function successful(result: SwarmWorkerResultV1): boolean {
   return result.status === 'completed' || result.status === 'partial'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+const WORKER_RESULT_STATUSES: readonly SwarmWorkerResultV1['status'][] = ['completed', 'partial', 'unavailable', 'failed', 'timeout', 'cancelled']
+const TOOL_ACTIVITY_STATUSES: readonly SwarmWorkerResultV1['toolActivity'][number]['status'][] = ['started', 'completed', 'unavailable', 'failed', 'cancelled']
+
+function normalizeWorkerResult(request: SwarmWorkerRequestV1, value: unknown): SwarmWorkerResultV1 {
+  if (!isRecord(value) || !WORKER_RESULT_STATUSES.includes(value.status as SwarmWorkerResultV1['status'])) throw new Error('Worker returned a malformed terminal result.')
+  if (!Array.isArray(value.toolActivity) || !Array.isArray(value.evidenceRefs) || !Array.isArray(value.errors)) throw new Error('Worker returned a malformed terminal result.')
+  const toolActivity = value.toolActivity.filter(item => isRecord(item) && typeof item.name === 'string' && TOOL_ACTIVITY_STATUSES.includes(item.status as typeof TOOL_ACTIVITY_STATUSES[number])).map(item => ({
+    name: item.name as string,
+    status: item.status as typeof TOOL_ACTIVITY_STATUSES[number],
+  }))
+  const evidenceRefs = value.evidenceRefs.filter(item => isRecord(item) && typeof item.id === 'string' && typeof item.label === 'string').map(item => ({ id: item.id as string, label: item.label as string }))
+  const errors = value.errors.filter(error => typeof error === 'string') as string[]
+  const identity = (candidate: unknown, fallback: SwarmIdentityV1): SwarmIdentityV1 => isRecord(candidate) && typeof candidate.id === 'string' && typeof candidate.label === 'string'
+    ? { id: candidate.id, label: candidate.label }
+    : fallback
+  const usage = isRecord(value.usage)
+    ? {
+        inputTokens: typeof value.usage.inputTokens === 'number' ? value.usage.inputTokens : null,
+        outputTokens: typeof value.usage.outputTokens === 'number' ? value.usage.outputTokens : null,
+        costUsd: typeof value.usage.costUsd === 'number' ? value.usage.costUsd : null,
+      }
+    : null
+  return {
+    contractVersion: 'metrora.swarm.v1',
+    schemaVersion: 1,
+    runId: request.runId,
+    workerId: request.workerId,
+    role: request.role,
+    profile: request.profile,
+    status: value.status as SwarmWorkerResultV1['status'],
+    runtime: identity(value.runtime, request.runtime),
+    model: identity(value.model, request.model),
+    startedAt: typeof value.startedAt === 'string' ? value.startedAt : request.deadline.startedAt,
+    endedAt: typeof value.endedAt === 'string' ? value.endedAt : request.deadline.startedAt,
+    toolActivity,
+    evidenceRefs,
+    evidenceSummary: typeof value.evidenceSummary === 'string' ? value.evidenceSummary : '',
+    answer: typeof value.answer === 'string' ? value.answer : '',
+    artifactSummary: value.artifactSummary === null || typeof value.artifactSummary === 'string' ? value.artifactSummary : null,
+    errors,
+    usage,
+    resultDigest: '',
+  }
+}
+
+const SYNTHESIS_STATUSES: readonly SwarmSynthesisResultV1['status'][] = ['completed', 'unavailable', 'failed', 'cancelled']
+
+function normalizeSynthesis(value: unknown): SwarmSynthesisResultV1 {
+  if (!isRecord(value) || !SYNTHESIS_STATUSES.includes(value.status as SwarmSynthesisResultV1['status']) || typeof value.answer !== 'string' || typeof value.evidenceSummary !== 'string' || !Array.isArray(value.errors)) throw new Error('Synthesis returned a malformed result.')
+  return {
+    status: value.status as SwarmSynthesisResultV1['status'],
+    answer: boundedSwarmText(value.answer),
+    evidenceSummary: boundedSwarmText(value.evidenceSummary),
+    errors: value.errors.filter(error => typeof error === 'string').slice(0, 4).map(error => boundedSwarmText(error, 400)),
+  }
+}
+
+function appendSynthesisError(result: SwarmSynthesisResultV1, error: string): SwarmSynthesisResultV1 {
+  return { ...result, errors: [...result.errors, boundedSwarmText(error, 400)].slice(0, 4) }
+}
+
 export function createBaselineSwarmCoordinator(options: BaselineSwarmCoordinatorOptionsV1): BaselineSwarmCoordinatorV1 {
   const now = options.now ?? (() => new Date().toISOString())
   const createRunId = options.createRunId ?? makeRunId
-  const graceMs = Math.max(0, Math.min(options.cancellationGraceMs ?? 250, 2_000))
+  const synthesisTimeoutMs = boundedInteger(options.synthesisTimeoutMs, SWARM_DEFAULT_SYNTHESIS_TIMEOUT_MS, 1, SWARM_HARD_RUN_TIMEOUT_MS)
 
   const execute = async (
     input: BaselineSwarmInputV1,
@@ -192,104 +259,147 @@ export function createBaselineSwarmCoordinator(options: BaselineSwarmCoordinator
     const controller = new AbortController()
     let cancelled = false
     let timedOut = false
-    let suppressWorkerResults = false
+    let terminal = false
     let runClosed = false
+    let termination: 'cancelled' | 'timeout' | null = null
+    let resolveTermination!: (reason: 'cancelled' | 'timeout') => void
+    const terminationPromise = new Promise<'cancelled' | 'timeout'>(resolve => { resolveTermination = resolve })
+    let closePendingWorkers: () => void = () => {}
+    const terminate = (reason: 'cancelled' | 'timeout') => {
+      if (termination) return
+      termination = reason
+      cancelled = reason === 'cancelled'
+      timedOut = reason === 'timeout'
+      controller.abort()
+      resolveTermination(reason)
+    }
     const parentAbort = () => {
       if (runClosed) return
-      cancelled = true
-      controller.abort()
+      terminate('cancelled')
+      closePendingWorkers()
     }
     if (parentSignal?.aborted) parentAbort()
     else parentSignal?.addEventListener('abort', parentAbort, { once: true })
-    const publish = (event: SwarmEventV1) => observe(safeSwarmEvent(event))
+    const publish = (event: SwarmEventV1) => {
+      if (runClosed) return
+      observe(safeSwarmEvent(event))
+    }
     publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'swarm', runId, status: 'proposed', at: now() })
     publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'swarm', runId, status: 'preparing', at: now() })
-    let terminal = false
     const requests = createBaselineWorkerRequests({ ...input, runId, now })
-    const runTimeoutMs = boundedInteger(input.wholeRunTimeoutMs, SWARM_DEFAULT_RUN_TIMEOUT_MS, 1_000, SWARM_HARD_RUN_TIMEOUT_MS)
+    const runTimeoutMs = boundedInteger(input.wholeRunTimeoutMs, SWARM_DEFAULT_RUN_TIMEOUT_MS, 1, SWARM_HARD_RUN_TIMEOUT_MS)
     publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'swarm', runId, status: 'started', at: now(), detail: requests.length + ' fixed workers started.' })
-    const executions = new Map<string, { request: SwarmWorkerRequestV1; execution: WorkerExecutionV1 | null }>()
+
+    type WorkerRecord = {
+      request: SwarmWorkerRequestV1
+      execution: WorkerExecutionV1 | null
+      workerClosed: boolean
+      timeoutId?: ReturnType<typeof setTimeout>
+      result: SwarmWorkerResultV1 | null
+      resolve: (result: SwarmWorkerResultV1) => void
+    }
+    const records = new Map<string, WorkerRecord>()
     const workerResults = new Map<string, SwarmWorkerResultV1>()
+
+    const cancelExecution = (record: WorkerRecord): void => {
+      try { record.execution?.cancel() } catch { /* adapter cancellation is best effort */ }
+      try {
+        const cancellation = options.adapter.cancel(record.request.workerId)
+        void Promise.resolve(cancellation).catch(() => {})
+      } catch { /* adapter cancellation is best effort */ }
+    }
+
+    const completeWorker = (record: WorkerRecord, candidate: unknown, fallbackStatus: Extract<SwarmWorkerResultV1['status'], 'failed' | 'cancelled' | 'timeout'>, fallbackMessage: string): void => {
+      if (record.workerClosed) return
+      record.workerClosed = true
+      if (record.timeoutId !== undefined) clearTimeout(record.timeoutId)
+      let safeResult: SwarmWorkerResultV1
+      try {
+        safeResult = normalizeWorkerResult(record.request, candidate)
+      } catch (error) {
+        safeResult = terminalWorkerResult(record.request, fallbackStatus === 'cancelled' || fallbackStatus === 'timeout' ? fallbackStatus : 'failed', now(), error instanceof Error ? error.message : fallbackMessage)
+      }
+      safeResult = {
+        ...safeResult,
+        answer: boundedSwarmText(safeResult.answer),
+        evidenceSummary: boundedSwarmText(safeResult.evidenceSummary),
+        errors: safeResult.errors.slice(0, 4).map(error => boundedSwarmText(error, 400)),
+      }
+      record.result = safeResult
+      workerResults.set(record.request.workerId, safeResult)
+      if (!terminal && !cancelled && !timedOut) {
+        publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId, workerId: record.request.workerId, role: record.request.role, status: workerEventStatusForResult(safeResult.status), at: now() })
+      }
+      record.resolve(safeResult)
+    }
+
+    closePendingWorkers = () => {
+      for (const record of records.values()) {
+        if (record.workerClosed) continue
+        completeWorker(record, terminalWorkerResult(record.request, cancelled ? 'cancelled' : 'timeout', now(), cancelled ? 'Worker cancelled.' : 'Worker exceeded the Swarm deadline.'), cancelled ? 'cancelled' : 'timeout', cancelled ? 'Worker cancelled.' : 'Worker exceeded the Swarm deadline.')
+        cancelExecution(record)
+      }
+    }
+
     const workerPromises: Promise<SwarmWorkerResultV1>[] = []
     for (const request of requests) {
       publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId, workerId: request.workerId, role: request.role, status: 'queued', at: now() })
-      const record = { request, execution: null as WorkerExecutionV1 | null }
-      executions.set(request.workerId, record)
-      const promise = Promise.resolve().then(() => {
-        if (controller.signal.aborted) return terminalWorkerResult(request, cancelled ? 'cancelled' : 'timeout', now(), cancelled ? 'Worker cancelled before start.' : 'Worker timed out before start.')
-        record.execution = options.adapter.start(request, event => {
-          if (terminal || cancelled || timedOut) return
-          if (event.kind === 'worker' && event.runId === runId && event.workerId === request.workerId) publish(event)
-        }, { signal: controller.signal })
-        let workerTimeoutId: ReturnType<typeof setTimeout> | undefined
-        const workerTimeout = new Promise<SwarmWorkerResultV1>(resolve => {
-          workerTimeoutId = setTimeout(() => {
-            record.execution?.cancel()
-            void options.adapter.cancel(request.workerId).catch(() => {})
-            resolve(terminalWorkerResult(request, 'timeout', now(), 'Worker exceeded its individual deadline.'))
+      let resolveWorker!: (result: SwarmWorkerResultV1) => void
+      const workerPromise = new Promise<SwarmWorkerResultV1>(resolve => { resolveWorker = resolve })
+      const record: WorkerRecord = { request, execution: null, workerClosed: false, result: null, resolve: resolveWorker }
+      records.set(request.workerId, record)
+      workerPromises.push(workerPromise)
+      void Promise.resolve().then(() => {
+        if (record.workerClosed) return
+        if (controller.signal.aborted) {
+          completeWorker(record, terminalWorkerResult(request, cancelled ? 'cancelled' : 'timeout', now(), cancelled ? 'Worker cancelled before start.' : 'Worker timed out before start.'), cancelled ? 'cancelled' : 'timeout', cancelled ? 'Worker cancelled before start.' : 'Worker timed out before start.')
+          return
+        }
+        try {
+          record.execution = options.adapter.start(request, event => {
+            if (terminal || record.workerClosed || cancelled || timedOut) return
+            if (event.kind === 'worker' && event.runId === runId && event.workerId === request.workerId) publish(event)
+          }, { signal: controller.signal })
+          record.timeoutId = setTimeout(() => {
+            if (record.workerClosed) return
+            completeWorker(record, terminalWorkerResult(request, 'timeout', now(), 'Worker exceeded its individual deadline.'), 'timeout', 'Worker exceeded its individual deadline.')
+            cancelExecution(record)
           }, request.limits.timeoutMs)
-        })
-        return Promise.race([record.execution.result, workerTimeout]).finally(() => {
-          if (workerTimeoutId !== undefined) clearTimeout(workerTimeoutId)
-        })
-      }).then(result => {
-        const safeResult = {
-          ...result,
-          answer: boundedSwarmText(result.answer),
-          evidenceSummary: boundedSwarmText(result.evidenceSummary),
-          errors: result.errors.slice(0, 4).map(error => boundedSwarmText(error, 400)),
+          const resultPromise = Promise.resolve(record.execution.result)
+          resultPromise.then(value => {
+            try {
+              completeWorker(record, value, 'failed', 'Worker returned a malformed terminal result.')
+            } catch (error) {
+              completeWorker(record, terminalWorkerResult(request, 'failed', now(), error instanceof Error ? error.message : 'Worker failed.'), 'failed', 'Worker failed.')
+            }
+          }, error => {
+            completeWorker(record, terminalWorkerResult(request, controller.signal.aborted ? (cancelled ? 'cancelled' : 'timeout') : 'failed', now(), error instanceof Error ? error.message : 'Worker failed.'), controller.signal.aborted ? (cancelled ? 'cancelled' : 'timeout') : 'failed', error instanceof Error ? error.message : 'Worker failed.')
+          })
+        } catch (error) {
+          completeWorker(record, terminalWorkerResult(request, 'failed', now(), error instanceof Error ? error.message : 'Worker failed.'), 'failed', 'Worker failed.')
         }
-        if (!suppressWorkerResults) workerResults.set(request.workerId, safeResult)
-        if (!terminal && !cancelled && !timedOut && !suppressWorkerResults) {
-          publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId, workerId: request.workerId, role: request.role, status: workerEventStatusForResult(safeResult.status), at: now() })
-        }
-        return safeResult
-      }).catch(error => {
-        const failed = terminalWorkerResult(request, controller.signal.aborted ? (cancelled ? 'cancelled' : 'timeout') : 'failed', now(), error instanceof Error ? error.message : 'Worker failed.')
-        if (!suppressWorkerResults) workerResults.set(request.workerId, failed)
-        if (!terminal && !cancelled && !timedOut && !suppressWorkerResults) {
-          publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId, workerId: request.workerId, role: request.role, status: workerEventStatusForResult(failed.status), at: now() })
-        }
-        return failed
       })
-      workerPromises.push(promise)
     }
+
     const allWorkers = Promise.all(workerPromises)
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<'timeout'>(resolve => {
       timeoutId = setTimeout(() => {
-        timedOut = true
-        controller.abort()
+        terminate('timeout')
+        closePendingWorkers()
         resolve('timeout')
       }, runTimeoutMs)
     })
-    const abort = new Promise<'cancelled'>(resolve => {
-      if (controller.signal.aborted && cancelled) resolve('cancelled')
-      else controller.signal.addEventListener('abort', () => { if (cancelled) resolve('cancelled') }, { once: true })
-    })
-    let outcome: readonly SwarmWorkerResultV1[] | 'timeout' | 'cancelled'
-    try {
-      outcome = await Promise.race([allWorkers, timeout, abort])
-      if (outcome === 'timeout' || outcome === 'cancelled') {
-        suppressWorkerResults = true
-        for (const item of executions.values()) {
-          item.execution?.cancel()
-          void options.adapter.cancel(item.request.workerId).catch(() => {})
-        }
-        if (graceMs > 0) await Promise.race([allWorkers, new Promise(resolve => setTimeout(resolve, graceMs))])
-        for (const request of requests) {
-          if (!workerResults.has(request.workerId)) {
-            workerResults.set(request.workerId, terminalWorkerResult(request, outcome === 'cancelled' ? 'cancelled' : 'timeout', now(), outcome === 'cancelled' ? 'Worker cancelled.' : 'Worker exceeded the Swarm deadline.'))
-          }
-        }
-        outcome = requests.map(request => workerResults.get(request.workerId)!)
-      }
-    } finally {
-      if (timeoutId !== undefined) clearTimeout(timeoutId)
-    }
-    const rawResults = Array.isArray(outcome)
-      ? outcome
-      : requests.map(request => workerResults.get(request.workerId) ?? terminalWorkerResult(request, cancelled ? 'cancelled' : 'timeout', now(), 'Worker did not return before the Swarm deadline.'))
+    const terminated = terminationPromise
+    const outcome = await Promise.race([
+      allWorkers.then(results => ({ kind: 'workers' as const, results })),
+      timeout.then(() => ({ kind: 'timeout' as const })),
+      terminated.then(reason => ({ kind: reason as 'cancelled' | 'timeout' })),
+    ])
+    const rawResults = outcome.kind === 'workers'
+      ? outcome.results
+      : (outcome.kind === 'cancelled' ? (terminate('cancelled'), closePendingWorkers()) : (terminate('timeout'), closePendingWorkers()), await allWorkers)
+
     const results = await Promise.all(rawResults.map(finalizeSwarmWorkerResult))
     const successCount = results.filter(successful).length
     const allWorkerTimeout = results.length > 0 && results.every(result => result.status === 'timeout')
@@ -313,27 +423,63 @@ export function createBaselineSwarmCoordinator(options: BaselineSwarmCoordinator
         scope: input.scope,
         workers: results.map(result => ({ ...result, answer: boundedSwarmText(result.answer), evidenceSummary: boundedSwarmText(result.evidenceSummary) })),
       }
-      try {
-        synthesis = options.synthesize ? await options.synthesize(synthesisInput, controller.signal) : deterministicSynthesis(finalStatus, results)
-      } catch (error) {
-        synthesis = cancelled || timedOut
-          ? { status: cancelled ? 'cancelled' : 'unavailable', answer: '', evidenceSummary: 'Synthesis was stopped with the Swarm run.', errors: [] }
-          : deterministicSynthesis(finalStatus, results)
-        if (!cancelled && !timedOut) synthesis = { ...synthesis, errors: [...synthesis.errors, boundedSwarmText(error instanceof Error ? error.message : 'Synthesis failed.', 400)].slice(0, 4) }
+      const fallback = (message: string): SwarmSynthesisResultV1 => appendSynthesisError(deterministicSynthesis(finalStatus, results), message)
+      if (!options.synthesize) {
+        synthesis = deterministicSynthesis(finalStatus, results)
+      } else {
+        type SynthesisOutcome = { kind: 'value'; value: unknown } | { kind: 'error'; error: unknown } | { kind: 'timeout' } | { kind: 'cancelled' }
+        const synthesisPromise = Promise.resolve().then(() => options.synthesize!(synthesisInput, controller.signal))
+        const settledSynthesis: Promise<SynthesisOutcome> = synthesisPromise.then(value => ({ kind: 'value' as const, value }), error => ({ kind: 'error' as const, error }))
+        let synthesisTimer: ReturnType<typeof setTimeout> | undefined
+        const synthesisTimeout = new Promise<SynthesisOutcome>(resolve => {
+          synthesisTimer = setTimeout(() => resolve({ kind: 'timeout' }), synthesisTimeoutMs)
+        })
+        const synthesisOutcome = await Promise.race([settledSynthesis, synthesisTimeout, terminated.then(reason => ({ kind: reason === 'cancelled' ? 'cancelled' as const : 'timeout' as const }))])
+        if (synthesisTimer !== undefined) clearTimeout(synthesisTimer)
+        if (synthesisOutcome.kind === 'cancelled' || (synthesisOutcome.kind === 'timeout' && termination === 'timeout')) {
+          if (synthesisOutcome.kind === 'cancelled') terminate('cancelled')
+          else terminate('timeout')
+          closePendingWorkers()
+          finalStatus = synthesisOutcome.kind === 'cancelled' ? 'cancelled' : 'timeout'
+          synthesis = {
+            status: synthesisOutcome.kind === 'cancelled' ? 'cancelled' : 'unavailable',
+            answer: '',
+            evidenceSummary: synthesisOutcome.kind === 'cancelled' ? 'Synthesis was cancelled with the Swarm run.' : 'Synthesis was stopped with the Swarm timeout.',
+            errors: [],
+          }
+        } else if (synthesisOutcome.kind === 'timeout') {
+          synthesis = fallback('Synthesis exceeded its bounded deadline; deterministic worker closeout was used.')
+        } else if (synthesisOutcome.kind === 'error') {
+          synthesis = fallback('Synthesis failed; deterministic worker closeout was used.')
+        } else if (synthesisOutcome.kind === 'value') {
+          try {
+            const normalized = normalizeSynthesis(synthesisOutcome.value)
+            synthesis = normalized.status === 'completed' && normalized.answer.trim()
+              ? normalized
+              : fallback('Synthesis returned no usable completed answer; deterministic worker closeout was used.')
+          } catch {
+            synthesis = fallback('Synthesis returned a malformed result; deterministic worker closeout was used.')
+          }
+        } else {
+          synthesis = fallback('Synthesis ended without a usable result; deterministic worker closeout was used.')
+        }
+        // The bounded continuation consumes a late provider promise through
+        // settledSynthesis, so an abort-ignoring synthesizer cannot create an
+        // unhandled rejection or overwrite the selected fallback.
       }
-      if (cancelled || timedOut) {
-        finalStatus = cancelled ? 'cancelled' : 'timeout'
+      if (termination) {
+        finalStatus = termination === 'cancelled' ? 'cancelled' : 'timeout'
         synthesis = {
-          status: cancelled ? 'cancelled' : 'unavailable',
+          status: termination === 'cancelled' ? 'cancelled' : 'unavailable',
           answer: '',
-          evidenceSummary: cancelled ? 'Synthesis was cancelled with the Swarm run.' : 'Synthesis was stopped with the Swarm timeout.',
+          evidenceSummary: termination === 'cancelled' ? 'Synthesis was cancelled with the Swarm run.' : 'Synthesis was stopped with the Swarm timeout.',
           errors: [],
         }
       }
-      if (!terminal && !cancelled && !timedOut) publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'synthesis', runId, status: synthesis.status === 'completed' ? 'completed' : synthesis.status, at: now() })
+      if (!terminal) publish({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'synthesis', runId, status: synthesis.status === 'completed' ? 'completed' : synthesis.status, at: now() })
     }
+    if (termination) finalStatus = termination === 'cancelled' ? 'cancelled' : 'timeout'
     terminal = true
-    runClosed = true
     const evidence = await buildSwarmEvidenceV1({
       request: { runId, task: input.task, scope: input.scope, allowedToolNames: input.allowedToolNames },
       workers: results,
@@ -351,6 +497,8 @@ export function createBaselineSwarmCoordinator(options: BaselineSwarmCoordinator
       at: now(),
       detail: finalStatus === 'partial' ? 'Partial completion; failed workers are retained as unavailable evidence.' : undefined,
     })
+    runClosed = true
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
     parentSignal?.removeEventListener('abort', parentAbort)
     return {
       contractVersion: 'metrora.swarm.v1',

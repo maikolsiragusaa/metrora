@@ -129,6 +129,16 @@ describe('canonical Metrora Tools foundation', () => {
     await expect(todayRegistry.execute('get_spend_snapshot', { period: 'yesterday' })).rejects.toMatchObject({ code: 'invalid-scope' })
   })
 
+  it('allows only the exact user-requested comparison periods authorized by the kernel', async () => {
+    const registry = createMetroraToolRegistry(source(), scope, null, { allowedPeriods: ['lifetime'] })
+    const result = await registry.execute('get_spend_snapshot', { period: 'lifetime' })
+    expect(result.evidence.scope.period).toBe('lifetime')
+    expect(result.evidence.coverage.level).toBe('high')
+
+    const unrequested = createMetroraToolRegistry(source(), scope, null, { allowedPeriods: ['month'] })
+    await expect(unrequested.execute('get_spend_snapshot', { period: 'lifetime' })).rejects.toMatchObject({ code: 'invalid-scope' })
+  })
+
   it('does not allow a constrained provider or model scope to be changed by a call', async () => {
     const constrained = createMetroraToolRegistry(source(), {
       ...scope,

@@ -33,6 +33,7 @@ import type { PerformanceComparisonV1 } from '../../../src/bench/performance-com
 import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
+export type AdvisorLlamaServerOptions = { port?: number }
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
@@ -129,8 +130,8 @@ export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
-  advisorProbe(runtime?: AdvisorLocalRuntimeId): Promise<AdvisorRuntimeProbe>
-  advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
+  advisorProbe(runtime?: AdvisorLocalRuntimeId, options?: AdvisorLlamaServerOptions): Promise<AdvisorRuntimeProbe>
+  advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId, options?: AdvisorLlamaServerOptions): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
   advisorCancel(requestId: string): Promise<boolean>
   advisorHostedProbe(provider: AdvisorCredentialProvider, requestId?: string): Promise<AdvisorHostedProbe>
   advisorHostedChat(requestId: string, payload: Record<string, unknown>): Promise<AdvisorHostedChatResult>

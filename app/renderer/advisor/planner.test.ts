@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { ADVISOR_TOOL_DEFINITIONS } from './contract'
 import {
   deterministicPlanningFallback,
+  explicitAdvisorModelHint,
+  explicitAdvisorPeriodHints,
   parseAdvisorPlanningDraft,
   planningDraftFromNativeToolCalls,
   validateAdvisorPlanningDraft,
@@ -92,6 +94,19 @@ describe('Advisor bounded model planning contract', () => {
     const fallbackPlan = createAdvisorTurnPlanV1('Tell me a joke', scope)
     expect(fallbackPlan.questionFamily).toBe('unknown')
     expect(deterministicPlanningFallback(fallbackPlan, ADVISOR_TOOL_DEFINITIONS).toolRequests).toEqual([])
+  })
+
+  it('authorizes only explicitly requested bounded comparison periods and model filters', () => {
+    const question = 'Compare this week with lifetime spend for the model Luna-3.1.'
+    expect(explicitAdvisorPeriodHints(question)).toEqual(['week', 'lifetime'])
+    expect(explicitAdvisorModelHint(question)).toBe('Luna-3.1')
+
+    const fallbackPlan = createAdvisorTurnPlanV1(question, scope)
+    const fallback = deterministicPlanningFallback(fallbackPlan, ADVISOR_TOOL_DEFINITIONS, question)
+    expect(fallback.toolRequests).toEqual([
+      { tool: 'get_model_efficiency', arguments: { period: 'week', model: 'Luna-3.1' } },
+      { tool: 'get_model_efficiency', arguments: { period: 'lifetime', model: 'Luna-3.1' } },
+    ])
   })
 
 

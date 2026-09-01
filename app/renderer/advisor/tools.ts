@@ -15,6 +15,7 @@ import type {
   AdvisorToolDefinition,
   AdvisorToolExecution,
   AdvisorToolExecutor,
+  AdvisorPeriodFilter,
 } from './types'
 import { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_DEFINITIONS } from './contract'
 
@@ -27,11 +28,12 @@ export type AdvisorToolRegistry = {
   execute: AdvisorToolExecutor
 }
 
-export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: AdvisorScope, suppliedOverview: MenubarPayload | null): AdvisorToolRegistry {
+export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: AdvisorScope, suppliedOverview: MenubarPayload | null, options: { allowedPeriods?: readonly AdvisorPeriodFilter[] } = {}): AdvisorToolRegistry {
   const registry = createMetroraToolRegistry(
     source as unknown as MetroraToolDataSource,
     scope as unknown as MetroraToolScope,
     suppliedOverview as unknown as import('../../../src/tools/types').MetroraOverview | null,
+    options as unknown as import('../../../src/tools/types').MetroraToolScopeOptions,
   )
   return {
     contract: registry.contract as unknown as AdvisorToolContract,

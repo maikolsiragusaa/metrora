@@ -221,15 +221,16 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
     const evidence = buildSpendEvidence('synthetic', fixture.scope, fixture.overview)
     const execute = vi.fn(registry.execute)
     const malformedRuntime = new OllamaAdvisorRuntime({ model: 'synthetic-model', transport: scriptedTransport([{ function: { name: 'get_spend_snapshot', arguments: '{"model":' } }]) })
-    await expect(malformedRuntime.generate({ question: 'What changed?', evidence, tools: ADVISOR_TOOL_DEFINITIONS, toolContract: ADVISOR_TOOL_CONTRACT, executeTool: execute })).rejects.toMatchObject({ code: 'invalid-arguments' })
-    expect(execute).not.toHaveBeenCalled()
-    expect(fixture.reads.overviews).toHaveLength(0)
+    const malformedAnswer = await malformedRuntime.generate({ question: 'What is my spend?', evidence, tools: ADVISOR_TOOL_DEFINITIONS, toolContract: ADVISOR_TOOL_CONTRACT, executeTool: execute })
+    expect(malformedAnswer.conclusion).toContain('Metrora measured')
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(fixture.reads.overviews).toHaveLength(1)
 
     const runtime = new OllamaAdvisorRuntime({ model: 'synthetic-model', transport: scriptedTransport([{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]) })
-    const answer = await runtime.generate({ question: 'What changed?', evidence, tools: ADVISOR_TOOL_DEFINITIONS, toolContract: ADVISOR_TOOL_CONTRACT, executeTool: registry.execute })
+    const answer = await runtime.generate({ question: 'What is my spend?', evidence, tools: ADVISOR_TOOL_DEFINITIONS, toolContract: ADVISOR_TOOL_CONTRACT, executeTool: registry.execute })
     expect(answer.generatedByModel).toBe(true)
     expect(answer.evidence.length).toBeGreaterThan(0)
-    expect(fixture.reads.overviews).toHaveLength(1)
+    expect(fixture.reads.overviews).toHaveLength(2)
   })
 
   it('keeps content-minimal evidence safe for no-digit secrets, paths, and internal identifiers', async () => {

@@ -26,6 +26,7 @@ import type {
   MetroraToolName,
   MetroraToolRegistry,
   MetroraToolScope,
+  MetroraToolScopeOptions,
   MetroraToolExecution,
   MetroraToolExecutor,
 } from './types.js'
@@ -100,13 +101,13 @@ function resultFor(name: MetroraToolName, scope: MetroraToolScope, args: Metrora
 }
 
 /** The one canonical implementation used by all current transports. */
-export function createMetroraToolRegistry(source: MetroraToolDataSource, scope: MetroraToolScope, suppliedOverview: MetroraOverview | null = null): MetroraToolRegistry {
+export function createMetroraToolRegistry(source: MetroraToolDataSource, scope: MetroraToolScope, suppliedOverview: MetroraOverview | null = null, options: MetroraToolScopeOptions = {}): MetroraToolRegistry {
   const invocationScope = snapshotMetroraToolScope(scope)
   const execute: MetroraToolExecutor = async (name, args, signal): Promise<MetroraToolExecution> => {
     throwIfAborted(signal)
     const normalizedName = typeof name === 'string' ? name : String(name)
     const normalizedArgs = validateMetroraToolArguments(normalizedName, args)
-    const nextScope = nextMetroraToolScope(invocationScope, normalizedName as MetroraToolName, normalizedArgs)
+    const nextScope = nextMetroraToolScope(invocationScope, normalizedName as MetroraToolName, normalizedArgs, options)
     throwIfAborted(signal)
     const overview = suppliedOverview && sameScope(nextScope, invocationScope) ? suppliedOverview : await readOverview(source, nextScope, signal)
 

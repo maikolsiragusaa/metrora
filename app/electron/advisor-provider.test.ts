@@ -85,6 +85,71 @@ describe('Advisor hosted provider authority', () => {
     if (provider === 'gemini') expect(headers['x-goog-api-key']).toBe('synthetic-secret')
   })
 
+  it('keeps a discovered model unverified until the exact bounded Harness request succeeds', async () => {
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith('/v1/models')
+      ? jsonResponse({ data: [{ id: 'gpt-test', object: 'model' }] })
+      : jsonResponse(textPayload('openai'))) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const before = await handlers['metrora:advisorHostedProbe']!('openai') as { ok: boolean; value: any }
+    expect(before.value.models[0]).toMatchObject({ id: 'gpt-test', state: 'discovered' })
+
+    const result = await handlers['metrora:advisorHostedChat']!('conformance-success', {
+      ...request('openai'),
+      model: 'gpt-test',
+      harnessConformance: true,
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { model: 'gpt-test' } })
+
+    const after = await handlers['metrora:advisorHostedProbe']!('openai') as { ok: boolean; value: any }
+    expect(after.value.models[0]).toMatchObject({
+      id: 'gpt-test',
+      state: 'verified',
+      capabilities: { toolCall: 'unknown' },
+    })
+  })
+
+  it('records failed conformance only for a malformed exact bounded Harness response', async () => {
+    let chat = true
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/v1/models')) return jsonResponse({ data: [{ id: 'gpt-test', object: 'model' }] })
+      if (chat) { chat = false; return jsonResponse({ output: [] }) }
+      return jsonResponse({ output: [] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const result = await handlers['metrora:advisorHostedChat']!('conformance-malformed', {
+      ...request('openai'),
+      model: 'gpt-test',
+      harnessConformance: true,
+    }) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'response-malformed' } })
+
+    const after = await handlers['metrora:advisorHostedProbe']!('openai') as { ok: boolean; value: any }
+    expect(after.value.models[0]).toMatchObject({
+      id: 'gpt-test',
+      state: 'failed-conformance',
+      capabilities: { toolCall: 'failed-conformance' },
+    })
+  })
+
+  it('does not convert credential rejection into a conformance failure', async () => {
+    let firstChat = true
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/v1/models')) return jsonResponse({ data: [{ id: 'gpt-test', object: 'model' }] })
+      if (firstChat) { firstChat = false; return jsonResponse({ error: 'invalid credential' }, 401) }
+      return jsonResponse({ data: [{ id: 'gpt-test', object: 'model' }] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const result = await handlers['metrora:advisorHostedChat']!('conformance-credential', {
+      ...request('openai'),
+      model: 'gpt-test',
+      harnessConformance: true,
+    }) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'credential-invalid' } })
+
+    const after = await handlers['metrora:advisorHostedProbe']!('openai') as { ok: boolean; value: any }
+    expect(after.value.models[0]).toMatchObject({ id: 'gpt-test', state: 'discovered' })
+  })
+
   it.each(providers)('parses %s non-streaming text and emits only normalized events', async provider => {
     const events: AdvisorHostedEvent[] = []
     const fetchImpl = (async () => jsonResponse(textPayload(provider))) as typeof fetch

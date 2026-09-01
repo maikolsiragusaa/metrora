@@ -95,8 +95,21 @@ export function Advisor({
   const [hostedProbe, setHostedProbe] = useState<HarnessHostedProbePresentation>(() => createHostedProbeChecking('openai'))
   const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
   const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
+  const markHostedModelVerified = useCallback((provider: AdvisorHostedProviderId, model: string) => {
+    if (!hostedOperationGuardRef.current.isCurrentProvider(provider) || hostedModelRef.current !== model) return
+    setHostedProbe(current => current.provider !== provider ? current : {
+      ...current,
+      models: current.models.map(item => item.id === model && item.state !== 'unsupported' && item.state !== 'failed-conformance'
+        ? {
+            ...item,
+            state: 'verified',
+            limitation: 'This exact model passed a bounded Metrora Harness request; deterministic evidence retrieval remains authoritative.',
+          }
+        : item),
+    })
+  }, [])
   const [configureOpen, setConfigureOpen] = useState(false)
-  const { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, localRuntime, checkLocalRuntime, setLocalModel } = useAdvisorLocalRuntime()
+  const { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, llamaServerPort, localRuntime, checkLocalRuntime, setLocalModel, setLlamaServerPort } = useAdvisorLocalRuntime()
   const activeRuntime = runtimeChoice === 'hosted'
     ? hostedRuntime ?? fallbackRuntime
     : localRuntime ?? fallbackRuntime
@@ -216,6 +229,9 @@ export function Advisor({
     const targetConversation = conversations.find(conversation => conversation.id === conversationId)
     if (!targetConversation) return
     const currentHosted = hostedConfigRef.current
+    const hostedRequest = currentHosted.runtimeChoice === 'hosted' && hostedModel
+      ? { provider: hostedProvider, model: hostedModel }
+      : null
     if (currentHosted.runtimeChoice === 'hosted' && hostedSubmitBlockReason) {
       setNotice(hostedSubmitBlockReason)
       return
@@ -270,6 +286,9 @@ export function Advisor({
           relevantReferences: normalizedContextualLaunch?.suggestedPrompt ? [normalizedContextualLaunch.suggestedPrompt] : [],
         },
         signal: controller.signal,
+        onConformance: () => {
+          if (isCurrentRequest() && hostedRequest) markHostedModelVerified(hostedRequest.provider, hostedRequest.model)
+        },
         onToolEvent: event => {
           if (!isCurrentRequest()) return
           setToolActivity(current => [...current.filter(item => item.name !== event.name), event].slice(-4))
@@ -338,7 +357,7 @@ export function Advisor({
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeModel, scope, updateConversation])
+  }, [activeConversationId, contextualScopeMode, conversations, hostedModel, hostedProvider, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, markHostedModelVerified, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeModel, scope, updateConversation])
   const confirmHarnessAction = useCallback(async (actionId: string, digest: string) => {
     if (harnessActionBusyId || typeof metrora.harnessApproveCoreCompatibility !== 'function') {
       if (!harnessActionBusyId) setNotice('This desktop build cannot confirm a Core Compatibility action.')
@@ -469,6 +488,7 @@ export function Advisor({
     runtimeChoice,
     runtimeId,
     runtimeModel,
+    llamaServerPort,
     runtimeState,
     hostedProvider,
     hostedModel,
@@ -488,6 +508,7 @@ export function Advisor({
     onSaveHostedCredential: () => void saveHostedCredential(),
     onClearHostedCredential: () => void clearHostedCredential(),
     onCheckLocalRuntime: () => void checkLocalRuntime(),
+    onLlamaServerPortChange: setLlamaServerPort,
     onActivateHosted: activateHosted,
     onLocalRuntimeChange: updateLocalRuntime,
     onLocalModelChange: updateLocalModel,

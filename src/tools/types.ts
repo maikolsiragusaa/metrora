@@ -18,6 +18,7 @@ export type MetroraToolScope = {
   model: string | null
 }
 export type MetroraToolScopeIdentity = Pick<MetroraToolScope, 'period' | 'range' | 'provider' | 'projectId' | 'model'>
+export type MetroraToolScopeOptions = { allowedPeriods?: readonly MetroraToolPeriodFilter[] }
 
 export type MetroraToolJsonValue = null | string | number | boolean | { [key: string]: MetroraToolJsonValue } | MetroraToolJsonValue[]
 export type MetroraToolJsonObject = { [key: string]: MetroraToolJsonValue }

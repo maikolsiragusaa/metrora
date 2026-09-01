@@ -46,6 +46,7 @@ describe('Hosted Advisor renderer runtime', () => {
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
     const requests: Array<Record<string, unknown>> = []
     const deltas: string[] = []
+    let conformanceCalls = 0
     const transport: HostedAdvisorTransport = {
       probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
       chat: async (_requestId, payload) => {
@@ -61,6 +62,7 @@ describe('Hosted Advisor renderer runtime', () => {
       evidence,
       tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
       executeTool: async () => ({ content: '{"measured":true}', evidence }),
+      onConformance: () => { conformanceCalls += 1 },
       onDelta: text => deltas.push(text),
     })
 
@@ -70,15 +72,18 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(payload.model).toBe('gpt-test')
     expect(payload.stream).toBe(false)
     expect(payload.consent).toBe(true)
+    expect(payload.harnessConformance).toBeUndefined()
     expect(messages.map(message => message.role)).toEqual(['system', 'user'])
     expect(messages.some(message => message.content.includes('measuredCostUSD'))).toBe(false)
     const finalPayload = requests[1]!
-    expect(finalPayload.tools).toEqual([])
+    expect(finalPayload.tools).toHaveLength(1)
     expect(finalPayload.model).toBe('gpt-test')
     expect(finalPayload.stream).toBe(false)
+    expect(finalPayload.harnessConformance).toBe(true)
+    expect(conformanceCalls).toBe(1)
     const finalMessages = finalPayload.messages as Array<Record<string, unknown>>
-    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'system'])
-    expect(finalMessages[2]?.content).toContain('measuredCostUSD')
+    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user'])
+    expect(finalMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
     expect(finalMessages.some(message => message.role === 'tool')).toBe(false)
     expect(deltas).toEqual([])
     await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')
@@ -105,6 +110,33 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.conclusion).not.toContain(narrative)
     expect(answer.streamed).toBe(false)
+  })
+
+  it('does not signal hosted conformance when the bounded continuation fails', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    let calls = 0
+    let conformanceCalls = 0
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async () => {
+        calls += 1
+        if (calls === 1) return { streamed: false, message: { content: 'Read the spend.', tool_calls: [{ id: 'call-spend', function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+        throw new Error('provider unavailable')
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport }).generate({
+      question: 'What changed in spend?',
+      evidence,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async () => ({ content: '{"measured":true}', evidence }),
+      onConformance: () => { conformanceCalls += 1 },
+    })
+    expect(conformanceCalls).toBe(0)
+    expect(answer.conclusion).toContain('Metrora measured')
+    expect(answer.materialLimits?.join(' ')).toContain('continuation')
   })
 
   it('keeps same-scope conversation history for hosted follow-ups and drops other scopes', async () => {

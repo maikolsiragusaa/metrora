@@ -1,6 +1,6 @@
-import { containsAdvisorSensitiveText, sanitizeAdvisorDisplayText } from './privacy'
+import { containsAdvisorContributionLanguage, containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText, sanitizeAdvisorNarrative } from './privacy'
 import { buildAdvisorVerifiedClaimAtoms, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
-import type { AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorVerifiedClaimAtomV1 } from './types'
+import type { AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorSynthesisNarrativeV1, AdvisorVerifiedClaimAtomV1 } from './types'
 
 const PRESENTATION_KINDS: readonly AdvisorPresentationIntent[] = ['text', 'metric-cards', 'line-chart', 'bar-chart', 'comparison-table', 'quota-card', 'bench-summary', 'warning', 'evidence-disclosure']
 const MAX_DRAFT_BYTES = 16 * 1024
@@ -19,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function boundedText(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim() || bytes(value) > MAX_TEXT_BYTES || containsAdvisorSensitiveText(value)) return null
+  if (typeof value !== 'string' || !value.trim() || bytes(value) > MAX_TEXT_BYTES || containsAdvisorSensitiveText(value) || containsAdvisorForbiddenOutputClass(value)) return null
   const safe = sanitizeAdvisorDisplayText(value, 1_500)
   return safe === '[redacted]' ? null : safe
 }
@@ -29,6 +29,28 @@ function stringList(value: unknown, limit = 12): string[] | null {
   if (!Array.isArray(value) || value.length > limit) return null
   const result = value.map(item => boundedText(item))
   return result.every((item): item is string => Boolean(item)) ? result : null
+}
+
+function narrativeText(value: unknown): string | null {
+  if (typeof value !== 'string' || bytes(value) > MAX_TEXT_BYTES) return null
+  const safe = sanitizeAdvisorNarrative(value)
+  return safe || null
+}
+
+function parseNarrative(value: unknown): AdvisorSynthesisNarrativeV1 | null {
+  if (!isRecord(value) || !onlyKeys(value, ['interpretation', 'recommendation', 'caveats'])) return null
+  const interpretation = value.interpretation === undefined ? undefined : narrativeText(value.interpretation)
+  const recommendation = value.recommendation === undefined ? undefined : narrativeText(value.recommendation)
+  const caveats = stringList(value.caveats, 6)
+  if (value.interpretation !== undefined && !interpretation) return null
+  if (value.recommendation !== undefined && !recommendation) return null
+  if (value.caveats !== undefined && !caveats) return null
+  if (!interpretation && !recommendation && !caveats?.length) return null
+  return {
+    ...(interpretation ? { interpretation } : {}),
+    ...(recommendation ? { recommendation } : {}),
+    ...(caveats?.length ? { caveats } : {}),
+  }
 }
 
 function parseJsonText(value: string): unknown {
@@ -104,6 +126,8 @@ export function parseAdvisorSynthesisDraft(value: unknown): AdvisorSynthesisDraf
   if (claims.some(claim => claim === null) || presentationRequests.some(request => request === null)) return null
   const expertDetail = stringList(parsed.expertDetail, 8)
   if (parsed.expertDetail !== undefined && !expertDetail) return null
+  const narrative = parsed.narrative === undefined ? undefined : parseNarrative(parsed.narrative)
+  if (parsed.narrative !== undefined && !narrative) return null
   return {
     contractVersion: 'advisor-synthesis-draft-v1',
     schemaVersion: 1,
@@ -113,6 +137,7 @@ export function parseAdvisorSynthesisDraft(value: unknown): AdvisorSynthesisDraf
     claims: claims as AdvisorClaimSelectionV1[],
     presentationRequests: presentationRequests as AdvisorPresentationRequestV1[],
     ...(expertDetail?.length ? { expertDetail } : {}),
+    ...(narrative ? { narrative } : {}),
   }
 }
 
@@ -128,7 +153,151 @@ function verifyBlock(block: AdvisorSynthesisBlockV1, selected: Set<string>, avai
   return null
 }
 
-export type AdvisorSynthesisVerification = { valid: boolean; claims: AdvisorVerifiedClaimAtomV1[]; reason: string | null }
+export type AdvisorSynthesisVerification = {
+  valid: boolean
+  claims: AdvisorVerifiedClaimAtomV1[]
+  reason: string | null
+  /** Safe model prose after evidence/subject/rank grounding. */
+  narrative?: AdvisorSynthesisNarrativeV1
+}
+
+function isCanonicalContributionAtom(atom: AdvisorVerifiedClaimAtomV1): boolean {
+  return (atom.claimKind === 'model_measured_cost' && /^spend\.models\.\d+\.costUSD$/u.test(atom.evidencePath))
+    || (atom.claimKind === 'project_measured_cost' && /^spend\.projects\.\d+\.costUSD$/u.test(atom.evidencePath))
+    || (atom.claimKind === 'session_measured_cost' && /^spend\.sessionsByCost\.\d+\.costUSD$/u.test(atom.evidencePath))
+}
+
+function normalizedPhrase(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
+}
+
+function phraseIn(value: string, phrase: string): boolean {
+  const haystack = ' ' + normalizedPhrase(value).replace(/[^\p{L}\p{N}._/-]+/gu, ' ') + ' '
+  const needle = ' ' + normalizedPhrase(phrase).replace(/[^\p{L}\p{N}._/-]+/gu, ' ') + ' '
+  return Boolean(needle.trim()) && haystack.includes(needle)
+}
+
+const CONTRIBUTION_ENTITY_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'based', 'breakdown', 'by', 'contribution', 'contributions',
+  'contributor', 'contributors', 'cost', 'driver', 'drivers', 'evidence', 'from', 'in', 'is', 'main',
+  'available', 'clear', 'measured', 'most', 'of', 'obvious', 'on', 'observed', 'primary', 'ranking', 'represented',
+  'sessions', 'shown', 'spend', 'the', 'this', 'to', 'top', 'visible', 'was', 'were', 'with',
+])
+const CONTRIBUTION_ENTITY_LABELS = new Set(['model', 'project', 'provider', 'service', 'session'])
+const CONTRIBUTION_PLACEHOLDER_PATTERN = /^(?:(?:the|a|an|this|that)\s+)?(?:selected|current|requested)\s+(?:model|project|session|service|provider)$/u
+const CONTRIBUTION_COPULA_PATTERN = /\b([\p{L}\p{N}][\p{L}\p{N}._/-]*(?:\s+[\p{L}\p{N}][\p{L}\p{N}._/-]*){0,3})\s+(?:is|was|are|were|appears?|seems?|looks?|e|era|erano|sono|sembra|appare)\s+(?:to\s+be\s+|di\s+essere\s+)?(?:(?:the|a|an|observed|measured|main|primary|top|leading|largest|highest|first|most|number|one|il|la|i|le|un|una|osservato|osservata|principale|principali|maggiore|maggiori|primo|prima|in|testa)\s+){0,7}(?:driver|drivers|contributor|contributors|contribution|contributions|contributore|contributori|contributo|contributi|ranked|ranking|classifica|classificazione|ordinamento)\b/giu
+const CONTRIBUTION_COMPLEMENT_PATTERN = /\b(?:driver|drivers|contributor|contributors|contribution|contributions|contributore|contributori|contributo|contributi)\s+(?:is|was|are|were|e|era|erano|sono|è|sembra|appare)\s+(?:(?:the|a|an|il|la|i|le|un|una|selected|current|requested|osservato|osservata|principale|principali)\s+){0,4}([\p{L}\p{N}][\p{L}\p{N}._/-]*(?:\s+[\p{L}\p{N}][\p{L}\p{N}._/-]*){0,2})\b/giu
+const CONTRIBUTION_LABEL_PATTERN = /\b(?:project|model|session|service|provider)\s+[\p{L}\p{N}][\p{L}\p{N}._/-]*(?:\s+[\p{L}\p{N}][\p{L}\p{N}._/-]*){0,3}/giu
+
+function contributionSubjectCandidate(value: string): string | null {
+  const words = normalizedPhrase(value).split(/\s+/u)
+    .map(word => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+    .filter(Boolean)
+  while (words.length && CONTRIBUTION_ENTITY_STOP_WORDS.has(words[0]!)) words.shift()
+  while (words.length && CONTRIBUTION_ENTITY_STOP_WORDS.has(words[words.length - 1]!)) {
+    if (words.length === 2 && CONTRIBUTION_ENTITY_LABELS.has(words[0]!) && words[1]!.length === 1) break
+    words.pop()
+  }
+  if (!words.length) return null
+  const candidate = words.join(' ')
+  if (words.length === 1 && CONTRIBUTION_ENTITY_LABELS.has(words[0]!)) return null
+  return CONTRIBUTION_PLACEHOLDER_PATTERN.test(candidate) ? null : candidate
+}
+
+function contributionSubjectCandidates(value: string): string[] {
+  const candidates: string[] = []
+  for (const match of value.matchAll(CONTRIBUTION_COPULA_PATTERN)) {
+    const candidate = contributionSubjectCandidate(match[1] ?? '')
+    if (candidate) candidates.push(candidate)
+  }
+  for (const match of value.matchAll(CONTRIBUTION_COMPLEMENT_PATTERN)) {
+    const candidate = contributionSubjectCandidate(match[1] ?? '')
+    if (candidate) candidates.push(candidate)
+  }
+  for (const match of value.matchAll(CONTRIBUTION_LABEL_PATTERN)) {
+    const candidate = contributionSubjectCandidate(match[0] ?? '')
+    if (candidate) candidates.push(candidate)
+  }
+  return Array.from(new Set(candidates.map(normalizedPhrase)))
+}
+
+function canonicalContributionAtoms(evidence: AdvisorEvidence): AdvisorVerifiedClaimAtomV1[] {
+  return buildAdvisorVerifiedClaimAtoms(evidence).filter(isCanonicalContributionAtom).filter(atom => verifyAdvisorVerifiedClaimAtom(atom, evidence))
+}
+
+function contributionGroup(atom: AdvisorVerifiedClaimAtomV1): string | null {
+  const match = atom.evidencePath.match(/^spend\.(models|projects|sessionsByCost)\.\d+\.costUSD$/u)
+  return match?.[1] ?? null
+}
+
+function isStrongContributionLanguage(value: string): boolean {
+  return /\b(?:main|primary|top|leading|highest|largest|biggest|first|number\s+one|most\s+(?:expensive|costly)|ranking|ranked|rank|classifica|classificato|classificazione|ordinamento|ordine|principale|maggiore|primo|prima|in\s+testa|piu\s+(?:costoso|costosa|costosi|costose))\b/u.test(normalizedPhrase(value))
+}
+
+function rowIsStrictlyTop(atom: AdvisorVerifiedClaimAtomV1, allAtoms: AdvisorVerifiedClaimAtomV1[]): boolean {
+  const group = contributionGroup(atom)
+  if (!group || typeof atom.value !== 'number') return false
+  const peers = allAtoms.filter(candidate => contributionGroup(candidate) === group && typeof candidate.value === 'number')
+  if (peers.length < 2) return false
+  const maximum = Math.max(...peers.map(candidate => candidate.value as number))
+  return atom.value === maximum && peers.filter(candidate => candidate.value === maximum).length === 1
+}
+
+function contributionCategoriesSupported(value: string, atoms: AdvisorVerifiedClaimAtomV1[]): boolean {
+  const normalized = normalizedPhrase(value)
+  return [
+    [/\bmodels?\b/u, 'models'],
+    [/\bprojects?\b/u, 'projects'],
+    [/\bsessions?\b/u, 'sessionsByCost'],
+  ].every(([pattern, group]) => !(pattern as RegExp).test(normalized) || atoms.some(atom => contributionGroup(atom) === group))
+}
+
+function subjectRelevantCanonicalAtoms(value: string, evidence: AdvisorEvidence, atoms: AdvisorVerifiedClaimAtomV1[]): AdvisorVerifiedClaimAtomV1[] | null {
+  if (!contributionCategoriesSupported(value, atoms)) return null
+  const candidates = contributionSubjectCandidates(value)
+  const subjects = atoms.flatMap(atom => atom.subject ? [normalizedPhrase(atom.subject)] : [])
+  const namedSubjects = subjects.filter(subject => phraseIn(value, subject))
+  const unknownCandidate = candidates.some(candidate => !subjects.some(subject => phraseIn(candidate, subject) || phraseIn(subject, candidate)))
+  if (unknownCandidate || (candidates.length && !namedSubjects.length)) return null
+  if (namedSubjects.length) return atoms.filter(atom => atom.subject && namedSubjects.includes(normalizedPhrase(atom.subject)))
+  const selectedModel = evidence.scope.model ?? evidence.modelEfficiency?.selectedModel ?? null
+  if (/\b(?:selected\s+model|modello\s+selezionato)\b/u.test(normalizedPhrase(value)) && selectedModel) {
+    return atoms.filter(atom => atom.subject && normalizedPhrase(atom.subject) === normalizedPhrase(selectedModel))
+  }
+  return atoms
+}
+
+function selectedModelPlaceholderSupported(value: string, evidence: AdvisorEvidence, atoms: AdvisorVerifiedClaimAtomV1[]): boolean {
+  if (!/\b(?:selected\s+model|modello\s+selezionato)\b/u.test(normalizedPhrase(value))) return true
+  const selectedModel = evidence.scope.model ?? evidence.modelEfficiency?.selectedModel ?? null
+  return Boolean(selectedModel && atoms.some(atom => atom.subject && normalizedPhrase(atom.subject) === normalizedPhrase(selectedModel)))
+}
+
+function contributionNarrativeSupported(value: string, evidence: AdvisorEvidence, relevantAtoms: AdvisorVerifiedClaimAtomV1[]): boolean {
+  const safe = sanitizeAdvisorNarrative(value)
+  if (!safe || !containsAdvisorContributionLanguage(safe)) return Boolean(safe)
+  if (!relevantAtoms.length || !selectedModelPlaceholderSupported(safe, evidence, relevantAtoms)) return false
+  const subjectAtoms = subjectRelevantCanonicalAtoms(safe, evidence, relevantAtoms)
+  if (!subjectAtoms?.length) return false
+  return !isStrongContributionLanguage(safe) || subjectAtoms.some(atom => rowIsStrictlyTop(atom, canonicalContributionAtoms(evidence)))
+}
+
+function groundedNarrative(narrative: AdvisorSynthesisNarrativeV1 | undefined, evidence: AdvisorEvidence, selectedAtoms: AdvisorVerifiedClaimAtomV1[]): AdvisorSynthesisNarrativeV1 | undefined {
+  if (!narrative) return undefined
+  const contributionAtoms = selectedAtoms.filter(isCanonicalContributionAtom)
+  const interpretation = narrative.interpretation && contributionNarrativeSupported(narrative.interpretation, evidence, contributionAtoms) ? narrative.interpretation : undefined
+  const recommendation = narrative.recommendation && contributionNarrativeSupported(narrative.recommendation, evidence, contributionAtoms) ? narrative.recommendation : undefined
+  const caveats = (narrative.caveats ?? []).filter(value => contributionNarrativeSupported(value, evidence, contributionAtoms))
+  if (!interpretation && !recommendation && !caveats.length) return undefined
+  return { ...(interpretation ? { interpretation } : {}), ...(recommendation ? { recommendation } : {}), ...(caveats.length ? { caveats } : {}) }
+}
+
+export function isAdvisorNaturalNarrativeSupported(value: string, evidence: AdvisorEvidence): boolean {
+  const safe = sanitizeAdvisorNarrative(value)
+  if (!safe) return false
+  if (!containsAdvisorContributionLanguage(safe)) return true
+  return contributionNarrativeSupported(safe, evidence, canonicalContributionAtoms(evidence))
+}
 
 export function verifyAdvisorSynthesis(draft: AdvisorSynthesisDraftV1, evidence: AdvisorEvidence): AdvisorSynthesisVerification {
   const available = new Map(buildAdvisorVerifiedClaimAtoms(evidence).map(atom => [atom.id, atom]))
@@ -149,10 +318,13 @@ export function verifyAdvisorSynthesis(draft: AdvisorSynthesisDraftV1, evidence:
   const blockErrors = [draft.conclusion, ...draft.why, ...draft.details]
     .map(block => verifyBlock(block, selected, available))
     .filter((item): item is string => Boolean(item))
-  const valid = !reason && blockErrors.length === 0 && draft.conclusion.claimIds.length > 0 && selectedAtoms.length > 0
+  const verificationError = reason ?? blockErrors[0]
+  const valid = !verificationError && draft.conclusion.claimIds.length > 0 && selectedAtoms.length > 0
+  const narrative = valid ? groundedNarrative(draft.narrative, evidence, selectedAtoms) : undefined
   return {
     valid,
     claims: selectedAtoms,
-    reason: valid ? null : reason ?? blockErrors[0] ?? 'The synthesis did not contain a verified claim-atom graph.',
+    reason: valid ? null : verificationError ?? 'The synthesis did not contain a verified claim-atom graph.',
+    ...(narrative ? { narrative } : {}),
   }
 }

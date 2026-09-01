@@ -18,6 +18,7 @@ import type {
   MetroraToolPeriod,
   MetroraToolPeriodFilter,
   MetroraToolScope,
+  MetroraToolScopeOptions,
   MetroraToolName,
   MetroraToolResultEnvelope,
 } from './types.js'
@@ -71,30 +72,30 @@ function definition(name: MetroraToolName, description: string, properties: Reco
 const definitions: readonly MetroraToolDefinition[] = Object.freeze([
   definition('get_spend_snapshot', 'Read Metrora measured spend, daily trend, model and Project drivers, and coverage for the selected scope.', {
     model: { type: 'string', description: 'Optional exact model filter; bounded identifier.' },
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope or request yesterday.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
   definition('get_model_efficiency', 'Read canonical Metrora model rows and observed cost per call. Do not infer quality or comparable work.', {
     model: { type: 'string', description: 'Optional exact model filter; bounded identifier.' },
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
   definition('get_quota_snapshot', 'Read provider-reported quota windows, reset timestamps, freshness, and credits. Never estimate quota from Metrora spend.', {
     provider: { type: 'string', enum: [...PROVIDER_FILTER_VALUES], description: 'Optional factual supported-provider filter.' },
   }),
   definition('get_overview_snapshot', 'Read the current canonical Metrora overview for the selected period, Project, provider, and model context.', {
     model: { type: 'string', description: 'Optional exact model filter; bounded identifier.' },
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope or request yesterday.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
   definition('get_project_drivers', 'Read descriptive Project spend drivers from the canonical Metrora overview. Do not infer causality.', {
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope or request yesterday.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
   definition('get_session_highlights', 'Read content-minimal highest-cost session summaries from the canonical Metrora overview. No raw session content is exposed.', {
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope or request yesterday.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
   definition('get_coverage_report', 'Read Metrora evidence coverage, assumptions, and unknowns for the selected scope.', {
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope or request yesterday.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
   definition('get_bench_evidence', 'Read bounded canonical Bench history and compatible comparisons for the selected scope. Never start a Bench run.', {
-    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may only narrow the selected scope.' },
+    period: { type: 'string', enum: [...TOOL_PERIOD_VALUES], description: 'Optional bounded period refinement; it may narrow the selected scope or use an explicit user-requested comparison period.' },
   }),
 ])
 
@@ -258,11 +259,12 @@ export function sameMetroraToolScope(left: MetroraToolScope, right: MetroraToolS
     && left.range?.to === right.range?.to
 }
 
-export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolName, args: MetroraToolJsonObject): MetroraToolScope {
+export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolName, args: MetroraToolJsonObject, options: MetroraToolScopeOptions = {}): MetroraToolScope {
   const next = { ...scope, range: scope.range ? { ...scope.range } : null }
+  const explicitlyRequestedPeriods = new Set(options.allowedPeriods ?? [])
   if (typeof args.period === 'string') {
     if (args.period === 'yesterday') {
-      if (scope.period === 'today' && !scope.range) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen today to yesterday.')
+      if (scope.period === 'today' && !scope.range && !explicitlyRequestedPeriods.has('yesterday')) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen today to yesterday.')
       const date = new Date()
       date.setHours(0, 0, 0, 0)
       date.setDate(date.getDate() - 1)
@@ -273,7 +275,8 @@ export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolN
     } else {
       const periodOrder: Record<MetroraToolPeriod, number> = { today: 0, week: 1, '30days': 2, month: 3, all: 4, lifetime: 5 }
       const requested = args.period as MetroraToolPeriod
-      if ((scope.range && requested !== scope.period) || periodOrder[requested] > periodOrder[scope.period]) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen the selected Metrora scope.')
+      const explicitComparison = explicitlyRequestedPeriods.has(requested) && !scope.range
+      if ((scope.range && requested !== scope.period) || (periodOrder[requested] > periodOrder[scope.period] && !explicitComparison)) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen the selected Metrora scope without an explicit bounded comparison request.')
       next.period = requested
       if (requested !== scope.period) next.range = null
     }

@@ -71,15 +71,15 @@ function hostedTransport(provider: 'openai' | 'anthropic' | 'gemini', payloads: 
   }
 }
 
-function expectFreshPayloads(payloads: Array<Record<string, unknown>>): void {
+function expectContinuationPayloads(payloads: Array<Record<string, unknown>>): void {
   expect(payloads).toHaveLength(2)
   expect(payloads[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
-  expect(payloads[1]?.tools).toEqual([])
+  expect(payloads[1]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
   const planningMessages = payloads[0]?.messages as Array<Record<string, unknown>>
-  const synthesisMessages = payloads[1]?.messages as Array<Record<string, unknown>>
+  const continuationMessages = payloads[1]?.messages as Array<Record<string, unknown>>
   expect(planningMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(false)
-  expect(synthesisMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
-  for (const message of [...planningMessages, ...synthesisMessages]) {
+  expect(continuationMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
+  for (const message of [...planningMessages, ...continuationMessages]) {
     expect(message.role).not.toBe('tool')
     expect(message).not.toHaveProperty('tool_calls')
     expect(message).not.toHaveProperty('tool_call_id')
@@ -125,7 +125,7 @@ describe('Advisor independent planning and synthesis phases', () => {
   it.each([
     ['Ollama', (transport: OllamaTransport) => new OllamaAdvisorRuntime({ model: 'fixture-ollama', transport })],
     ['LM Studio', (transport: OllamaTransport) => new LMStudioAdvisorRuntime({ model: 'fixture-lmstudio', transport })],
-  ] as const)('%s performs planning, canonical execution, and one fresh synthesis call', async (_label, createRuntime) => {
+  ] as const)('%s performs planning, canonical execution, and bounded continuation', async (_label, createRuntime) => {
     const payloads: Array<Record<string, unknown>> = []
     const events: string[] = []
     const runtime = createRuntime(localTransport(payloads, events))
@@ -140,7 +140,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     })
 
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
-    expectFreshPayloads(payloads)
+    expectContinuationPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
   })
@@ -182,7 +182,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     })
 
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
-    expectFreshPayloads(payloads)
+    expectContinuationPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
   })

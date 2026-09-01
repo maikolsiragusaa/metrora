@@ -1,5 +1,42 @@
 import type { AdvisorCoverageLevel, AdvisorEvidence } from './types'
 
+function sameEvidenceContext(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
+  return left.provider === right.provider
+    && left.projectId === right.projectId
+    && left.projectName === right.projectName
+    && left.model === right.model
+}
+
+function localYesterday(): string {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() - 1)
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0')
+}
+
+function isDerivedYesterday(scope: AdvisorEvidence['scope']): boolean {
+  return scope.period === 'today'
+    && scope.range?.from === localYesterday()
+    && scope.range.to === scope.range.from
+}
+
+/** Periods are comparable only when the factual provider/project/model
+ * context is unchanged and the reads use the bounded period vocabulary. */
+export function compatibleEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
+  if (!sameEvidenceContext(left, right)) return false
+  if (left.period === right.period) {
+    return (left.range?.from === right.range?.from && left.range?.to === right.range?.to)
+      || (left.range === null && isDerivedYesterday(right))
+      || (right.range === null && isDerivedYesterday(left))
+  }
+  // A bounded comparison may contain one aggregate period and one derived
+  // relative-day range (for example, a selected week plus yesterday). The
+  // tool contract prevents arbitrary range changes, so a temporal mismatch is
+  // safe to combine only when at least one side has no explicit range. Two
+  // independent explicit ranges remain incompatible.
+  return left.range === null || right.range === null
+}
+
 export function sameEvidenceScope(left: AdvisorEvidence['scope'], right: AdvisorEvidence['scope']): boolean {
   return left.period === right.period
     && left.provider === right.provider
@@ -11,7 +48,7 @@ export function sameEvidenceScope(left: AdvisorEvidence['scope'], right: Advisor
 }
 
 export function hasMixedEvidenceScopes(items: AdvisorEvidence[]): boolean {
-  return items.length > 1 && items.some(item => !sameEvidenceScope(item.scope, items[0]!.scope))
+  return items.length > 1 && items.some(item => !compatibleEvidenceScope(item.scope, items[0]!.scope))
 }
 
 export function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidence): AdvisorEvidence {

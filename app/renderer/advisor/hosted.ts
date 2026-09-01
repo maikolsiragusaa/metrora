@@ -1,9 +1,14 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { buildAdvisorChatMessages, buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
+import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
+import { parseAdvisorSynthesisDraft } from './synthesis'
+import { createAdvisorTurnDeadline, raceAdvisorAbort, shouldRethrowAdvisorAbort } from './abort'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+
+const BOUNDED_TURN_DEADLINE_NOTE = 'The bounded Metrora turn deadline was reached; verified facts are shown instead.'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
 export type HostedAdvisorProbeResult = {
@@ -48,7 +53,7 @@ const bridgeTransport: HostedAdvisorTransport = {
 
 export async function probeHostedAdvisor(provider: HostedAdvisorProvider, signal?: AbortSignal, transport: HostedAdvisorTransport = bridgeTransport): Promise<HostedAdvisorProbeResult> {
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
-  const result = await transport.probe(provider, signal)
+  const result = await raceAdvisorAbort(transport.probe(provider, signal), signal)
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
   return result
 }
@@ -69,7 +74,13 @@ function planningValidation(input: AdvisorRuntimeInput, response: { message: { c
   const { fallbackPlan, guard } = runtimeGuardPlan(input)
   let draft = parseAdvisorPlanningDraft(response.message?.content ?? '')
   if (!draft && allowNativeToolCalls && Array.isArray(response.message?.tool_calls)) {
-    draft = planningDraftFromNativeToolCalls(response.message.tool_calls, fallbackPlan)
+    try {
+      draft = planningDraftFromNativeToolCalls(response.message.tool_calls, fallbackPlan)
+    } catch {
+      // Provider-native calls are untrusted. A malformed call must not escape
+      // the planning boundary or reach the Tool executor.
+      return null
+    }
   }
   if (!draft) return null
   try {
@@ -87,7 +98,7 @@ async function executeRequests(input: AdvisorRuntimeInput, requests: readonly Ad
     input.onToolEvent?.({ name: request.tool, status: 'queued' })
     input.onToolEvent?.({ name: request.tool, status: 'started' })
     try {
-      const result = await input.executeTool(request.tool, request.arguments, signal)
+      const result = await raceAdvisorAbort(Promise.resolve().then(() => input.executeTool!(request.tool, request.arguments, signal)), signal)
     throwIfAborted(signal)
     if (typeof result.content !== 'string' || result.content.length > 32 * 1024) throw new AdvisorToolContractError('output-too-large', 'Metrora tool content exceeded its safety limit.')
     // The renderer still validates content-minimal output locally; it is never
@@ -137,58 +148,62 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     if (guard.authorization !== 'read-only') {
       return finalizeModelAnswer({ runtime: this, input, evidenceItems: [input.evidence], finalContent: '', modelUsed: false }, signal)
     }
+    const deadline = createAdvisorTurnDeadline(signal, HARNESS_TOOL_LOOP_LIMITS.turnTimeoutMs)
+    const turnSignal = deadline.signal
+    const finalizationSignal = () => deadline.didTimeout() ? undefined : turnSignal
+    const shouldRethrow = (error: unknown) => shouldRethrowAdvisorAbort(error, signal, deadline)
     let activeRequestId: string | null = null
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
-    signal?.addEventListener('abort', cancel, { once: true })
+    turnSignal.addEventListener('abort', cancel, { once: true })
     try {
       const conversation = async (kind: 'social' | 'boundary', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
         try {
           activeRequestId = requestId('hosted-conversation')
-          const response = await this.transport.chat(activeRequestId, {
+          const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
             provider: this.provider,
             model: this.model,
             messages: buildAdvisorConversationMessages(effectiveInput, kind),
             tools: [],
             stream: false,
             consent: true,
-          }, signal)
+          }, turnSignal), turnSignal)
           activeRequestId = null
-          throwIfAborted(signal)
-          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, response.message?.content ?? '', true, signal)
+          throwIfAborted(turnSignal)
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, response.message?.content ?? '', true, finalizationSignal())
         } catch (error) {
           activeRequestId = null
-          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, signal)
+          if (shouldRethrow(error)) throw error
+          return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, '', false, finalizationSignal())
         }
       }
 
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
         const deterministic = deterministicPlanningFallback(fallbackPlan, definitions, input.question)
         let evidenceItems: AdvisorEvidence[] = []
-        try { evidenceItems = await executeRequests(input, deterministic.toolRequests, signal) } catch (error) {
-          if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+        try { evidenceItems = await executeRequests(input, deterministic.toolRequests, turnSignal) } catch (error) {
+          if (shouldRethrow(error)) throw error
         }
-        throwIfAborted(signal)
-        return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: note }, signal)
+        if (signal?.aborted) throwIfAborted(signal)
+        return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: deadline.didTimeout() ? BOUNDED_TURN_DEADLINE_NOTE : note }, finalizationSignal())
       }
 
       let firstResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
       const allowNativeToolCalls = this.capabilities.toolCall === 'supported'
       try {
         activeRequestId = requestId('hosted-chat')
-        firstResponse = await this.transport.chat(activeRequestId, {
+        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
-          messages: buildAdvisorChatMessages(input, fallbackPlan, guard),
+          messages: buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
           tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
-        }, signal)
+        }, turnSignal), turnSignal)
         activeRequestId = null
-        throwIfAborted(signal)
+        throwIfAborted(turnSignal)
       } catch (error) {
         activeRequestId = null
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
+        if (shouldRethrow(error)) throw error
         return fallback('The hosted model response was unavailable; this answer uses the deterministic Metrora evidence path.')
       }
 
@@ -200,46 +215,114 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
         if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
         if (!content.trim() || /^(?:\{|\[|```)/u.test(content.trim())) return fallback('The model response was malformed or outside the bounded Metrora Tools contract.')
-        return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, signal)
+        return finalizeAdvisorConversationAnswer(this, input, 'social', content, true, finalizationSignal())
       }
       const effectiveInput: AdvisorRuntimeInput = { ...input, plan: validation.plan, guard }
       if (validation.plan.turnKind === 'social' || validation.plan.turnKind === 'boundary') {
         return conversation(validation.plan.turnKind, effectiveInput)
       }
 
+      let currentInput = effectiveInput
+      let currentPlan = validation.plan
+      let currentResponse = firstResponse
       let evidenceItems: AdvisorEvidence[] = []
-      try { evidenceItems = await executeRequests(effectiveInput, validation.toolRequests, signal) } catch (error) {
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return fallback('The hosted model requested evidence that could not be executed; this answer uses the deterministic Metrora evidence path.')
-      }
-      throwIfAborted(signal)
-      const effectiveEvidenceItems = evidenceItems.length ? evidenceItems : [input.evidence]
-      if (hasMixedEvidenceScopes(effectiveEvidenceItems)) {
-        return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: '', modelUsed: true, fallbackNote: 'Conflicting tool scopes were rejected; no cross-scope synthesis was attempted.' }, signal)
-      }
+      let toolRound = 0
+      let totalToolCalls = 0
+      const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({
+        runtime: this,
+        input: currentInput,
+        evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence],
+        finalContent,
+        modelUsed: true,
+        fallbackNote: deadline.didTimeout() ? BOUNDED_TURN_DEADLINE_NOTE : note,
+      }, finalizationSignal())
 
-      activeRequestId = requestId('hosted-synthesis')
-      let synthesisResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
-      try {
-        const mergedEvidence = mergeEvidence(effectiveEvidenceItems, input.evidence)
-        synthesisResponse = await this.transport.chat(activeRequestId, {
-          provider: this.provider,
-          model: this.model,
-          messages: buildAdvisorSynthesisMessages(effectiveInput, validation.plan, mergedEvidence),
-          tools: [],
-          stream: false,
-          consent: true,
-        }, signal)
-        activeRequestId = null
+      while (true) {
+        const nextValidation = toolRound === 0 ? validation : planningValidation(currentInput, currentResponse, allowNativeToolCalls)
+        if (!nextValidation) {
+          if (Array.isArray(currentResponse.message?.tool_calls) && currentResponse.message.tool_calls.length > 0) {
+            return fallbackFromEvidence('The model requested a tool outside the bounded Metrora Tools contract; verified facts are shown instead.')
+          }
+          const finalContent = currentResponse.message?.content ?? ''
+          if (toolRound > 0 && finalContent.trim()) {
+            const structured = /^(?:\{|\[)/u.test(finalContent.trim()) || finalContent.trim().startsWith(String.fromCharCode(96))
+            const validDraft = structured && Boolean(parseAdvisorSynthesisDraft(finalContent))
+            return fallbackFromEvidence(structured && !validDraft ? 'The model synthesis was malformed; verified facts are shown instead.' : '', finalContent)
+          }
+          return fallbackFromEvidence('The model continuation was malformed or outside the bounded Metrora Tools contract; verified facts are shown instead.')
+        }
+        currentPlan = nextValidation.plan
+        currentInput = { ...currentInput, plan: currentPlan }
+        const requestedCalls = nextValidation.toolRequests.length
+        if (requestedCalls === 0 || requestedCalls > HARNESS_TOOL_LOOP_LIMITS.maxCallsPerRound || toolRound >= HARNESS_TOOL_LOOP_LIMITS.maxRounds || totalToolCalls + requestedCalls > HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
+          return fallbackFromEvidence('The bounded Metrora Tool loop limit was reached; verified facts are shown instead.')
+        }
+        currentInput.onToolRound?.(toolRound + 1)
+        try {
+          const roundEvidence = await executeRequests(currentInput, nextValidation.toolRequests, turnSignal)
+          evidenceItems.push(...roundEvidence)
+        } catch (error) {
+          if (shouldRethrow(error)) throw error
+          return fallbackFromEvidence('The hosted model requested evidence that could not be executed; verified facts are shown instead.')
+        }
+        if (deadline.didTimeout()) return fallbackFromEvidence(BOUNDED_TURN_DEADLINE_NOTE)
         throwIfAborted(signal)
-      } catch (error) {
-        activeRequestId = null
-        if (signal?.aborted || (error instanceof Error && /cancel|abort/i.test(error.message))) throw error
-        return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: '', modelUsed: true, fallbackNote: 'The fresh hosted synthesis phase was unavailable; verified Metrora facts are shown instead.' }, signal)
+        totalToolCalls += requestedCalls
+        toolRound += 1
+        const effectiveEvidenceItems = evidenceItems.length ? evidenceItems : [input.evidence]
+        if (hasMixedEvidenceScopes(effectiveEvidenceItems)) return fallbackFromEvidence('Conflicting tool scopes were rejected; no cross-scope synthesis was attempted.')
+
+        if (deadline.didTimeout()) return fallbackFromEvidence(BOUNDED_TURN_DEADLINE_NOTE)
+        if (toolRound < HARNESS_TOOL_LOOP_LIMITS.maxRounds && totalToolCalls < HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
+          activeRequestId = requestId('hosted-tool-continuation')
+          try {
+            currentResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
+              provider: this.provider,
+              model: this.model,
+              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergeEvidence(effectiveEvidenceItems, input.evidence), toolRound + 1, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
+              tools: allowNativeToolCalls ? definitions : [],
+              stream: false,
+              consent: true,
+              harnessConformance: true,
+            }, turnSignal), turnSignal)
+            activeRequestId = null
+            throwIfAborted(turnSignal)
+            currentInput.onConformance?.()
+            continue
+          } catch (error) {
+            activeRequestId = null
+            if (shouldRethrow(error)) throw error
+            return fallbackFromEvidence('The bounded hosted evidence continuation was unavailable; verified facts are shown instead.')
+          }
+        }
+
+        if (deadline.didTimeout()) return fallbackFromEvidence(BOUNDED_TURN_DEADLINE_NOTE)
+        activeRequestId = requestId('hosted-synthesis')
+        let synthesisResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
+        try {
+          const mergedEvidence = mergeEvidence(effectiveEvidenceItems, input.evidence)
+          synthesisResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
+            provider: this.provider,
+            model: this.model,
+            messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence),
+            tools: [],
+            stream: false,
+            consent: true,
+            harnessConformance: true,
+          }, turnSignal), turnSignal)
+          activeRequestId = null
+          throwIfAborted(turnSignal)
+          currentInput.onConformance?.()
+        } catch (error) {
+          activeRequestId = null
+          if (shouldRethrow(error)) throw error
+          return fallbackFromEvidence('The fresh hosted synthesis phase was unavailable; verified Metrora facts are shown instead.')
+        }
+        return fallbackFromEvidence('', synthesisResponse.message?.content ?? '')
       }
-      return finalizeModelAnswer({ runtime: this, input: effectiveInput, evidenceItems: effectiveEvidenceItems, finalContent: synthesisResponse.message?.content ?? '', modelUsed: true }, signal)
     } finally {
-      signal?.removeEventListener('abort', cancel)
+      turnSignal.removeEventListener('abort', cancel)
+      deadline.dispose()
     }
   }
 }

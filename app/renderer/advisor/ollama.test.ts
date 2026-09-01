@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { LMStudioAdvisorRuntime } from './lmstudio'
+import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
 import { advisorScopeFingerprint, type AdvisorEvidence, type AdvisorScope } from './types'
 
@@ -122,7 +123,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(contents).not.toContain('different factual answer')
   })
 
-  it('runs one tool-planning request, one final request, and retains all evidence domains', async () => {
+  it('runs one bounded tool-planning request and continuation, retaining all evidence domains', async () => {
     const events: string[] = []
     const transport = transportFor(events, [[
       { function: { name: 'get_spend_snapshot', arguments: '{}' } },
@@ -145,7 +146,7 @@ describe('Ollama Advisor renderer state machine', () => {
     })
 
     expect(JSON.parse(events[0]!).stream).toBe(false)
-    expect(JSON.parse(events[0]!).tools).toEqual([])
+    expect(JSON.parse(events[0]!).tools).toHaveLength(2)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.streamed).toBe(false)
     expect(answer.evidence.map(ref => ref.id)).toEqual(['spend', 'quota'])
@@ -327,5 +328,29 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(deltas).toEqual([])
     expect(answer.conclusion).not.toContain('Local model context')
     expect(answer.streamed).toBe(false)
+  })
+
+  it('returns bounded evidence when a Tool executor ignores cancellation', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport: OllamaTransport = {
+        probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async () => ({ streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }),
+      }
+      const pending = new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+        question: 'What changed in spend?',
+        evidence: spendEvidence,
+        tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+        executeTool: async () => new Promise<never>(() => {}),
+      })
+      await vi.advanceTimersByTimeAsync(HARNESS_TOOL_LOOP_LIMITS.turnTimeoutMs)
+      const answer = await pending
+      expect(answer.conclusion).toContain('Metrora measured')
+      expect(answer.materialLimits?.join(' ')).toContain('turn deadline')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

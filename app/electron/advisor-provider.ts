@@ -95,6 +95,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
       tools: normalizeTools(value.tools),
       stream: value.stream === undefined ? true : value.stream === true,
       consent: true,
+      ...(value.harnessConformance === true ? { harnessConformance: true as const } : {}),
     },
   }
 }
@@ -110,7 +111,28 @@ function unsupportedCapabilities(): AdvisorHostedModelCapabilities {
   return { conversational: 'unavailable', streaming: 'unsupported', toolCall: 'unsupported' }
 }
 
-function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, unknown>, models: AdvisorHostedModel[], seen: Set<string>): string | null {
+type HostedConformanceRecord = {
+  state: 'verified' | 'failed-conformance'
+  protocol: contract.AdvisorHostedProtocol
+}
+type HostedConformanceRegistry = Map<string, HostedConformanceRecord>
+
+function conformanceKey(provider: AdvisorHostedProviderId, model: string): string {
+  return provider + '\u0000' + model
+}
+
+function conformanceFailureCode(error: unknown): boolean {
+  if (!(error instanceof HostedAdapterError)) return false
+  return error.code === 'response-malformed' || error.code === 'tool-malformed' || error.code === 'tool-unsupported' || error.code === 'response-too-large'
+}
+
+function modelRows(
+  provider: AdvisorHostedProviderId,
+  payload: Record<string, unknown>,
+  models: AdvisorHostedModel[],
+  seen: Set<string>,
+  conformance: HostedConformanceRegistry,
+): string | null {
   const kind = DESCRIPTORS[provider].modelListKind
   const rows = kind === 'gemini' ? payload.models : payload.data
   if (!Array.isArray(rows)) throw new HostedAdapterError('response-malformed', 'The provider model listing was malformed.')
@@ -164,12 +186,20 @@ function modelRows(provider: AdvisorHostedProviderId, payload: Record<string, un
           : kind === 'opencode-zen'
             ? 'Discovered from OpenCode Zen; the model protocol is documented, but Metrora Harness conformance and tool capability are not verified.'
             : 'Discovered from the provider model listing; Metrora Harness compatibility is not verified.'
+    const conformanceRecord = conformance.get(conformanceKey(provider, id))
+    const conformanceCapabilities = conformanceRecord?.state === 'failed-conformance'
+        ? { ...capabilities, toolCall: 'failed-conformance' as const }
+        : capabilities
     models.push({
       id,
       label,
-      state,
-      limitation,
-      capabilities,
+      state: conformanceRecord?.state ?? state,
+      limitation: conformanceRecord?.state === 'verified'
+        ? 'This exact model passed a bounded Metrora Harness request; deterministic evidence retrieval remains authoritative.'
+        : conformanceRecord?.state === 'failed-conformance'
+          ? 'This exact model failed a bounded Metrora Harness response check; it is not eligible for hosted Harness use until reverified.'
+          : limitation,
+      capabilities: conformanceRecord && protocol ? conformanceCapabilities : capabilities,
     })
     seen.add(id)
     if (models.length >= MAX_MODELS) break
@@ -277,7 +307,7 @@ async function readSse(response: Response, onPayload: (payload: Record<string, u
     throw error
   } finally { signal?.removeEventListener('abort', onAbort) }
 }
-async function discover(provider: AdvisorHostedProviderId, secret: string, fetchImpl: FetchLike, parent?: AbortSignal): Promise<AdvisorHostedModel[]> {
+async function discover(provider: AdvisorHostedProviderId, secret: string, fetchImpl: FetchLike, parent: AbortSignal | undefined, conformance: HostedConformanceRegistry): Promise<AdvisorHostedModel[]> {
   const descriptor = DESCRIPTORS[provider]
   const models: AdvisorHostedModel[] = []
   const seen = new Set<string>()
@@ -295,7 +325,7 @@ async function discover(provider: AdvisorHostedProviderId, secret: string, fetch
     const request = await fetchResponse(fetchImpl, providerUrl(provider, url.pathname + url.search), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
     try {
       statusCheck(request.response)
-      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen)
+      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen, conformance)
     } finally { request.dispose() }
     if (!nextToken || seenTokens.has(nextToken)) break
     seenTokens.add(nextToken)
@@ -355,6 +385,11 @@ export function createAdvisorHostedHandlers(options: {
   const fetchImpl = options.fetchImpl ?? fetch
   const emitEvent = options.emitEvent ?? (() => {})
   const flights = new Map<string, AbortController>()
+  // Credential validity, provider reachability, model discovery, and Harness
+  // conformance are intentionally separate pieces of state. A successful
+  // listing never upgrades a model to verified, and transport failures never
+  // turn into a conformance failure.
+  const conformance = new Map<string, HostedConformanceRecord>()
   const fail = (error: unknown, fallback: string): AdvisorHostedEnvelope => {
     const safe = safeError(error)
     return { ok: false, error: { kind: error instanceof HostedAdapterError ? safe.code : fallback, message: safe.message } }
@@ -383,7 +418,7 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller?.signal)
         if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
-        const models = await discover(providerValue, secret, fetchImpl, controller?.signal)
+        const models = await discover(providerValue, secret, fetchImpl, controller?.signal, conformance)
         return { ok: true, value: { provider: providerValue, available: true, models, detail: models.length ? providerDetail(providerValue) : 'The provider is reachable but returned no usable models.', credentialState: 'ready' } satisfies AdvisorHostedProbe }
       } catch (error) {
         if (controller?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
@@ -417,11 +452,20 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller.signal)
         if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
-        return { ok: true, value: await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal) }
+        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal)
+        if (parsed.request.harnessConformance === true) {
+          const protocol = DESCRIPTORS[parsed.request.provider].protocolForModel(parsed.request.model)
+          if (protocol) conformance.set(conformanceKey(parsed.request.provider, parsed.request.model), { state: 'verified', protocol })
+        }
+        return { ok: true, value }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
           emit({ requestId: parsed.requestId, provider: parsed.request.provider, model: parsed.request.model, kind: 'cancelled' })
           return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
+        }
+        if (parsed.request.harnessConformance === true && conformanceFailureCode(error)) {
+          const protocol = DESCRIPTORS[parsed.request.provider].protocolForModel(parsed.request.model)
+          if (protocol) conformance.set(conformanceKey(parsed.request.provider, parsed.request.model), { state: 'failed-conformance', protocol })
         }
         const safe = safeError(error)
         emit({ requestId: parsed.requestId, provider: parsed.request.provider, model: parsed.request.model, kind: 'failed', code: safe.code, message: safe.message })

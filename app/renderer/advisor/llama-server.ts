@@ -3,16 +3,29 @@ import { LocalAdvisorRuntime, type LocalAdvisorTransport } from './ollama'
 import type { AdvisorModelCapabilityProfileV1, AdvisorRuntimeProbe } from './types'
 
 export const LLAMA_SERVER_RUNTIME_ID = 'llama-server' as const
+export const LLAMA_SERVER_DEFAULT_PORT = 8080
+
+export function validLlamaServerPort(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= 65_535
+}
+
+function boundedPort(value: unknown): number {
+  if (value === undefined) return LLAMA_SERVER_DEFAULT_PORT
+  if (!validLlamaServerPort(value)) throw new Error('llama-server port must be an integer between 1 and 65535')
+  return value
+}
 
 export type LlamaServerTransport = LocalAdvisorTransport
 
-const bridgeTransport: LlamaServerTransport = {
-  chat: (requestId, payload, signal) => {
-    if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
-    return metrora.advisorChat(requestId, payload, LLAMA_SERVER_RUNTIME_ID)
-  },
-  cancel: requestId => metrora.advisorCancel(requestId),
-  onDelta: callback => metrora.onAdvisorDelta(callback),
+function bridgeTransport(port: number): LlamaServerTransport {
+  return {
+    chat: (requestId, payload, signal) => {
+      if (signal?.aborted) return Promise.reject(new DOMException('Advisor request cancelled', 'AbortError'))
+      return metrora.advisorChat(requestId, payload, LLAMA_SERVER_RUNTIME_ID, { port })
+    },
+    cancel: requestId => metrora.advisorCancel(requestId),
+    onDelta: callback => metrora.onAdvisorDelta(callback),
+  }
 }
 
 function profiles(models: string[]): AdvisorModelCapabilityProfileV1[] {
@@ -28,10 +41,11 @@ function profiles(models: string[]): AdvisorModelCapabilityProfileV1[] {
   }))
 }
 
-export async function probeLlamaServer(signal?: AbortSignal): Promise<AdvisorRuntimeProbe> {
+export async function probeLlamaServer(signal?: AbortSignal, port = LLAMA_SERVER_DEFAULT_PORT): Promise<AdvisorRuntimeProbe> {
+  const selectedPort = boundedPort(port)
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
   try {
-    const result = await metrora.advisorProbe(LLAMA_SERVER_RUNTIME_ID)
+    const result = await metrora.advisorProbe(LLAMA_SERVER_RUNTIME_ID, { port: selectedPort })
     if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
     return result
   } catch (error) {
@@ -40,7 +54,7 @@ export async function probeLlamaServer(signal?: AbortSignal): Promise<AdvisorRun
       runtime: LLAMA_SERVER_RUNTIME_ID,
       available: false,
       models: [],
-      detail: 'Local llama-server is unavailable on loopback port 8080.',
+      detail: 'Local llama-server is unavailable on loopback port ' + selectedPort + '.',
       discoveryState: 'runtime-unavailable',
       capabilities: [],
     }
@@ -48,14 +62,15 @@ export async function probeLlamaServer(signal?: AbortSignal): Promise<AdvisorRun
 }
 
 export class LlamaServerAdvisorRuntime extends LocalAdvisorRuntime {
-  constructor(options: { model: string; transport?: LlamaServerTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+  constructor(options: { model: string; port?: number; transport?: LlamaServerTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+    const port = boundedPort(options.port)
     super({
       id: 'llama-server-local',
-      label: 'llama.cpp server · ' + options.model,
+      label: 'llama.cpp server:' + port + ' · ' + options.model,
       mode: 'llama-server-local',
       providerSupport: ['llama.cpp llama-server OpenAI-compatible local API'],
       model: options.model,
-      transport: options.transport ?? bridgeTransport,
+      transport: options.transport ?? bridgeTransport(port),
       availability: options.availability,
       unavailableMessage: 'Local llama-server model is not available.',
     })

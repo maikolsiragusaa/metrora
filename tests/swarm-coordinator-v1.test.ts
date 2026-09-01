@@ -158,7 +158,7 @@ describe('public Swarm baseline coordinator', () => {
     expect(() => createBaselineWorkerRequests({ ...input, runId: 'too-many', workerCount: SWARM_MAX_WORKERS + 1 })).toThrow()
   })
 
-  it('runs a replaceable adapter in bounded parallel and synthesizes both results', async () => {
+  it('runs two workers in bounded parallel, synthesizes both results, and emits one terminal closeout', async () => {
     const adapter = new FixtureAdapter()
     const events: SwarmEventV1[] = []
     const output = await coordinator(adapter).run(input, event => events.push(event))
@@ -168,7 +168,33 @@ describe('public Swarm baseline coordinator', () => {
     expect(adapter.maxActive).toBe(2)
     expect(events.some(event => event.kind === 'worker' && event.status === 'tool-started')).toBe(true)
     expect(events.at(-1)).toMatchObject({ kind: 'swarm', status: 'completed' })
+    expect(events.filter(event => event.kind === 'swarm' && event.status === 'completed')).toHaveLength(1)
     expectDigestIdentity(output)
+  })
+
+  it('bounds one worker that ignores cancellation while retaining the completed worker result', async () => {
+    vi.useFakeTimers()
+    try {
+      const adapter = new FixtureAdapter({ 2: 'late' })
+      const events: SwarmEventV1[] = []
+      const handle = coordinator(adapter).start({
+        ...input,
+        limits: { timeoutMs: 20 },
+        wholeRunTimeoutMs: 1_000,
+      }, event => events.push(event))
+      await vi.advanceTimersByTimeAsync(21)
+      const output = await handle.result
+
+      expect(output.status).toBe('partial')
+      expect(output.workers.map(worker => worker.status)).toEqual(['completed', 'timeout'])
+      expect(output.synthesis?.answer).toContain('Observed evidence is available.')
+      expect(events.at(-1)).toMatchObject({ kind: 'swarm', status: 'completed' })
+      expect(events.filter(event => event.kind === 'swarm' && event.status === 'completed')).toHaveLength(1)
+      adapter.resolveLate()
+      await Promise.resolve()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('isolates one failed worker and returns truthful partial completion', async () => {
@@ -259,5 +285,34 @@ describe('public Swarm baseline coordinator', () => {
     expect(output.status).toBe('cancelled')
     expect(output.synthesis?.status).toBe('cancelled')
     expect(output.synthesis?.answer).toBe('')
+  })
+
+  it('uses deterministic worker closeout when synthesis ignores its bounded deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      let markSynthesisStarted!: () => void
+      const synthesisStarted = new Promise<void>(resolve => { markSynthesisStarted = resolve })
+      const adapter = new FixtureAdapter()
+      const events: SwarmEventV1[] = []
+      const handle = coordinator(adapter, {
+        synthesisTimeoutMs: 20,
+        synthesize: async () => {
+          markSynthesisStarted()
+          return await new Promise<SwarmRunResultV1['synthesis']>(() => {}) as never
+        },
+      }).start({ ...input, wholeRunTimeoutMs: 1_000 }, event => events.push(event))
+      await synthesisStarted
+      await vi.advanceTimersByTimeAsync(21)
+      const output = await handle.result
+
+      expect(output.status).toBe('completed')
+      expect(output.synthesis?.status).toBe('completed')
+      expect(output.synthesis?.answer).toContain('Observed evidence is available.')
+      expect(output.synthesis?.errors.join(' ')).toContain('bounded deadline')
+      expect(events.at(-1)).toMatchObject({ kind: 'swarm', status: 'completed' })
+      expect(events.filter(event => event.kind === 'swarm' && event.status === 'completed')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

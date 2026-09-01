@@ -16,6 +16,7 @@ import type {
   AdvisorToolRequestV1,
   AdvisorTurnPlanV1,
   AdvisorRuntimeInput,
+  AdvisorPeriodFilter,
 } from './types'
 
 const MAX_PLANNING_BYTES = 12 * 1024
@@ -253,15 +254,29 @@ export function validateAdvisorPlanningDraft(
   return { plan: planWithGuard(draft, fallbackPlan, guard), toolRequests: requests.slice(0, HARNESS_MAX_TOOL_REQUESTS), modelAssisted: true }
 }
 
-function boundedPeriodHint(question: string): string | null {
+export function explicitAdvisorPeriodHints(question: string): AdvisorPeriodFilter[] {
   const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  if (/\b(?:yesterday|ieri)\b/u.test(value)) return 'yesterday'
-  if (/\b(?:today|oggi)\b/u.test(value)) return 'today'
-  if (/(?:last|past|this)\s+7\s+days|ultimi\s+7\s+giorni|questa\s+settimana/u.test(value)) return 'week'
-  if (/(?:last|past)\s+30\s+days|ultimi\s+30\s+giorni/u.test(value)) return '30days'
-  if (/(?:this|last)\s+month|questo\s+mese|mese\s+scorso/u.test(value)) return 'month'
-  if (/(?:all\s+time|lifetime|sempre|tutta\s+la\s+vita)/u.test(value)) return 'lifetime'
-  return null
+  const matches: Array<{ period: AdvisorPeriodFilter; index: number }> = []
+  const add = (period: AdvisorPeriodFilter, pattern: RegExp) => {
+    const match = pattern.exec(value)
+    pattern.lastIndex = 0
+    if (match && match.index !== undefined) matches.push({ period, index: match.index })
+  }
+  add('yesterday', /\b(?:yesterday|ieri)\b/u)
+  add('today', /\b(?:today|oggi)\b/u)
+  add('week', /(?:last|past|this)\s+(?:week|7\s+days)|(?:questa|la\s+scorsa)\s+settimana|ultimi\s+7\s+giorni/u)
+  add('30days', /(?:last|past)\s+30\s+days|ultimi\s+30\s+giorni/u)
+  add('month', /(?:this|last)\s+month|questo\s+mese|mese\s+scorso/u)
+  add('lifetime', /(?:all\s+time|lifetime|sempre|tutta\s+la\s+vita|in\s+totale)/u)
+  return Array.from(new Set(matches.sort((left, right) => left.index - right.index).map(item => item.period)))
+}
+
+export function explicitAdvisorModelHint(question: string): string | undefined {
+  const value = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const match = /\b(?:for|per)\s+(?:(?:the|il|la|un|una)\s+)?(?:model|modello)\s+["']?([A-Za-z0-9][A-Za-z0-9._:/-]{0,160})/iu.exec(value)
+  const candidate = match?.[1]?.replace(/["'.,!?;:]+$/gu, '').trim()
+  if (!candidate || /^(?:should|is|are|has|have|dovrei|e|è|sono|ha|hanno)$/iu.test(candidate)) return undefined
+  return candidate
 }
 
 export function deterministicPlanningFallback(
@@ -271,8 +286,12 @@ export function deterministicPlanningFallback(
 ): AdvisorPlanningValidation {
   if (guardPlan.turnKind !== 'investigate' || guardPlan.authorization !== 'read-only') return { plan: guardPlan, toolRequests: [], modelAssisted: false }
   const names = definitionNames(definitions)
-  const period = boundedPeriodHint(question)
-  const fallbackArguments: AdvisorJsonObject = period ? { period } : {}
+  const periods = explicitAdvisorPeriodHints(question)
+  const model = explicitAdvisorModelHint(question)
+  const fallbackArguments = (period: AdvisorPeriodFilter | undefined): AdvisorJsonObject => ({
+    ...(period ? { period } : {}),
+    ...(model && (guardPlan.questionFamily === 'spend' || guardPlan.questionFamily === 'usage' || guardPlan.questionFamily === 'models') ? { model } : {}),
+  })
   const required = defaultToolForFamily(guardPlan.questionFamily)
   const toolNames: AdvisorToolName[] = []
   if (required && names.has(required)) toolNames.push(required)
@@ -283,6 +302,13 @@ export function deterministicPlanningFallback(
       if (names.has(tool) && !toolNames.includes(tool)) toolNames.push(tool)
     }
   }
-  const toolRequests: AdvisorToolRequestV1[] = toolNames.slice(0, HARNESS_MAX_TOOL_REQUESTS).map(tool => ({ tool, arguments: fallbackArguments }))
+  const primary = toolNames.shift()
+  const toolRequests: AdvisorToolRequestV1[] = primary
+    ? (periods.length ? periods : [undefined]).map(period => ({ tool: primary, arguments: fallbackArguments(period) }))
+    : []
+  for (const tool of toolNames) {
+    if (toolRequests.length >= HARNESS_MAX_TOOL_REQUESTS) break
+    toolRequests.push({ tool, arguments: fallbackArguments(periods[0]) })
+  }
   return { plan: guardPlan, toolRequests, modelAssisted: false }
 }

@@ -336,11 +336,48 @@ export function verifyAdvisorVerifiedClaimAtom(atomValue: AdvisorVerifiedClaimAt
   return subjectMatches(atomValue, minimal)
 }
 
-export function contentMinimalVerifiedClaimAtoms(evidence: AdvisorEvidence): AdvisorVerifiedClaimAtomV1[] {
+export type AdvisorModelVerifiedFact = {
+  id: string
+  category: string
+  subject: string | null
+  metric: AdvisorClaimMetricV1 | null
+  value: AdvisorJsonValue
+  unit: string | null
+}
+
+function modelFactCategory(kind: AdvisorClaimKindV1): string {
+  const labels: Partial<Record<AdvisorClaimKindV1, string>> = {
+    measured_total: 'measured total',
+    observed_count: 'observed count',
+    provider_quota_remaining: 'provider quota remaining',
+    provider_quota_reset: 'provider quota reset',
+    model_identity: 'observed model',
+    model_measured_cost: 'measured model cost',
+    project_measured_cost: 'measured Project cost',
+    session_measured_cost: 'measured session cost',
+    trend_direction: 'measured spend trend',
+    coverage_state: 'evidence coverage',
+    freshness_state: 'provider freshness',
+    bench_score: 'controlled Bench score',
+    bench_status: 'controlled Bench status',
+    bench_comparability: 'controlled Bench comparability',
+    bench_performance_throughput: 'measured Performance throughput',
+    bench_performance_latency: 'measured Performance latency',
+    bench_performance_status: 'native Performance status',
+    bench_performance_comparability: 'native Performance comparability',
+  }
+  return labels[kind] ?? 'verified Metrora fact'
+}
+
+/** Model-facing fact choices omit contract, scope, path, and provenance internals. */
+export function contentMinimalVerifiedClaimAtoms(evidence: AdvisorEvidence): AdvisorModelVerifiedFact[] {
   return buildAdvisorVerifiedClaimAtoms(evidence).map(atomValue => ({
-    ...atomValue,
+    id: atomValue.id,
+    category: modelFactCategory(atomValue.claimKind),
     subject: atomValue.subject === null ? null : sanitizeAdvisorDisplayText(atomValue.subject),
-    scope: contentMinimalScope(atomValue.scope),
+    metric: atomValue.metric,
+    value: atomValue.value,
+    unit: atomValue.unit === null ? null : sanitizeAdvisorDisplayText(atomValue.unit),
   }))
 }
 
@@ -466,9 +503,13 @@ function renderBlock(block: { claimIds: string[] }, atoms: Map<string, AdvisorVe
 export function renderAdvisorVerifiedSynthesis(draft: AdvisorSynthesisDraftV1, atoms: AdvisorVerifiedClaimAtomV1[], question: string): { conclusion: string; why: string[]; details: string[] } {
   const language = advisorCopyLanguage(question)
   const atomMap = new Map(atoms.map(item => [item.id, item]))
+  const narrative = draft.narrative
+  const interpretation = narrative?.interpretation ?? null
+  const recommendation = narrative?.recommendation ?? null
+  const caveats = narrative?.caveats ?? []
   return {
-    conclusion: renderBlock(draft.conclusion, atomMap, language),
-    why: draft.why.map(block => renderBlock(block, atomMap, language)).filter(Boolean),
+    conclusion: [renderBlock(draft.conclusion, atomMap, language), interpretation, recommendation].filter(Boolean).join(' '),
+    why: [...draft.why.map(block => renderBlock(block, atomMap, language)).filter(Boolean), ...caveats].filter(Boolean),
     details: draft.details.map(block => renderBlock(block, atomMap, language)).filter(Boolean),
   }
 }

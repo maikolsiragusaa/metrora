@@ -1,7 +1,10 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from 'vitest'
 
 import type { MenubarPayload } from '../lib/types'
 import { createAdvisorKernel } from './kernel'
+import { OllamaAdvisorRuntime } from './ollama'
 import { DeterministicAdvisorRuntime } from './runtime'
 import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope } from './types'
 
@@ -43,5 +46,50 @@ describe('Advisor model planning boundary', () => {
 
     expect(data.getOverview).not.toHaveBeenCalled()
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
+  })
+
+  it('keeps explicit bounded comparison periods and model filters through deterministic fallback', async () => {
+    const fixtureOverview = {
+      ...measured,
+      current: { ...measured.current!, cost: 12, calls: 3, sessions: 2 },
+    } as unknown as MenubarPayload
+    const fixtureSource: AdvisorDataSource = {
+      getOverview: vi.fn(async (requestedScope, signal) => {
+        if (signal?.aborted) throw new DOMException('Advisor data read cancelled', 'AbortError')
+        return {
+          ...fixtureOverview,
+          current: {
+            ...fixtureOverview.current!,
+            cost: requestedScope.period === 'lifetime' ? 42 : 12,
+            calls: requestedScope.period === 'lifetime' ? 9 : 3,
+          },
+        }
+      }),
+      getModels: vi.fn(async () => []),
+      getQuota: vi.fn(async () => []),
+    }
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'synthetic-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['synthetic-model'], detail: 'synthetic' }),
+        chat: async () => ({ streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{' } }] } }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+      },
+    })
+
+    const answer = await createAdvisorKernel(fixtureSource, runtime).investigate({
+      question: 'Show spend for this week and lifetime.',
+      scope,
+    })
+
+    expect(fixtureSource.getOverview).toHaveBeenCalledTimes(2)
+    expect((fixtureSource.getOverview as ReturnType<typeof vi.fn>).mock.calls.map(call => call[0])).toEqual([
+      expect.objectContaining({ period: 'week', model: null }),
+      expect.objectContaining({ period: 'lifetime', model: null }),
+    ])
+    expect(answer.conclusion).toContain('12')
+    expect(answer.conclusion).toContain('42')
+    expect(answer.coverage.level).toBe('high')
   })
 })

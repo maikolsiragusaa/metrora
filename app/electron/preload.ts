@@ -7,6 +7,7 @@ type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
 type AdvisorHostedProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
+type LlamaServerRuntimeOptions = { port?: number }
 type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorHostedProvider; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
 type PerformanceBenchRequest = {
   executablePath: string
@@ -36,8 +37,8 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 // immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  advisorProbe: (runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorProbe', runtime),
-  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
+  advisorProbe: (runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama', options?: LlamaServerRuntimeOptions) => invoke('metrora:advisorProbe', runtime, options),
+  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama', options?: LlamaServerRuntimeOptions) => invoke('metrora:advisorChat', requestId, payload, runtime, options),
   advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
   advisorCredentialStatus: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialStatus', provider),
   advisorCredentialSet: (provider: AdvisorHostedProvider, secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),

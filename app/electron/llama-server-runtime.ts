@@ -5,6 +5,19 @@ export const LLAMA_SERVER_RUNTIME_ID = 'llama-server' as const
 export const LLAMA_SERVER_DEFAULT_PORT = 8080
 export const LLAMA_SERVER_DEFAULT_ENDPOINT = 'http://127.0.0.1:8080' as const
 
+export type LlamaServerRuntimeOptions = { port?: number }
+
+export function validateLlamaServerPort(value: unknown = LLAMA_SERVER_DEFAULT_PORT): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 65_535) {
+    throw new Error('llama-server port must be an integer between 1 and 65535')
+  }
+  return value
+}
+
+export function resolveLlamaServerEndpoint(options: LlamaServerRuntimeOptions = {}): string {
+  return 'http://127.0.0.1:' + validateLlamaServerPort(options.port)
+}
+
 const PROBE_TIMEOUT_MS = 1_500
 const CHAT_TIMEOUT_MS = 120_000
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -12,7 +25,10 @@ const MAX_MESSAGE_BYTES = 32_000
 const MAX_STREAM_CHUNKS = 512
 const MAX_MALFORMED_CHUNKS = 16
 const MAX_TOOL_CALLS = 16
-const modelRoutes = new Map<string, string>()
+// A model handle is only meaningful for the endpoint that advertised it. Do
+// not let a probe on one local port replace or reuse the trusted raw-id route
+// belonging to another port.
+const modelRoutes = new Map<string, Map<string, string>>()
 
 export type LlamaServerRuntimeProbe = {
   runtime: typeof LLAMA_SERVER_RUNTIME_ID
@@ -59,7 +75,7 @@ export function validateLlamaServerEndpoint(endpoint: string = LLAMA_SERVER_DEFA
   return `http://${displayHost}:${port}`
 }
 
-function endpointUrl(path: string, endpoint = LLAMA_SERVER_DEFAULT_ENDPOINT): string {
+function endpointUrl(path: string, endpoint: string = LLAMA_SERVER_DEFAULT_ENDPOINT): string {
   const base = validateLlamaServerEndpoint(endpoint)
   if (!/^\/[A-Za-z0-9._~:/-]{1,80}$/u.test(path)) throw new Error('llama-server path is invalid')
   return new URL(path, base).toString()
@@ -115,11 +131,11 @@ async function boundedText(response: Response): Promise<string> {
   return text + decoder.decode()
 }
 
-async function fetchJson(fetchImpl: FetchLike, path: string, init: RequestInit, timeoutMs: number, parent?: AbortSignal): Promise<RecordValue> {
+async function fetchJson(fetchImpl: FetchLike, path: string, init: RequestInit, timeoutMs: number, parent?: AbortSignal, endpoint: string = LLAMA_SERVER_DEFAULT_ENDPOINT): Promise<RecordValue> {
   const timed = timeoutSignal(parent, timeoutMs)
   try {
     throwIfAborted(timed.signal)
-    const response = await fetchImpl(endpointUrl(path), { ...init, redirect: 'error', signal: timed.signal })
+    const response = await fetchImpl(endpointUrl(path, endpoint), { ...init, redirect: 'error', signal: timed.signal })
     throwIfAborted(timed.signal)
     if (!response.ok) throw new LlamaServerHttpError(response.status)
     const text = await boundedText(response)
@@ -149,8 +165,9 @@ function modelHandle(rawId: string): string {
   return 'llama-server:model:' + createHash('sha256').update(rawId).digest('hex').slice(0, 24)
 }
 
-function modelRows(payload: RecordValue): { models: string[]; labels: Record<string, string> } {
-  modelRoutes.clear()
+function modelRows(payload: RecordValue, endpoint: string = LLAMA_SERVER_DEFAULT_ENDPOINT): { models: string[]; labels: Record<string, string> } {
+  const routes = new Map<string, string>()
+  modelRoutes.set(endpoint, routes)
   if (!Array.isArray(payload.data)) return { models: [], labels: {} }
   const projected = new Map<string, string>()
   for (const row of payload.data) {
@@ -158,7 +175,7 @@ function modelRows(payload: RecordValue): { models: string[]; labels: Record<str
     const rawId = row.id.trim()
     const handle = modelHandle(rawId)
     if (!projected.has(handle)) projected.set(handle, modelLabel(rawId))
-    modelRoutes.set(handle, rawId)
+    routes.set(handle, rawId)
   }
   const entries = [...projected.entries()].slice(0, 32)
   return { models: entries.map(([handle]) => handle), labels: Object.fromEntries(entries) }
@@ -177,13 +194,17 @@ function capability(modelId: string): LlamaServerRuntimeProbe['capabilities'][nu
   }
 }
 
-export async function probeLlamaServerMain(fetchImpl: FetchLike = fetch, parent?: AbortSignal): Promise<LlamaServerRuntimeProbe> {
-  modelRoutes.clear()
+export async function probeLlamaServerMain(fetchImpl: FetchLike = fetch, parent?: AbortSignal, options: LlamaServerRuntimeOptions = {}): Promise<LlamaServerRuntimeProbe> {
+  const endpoint = resolveLlamaServerEndpoint(options)
+  // A failed or empty reprobe must not leave a previous model handle usable
+  // on the same port. The route map is rebuilt only from the current model
+  // listing.
+  modelRoutes.delete(endpoint)
   if (!fetchImpl) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail: 'Node fetch is unavailable.', discoveryState: 'runtime-unavailable', capabilities: [] }
   try {
-    await fetchJson(fetchImpl, '/health', { method: 'GET' }, PROBE_TIMEOUT_MS, parent)
-    const modelsPayload = await fetchJson(fetchImpl, '/v1/models', { method: 'GET' }, PROBE_TIMEOUT_MS, parent)
-    const projected = modelRows(modelsPayload)
+    await fetchJson(fetchImpl, '/health', { method: 'GET' }, PROBE_TIMEOUT_MS, parent, endpoint)
+    const modelsPayload = await fetchJson(fetchImpl, '/v1/models', { method: 'GET' }, PROBE_TIMEOUT_MS, parent, endpoint)
+    const projected = modelRows(modelsPayload, endpoint)
     if (!projected.models.length) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail: 'llama-server is reachable but has no loaded model.', discoveryState: 'no-models', capabilities: [] }
     return { runtime: LLAMA_SERVER_RUNTIME_ID, available: true, models: projected.models, modelLabels: projected.labels, detail: 'Local llama-server is reachable on loopback.', discoveryState: 'models-discovered', capabilities: projected.models.map(capability) }
   } catch (error) {
@@ -333,18 +354,20 @@ function validatePayload(value: unknown): asserts value is AdvisorRuntimeChatPay
   }
 }
 
-function resolveModelRoute(value: string): string {
+function resolveModelRoute(value: string, endpoint: string = LLAMA_SERVER_DEFAULT_ENDPOINT): string {
   const model = value.trim()
-  const trusted = modelRoutes.get(model)
+  const trusted = modelRoutes.get(endpoint)?.get(model)
   if (trusted) return trusted
+  if (model.startsWith('llama-server:model:')) throw new Error('Local llama-server model must be a discovered safe handle for the selected endpoint.')
   if (safeModelAlias(model)) return model
   throw new Error('Local llama-server model must be a discovered safe handle or bounded alias.')
 }
 
-export async function chatLlamaServerMain(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<AdvisorRuntimeChatResult> {
+export async function chatLlamaServerMain(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void, options: LlamaServerRuntimeOptions = {}): Promise<AdvisorRuntimeChatResult> {
   if (!fetchImpl) throw new Error('Node fetch is unavailable.')
+  const endpoint = resolveLlamaServerEndpoint(options)
   validatePayload(payload)
-  const routedModel = resolveModelRoute(payload.model)
+  const routedModel = resolveModelRoute(payload.model, endpoint)
   const body = {
     model: routedModel,
     messages: openAIMessageList(payload.messages),
@@ -356,7 +379,7 @@ export async function chatLlamaServerMain(fetchImpl: FetchLike, payload: Advisor
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)
   try {
     throwIfAborted(timed.signal)
-    const response = await fetchImpl(endpointUrl('/v1/chat/completions'), {
+    const response = await fetchImpl(endpointUrl('/v1/chat/completions', endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: encoded,

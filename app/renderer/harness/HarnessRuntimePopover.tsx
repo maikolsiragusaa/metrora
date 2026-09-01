@@ -86,6 +86,7 @@ export type HarnessRuntimeControlsProps = {
   runtimeChoice: HarnessRuntimeChoice
   runtimeId: AdvisorLocalRuntimeId
   runtimeModel: string | null
+  llamaServerPort: number
   runtimeState: HarnessRuntimeState
   hostedProvider: AdvisorHostedProviderId
   hostedModel: string | null
@@ -105,6 +106,7 @@ export type HarnessRuntimeControlsProps = {
   onSaveHostedCredential: () => void
   onClearHostedCredential: () => void
   onCheckLocalRuntime: () => void
+  onLlamaServerPortChange: (value: number) => void
   onActivateHosted: () => void
   onLocalRuntimeChange: (runtime: AdvisorLocalRuntimeId) => void
   onLocalModelChange: (model: string) => void
@@ -122,6 +124,7 @@ export function HarnessRuntimePopover({
   runtimeChoice,
   runtimeId,
   runtimeModel,
+  llamaServerPort,
   runtimeState,
   hostedProvider,
   hostedModel,
@@ -141,6 +144,7 @@ export function HarnessRuntimePopover({
   onSaveHostedCredential,
   onClearHostedCredential,
   onCheckLocalRuntime,
+  onLlamaServerPortChange,
   onActivateHosted,
   onLocalRuntimeChange,
   onLocalModelChange,
@@ -192,7 +196,7 @@ export function HarnessRuntimePopover({
           {hasHostedRuntime ? <label className="harness-v3-hosted-consent"><input type="checkbox" checked={hostedConsent} onChange={event => onHostedConsentChange(event.target.checked)} /><span>Before the first hosted message, send this question and any minimum Metrora evidence directly to the selected provider using your account. Metrora does not proxy it; provider terms, privacy, and retention apply.</span></label> : <p className="harness-v3-runtime-detail">Consent appears after a usable hosted model is available. It starts unchecked.</p>}
         </div> : <div className="harness-v3-runtime-controls">
           <div className="harness-v3-popover-actions"><button type="button" className="harness-v3-quiet-button" onClick={onCheckLocalRuntime}>{runtimeState.status === 'checking' ? 'Checking…' : 'Check local model'}</button><button type="button" className="harness-v3-quiet-button" onClick={onActivateHosted}>Use hosted provider</button></div>
-          <div className="harness-v3-picker-row"><label>Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option><option value="llama-server">llama.cpp server</option></select></label>{runtimeState.models.length ? <label>Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{runtimeState.modelLabels?.[model] ?? model}</option>)}</select></label> : null}</div>
+          <div className="harness-v3-picker-row"><label>Runtime<select aria-label="Harness runtime" value={runtimeId} onChange={event => onLocalRuntimeChange(event.target.value as AdvisorLocalRuntimeId)}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option><option value="llama-server">llama.cpp server</option></select></label>{runtimeState.models.length ? <label>Local model<select aria-label="Harness local runtime model" value={runtimeModel ?? runtimeState.models[0]} onChange={event => onLocalModelChange(event.target.value)}>{runtimeState.models.map(model => <option key={model} value={model}>{runtimeState.modelLabels?.[model] ?? model}</option>)}</select></label> : null}{runtimeId === 'llama-server' ? <label>Port<input aria-label="llama-server port" type="number" min={1} max={65535} step={1} value={llamaServerPort} onChange={event => onLlamaServerPortChange(Number(event.target.value))} /></label> : null}</div>
           <div className="harness-v3-runtime-state-grid" aria-label="Local runtime state"><span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span><span data-state="model">Model: {modelStateLabel(runtimeState.modelState)}</span><span data-state="tool-call">Tool calls: {stateLabel(runtimeState.toolCall)}</span></div>
           <p className="harness-v3-runtime-detail">{runtimeDescription}</p><p className="harness-v3-runtime-detail">{runtimeDetail}</p>
         </div>}

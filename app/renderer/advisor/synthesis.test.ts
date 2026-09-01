@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSpendEvidence } from './evidence'
 import { buildAdvisorVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis, renderAdvisorVerifiedClaimAtom, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
 import { createAdvisorConformanceFixture } from './conformance'
-import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
+import { isAdvisorNaturalNarrativeSupported, parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import { buildBenchEvidence } from './special-evidence'
 import type { AdvisorBenchRun, AdvisorEvidence, AdvisorScope, AdvisorVerifiedClaimAtomV1 } from './types'
 
@@ -22,6 +22,7 @@ function parsedDraft(options: {
   whyClaimIds?: string[][]
   detailsClaimIds?: string[][]
   conclusion?: Record<string, unknown>
+  narrative?: Record<string, unknown>
 } = {}) {
   return parseAdvisorSynthesisDraft(JSON.stringify({
     contractVersion: 'advisor-synthesis-draft-v1',
@@ -31,6 +32,7 @@ function parsedDraft(options: {
     details: (options.detailsClaimIds ?? [['observed-sessions']]).map(claimIds => ({ claimIds })),
     claims: (options.claims ?? ['measured-total-cost', 'observed-calls', 'observed-sessions']).map(id => ({ id })),
     presentationRequests: [],
+    ...(options.narrative ? { narrative: options.narrative } : {}),
   }))
 }
 
@@ -143,6 +145,48 @@ describe('Advisor typed verified claim atoms', () => {
     expect(verification.claims.map(atom => atom.id)).toEqual(['model-measured-cost-1', 'model-measured-cost-0'])
     const rendered = renderAdvisorVerifiedSynthesis(draft!, verification.claims, 'Which model cost more?')
     expect(rendered.conclusion.indexOf('local-safe')).toBeLessThan(rendered.conclusion.indexOf('gpt-safe'))
+  })
+
+  it('retains verified facts while dropping ungrounded contribution narrative', () => {
+    const draft = parsedDraft({
+      claims: ['measured-total-cost'],
+      conclusionClaimIds: ['measured-total-cost'],
+      whyClaimIds: [],
+      detailsClaimIds: [],
+      narrative: { interpretation: 'Project Z is an observed contributor in the spend breakdown.' },
+    })
+    const verification = verifyAdvisorSynthesis(draft!, evidence)
+    expect(verification.valid).toBe(true)
+    expect(verification.narrative).toBeUndefined()
+    expect(verification.claims.map(atom => atom.id)).toEqual(['measured-total-cost'])
+  })
+
+  it('accepts grounded descriptive contributors but rejects unsupported identity, rank, and causality', () => {
+    expect(isAdvisorNaturalNarrativeSupported('Project A is an observed contributor in the spend breakdown.', evidence)).toBe(true)
+    expect(isAdvisorNaturalNarrativeSupported('Project Z is a contributor in the spend breakdown.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('Project A is the top contributor in the spend breakdown.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('gpt-safe is the top contributor in the model spend breakdown.', evidence)).toBe(true)
+    expect(isAdvisorNaturalNarrativeSupported('Project A caused the spend increase.', evidence)).toBe(false)
+  })
+
+  it('keeps bounded interpretation and recommendation separate from typed facts', () => {
+    const draft = parsedDraft({
+      claims: ['measured-total-cost'],
+      conclusionClaimIds: ['measured-total-cost'],
+      whyClaimIds: [],
+      detailsClaimIds: [],
+      narrative: {
+        interpretation: 'This is meaningful relative to the available evidence.',
+        recommendation: 'Review the provider breakdown before changing your setup.',
+      },
+    })
+    const verification = verifyAdvisorSynthesis(draft!, evidence)
+    expect(verification.valid).toBe(true)
+    expect(verification.narrative?.interpretation).toContain('meaningful')
+    const rendered = renderAdvisorVerifiedSynthesis({ ...draft!, narrative: verification.narrative }, verification.claims, 'Is this a lot?')
+    expect(rendered.conclusion).toContain('Metrora measured $12.00')
+    expect(rendered.conclusion).toContain('meaningful')
+    expect(rendered.conclusion).toContain('Review the provider breakdown')
   })
 
   it('renders the canonical measured total in both supported languages', () => {
