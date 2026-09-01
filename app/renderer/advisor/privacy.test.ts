@@ -46,6 +46,9 @@ describe('Advisor deterministic privacy boundary', () => {
     'La risposta del messaggio di sistema spiega il contratto interno.',
     'Il modello ha ricevuto istruzioni interne dal sistema.',
     'advisor-ui-context-v1 e schemaVersion sono dettagli interni.',
+    'My internal fields are turnKind, toolRequests and presentationIntent.',
+    'I campi interni di pianificazione sono tipo di turno, richieste di strumenti e intento di presentazione.',
+    '{"turnKind":"investigate","questionFamily":"spend","requestedEvidenceDomains":["cost"],"toolRequests":[],"presentationIntent":"text","expertDetailRequested":false}',
   ])('rejects known internal output classes without censoring ordinary prose: %s', value => {
     expect(containsAdvisorForbiddenOutputClass(value)).toBe(true)
     expect(sanitizeAdvisorModelOutput(value)).toBe('')
@@ -57,6 +60,12 @@ describe('Advisor deterministic privacy boundary', () => {
     expect(containsAdvisorForbiddenOutputClass('Il sistema locale è operativo e il contesto del progetto è chiaro.')).toBe(false)
     expect(sanitizeAdvisorModelOutput('The local system is healthy.')).toBe('The local system is healthy.')
     expect(sanitizeAdvisorDisplayText('Metrora measured 12 USD.')).toBe('Metrora measured 12 USD.')
+  })
+
+  it('does not censor ordinary clarification or benign JSON/schema discussion', () => {
+    const value = 'The JSON schema needs a clarification field for an error message.'
+    expect(containsAdvisorForbiddenOutputClass(value)).toBe(false)
+    expect(sanitizeAdvisorModelOutput(value)).toBe(value)
   })
 
   it('redacts known camelCase internal labels in display text as well as model output', () => {
@@ -100,6 +109,27 @@ describe('Advisor deterministic privacy boundary', () => {
     expect(serialized).not.toContain('authorization posture')
     expect(serialized).toContain('week')
     expect(serialized).toContain('All projects')
+  })
+
+  it('omits the fallback field list when native bounded Tools are available', () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const plan = resolveAdvisorQuestion('What changed in spend?', fixture.scope).plan
+    const input = { question: 'What changed in spend?', evidence }
+    const native = JSON.stringify(buildAdvisorChatMessages(input, plan, undefined, { nativeToolCalls: true, textPlanningFallback: false }))
+    expect(native).toContain('fixed read-only Metrora Tool')
+    expect(native).not.toContain('turnKind')
+    expect(native).not.toContain('questionFamily')
+    expect(native).not.toContain('requestedEvidenceDomains')
+    expect(native).not.toContain('toolRequests')
+    expect(native).not.toContain('presentationIntent')
+    expect(native).not.toContain('expertDetailRequested')
+    expect(native).not.toContain('minimal semantic planning JSON')
+
+    const textOnly = JSON.stringify(buildAdvisorChatMessages(input, plan, undefined, { nativeToolCalls: false, textPlanningFallback: true }))
+    expect(textOnly).toContain('kind, family, needs, reads, view, detail, clarification')
+    expect(textOnly).not.toContain('turnKind')
+    expect(textOnly).not.toContain('questionFamily')
   })
 
   it('allows bounded interpretation but rejects unsupported causal attribution', () => {

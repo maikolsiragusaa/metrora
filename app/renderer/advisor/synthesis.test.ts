@@ -22,6 +22,7 @@ function parsedDraft(options: {
   whyClaimIds?: string[][]
   detailsClaimIds?: string[][]
   conclusion?: Record<string, unknown>
+  narrative?: Record<string, unknown>
 } = {}) {
   return parseAdvisorSynthesisDraft(JSON.stringify({
     contractVersion: 'advisor-synthesis-draft-v1',
@@ -31,6 +32,7 @@ function parsedDraft(options: {
     details: (options.detailsClaimIds ?? [['observed-sessions']]).map(claimIds => ({ claimIds })),
     claims: (options.claims ?? ['measured-total-cost', 'observed-calls', 'observed-sessions']).map(id => ({ id })),
     presentationRequests: [],
+    ...(options.narrative ? { narrative: options.narrative } : {}),
   }))
 }
 
@@ -145,7 +147,7 @@ describe('Advisor typed verified claim atoms', () => {
     expect(rendered.conclusion.indexOf('local-safe')).toBeLessThan(rendered.conclusion.indexOf('gpt-safe'))
   })
 
-  it('allows contribution language only when canonical spend atoms support it', () => {
+  it('drops ungrounded structured contribution prose while retaining verified facts', () => {
     const withoutContributionAtom = parseAdvisorSynthesisDraft(JSON.stringify({
       contractVersion: 'advisor-synthesis-draft-v1',
       schemaVersion: 1,
@@ -156,7 +158,10 @@ describe('Advisor typed verified claim atoms', () => {
       narrative: { interpretation: 'The main drivers are visible in the spend breakdown.' },
       presentationRequests: [],
     }))
-    expect(verifyAdvisorSynthesis(withoutContributionAtom!, evidence).reason).toContain('contribution atom')
+    const withoutVerification = verifyAdvisorSynthesis(withoutContributionAtom!, evidence)
+    expect(withoutVerification.valid).toBe(true)
+    expect(withoutVerification.narrative).toBeUndefined()
+    expect(withoutVerification.claims.map(atom => atom.id)).toEqual(['measured-total-cost'])
 
     const withContributionAtom = parseAdvisorSynthesisDraft(JSON.stringify({
       contractVersion: 'advisor-synthesis-draft-v1',
@@ -168,13 +173,47 @@ describe('Advisor typed verified claim atoms', () => {
       narrative: { interpretation: 'The main drivers are visible in the spend breakdown.' },
       presentationRequests: [],
     }))
-    expect(verifyAdvisorSynthesis(withContributionAtom!, evidence).valid).toBe(true)
+    const withVerification = verifyAdvisorSynthesis(withContributionAtom!, evidence)
+    expect(withVerification.valid).toBe(true)
+    expect(withVerification.narrative?.interpretation).toContain('main drivers')
   })
 
-  it('accepts a grounded contributor interpretation and rejects an unsupported causal claim', () => {
+  it('accepts a grounded contributor interpretation and rejects unsupported identity, rank, and causal claims', () => {
     expect(isAdvisorNaturalNarrativeSupported('Project A is an observed contributor in the spend breakdown.', evidence)).toBe(true)
+    expect(isAdvisorNaturalNarrativeSupported('Project Z is a contributor in the spend breakdown.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('UnknownService is the main contributor in the spend breakdown.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('The main contributor is UnknownService.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('Project A is the top contributor in the spend breakdown.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('gpt-safe is the top contributor in the model spend breakdown.', evidence)).toBe(true)
     expect(isAdvisorNaturalNarrativeSupported('Project A caused the spend increase.', evidence)).toBe(false)
     expect(isAdvisorNaturalNarrativeSupported('An unknown service is the main driver.', evidence)).toBe(false)
+  })
+
+  it('grounds structured narrative subjects to the selected canonical atoms', () => {
+    const projectMismatch = parsedDraft({
+      claims: ['project-measured-cost-0'],
+      conclusionClaimIds: ['project-measured-cost-0'],
+      whyClaimIds: [],
+      detailsClaimIds: [],
+      narrative: { interpretation: 'Project Z is an observed contributor in the spend breakdown.' },
+    })
+    const projectVerification = verifyAdvisorSynthesis(projectMismatch!, evidence)
+    expect(projectVerification.valid).toBe(true)
+    expect(projectVerification.narrative).toBeUndefined()
+    expect(projectVerification.claims.map(atom => atom.id)).toEqual(['project-measured-cost-0'])
+
+    const modelWithProjectNarrative = parsedDraft({
+      claims: ['model-measured-cost-0'],
+      conclusionClaimIds: ['model-measured-cost-0'],
+      whyClaimIds: [],
+      detailsClaimIds: [],
+      narrative: { interpretation: 'Project A is an observed contributor in the spend breakdown.' },
+    })
+    const modelVerification = verifyAdvisorSynthesis(modelWithProjectNarrative!, evidence)
+    expect(modelVerification.valid).toBe(true)
+    expect(modelVerification.narrative).toBeUndefined()
+    expect(renderAdvisorVerifiedSynthesis({ ...modelWithProjectNarrative!, narrative: modelVerification.narrative }, modelVerification.claims, 'What changed in spend?').conclusion).toContain('gpt-safe')
+    expect(renderAdvisorVerifiedSynthesis({ ...modelWithProjectNarrative!, narrative: modelVerification.narrative }, modelVerification.claims, 'What changed in spend?').conclusion).not.toContain('Project A is an observed contributor')
   })
 
   it('accepts the model-facing factIds alias without exposing factual prose', () => {

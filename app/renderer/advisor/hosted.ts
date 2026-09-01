@@ -182,7 +182,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
-          messages: buildAdvisorChatMessages(input, fallbackPlan, guard),
+          messages: buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
           tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
@@ -266,7 +266,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
             currentResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
               provider: this.provider,
               model: this.model,
-              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1),
+              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
               // Keep provider-native definitions available after a bare first
               // call so a second bounded read remains executable.
               tools: allowNativeToolCalls ? definitions : [],

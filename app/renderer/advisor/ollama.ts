@@ -220,7 +220,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         let actionResponse: LocalChatResponse
         try {
           activeRequestId = requestId('advisor-action-chat')
-          actionResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: [], stream: false }, signal), signal)
+          actionResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard, { textPlanningFallback: false }), tools: [], stream: false }, signal), signal)
           activeRequestId = null
           throwIfAborted(signal)
         } catch (error) {
@@ -237,7 +237,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       let firstResponse: LocalChatResponse
       try {
         activeRequestId = requestId('advisor-chat')
-        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: definitions, stream: false }, signal), signal)
+        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: definitions.length > 0, textPlanningFallback: definitions.length === 0 }), tools: definitions, stream: false }, signal), signal)
         activeRequestId = null
         throwIfAborted(signal)
       } catch (error) {
@@ -316,7 +316,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
           try {
             currentResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
               model: this.model,
-              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1),
+              messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1, { nativeToolCalls: definitions.length > 0, textPlanningFallback: definitions.length === 0 }),
               // Keep canonical definitions available after a native first
               // call so a genuine second bounded read remains possible.
               tools: definitions,

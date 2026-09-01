@@ -8,6 +8,12 @@ import { contentMinimalVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis } from
 
 type ModelMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 export type AdvisorConversationKind = 'social' | 'boundary' | 'action'
+export type AdvisorChatPromptOptions = {
+  /** The provider will receive the bounded native read-tool definitions. */
+  nativeToolCalls?: boolean
+  /** Keep a minimal semantic text fallback only when native tools are absent. */
+  textPlanningFallback?: boolean
+}
 
 function bounded(value: string, max = 4_000): string {
   return value.trim().slice(0, max)
@@ -67,7 +73,17 @@ function safeConversation(input: AdvisorRuntimeInput): ModelMessage[] {
     })
 }
 
-export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1 | undefined = input.guard): ModelMessage[] {
+function planningInstruction(options: AdvisorChatPromptOptions): string {
+  if (options.nativeToolCalls) {
+    return 'For a factual request, call a supplied fixed read-only Metrora Tool directly. Do not emit a planning envelope or describe internal planning metadata.'
+  }
+  if (options.textPlanningFallback === false) {
+    return 'This path has no read tool available for the current turn. Respond directly when possible and do not emit a planning envelope or describe internal planning metadata.'
+  }
+  return 'If a needed Metrora read tool is unavailable, return only a minimal semantic planning JSON object shaped {kind, family, needs, reads, view, detail, clarification}; reads may contain only fixed Metrora read-only tools. Do not add application metadata or contract fields.'
+}
+
+export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1 | undefined = input.guard, options: AdvisorChatPromptOptions = {}): ModelMessage[] {
   return [
     {
       role: 'system',
@@ -78,7 +94,7 @@ export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPla
         'For user-specific Metrora facts about spend, usage, models, providers, Projects, sessions, quota, freshness, or controlled Bench results, use only the fixed read-only tools supplied by Metrora. Do not guess, recalculate from memory, infer causality, rank models universally, or turn observed cost into quality.',
         'Tool requests may contain only fixed Metrora read-only tools and bounded filters. Never request or execute actions, writes, web search, shell commands, files, repository changes, agent orchestration, or arbitrary endpoints.',
         'An operational request may be understood and described as a proposal, but it must never be executed or represented as completed from conversation text.',
-        'If a needed Metrora read tool is unavailable, return a short planning JSON object with turnKind, questionFamily, requestedEvidenceDomains, toolRequests, presentationIntent, expertDetailRequested, and clarification. Otherwise respond to the user directly or call the bounded read tool.',
+        planningInstruction(options),
         'When a read tool has returned, the application will perform a fresh evidence-bound synthesis. Do not treat conversation history or surrounding application context as factual evidence; use them only for referents and scope.',
         'Stay within the selected Metrora context and use only the supplied read tools. Do not broaden the period, provider, Project, or model context.',
         'Selected context: ' + modelScope(input),
@@ -90,8 +106,8 @@ export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPla
 }
 
 /** Backward-compatible export for callers/tests that still use the old name. */
-export function buildAdvisorPlanningMessages(input: AdvisorRuntimeInput, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1 | undefined = input.guard): ModelMessage[] {
-  return buildAdvisorChatMessages(input, fallbackPlan, guard)
+export function buildAdvisorPlanningMessages(input: AdvisorRuntimeInput, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1 | undefined = input.guard, options: AdvisorChatPromptOptions = {}): ModelMessage[] {
+  return buildAdvisorChatMessages(input, fallbackPlan, guard, options)
 }
 
 /**
@@ -100,14 +116,14 @@ export function buildAdvisorPlanningMessages(input: AdvisorRuntimeInput, fallbac
  * payloads never enter the prompt; only the canonical content-minimal
  * evidence projection is supplied.
  */
-export function buildAdvisorToolContinuationMessages(input: AdvisorRuntimeInput, plan: AdvisorTurnPlanV1, evidence: AdvisorEvidence, round: number): ModelMessage[] {
+export function buildAdvisorToolContinuationMessages(input: AdvisorRuntimeInput, plan: AdvisorTurnPlanV1, evidence: AdvisorEvidence, round: number, options: AdvisorChatPromptOptions = {}): ModelMessage[] {
   return [
     {
       role: 'system',
       content: [
         'You are continuing a bounded Metrora Harness evidence turn.',
         'Inspect the canonical evidence below before deciding whether one more fixed read-only Metrora Tool is needed.',
-        'If more evidence is required, return only a bounded planning JSON object using the planning fields already described, with a request in the current context. Never request actions, files, shell, web, agents, or arbitrary endpoints.',
+        planningInstruction(options),
         'If the evidence is sufficient, return a short natural-language interpretation or recommendation grounded only in it, without inventing facts. The application will render verified facts separately.',
         round === 1 ? 'This is the last opportunity for one additional bounded read.' : 'No additional read should be requested.',
         'Selected context: ' + modelScopeForEvidence(evidence),
@@ -246,15 +262,20 @@ export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, s
   const verification = draft ? verifyAdvisorSynthesis(draft, evidence) : null
   const plan = input.plan ?? input.evidence.plan
   if (draft && verification?.valid && plan) {
-    const rendered = renderAdvisorVerifiedSynthesis(draft, verification.claims, input.question)
+    const verifiedDraft = verification.narrative
+      ? { ...draft, narrative: verification.narrative }
+      : draft.narrative
+        ? { ...draft, narrative: undefined }
+        : draft
+    const rendered = renderAdvisorVerifiedSynthesis(verifiedDraft, verification.claims, input.question)
     return sanitizeAdvisorAnswer({
       ...fallback,
       conclusion: rendered.conclusion,
       why: rendered.why,
       details: rendered.details,
       claims: verification.claims,
-      synthesis: draft,
-      presentation: buildAdvisorPresentationBlocks(evidence, plan, input.question, draft, verification.claims),
+      synthesis: verifiedDraft,
+      presentation: buildAdvisorPresentationBlocks(evidence, plan, input.question, verifiedDraft, verification.claims),
       runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
       generatedByModel: modelUsed,
       streamed: false,

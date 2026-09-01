@@ -221,6 +221,21 @@ describe('Advisor bounded planning and continuation phases', () => {
     expect(causalAnswer.conclusion).toContain('Metrora measured $12.00 in the selected period.')
   })
 
+  it('drops a mismatched structured contributor narrative while retaining its verified fact', async () => {
+    const mismatched = synthesisContent(['project-measured-cost-0'], 'Project Z is an observed contributor in the canonical spend breakdown.')
+    const runtime = new OllamaAdvisorRuntime({ model: 'fixture-ollama', transport: localTransport(payloadsForTest(), [], mismatched) })
+    const answer = await runtime.generate({
+      question: 'What are the spend contributors?',
+      evidence,
+      tools: [tool],
+      executeTool: async () => ({ content: '{"bounded":true}', evidence }),
+    })
+    expect(answer.claims?.map(claim => claim.id)).toEqual(['project-measured-cost-0'])
+    expect(answer.synthesis?.narrative).toBeUndefined()
+    expect(answer.conclusion).toContain('Measured spend for Project Project A was $12.00.')
+    expect(answer.conclusion).not.toContain('Project Z')
+  })
+
   it.each([
     ['Ollama', (transport: OllamaTransport) => new OllamaAdvisorRuntime({ model: 'fixture-ollama', transport })],
     ['LM Studio', (transport: OllamaTransport) => new LMStudioAdvisorRuntime({ model: 'fixture-lmstudio', transport })],

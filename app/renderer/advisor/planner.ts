@@ -79,6 +79,40 @@ function parseToolRequest(value: unknown): AdvisorToolRequestV1 | null {
   return { tool: value.tool as AdvisorToolName, arguments: value.arguments }
 }
 
+function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every(key => allowed.includes(key))
+}
+
+/**
+ * Text-only providers get a semantic envelope rather than the renderer's
+ * internal planning contract. It is normalized here before validation so the
+ * rest of the bounded loop keeps one canonical representation.
+ */
+function parseMinimalPlanningDraft(parsed: Record<string, unknown>): AdvisorModelPlanningDraftV1 | null {
+  if (!onlyKeys(parsed, ['kind', 'family', 'needs', 'reads', 'view', 'detail', 'clarification'])) return null
+  if (parsed.kind !== 'investigate' && parsed.kind !== 'clarify' && parsed.kind !== 'social' && parsed.kind !== 'boundary') return null
+  if (typeof parsed.family !== 'string' || !(QUESTION_FAMILIES as readonly string[]).includes(parsed.family)) return null
+  if (!Array.isArray(parsed.needs) || parsed.needs.length > MAX_DOMAINS || parsed.needs.some(domain => !(EVIDENCE_DOMAINS as readonly string[]).includes(domain))) return null
+  if (!Array.isArray(parsed.reads) || parsed.reads.length > HARNESS_MAX_TOOL_REQUESTS) return null
+  const reads = parsed.reads.map(parseToolRequest)
+  if (reads.some(request => request === null)) return null
+  if (!PRESENTATION_INTENTS.includes(parsed.view as AdvisorPresentationIntent)) return null
+  if (typeof parsed.detail !== 'boolean') return null
+  const clarification = parsed.clarification === undefined || parsed.clarification === null ? null : boundedText(parsed.clarification)
+  if (parsed.clarification !== undefined && parsed.clarification !== null && !clarification) return null
+  return {
+    contractVersion: 'advisor-planning-draft-v1',
+    schemaVersion: 1,
+    turnKind: parsed.kind,
+    questionFamily: parsed.family as AdvisorQuestionFamily,
+    requestedEvidenceDomains: [...parsed.needs] as AdvisorEvidenceDomain[],
+    toolRequests: reads as AdvisorToolRequestV1[],
+    presentationIntent: parsed.view as AdvisorPresentationIntent,
+    expertDetailRequested: parsed.detail,
+    clarification,
+  } as AdvisorModelPlanningDraftV1
+}
+
 export function parseAdvisorPlanningDraft(value: unknown): AdvisorModelPlanningDraftV1 | null {
   const parsed = typeof value === 'string' ? parseJsonText(value) : value
   if (!isRecord(parsed)) return null
@@ -89,6 +123,8 @@ export function parseAdvisorPlanningDraft(value: unknown): AdvisorModelPlanningD
   // The wire envelope is an internal application detail. Older runtimes may
   // still emit it, but the model-facing prompt no longer requires or teaches
   // these fields.
+  const minimal = parseMinimalPlanningDraft(parsed)
+  if (minimal) return minimal
   if (parsed.contractVersion !== undefined && parsed.contractVersion !== 'advisor-planning-draft-v1') return null
   if (parsed.schemaVersion !== undefined && parsed.schemaVersion !== 1) return null
   if (parsed.turnKind !== 'investigate' && parsed.turnKind !== 'clarify' && parsed.turnKind !== 'social' && parsed.turnKind !== 'boundary') return null

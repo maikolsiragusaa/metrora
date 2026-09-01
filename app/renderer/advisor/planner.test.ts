@@ -73,6 +73,27 @@ describe('Advisor bounded model planning contract', () => {
     })
   })
 
+  it('normalizes the minimal semantic envelope used by text-only providers', () => {
+    const fallbackPlan = createAdvisorTurnPlanV1('What changed in spend?', scope)
+    const draft = parseAdvisorPlanningDraft(JSON.stringify({
+      kind: 'investigate',
+      family: 'quota',
+      needs: ['provider-capacity', 'freshness'],
+      reads: [{ tool: 'get_quota_snapshot', arguments: {} }],
+      view: 'quota-card',
+      detail: false,
+      clarification: null,
+    }))
+    expect(draft).toMatchObject({
+      contractVersion: 'advisor-planning-draft-v1',
+      turnKind: 'investigate',
+      questionFamily: 'quota',
+      requestedEvidenceDomains: ['provider-capacity', 'freshness'],
+      toolRequests: [{ tool: 'get_quota_snapshot', arguments: {} }],
+    })
+    expect(validateAdvisorPlanningDraft(draft!, fallbackPlan, scope, ADVISOR_TOOL_DEFINITIONS)).toMatchObject({ plan: { questionFamily: 'quota' } })
+  })
+
   it('falls back deterministically when the model returns answer prose instead of a plan', () => {
     const guardPlan = createAdvisorTurnPlanV1('What changed in spend?', scope)
     const malformed = parseAdvisorPlanningDraft(JSON.stringify({
