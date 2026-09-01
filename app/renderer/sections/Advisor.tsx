@@ -7,9 +7,9 @@ import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
-import { periodLabel, scopeLabel } from '../advisor/evidence'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
+import { contextualScopeLabel } from './advisor-scope-labels'
 import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type HarnessHostedProbePresentation, type HarnessRuntimeChoice } from '../harness/HarnessRuntimePopover'
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { harnessToolLabel, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
@@ -23,15 +23,6 @@ type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
-}
-function providerLabel(provider: string): string {
-  if (provider === 'all') return 'All providers'
-  return provider.split(/[-\s]+/).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
-}
-function contextualScopeLabel(scope: AdvisorScope, mode: AdvisorContextualScopeMode | null): string {
-  if (mode === 'capacity') return 'Provider-reported current capacity · All providers'
-  if (mode === 'compare') return `Compare page scope · ${periodLabel(scope)} · ${providerLabel(scope.provider)}`
-  return scopeLabel(scope)
 }
 export function Advisor({
   period,
