@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import {
   DESKTOP_NAVIGATION_GROUPS,
@@ -149,6 +149,7 @@ export function MetroraSidebar({
   const [collapsed, setCollapsed] = useState(() => initialCollapsed ?? readStorage('sidebar.collapsed') === 'true')
   const [aboutOpen, setAboutOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const navigationScrollRef = useRef<HTMLDivElement>(null)
   const commandShortcut = shortcutLabel('K')
   const primaryGroups = DESKTOP_NAVIGATION_GROUPS.filter(group => group.placement === 'primary')
   const utilityGroups = DESKTOP_NAVIGATION_GROUPS.filter(group => group.placement === 'utility')
@@ -164,6 +165,11 @@ export function MetroraSidebar({
     return () => document.removeEventListener('keydown', onShortcut)
   }, [])
 
+  useEffect(() => {
+    const activeItem = navigationScrollRef.current?.querySelector<HTMLElement>(`[data-section="${active}"]`)
+    activeItem?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [active, collapsed])
+
   const toggleCollapsed = () => {
     setCollapsed(current => {
       const next = !current
@@ -176,7 +182,7 @@ export function MetroraSidebar({
   return (
     <aside className="metrora-sidebar" data-collapsed={collapsed ? 'true' : 'false'}>
       <div className="metrora-sidebar__surface">
-        <div className={sidebarHeaderRowClassName(collapsed)}>
+        <div className={sidebarHeaderRowClassName(collapsed)} data-sidebar-region="header">
           <div className="metrora-sidebar__brand app" title="Metrora">
             <MetroraMark size={24} />
             <span className={sidebarNavLabelClassName(collapsed)}>Metrora</span>
@@ -196,6 +202,7 @@ export function MetroraSidebar({
         <button
           type="button"
           className="metrora-sidebar__search"
+          data-sidebar-region="search"
           aria-label="Search sections"
           title={`Search sections (${commandShortcut})`}
           onClick={() => setCommandOpen(true)}
@@ -206,23 +213,26 @@ export function MetroraSidebar({
         </button>
 
         <Divider className="metrora-sidebar__divider" />
-        <nav aria-label="Metrora navigation" className="metrora-sidebar__navigation">
-          <div className="nav-primary metrora-sidebar__nav-primary">
-            {primaryGroups.map(group => (
-              <NavigationGroup key={group.id} group={group} active={active} collapsed={collapsed} onNavigate={onNavigate} />
-            ))}
+        <nav aria-label="Metrora navigation" className="metrora-sidebar__navigation" data-sidebar-region="navigation">
+          <div ref={navigationScrollRef} className="metrora-sidebar__nav-scroll" data-sidebar-region="navigation-scroll">
+            <div className="nav-primary metrora-sidebar__nav-primary">
+              {primaryGroups.map(group => (
+                <NavigationGroup key={group.id} group={group} active={active} collapsed={collapsed} onNavigate={onNavigate} />
+              ))}
+            </div>
           </div>
-          <div className="metrora-sidebar__spacer" />
-          <div className="nav-utility metrora-sidebar__nav-utility">
-            {utilityGroups.map(group => (
-              <NavigationGroup key={group.id} group={group} active={active} collapsed={collapsed} onNavigate={onNavigate} />
-            ))}
+          <div className="metrora-sidebar__nav-utility-region" data-sidebar-region="utility">
+            <div className="nav-utility metrora-sidebar__nav-utility">
+              {utilityGroups.map(group => (
+                <NavigationGroup key={group.id} group={group} active={active} collapsed={collapsed} onNavigate={onNavigate} />
+              ))}
+            </div>
           </div>
         </nav>
 
-        {status !== undefined && <div className="metrora-sidebar__status status" aria-live="polite">{status}</div>}
+        {status !== undefined && <div className="metrora-sidebar__status status" data-sidebar-region="status" aria-live="polite">{status}</div>}
         <Divider className="metrora-sidebar__divider metrora-sidebar__footer-divider" />
-        <div className="metrora-sidebar__footer foot">
+        <div className="metrora-sidebar__footer foot" data-sidebar-region="footer">
           <a
             className="about"
             href="#about"

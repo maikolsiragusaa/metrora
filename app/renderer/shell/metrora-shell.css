@@ -63,6 +63,7 @@
   display: flex;
   flex: 0 0 var(--metrora-sidebar-expanded);
   width: var(--metrora-sidebar-expanded);
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--metrora-border);
@@ -78,9 +79,11 @@
 .metrora-sidebar__surface {
   display: flex;
   width: 100%;
+  height: 100%;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   padding: 12px 10px 10px;
 }
 
@@ -88,6 +91,7 @@
   display: flex;
   width: 100%;
   height: 42px;
+  flex: 0 0 auto;
   min-height: 42px;
   align-items: center;
   gap: 9px;
@@ -163,6 +167,7 @@
   display: flex;
   width: 100%;
   height: 34px;
+  flex: 0 0 auto;
   min-height: 34px;
   align-items: center;
   gap: 9px;
@@ -253,16 +258,39 @@
   padding-top: 10px;
 }
 
+.metrora-sidebar__nav-scroll {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--metrora-scrollbar) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.metrora-sidebar__nav-scroll::-webkit-scrollbar { width: 6px; }
+.metrora-sidebar__nav-scroll::-webkit-scrollbar-thumb {
+  border-radius: 6px;
+  background: var(--metrora-scrollbar);
+}
+.metrora-sidebar__nav-scroll::-webkit-scrollbar-thumb:hover { background: var(--metrora-scrollbar-hover); }
+
 .metrora-sidebar__nav-primary,
 .metrora-sidebar__nav-utility {
   display: flex;
   width: 100%;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 10px;
 }
 
 .metrora-sidebar__nav-group {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 2px;
 }
@@ -282,6 +310,7 @@
   display: flex;
   width: 100%;
   height: 36px;
+  flex: 0 0 auto;
   min-height: 36px;
   min-width: 0;
   align-items: center;
@@ -366,15 +395,16 @@
   line-height: 1.3;
 }
 
-.metrora-sidebar__spacer { flex: 1 1 auto; min-height: 10px; }
-
-.metrora-sidebar__nav-utility {
+.metrora-sidebar__nav-utility-region {
+  min-height: 0;
+  flex: 0 0 auto;
   padding-top: 10px;
   border-top: 1px solid var(--metrora-border-subtle);
 }
 
 .metrora-sidebar__status {
   display: flex;
+  flex: 0 0 auto;
   min-height: 33px;
   align-items: center;
   gap: 5px;
@@ -392,6 +422,7 @@
 
 .metrora-sidebar__footer {
   display: flex;
+  flex: 0 0 auto;
   min-height: 36px;
   align-items: center;
   gap: 8px;
