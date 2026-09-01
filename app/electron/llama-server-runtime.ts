@@ -62,6 +62,13 @@ class LlamaServerHttpError extends Error {
   }
 }
 
+class LlamaServerTimeoutError extends Error {
+  constructor() {
+    super('Local llama-server request timed out.')
+    this.name = 'LlamaServerTimeoutError'
+  }
+}
+
 export function validateLlamaServerEndpoint(endpoint: string = LLAMA_SERVER_DEFAULT_ENDPOINT): string {
   if (typeof endpoint !== 'string' || endpoint.length > 256 || /[\u0000-\u001f\u007f]/u.test(endpoint)) throw new Error('llama-server endpoint is invalid')
   let parsed: URL
@@ -94,21 +101,17 @@ function boundedMessageContent(value: string): string {
   return value
 }
 
-function boundedError(error: unknown): Error {
-  const raw = error instanceof Error ? error.message : String(error)
-  return new Error(raw.replace(/[\r\n]+/gu, ' ').replace(/[A-Za-z]:\\[^ ]+|\/[^ ]+/gu, '[local path]').slice(0, 240))
-}
-
 function abortError(): Error { const error = new Error('The operation was aborted.'); error.name = 'AbortError'; return error }
 function throwIfAborted(signal: AbortSignal): void { if (signal.aborted) throw abortError() }
 
-function timeoutSignal(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
+function timeoutSignal(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; didTimeout: () => boolean; dispose: () => void } {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
   const forward = () => controller.abort()
   if (parent?.aborted) controller.abort()
   else parent?.addEventListener('abort', forward, { once: true })
-  return { signal: controller.signal, dispose: () => { clearTimeout(timer); parent?.removeEventListener('abort', forward) } }
+  return { signal: controller.signal, didTimeout: () => timedOut, dispose: () => { clearTimeout(timer); parent?.removeEventListener('abort', forward) } }
 }
 
 async function boundedText(response: Response): Promise<string> {
@@ -142,6 +145,9 @@ async function fetchJson(fetchImpl: FetchLike, path: string, init: RequestInit, 
     const value = JSON.parse(text) as unknown
     if (!isRecord(value)) throw new Error('Local llama-server returned invalid JSON.')
     return value
+  } catch (error) {
+    if (timed.didTimeout() && !parent?.aborted) throw new LlamaServerTimeoutError()
+    throw error
   } finally { timed.dispose() }
 }
 
@@ -194,6 +200,46 @@ function capability(modelId: string): LlamaServerRuntimeProbe['capabilities'][nu
   }
 }
 
+type ProbeStage = 'health' | 'models'
+
+function loopbackLocation(endpoint: string): string {
+  const parsed = new URL(endpoint)
+  const host = parsed.hostname === '::1' ? '[::1]' : parsed.hostname
+  return `${host}:${parsed.port || String(LLAMA_SERVER_DEFAULT_PORT)}`
+}
+
+function nestedErrorCode(error: unknown): string {
+  let current: unknown = error
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (!current || typeof current !== 'object') return ''
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string') return code
+    current = (current as { cause?: unknown }).cause
+  }
+  return ''
+}
+
+function isLoopbackConnectionFailure(error: unknown): boolean {
+  const code = nestedErrorCode(error)
+  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT'].includes(code)) return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /fetch failed|connection refused|connection reset|host unreachable|network is unreachable|could not connect/iu.test(message)
+}
+
+function probeFailureDetail(error: unknown, stage: ProbeStage, endpoint: string): string {
+  const location = loopbackLocation(endpoint)
+  const label = stage === 'health' ? 'llama-server health check' : 'llama-server model listing'
+  if (error instanceof LlamaServerTimeoutError) return `${label} timed out on loopback ${location}.`
+  if (error instanceof LlamaServerHttpError) {
+    if (stage === 'health' && error.status === 503) return `llama-server is reachable on loopback ${location} but is still loading a model.`
+    return `${label} returned HTTP ${error.status} on loopback ${location}.`
+  }
+  if (isLoopbackConnectionFailure(error)) return `Could not connect to llama-server at loopback ${location}; check that the server is running.`
+  const message = error instanceof Error ? error.message : String(error)
+  if (/invalid JSON/iu.test(message)) return `${label} returned invalid JSON on loopback ${location}.`
+  return `${label} failed on loopback ${location}.`
+}
+
 export async function probeLlamaServerMain(fetchImpl: FetchLike = fetch, parent?: AbortSignal, options: LlamaServerRuntimeOptions = {}): Promise<LlamaServerRuntimeProbe> {
   const endpoint = resolveLlamaServerEndpoint(options)
   // A failed or empty reprobe must not leave a previous model handle usable
@@ -201,17 +247,17 @@ export async function probeLlamaServerMain(fetchImpl: FetchLike = fetch, parent?
   // listing.
   modelRoutes.delete(endpoint)
   if (!fetchImpl) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail: 'Node fetch is unavailable.', discoveryState: 'runtime-unavailable', capabilities: [] }
+  let stage: ProbeStage = 'health'
   try {
     await fetchJson(fetchImpl, '/health', { method: 'GET' }, PROBE_TIMEOUT_MS, parent, endpoint)
+    stage = 'models'
     const modelsPayload = await fetchJson(fetchImpl, '/v1/models', { method: 'GET' }, PROBE_TIMEOUT_MS, parent, endpoint)
     const projected = modelRows(modelsPayload, endpoint)
     if (!projected.models.length) return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail: 'llama-server is reachable but has no loaded model.', discoveryState: 'no-models', capabilities: [] }
     return { runtime: LLAMA_SERVER_RUNTIME_ID, available: true, models: projected.models, modelLabels: projected.labels, detail: 'Local llama-server is reachable on loopback.', discoveryState: 'models-discovered', capabilities: projected.models.map(capability) }
   } catch (error) {
     if (parent?.aborted) throw error
-    const detail = error instanceof LlamaServerHttpError && error.status === 503
-      ? 'llama-server is reachable but still loading a model.'
-      : boundedError(error).message
+    const detail = probeFailureDetail(error, stage, endpoint)
     return { runtime: LLAMA_SERVER_RUNTIME_ID, available: false, models: [], modelLabels: {}, detail, discoveryState: 'runtime-unavailable', capabilities: [] }
   }
 }

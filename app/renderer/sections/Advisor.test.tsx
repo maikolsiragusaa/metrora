@@ -300,6 +300,10 @@ describe('Harness V3 workspace', () => {
   })
 
   it('submits a ready OpenRouter hosted investigation and clears the composer', async () => {
+    investigate.mockImplementationOnce(async input => {
+      input.onConformance?.()
+      return answer
+    })
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
@@ -312,6 +316,7 @@ describe('Harness V3 workspace', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Ask Metrora Harness' })).toHaveValue(''))
     expect(investigate).toHaveBeenCalledWith(expect.objectContaining({ question: 'Quanto ho speso con Codex negli ultimi giorni?' }))
+    await waitFor(() => expect(screen.getByText('Model: Verified')).toBeInTheDocument())
   })
 
   it('renders Metrora-owned presentation blocks inside the direct answer hierarchy', async () => {
@@ -587,6 +592,28 @@ describe('Harness V3 workspace', () => {
     await waitFor(() => expect(screen.getByLabelText('Harness hosted provider')).toHaveValue('anthropic'))
     expect(screen.getByLabelText('Harness hosted model')).toHaveValue('claude-a')
     expect(screen.queryByText('OpenAI · gpt-a')).not.toBeInTheDocument()
+  })
+
+  it('does not verify the newly selected hosted model from a stale first-request callback', async () => {
+    let reportConformance: (() => void) | undefined
+    investigate.mockImplementation(input => {
+      reportConformance = input.onConformance
+      return new Promise<AdvisorAnswer>(() => {})
+    })
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
+    const model = await screen.findByLabelText('Harness hosted model') as HTMLSelectElement
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true))
+    await submitQuestion('Keep model A verification scoped to model A')
+
+    fireEvent.change(model, { target: { value: 'gpt-b' } })
+    await waitFor(() => expect(model).toHaveValue('gpt-b'))
+    reportConformance?.()
+
+    expect(screen.getByText('Model: Discovered')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close runtime' }).querySelector('.harness-v3-runtime-dot')).toHaveClass('unknown')
   })
 
   it('does not append a hosted answer after switching providers during an active request', async () => {

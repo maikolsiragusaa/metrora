@@ -1,3 +1,5 @@
+import { createServer, type IncomingMessage } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { describe, expect, it, vi } from 'vitest'
 
 import { chatOllamaMain, createAdvisorRuntimeHandlers, probeOllamaMain } from './advisor-runtime'
@@ -18,7 +20,81 @@ function textOnlyResponse(text: string): Response {
   return { ok: true, body: null, text: async () => text } as unknown as Response
 }
 
+function readRequestBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', chunk => { body += chunk })
+    request.on('end', () => resolve(body))
+    request.on('error', reject)
+  })
+}
+
 describe('Electron Advisor local runtime', () => {
+  it('probes and chats through the exact selected port on a real loopback socket', async () => {
+    const requests: Array<{ method: string; path: string; port: number }> = []
+    const server = createServer(async (request, response) => {
+      requests.push({ method: request.method ?? '', path: request.url ?? '', port: request.socket.localPort ?? 0 })
+      response.setHeader('content-type', 'application/json')
+      if (request.method === 'GET' && request.url === '/health') {
+        response.writeHead(200)
+        response.end(JSON.stringify({ status: 'ok' }))
+        return
+      }
+      if (request.method === 'GET' && request.url === '/v1/models') {
+        response.writeHead(200)
+        response.end(JSON.stringify({ data: [{ id: 'fixture-llama-model', object: 'model' }] }))
+        return
+      }
+      if (request.method === 'POST' && request.url === '/v1/chat/completions') {
+        const body = JSON.parse(await readRequestBody(request)) as { model?: string }
+        expect(body.model).toBe('fixture-llama-model')
+        response.writeHead(200)
+        response.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'real loopback answer' } }] }))
+        return
+      }
+      response.writeHead(404)
+      response.end(JSON.stringify({ error: 'not found' }))
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', () => resolve())
+    })
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('The loopback test server did not expose a TCP address.')
+    const port = (address as AddressInfo).port
+    try {
+      const handlers = createAdvisorRuntimeHandlers()
+      const probe = await handlers['metrora:advisorProbe']('llama-server', { port })
+      expect(probe).toMatchObject({
+        ok: true,
+        value: {
+          runtime: 'llama-server',
+          available: true,
+          models: ['fixture-llama-model'],
+          discoveryState: 'models-discovered',
+        },
+      })
+
+      const chat = await handlers['metrora:advisorChat']('loopback-envelope', {
+        model: 'fixture-llama-model',
+        messages: [{ role: 'user', content: 'Say hello.' }],
+        tools: [],
+        stream: false,
+      }, 'llama-server', { port })
+      expect(chat).toMatchObject({ ok: true, value: { streamed: false, message: { content: 'real loopback answer' } } })
+      expect(requests.map(request => `${request.method} ${request.path}`)).toEqual([
+        'GET /health',
+        'GET /v1/models',
+        'POST /v1/chat/completions',
+      ])
+      expect(requests.every(request => request.port === port)).toBe(true)
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    }
+  })
+
   it('probes the fixed loopback endpoint and reports discovered models', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {

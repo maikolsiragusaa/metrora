@@ -66,6 +66,31 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizedHostedToolCall(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  const functionValue = isRecord(value.function) ? value.function : null
+  const name = typeof value.name === 'string' ? value.name : functionValue && typeof functionValue.name === 'string' ? functionValue.name : null
+  if (!name?.trim()) return false
+  const args = Object.prototype.hasOwnProperty.call(value, 'arguments')
+    ? value.arguments
+    : functionValue && Object.prototype.hasOwnProperty.call(functionValue, 'arguments')
+      ? functionValue.arguments
+      : undefined
+  return args === undefined || typeof args === 'string' || isRecord(args)
+}
+
+function isNormalizedHostedResponse(value: unknown): value is { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean } {
+  if (!isRecord(value) || typeof value.streamed !== 'boolean' || !isRecord(value.message)) return false
+  if (typeof value.message.content !== 'string' || new TextEncoder().encode(value.message.content).byteLength > 32 * 1024) return false
+  const toolCalls = value.message.tool_calls
+  if (toolCalls !== undefined && (!Array.isArray(toolCalls) || toolCalls.length > 16 || toolCalls.some(call => !normalizedHostedToolCall(call)))) return false
+  return Boolean(value.message.content) || Boolean(Array.isArray(toolCalls) && toolCalls.length)
+}
+
 function toolDefinitions(input: AdvisorRuntimeInput): readonly AdvisorToolDefinition[] {
   return input.toolContract?.tools ? [...input.toolContract.tools] : input.tools ? [...input.tools] : []
 }
@@ -153,6 +178,12 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     const finalizationSignal = () => deadline.didTimeout() ? undefined : turnSignal
     const shouldRethrow = (error: unknown) => shouldRethrowAdvisorAbort(error, signal, deadline)
     let activeRequestId: string | null = null
+    let conformanceReported = false
+    const reportConformance = () => {
+      if (conformanceReported) return
+      conformanceReported = true
+      input.onConformance?.()
+    }
     const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
     turnSignal.addEventListener('abort', cancel, { once: true })
     try {
@@ -198,6 +229,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
+          harnessConformance: true,
         }, turnSignal), turnSignal)
         activeRequestId = null
         throwIfAborted(turnSignal)
@@ -206,6 +238,14 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         if (shouldRethrow(error)) throw error
         return fallback('The hosted model response was unavailable; this answer uses the deterministic Metrora evidence path.')
       }
+
+      if (!isNormalizedHostedResponse(firstResponse)) {
+        return fallback('The hosted model response was malformed; this answer uses the deterministic Metrora evidence path.')
+      }
+      // The provider boundary has already normalized and bounded this first
+      // response. It is the first qualifying Harness request; no extra tool or
+      // synthesis round is required to establish conversational conformance.
+      reportConformance()
 
       const validation = planningValidation(input, firstResponse, allowNativeToolCalls)
       if (!validation) {
@@ -287,7 +327,8 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
             }, turnSignal), turnSignal)
             activeRequestId = null
             throwIfAborted(turnSignal)
-            currentInput.onConformance?.()
+            if (!isNormalizedHostedResponse(currentResponse)) throw new Error('The bounded hosted continuation was malformed.')
+            reportConformance()
             continue
           } catch (error) {
             activeRequestId = null
@@ -312,7 +353,8 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           }, turnSignal), turnSignal)
           activeRequestId = null
           throwIfAborted(turnSignal)
-          currentInput.onConformance?.()
+          if (!isNormalizedHostedResponse(synthesisResponse)) throw new Error('The bounded hosted synthesis response was malformed.')
+          reportConformance()
         } catch (error) {
           activeRequestId = null
           if (shouldRethrow(error)) throw error

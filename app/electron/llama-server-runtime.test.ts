@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { chatLlamaServerMain, probeLlamaServerMain, resolveLlamaServerEndpoint, validateLlamaServerEndpoint, validateLlamaServerPort } from './llama-server-runtime'
 import type { AdvisorRuntimeChatPayload } from './advisor-runtime'
 
@@ -72,6 +72,42 @@ describe('llama-server local runtime', () => {
     expect(result).toMatchObject({ runtime: 'llama-server', available: true, models: ['fixture-model'], discoveryState: 'models-discovered' })
     expect(result.capabilities[0]).toMatchObject({ modelId: 'fixture-model', streaming: 'supported', toolCall: 'unknown' })
     expect(calls).toEqual(['http://127.0.0.1:8080/health', 'http://127.0.0.1:8080/v1/models'])
+  })
+
+  it('distinguishes bounded loopback probe failures by stage', async () => {
+    const connection = await probeLlamaServerMain(async () => { throw new TypeError('fetch failed') }, undefined, { port: 18035 })
+    expect(connection).toMatchObject({ available: false, discoveryState: 'runtime-unavailable' })
+    expect(connection.detail).toContain('Could not connect to llama-server at loopback 127.0.0.1:18035')
+
+    const healthFailure = await probeLlamaServerMain(async () => new Response('{}', { status: 500 }), undefined, { port: 18036 })
+    expect(healthFailure.detail).toBe('llama-server health check returned HTTP 500 on loopback 127.0.0.1:18036.')
+
+    let requestCount = 0
+    const modelFailure = await probeLlamaServerMain(async input => {
+      requestCount += 1
+      return String(input).endsWith('/health')
+        ? new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+        : new Response('{}', { status: 502 })
+    }, undefined, { port: 18037 })
+    expect(requestCount).toBe(2)
+    expect(modelFailure.detail).toBe('llama-server model listing returned HTTP 502 on loopback 127.0.0.1:18037.')
+  })
+
+  it('reports a bounded timeout for an unreachable probe that never settles', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const fetchImpl: typeof fetch = async (_input, init) => await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true })
+      })
+      const pending = probeLlamaServerMain(fetchImpl, undefined, { port: 18038 })
+      await vi.advanceTimersByTimeAsync(1_501)
+      await expect(pending).resolves.toMatchObject({
+        available: false,
+        detail: 'llama-server health check timed out on loopback 127.0.0.1:18038.',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('projects upstream path model ids into safe renderer handles and routes chat through the trusted map', async () => {

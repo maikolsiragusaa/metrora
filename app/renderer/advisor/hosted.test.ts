@@ -72,7 +72,7 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(payload.model).toBe('gpt-test')
     expect(payload.stream).toBe(false)
     expect(payload.consent).toBe(true)
-    expect(payload.harnessConformance).toBeUndefined()
+    expect(payload.harnessConformance).toBe(true)
     expect(messages.map(message => message.role)).toEqual(['system', 'user'])
     expect(messages.some(message => message.content.includes('measuredCostUSD'))).toBe(false)
     const finalPayload = requests[1]!
@@ -112,7 +112,7 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(answer.streamed).toBe(false)
   })
 
-  it('does not signal hosted conformance when the bounded continuation fails', async () => {
+  it('signals hosted conformance after the first valid response even when continuation later fails', async () => {
     const fixture = createAdvisorConformanceFixture()
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
     let calls = 0
@@ -134,9 +134,54 @@ describe('Hosted Advisor renderer runtime', () => {
       executeTool: async () => ({ content: '{"measured":true}', evidence }),
       onConformance: () => { conformanceCalls += 1 },
     })
-    expect(conformanceCalls).toBe(0)
+    expect(conformanceCalls).toBe(1)
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.materialLimits?.join(' ')).toContain('continuation')
+  })
+
+  it('does not signal conformance for a malformed first response', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    let conformanceCalls = 0
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async () => ({ streamed: false, message: { content: '' } }),
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+
+    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport }).generate({
+      question: 'What changed in spend?',
+      evidence,
+      onConformance: () => { conformanceCalls += 1 },
+    })
+
+    expect(conformanceCalls).toBe(0)
+    expect(answer.conclusion).toContain('Metrora measured')
+  })
+
+  it('does not signal conformance when the first request is cancelled', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const controller = new AbortController()
+    let conformanceCalls = 0
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async () => new Promise(() => {}),
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+
+    const pending = new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport }).generate({
+      question: 'What changed in spend?',
+      evidence,
+      onConformance: () => { conformanceCalls += 1 },
+    }, controller.signal)
+    await Promise.resolve()
+    controller.abort()
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(conformanceCalls).toBe(0)
   })
 
   it('keeps same-scope conversation history for hosted follow-ups and drops other scopes', async () => {
