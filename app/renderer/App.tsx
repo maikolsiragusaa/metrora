@@ -6,12 +6,11 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { Hint } from './components/Hint'
 import { Onboarding } from './components/Onboarding'
 import { Panel } from './components/Panel'
-import { Sidebar, type Section } from './components/Sidebar'
+import type { Section } from './components/Sidebar'
 import { Splash } from './components/Splash'
 import { ToastHost } from './components/ToastHost'
 import { UpdateBanner } from './components/UpdateBanner'
 import { rangeLabel, TopBar } from './components/TopBar'
-import { Window } from './components/Window'
 import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { useDesktopTelemetry } from './hooks/useDesktopTelemetry'
@@ -37,6 +36,8 @@ import { Advisor } from './sections/Advisor'
 import { Bench } from './sections/Bench'
 import type { MenubarPayload } from './lib/types'
 import { createAdvisorContextualLaunch, type AdvisorContextualLaunchV1 } from './advisor/context'
+import { MetroraShell } from './shell/MetroraShell'
+import { MetroraSidebar } from './shell/sidebar/MetroraSidebar'
 
 export { overviewMemoKey } from './hooks/useProviderPrefetch'
 export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTelemetry'
@@ -159,8 +160,9 @@ function AppMain() {
   }, [metroraProjectId, onProjectScopeSelect, projectScope])
 
   return (
-    <Window>
-      <Sidebar active={section} onNavigate={navigate} status={<StatusLine polled={overview} />} />
+    <MetroraShell
+      sidebar={<MetroraSidebar active={section} onNavigate={navigate} status={<StatusLine polled={overview} />} />}
+    >
       <ToastHost />
       <Splash hasData={overview.data != null} hasError={overview.error != null} />
       {onboardingStatus && <Onboarding defaultEnabled={onboardingStatus.defaultEnabled} onDone={finishOnboarding} />}
@@ -246,7 +248,7 @@ function AppMain() {
           />
         )}
       </div>
-    </Window>
+    </MetroraShell>
   )
 }
 

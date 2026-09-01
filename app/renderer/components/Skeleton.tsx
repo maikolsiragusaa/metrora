@@ -5,7 +5,7 @@
  */
 export function SectionSkeleton({ label, rows = 4, chart = false }: { label: string; rows?: number; chart?: boolean }) {
   return (
-    <div className="panel skel-card">
+    <div className="panel skel-card" data-ui-state="loading" aria-busy="true">
       <span className="sr-only" role="status">{label}</span>
       <div className="phead skel-head" aria-hidden="true">
         <span className="skel skel-line" style={{ width: '38%' }} />

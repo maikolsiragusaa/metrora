@@ -28,7 +28,7 @@ describe('Splash', () => {
     expect(el).toBeInTheDocument()
     expect(el).not.toHaveClass('splash-lit')
     expect(el?.querySelector('video')).toBeNull()
-    expect(el?.querySelector('.splash-mark svg')).not.toBeNull()
+    expect(el?.querySelector('.splash-mark img.metrora-mark-light')).not.toBeNull()
     expect(el?.textContent).toContain('Metrora')
     expect(document.querySelector('.splash-status-line')?.textContent).toBe('Loading local analytics…')
     expect(el?.textContent).toContain('Reading your local Metrora data')
