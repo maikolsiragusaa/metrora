@@ -250,18 +250,32 @@
 
 .harness-v3-composer-region { flex: 0 0 auto; padding: 9px clamp(18px, 3vw, 34px) 16px; border-top: 1px solid var(--metrora-border-subtle); background: var(--metrora-surface-app); }
 .harness-v3-composer { width: min(960px, 100%); margin: 0 auto; padding: 10px 11px 9px; border: 1px solid var(--metrora-border-strong); border-radius: 14px; background: var(--metrora-surface-panel); box-shadow: var(--metrora-shadow-panel); }
-.harness-v3-composer:focus-within { border-color: var(--metrora-focus); box-shadow: var(--metrora-shadow-panel), 0 0 0 1px color-mix(in srgb, var(--metrora-focus) 50%, transparent); }
+.harness-v3-composer:focus-within { border-color: var(--metrora-focus); box-shadow: var(--metrora-shadow-panel), 0 0 0 2px color-mix(in srgb, var(--metrora-focus) 38%, transparent); }
 .harness-v3-composer textarea { display: block; width: 100%; min-height: 70px; max-height: 190px; resize: vertical; padding: 2px 3px 8px; border: 0; outline: none; background: transparent; color: var(--metrora-text-primary); font-size: 14px; line-height: 1.5; }
+.harness-v3-composer textarea:focus,
+.harness-v3-composer textarea:focus-visible { outline: none; box-shadow: none; }
 .harness-v3-composer textarea::placeholder { color: var(--metrora-text-subtle); }
 .harness-v3-composer textarea:disabled { cursor: wait; opacity: .7; }
 .harness-v3-composer-toolbar { min-width: 0; flex-wrap: wrap; gap: 8px; }
 .harness-v3-composer-options { gap: 7px; }
 .harness-v3-strategy-control,
-.harness-v3-worker-count { display: inline-flex; min-height: 28px; align-items: center; gap: 6px; padding: 0 7px; border: 1px solid var(--metrora-border); border-radius: var(--metrora-radius-sm); background: var(--metrora-surface-inset); }
+.harness-v3-worker-count { position: relative; display: inline-flex; min-height: var(--metrora-control-height); align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--metrora-border); border-radius: var(--metrora-radius-sm); background: var(--metrora-surface-panel); transition: border-color var(--metrora-motion-fast) ease, background var(--metrora-motion-fast) ease, box-shadow var(--metrora-motion-fast) ease; }
 .harness-v3-strategy-control > span,
 .harness-v3-worker-count > span { color: var(--metrora-text-muted); font-size: var(--metrora-text-xs); }
 .harness-v3-strategy-control select,
-.harness-v3-worker-count select { border: 0; outline: 0; background: transparent; color: var(--metrora-text-primary); font-size: var(--metrora-text-sm); cursor: pointer; }
+.harness-v3-worker-count select { min-height: 30px; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--metrora-text-primary); font-size: var(--metrora-text-sm); cursor: pointer; appearance: none; -webkit-appearance: none; }
+.harness-v3-strategy-control select { min-width: 54px; padding: 0 15px 0 1px; }
+.harness-v3-worker-count select { min-width: 25px; padding: 0 13px 0 1px; }
+.harness-v3-strategy-control::after,
+.harness-v3-worker-count::after { position: absolute; right: 8px; color: var(--metrora-text-subtle); content: '⌄'; font-size: 13px; line-height: 1; pointer-events: none; }
+.harness-v3-strategy-control:focus-within,
+.harness-v3-worker-count:focus-within { border-color: var(--metrora-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--metrora-focus) 30%, transparent); }
+.harness-v3-strategy-control select:focus,
+.harness-v3-strategy-control select:focus-visible,
+.harness-v3-worker-count select:focus,
+.harness-v3-worker-count select:focus-visible { outline: none; box-shadow: none; }
+.harness-v3-strategy-control option,
+.harness-v3-worker-count option { background: var(--metrora-surface-panel); color: var(--metrora-text-primary); }
 .harness-v3-composer-hint { margin-left: auto; color: var(--metrora-text-subtle); font-size: var(--metrora-text-xs); }
 .harness-v3-submit-note { flex: 1 1 100%; color: var(--metrora-status-warning); font-size: var(--metrora-text-xs); }
 
