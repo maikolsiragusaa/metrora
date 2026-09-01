@@ -54,6 +54,12 @@ export type SwarmEvidenceRefV1 = {
   id: string
   label: string
 }
+export type SwarmEvidenceResultStatusV1 = 'usable' | 'partial' | 'unavailable'
+export type SwarmEvidenceResultV1 = {
+  status: SwarmEvidenceResultStatusV1
+  requiredToolNames: readonly string[]
+  usedToolNames: readonly string[]
+}
 
 export type SwarmWorkerRequestV1 = {
   contractVersion: typeof SWARM_CONTRACT_VERSION
@@ -87,6 +93,8 @@ export type SwarmWorkerResultV1 = {
   toolActivity: readonly SwarmToolActivityV1[]
   evidenceRefs: readonly SwarmEvidenceRefV1[]
   evidenceSummary: string
+  /** Execution status is separate from whether the required evidence is usable. */
+  evidenceResult?: SwarmEvidenceResultV1
   answer: string
   artifactSummary: string | null
   errors: readonly string[]

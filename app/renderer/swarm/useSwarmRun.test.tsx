@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { AdvisorAnswer, AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope, AdvisorSwarmSynthesisResult } from '../advisor/types'
 import { createAdvisorConformanceFixture } from '../advisor/conformance'
 import type { MenubarPayload } from '../lib/types'
 import { useSwarmRun, type UseSwarmRunOptions } from './useSwarmRun'
@@ -38,7 +38,7 @@ function source(): AdvisorDataSource {
   }
 }
 
-function runtime(id: string, generate: AdvisorModelRuntime['generate']): AdvisorModelRuntime {
+function runtime(id: string, generate: AdvisorModelRuntime['generate'], generateSwarmSynthesis?: AdvisorModelRuntime['generateSwarmSynthesis']): AdvisorModelRuntime {
   return {
     id,
     label: 'Fixture runtime ' + id,
@@ -47,6 +47,7 @@ function runtime(id: string, generate: AdvisorModelRuntime['generate']): Advisor
     availability: 'ready',
     supportsStreaming: false,
     generate,
+    ...(generateSwarmSynthesis ? { generateSwarmSynthesis } : {}),
   }
 }
 
@@ -82,14 +83,17 @@ describe('useSwarmRun execution ownership', () => {
   it('keeps one run alive across polling and runtime-promotion replacements and closes after synthesis', async () => {
     const workerOne = deferred<AdvisorAnswer>()
     const workerTwo = deferred<AdvisorAnswer>()
-    const synthesis = deferred<AdvisorAnswer>()
+    const synthesis = deferred<AdvisorSwarmSynthesisResult>()
     const signals: AbortSignal[] = []
-    const generate = vi.fn(async (input: AdvisorRuntimeInput, signal?: AbortSignal) => {
+    const generate = vi.fn(async (_input: AdvisorRuntimeInput, signal?: AbortSignal) => {
       if (signal) signals.push(signal)
-      if (input.question.startsWith('Synthesize this bounded worker evidence')) return synthesis.promise
       return (signals.length === 1 ? workerOne : workerTwo).promise
     })
-    const initial = options({ runtime: runtime('fixture', generate) })
+    const generateSwarmSynthesis = vi.fn(async (input: Parameters<NonNullable<AdvisorModelRuntime['generateSwarmSynthesis']>>[0]) => {
+      expect(input.question).toBe('Explain the observed spend change.')
+      return synthesis.promise
+    })
+    const initial = options({ runtime: runtime('fixture', generate, generateSwarmSynthesis) })
     const { result, rerender } = renderHook((props: UseSwarmRunOptions) => useSwarmRun(props), { initialProps: initial })
 
     act(() => result.current.run('Explain the observed spend change.', 2))
@@ -110,16 +114,16 @@ describe('useSwarmRun execution ownership', () => {
       workerTwo.resolve(answer('fixture', 'worker two'))
       await flushMicrotasks()
     })
-    expect(generate).toHaveBeenCalledTimes(3)
+    expect(generate).toHaveBeenCalledTimes(2)
 
     await act(async () => {
-      synthesis.resolve(answer('fixture', 'synthesized result'))
+      synthesis.resolve({ answer: 'synthesized result: Metrora measured $12.00 in spend during the selected period.', evidenceSummary: 'Two bounded worker closeouts with the measured spend anchor.' })
       await flushMicrotasks()
     })
     await waitFor(() => expect(result.current.state.running).toBe(false))
     expect(result.current.state.status).toBe('completed')
     expect(result.current.state.result?.workers).toHaveLength(2)
-    expect(result.current.state.result?.synthesis?.answer).toBe('synthesized result')
+    expect(result.current.state.result?.synthesis?.answer).toBe('synthesized result: Metrora measured $12.00 in spend during the selected period.')
     expect(promotedRuntimeGenerate).not.toHaveBeenCalled()
   })
 
@@ -130,12 +134,12 @@ describe('useSwarmRun execution ownership', () => {
       const workerTwo = deferred<AdvisorAnswer>()
       let workerIndex = 0
       const signals: AbortSignal[] = []
-      const generate = vi.fn(async (input: AdvisorRuntimeInput, signal?: AbortSignal) => {
+      const generate = vi.fn(async (_input: AdvisorRuntimeInput, signal?: AbortSignal) => {
         if (signal) signals.push(signal)
-        if (input.question.startsWith('Synthesize this bounded worker evidence')) return answer('fixture', 'timeout closeout synthesis')
         return (workerIndex++ === 0 ? workerOne : workerTwo).promise
       })
-      const initial = options({ runtime: runtime('fixture', generate) })
+      const generateSwarmSynthesis = vi.fn(async () => ({ answer: 'The bounded worker closeout has worker one completed while worker two timed out.', evidenceSummary: 'One worker completed before the other timed out.' }))
+      const initial = options({ runtime: runtime('fixture', generate, generateSwarmSynthesis) })
       const { result, rerender } = renderHook((props: UseSwarmRunOptions) => useSwarmRun(props), { initialProps: initial })
 
       act(() => result.current.run('Close even when one worker stalls.', 2))
@@ -159,7 +163,7 @@ describe('useSwarmRun execution ownership', () => {
       await waitFor(() => expect(result.current.state.running).toBe(false), { timeout: 1_000, interval: 5 })
       expect(result.current.state.status).toBe('partial')
       expect(result.current.state.result?.workers.map(worker => worker.status)).toEqual(['completed', 'timeout'])
-      expect(result.current.state.result?.synthesis?.answer).toBe('timeout closeout synthesis')
+      expect(result.current.state.result?.synthesis?.answer).toBe('The bounded worker closeout has worker one completed while worker two timed out.')
     } finally {
       vi.useRealTimers()
     }
@@ -173,13 +177,14 @@ describe('useSwarmRun execution ownership', () => {
     const firstWorker = deferred<AdvisorAnswer>()
     const secondWorker = deferred<AdvisorAnswer>()
     let calls = 0
+    const nextSynthesis = async () => ({ answer: 'Next run completed with the bounded next-run worker closeout.', evidenceSummary: 'The next bounded run completed.' })
     const firstRuntime = runtime('fixture-a', async () => {
       calls += 1
       if (calls === 1) return firstWorker.promise
       if (calls === 2) return secondWorker.promise
-      return answer('fixture-a', 'next run')
-    })
-    const nextRuntime = runtime('fixture-b', async () => answer('fixture-b', 'next run'))
+      return answer('fixture-a', 'next run completed')
+    }, nextSynthesis)
+    const nextRuntime = runtime('fixture-b', async () => answer('fixture-b', 'next run completed'), nextSynthesis)
     const initial = options({ runtime: firstRuntime })
     const { result, rerender } = renderHook((props: UseSwarmRunOptions) => useSwarmRun(props), { initialProps: initial })
 
@@ -194,6 +199,6 @@ describe('useSwarmRun execution ownership', () => {
     act(() => result.current.run('The next run may start.', 2))
     await waitFor(() => expect(result.current.state.running).toBe(false), { timeout: 1_000, interval: 5 })
     expect(result.current.state.status).toBe('completed')
-    expect(result.current.state.result?.synthesis?.answer).toBe('next run')
+    expect(result.current.state.result?.synthesis?.answer).toBe('Next run completed with the bounded next-run worker closeout.')
   })
 })

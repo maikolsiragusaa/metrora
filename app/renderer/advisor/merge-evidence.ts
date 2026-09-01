@@ -65,8 +65,10 @@ export function mergeEvidence(items: AdvisorEvidence[], fallback: AdvisorEvidenc
     }
   }
   const last = items[items.length - 1]!
-  const usable = items.filter(item => item.coverage.level !== 'unavailable')
-  const level: AdvisorCoverageLevel = items.length > 0 && items.every(item => item.coverage.level === 'high')
+  // Coverage is earned by canonical evidence, not by a model closeout. A
+  // nominal high label without evidence refs is therefore unavailable.
+  const usable = items.filter(item => item.coverage.level !== 'unavailable' && item.refs.length > 0)
+  const level: AdvisorCoverageLevel = items.length > 0 && items.every(item => item.coverage.level === 'high' && item.refs.length > 0)
     ? 'high'
     : usable.length
       ? 'partial'

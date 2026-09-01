@@ -17,6 +17,13 @@ describe('Advisor canonical turn coverage', () => {
     expect(mergeEvidence([unavailable, { ...unavailable }], high).coverage.level).toBe('unavailable')
   })
 
+  it('does not award High coverage to a nominal model response without canonical refs', () => {
+    const fixture = createAdvisorConformanceFixture()
+    const high = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const modelOnly = { ...high, refs: [], coverage: { level: 'high' as const, label: 'High coverage', detail: 'The model returned a non-empty answer.' } }
+    expect(mergeEvidence([modelOnly], high).coverage.level).toBe('unavailable')
+  })
+
   it('keeps an explicit bounded period comparison usable without mixing provider or project scopes', () => {
     const fixture = createAdvisorConformanceFixture()
     const week = buildSpendEvidence('Show spend for this week and lifetime.', fixture.scope, fixture.overview)

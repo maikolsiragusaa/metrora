@@ -1,12 +1,12 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorSwarmSynthesisMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { parseAdvisorSynthesisDraft } from './synthesis'
 import { createAdvisorTurnDeadline, raceAdvisorAbort, shouldRethrowAdvisorAbort } from './abort'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 
 const BOUNDED_TURN_DEADLINE_NOTE = 'The bounded Metrora turn deadline was reached; verified facts are shown instead.'
 
@@ -165,6 +165,38 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     this.providerSupport = [options.provider + ' official API']
   }
 
+  async generateSwarmSynthesis(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> {
+    if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
+    if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
+    const deadline = createAdvisorTurnDeadline(signal, HARNESS_TOOL_LOOP_LIMITS.turnTimeoutMs)
+    const turnSignal = deadline.signal
+    let activeRequestId: string | null = null
+    const cancel = () => { if (activeRequestId) void this.transport.cancel(activeRequestId).catch(() => {}) }
+    turnSignal.addEventListener('abort', cancel, { once: true })
+    try {
+      activeRequestId = requestId('hosted-swarm-synthesis')
+      const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
+        provider: this.provider,
+        model: this.model,
+        messages: buildAdvisorSwarmSynthesisMessages(input),
+        tools: [],
+        stream: false,
+        consent: true,
+        harnessConformance: true,
+      }, turnSignal), turnSignal)
+      activeRequestId = null
+      throwIfAborted(turnSignal)
+      if (!isNormalizedHostedResponse(response)) throw new Error('The dedicated hosted Swarm synthesis response was malformed.')
+      return {
+        answer: response.message.content,
+        evidenceSummary: 'Dedicated bounded hosted synthesis over ' + input.workers.length + ' normalized worker closeout(s).',
+      }
+    } finally {
+      turnSignal.removeEventListener('abort', cancel)
+      deadline.dispose()
+    }
+  }
+
   async generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer> {
     if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
     if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
@@ -210,9 +242,11 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
 
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
         const deterministic = deterministicPlanningFallback(fallbackPlan, definitions, input.question)
-        let evidenceItems: AdvisorEvidence[] = []
-        try { evidenceItems = await executeRequests(input, deterministic.toolRequests, turnSignal) } catch (error) {
-          if (shouldRethrow(error)) throw error
+        let evidenceItems: AdvisorEvidence[] = [...(input.requiredEvidence ?? [])]
+        if (!evidenceItems.length) {
+          try { evidenceItems = await executeRequests(input, deterministic.toolRequests, turnSignal) } catch (error) {
+            if (shouldRethrow(error)) throw error
+          }
         }
         if (signal?.aborted) throwIfAborted(signal)
         return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: deadline.didTimeout() ? BOUNDED_TURN_DEADLINE_NOTE : note }, finalizationSignal())
@@ -265,7 +299,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       let currentInput = effectiveInput
       let currentPlan = validation.plan
       let currentResponse = firstResponse
-      let evidenceItems: AdvisorEvidence[] = []
+      let evidenceItems: AdvisorEvidence[] = [...(input.requiredEvidence ?? [])]
       let toolRound = 0
       let totalToolCalls = 0
       const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({

@@ -11,6 +11,7 @@ import type {
   SwarmWorkerResultV1,
   SwarmWorkerRoleV1,
   SwarmWorkerProfileV1,
+  SwarmEvidenceResultV1,
 } from './contract-v1'
 import { workerEventStatusForResult, safeSwarmEvent } from './events-v1'
 import { buildSwarmEvidenceV1, boundedSwarmText, finalizeSwarmWorkerResult, sanitizeSwarmIdentity, SWARM_EVIDENCE_MAX_TASK_BYTES } from './evidence-v1'
@@ -151,6 +152,7 @@ function terminalWorkerResult(
     toolActivity: [],
     evidenceRefs: [],
     evidenceSummary: '',
+    evidenceResult: { status: 'unavailable', requiredToolNames: [], usedToolNames: [] },
     answer: '',
     artifactSummary: null,
     errors: [boundedSwarmText(error, 400)],
@@ -160,11 +162,11 @@ function terminalWorkerResult(
 }
 
 function deterministicSynthesis(status: SwarmRunStatusV1, results: readonly SwarmWorkerResultV1[]): SwarmSynthesisResultV1 {
-  const available = results.filter(result => result.status === 'completed' || result.status === 'partial')
-  const unavailable = results.filter(result => result.status !== 'completed' && result.status !== 'partial')
+  const available = results.filter(successful)
+  const unavailable = results.filter(result => !successful(result))
   const answer = available.length
     ? available.map(result => result.answer).filter(Boolean).join('\n\n')
-    : 'No worker returned usable evidence for this Swarm run.'
+    : 'No worker returned usable canonical Metrora evidence for this Swarm run.'
   const suffix = unavailable.length
     ? ' Partial evidence: ' + unavailable.map(result => result.role + ' ' + result.status).join(', ') + '.'
     : ''
@@ -177,7 +179,12 @@ function deterministicSynthesis(status: SwarmRunStatusV1, results: readonly Swar
 }
 
 function successful(result: SwarmWorkerResultV1): boolean {
-  return result.status === 'completed' || result.status === 'partial'
+  if (result.status !== 'completed' && result.status !== 'partial') return false
+  if (!result.evidenceResult) return result.evidenceRefs.length > 0
+  if (result.evidenceResult.status !== 'usable' && result.evidenceResult.status !== 'partial') return false
+  if (!result.evidenceResult.requiredToolNames.length) return true
+  return result.evidenceRefs.length > 0
+    && result.evidenceResult.usedToolNames.some(name => result.evidenceResult!.requiredToolNames.includes(name))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -206,6 +213,24 @@ function normalizeWorkerResult(request: SwarmWorkerRequestV1, value: unknown): S
         costUsd: typeof value.usage.costUsd === 'number' ? value.usage.costUsd : null,
       }
     : null
+  const rawEvidenceResult = isRecord(value.evidenceResult) ? value.evidenceResult : null
+  const parsedEvidenceResult: SwarmEvidenceResultV1 = rawEvidenceResult
+    && (rawEvidenceResult.status === 'usable' || rawEvidenceResult.status === 'partial' || rawEvidenceResult.status === 'unavailable')
+    && Array.isArray(rawEvidenceResult.requiredToolNames)
+    && Array.isArray(rawEvidenceResult.usedToolNames)
+    ? {
+        status: rawEvidenceResult.status as SwarmEvidenceResultV1['status'],
+        requiredToolNames: rawEvidenceResult.requiredToolNames.filter(name => typeof name === 'string').slice(0, 16) as string[],
+        usedToolNames: rawEvidenceResult.usedToolNames.filter(name => typeof name === 'string').slice(0, 16) as string[],
+      }
+    : {
+        status: evidenceRefs.length > 0 && toolActivity.some(item => item.status === 'completed') ? 'usable' as const : 'unavailable' as const,
+        requiredToolNames: toolActivity.map(item => item.name).slice(0, 16),
+        usedToolNames: toolActivity.filter(item => item.status === 'completed').map(item => item.name).slice(0, 16),
+      }
+  const evidenceResult: SwarmEvidenceResultV1 = parsedEvidenceResult.requiredToolNames.length > 0 && evidenceRefs.length === 0
+    ? { ...parsedEvidenceResult, status: 'unavailable' }
+    : parsedEvidenceResult
   return {
     contractVersion: 'metrora.swarm.v1',
     schemaVersion: 1,
@@ -221,6 +246,7 @@ function normalizeWorkerResult(request: SwarmWorkerRequestV1, value: unknown): S
     toolActivity,
     evidenceRefs,
     evidenceSummary: typeof value.evidenceSummary === 'string' ? value.evidenceSummary : '',
+    evidenceResult,
     answer: typeof value.answer === 'string' ? value.answer : '',
     artifactSummary: value.artifactSummary === null || typeof value.artifactSummary === 'string' ? value.artifactSummary : null,
     errors,

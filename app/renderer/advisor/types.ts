@@ -228,6 +228,10 @@ export type AdvisorUiContextV1 = {
 export type AdvisorRuntimeInput = {
   question: string
   evidence: AdvisorEvidence
+  /** Canonical reads executed by the controller before model planning. */
+  requiredEvidence?: readonly AdvisorEvidence[]
+  /** Exact bounded requests represented by requiredEvidence; used to avoid a duplicate read. */
+  requiredToolRequests?: readonly AdvisorToolRequestV1[]
   conversation?: AdvisorConversationTurn[]
   uiContext?: AdvisorUiContextV1
   plan?: AdvisorTurnPlanV1
@@ -244,11 +248,28 @@ export type AdvisorRuntimeInput = {
   onToolRound?: (round: number) => void
   onToolEvent?: (event: { name: string; status: 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled' }) => void
   onDelta?: (text: string) => void
+  /** Trusted bounded responsibility for a Swarm worker; this changes the model input, not just UI metadata. */
+  workerContext?: {
+    role: 'investigator' | 'verifier' | 'evidence-reviewer'
+    profile: string
+    responsibility: string
+    instruction: string
+  }
 }
+export type AdvisorSwarmEvidenceStatus = 'usable' | 'partial' | 'unavailable'
 export type AdvisorSwarmSynthesisInput = {
   question: string
   scope: AdvisorScope
-  workers: ReadonlyArray<{ role: string; status: string; answer: string; evidenceSummary: string }>
+  workers: ReadonlyArray<{
+    role: string
+    status: string
+    answer: string
+    evidenceSummary: string
+    evidenceStatus?: AdvisorSwarmEvidenceStatus
+    evidenceRefs?: readonly { id: string; label: string }[]
+    requiredToolNames?: readonly string[]
+    toolNamesUsed?: readonly string[]
+  }>
 }
 export type AdvisorSwarmSynthesisResult = { answer: string; evidenceSummary: string }
 export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'llama-server-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer>; generateSwarmSynthesis?(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> }

@@ -56,7 +56,7 @@ export type AdvisorHostedProviderDescriptor = {
   origin: string
   modelsPath: string
   modelListKind: AdvisorHostedModelListKind
-  protocolForModel: (model: string) => AdvisorHostedProtocol | null
+  protocolForModel: (model: string, metadata?: Record<string, unknown>) => AdvisorHostedProtocol | null
   chatPath: (model: string, stream: boolean, protocol: AdvisorHostedProtocol) => string
 }
 
@@ -151,7 +151,63 @@ const OPENCODE_ZEN_PROTOCOLS: Readonly<Record<string, AdvisorHostedProtocol>> = 
 }
 
 function openCodeZenModelId(model: string): string { return model.replace(/^models\//u, '') }
-function openCodeZenProtocol(model: string): AdvisorHostedProtocol | null { return OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null }
+
+/**
+ * Resolve only the protocol vocabulary and endpoint paths implemented by the
+ * provider adapter. An absent field returns undefined so the reviewed static
+ * model map can remain the fallback; a present but unknown/malformed field
+ * returns null so discovery fails closed instead of guessing.
+ */
+export function resolveOpenCodeZenProtocolFromMetadata(metadata: Record<string, unknown> | undefined): AdvisorHostedProtocol | null | undefined {
+  if (!metadata) return undefined
+
+  const protocolValues = ['protocol', 'protocol_id', 'protocolId']
+    .filter(key => Object.prototype.hasOwnProperty.call(metadata, key))
+    .map(key => metadata[key])
+  const endpointValues = ['endpointPath', 'endpoint', 'chatPath']
+    .filter(key => Object.prototype.hasOwnProperty.call(metadata, key))
+    .map(key => metadata[key])
+  if (protocolValues.length > 1 && protocolValues.some(value => value !== protocolValues[0])) return null
+  if (endpointValues.length > 1 && endpointValues.some(value => value !== endpointValues[0])) return null
+  if (protocolValues.some(value => value === undefined) || endpointValues.some(value => value === undefined)) return null
+
+  const rawProtocol = protocolValues[0]
+  const rawEndpoint = endpointValues[0]
+  let protocol: AdvisorHostedProtocol | null | undefined
+  if (rawProtocol !== undefined) {
+    protocol = rawProtocol === 'openai-responses' || rawProtocol === 'openai-chat' || rawProtocol === 'anthropic-messages' || rawProtocol === 'gemini-content'
+      ? rawProtocol
+      : null
+  }
+  if (rawEndpoint !== undefined) {
+    if (typeof rawEndpoint !== 'string') return null
+    try {
+      const parsed = new URL(rawEndpoint, 'https://opencode.ai')
+      if (parsed.origin !== 'https://opencode.ai' || parsed.search || parsed.hash || parsed.username || parsed.password) return null
+      const path = parsed.pathname
+      const endpointProtocol = path === '/zen/v1/responses'
+        ? 'openai-responses' as const
+        : path === '/zen/v1/messages'
+          ? 'anthropic-messages' as const
+          : path === '/zen/v1/chat/completions'
+            ? 'openai-chat' as const
+            : /^\/zen\/v1\/models\/[^/]+:generateContent$/u.test(path)
+              ? 'gemini-content' as const
+              : null
+      if (!endpointProtocol) return null
+      if (protocol !== undefined && protocol !== endpointProtocol) return null
+      protocol = endpointProtocol
+    } catch {
+      return null
+    }
+  }
+  return protocol
+}
+
+function openCodeZenProtocol(model: string, metadata?: Record<string, unknown>): AdvisorHostedProtocol | null {
+  const explicit = resolveOpenCodeZenProtocolFromMetadata(metadata)
+  return explicit === undefined ? OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null : explicit
+}
 
 function openCodeZenChatPath(model: string, stream: boolean, protocol: AdvisorHostedProtocol): string {
   if (protocol === 'openai-responses') return '/zen/v1/responses'

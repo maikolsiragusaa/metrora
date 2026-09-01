@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { advisorHostedProviderDescriptors, createAdvisorHostedHandlers, type AdvisorHostedEvent, type AdvisorHostedProviderId } from './advisor-provider'
+import { resolveOpenCodeZenProtocolFromMetadata } from './advisor-provider-contract'
 
 const providers: AdvisorHostedProviderId[] = ['openai', 'anthropic', 'gemini']
 const request = (provider: AdvisorHostedProviderId, stream = false) => ({
@@ -543,5 +544,68 @@ describe('Advisor hosted provider authority', () => {
     }) as { ok: boolean; error: { kind: string } }
     expect(result).toMatchObject({ ok: false, error: { kind: 'model-unavailable' } })
     expect(chatFetch).not.toHaveBeenCalled()
+  })
+
+  it('uses reviewed OpenCode Zen model-list metadata for the physical regression models', async () => {
+    const cases = [
+      { model: 'muse-spark-1.2-contributor-free', metadata: { protocol: 'openai-responses' }, path: '/zen/v1/responses', payload: textPayload('openai') },
+      { model: 'mimo-v2.5-free', metadata: { protocol: 'openai-chat' }, path: '/zen/v1/chat/completions', payload: { choices: [{ message: { content: 'MiMo response.' } }] } },
+      { model: 'nemotron-3-ultra-free', metadata: { endpointPath: '/zen/v1/chat/completions' }, path: '/zen/v1/chat/completions', payload: { choices: [{ message: { content: 'Nemotron response.' } }] } },
+    ] as const
+    const calls: string[] = []
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      const value = String(url)
+      calls.push(value)
+      if (value.endsWith('/zen/v1/models')) return jsonResponse({ data: cases.map(item => ({ id: item.model, ...item.metadata })) })
+      const selected = cases.find(item => value.endsWith(item.path))
+      return jsonResponse(selected?.payload ?? {})
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const probe = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(probe.value.models).toEqual([
+      expect.objectContaining({ id: 'muse-spark-1.2-contributor-free', state: 'unverified' }),
+      expect.objectContaining({ id: 'mimo-v2.5-free', state: 'unverified' }),
+      expect.objectContaining({ id: 'nemotron-3-ultra-free', state: 'unverified' }),
+    ])
+    for (const item of cases) {
+      await expect(handlers['metrora:advisorHostedChat']!('zen-metadata-' + item.model, {
+        provider: 'opencode-zen', model: item.model, messages: [{ role: 'user', content: 'Use the reviewed metadata protocol.' }], stream: false, consent: true,
+      })).resolves.toMatchObject({ ok: true, value: { model: item.model } })
+      expect(calls.at(-1)).toBe('https://opencode.ai' + item.path)
+    }
+  })
+
+  it('does not reuse exact-model conformance when OpenCode Zen protocol metadata changes', async () => {
+    let protocol: 'openai-chat' | 'openai-responses' = 'openai-chat'
+    const calls: string[] = []
+    const fetchImpl = (async (url: RequestInfo | URL) => {
+      const value = String(url)
+      calls.push(value)
+      if (value.endsWith('/zen/v1/models')) return jsonResponse({ data: [{ id: 'mimo-v2.5-free', protocol }] })
+      return protocol === 'openai-chat'
+        ? jsonResponse({ choices: [{ message: { content: 'MiMo conformance response.' } }] })
+        : jsonResponse(textPayload('openai'))
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    await handlers['metrora:advisorHostedProbe']!('opencode-zen')
+    await expect(handlers['metrora:advisorHostedChat']!('zen-stale-protocol', {
+      provider: 'opencode-zen', model: 'mimo-v2.5-free', messages: [{ role: 'user', content: 'Verify this exact model.' }], stream: false, consent: true, harnessConformance: true,
+    })).resolves.toMatchObject({ ok: true })
+    const verified = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(verified.value.models[0]).toMatchObject({ id: 'mimo-v2.5-free', state: 'verified' })
+
+    protocol = 'openai-responses'
+    const changed = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(changed.value.models[0]).toMatchObject({ id: 'mimo-v2.5-free', state: 'unverified' })
+    await expect(handlers['metrora:advisorHostedChat']!('zen-new-protocol', {
+      provider: 'opencode-zen', model: 'mimo-v2.5-free', messages: [{ role: 'user', content: 'Use the changed exact protocol.' }], stream: false, consent: true,
+    })).resolves.toMatchObject({ ok: true })
+    expect(calls.at(-1)).toBe('https://opencode.ai/zen/v1/responses')
+  })
+
+  it('fails closed for conflicting OpenCode Zen protocol metadata', () => {
+    expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: 'openai-chat', endpointPath: '/zen/v1/responses' })).toBeNull()
+    expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: undefined })).toBeNull()
+    expect(resolveOpenCodeZenProtocolFromMetadata({ endpointPath: '/zen/v1/chat/completions?redirect=1' })).toBeNull()
   })
 })

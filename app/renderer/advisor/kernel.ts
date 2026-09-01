@@ -4,8 +4,10 @@ import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from './comprehensi
 import { explicitAdvisorModelHint, explicitAdvisorPeriodHints } from './planner'
 import { createAdvisorToolRegistry } from './tools'
 import { DeterministicAdvisorRuntime } from './runtime'
+import { advisorAnswerUsesCanonicalEvidence, advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, advisorToolRequestKey } from './required-reads'
+import { mergeEvidence } from './merge-evidence'
 import type { MenubarPayload } from '../lib/types'
-import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorScope, AdvisorUiContextV1, AdvisorToolEvent } from './types'
+import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorScope, AdvisorUiContextV1, AdvisorToolEvent, AdvisorToolExecution } from './types'
 
 export class AdvisorCancelledError extends Error {
   constructor() { super('Advisor investigation cancelled'); this.name = 'AdvisorCancelledError' }
@@ -55,6 +57,52 @@ function attachPlan(evidence: AdvisorEvidence, plan: ReturnType<typeof resolveAd
       : evidence.assumptions,
   }
 }
+
+function evidenceRequired(plan: ReturnType<typeof resolveAdvisorQuestion>): boolean {
+  return advisorQuestionRequiresCanonicalReads(plan)
+}
+
+function hasCanonicalAnswerReference(answer: AdvisorAnswer, evidence: AdvisorEvidence): boolean {
+  return advisorAnswerUsesCanonicalEvidence(answer, evidence)
+}
+
+async function normalizeFactualModelAnswer(
+  answer: AdvisorAnswer,
+  evidence: AdvisorEvidence,
+  question: string,
+  plan: ReturnType<typeof resolveAdvisorQuestion>,
+  conversation: AdvisorConversationTurn[],
+  uiContext: AdvisorUiContextV1 | undefined,
+  signal: AbortSignal | undefined,
+): Promise<AdvisorAnswer> {
+  const authoritative = attachPlan(evidence, plan)
+  if (hasCanonicalAnswerReference(answer, authoritative)) {
+    return {
+      ...answer,
+      evidence: authoritative.refs,
+      coverage: authoritative.coverage,
+      assumptions: authoritative.assumptions,
+      unknown: authoritative.unknown,
+      nextInvestigations: authoritative.nextInvestigations,
+      understanding: authoritative.understanding,
+      plan: authoritative.plan,
+    }
+  }
+  const fallback = await new DeterministicAdvisorRuntime().generate({
+    question,
+    evidence: authoritative,
+    conversation,
+    uiContext,
+    plan: plan.plan,
+    fallbackIntent: plan.intent,
+    guard: plan.guard,
+  }, signal)
+  return {
+    ...fallback,
+    materialLimits: [...(fallback.materialLimits ?? []), 'The model response was not grounded in the required canonical Metrora evidence.'],
+  }
+}
+
 export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorModelRuntime): AdvisorKernel {
   return {
     async investigate({ question, scope, overview: suppliedOverview = null, conversation = [], uiContext, signal, onConformance, onToolEvent, onDelta }) {
@@ -67,21 +115,73 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
       const modelEvidence = plan.intent === 'action-proposal'
         ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
         : buildConversationEvidence(question, scope)
-      const modelInputEvidence = attachPlan(modelEvidence, plan)
+      const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview, { allowedPeriods })
+      const requiredReads = advisorQuestionRequiresCanonicalReads(plan)
+        ? await executeRequiredAdvisorReads({
+            source,
+            scope,
+            question,
+            plan,
+            suppliedOverview,
+            registry: toolRegistry,
+            definitions: toolRegistry.definitions,
+            onToolEvent,
+            signal,
+          })
+        : null
+      const canonicalEvidence = requiredReads?.evidence.length
+        ? mergeEvidence([...requiredReads.evidence], requiredReads.evidence[0]!)
+        : null
+      const modelInputEvidence = attachPlan(canonicalEvidence ?? modelEvidence, plan)
       if (!modelReady) {
-        const evidence = await deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, signal, allowedPeriods)
+        const evidence = canonicalEvidence ?? await deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, signal, allowedPeriods)
         const inputEvidence = attachPlan(evidence, plan)
         return new DeterministicAdvisorRuntime().generate({ question, evidence: inputEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard, allowedPeriods }, signal)
       }
       const modelGuard = createAdvisorModelGuardV1(plan)
-      const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview, { allowedPeriods })
+      const baselineExecutions = new Map<string, AdvisorToolExecution>()
+      for (const read of requiredReads?.reads ?? []) {
+        if (read.execution) baselineExecutions.set(advisorToolRequestKey(read.request), read.execution)
+      }
+      const modelEvidenceItems: AdvisorEvidence[] = [...(requiredReads?.evidence ?? [])]
+      const executeTool = async (name: string, args: Record<string, unknown>, toolSignal?: AbortSignal): Promise<AdvisorToolExecution> => {
+        const cached = baselineExecutions.get(name + '\u0000' + JSON.stringify(args))
+        if (cached) return cached
+        const execution = await toolRegistry.execute(name, args, toolSignal ?? signal)
+        const unavailable = execution.envelope?.unavailable === true || execution.evidence.coverage.level === 'unavailable'
+        const evidence = unavailable ? { ...execution.evidence, refs: [] } : execution.evidence
+        modelEvidenceItems.push(evidence)
+        return unavailable ? { ...execution, evidence } : execution
+      }
       try {
-        return await runtime.generate({ question, evidence: modelInputEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: modelGuard, allowedPeriods, tools: toolRegistry.definitions, toolContract: toolRegistry.contract, executeTool: toolRegistry.execute, onConformance, onToolEvent, onDelta }, signal)
+        const answer = await runtime.generate({
+          question,
+          evidence: modelInputEvidence,
+          requiredEvidence: requiredReads?.evidence,
+          requiredToolRequests: requiredReads?.requests,
+          conversation,
+          uiContext,
+          plan: plan.plan,
+          fallbackIntent: plan.intent,
+          guard: modelGuard,
+          allowedPeriods,
+          tools: toolRegistry.definitions,
+          toolContract: toolRegistry.contract,
+          executeTool,
+          onConformance,
+          onToolEvent,
+          onDelta,
+        }, signal)
+        if (!evidenceRequired(plan)) return answer
+        const authoritative = modelEvidenceItems.length
+          ? mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
+          : canonicalEvidence ?? modelInputEvidence
+        return normalizeFactualModelAnswer(answer, authoritative, question, plan, conversation, uiContext, signal)
       } catch (error) {
         rethrowCancellation(error, signal)
         const fallbackBase = plan.intent === 'action-proposal'
           ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
-          : await deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, signal, allowedPeriods)
+          : canonicalEvidence ?? await deterministicEvidenceForIntent(source, plan.intent, question, scope, suppliedOverview, signal, allowedPeriods)
         const fallbackEvidence = attachPlan(fallbackBase, plan)
         const fallback = await new DeterministicAdvisorRuntime().generate({ question, evidence: fallbackEvidence, conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard, allowedPeriods }, signal)
         return {

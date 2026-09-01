@@ -50,6 +50,12 @@ function modelScope(input: AdvisorRuntimeInput): string {
   return modelScopeValue(input.evidence.scope)
 }
 
+function workerInstruction(input: AdvisorRuntimeInput): string | null {
+  const worker = input.workerContext
+  if (!worker) return null
+  return 'Trusted Swarm worker responsibility (' + worker.role + ', ' + bounded(worker.profile, 96) + '): ' + bounded(worker.responsibility, 800) + ' Instruction: ' + bounded(worker.instruction, 1_200)
+}
+
 function safeConversation(input: AdvisorRuntimeInput): ModelMessage[] {
   const currentScopeFingerprint = advisorScopeFingerprint(input.evidence.scope)
   return (input.conversation ?? [])
@@ -96,6 +102,7 @@ export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPla
         planningInstruction(options),
         'When a read tool has returned, the application will perform a fresh evidence-bound synthesis. Do not treat conversation history or surrounding application context as factual evidence; use them only for referents and scope.',
         'Stay within the selected Metrora context and use only the supplied read tools. Do not broaden the period, provider, Project, or model context.',
+        ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
         'Selected context: ' + modelScope(input),
       ].join(' '),
     },
@@ -120,6 +127,7 @@ export function buildAdvisorToolContinuationMessages(input: AdvisorRuntimeInput,
         planningInstruction(options),
         'If the evidence is sufficient, return a short natural-language interpretation or recommendation grounded only in it, without inventing facts. The application will render verified facts separately.',
         round === 1 ? 'This is the last opportunity for one additional bounded read.' : 'No additional read should be requested.',
+        ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
         'Selected context: ' + modelScopeForEvidence(evidence),
         'Canonical evidence: ' + modelEvidence(evidence),
       ].join(' '),
@@ -134,6 +142,10 @@ export function buildAdvisorSwarmSynthesisMessages(input: AdvisorSwarmSynthesisI
   const reports = input.workers.slice(0, 3).map(worker => [
     'Role: ' + sanitizeAdvisorDisplayText(worker.role, 64),
     'Status: ' + sanitizeAdvisorDisplayText(worker.status, 32),
+    'Evidence result: ' + sanitizeAdvisorDisplayText(worker.evidenceStatus ?? 'unavailable', 32),
+    'Required reads: ' + (worker.requiredToolNames ?? []).slice(0, 16).map(tool => sanitizeAdvisorDisplayText(tool, 96)).join(', '),
+    'Evidence refs: ' + (worker.evidenceRefs ?? []).slice(0, 16).map(ref => sanitizeAdvisorDisplayText(ref.id, 120) + ' · ' + sanitizeAdvisorDisplayText(ref.label, 160)).join('; '),
+    'Tools used: ' + (worker.toolNamesUsed ?? []).slice(0, 16).map(tool => sanitizeAdvisorDisplayText(tool, 96)).join(', '),
     'Worker answer: ' + bounded(sanitizeAdvisorDisplayText(worker.answer, 4_000), 4_000),
     'Evidence summary: ' + bounded(sanitizeAdvisorDisplayText(worker.evidenceSummary, 1_000), 1_000),
   ].join('\n')).join('\n\n')

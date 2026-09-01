@@ -210,11 +210,13 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
 
       const fallback = async (note: string, modelUsed = false): Promise<AdvisorAnswer> => {
         const deterministic = deterministicPlanningFallback(fallbackPlan, definitions, input.question)
-        let evidenceItems: AdvisorEvidence[] = []
-        try {
-          evidenceItems = await executeRequests(input, deterministic.toolRequests, turnSignal)
-        } catch (error) {
-          if (shouldRethrow(error)) throw error
+        let evidenceItems: AdvisorEvidence[] = [...(input.requiredEvidence ?? [])]
+        if (!evidenceItems.length) {
+          try {
+            evidenceItems = await executeRequests(input, deterministic.toolRequests, turnSignal)
+          } catch (error) {
+            if (shouldRethrow(error)) throw error
+          }
         }
         if (signal?.aborted) throwIfAborted(signal)
         return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: deadline.didTimeout() ? BOUNDED_TURN_DEADLINE_NOTE : note }, finalizationSignal())
@@ -268,7 +270,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       let currentInput = effectiveInput
       let currentPlan = validation.plan
       let currentResponse = firstResponse
-      let evidenceItems: AdvisorEvidence[] = []
+      let evidenceItems: AdvisorEvidence[] = [...(input.requiredEvidence ?? [])]
       let toolRound = 0
       let totalToolCalls = 0
       const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({

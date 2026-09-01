@@ -90,6 +90,33 @@ describe('Advisor chat-first model boundary', () => {
     expect(answer.conclusion).toMatch(/not authorized|not an authorized|not executable|requires/i)
   })
 
+  it('guarantees the canonical read and Tool activity for a factual Chat turn when the model skips tools', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const requests: Array<Record<string, unknown>> = []
+    const events: Array<{ name: string; status: string }> = []
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'chat-model',
+      transport: directTransport(requests, { content: 'Hello. I can help you understand spend.' }),
+    })
+
+    const answer = await createAdvisorKernel(fixture.source, runtime).investigate({
+      question: 'È vero che ho speso più di 4k in totale di AI? Verifica i dati disponibili e dammi una conclusione.',
+      scope: fixture.scope,
+      onToolEvent: event => events.push(event),
+    })
+
+    expect(fixture.reads.overviews).toHaveLength(1)
+    expect(events).toEqual([
+      { name: 'get_spend_snapshot', status: 'queued' },
+      { name: 'get_spend_snapshot', status: 'started' },
+      { name: 'get_spend_snapshot', status: 'completed' },
+    ])
+    expect(requests).toHaveLength(1)
+    expect(answer.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'overview.current' })]))
+    expect(answer.conclusion).toContain('$12.00')
+    expect(answer.conclusion).not.toMatch(/Hello\. I can help you understand spend/i)
+  })
+
   it('sends only bounded same-scope history and minimal semantic context', async () => {
     const requests: Array<Record<string, unknown>> = []
     const fingerprint = advisorScopeFingerprint(scope)

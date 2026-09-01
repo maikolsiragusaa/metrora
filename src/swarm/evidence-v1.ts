@@ -84,6 +84,13 @@ export async function digestWorkerResult(result: SwarmWorkerResultV1): Promise<s
     toolActivity: result.toolActivity.map(item => ({ name: item.name, status: item.status })),
     evidenceRefs: result.evidenceRefs.slice(0, SWARM_EVIDENCE_MAX_REFS),
     evidenceSummary: boundedSwarmText(result.evidenceSummary),
+    evidenceResult: result.evidenceResult
+      ? {
+          status: result.evidenceResult.status,
+          requiredToolNames: result.evidenceResult.requiredToolNames.slice(0, SWARM_EVIDENCE_MAX_REFS).map(name => sanitizeSwarmText(name, 96)),
+          usedToolNames: result.evidenceResult.usedToolNames.slice(0, SWARM_EVIDENCE_MAX_REFS).map(name => sanitizeSwarmText(name, 96)),
+        }
+      : undefined,
     answer: boundedSwarmText(result.answer),
     artifactSummary: boundedSwarmText(result.artifactSummary),
     errors: result.errors.slice(0, 4).map(error => boundedSwarmText(error, 400)),
@@ -110,6 +117,13 @@ export async function finalizeSwarmWorkerResult(result: SwarmWorkerResultV1): Pr
       label: sanitizeSwarmText(ref.label, 240),
     })),
     evidenceSummary: boundedSwarmText(result.evidenceSummary),
+    evidenceResult: result.evidenceResult
+      ? {
+          status: result.evidenceResult.status,
+          requiredToolNames: result.evidenceResult.requiredToolNames.slice(0, SWARM_EVIDENCE_MAX_REFS).map(name => sanitizeSwarmText(name, 96)),
+          usedToolNames: result.evidenceResult.usedToolNames.slice(0, SWARM_EVIDENCE_MAX_REFS).map(name => sanitizeSwarmText(name, 96)),
+        }
+      : undefined,
     answer: boundedSwarmText(result.answer),
     artifactSummary: result.artifactSummary === null ? null : boundedSwarmText(result.artifactSummary),
     errors: result.errors.slice(0, 4).map(error => boundedSwarmText(error, 400)),

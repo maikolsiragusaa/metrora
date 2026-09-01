@@ -5,8 +5,48 @@ import { buildSpendEvidence } from './evidence'
 import { createAdvisorConformanceFixture } from './conformance'
 import { createAdvisorKernel } from './kernel'
 import { HostedAdvisorRuntime, type HostedAdvisorTransport } from './hosted'
+import type { AdvisorSwarmSynthesisInput } from './types'
 
 describe('Hosted Advisor renderer runtime', () => {
+  it('uses a dedicated bounded transport request for Swarm synthesis', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const requests: Array<Record<string, unknown>> = []
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'verified', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        return { streamed: false, message: { content: 'Verified spend is $12.00 from measured spend and call totals.' } }
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const runtime = new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport })
+    const input: AdvisorSwarmSynthesisInput = {
+      question: 'È vero che ho speso più di 4k in totale di AI?',
+      scope: fixture.scope,
+      workers: [{
+        role: 'investigator',
+        status: 'completed',
+        answer: 'Metrora measured $12.00 in the selected period.',
+        evidenceSummary: 'Usable canonical spend evidence.',
+        evidenceStatus: 'usable',
+        evidenceRefs: [{ id: 'overview.current', label: 'Measured spend and call totals' }],
+        requiredToolNames: ['get_spend_snapshot'],
+        toolNamesUsed: ['get_spend_snapshot'],
+      }],
+    }
+
+    const result = await runtime.generateSwarmSynthesis(input)
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.tools).toEqual([])
+    expect(requests[0]?.harnessConformance).toBe(true)
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>
+    expect(messages.at(-1)?.content).toBe(input.question)
+    expect(messages.some(message => message.content.includes('Synthesize this bounded worker evidence'))).toBe(false)
+    expect(result.answer).toContain('Verified spend is $12.00')
+  })
+
   it.each([
     ['ciao come stai', 'Ciao! Sto bene, grazie.', 1, 'social'],
     ['Bonjour, comment ça va ?', 'Bonjour ! Je vais bien, merci.', 1, 'investigate'],
