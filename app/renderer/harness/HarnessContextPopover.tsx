@@ -1,0 +1,58 @@
+import { useEffect, useRef, useState } from 'react'
+import type { AdvisorContextualScopeMode } from '../advisor/context'
+import { periodLabel } from '../advisor/evidence'
+import type { AdvisorScope } from '../advisor/types'
+import { PERIOD_OPTIONS } from '../components/TopBar'
+import type { Period } from '../lib/types'
+
+const PERIODS: Array<{ value: Period; label: string }> = PERIOD_OPTIONS.map(option => ({ value: option.value as Period, label: option.label }))
+
+export type HarnessContextPopoverProps = {
+  projectOptions: Array<{ id: string; name: string }>
+  modelOptions: string[]
+  providerOptions: Array<{ id: string; label: string }>
+  scope: AdvisorScope
+  contextualScopeMode: AdvisorContextualScopeMode | null
+  contextualOrigin: string | null
+  scopeSummary: string
+  onScopeChange: (update: (current: AdvisorScope) => AdvisorScope) => void
+}
+
+function compactSummary(scopeSummary: string, mode: AdvisorContextualScopeMode | null): string {
+  if (mode === 'capacity') return 'Provider capacity · All providers'
+  if (mode === 'compare') return 'Compare · ' + scopeSummary
+  return scopeSummary
+}
+
+export function HarnessContextPopover({ projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange }: HarnessContextPopoverProps) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }
+    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false) } }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => { document.removeEventListener('mousedown', onPointerDown); document.removeEventListener('keydown', onKeyDown) }
+  }, [open])
+  return (
+    <div className="harness-v3-context-anchor" ref={rootRef}>
+      <button type="button" className="harness-v3-context-trigger" aria-label="Harness context" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? 'harness-context-popover' : undefined} onClick={() => setOpen(current => !current)}>
+        <span className="harness-v3-context-trigger-label">{compactSummary(scopeSummary, contextualScopeMode)}</span><span aria-hidden="true" className="harness-v3-chevron">⌄</span>
+      </button>
+      {open ? <div className="harness-v3-context-popover" id="harness-context-popover" role="dialog" aria-label="Harness context details">
+        <div className="harness-v3-popover-head"><strong>Conversation context</strong><p>Scope is applied to this Harness turn and remains explicit.</p></div>
+        {contextualOrigin ? <p className="harness-v3-context-origin">From {contextualOrigin}</p> : null}
+        {contextualScopeMode === 'capacity' ? <p className="harness-v3-context-authority">Provider-reported now · All providers; Project and history do not scope Capacity.</p> : <>
+          <div className="harness-v3-context-fields">
+            <label>Period<select aria-label="Harness period" value={scope.period} onChange={event => onScopeChange(current => ({ ...current, period: event.target.value as Period }))}>{PERIODS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            {contextualScopeMode === 'compare' ? <p className="harness-v3-context-authority">Compare uses period + provider; custom dates and Project are not part of Compare.</p> : <label>Project<select aria-label="Harness Project" value={scope.projectId} onChange={event => { const id = event.target.value; onScopeChange(current => ({ ...current, projectId: id, projectName: id === 'all' ? 'All projects' : projectOptions.find(option => option.id === id)?.name ?? id })) }}><option value="all">All projects</option>{projectOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>}
+            <label>Provider<select aria-label="Harness provider" value={scope.provider} onChange={event => onScopeChange(current => ({ ...current, provider: event.target.value }))}>{providerOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+            <label>Model<select aria-label="Harness model" value={scope.model ?? ''} onChange={event => onScopeChange(current => ({ ...current, model: event.target.value || null }))}><option value="">All models</option>{modelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select></label>
+          </div>
+        </>}
+        <div className="harness-v3-context-footer"><span>{periodLabel(scope)}</span><span>{scopeSummary}</span><span>Facts read-only · actions require confirmation</span></div>
+      </div> : null}
+    </div>
+  )
+}

@@ -4,7 +4,7 @@ import { LMStudioAdvisorRuntime, probeLMStudio } from '../advisor/lmstudio'
 import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
 import { LlamaServerAdvisorRuntime, probeLlamaServer } from '../advisor/llama-server'
 import type { AdvisorLocalRuntimeId } from '../advisor/types'
-import type { AdvisorRuntimeState } from './AdvisorRuntimeControls'
+import type { HarnessRuntimeState } from '../harness/HarnessRuntimePopover'
 
 type LocalRuntimeInstance = OllamaAdvisorRuntime | LMStudioAdvisorRuntime | LlamaServerAdvisorRuntime
 
@@ -34,14 +34,14 @@ export function useAdvisorLocalRuntime(): {
   setRuntimeId: (value: AdvisorLocalRuntimeId) => void
   runtimeModel: string | null
   setRuntimeModel: (value: string | null) => void
-  runtimeState: AdvisorRuntimeState
+  runtimeState: HarnessRuntimeState
   localRuntime: LocalRuntimeInstance | null
   checkLocalRuntime: (requestedRuntime?: AdvisorLocalRuntimeId) => Promise<void>
   setLocalModel: (model: string) => void
 } {
   const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
   const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
-  const [runtimeState, setRuntimeState] = useState<AdvisorRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelLabels: {}, modelState: 'unavailable', toolCall: 'unknown' })
+  const [runtimeState, setRuntimeState] = useState<HarnessRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelLabels: {}, modelState: 'unavailable', toolCall: 'unknown' })
   const [localRuntime, setLocalRuntime] = useState<LocalRuntimeInstance | null>(null)
   const probeController = useRef<AbortController | null>(null)
 
@@ -61,7 +61,7 @@ export function useAdvisorLocalRuntime(): {
         const selected = runtimeModel && result.models.includes(runtimeModel) ? runtimeModel : result.models[0]
         setRuntimeModel(selected)
         setLocalRuntime(createLocalRuntime(requestedRuntime, selected))
-        const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: AdvisorRuntimeState['toolCall'] }> }).capabilities ?? []
+        const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: HarnessRuntimeState['toolCall'] }> }).capabilities ?? []
         const capability = capabilityProfiles.find(profile => profile.modelId === selected)
         setRuntimeState({ runtime: requestedRuntime, status: 'ready', detail: result.detail, models: result.models, modelLabels: result.modelLabels ?? {}, modelState: 'discovered', toolCall: capability?.toolCall ?? 'unknown' })
       } else {
