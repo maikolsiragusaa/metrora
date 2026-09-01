@@ -114,7 +114,11 @@ function parsePresentationRequest(value: unknown): AdvisorPresentationRequestV1 
 export function parseAdvisorSynthesisDraft(value: unknown): AdvisorSynthesisDraftV1 | null {
   const parsed = typeof value === 'string' ? (bytes(value) > MAX_DRAFT_BYTES ? null : parseJsonText(value)) : value
   if (!isRecord(parsed)) return null
-  if (parsed.contractVersion !== 'advisor-synthesis-draft-v1' || parsed.schemaVersion !== 1) return null
+  if (!onlyKeys(parsed, ['contractVersion', 'schemaVersion', 'conclusion', 'why', 'details', 'claims', 'presentationRequests', 'expertDetail', 'narrative'])) return null
+  // The internal envelope is normalized here rather than disclosed in the
+  // model-facing prompt. If a caller supplies it, it must still be exact.
+  if (parsed.contractVersion !== undefined && parsed.contractVersion !== 'advisor-synthesis-draft-v1') return null
+  if (parsed.schemaVersion !== undefined && parsed.schemaVersion !== 1) return null
   const conclusion = parseBlock(parsed.conclusion)
   const why = blockList(parsed.why, 6)
   const details = blockList(parsed.details, 12)

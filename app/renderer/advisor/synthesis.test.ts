@@ -64,6 +64,17 @@ describe('Advisor typed verified claim atoms', () => {
     expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(false)
   })
 
+  it('normalizes a model-facing draft without disclosing the internal envelope fields', () => {
+    const draft = parseAdvisorSynthesisDraft(JSON.stringify({
+      conclusion: { claimIds: ['measured-total-cost'] },
+      why: [{ claimIds: ['observed-calls'] }],
+      details: [{ claimIds: ['observed-sessions'] }],
+      claims: [{ id: 'measured-total-cost' }, { id: 'observed-calls' }, { id: 'observed-sessions' }],
+      presentationRequests: [],
+    }))
+    expect(draft).toMatchObject({ contractVersion: 'advisor-synthesis-draft-v1', schemaVersion: 1 })
+  })
+
   it('rejects a block that points at an atom that was not selected', () => {
     const draft = parsedDraft({ detailsClaimIds: [['missing-atom']] })
     expect(draft).not.toBeNull()
