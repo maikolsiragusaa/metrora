@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { SwarmEventV1, SwarmRunResultV1 } from '../../../src/swarm/contract-v1'
 import type { SwarmRunState } from '../swarm/useSwarmRun'
 import { sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
+import { sanitizeSwarmSynthesisAnswer } from '../swarm/synthesis-safety'
 
 type SwarmWorkspaceProps = {
   enabled: boolean
@@ -86,8 +87,22 @@ function eventRows(events: readonly SwarmEventV1[], result: SwarmRunResultV1 | n
   return [...workers.values()].sort((left, right) => left.workerId.localeCompare(right.workerId))
 }
 
+function finalSwarmAnswer(result: SwarmRunResultV1): string {
+  const workerAnswers = Array.from(new Set(result.workers
+    .filter(worker => worker.status === 'completed' || worker.status === 'partial')
+    .map(worker => sanitizeAdvisorModelOutput(worker.answer, 8 * 1024))
+    .filter(Boolean)))
+  const workerAnswer = workerAnswers.join('\n\n')
+  const synthesisAnswer = result.synthesis?.answer
+    ? sanitizeSwarmSynthesisAnswer(result.synthesis.answer, result.workers, 8 * 1024)
+    : ''
+  if (synthesisAnswer && workerAnswer && synthesisAnswer !== workerAnswer) return workerAnswer + '\n\n' + synthesisAnswer
+  return synthesisAnswer || workerAnswer
+}
+
 export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, workerCount, onWorkerCountChange, onCancel, showFinalResult = true }: SwarmWorkspaceProps) {
   const rows = useMemo(() => eventRows(state.events, state.result), [state.events, state.result])
+  const finalAnswer = state.result ? finalSwarmAnswer(state.result) : ''
   const completeCount = rows.filter(row => row.status === 'completed').length
   const running = state.running
 
@@ -178,7 +193,7 @@ export function SwarmWorkspace({ enabled, runtimeLabel, modelLabel, state, worke
             <span className="swarm-badge">Final synthesis</span>
             <span>{state.result.status === 'partial' ? 'Partial evidence' : statusLabel(state.result.status)}</span>
           </div>
-          {state.result.synthesis?.answer && sanitizeAdvisorModelOutput(state.result.synthesis.answer) ? <p>{sanitizeAdvisorModelOutput(state.result.synthesis.answer)}</p> : <p>No final synthesis was available; worker status and evidence are retained.</p>}
+          {finalAnswer ? <p>{finalAnswer}</p> : <p>No final synthesis was available; worker status and evidence are retained.</p>}
           {state.result.synthesis?.evidenceSummary ? <small>{sanitizeAdvisorDisplayText(state.result.synthesis.evidenceSummary, 1 * 1024)}</small> : null}
           {state.result.status === 'partial' ? <div className="swarm-partial-note">Some workers did not complete. The answer above is limited to the worker evidence that was available.</div> : null}
           <details>

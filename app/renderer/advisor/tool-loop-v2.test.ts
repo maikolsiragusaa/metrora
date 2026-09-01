@@ -116,6 +116,111 @@ describe('Harness bounded iterative Tool loop V2', () => {
     ]))
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.conclusion).toContain('Claude quota freshness is up to date.')
+    expect(answer.conclusion).toContain('The verified evidence is sufficient for this answer.')
+  })
+
+  it('keeps a bounded second read executable after a single bare native Tool call', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const spend = buildSpendEvidence('What changed and what quota remains?', scope, fixture.overview)
+    const quota = buildQuotaEvidence('What changed and what quota remains?', scope, fixture.overview, fixture.quota)
+    const payloads: Array<Record<string, unknown>> = []
+    const executed: string[] = []
+    let call = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'fixture-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['fixture-model'], detail: 'fixture' }),
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          call += 1
+          if (call === 1) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+          if (call === 2) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_quota_snapshot', arguments: '{}' } }] } }
+          return { streamed: false, message: { content: 'The measured evidence is sufficient.' } }
+        },
+        cancel: async () => true,
+        onDelta: () => () => {},
+      },
+    })
+    const answer = await runtime.generate({
+      question: 'What changed and what quota remains?',
+      evidence: spend,
+      tools: [definition('get_spend_snapshot'), definition('get_quota_snapshot')],
+      executeTool: async name => {
+        executed.push(name)
+        return { content: JSON.stringify({ tool: name }), evidence: name === 'get_quota_snapshot' ? quota : spend }
+      },
+    })
+
+    expect(executed).toEqual(['get_spend_snapshot', 'get_quota_snapshot'])
+    expect(payloads).toHaveLength(3)
+    expect(payloads[0]?.tools).toHaveLength(2)
+    expect(payloads[1]?.tools).toHaveLength(2)
+    expect(payloads[2]?.tools).toEqual([])
+    expect(answer.conclusion).toContain('Claude quota freshness is up to date.')
+    expect(answer.conclusion).toContain('The measured evidence is sufficient.')
+  })
+
+  it('keeps the hosted second read executable after a single bare native Tool call', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const spend = buildSpendEvidence('What changed and what quota remains?', scope, fixture.overview)
+    const quota = buildQuotaEvidence('What changed and what quota remains?', scope, fixture.overview, fixture.quota)
+    const payloads: Array<Record<string, unknown>> = []
+    const executed: string[] = []
+    let call = 0
+    const runtime = new HostedAdvisorRuntime({
+      provider: 'opencode-zen',
+      model: 'fixture-model',
+      capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' },
+      consent: true,
+      transport: {
+        probe: async () => ({ provider: 'opencode-zen', available: true, models: [{ id: 'fixture-model', label: 'fixture-model', state: 'verified', limitation: null }], detail: 'fixture', credentialState: 'ready' }),
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          call += 1
+          if (call === 1) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+          if (call === 2) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_quota_snapshot', arguments: '{}' } }] } }
+          return { streamed: false, message: { content: 'The hosted measured evidence is sufficient.' } }
+        },
+        cancel: async () => true,
+        onEvent: () => () => {},
+      },
+    })
+    const answer = await runtime.generate({
+      question: 'What changed and what quota remains?',
+      evidence: spend,
+      tools: [definition('get_spend_snapshot'), definition('get_quota_snapshot')],
+      executeTool: async name => {
+        executed.push(name)
+        return { content: JSON.stringify({ tool: name }), evidence: name === 'get_quota_snapshot' ? quota : spend }
+      },
+    })
+
+    expect(executed).toEqual(['get_spend_snapshot', 'get_quota_snapshot'])
+    expect(payloads).toHaveLength(3)
+    expect(payloads[0]?.tools).toHaveLength(2)
+    expect(payloads[1]?.tools).toHaveLength(2)
+    expect(payloads[2]?.tools).toEqual([])
+    expect(answer.conclusion).toContain('Claude quota freshness is up to date.')
+    expect(answer.conclusion).toContain('The hosted measured evidence is sufficient.')
+  })
+
+  it('appends a grounded contributor interpretation when canonical spend atoms support it', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('Which Project drove the most spend?', scope, fixture.overview)
+    const interpretation = 'Project A is an observed contributor in the spend breakdown.'
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'fixture-model',
+      transport: localTransport([planning('spend', ['get_spend_snapshot']), interpretation], []),
+    })
+    const answer = await runtime.generate({
+      question: 'Which Project drove the most spend?',
+      evidence,
+      tools: [definition('get_spend_snapshot')],
+      executeTool: async () => ({ content: '{"tool":"get_spend_snapshot"}', evidence }),
+    })
+
+    expect(answer.conclusion).toContain(interpretation)
+    expect(answer.conclusion).toContain('Metrora measured')
   })
 
   it('stops at the explicit read-round cap and does not ask for a third round', async () => {

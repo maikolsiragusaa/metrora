@@ -6,6 +6,7 @@ import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
 import { parseAdvisorSynthesisDraft } from './synthesis'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
+import { raceAdvisorAbort } from './abort'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
 export type HostedAdvisorProbeResult = {
@@ -50,7 +51,7 @@ const bridgeTransport: HostedAdvisorTransport = {
 
 export async function probeHostedAdvisor(provider: HostedAdvisorProvider, signal?: AbortSignal, transport: HostedAdvisorTransport = bridgeTransport): Promise<HostedAdvisorProbeResult> {
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
-  const result = await transport.probe(provider, signal)
+  const result = await raceAdvisorAbort(transport.probe(provider, signal), signal)
   if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
   return result
 }
@@ -146,14 +147,14 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       const conversation = async (kind: 'social' | 'boundary', effectiveInput: AdvisorRuntimeInput): Promise<AdvisorAnswer> => {
         try {
           activeRequestId = requestId('hosted-conversation')
-          const response = await this.transport.chat(activeRequestId, {
+          const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
             provider: this.provider,
             model: this.model,
             messages: buildAdvisorConversationMessages(effectiveInput, kind),
             tools: [],
             stream: false,
             consent: true,
-          }, signal)
+          }, signal), signal)
           activeRequestId = null
           throwIfAborted(signal)
           return finalizeAdvisorConversationAnswer(this, effectiveInput, kind, response.message?.content ?? '', true, signal)
@@ -178,14 +179,14 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       const allowNativeToolCalls = this.capabilities.toolCall === 'supported'
       try {
         activeRequestId = requestId('hosted-chat')
-        firstResponse = await this.transport.chat(activeRequestId, {
+        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
           messages: buildAdvisorChatMessages(input, fallbackPlan, guard),
           tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
-        }, signal)
+        }, signal), signal)
         activeRequestId = null
         throwIfAborted(signal)
       } catch (error) {
@@ -215,8 +216,6 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       let currentResponse = firstResponse
       let toolRound = 0
       let totalToolCalls = 0
-      const firstResponseUsedNativeToolCall = Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0
-      const firstResponseWasSingleBareNativeToolCall = firstResponseUsedNativeToolCall && firstResponse.message!.tool_calls!.length === 1 && !(firstResponse.message?.content ?? '').trim()
       const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({
         runtime: this,
         input: currentInput,
@@ -264,14 +263,16 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         if (toolRound < HARNESS_TOOL_LOOP_LIMITS.maxRounds && totalToolCalls < HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
           activeRequestId = requestId('hosted-tool-continuation')
           try {
-            currentResponse = await this.transport.chat(activeRequestId, {
+            currentResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
               provider: this.provider,
               model: this.model,
               messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1),
-              tools: allowNativeToolCalls && !(firstResponseWasSingleBareNativeToolCall && toolRound === 1) ? definitions : [],
+              // Keep provider-native definitions available after a bare first
+              // call so a second bounded read remains executable.
+              tools: allowNativeToolCalls ? definitions : [],
               stream: false,
               consent: true,
-            }, signal)
+            }, signal), signal)
             activeRequestId = null
             throwIfAborted(signal)
             continue
@@ -285,14 +286,14 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         activeRequestId = requestId('hosted-synthesis')
         let synthesisResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
         try {
-          synthesisResponse = await this.transport.chat(activeRequestId, {
+          synthesisResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
             provider: this.provider,
             model: this.model,
             messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence),
             tools: [],
             stream: false,
             consent: true,
-          }, signal)
+          }, signal), signal)
           activeRequestId = null
           throwIfAborted(signal)
         } catch (error) {

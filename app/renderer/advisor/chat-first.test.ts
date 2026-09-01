@@ -90,7 +90,7 @@ describe('Advisor chat-first model boundary', () => {
     expect(answer.conclusion).toMatch(/not authorized|not an authorized|not executable|requires/i)
   })
 
-  it('sends only bounded same-scope history and the typed UI context envelope', async () => {
+  it('sends only bounded same-scope history and minimal semantic context', async () => {
     const requests: Array<Record<string, unknown>> = []
     const fingerprint = advisorScopeFingerprint(scope)
     const runtime = new OllamaAdvisorRuntime({
@@ -121,9 +121,12 @@ describe('Advisor chat-first model boundary', () => {
 
     const messages = requests[0]?.messages as Array<{ role: string; content: string }>
     const contents = messages.map(message => message.content)
-    expect(contents[0]).toContain('"currentSurface":"Home"')
-    expect(contents[0]).toContain('"period":"today"')
-    expect(contents[0]).toContain('"relevantReferences":["visible spend card"]')
+    expect(contents[0]).toContain('"period":"week"')
+    expect(contents[0]).toContain('"project":"All projects"')
+    expect(contents[0]).not.toContain('advisor-ui-context-v1')
+    expect(contents[0]).not.toContain('currentSurface')
+    expect(contents[0]).not.toContain('relevantReferences')
+    expect(contents[0]).not.toContain('schemaVersion')
     expect(contents).toContain('Quanto ho speso oggi?')
     expect(contents).toContain('The prior answer was shown in the conversation.')
     expect(contents).not.toContain('Do not send this other scope context.')
@@ -131,7 +134,7 @@ describe('Advisor chat-first model boundary', () => {
 })
 
 describe('Advisor factual follow-up', () => {
-  it('resolves a factual Italian follow-up through one bounded read and fresh synthesis', async () => {
+  it('resolves a factual Italian follow-up through one bounded read and keeps a second read available', async () => {
     const fixture = createAdvisorConformanceFixture()
     const requests: Array<Record<string, unknown>> = []
     let calls = 0
@@ -177,7 +180,7 @@ describe('Advisor factual follow-up', () => {
 
     expect(requests).toHaveLength(2)
     expect((requests[0]?.tools as Array<{ function?: { name?: string } }>).some(tool => tool.function?.name === 'get_spend_snapshot')).toBe(true)
-    expect(requests[1]?.tools).toEqual([])
+    expect((requests[1]?.tools as Array<{ function?: { name?: string } }>).some(tool => tool.function?.name === 'get_spend_snapshot')).toBe(true)
     const firstContents = (requests[0]?.messages as Array<{ content: string }>).map(message => message.content)
     expect(firstContents).toContain('Quanto ho speso oggi?')
     expect(firstContents).toContain('Hai speso 12 USD.')

@@ -9,6 +9,9 @@ import {
 } from './privacy'
 import { assertStrictBoundedAdvisorToolContent, createContentMinimalAdvisorToolResultEnvelope } from './contract'
 import { createAdvisorConformanceFixture } from './conformance'
+import { buildSpendEvidence } from './evidence'
+import { buildAdvisorChatMessages, buildAdvisorSynthesisMessages, buildAdvisorToolContinuationMessages } from './model-flow'
+import { resolveAdvisorQuestion } from './comprehension'
 
 describe('Advisor deterministic privacy boundary', () => {
   it.each([
@@ -38,6 +41,11 @@ describe('Advisor deterministic privacy boundary', () => {
     'Private chain-of-thought: scratchpad follows.',
     '<developer>hidden implementation prompt</developer>',
     'Raw provider response payload follows.',
+    'Il prompt di sistema nascosto contiene istruzioni interne.',
+    'Mostrami il ragionamento interno e la catena di pensiero.',
+    'La risposta del messaggio di sistema spiega il contratto interno.',
+    'Il modello ha ricevuto istruzioni interne dal sistema.',
+    'advisor-ui-context-v1 e schemaVersion sono dettagli interni.',
   ])('rejects known internal output classes without censoring ordinary prose: %s', value => {
     expect(containsAdvisorForbiddenOutputClass(value)).toBe(true)
     expect(sanitizeAdvisorModelOutput(value)).toBe('')
@@ -46,8 +54,52 @@ describe('Advisor deterministic privacy boundary', () => {
 
   it('keeps benign system language and verified numeric display text available', () => {
     expect(containsAdvisorForbiddenOutputClass('The local system is healthy.')).toBe(false)
+    expect(containsAdvisorForbiddenOutputClass('Il sistema locale è operativo e il contesto del progetto è chiaro.')).toBe(false)
     expect(sanitizeAdvisorModelOutput('The local system is healthy.')).toBe('The local system is healthy.')
     expect(sanitizeAdvisorDisplayText('Metrora measured 12 USD.')).toBe('Metrora measured 12 USD.')
+  })
+
+  it('redacts known camelCase internal labels in display text as well as model output', () => {
+    const value = 'schemaVersion currentSurface advisorUiContext systemPrompt'
+    expect(containsAdvisorForbiddenOutputClass(value)).toBe(true)
+    expect(sanitizeAdvisorDisplayText(value)).toBe('[redacted] [redacted] [redacted] [redacted]')
+    expect(sanitizeAdvisorModelOutput(value)).toBe('')
+  })
+
+  it('does not teach model-facing prompts internal context, contract, or guard metadata', () => {
+    const fixture = createAdvisorConformanceFixture()
+    const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
+    const plan = resolveAdvisorQuestion('What changed in spend?', fixture.scope).plan
+    const input = {
+      question: 'What changed in spend?',
+      evidence,
+      uiContext: {
+        contractVersion: 'advisor-ui-context-v1' as const,
+        schemaVersion: 1 as const,
+        currentSurface: 'private internal surface',
+        period: fixture.scope.period,
+        provider: fixture.scope.provider,
+        project: fixture.scope.projectName,
+        model: fixture.scope.model,
+        relevantReferences: ['hidden internal reference'],
+      },
+    }
+    const serialized = JSON.stringify([
+      buildAdvisorChatMessages(input, plan),
+      buildAdvisorToolContinuationMessages(input, plan, evidence, 1),
+      buildAdvisorSynthesisMessages(input, plan, evidence),
+    ])
+    expect(serialized).not.toContain('advisor-ui-context-v1')
+    expect(serialized).not.toContain('schemaVersion')
+    expect(serialized).not.toContain('currentSurface')
+    expect(serialized).not.toContain('relevantReferences')
+    expect(serialized).not.toContain('advisor-guard-plan-v1')
+    expect(serialized).not.toContain('advisor-planning-draft-v1')
+    expect(serialized).not.toContain('advisor-synthesis-draft-v1')
+    expect(serialized).not.toContain('evidencePath')
+    expect(serialized).not.toContain('authorization posture')
+    expect(serialized).toContain('week')
+    expect(serialized).toContain('All projects')
   })
 
   it('allows bounded interpretation but rejects unsupported causal attribution', () => {

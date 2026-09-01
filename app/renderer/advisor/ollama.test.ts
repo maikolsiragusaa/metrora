@@ -90,6 +90,24 @@ function noToolTransport(content: string): OllamaTransport {
   }
 }
 describe('Ollama Advisor renderer state machine', () => {
+  it('does not keep the foreground turn pending when transport ignores AbortSignal', async () => {
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: () => () => {},
+      chat: async () => await new Promise<never>(() => {}),
+    }
+    const controller = new AbortController()
+    const pending = new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'Tell me a joke',
+      evidence: spendEvidence,
+      fallbackIntent: 'unknown',
+      tools: [],
+    }, controller.signal)
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('sends only same-scope conversation context to the local model', async () => {
     const requests: Array<Record<string, unknown>> = []
     const currentFingerprint = advisorScopeFingerprint(scope)

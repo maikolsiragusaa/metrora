@@ -7,6 +7,24 @@ import { createAdvisorKernel } from './kernel'
 import { HostedAdvisorRuntime, type HostedAdvisorTransport } from './hosted'
 
 describe('Hosted Advisor renderer runtime', () => {
+  it('does not keep the foreground turn pending when transport ignores AbortSignal', async () => {
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'opencode-zen', available: true, models: [{ id: 'fixture-model', label: 'fixture-model', state: 'verified', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async () => await new Promise<never>(() => {}),
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const controller = new AbortController()
+    const pending = new HostedAdvisorRuntime({ provider: 'opencode-zen', model: 'fixture-model', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport }).generate({
+      question: 'Tell me a joke',
+      evidence: buildSpendEvidence('Tell me a joke', createAdvisorConformanceFixture().scope, createAdvisorConformanceFixture().overview),
+      fallbackIntent: 'unknown',
+      tools: [],
+    }, controller.signal)
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it.each([
     ['ciao come stai', 'Ciao! Sto bene, grazie.', 1, 'social'],
     ['Bonjour, comment ça va ?', 'Bonjour ! Je vais bien, merci.', 1, 'investigate'],

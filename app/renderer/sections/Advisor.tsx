@@ -199,6 +199,10 @@ export function Advisor({
       return
     }
     invalidateAdvisorRequest()
+    // The Evidence rail follows the turn currently being generated. An
+    // explicitly selected older card must not remain pinned while a new turn
+    // is producing its canonical answer.
+    setSelectedAnswerId(null)
     const controller = new AbortController()
     requestController.current = controller
     const requestId = requestGenerationRef.current

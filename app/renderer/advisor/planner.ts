@@ -86,7 +86,11 @@ export function parseAdvisorPlanningDraft(value: unknown): AdvisorModelPlanningD
   // answer-like fields as malformed rather than allowing factual prose to
   // cross the planning boundary.
   if (['conclusion', 'answer', 'why', 'details', 'claims'].some(key => Object.prototype.hasOwnProperty.call(parsed, key))) return null
-  if (parsed.contractVersion !== 'advisor-planning-draft-v1' || parsed.schemaVersion !== 1) return null
+  // The wire envelope is an internal application detail. Older runtimes may
+  // still emit it, but the model-facing prompt no longer requires or teaches
+  // these fields.
+  if (parsed.contractVersion !== undefined && parsed.contractVersion !== 'advisor-planning-draft-v1') return null
+  if (parsed.schemaVersion !== undefined && parsed.schemaVersion !== 1) return null
   if (parsed.turnKind !== 'investigate' && parsed.turnKind !== 'clarify' && parsed.turnKind !== 'social' && parsed.turnKind !== 'boundary') return null
   if (typeof parsed.questionFamily !== 'string' || !(QUESTION_FAMILIES as readonly string[]).includes(parsed.questionFamily)) return null
   if (!Array.isArray(parsed.requestedEvidenceDomains) || parsed.requestedEvidenceDomains.length > MAX_DOMAINS || parsed.requestedEvidenceDomains.some(domain => !(EVIDENCE_DOMAINS as readonly string[]).includes(domain))) return null
@@ -122,7 +126,7 @@ function nativeToolArguments(call: Record<string, unknown>): unknown {
   return fn && typeof fn === 'object' && !Array.isArray(fn) ? (fn as Record<string, unknown>).arguments : undefined
 }
 
-/** Compatibility parser for provider-native tool calls in CALL A only. */
+/** Compatibility parser for bounded provider-native tool calls. */
 export function planningDraftFromNativeToolCalls(calls: readonly Record<string, unknown>[], guardPlan: AdvisorTurnPlanV1): AdvisorPlanningDraftV1 | null {
   if (!calls.length) return null
   const toolRequests: AdvisorToolRequestV1[] = []

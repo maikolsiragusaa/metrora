@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSpendEvidence } from './evidence'
 import { buildAdvisorVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis, renderAdvisorVerifiedClaimAtom, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
 import { createAdvisorConformanceFixture } from './conformance'
-import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
+import { isAdvisorNaturalNarrativeSupported, parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import { buildBenchEvidence } from './special-evidence'
 import type { AdvisorBenchRun, AdvisorEvidence, AdvisorScope, AdvisorVerifiedClaimAtomV1 } from './types'
 
@@ -169,6 +169,24 @@ describe('Advisor typed verified claim atoms', () => {
       presentationRequests: [],
     }))
     expect(verifyAdvisorSynthesis(withContributionAtom!, evidence).valid).toBe(true)
+  })
+
+  it('accepts a grounded contributor interpretation and rejects an unsupported causal claim', () => {
+    expect(isAdvisorNaturalNarrativeSupported('Project A is an observed contributor in the spend breakdown.', evidence)).toBe(true)
+    expect(isAdvisorNaturalNarrativeSupported('Project A caused the spend increase.', evidence)).toBe(false)
+    expect(isAdvisorNaturalNarrativeSupported('An unknown service is the main driver.', evidence)).toBe(false)
+  })
+
+  it('accepts the model-facing factIds alias without exposing factual prose', () => {
+    const draft = parseAdvisorSynthesisDraft(JSON.stringify({
+      conclusion: { factIds: ['measured-total-cost'] },
+      why: [],
+      details: [],
+      claims: [{ id: 'measured-total-cost' }],
+      presentationRequests: [],
+    }))
+    expect(draft).not.toBeNull()
+    expect(verifyAdvisorSynthesis(draft!, evidence).valid).toBe(true)
   })
 
   it('keeps the verified fact authoritative while allowing bounded interpretation and recommendation', () => {

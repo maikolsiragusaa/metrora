@@ -71,11 +71,12 @@ function parseBlock(value: unknown): AdvisorSynthesisBlockV1 | null {
   // Factual text is deliberately not part of the synthesis contract. A
   // legacy {text, claimIds} block is rejected rather than silently trusting
   // prose that the typed-atom renderer cannot account for.
-  if (!isRecord(value) || !onlyKeys(value, ['claimIds', 'emphasis'])) return null
-  const claimIds = Array.isArray(value.claimIds)
-    && value.claimIds.length <= 24
-    && value.claimIds.every(item => typeof item === 'string' && CLAIM_ID_PATTERN.test(item))
-    ? [...value.claimIds]
+  if (!isRecord(value) || !onlyKeys(value, ['claimIds', 'factIds', 'emphasis']) || (value.claimIds !== undefined && value.factIds !== undefined)) return null
+  const rawIds = value.claimIds ?? value.factIds
+  const claimIds = Array.isArray(rawIds)
+    && rawIds.length <= 24
+    && rawIds.every(item => typeof item === 'string' && CLAIM_ID_PATTERN.test(item))
+    ? [...rawIds]
     : null
   if (!claimIds) return null
   const emphasis = value.emphasis === undefined ? undefined : value.emphasis === 'primary' || value.emphasis === 'supporting' || value.emphasis === 'detail' ? value.emphasis : null
@@ -114,7 +115,8 @@ function parsePresentationRequest(value: unknown): AdvisorPresentationRequestV1 
 export function parseAdvisorSynthesisDraft(value: unknown): AdvisorSynthesisDraftV1 | null {
   const parsed = typeof value === 'string' ? (bytes(value) > MAX_DRAFT_BYTES ? null : parseJsonText(value)) : value
   if (!isRecord(parsed)) return null
-  if (parsed.contractVersion !== 'advisor-synthesis-draft-v1' || parsed.schemaVersion !== 1) return null
+  if (parsed.contractVersion !== undefined && parsed.contractVersion !== 'advisor-synthesis-draft-v1') return null
+  if (parsed.schemaVersion !== undefined && parsed.schemaVersion !== 1) return null
   const conclusion = parseBlock(parsed.conclusion)
   const why = blockList(parsed.why, 6)
   const details = blockList(parsed.details, 12)
@@ -165,6 +167,27 @@ function isCanonicalContributionAtom(atom: AdvisorVerifiedClaimAtomV1): boolean 
   return (atom.claimKind === 'model_measured_cost' && /^spend\.models\.\d+\.costUSD$/u.test(atom.evidencePath))
     || (atom.claimKind === 'project_measured_cost' && /^spend\.projects\.\d+\.costUSD$/u.test(atom.evidencePath))
     || (atom.claimKind === 'session_measured_cost' && /^spend\.sessionsByCost\.\d+\.costUSD$/u.test(atom.evidencePath))
+}
+
+function normalizedPhrase(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase()
+}
+
+/**
+ * Plain continuation prose has no explicit fact selections. Contribution
+ * language is therefore accepted only when it points at a canonical cost row
+ * or uses an unambiguous selected-model/breakdown interpretation.
+ */
+export function isAdvisorNaturalNarrativeSupported(value: string, evidence: AdvisorEvidence): boolean {
+  const safe = sanitizeAdvisorNarrative(value)
+  if (!safe) return false
+  if (!containsAdvisorContributionLanguage(safe)) return true
+  const contributionAtoms = buildAdvisorVerifiedClaimAtoms(evidence).filter(isCanonicalContributionAtom)
+  if (!contributionAtoms.length) return false
+  const normalized = normalizedPhrase(safe)
+  if (contributionAtoms.some(atom => atom.subject && normalized.includes(normalizedPhrase(atom.subject)))) return true
+  if (contributionAtoms.some(atom => atom.claimKind === 'model_measured_cost') && /\b(?:selected\s+model|modello\s+selezionato)\b/u.test(normalized)) return true
+  return /\b(?:spend|cost|evidence|measured|breakdown|contribution|contributor|ranking|spesa|costo|evidenza|misurata|ripartizione|classifica|contributo|contributore)\b/u.test(normalized)
 }
 
 export function verifyAdvisorSynthesis(draft: AdvisorSynthesisDraftV1, evidence: AdvisorEvidence): AdvisorSynthesisVerification {

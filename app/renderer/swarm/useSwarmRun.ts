@@ -80,9 +80,17 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
   )
 
   const cancel = useCallback(() => {
-    handleRef.current?.cancel()
+    const handle = handleRef.current
+    if (!handle) return
+    // Cancellation is a foreground lifecycle transition. Do not wait for a
+    // provider promise to observe AbortSignal before freeing the composer;
+    // the coordinator still owns the background cleanup and late results are
+    // ignored by this generation.
+    generationRef.current += 1
+    handleRef.current = null
+    handle.cancel()
     setState(current => current.running
-      ? { ...current, status: 'cancelled' }
+      ? { ...current, status: 'cancelled', running: false }
       : current)
   }, [])
 
@@ -135,7 +143,14 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
 
   useEffect(() => () => {
     generationRef.current += 1
-    handleRef.current?.cancel()
+    const handle = handleRef.current
+    handleRef.current = null
+    handle?.cancel()
+    // The coordinator instance changes when its runtime/overview inputs
+    // change. A stale handle must not leave the old run marked as current.
+    setState(current => current.running
+      ? { ...current, status: 'cancelled', running: false }
+      : current)
   }, [coordinator])
 
   useEffect(() => {

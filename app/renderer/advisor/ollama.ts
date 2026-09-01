@@ -6,6 +6,7 @@ import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merg
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES } from './privacy'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { parseAdvisorSynthesisDraft } from './synthesis'
+import { raceAdvisorAbort } from './abort'
 import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 
 export { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
@@ -38,7 +39,7 @@ const bridgeTransport: OllamaTransport = {
 
 export async function probeOllama(signal?: AbortSignal, transport: OllamaTransport = bridgeTransport): Promise<OllamaProbeResult> {
   try {
-    return await transport.probe(signal)
+    return await raceAdvisorAbort(transport.probe(signal), signal)
   } catch (error) {
     if (signal?.aborted) throw error
     return { available: false, models: [], detail: 'Local Ollama is unavailable.' }
@@ -156,12 +157,12 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     const cancel = () => { void this.transport.cancel(activeRequestId).catch(() => {}) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
-      const response = await this.transport.chat(activeRequestId, {
+      const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
         model: this.model,
         messages: buildAdvisorSwarmSynthesisMessages(input),
         tools: [],
         stream: false,
-      }, signal)
+      }, signal), signal)
       throwIfAborted(signal)
       const answer = boundedModelText(response.message?.content)
       if (!answer.trim()) throw new Error('Swarm synthesis returned no usable answer.')
@@ -188,7 +189,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         try {
           activeRequestId = requestId('advisor-conversation')
           streamingConversation = kind === 'social' && Boolean(input.onDelta)
-          const response = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorConversationMessages(effectiveInput, kind), tools: [], stream: streamingConversation }, signal)
+          const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorConversationMessages(effectiveInput, kind), tools: [], stream: streamingConversation }, signal), signal)
           const wasStreaming = streamingConversation
           activeRequestId = null
           streamingConversation = false
@@ -219,7 +220,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         let actionResponse: LocalChatResponse
         try {
           activeRequestId = requestId('advisor-action-chat')
-          actionResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: [], stream: false }, signal)
+          actionResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: [], stream: false }, signal), signal)
           activeRequestId = null
           throwIfAborted(signal)
         } catch (error) {
@@ -236,7 +237,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       let firstResponse: LocalChatResponse
       try {
         activeRequestId = requestId('advisor-chat')
-        firstResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: definitions, stream: false }, signal)
+        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard), tools: definitions, stream: false }, signal), signal)
         activeRequestId = null
         throwIfAborted(signal)
       } catch (error) {
@@ -264,9 +265,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       let currentResponse = firstResponse
       let toolRound = 0
       let totalToolCalls = 0
-      const firstResponseUsedNativeToolCall = Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0
-      const firstResponseWasSingleBareNativeToolCall = firstResponseUsedNativeToolCall && firstResponse.message!.tool_calls!.length === 1 && !boundedModelText(firstResponse.message?.content).trim()
-
       const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({
         runtime: this,
         input: currentInput,
@@ -316,15 +314,14 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         if (toolRound < HARNESS_TOOL_LOOP_LIMITS.maxRounds && totalToolCalls < HARNESS_TOOL_LOOP_LIMITS.maxCallsPerTurn) {
           activeRequestId = requestId('advisor-tool-continuation')
           try {
-            currentResponse = await this.transport.chat(activeRequestId, {
+            currentResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
               model: this.model,
               messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergedEvidence, toolRound + 1),
-              // A single bare native call has completed the provider planning
-              // phase. Review it without replaying schemas; another bounded
-              // round can still be requested as a typed plan.
-              tools: firstResponseWasSingleBareNativeToolCall && toolRound === 1 ? [] : definitions,
+              // Keep canonical definitions available after a native first
+              // call so a genuine second bounded read remains possible.
+              tools: definitions,
               stream: false,
-            }, signal)
+            }, signal), signal)
             activeRequestId = null
             throwIfAborted(signal)
             continue
@@ -338,7 +335,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         activeRequestId = requestId('advisor-synthesis')
         let synthesisResponse: LocalChatResponse
         try {
-          synthesisResponse = await this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence), tools: [], stream: false }, signal)
+          synthesisResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence), tools: [], stream: false }, signal), signal)
           activeRequestId = null
           throwIfAborted(signal)
         } catch (error) {

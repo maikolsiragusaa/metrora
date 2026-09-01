@@ -15,6 +15,7 @@ import type {
   AdvisorSynthesisNarrativeV1,
   AdvisorVerifiedClaimAtomV1,
 } from './types'
+import { containsAdvisorInternalDisclosure, redactAdvisorInternalDisclosure } from './privacy-disclosure'
 
 /**
  * The privacy boundary is intentionally conservative. It is used for values
@@ -45,7 +46,7 @@ const FORBIDDEN_OUTPUT_CLASS_PATTERN = /\b(?:system\s+prompt|hidden\s+prompt|dev
 // assertions are blocked while contribution/ranking language is checked
 // later against selected canonical cost atoms.
 const UNSUPPORTED_CAUSAL_PATTERN = /\b(?:caused|causes|due\s+to|because\s+of|reason\s+(?:is|was)|driver\s+of|a\s+causa\s+di|causat[oaie]\s+da(?:l(?:la|le|li|lo)?|gli|i|un[ao]?|una)?\b|causa\s+principale|(?:il|la)\s+(?:motivo|ragione)\s+(?:è|e))\b/iu
-const CONTRIBUTION_LANGUAGE_PATTERN = /\b(?:(?:main|primary|top)\s+)?(?:driver|drivers|contributor|contributors|contribution|contributions|ranking|ranked)\b/iu
+const CONTRIBUTION_LANGUAGE_PATTERN = /\b(?:(?:main|primary|top)\s+)?(?:driver|drivers|contributor|contributors|contribution|contributions|ranking|ranked|contributore|contributori|contributo|contributi|classifica|classificazione|ordinamento)\b/iu
 const NUMERIC_CHARACTER_PATTERN = /\p{N}/u
 const NUMBER_WORD_PATTERN = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|thousand|million|billion|first|second|third|uno|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|primo|secondo|terzo)\b/iu
 const CONTENT_MINIMAL_EVIDENCE_SOURCES = ['overview', 'history', 'models', 'quota', 'bench'] as const
@@ -103,7 +104,7 @@ export function containsAdvisorForbiddenOutputClass(value: string): boolean {
   if (!value) return false
   const matched = FORBIDDEN_OUTPUT_CLASS_PATTERN.test(value)
   FORBIDDEN_OUTPUT_CLASS_PATTERN.lastIndex = 0
-  return matched
+  return matched || containsAdvisorInternalDisclosure(value)
 }
 
 export function containsAdvisorContributionLanguage(value: string): boolean {
@@ -134,7 +135,7 @@ export function containsAdvisorSensitiveText(value: string): boolean {
 export function sanitizeAdvisorDisplayText(value: string, maxLength = ADVISOR_CONTENT_MINIMAL_TEXT_MAX_LENGTH): string {
   const normalized = value.replace(CONTROL_CHARACTERS, ' ').trim()
   if (!normalized) return REDACTION
-  const redacted = replaceSensitiveSegments(normalized).replace(FORBIDDEN_OUTPUT_CLASS_PATTERN, REDACTION).replace(/\s{2,}/gu, ' ').trim()
+  const redacted = redactAdvisorInternalDisclosure(replaceSensitiveSegments(normalized).replace(FORBIDDEN_OUTPUT_CLASS_PATTERN, REDACTION)).replace(/\s{2,}/gu, ' ').trim()
   FORBIDDEN_OUTPUT_CLASS_PATTERN.lastIndex = 0
   if (!redacted) return REDACTION
   if (redacted.length <= maxLength) return redacted
@@ -236,7 +237,6 @@ function safePerformanceText(value: string | null): string | null {
 
 function contentMinimalPerformanceRun(run: import('./types').AdvisorPerformanceEvidence['runs'][number]): AdvisorJsonObject {
   return {
-    schemaVersion: run.schemaVersion,
     runId: safeBenchIdentifier(run.runId),
     runner: { id: safeBenchIdentifier(run.runner.id), version: safeBenchIdentifier(run.runner.version) },
     methodology: {
@@ -309,7 +309,6 @@ function contentMinimalPerformanceComparison(value: import('./types').AdvisorPer
     observedConfiguration: item.observedConfiguration,
   })
   return {
-    schemaVersion: value.schemaVersion,
     compatible: value.compatible,
     reason: value.reason,
     left: identity(value.left),
@@ -458,7 +457,7 @@ export function sanitizeAdvisorAnswer(answer: AdvisorAnswer): AdvisorAnswer {
 }
 
 /** Explicitly allowlisted model-facing evidence projection. */
-export function contentMinimalEvidence(evidence: AdvisorEvidence, options: { preserveEvidenceIds?: boolean } = {}): AdvisorJsonObject {
+export function contentMinimalEvidence(evidence: AdvisorEvidence, options: { preserveEvidenceIds?: boolean; modelFacing?: boolean } = {}): AdvisorJsonObject {
   const spend = evidence.spend
     ? {
         measuredCostUSD: evidence.spend.measuredCostUSD,
@@ -556,9 +555,19 @@ export function contentMinimalEvidence(evidence: AdvisorEvidence, options: { pre
           : null,
       }
     : null
+  const minimalScope = contentMinimalScope(evidence.scope)
+  const modelScope = options.modelFacing
+    ? {
+        period: minimalScope.period,
+        range: minimalScope.range,
+        provider: minimalScope.provider,
+        project: minimalScope.projectName,
+        model: minimalScope.model,
+      }
+    : minimalScope
   return {
     intent: evidence.intent,
-    scope: contentMinimalScope(evidence.scope),
+    scope: modelScope,
     coverage: contentMinimalCoverage(evidence.coverage),
     refs: contentMinimalEvidenceRefs(evidence.refs, { preserveIds: options.preserveEvidenceIds }),
     spend,

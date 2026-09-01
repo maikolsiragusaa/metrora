@@ -3,6 +3,7 @@ import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from '../advisor/co
 import { ADVISOR_TOOL_CONTRACT } from '../advisor/contract'
 import { createAdvisorToolRegistry } from '../advisor/tools'
 import { sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
+import { sanitizeSwarmSynthesisAnswer } from './synthesis-safety'
 import type {
   AdvisorAnswer,
   AdvisorDataSource,
@@ -185,16 +186,35 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
     const controller = new AbortController()
     let cancelled = false
     let timedOut = false
+    let closed = false
+    let terminalSettled = false
+    let settleTerminal: ((status: SwarmWorkerResultV1['status'], error: string) => void) | null = null
     const startedAt = this.now()
-    const parentAbort = () => controller.abort()
-    if (options.signal?.aborted) controller.abort()
+    const terminal = new Promise<SwarmWorkerResultV1>(resolve => {
+      settleTerminal = (status, error) => {
+        if (terminalSettled) return
+        terminalSettled = true
+        resolve(baseResult(request, status, startedAt, this.now(), [], '', '', [error]))
+      }
+    })
+    const parentAbort = () => {
+      cancelled = true
+      controller.abort()
+      settleTerminal?.('cancelled', 'Worker cancelled by its parent run.')
+    }
+    if (options.signal?.aborted) parentAbort()
     else options.signal?.addEventListener('abort', parentAbort, { once: true })
     const timeoutId = setTimeout(() => {
       timedOut = true
       controller.abort()
+      settleTerminal?.('timeout', 'Worker exceeded its bounded deadline.')
     }, request.limits.timeoutMs)
     this.active.set(request.workerId, controller)
-    observe({
+    const emit = (event: SwarmEventV1) => {
+      if (closed) return
+      observe(event)
+    }
+    emit({
       contractVersion: 'metrora.swarm.v1',
       schemaVersion: 1,
       kind: 'worker',
@@ -205,8 +225,10 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       at: startedAt,
       detail: sanitizeSwarmText(this.runtime.label, 160),
     })
-    const result = this.execute(request, observe, controller.signal, startedAt, () => cancelled, () => timedOut)
+    const operation = this.execute(request, emit, controller.signal, startedAt, () => cancelled, () => timedOut)
+    const result = Promise.race([operation, terminal])
       .finally(() => {
+        closed = true
         clearTimeout(timeoutId)
         options.signal?.removeEventListener('abort', parentAbort)
         if (this.active.get(request.workerId) === controller) this.active.delete(request.workerId)
@@ -217,6 +239,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       cancel: () => {
         cancelled = true
         controller.abort()
+        settleTerminal?.('cancelled', 'Worker cancelled.')
       },
     }
   }
@@ -347,13 +370,17 @@ export function createNativeHarnessSwarmSynthesizer(runtime: AdvisorModelRuntime
     }
     const result = await runtime.generateSwarmSynthesis({ question: input.task, scope: input.scope as unknown as AdvisorScope, workers: reports }, signal)
     throwIfAborted(signal)
-    const answer = sanitizeAdvisorModelOutput(boundedSwarmText(sanitizeSwarmText(result.answer)), 8 * 1024)
+    const answer = sanitizeSwarmSynthesisAnswer(
+      boundedSwarmText(sanitizeSwarmText(result.answer)),
+      reports,
+      8 * 1024,
+    )
     const evidenceSummary = sanitizeAdvisorDisplayText(boundedSwarmText(sanitizeSwarmText(result.evidenceSummary)), 1 * 1024)
     return {
       status: answer.trim() ? 'completed' : 'unavailable',
       answer,
       evidenceSummary: evidenceSummary || 'Synthesis used bounded worker results and statuses only.',
-      errors: [],
+      errors: answer.trim() ? [] : ['Synthesis was not promoted because it added unsupported or unsafe content.'],
     }
   }
 }
