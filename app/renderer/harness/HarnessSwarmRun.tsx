@@ -20,22 +20,28 @@ function statusLabel(status: string): string {
   return 'Failed'
 }
 
-function roleLabel(role: string): string {
-  return role.charAt(0).toUpperCase() + role.slice(1).replaceAll('-', ' ')
-}
-
 function toolLabel(name: string): string {
   const labels: Record<string, string> = {
     get_spend_snapshot: 'Usage',
-    get_model_efficiency: 'Model efficiency',
+    get_model_efficiency: 'Model breakdown',
     get_quota_snapshot: 'Provider capacity',
     get_overview_snapshot: 'Overview',
     get_project_drivers: 'Project drivers',
     get_session_highlights: 'Session highlights',
-    get_coverage_report: 'Evidence coverage',
-    get_bench_evidence: 'Bench evidence',
+    get_coverage_report: 'Sources',
+    get_bench_evidence: 'Bench results',
   }
-  return labels[name] ?? 'Metrora evidence'
+  return labels[name] ?? 'Metrora Sources'
+}
+
+function evidenceSummaryLabel(value: string): string {
+  return value
+    .replace(/Usable canonical evidence/gu, 'Sources available')
+    .replace(/Partial canonical evidence/gu, 'Partial Sources')
+    .replace(/Canonical evidence unavailable/gu, 'Sources unavailable')
+    .replace(/No canonical Metrora read was required/gu, 'No Metrora Source check was required')
+    .replace(/No supported canonical Metrora evidence read was assigned/gu, 'No supported Metrora Source check was assigned')
+    .replace(/The required canonical Metrora evidence was unavailable/gu, 'The required Metrora Sources were unavailable')
 }
 
 function eventRows(events: readonly SwarmEventV1[], result: SwarmRunResultV1 | null): WorkerRow[] {
@@ -74,25 +80,25 @@ export function HarnessSwarmRun({ enabled, runtimeLabel, modelLabel, state, onCa
   return (
     <section className="harness-v3-swarm-run" aria-label="Swarm run" aria-live="polite">
       <div className="harness-v3-swarm-head">
-        <div><span className="harness-v3-strategy-badge">Swarm</span><strong>{state.running ? 'Coordinated work in progress' : state.result ? 'Swarm run ' + statusLabel(state.status).toLowerCase() : 'Swarm is ready'}</strong><p>Bounded workers will report back into this conversation.</p></div>
+        <div><span className="harness-v3-strategy-badge">Swarm</span><strong>{state.running ? 'Coordinated work in progress' : state.result ? 'Swarm run ' + statusLabel(state.status).toLowerCase() : 'Swarm is ready'}</strong><p>Bounded subagents will report back into this conversation.</p></div>
         <div className="harness-v3-swarm-runtime"><span>{runtimeLabel}</span><span>{modelLabel}</span></div>
       </div>
       {state.error ? <p className="harness-v3-swarm-error" role="alert">{state.error}</p> : null}
       {rows.length ? <>
-        <div className="harness-v3-swarm-progress"><span>{rows.length} workers · {completeCount} complete{state.running ? ' · active' : ''}</span>{state.running ? <button type="button" className="harness-v3-quiet-button" onClick={onCancel}>Cancel</button> : null}</div>
+        <div className="harness-v3-swarm-progress"><span>{rows.length} subagents · {completeCount} complete{state.running ? ' · active' : ''}</span>{state.running ? <button type="button" className="harness-v3-quiet-button" onClick={onCancel}>Cancel</button> : null}</div>
         <div className="harness-v3-workers">
-          {rows.map(row => {
+          {rows.map((row, index) => {
             const result = workerResults.get(row.workerId)
             return <article className="harness-v3-worker" key={row.workerId}>
-              <div className="harness-v3-worker-head"><div><strong>{roleLabel(row.role)}</strong><small>{row.workerId}</small></div><span className={'harness-v3-worker-status ' + row.status}>{statusLabel(row.status)}</span></div>
+              <div className="harness-v3-worker-head"><div><strong>Subagent {index + 1}</strong></div><span className={'harness-v3-worker-status ' + row.status}>{statusLabel(row.status)}</span></div>
               {row.tools.length ? <div className="harness-v3-worker-tools">{row.tools.map(tool => <span key={tool.name}><i className={tool.status} />{toolLabel(tool.name)} · {statusLabel(tool.status)}</span>)}</div> : null}
               {row.detail ? <p>{row.detail}</p> : null}
-              {result ? <details className="harness-v3-worker-closeout"><summary>View worker closeout</summary><div><p>{result.answer || 'No worker answer was returned.'}</p>{result.evidenceSummary ? <p>{result.evidenceSummary}</p> : null}{result.artifactSummary ? <p>Artifact · {result.artifactSummary}</p> : null}{result.errors.map(error => <p key={error}>Issue · {error}</p>)}</div></details> : null}
+              {result ? <details className="harness-v3-worker-closeout"><summary>View subagent closeout</summary><div><p>{result.answer || 'No subagent answer was returned.'}</p>{result.evidenceSummary ? <p>{evidenceSummaryLabel(result.evidenceSummary)}</p> : null}{result.artifactSummary ? <p>Artifact · {result.artifactSummary}</p> : null}{result.errors.map(error => <p key={error}>Issue · {error}</p>)}</div></details> : null}
             </article>
           })}
         </div>
-      </> : <p className="harness-v3-swarm-idle">Choose Swarm in the composer when you want bounded coordinated work. Worker progress will appear here.</p>}
-      {state.result ? <div className="harness-v3-swarm-result"><div className="harness-v3-swarm-result-head"><strong>Final answer</strong><span>{state.result.synthesis?.status === 'completed' ? 'Synthesized' : state.result.synthesis?.status === 'unavailable' ? 'Fallback closeout' : statusLabel(state.result.status)}</span></div><p>{state.result.synthesis?.answer || 'No final synthesis was available; worker closeouts remain inspectable.'}</p>{state.result.synthesis?.evidenceSummary ? <small>{state.result.synthesis.evidenceSummary}</small> : null}<details><summary>Run details</summary><p>Worker completion is separate from Evidence coverage.</p><code>{state.result.evidence.evidenceDigest}</code></details></div> : null}
+      </> : <p className="harness-v3-swarm-idle">Choose Swarm in the composer when you want bounded coordinated work. Subagent progress will appear here.</p>}
+      {state.result ? <div className="harness-v3-swarm-result"><div className="harness-v3-swarm-result-head"><strong>Final answer</strong><span>{state.result.synthesis?.status === 'completed' ? 'Synthesized' : state.result.synthesis?.status === 'unavailable' ? 'Fallback closeout' : statusLabel(state.result.status)}</span></div><p>{state.result.synthesis?.answer || 'No final synthesis was available; subagent closeouts remain inspectable.'}</p>{state.result.synthesis?.evidenceSummary ? <small>{evidenceSummaryLabel(state.result.synthesis.evidenceSummary)}</small> : null}<details><summary>Run details</summary><p>Subagent completion is separate from Sources.</p><code>{state.result.evidence.evidenceDigest}</code></details></div> : null}
     </section>
   )
 }

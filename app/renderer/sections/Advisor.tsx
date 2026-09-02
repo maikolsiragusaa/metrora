@@ -10,7 +10,7 @@ import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normal
 import { advisorScopeForRequestedPeriod } from '../advisor/turn-plan'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorScope, type AdvisorScopeConflictOptionV1, type AdvisorScopeConflictV1 } from '../advisor/types'
 import { contextualScopeLabel } from './advisor-scope-labels'
-import { harnessToolLabel, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
+import { harnessToolCheckedLabel, harnessToolLabel, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
 import { HarnessSurface } from '../harness/HarnessSurface'
 import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
@@ -214,10 +214,26 @@ export function Advisor({
         onConformance: () => {
           if (isCurrentRequest() && hostedRequest) markHostedModelVerified(hostedRequest.provider, hostedRequest.model)
         },
+        onAgentEvent: event => {
+          if (!isCurrentRequest()) return
+          if (event.type === 'turn-started' || event.type === 'model-started' || (event.type === 'model-completed' && event.detail === 'tool-calls')) {
+            setToolStatus('Thinking…')
+          } else if (event.type === 'tool-queued' || event.type === 'tool-started') {
+            setToolStatus(event.tool ? harnessToolLabel(event.tool, requestedScope) + '…' : 'Thinking…')
+          } else if (event.type === 'tool-completed') {
+            setToolStatus(event.tool ? harnessToolCheckedLabel(event.tool) : 'Sources checked')
+          } else if (event.type === 'tool-unavailable' || event.type === 'tool-failed' || event.type === 'turn-failed' || event.type === 'turn-timeout') {
+            setToolStatus('Failed')
+          } else if (event.type === 'turn-cancelled') {
+            setToolStatus('Request cancelled')
+          } else if (event.type === 'turn-completed') {
+            setToolStatus('Preparing answer…')
+          }
+        },
         onToolEvent: event => {
           if (!isCurrentRequest()) return
           setToolActivity(current => [...current.filter(item => item.name !== event.name), event].slice(-4))
-          setToolStatus(event.status === 'started' || event.status === 'queued' ? harnessToolLabel(event.name, requestedScope) + '…' : event.status === 'completed' ? 'Evidence ready' : event.status === 'unavailable' ? 'Evidence unavailable' : event.status === 'cancelled' ? 'Request cancelled' : 'Evidence read failed')
+          setToolStatus(event.status === 'started' || event.status === 'queued' ? harnessToolLabel(event.name, requestedScope) + '…' : event.status === 'completed' ? harnessToolCheckedLabel(event.name) : event.status === 'unavailable' ? 'Failed' : event.status === 'cancelled' ? 'Request cancelled' : 'Failed')
         },
         onDelta: text => { if (isCurrentRequest()) setStreamPreview(current => (current + text).slice(0, 4_000)) },
       })

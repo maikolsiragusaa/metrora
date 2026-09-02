@@ -24,10 +24,10 @@ const spendEvidence: AdvisorEvidence = {
   unknown: [],
   nextInvestigations: [],
   spend: {
-    measuredCostUSD: 4_120.46,
+    measuredCostUSD: 4_122.20,
     calls: 42,
     sessions: 3,
-    models: [{ name: 'GPT-5.6', costUSD: 4_120.46, calls: 42 }],
+    models: [{ name: 'GPT-5.6', costUSD: 4_122.20, calls: 42 }],
     projects: [],
     sessionsByCost: [],
     trend: null,
@@ -192,6 +192,10 @@ describe('MetroraAgentLoop', () => {
     expect(output.status).toBe('completed')
     expect(output.toolCalls).toBe(1)
     expect(seen[1]?.some(value => value.includes('{"measured":true}'))).toBe(true)
+    expect(output.ledger).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', toolCalls: [expect.objectContaining({ id: 'required-spend' })] }),
+      expect.objectContaining({ role: 'tool', toolCallId: 'required-spend' }),
+    ]))
     expect(output.finalText).toContain('canonical spend')
   })
 
@@ -274,14 +278,14 @@ describe('MetroraAgentLoop', () => {
 
 describe('Metrora provenance classification', () => {
   it('accepts canonical facts combined with a user-provided threshold', () => {
-    const result = classifyMetroraProvenance('Metrora measured $4,120.46, which exceeds your $4,000 threshold.', 'Did I spend more than $4,000?', [spendEvidence])
+    const result = classifyMetroraProvenance('Sì. Metrora misura $4,122.20 lifetime, quindi sei circa $122.20 sopra la soglia che hai indicato. È una cifra significativa; guarderei quali modelli e progetti hanno contribuito di più.', 'Ho superato $4.000? Sono tanti?', [spendEvidence])
     expect(result.accepted).toBe(true)
     expect(result.usedCanonicalFact).toBe(true)
     expect(result.usedUserFact).toBe(true)
   })
 
   it('accepts a deterministic derived difference', () => {
-    const result = classifyMetroraProvenance('That is $120.46 above your threshold.', 'Did I spend more than $4,000?', [spendEvidence])
+    const result = classifyMetroraProvenance('That is $122.20 above your threshold.', 'Did I spend more than $4,000?', [spendEvidence])
     expect(result.accepted).toBe(true)
     expect(result.usedDerivation).toBe(true)
   })
@@ -302,7 +306,7 @@ describe('Metrora provenance classification', () => {
   })
 
   it('rejects unsupported causality even when the number itself is canonical', () => {
-    const result = classifyMetroraProvenance('GPT-5.6 caused the $4,120.46 spend.', 'How much did I spend?', [spendEvidence])
+    const result = classifyMetroraProvenance('GPT-5.6 caused the $4,122.20 spend.', 'How much did I spend?', [spendEvidence])
     expect(result.accepted).toBe(false)
     expect(result.diagnostics).toContain('unsupported_causality')
   })

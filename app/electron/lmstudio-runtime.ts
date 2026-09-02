@@ -1,3 +1,5 @@
+import { openAICompatibleMessages } from './advisor-runtime-messages'
+
 const LOOPBACK_ENDPOINT = 'http://127.0.0.1:1234'
 const PROBE_TIMEOUT_MS = 1500
 const CHAT_TIMEOUT_MS = 120_000
@@ -114,7 +116,7 @@ function parseToolCalls(value: unknown): Array<RecordValue> {
     const args = call.function.arguments
     if (args !== undefined && typeof args !== 'string' && !isRecord(args)) throw new Error('Local runtime returned malformed tool arguments.')
     if (typeof args === 'string' && byteLength(args) > MAX_MESSAGE_BYTES) throw new Error('Local runtime tool arguments exceeded the content limit.')
-    return { function: { name: call.function.name, ...(args !== undefined ? { arguments: args } : {}) } }
+    return { ...(typeof call.id === 'string' && call.id.trim() ? { id: call.id } : {}), function: { name: call.function.name, ...(args !== undefined ? { arguments: args } : {}) } }
   })
 }
 function normalizeMessage(message: RecordValue): ChatResult['message'] {
@@ -123,37 +125,25 @@ function normalizeMessage(message: RecordValue): ChatResult['message'] {
   if (message.content === undefined && toolCalls.length === 0) throw new Error('Local runtime returned an empty message.')
   return { content: typeof message.content === 'string' ? boundedMessageContent(message.content) : '', tool_calls: toolCalls }
 }
-function openAIMessageList(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const callIds: string[] = []
-  let nextId = 0
-  return messages.map(message => {
-    if (!isRecord(message)) throw new Error('Local runtime request contains a malformed message.')
-    if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
-      const toolCalls = message.tool_calls.slice(0, MAX_TOOL_CALLS).map(call => {
-        if (!isRecord(call) || !isRecord(call.function) || typeof call.function.name !== 'string') throw new Error('Local runtime request contains a malformed tool call.')
-        const id = 'metrora_call_' + nextId++
-        callIds.push(id)
-        const args = typeof call.function.arguments === 'string' ? call.function.arguments : JSON.stringify(call.function.arguments ?? {})
-        return { id, type: 'function', function: { name: call.function.name, arguments: args } }
-      })
-      return { role: 'assistant', content: typeof message.content === 'string' ? message.content : '', tool_calls: toolCalls }
-    }
-    if (message.role === 'tool') {
-      const toolCallId = callIds.shift() ?? 'metrora_call_' + nextId++
-      return { role: 'tool', content: typeof message.content === 'string' ? message.content : '', tool_call_id: toolCallId }
-    }
-    return { role: message.role, content: message.content }
-  })
+function openAIMessageList(messages: Array<Record<string, unknown>>, mode: 'native' | 'flattened' = 'native'): Array<Record<string, unknown>> {
+  return openAICompatibleMessages(messages, mode)
 }
 function validatePayload(value: unknown): asserts value is ChatPayload {
   if (!isRecord(value) || typeof value.model !== 'string' || !validModel(value.model)) throw new Error('Local runtime model is invalid.')
   if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 12) throw new Error('Local runtime request exceeded the safety limit.')
   if (typeof value.stream !== 'boolean') throw new Error('Local runtime stream flag is invalid.')
+  if (value.messageMode !== undefined && value.messageMode !== 'native' && value.messageMode !== 'flattened') throw new Error('Local runtime message mode is invalid.')
   for (const message of value.messages) {
     if (!isRecord(message) || typeof message.role !== 'string' || !['system', 'user', 'assistant', 'tool'].includes(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
     boundedMessageContent(message.content)
+    if (message.toolCalls !== undefined && !Array.isArray(message.toolCalls)) throw new Error('Local runtime toolCalls must be an array.')
     if (message.tool_calls !== undefined) parseToolCalls(message.tool_calls)
+    if (message.role !== 'assistant' && (message.toolCalls !== undefined || message.tool_calls !== undefined)) throw new Error('Local runtime tool calls are only valid on assistant messages.')
+    if (message.role === 'tool') {
+      const id = message.toolCallId ?? message.tool_call_id
+      if (id !== undefined && (typeof id !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(id))) throw new Error('Local runtime tool result call ID is invalid.')
+    } else if (message.toolCallId !== undefined || message.tool_call_id !== undefined || message.tool_name !== undefined) throw new Error('Local runtime tool result metadata is invalid.')
   }
   for (const tool of value.tools) {
     if (!isRecord(tool) || tool.type !== 'function' || !isRecord(tool.function) || typeof tool.function.name !== 'string' || !tool.function.name.trim()) throw new Error('Local runtime request contains a malformed tool definition.')
@@ -190,6 +180,7 @@ function parseSseText(text: string, onDelta?: (text: string) => void): ChatResul
         if (!isRecord(call) || typeof call.index !== 'number') throw new Error('Local runtime returned malformed streaming tool calls.')
         const index = Math.max(0, Math.floor(call.index))
         const current = toolCalls[index] ?? { function: { name: '', arguments: '' } }
+        if (typeof call.id === 'string' && call.id.trim()) current.id = call.id
         const fn = isRecord(call.function) ? call.function : {}
         if (typeof fn.name === 'string') current.function = { ...(isRecord(current.function) ? current.function : {}), name: fn.name }
         if (typeof fn.arguments === 'string') current.function = { ...(isRecord(current.function) ? current.function : {}), arguments: String(isRecord(current.function) && typeof current.function.arguments === 'string' ? current.function.arguments : '') + fn.arguments }
@@ -220,7 +211,7 @@ async function streamResponse(response: Response, onDelta?: (text: string) => vo
 export async function chatLMStudioMain(fetchImpl: FetchLike, payload: ChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<ChatResult> {
   if (!fetchImpl) throw new Error('Node fetch is unavailable.')
   validatePayload(payload)
-  const body = { model: payload.model, messages: openAIMessageList(payload.messages), ...(payload.tools.length ? { tools: payload.tools } : {}), stream: payload.stream }
+  const body = { model: payload.model, messages: openAIMessageList(payload.messages, payload.messageMode ?? 'native'), ...(payload.tools.length ? { tools: payload.tools } : {}), stream: payload.stream }
   const encoded = JSON.stringify(body)
   if (byteLength(encoded) > MAX_RESPONSE_BYTES) throw new Error('Local runtime request exceeded the safety limit.')
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)

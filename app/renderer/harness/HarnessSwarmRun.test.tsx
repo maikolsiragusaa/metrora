@@ -34,9 +34,9 @@ describe('Harness V3 inline Swarm run', () => {
     }
     render(<HarnessSwarmRun enabled runtimeLabel="Ollama local" modelLabel="model-a" state={state} onCancel={onCancel} />)
     expect(screen.getByText('Swarm')).toBeInTheDocument()
-    expect(screen.getByText(/Bounded workers will report back into this conversation/)).toBeInTheDocument()
+    expect(screen.getByText(/Bounded subagents will report back into this conversation/)).toBeInTheDocument()
     expect(screen.getByText('Usage · Running')).toBeInTheDocument()
-    expect(screen.getByText('2 workers · 0 complete · active')).toBeInTheDocument()
+    expect(screen.getByText('2 subagents · 0 complete · active')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onCancel).toHaveBeenCalledOnce()
   })

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { advisorHostedProviderDescriptors, createAdvisorHostedHandlers, type AdvisorHostedEvent, type AdvisorHostedProviderId } from './advisor-provider'
+import { createMemoryAdvisorConformanceStore, type AdvisorConformanceStore } from './advisor-conformance-store'
 import { reasoningCapabilityFromMetadata, resolveOpenCodeZenProtocolFromMetadata } from './advisor-provider-contract'
 
 const providers: AdvisorHostedProviderId[] = ['openai', 'anthropic', 'gemini']
@@ -25,12 +26,13 @@ function sseResponse(payloads: unknown[], includeDone = true): Response {
   })
   return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
 }
-function readyHandlers(fetchImpl: typeof fetch, events: AdvisorHostedEvent[] = []) {
+function readyHandlers(fetchImpl: typeof fetch, events: AdvisorHostedEvent[] = [], conformanceStore?: AdvisorConformanceStore) {
   return createAdvisorHostedHandlers({
     fetchImpl,
     credentialStatus: async provider => ({ provider, state: 'ready' }),
     readCredential: async () => 'synthetic-secret',
     emitEvent: event => events.push(event),
+    ...(conformanceStore ? { conformanceStore } : {}),
   })
 }
 function modelPayload(provider: AdvisorHostedProviderId): Record<string, unknown> {
@@ -119,6 +121,39 @@ describe('Advisor hosted provider authority', () => {
     })
   })
 
+  it('persists exact conformance across handler restarts and invalidates it when capabilities change', async () => {
+    let toolCallAdvertised = true
+    const store = createMemoryAdvisorConformanceStore()
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/v1/models')) return jsonResponse({ data: [{ id: 'gpt-persisted', tool_call: toolCallAdvertised }] })
+      return jsonResponse(textPayload('openai'))
+    }) as typeof fetch
+
+    const first = readyHandlers(fetchImpl, [], store)
+    await first['metrora:advisorHostedProbe']!('openai')
+    await expect(first['metrora:advisorHostedChat']!('persisted-conformance', {
+      ...request('openai'),
+      model: 'gpt-persisted',
+      harnessConformance: true,
+    })).resolves.toMatchObject({ ok: true })
+
+    const restarted = readyHandlers(fetchImpl, [], store)
+    const preserved = await restarted['metrora:advisorHostedProbe']!('openai') as { ok: boolean; value: any }
+    expect(preserved.value.models[0]).toMatchObject({
+      id: 'gpt-persisted',
+      state: 'verified',
+      capabilities: { toolCall: 'supported' },
+    })
+
+    toolCallAdvertised = false
+    const changed = await restarted['metrora:advisorHostedProbe']!('openai') as { ok: boolean; value: any }
+    expect(changed.value.models[0]).toMatchObject({
+      id: 'gpt-persisted',
+      state: 'discovered',
+      capabilities: { toolCall: 'unsupported' },
+    })
+  })
+
   it('records failed conformance only for a malformed exact bounded Harness response', async () => {
     let chat = true
     const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
@@ -171,6 +206,95 @@ describe('Advisor hosted provider authority', () => {
     expect(events.map(event => event.kind)).toContain('text-delta')
     expect(events.at(-1)?.kind).toBe('completed')
     expect(JSON.stringify(events)).not.toContain('synthetic-secret')
+  })
+
+  it.each([
+    ['openai', 'openai-test-model'],
+    ['anthropic', 'anthropic-test-model'],
+    ['gemini', 'models/gemini-2.5-flash'],
+    ['openrouter', 'openai/gpt-5'],
+  ] as const)('replays semantic Tool history with the exact call ID on %s', async (provider, model) => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      if (provider === 'openrouter') return jsonResponse({ choices: [{ message: { content: 'Natural continuation.' } }] })
+      return jsonResponse(textPayload(provider === 'gemini' ? 'gemini' : provider === 'anthropic' ? 'anthropic' : 'openai'))
+    }) as typeof fetch
+    const messages = [
+      { role: 'system' as const, content: 'Use canonical facts.' },
+      { role: 'user' as const, content: 'What changed?' },
+      { role: 'assistant' as const, content: '', toolCalls: [{ id: 'call-42', name: 'get_spend_snapshot', arguments: '{}' }] },
+      { role: 'tool' as const, content: '{"measuredCostUSD":12}', toolCallId: 'call-42', toolName: 'get_spend_snapshot' },
+    ]
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('semantic-replay-' + provider, {
+      provider,
+      model,
+      messages,
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }],
+      stream: false,
+      consent: true,
+      messageMode: 'native',
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true })
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
+    const bodyText = JSON.stringify(body)
+    if (provider === 'openai') {
+      expect(body.input).toEqual([
+        { role: 'user', content: 'What changed?' },
+        { type: 'function_call', call_id: 'call-42', name: 'get_spend_snapshot', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'call-42', output: '{"measuredCostUSD":12}' },
+      ])
+    } else if (provider === 'anthropic') {
+      expect(body.messages).toEqual([
+        { role: 'user', content: 'What changed?' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'call-42', name: 'get_spend_snapshot', input: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call-42', content: '{"measuredCostUSD":12}' }] },
+      ])
+    } else if (provider === 'gemini') {
+      expect(body.contents).toEqual([
+        { role: 'user', parts: [{ text: 'What changed?' }] },
+        { role: 'model', parts: [{ functionCall: { name: 'get_spend_snapshot', args: {}, id: 'call-42' } }] },
+        { role: 'user', parts: [{ functionResponse: { name: 'get_spend_snapshot', response: { measuredCostUSD: 12 }, id: 'call-42' } }] },
+      ])
+    } else {
+      expect(body.messages).toEqual([
+        { role: 'system', content: 'Use canonical facts.' },
+        { role: 'user', content: 'What changed?' },
+        { role: 'assistant', content: '', tool_calls: [{ id: 'call-42', type: 'function', function: { name: 'get_spend_snapshot', arguments: '{}' } }] },
+        { role: 'tool', content: '{"measuredCostUSD":12}', tool_call_id: 'call-42', name: 'get_spend_snapshot' },
+      ])
+    }
+    expect(bodyText).toContain('call-42')
+    expect(bodyText).not.toContain('Metrora Tool result')
+  })
+
+  it('uses the bounded flattened representation only when native Tool replay is not selected', async () => {
+    const calls: Array<{ init?: RequestInit }> = []
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ init })
+      return jsonResponse({ choices: [{ message: { content: 'Fallback continuation.' } }] })
+    }) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('flattened-replay', {
+      provider: 'openrouter',
+      model: 'openai/text-only',
+      messages: [
+        { role: 'user', content: 'What changed?' },
+        { role: 'assistant', content: '', toolCalls: [{ id: 'call-fallback', name: 'get_spend_snapshot', arguments: '{}' }] },
+        { role: 'tool', content: '{"measuredCostUSD":12}', toolCallId: 'call-fallback', toolName: 'get_spend_snapshot' },
+      ],
+      stream: false,
+      consent: true,
+      messageMode: 'flattened',
+    }) as { ok: boolean }
+    expect(result).toMatchObject({ ok: true })
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
+    expect(body.messages).toEqual([
+      { role: 'user', content: 'What changed?' },
+      { role: 'assistant', content: 'Metrora read request: get_spend_snapshot {}' },
+      { role: 'user', content: 'Metrora Tool result (get_spend_snapshot): {"measuredCostUSD":12}' },
+    ])
+    expect(JSON.stringify(body)).not.toContain('tool_call_id')
+    expect(JSON.stringify(body)).not.toContain('tool_calls')
   })
 
   it.each(providers)('parses %s SSE text without forwarding provider event names', async provider => {
@@ -437,7 +561,7 @@ describe('Advisor hosted provider authority', () => {
     }) as typeof fetch
     const result = await readyHandlers(fetchImpl)['metrora:advisorHostedProbe']!('openrouter') as { ok: boolean; value: any }
     expect(result.value.models).toEqual([
-      expect.objectContaining({ id: 'openai/gpt-5', state: 'unverified', capabilities: { conversational: 'available', streaming: 'unknown', toolCall: 'unknown' } }),
+      expect.objectContaining({ id: 'openai/gpt-5', state: 'unverified', capabilities: { conversational: 'available', streaming: 'unknown', toolCall: 'supported' } }),
       expect.objectContaining({ id: 'openai/text-only', state: 'limited', capabilities: { conversational: 'available', streaming: 'unknown', toolCall: 'unsupported' } }),
     ])
     expect(calls[0]?.url).toContain('output_modalities=text')
@@ -616,7 +740,7 @@ describe('Advisor hosted provider authority', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(url), init })
-      if (String(url).includes('/api/v1/models')) return jsonResponse({ data: [{ id: 'openai/reasoning-fixture', supported_parameters: ['reasoning_effort'] }] })
+      if (String(url).includes('/api/v1/models')) return jsonResponse({ data: [{ id: 'openai/reasoning-fixture', supported_parameters: ['reasoning_effort'], reasoning_effort_values: ['low', 'medium', 'high'] }] })
       return jsonResponse({ choices: [{ message: { content: 'Reasoning response.' } }] })
     }) as typeof fetch
     const handlers = readyHandlers(fetchImpl)
@@ -648,7 +772,11 @@ describe('Advisor hosted provider authority', () => {
     }) as { ok: boolean; error: { kind: string } }
     expect(unsupported).toMatchObject({ ok: false, error: { kind: 'request-unsupported' } })
     expect(calls).toHaveLength(2)
-    expect(reasoningCapabilityFromMetadata({ supported_parameters: ['reasoning_effort'] }, 'openai-chat')).toEqual({ efforts: ['default', 'low', 'medium', 'high'], parameter: 'openai-effort' })
+    expect(reasoningCapabilityFromMetadata({ supported_parameters: ['reasoning_effort'], reasoning_effort_values: ['low', 'medium', 'high'] }, 'openai-chat')).toEqual({ efforts: ['default', 'low', 'medium', 'high'], parameter: 'openai-effort' })
+  })
+
+  it('keeps an advertised reasoning parameter at Default when the model publishes no levels', () => {
+    expect(reasoningCapabilityFromMetadata({ supported_parameters: ['reasoning_effort'] }, 'openai-chat')).toEqual({ efforts: ['default'], parameter: 'openai-effort' })
   })
 
   it('does not reuse exact-model conformance when OpenCode Zen protocol metadata changes', async () => {

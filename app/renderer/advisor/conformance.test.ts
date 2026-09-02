@@ -222,7 +222,9 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
     const execute = vi.fn(registry.execute)
     const malformedRuntime = new OllamaAdvisorRuntime({ model: 'synthetic-model', transport: scriptedTransport([{ function: { name: 'get_spend_snapshot', arguments: '{"model":' } }]) })
     const malformedAnswer = await malformedRuntime.generate({ question: 'What is my spend?', evidence, tools: ADVISOR_TOOL_DEFINITIONS, toolContract: ADVISOR_TOOL_CONTRACT, executeTool: execute })
-    expect(malformedAnswer.conclusion).toContain('Metrora measured')
+    expect(malformedAnswer.conclusion).toContain('selected model could not finish')
+    expect(malformedAnswer.conclusion).not.toContain('offline evidence')
+    expect(malformedAnswer.runtimeFailure).toBe(true)
     expect(execute).not.toHaveBeenCalled()
     expect(fixture.reads.overviews).toHaveLength(0)
 

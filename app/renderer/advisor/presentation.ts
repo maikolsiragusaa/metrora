@@ -1,4 +1,4 @@
-import { formatAdvisorPercent, formatAdvisorUsd, periodLabel, scopeLabel } from './evidence'
+import { formatAdvisorUsd, periodLabel, scopeLabel } from './evidence'
 import type { AdvisorEvidence, AdvisorPresentationBlockV1, AdvisorPresentationIntent, AdvisorSynthesisDraftV1, AdvisorTurnPlanV1, AdvisorVerifiedClaimAtomV1 } from './types'
 
 function number(value: number | null): string {
@@ -8,30 +8,6 @@ function number(value: number | null): string {
 function presentationRequest(plan: AdvisorTurnPlanV1, draft: AdvisorSynthesisDraftV1 | null): AdvisorPresentationIntent {
   const requested = draft?.presentationRequests.find(request => request.kind !== 'text')?.kind
   return requested ?? plan.presentationIntent
-}
-
-function claimIdForPath(claims: readonly AdvisorVerifiedClaimAtomV1[], path: string): string[] {
-  const id = claims.find(claim => claim.evidencePath === path)?.id
-  return id ? [id] : []
-}
-
-function metricCards(evidence: AdvisorEvidence, claims: readonly AdvisorVerifiedClaimAtomV1[]): AdvisorPresentationBlockV1 | null {
-  const values: Array<{ label: string; value: string; unit: string; detail: string; claimIds: string[] }> = []
-  if (evidence.spend) {
-    if (evidence.spend.measuredCostUSD !== null) values.push({ label: 'Measured spend', value: formatAdvisorUsd(evidence.spend.measuredCostUSD), unit: 'USD', detail: 'Metrora-measured cost in the selected scope.', claimIds: claimIdForPath(claims, 'spend.measuredCostUSD') })
-    if (evidence.spend.calls !== null) values.push({ label: 'Calls', value: number(evidence.spend.calls), unit: 'calls', detail: 'Observed calls in the selected scope.', claimIds: claimIdForPath(claims, 'spend.calls') })
-    if (evidence.spend.sessions !== null) values.push({ label: 'Sessions', value: number(evidence.spend.sessions), unit: 'sessions', detail: 'Observed sessions in the selected scope.', claimIds: claimIdForPath(claims, 'spend.sessions') })
-    if (evidence.spend.inputTokens !== null && evidence.spend.inputTokens !== undefined) values.push({ label: 'Input tokens', value: number(evidence.spend.inputTokens), unit: 'tokens', detail: 'Canonical input-token total; raw prompt content is excluded.', claimIds: claimIdForPath(claims, 'spend.inputTokens') })
-    if (evidence.spend.outputTokens !== null && evidence.spend.outputTokens !== undefined) values.push({ label: 'Output tokens', value: number(evidence.spend.outputTokens), unit: 'tokens', detail: 'Canonical output-token total; generated content is excluded.', claimIds: claimIdForPath(claims, 'spend.outputTokens') })
-    if (evidence.spend.cacheReadTokens !== null && evidence.spend.cacheReadTokens !== undefined) values.push({ label: 'Cache read', value: number(evidence.spend.cacheReadTokens), unit: 'tokens', detail: 'Canonical cache-read token total.', claimIds: claimIdForPath(claims, 'spend.cacheReadTokens') })
-    if (evidence.spend.pricingCoverage !== null) values.push({ label: 'Pricing coverage', value: formatAdvisorPercent(evidence.spend.pricingCoverage), unit: 'covered', detail: 'Canonical pricing/accounting coverage; unknown usage is not treated as free.', claimIds: [] })
-  }
-  if (evidence.modelEfficiency?.rows.length) {
-    const lowest = evidence.modelEfficiency.rows[0]!
-    values.push({ label: 'Lowest observed cost/call', value: lowest.costPerCallUSD === null ? 'Unavailable' : formatAdvisorUsd(lowest.costPerCallUSD), unit: lowest.model, detail: 'Observed comparison only; not a quality or universal model ranking.', claimIds: claimIdForPath(claims, 'modelEfficiency.rows.0.costPerCallUSD') })
-  }
-  if (!values.length) return null
-  return { kind: 'metric-cards', title: 'At a glance', cards: values.slice(0, 6), scopeLabel: scopeLabel(evidence.scope), periodLabel: periodLabel(evidence.scope), evidenceRefs: evidence.refs }
 }
 
 function lineChart(evidence: AdvisorEvidence, question: string, family: AdvisorTurnPlanV1['questionFamily']): AdvisorPresentationBlockV1 | null {
@@ -107,7 +83,7 @@ function comparisonTable(evidence: AdvisorEvidence, family: AdvisorTurnPlanV1['q
   }
 }
 
-function warning(evidence: AdvisorEvidence, title = 'Evidence limit'): AdvisorPresentationBlockV1 {
+function warning(evidence: AdvisorEvidence, title = 'Sources'): AdvisorPresentationBlockV1 {
   return { kind: 'warning', title, text: evidence.coverage.detail + (evidence.unknown.length ? ' ' + evidence.unknown[0] : ''), evidenceRefs: evidence.refs }
 }
 
@@ -130,10 +106,9 @@ export function buildAdvisorPresentationBlocks(evidence: AdvisorEvidence, plan: 
   } else if (requested === 'evidence-disclosure') {
     blocks.push({ kind: 'evidence-disclosure', title: 'How Metrora knows', text: evidence.coverage.detail + (evidence.assumptions.length ? ' ' + evidence.assumptions[0] : ''), evidenceRefs: evidence.refs })
   }
-  if (requested === 'text' && (evidence.intent === 'spend-change' || evidence.intent === 'model-efficiency')) {
-    const cards = metricCards(evidence, claims)
-    if (cards) blocks.push(cards)
-  }
+  // A plain conversational turn keeps the answer in the conversation. Large
+  // metric blocks are reserved for an explicit presentation request or an
+  // intentionally visual plan such as quota, Bench, chart, or comparison.
   if (evidence.coverage.level !== 'high' && !blocks.some(block => block.kind === 'warning')) blocks.push(warning(evidence))
   if (plan.expertDetailRequested && !blocks.some(block => block.kind === 'evidence-disclosure')) {
     blocks.push({ kind: 'evidence-disclosure', title: 'Evidence details', text: evidence.coverage.detail, evidenceRefs: evidence.refs })

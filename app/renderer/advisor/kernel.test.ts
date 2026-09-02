@@ -158,7 +158,7 @@ describe('Advisor model planning boundary', () => {
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
   })
 
-  it('keeps explicit bounded comparison periods and model filters through deterministic fallback', async () => {
+  it('reports a selected-model failure without switching into deterministic evidence mode', async () => {
     const fixtureOverview = {
       ...measured,
       current: { ...measured.current!, cost: 12, calls: 3, sessions: 2 },
@@ -193,13 +193,9 @@ describe('Advisor model planning boundary', () => {
       scope,
     })
 
-    expect(fixtureSource.getOverview).toHaveBeenCalledTimes(2)
-    expect((fixtureSource.getOverview as ReturnType<typeof vi.fn>).mock.calls.map(call => call[0])).toEqual([
-      expect.objectContaining({ period: 'week', model: null }),
-      expect.objectContaining({ period: 'lifetime', model: null }),
-    ])
-    expect(answer.conclusion).toContain('12')
-    expect(answer.conclusion).toContain('42')
-    expect(answer.coverage.level).toBe('high')
+    expect(fixtureSource.getOverview).not.toHaveBeenCalled()
+    expect(answer.conclusion).toContain('selected model could not finish')
+    expect(answer.conclusion).not.toContain('offline evidence')
+    expect(answer.runtimeFailure).toBe(true)
   })
 })

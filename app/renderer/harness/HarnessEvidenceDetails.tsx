@@ -3,7 +3,7 @@ import type { AdvisorAnswer } from '../advisor/types'
 export function HarnessEvidenceDetails({ answer, onNextInvestigation }: { answer: AdvisorAnswer; onNextInvestigation?: (question: string) => void }) {
   return (
     <details className="harness-v3-evidence-details">
-      <summary><span>Evidence &amp; details</span><small>Scope, sources, assumptions</small></summary>
+      <summary><span>Sources &amp; details</span><small>Scope, sources, assumptions</small></summary>
       <div className="harness-v3-evidence-content">
         <div className={'harness-v3-coverage ' + answer.coverage.level}>
           <strong>{answer.coverage.label}</strong>

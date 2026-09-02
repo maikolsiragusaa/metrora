@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MenubarPayload } from '../lib/types'
 import { createAdvisorConformanceFixture } from '../advisor/conformance'
-import { OllamaAdvisorRuntime } from '../advisor/ollama'
+import { OllamaAdvisorRuntime, type OllamaTransport } from '../advisor/ollama'
 import type { AdvisorAnswer, AdvisorDataSource, AdvisorRuntimeInput, AdvisorModelRuntime } from '../advisor/types'
 import { createBaselineWorkerRequests } from '../../../src/swarm/coordinator-v1'
 import type { SwarmEventV1, SwarmSynthesisInputV1, SwarmWorkerResultV1 } from '../../../src/swarm/contract-v1'
@@ -96,6 +96,56 @@ function runtime(capture: { input?: AdvisorRuntimeInput; denied: boolean; toolCa
 }
 
 describe('Native Harness Swarm worker adapter', () => {
+  it('gives a delegated Native Agent the same semantic Tool continuation ledger as Chat', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const payloads: Array<Record<string, unknown>> = []
+    let calls = 0
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['native-agent-model'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: () => () => {},
+      chat: async (_requestId, payload) => {
+        payloads.push(payload)
+        calls += 1
+        return calls === 1
+          ? { streamed: false, message: { content: '', tool_calls: [{ id: 'native-agent-call', function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+          : { streamed: false, message: { content: 'Metrora measured $12.00 in this scope; that is a small amount.' } }
+      },
+    }
+    const modelRuntime = new OllamaAdvisorRuntime({ model: 'native-agent-model', transport })
+    const adapter = new NativeHarnessWorkerAdapter({
+      source: fixture.source,
+      runtime: {
+        ...modelRuntime,
+        generate: (input, signal) => modelRuntime.generate(input, signal),
+      },
+      overview: null,
+      now: () => '2026-08-31T00:00:00.000Z',
+    })
+    const [request] = createBaselineWorkerRequests({
+      runId: 'run-native-semantic-replay',
+      task: 'What changed in spend?',
+      scope: fixture.scope,
+      runtime: { id: 'ollama', label: 'Ollama local' },
+      model: { id: 'native-agent-model', label: 'native-agent-model' },
+      allowedToolNames: ['get_spend_snapshot'],
+      limits: { maxToolCalls: 1, maxToolRounds: 1 },
+    })
+
+    const result = await adapter.run(request!)
+
+    expect(result.status).toBe('completed')
+    expect(payloads).toHaveLength(2)
+    expect(payloads[1]?.messageMode).toBe('native')
+    const continuation = payloads[1]?.messages as Array<Record<string, unknown>>
+    expect(continuation).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', toolCalls: [expect.objectContaining({ id: 'native-agent-call', name: 'get_spend_snapshot' })] }),
+      expect.objectContaining({ role: 'tool', toolCallId: 'native-agent-call', toolName: 'get_spend_snapshot' }),
+    ]))
+    expect(continuation.some(message => message.role === 'user' && String(message.content).includes('Metrora Tool result'))).toBe(false)
+    expect(result.answer).toContain('small amount')
+  })
+
   it('uses canonical read-only Tools, enforces allowlist/calls, and returns bounded identity', async () => {
     const sourceResult = source()
     const capture: { input?: AdvisorRuntimeInput; denied: boolean; toolCalls?: number; generateCalls?: number } = { denied: false }

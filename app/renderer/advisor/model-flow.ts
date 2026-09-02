@@ -326,31 +326,36 @@ export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, s
   const notes = [
     ...(fallback.materialLimits ?? []),
     ...(fallbackNote ? [fallbackNote] : []),
-    ...(draft ? ['The model atom selection did not pass Metrora semantic verification; verified facts are shown instead.'] : []),
+    ...(draft ? ['The model answer format could not be verified; Metrora fact details remain available below.'] : []),
   ]
   const naturalCandidate = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim())
   const naturalResult = naturalCandidate && sameScope && !hasMixedEvidenceScopes(evidenceItems)
     ? classifyMetroraProvenance(finalContent, input.question, evidenceItems)
     : null
-  if (naturalCandidate && !naturalResult?.accepted) notes.push('The model answer did not contain a safe supported explanation; verified facts are shown instead.')
+  if (naturalCandidate && !naturalResult?.accepted) notes.push('The model answer did not contain a safe supported explanation; Metrora fact details remain available below.')
   if (naturalResult?.removedClauses) notes.push('Some model claims were omitted because they were not supported by verified Metrora evidence.')
   const naturalInterpretation = naturalResult?.accepted ? naturalResult.text : ''
   const naturalIncludesCanonicalFact = Boolean(naturalResult?.usedCanonicalFact || naturalResult?.usedDerivation)
   const naturalConclusion = naturalIncludesCanonicalFact
     ? naturalInterpretation
     : [verifiedConclusion, naturalInterpretation].filter(Boolean).join(' ')
+  // A provider can fail before returning its first model step. The selected
+  // runtime is still the source of the failure, so do not silently turn that
+  // case into a deterministic evidence answer.
+  const modelFailure = Boolean(fallbackNote && !naturalInterpretation)
   return sanitizeAdvisorAnswer({
     ...fallback,
     // Canonical facts remain authoritative while the model supplies the
     // bounded prose that explains them. Unsupported clauses are removed at
     // sentence granularity instead of invalidating the whole response.
-    conclusion: naturalConclusion || verifiedConclusion,
+    conclusion: modelFailure ? fallbackNote! : naturalConclusion || verifiedConclusion,
     details,
     materialLimits: notes,
     presentation: plan ? buildAdvisorPresentationBlocks(evidence, plan, input.question, null, fallback.claims ?? []) : undefined,
     runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
-    generatedByModel: modelUsed && Boolean(naturalInterpretation),
+    generatedByModel: modelUsed && Boolean(naturalInterpretation) && !modelFailure,
     streamed: false,
+    ...(modelFailure ? { runtimeFailure: true } : {}),
   })
 }
 

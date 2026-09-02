@@ -62,7 +62,7 @@ export async function probeLlamaServer(signal?: AbortSignal, port = LLAMA_SERVER
 }
 
 export class LlamaServerAdvisorRuntime extends LocalAdvisorRuntime {
-  constructor(options: { model: string; port?: number; transport?: LlamaServerTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+  constructor(options: { model: string; port?: number; transport?: LlamaServerTransport; availability?: 'ready' | 'checking' | 'unavailable'; nativeToolCalls?: boolean }) {
     const port = boundedPort(options.port)
     super({
       id: 'llama-server-local',
@@ -73,8 +73,7 @@ export class LlamaServerAdvisorRuntime extends LocalAdvisorRuntime {
       transport: options.transport ?? bridgeTransport(port),
       availability: options.availability,
       unavailableMessage: 'Local llama-server model is not available.',
-      wireMode: 'openai',
-      nativeToolCalls: true,
+      nativeToolCalls: options.nativeToolCalls,
     })
   }
 }

@@ -3,6 +3,7 @@ import { buildAdvisorSwarmSynthesisMessages } from './model-flow'
 import { createAdvisorTurnDeadline, raceAdvisorAbort } from './abort'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { runAdvisorRuntimeAgentLoop } from '../agent-loop/advisor-runtime'
+import { serializeMetroraAgentMessages, type MetroraAgentMessage } from '../agent-loop/contracts'
 import type { AdvisorAnswer, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorReasoningEffort, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult } from './types'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
@@ -162,7 +163,6 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       input,
       signal,
       transport: {
-        wireMode: 'flattened',
         nativeToolCalls: this.capabilities.toolCall === 'supported',
         complete: async (request, payload, requestSignal) => {
           const response = await this.transport.chat(request, {
@@ -172,6 +172,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
             messages: payload.messages,
             tools: payload.tools,
             stream: false,
+            messageMode: payload.messageMode as 'native' | 'flattened' | undefined,
             consent: true,
             harnessConformance: true,
           }, requestSignal)
@@ -179,7 +180,12 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           return response
         },
         cancel: request => this.transport.cancel(request),
-        buildPayload: ({ messages, tools }) => ({ messages, tools: [...tools], stream: false }),
+        buildPayload: ({ messages, tools }) => ({
+          messages: serializeMetroraAgentMessages(messages as readonly MetroraAgentMessage[]),
+          tools: [...tools],
+          stream: false,
+          messageMode: this.capabilities.toolCall === 'supported' ? 'native' : 'flattened',
+        }),
         reportConformance: true,
       },
     })

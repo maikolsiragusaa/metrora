@@ -48,7 +48,7 @@ export async function probeLMStudio(signal?: AbortSignal): Promise<AdvisorRuntim
 }
 
 export class LMStudioAdvisorRuntime extends LocalAdvisorRuntime {
-  constructor(options: { model: string; transport?: LMStudioTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+  constructor(options: { model: string; transport?: LMStudioTransport; availability?: 'ready' | 'checking' | 'unavailable'; nativeToolCalls?: boolean }) {
     super({
       id: 'lmstudio-local',
       label: 'LM Studio · ' + options.model,
@@ -58,8 +58,7 @@ export class LMStudioAdvisorRuntime extends LocalAdvisorRuntime {
       transport: options.transport ?? bridgeTransport,
       availability: options.availability,
       unavailableMessage: 'Local LM Studio model is not available.',
-      wireMode: 'openai',
-      nativeToolCalls: true,
+      nativeToolCalls: options.nativeToolCalls,
     })
   }
 }

@@ -1,5 +1,7 @@
 import { chatLMStudioMain, probeLMStudioMain } from './lmstudio-runtime'
 import { chatLlamaServerMain, probeLlamaServerMain, validateLlamaServerPort, type LlamaServerRuntimeOptions } from './llama-server-runtime'
+import { ollamaMessages } from './advisor-runtime-messages'
+
 const LOOPBACK_ENDPOINT = 'http://127.0.0.1:11434'
 const PROBE_TIMEOUT_MS = 1500
 const CHAT_TIMEOUT_MS = 120_000
@@ -13,6 +15,7 @@ export type AdvisorRuntimeChatPayload = {
   messages: Array<Record<string, unknown>>
   tools: Array<Record<string, unknown>>
   stream: boolean
+  messageMode?: 'native' | 'flattened'
 }
 export type AdvisorRuntimeChatResult = { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
 type FetchLike = typeof fetch
@@ -47,7 +50,8 @@ function timeoutSignal(parent?: AbortSignal, timeoutMs = CHAT_TIMEOUT_MS): { sig
   if (parent?.aborted) controller.abort()
   else parent?.addEventListener('abort', forward, { once: true })
   return { signal: controller.signal, dispose: () => { clearTimeout(timer); parent?.removeEventListener('abort', forward) } }
-}async function boundedText(response: Response): Promise<string> {
+}
+async function boundedText(response: Response): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) {
     const text = await response.text()
@@ -106,7 +110,7 @@ function parseToolCalls(value: unknown): Array<Record<string, unknown>> {
     }
     const args = call.function.arguments
     if (args !== undefined && typeof args !== 'string' && !isRecord(args)) throw new Error('Local runtime returned malformed tool arguments.')
-    return { function: { name: call.function.name, ...(args !== undefined ? { arguments: args } : {}) } }
+    return { ...(typeof call.id === 'string' && call.id.trim() ? { id: call.id } : {}), function: { name: call.function.name, ...(args !== undefined ? { arguments: args } : {}) } }
   })
 }
 function messageResult(raw: Record<string, unknown>, streamed: boolean): AdvisorRuntimeChatResult {
@@ -221,7 +225,7 @@ async function streamNdjsonResponse(response: Response, onDelta?: (text: string)
   if (validMessages === 0) throw new Error('Local runtime stream contained no valid messages.')
   return { message: { content, tool_calls: toolCalls.slice(0, 16) }, streamed: true }
 }
-const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant'])
+const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant', 'tool'])
 
 function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeChatPayload {
   if (!isRecord(value) || typeof value.model !== 'string' || !validModel(value.model)) throw new Error('Local runtime model is invalid.')
@@ -229,11 +233,18 @@ function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeCha
     throw new Error('Local runtime request exceeded the safety limit.')
   }
   if (typeof value.stream !== 'boolean') throw new Error('Local runtime stream flag is invalid.')
+  if (value.messageMode !== undefined && value.messageMode !== 'native' && value.messageMode !== 'flattened') throw new Error('Local runtime message mode is invalid.')
   for (const message of value.messages) {
     if (!isRecord(message) || typeof message.role !== 'string' || !ADVISOR_MESSAGE_ROLES.has(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
     boundedMessageContent(message.content)
-    if (message.tool_calls !== undefined || message.tool_name !== undefined) throw new Error('Local runtime provider-native tool continuation is not supported.')
+    if (message.toolCalls !== undefined && !Array.isArray(message.toolCalls)) throw new Error('Local runtime toolCalls must be an array.')
+    if (message.tool_calls !== undefined && !Array.isArray(message.tool_calls)) throw new Error('Local runtime tool_calls must be an array.')
+    if (message.role !== 'assistant' && (message.toolCalls !== undefined || message.tool_calls !== undefined)) throw new Error('Local runtime tool calls are only valid on assistant messages.')
+    if (message.role === 'tool') {
+      const id = message.toolCallId ?? message.tool_call_id
+      if (id !== undefined && (typeof id !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(id))) throw new Error('Local runtime tool result call ID is invalid.')
+    } else if (message.toolCallId !== undefined || message.tool_call_id !== undefined || message.tool_name !== undefined) throw new Error('Local runtime tool result metadata is invalid.')
   }
   for (const tool of value.tools) {
     if (!isRecord(tool) || tool.type !== 'function' || !isRecord(tool.function) || typeof tool.function.name !== 'string' || !tool.function.name.trim()) {
@@ -246,10 +257,12 @@ async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)
   try {
     throwIfAborted(timed.signal)
+    const body = { ...payload, messages: ollamaMessages(payload.messages, payload.messageMode ?? 'native') }
+    delete (body as { messageMode?: unknown }).messageMode
     const response = await fetchImpl(LOOPBACK_ENDPOINT + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       redirect: 'error',
       signal: timed.signal,
     })

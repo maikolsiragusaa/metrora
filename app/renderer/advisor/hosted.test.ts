@@ -122,9 +122,11 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(finalPayload.harnessConformance).toBe(true)
     expect(conformanceCalls).toBe(1)
     const finalMessages = finalPayload.messages as Array<Record<string, unknown>>
-    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'user'])
-    expect(finalMessages.some(message => String(message.content).includes('Metrora Tool result'))).toBe(true)
-    expect(finalMessages.some(message => message.role === 'tool')).toBe(false)
+    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'tool'])
+    expect(finalMessages[2]).toMatchObject({ toolCalls: [{ id: 'call-spend', name: 'get_spend_snapshot', arguments: '{}' }] })
+    expect(finalMessages[3]).toMatchObject({ role: 'tool', toolCallId: 'call-spend', toolName: 'get_spend_snapshot' })
+    expect(String(finalMessages[3]?.content)).toContain('measured')
+    expect(finalPayload.messageMode).toBe('native')
     expect(deltas).toEqual([])
     await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')
     expect(answer.runtime).toMatchObject({ id: 'hosted-openai', mode: 'hosted-byok' })
@@ -235,8 +237,9 @@ describe('Hosted Advisor renderer runtime', () => {
       onConformance: () => { conformanceCalls += 1 },
     })
     expect(conformanceCalls).toBe(1)
-    expect(answer.conclusion).toContain('Metrora measured')
-    expect(answer.materialLimits?.join(' ')).toContain('continuation')
+    expect(answer.conclusion).toContain('could not finish')
+    expect(answer.conclusion).not.toContain('offline evidence')
+    expect(answer.materialLimits?.join(' ')).toContain('selected model')
   })
 
   it('does not signal conformance for a malformed first response', async () => {
@@ -257,7 +260,28 @@ describe('Hosted Advisor renderer runtime', () => {
     })
 
     expect(conformanceCalls).toBe(0)
-    expect(answer.conclusion).toContain('Metrora measured')
+    expect(answer.conclusion).toContain('could not finish')
+    expect(answer.conclusion).not.toContain('offline evidence')
+  })
+
+  it('reports a provider failure before the first model step without deterministic prose', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async () => { throw new Error('provider unavailable') },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+
+    const answer = await new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', consent: true, transport }).generate({
+      question: 'Tell me a joke',
+      evidence: buildSpendEvidence('Tell me a joke', fixture.scope, fixture.overview),
+    })
+
+    expect(answer.runtimeFailure).toBe(true)
+    expect(answer.conclusion).toContain('selected model could not finish')
+    expect(answer.conclusion).not.toContain('offline evidence')
+    expect(answer.generatedByModel).toBe(false)
   })
 
   it('does not signal conformance when the first request is cancelled', async () => {

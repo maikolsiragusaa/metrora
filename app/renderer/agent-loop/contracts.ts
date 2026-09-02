@@ -20,6 +20,34 @@ export type MetroraAgentMessage = {
   toolName?: string
 }
 
+/**
+ * Serialize the semantic ledger for an IPC/runtime adapter without choosing a
+ * provider wire format.  In particular, tool calls and results remain
+ * structured and keep their exact IDs until the selected adapter projects
+ * them to OpenAI, Anthropic, Gemini, Ollama, or another protocol.
+ */
+export function serializeMetroraAgentMessages(messages: readonly MetroraAgentMessage[]): Array<Record<string, unknown>> {
+  return messages.map(message => ({
+    role: message.role,
+    content: message.content,
+    ...(message.role === 'assistant' && message.toolCalls?.length
+      ? {
+          toolCalls: message.toolCalls.map(call => ({
+            id: call.id,
+            name: call.name,
+            arguments: JSON.stringify(call.arguments),
+          })),
+        }
+      : {}),
+    ...(message.role === 'tool'
+      ? {
+          ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+          ...(message.toolName ? { toolName: message.toolName } : {}),
+        }
+      : {}),
+  }))
+}
+
 export type MetroraAgentModelStep = {
   kind: 'final-text' | 'tool-calls'
   content: string

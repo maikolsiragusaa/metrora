@@ -124,6 +124,7 @@ function openHarnessContext(): void {
 
 describe('Harness V3 workspace', () => {
   beforeEach(() => {
+    localStorage.clear()
     advisorProbe.mockReset().mockImplementation(async (runtime: 'ollama' | 'lmstudio' = 'ollama'): Promise<AdvisorRuntimeProbe> => runtime === 'lmstudio'
       ? { runtime: 'lmstudio', available: true, models: ['qwen/qwen3-8b'], detail: 'Local LM Studio is reachable.', discoveryState: 'models-discovered', capabilities: [{ schemaVersion: 1, runtime: 'lmstudio', modelId: 'qwen/qwen3-8b', discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', limitation: 'Tool support varies by model.' }] }
       : { runtime: 'ollama', available: false, models: [], detail: 'Ollama is not running.' })
@@ -165,7 +166,8 @@ describe('Harness V3 workspace', () => {
     expect(screen.queryByText(/Facts read-only · actions require confirmation/)).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Harness runtime')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Harness hosted provider')).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Runtime unavailable')).toBeInTheDocument())
+    expect(screen.queryByText(/offline evidence/i)).not.toBeInTheDocument()
     expect(screen.getByText('Ollama')).toBeInTheDocument()
     expect(advisorProbe).toHaveBeenCalledTimes(1)
   })
@@ -247,10 +249,10 @@ describe('Harness V3 workspace', () => {
     expect(screen.getByText('Interpretation is bounded.')).toBeInTheDocument()
     expect(screen.getByText('Next step')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Inspect the evidence' }).length).toBeGreaterThan(0)
-    const evidenceDetails = screen.getByText('Evidence & details').closest('details')
+    const evidenceDetails = screen.getByText('Sources & details').closest('details')
     expect(evidenceDetails).toBeInTheDocument()
     expect(evidenceDetails).not.toHaveAttribute('open')
-    fireEvent.click(screen.getByText('Evidence & details'))
+    fireEvent.click(screen.getByText('Sources & details'))
     expect(evidenceDetails).toHaveAttribute('open')
     expect(screen.getByText('Test evidence.')).toBeInTheDocument()
   })
@@ -319,6 +321,43 @@ describe('Harness V3 workspace', () => {
     await waitFor(() => expect(screen.getByText('Model: Verified')).toBeInTheDocument())
   })
 
+  it('shows the bounded model and Tool lifecycle through the Harness surface', async () => {
+    let releaseModel: (() => void) | undefined
+    let releaseTool: (() => void) | undefined
+    let releaseContinuation: (() => void) | undefined
+    const modelGate = new Promise<void>(resolve => { releaseModel = resolve })
+    const toolGate = new Promise<void>(resolve => { releaseTool = resolve })
+    const continuationGate = new Promise<void>(resolve => { releaseContinuation = resolve })
+    investigate.mockImplementationOnce(async input => {
+      const emit = (type: string, extra: Record<string, unknown> = {}) => input.onAgentEvent?.({ type, turnId: 'turn-1', at: '2026-09-02T10:00:00.000Z', ...extra } as never)
+      emit('turn-started')
+      emit('model-started', { step: 1 })
+      await modelGate
+      emit('tool-queued', { step: 1, tool: 'get_spend_snapshot', callId: 'call-1' })
+      input.onToolEvent?.({ name: 'get_spend_snapshot', status: 'queued' })
+      emit('tool-started', { step: 1, tool: 'get_spend_snapshot', callId: 'call-1' })
+      input.onToolEvent?.({ name: 'get_spend_snapshot', status: 'started' })
+      await toolGate
+      emit('tool-completed', { step: 1, tool: 'get_spend_snapshot', callId: 'call-1' })
+      input.onToolEvent?.({ name: 'get_spend_snapshot', status: 'completed' })
+      await Promise.resolve()
+      await continuationGate
+      emit('model-started', { step: 2 })
+      await Promise.resolve()
+      return answer
+    })
+    render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
+    await submitQuestion('Show the bounded execution lifecycle')
+
+    await waitFor(() => expect(screen.getByText('Thinking…')).toBeInTheDocument())
+    releaseModel?.()
+    await waitFor(() => expect(screen.getByText('Checking usage · Last 7 days…')).toBeInTheDocument())
+    releaseTool?.()
+    await waitFor(() => expect(screen.getByText('Usage checked')).toBeInTheDocument())
+    releaseContinuation?.()
+    await waitFor(() => expect(screen.getByText(answer.conclusion)).toBeInTheDocument())
+  })
+
   it('renders Metrora-owned presentation blocks inside the direct answer hierarchy', async () => {
     investigate.mockResolvedValueOnce({
       ...answer,
@@ -341,7 +380,7 @@ describe('Harness V3 workspace', () => {
 
   it('switches between supported local runtimes and discovers its models factually', async () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
-    await waitFor(() => expect(screen.getByText('Offline evidence fallback')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Runtime unavailable')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.change(screen.getByLabelText('Harness runtime'), { target: { value: 'lmstudio' } })
     await waitFor(() => expect(screen.getByLabelText('Harness local runtime model')).toHaveValue('qwen/qwen3-8b'))
@@ -480,10 +519,10 @@ describe('Harness V3 workspace', () => {
 
     await waitFor(() => expect(screen.getByText('Runtime status unavailable')).toBeInTheDocument())
     expect(screen.getByText('OpenAI', { selector: 'strong' })).toBeInTheDocument()
-    expect(screen.getByText('Credential: Unknown')).toBeInTheDocument()
-    expect(screen.getByText('Reachability: Unknown')).toBeInTheDocument()
-    expect(screen.queryByText('Credential: Ready')).not.toBeInTheDocument()
-    expect(screen.queryByText('Credential: Not configured')).not.toBeInTheDocument()
+    expect(screen.getByText('Account: Unknown')).toBeInTheDocument()
+    expect(screen.getByText('Connection: Unknown')).toBeInTheDocument()
+    expect(screen.queryByText('Account: Ready')).not.toBeInTheDocument()
+    expect(screen.queryByText('Account: Not configured')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Harness hosted model')).not.toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Close runtime' }))
@@ -505,8 +544,8 @@ describe('Harness V3 workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
     fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'anthropic' } })
 
-    await waitFor(() => expect(screen.getByText('Credential: Invalid')).toBeInTheDocument())
-    expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Account: Invalid')).toBeInTheDocument())
+    expect(screen.getByText('Connection: Reachable')).toBeInTheDocument()
     expect(screen.getByText('Model: Unavailable')).toBeInTheDocument()
     expect(screen.getByText('Credential invalid')).toBeInTheDocument()
   })
@@ -523,8 +562,8 @@ describe('Harness V3 workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Configure runtime' }))
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
 
-    await waitFor(() => expect(screen.getByText('Reachability: Unavailable')).toBeInTheDocument())
-    expect(screen.queryByText('Reachability: Unreachable')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Connection: Unavailable')).toBeInTheDocument())
+    expect(screen.queryByText('Connection: Unreachable')).not.toBeInTheDocument()
     expect(screen.getByText('Provider unavailable')).toBeInTheDocument()
   })
 
@@ -541,20 +580,20 @@ describe('Harness V3 workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use hosted provider' }))
 
     await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('openai-model'))
-    expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
-    expect(screen.getByText('Reachability: Reachable')).toBeInTheDocument()
-    expect(screen.getByText('Model: Unverified')).toBeInTheDocument()
-    expect(screen.getByText('Compatibility unverified')).toBeInTheDocument()
+    expect(screen.getByText('Account: Ready')).toBeInTheDocument()
+    expect(screen.getByText('Connection: Reachable')).toBeInTheDocument()
+    expect(screen.getByText('Model: Check pending')).toBeInTheDocument()
+    expect(screen.getByText('Checking model')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close runtime' }).querySelector('.harness-v3-runtime-dot')).toHaveClass('unknown')
   })
 
   it.each([
-    ['discovered', 'Compatibility unverified', 'unknown', 'Discovered'],
-    ['unverified', 'Compatibility unverified', 'unknown', 'Unverified'],
+    ['discovered', 'Checking model', 'unknown', 'Available'],
+    ['unverified', 'Checking model', 'unknown', 'Check pending'],
     ['limited', 'Model limited', 'unknown', 'Limited'],
     ['verified', 'Ready', 'ready', 'Verified'],
-    ['unsupported', 'Model unsupported', 'unavailable', 'Unsupported'],
-    ['failed-conformance', 'Model failed conformance', 'unavailable', 'Failed Conformance'],
+    ['unsupported', 'Model unsupported', 'unavailable', 'Unavailable'],
+    ['failed-conformance', 'Model check failed', 'unavailable', 'Check failed'],
   ] as Array<[AdvisorHostedModelState, string, 'ready' | 'unknown' | 'unavailable', string]>)('keeps hosted %s model compatibility distinct from generic Ready', async (state, expectedAvailability, expectedStatus, expectedModelState) => {
     advisorHostedProbe.mockImplementation(async provider => ({
       provider,
@@ -612,7 +651,7 @@ describe('Harness V3 workspace', () => {
     await waitFor(() => expect(model).toHaveValue('gpt-b'))
     reportConformance?.()
 
-    expect(screen.getByText('Model: Discovered')).toBeInTheDocument()
+    expect(screen.getByText('Model: Available')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close runtime' }).querySelector('.harness-v3-runtime-dot')).toHaveClass('unknown')
   })
 
@@ -676,6 +715,6 @@ describe('Harness V3 workspace', () => {
 
     fireEvent.change(screen.getByLabelText('Harness hosted provider'), { target: { value: 'gemini' } })
     await waitFor(() => expect(screen.getByLabelText('Harness hosted model')).toHaveValue('gemini-a'))
-    expect(screen.getByText('Credential: Ready')).toBeInTheDocument()
+    expect(screen.getByText('Account: Ready')).toBeInTheDocument()
   })
 })

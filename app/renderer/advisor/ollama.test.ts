@@ -374,8 +374,10 @@ describe('Ollama Advisor renderer state machine', () => {
       })
       await vi.advanceTimersByTimeAsync(HARNESS_TOOL_LOOP_LIMITS.turnTimeoutMs)
       const answer = await pending
-      expect(answer.conclusion).toContain('Metrora measured')
-      expect(answer.materialLimits?.join(' ')).toContain('turn deadline')
+      expect(answer.conclusion).toContain('selected model timed out')
+      expect(answer.conclusion).not.toContain('offline evidence')
+      expect(answer.runtimeFailure).toBe(true)
+      expect(answer.materialLimits?.join(' ')).toContain('selected model')
     } finally {
       vi.useRealTimers()
     }

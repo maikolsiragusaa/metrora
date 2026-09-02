@@ -1,7 +1,7 @@
 import { buildClarificationEvidence, buildConversationEvidence } from '../advisor/special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from '../advisor/comprehension'
 import { explicitAdvisorPeriodHints } from '../advisor/planner'
-import { ADVISOR_TOOL_CONTRACT } from '../advisor/contract'
+import { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_OUTPUT_MAX_BYTES } from '../advisor/contract'
 import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from '../advisor/tools'
 import { DeterministicAdvisorRuntime } from '../advisor/runtime'
 import { mergeEvidence } from '../advisor/merge-evidence'
@@ -313,7 +313,10 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
           maxToolRounds: request.limits.maxToolRounds,
           maxParallelToolCalls: 1,
           turnTimeoutMs: request.limits.timeoutMs,
-          maxContentBytes: request.limits.maxOutputBytes,
+          // A worker's published answer limit is separate from the canonical
+          // Tool-result limit. The loop must be able to replay one bounded
+          // Tool result without treating it as an oversized final answer.
+          maxContentBytes: Math.max(request.limits.maxOutputBytes, ADVISOR_TOOL_OUTPUT_MAX_BYTES),
           maxLedgerMessages: 32,
         },
         workerContext: workerContext(request),

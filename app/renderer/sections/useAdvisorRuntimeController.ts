@@ -12,15 +12,23 @@ import {
 } from '../harness/HarnessRuntimePopover'
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
+import { loadHarnessRuntimeProfile, runtimeReasoningKey, saveHarnessRuntimeProfile, hostedConsentKey, type HarnessRuntimeProfile } from '../advisor/runtime-profile'
 
 const DEFAULT_REASONING_EFFORTS: readonly AdvisorReasoningEffort[] = ['default']
 const REASONING_EFFORT_STORAGE_KEY = 'metrora.harness.reasoning-effort'
 
-function storedReasoningEffort(): AdvisorReasoningEffort {
+function storedReasoningEffort(profile: HarnessRuntimeProfile, key: string): AdvisorReasoningEffort {
+  const scoped = profile.reasoningEfforts[key]
+  if (scoped === 'low' || scoped === 'medium' || scoped === 'high' || scoped === 'max' || scoped === 'default') return scoped
   try {
     const value = window.localStorage.getItem(REASONING_EFFORT_STORAGE_KEY)
     return value === 'low' || value === 'medium' || value === 'high' || value === 'max' || value === 'default' ? value : 'default'
   } catch { return 'default' }
+}
+
+function storedScopedReasoningEffort(profile: HarnessRuntimeProfile, key: string): AdvisorReasoningEffort {
+  const scoped = profile.reasoningEfforts[key]
+  return scoped === 'low' || scoped === 'medium' || scoped === 'high' || scoped === 'max' || scoped === 'default' ? scoped : 'default'
 }
 
 type UseAdvisorRuntimeControllerOptions = {
@@ -29,16 +37,25 @@ type UseAdvisorRuntimeControllerOptions = {
 }
 
 export function useAdvisorRuntimeController({ invalidateAdvisorRequest, setNotice }: UseAdvisorRuntimeControllerOptions) {
+  const initialProfile = useMemo(() => loadHarnessRuntimeProfile(), [])
   const fallbackRuntime = useMemo(() => createAdvisorRuntime(), [])
-  const [runtimeChoice, setRuntimeChoice] = useState<HarnessRuntimeChoice>('ollama')
-  const [hostedProvider, setHostedProvider] = useState<AdvisorHostedProviderId>('openai')
+  const [runtimeChoice, setRuntimeChoice] = useState<HarnessRuntimeChoice>(initialProfile.runtimeChoice)
+  const [hostedProvider, setHostedProvider] = useState<AdvisorHostedProviderId>(initialProfile.hostedProvider)
   const hostedOperationGuardRef = useRef(new AdvisorHostedOperationGuard(hostedProvider))
-  const [hostedModel, setHostedModel] = useState<string | null>(null)
+  const initialHostedModel = initialProfile.hostedModels[initialProfile.hostedProvider] ?? null
+  const [hostedModel, setHostedModel] = useState<string | null>(initialHostedModel)
   const hostedModelRef = useRef<string | null>(null)
   hostedModelRef.current = hostedModel
-  const [hostedConsent, setHostedConsent] = useState(false)
-  const [reasoningEffort, setReasoningEffort] = useState<AdvisorReasoningEffort>(storedReasoningEffort)
-  const [hostedProbe, setHostedProbe] = useState<HarnessHostedProbePresentation>(() => createHostedProbeChecking('openai'))
+  const [hostedConsent, setHostedConsent] = useState(() => initialHostedModel ? initialProfile.hostedConsent[hostedConsentKey(initialProfile.hostedProvider, initialHostedModel)] === true : false)
+  const initialReasoningKey = runtimeReasoningKey(
+    initialProfile.runtimeChoice,
+    initialProfile.hostedProvider,
+    initialHostedModel,
+    initialProfile.localRuntime,
+    initialProfile.localModels[initialProfile.localRuntime] ?? null,
+  )
+  const [reasoningEffort, setReasoningEffort] = useState<AdvisorReasoningEffort>(() => storedReasoningEffort(initialProfile, initialReasoningKey))
+  const [hostedProbe, setHostedProbe] = useState<HarnessHostedProbePresentation>(() => createHostedProbeChecking(initialProfile.hostedProvider))
   const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
   const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, reasoningEffort, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider, reasoningEffort])
   const markHostedModelVerified = useCallback((provider: AdvisorHostedProviderId, model: string) => {
@@ -61,6 +78,41 @@ export function useAdvisorRuntimeController({ invalidateAdvisorRequest, setNotic
     : localRuntime ?? fallbackRuntime
   const reasoningEfforts = activeRuntime.reasoningEfforts ?? DEFAULT_REASONING_EFFORTS
   const effectiveReasoningEffort = reasoningEfforts.includes(reasoningEffort) ? reasoningEffort : 'default'
+  const selectedReasoningKey = runtimeReasoningKey(runtimeChoice, hostedProvider, hostedModel, runtimeId, runtimeModel)
+  const reasoningKeyRef = useRef(selectedReasoningKey)
+  const reasoningKeyChangingRef = useRef(false)
+  useEffect(() => {
+    if (reasoningKeyRef.current === selectedReasoningKey) return
+    reasoningKeyChangingRef.current = true
+    reasoningKeyRef.current = selectedReasoningKey
+    setReasoningEffort(storedScopedReasoningEffort(loadHarnessRuntimeProfile(), selectedReasoningKey))
+  }, [selectedReasoningKey])
+  useEffect(() => {
+    if (reasoningKeyChangingRef.current) {
+      reasoningKeyChangingRef.current = false
+      return
+    }
+    const current = loadHarnessRuntimeProfile()
+    const hostedModels = hostedModel
+      ? { ...current.hostedModels, [hostedProvider]: hostedModel }
+      : current.hostedModels
+    const localModels = runtimeModel
+      ? { ...current.localModels, [runtimeId]: runtimeModel }
+      : current.localModels
+    saveHarnessRuntimeProfile({
+      ...current,
+      runtimeChoice,
+      localRuntime: runtimeId,
+      hostedProvider,
+      hostedModels,
+      localModels,
+      llamaServerPort,
+      reasoningEfforts: { ...current.reasoningEfforts, [selectedReasoningKey]: effectiveReasoningEffort },
+      hostedConsent: hostedModel
+        ? { ...current.hostedConsent, [hostedConsentKey(hostedProvider, hostedModel)]: hostedConsent }
+        : current.hostedConsent,
+    })
+  }, [effectiveReasoningEffort, hostedConsent, hostedModel, hostedProvider, llamaServerPort, runtimeChoice, runtimeId, runtimeModel, selectedReasoningKey])
   useEffect(() => {
     try { window.localStorage.setItem(REASONING_EFFORT_STORAGE_KEY, reasoningEffort) } catch { /* unavailable in restricted contexts */ }
   }, [reasoningEffort])
@@ -81,10 +133,17 @@ export function useAdvisorRuntimeController({ invalidateAdvisorRequest, setNotic
       setHostedProbe(presentHostedProbe(result))
       const selectable = result.models.find(isSelectableHostedModel)
       if (result.available && selectable) {
+        const savedProfile = loadHarnessRuntimeProfile()
+        const savedModel = savedProfile.hostedModels[requestedProvider] ?? null
         const currentModel = resetSelection ? null : hostedModelRef.current
-        const next = currentModel && result.models.some(model => model.id === currentModel && isSelectableHostedModel(model)) ? currentModel : selectable.id
+        const next = currentModel && result.models.some(model => model.id === currentModel && isSelectableHostedModel(model))
+          ? currentModel
+          : savedModel && result.models.some(model => model.id === savedModel && isSelectableHostedModel(model))
+            ? savedModel
+            : selectable.id
         setHostedModel(next)
-        if (next !== currentModel) setHostedConsent(false)
+        setHostedConsent(savedProfile.hostedConsent[hostedConsentKey(requestedProvider, next)] === true)
+        setReasoningEffort(storedScopedReasoningEffort(savedProfile, runtimeReasoningKey('hosted', requestedProvider, next, runtimeId, runtimeModel)))
       } else {
         setHostedModel(null)
         setHostedConsent(false)
@@ -120,7 +179,9 @@ export function useAdvisorRuntimeController({ invalidateAdvisorRequest, setNotic
   const activateHosted = () => {
     invalidateAdvisorRequest()
     setRuntimeChoice('hosted')
-    setHostedConsent(false)
+    const profile = loadHarnessRuntimeProfile()
+    setHostedConsent(hostedModel ? profile.hostedConsent[hostedConsentKey(hostedProvider, hostedModel)] === true : false)
+    setReasoningEffort(storedScopedReasoningEffort(profile, runtimeReasoningKey('hosted', hostedProvider, hostedModel, runtimeId, runtimeModel)))
     void checkHostedRuntime()
   }
   const activateLocal = () => {
@@ -138,30 +199,40 @@ export function useAdvisorRuntimeController({ invalidateAdvisorRequest, setNotic
     setReasoningEffort(effort)
   }
   const updateHostedProvider = (next: AdvisorHostedProviderId) => {
+    const profile = loadHarnessRuntimeProfile()
+    const savedModel = profile.hostedModels[next] ?? null
     invalidateAdvisorRequest()
     hostedOperationGuardRef.current.setProvider(next)
     hostedProbeController.current?.abort()
     setHostedProvider(next)
     setHostedModel(null)
-    setHostedConsent(false)
+    setHostedConsent(savedModel ? profile.hostedConsent[hostedConsentKey(next, savedModel)] === true : false)
+    setReasoningEffort(storedScopedReasoningEffort(profile, runtimeReasoningKey('hosted', next, savedModel, runtimeId, runtimeModel)))
     setCredentialSaving(false)
     void checkHostedRuntime(next, true)
   }
   const updateHostedModel = (model: string) => {
+    const profile = loadHarnessRuntimeProfile()
     invalidateAdvisorRequest()
     setHostedModel(model)
-    setHostedConsent(false)
+    setHostedConsent(profile.hostedConsent[hostedConsentKey(hostedProvider, model)] === true)
+    setReasoningEffort(storedScopedReasoningEffort(profile, runtimeReasoningKey('hosted', hostedProvider, model, runtimeId, runtimeModel)))
   }
   const updateLocalRuntime = (next: AdvisorLocalRuntimeId) => {
+    const profile = loadHarnessRuntimeProfile()
+    const savedModel = profile.localModels[next] ?? null
     invalidateAdvisorRequest()
     setRuntimeId(next)
     setRuntimeModel(null)
     setHostedConsent(false)
+    setReasoningEffort(storedScopedReasoningEffort(profile, runtimeReasoningKey(next, hostedProvider, hostedModel, next, savedModel)))
     void checkLocalRuntime(next)
   }
   const updateLocalModel = (model: string) => {
+    const profile = loadHarnessRuntimeProfile()
     invalidateAdvisorRequest()
     setLocalModel(model)
+    setReasoningEffort(storedScopedReasoningEffort(profile, runtimeReasoningKey(runtimeChoice, hostedProvider, hostedModel, runtimeId, model)))
   }
   const saveHostedCredential = async () => {
     if (!credentialEntry.trim() || credentialSaving) return

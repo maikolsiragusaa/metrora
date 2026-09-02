@@ -190,11 +190,15 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           onDelta,
         }, signal)
         if (!advisorQuestionRequiresCanonicalReads(plan)) return answer
+        // A selected model failure is a runtime failure, not permission to
+        // silently switch the user into a deterministic evidence-only mode.
+        // The loop already retains any reads completed before the failure.
+        if (answer.runtimeFailure) return answer
         if (!hasUsableEvidence(modelEvidenceItems)) {
           const fallback = await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
           return {
             ...fallback,
-            materialLimits: [...(fallback.materialLimits ?? []), 'The model did not obtain usable canonical evidence, so the verified Metrora result is shown.'],
+            materialLimits: [...(fallback.materialLimits ?? []), 'No usable Metrora facts were returned for this turn; try again or adjust the selected scope.'],
           }
         }
         const authoritative = mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
@@ -204,12 +208,24 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
         const fallbackBase = plan.intent === 'action-proposal'
           ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
           : null
+        const recoveredEvidence = modelEvidenceItems.length && hasUsableEvidence(modelEvidenceItems)
+          ? mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
+          : null
         const fallback = fallbackBase
           ? await new DeterministicAdvisorRuntime().generate({ question, evidence: attachPlan(fallbackBase, plan), conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard, allowedPeriods }, signal)
-          : await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
+          : recoveredEvidence
+            ? await new DeterministicAdvisorRuntime().generate({ question, evidence: attachPlan(recoveredEvidence, plan), conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard, allowedPeriods }, signal)
+            : await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
+        const hasRecoveredFacts = Boolean(recoveredEvidence?.refs.length || fallback.evidence.length)
         return {
           ...fallback,
-          materialLimits: [...(fallback.materialLimits ?? []), 'The explanatory model was unavailable, so this answer uses Metrora deterministic evidence.'],
+          conclusion: hasRecoveredFacts
+            ? 'The selected model could not finish this answer. Retrieved Metrora facts remain available in Sources and Details.'
+            : 'The selected model could not finish this answer. Try again or choose another runtime.',
+          presentation: undefined,
+          generatedByModel: false,
+          runtimeFailure: true,
+          materialLimits: [...(fallback.materialLimits ?? []), 'The selected model or runtime failed before the conversational answer was ready.'],
         }
       }
     },

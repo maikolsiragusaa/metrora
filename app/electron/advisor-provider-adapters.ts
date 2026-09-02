@@ -1,5 +1,6 @@
 import type {
   AdvisorHostedChatRequest,
+  AdvisorHostedChatMessage,
   AdvisorHostedProtocol,
   AdvisorHostedProviderId,
   AdvisorHostedReasoningParameter,
@@ -56,17 +57,123 @@ function reasoningBody(request: AdvisorHostedChatRequest, parameter?: AdvisorHos
   if (!parameter || !effort || effort === 'default') return {}
   return parameter === 'openai-effort' ? { reasoning_effort: effort } : { reasoning: { effort } }
 }
+
+function parsedToolArguments(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return isRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function flattenedMessages(messages: readonly AdvisorHostedChatMessage[]): Array<Record<string, unknown>> {
+  return messages.map(message => {
+    if (message.role === 'tool') {
+      return { role: 'user', content: 'Metrora Tool result' + (message.toolName ? ' (' + message.toolName + ')' : '') + ': ' + message.content }
+    }
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      const requestText = message.toolCalls.map(call => call.name + ' ' + call.arguments).join('; ')
+      return { role: 'assistant', content: [message.content, 'Metrora read request: ' + requestText].filter(Boolean).join('\n') }
+    }
+    return { role: message.role, content: message.content }
+  })
+}
+
+/** OpenAI Responses input items retain function_call/function_call_output IDs. */
+function openAiResponsesMessages(messages: readonly AdvisorHostedChatMessage[]): Array<Record<string, unknown>> {
+  const input: Array<Record<string, unknown>> = []
+  for (const message of messages) {
+    if (message.role === 'system') continue
+    if (message.role === 'tool') {
+      input.push({ type: 'function_call_output', call_id: message.toolCallId, output: message.content })
+      continue
+    }
+    if (message.role === 'user') {
+      input.push({ role: 'user', content: message.content })
+      continue
+    }
+    const assistant = message as Extract<AdvisorHostedChatMessage, { role: 'assistant' }>
+    if (assistant.content) input.push({ role: 'assistant', content: assistant.content })
+    for (const call of assistant.toolCalls ?? []) {
+      input.push({ type: 'function_call', call_id: call.id, name: call.name, arguments: call.arguments })
+    }
+  }
+  return input
+}
+
+/** OpenAI Chat Completions messages retain assistant tool_calls and tool IDs. */
+function openAiChatMessages(messages: readonly AdvisorHostedChatMessage[]): Array<Record<string, unknown>> {
+  return messages.map(message => {
+    if (message.role === 'tool') return { role: 'tool', content: message.content, tool_call_id: message.toolCallId, ...(message.toolName ? { name: message.toolName } : {}) }
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      return {
+        role: 'assistant',
+        content: message.content,
+        tool_calls: message.toolCalls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } })),
+      }
+    }
+    return { role: message.role, content: message.content }
+  })
+}
+
+/** Anthropic requires tool results as user content blocks and preserves tool_use IDs. */
+function anthropicMessages(messages: readonly AdvisorHostedChatMessage[]): Array<Record<string, unknown>> {
+  const output: Array<Record<string, unknown>> = []
+  for (const message of messages) {
+    if (message.role === 'tool') {
+      const block = { type: 'tool_result', tool_use_id: message.toolCallId, content: message.content }
+      const previous = output.at(-1)
+      if (previous?.role === 'user' && Array.isArray(previous.content)) previous.content.push(block)
+      else output.push({ role: 'user', content: [block] })
+      continue
+    }
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      const content: Array<Record<string, unknown>> = []
+      if (message.content) content.push({ type: 'text', text: message.content })
+      for (const call of message.toolCalls) content.push({ type: 'tool_use', id: call.id, name: call.name, input: parsedToolArguments(call.arguments) })
+      output.push({ role: 'assistant', content })
+      continue
+    }
+    output.push({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })
+  }
+  return output
+}
+
+/** Gemini functionCall/functionResponse parts retain the call association. */
+function geminiMessages(messages: readonly AdvisorHostedChatMessage[]): Array<Record<string, unknown>> {
+  const output: Array<Record<string, unknown>> = []
+  for (const message of messages) {
+    if (message.role === 'tool') {
+      const part = { functionResponse: { name: message.toolName ?? 'metrora_tool', response: parsedToolArguments(message.content), id: message.toolCallId } }
+      const previous = output.at(-1)
+      if (previous?.role === 'user' && Array.isArray(previous.parts)) previous.parts.push(part)
+      else output.push({ role: 'user', parts: [part] })
+      continue
+    }
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      const parts: Array<Record<string, unknown>> = []
+      if (message.content) parts.push({ text: message.content })
+      for (const call of message.toolCalls) parts.push({ functionCall: { name: call.name, args: parsedToolArguments(call.arguments), id: call.id } })
+      output.push({ role: 'model', parts })
+      continue
+    }
+    output.push({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })
+  }
+  return output
+}
+
+function providerMessages(request: AdvisorHostedChatRequest, native: (messages: readonly AdvisorHostedChatMessage[]) => Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return request.messageMode === 'flattened' ? flattenedMessages(request.messages) : native(request.messages)
+}
+
 function openAiBody(request: AdvisorHostedChatRequest, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const input: Array<Record<string, unknown>> = []
-  for (const message of request.messages) {
-    if (message.role === 'system') continue
-    input.push({ role: message.role, content: message.content })
-  }
+  const input = providerMessages({ ...request, messages: request.messages.filter(message => message.role !== 'system') }, openAiResponsesMessages)
   return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), ...reasoningBody(request, reasoningParameter), stream: request.stream === true, store: false }
 }
 function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
-  const messages = request.messages.map(message => ({ role: message.role, content: message.content }))
+  const messages = providerMessages(request, openAiChatMessages)
   return {
     model: request.model,
     messages,
@@ -78,12 +185,12 @@ function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean
 }
 function anthropicBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const messages = request.messages.filter(message => message.role !== 'system').map(message => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content }))
+  const messages = providerMessages({ ...request, messages: request.messages.filter(message => message.role !== 'system') }, anthropicMessages)
   return { model: request.model, max_tokens: 2048, ...(system ? { system } : {}), messages, ...(request.tools?.length ? { tools: anthropicTools(request.tools) } : {}), stream: request.stream === true }
 }
 function geminiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
-  const contents = request.messages.filter(message => message.role !== 'system').map(message => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }))
+  const contents = providerMessages({ ...request, messages: request.messages.filter(message => message.role !== 'system') }, geminiMessages)
   return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(request.tools?.length ? { tools: geminiTools(request.tools) } : {}) }
 }
 
@@ -274,13 +381,20 @@ function parseAnthropicStream(payload: Record<string, unknown>, state: StreamSta
 }
 function parseGeminiStream(payload: Record<string, unknown>, state: StreamState, provider: AdvisorHostedProviderId, requestId: string, model: string, emit: EventEmitter): void {
   if (Array.isArray(payload.candidates) && payload.candidates.some(candidate => isRecord(candidate) && typeof candidate.finishReason === 'string' && candidate.finishReason.trim())) state.terminal = true
-  const parsed = parseGeminiJson(payload, provider, requestId, model, emit)
-  state.content += parsed.content
-  if (byteLength(state.content) > MAX_TEXT_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
-  state.usage = mergeUsage(state.usage, parsed.usage)
-  for (const call of parsed.calls) {
-    if (!state.calls.some(existing => existing.id === call.id && existing.name === call.name)) appendToolCall(state, call)
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : []
+  for (const candidate of candidates) {
+    if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) continue
+    for (const part of candidate.content.parts) {
+      if (!isRecord(part)) continue
+      if (typeof part.text === 'string') appendText(state, requestId, provider, model, part.text, emit)
+      if (!isRecord(part.functionCall)) continue
+      const call = normalizeToolCall(part.functionCall.id, part.functionCall.name, part.functionCall.args, provider + '-tool-' + state.calls.length)
+      if (state.calls.some(existing => existing.id === call.id && existing.name === call.name)) continue
+      appendToolCall(state, call)
+      emitToolCall(call, requestId, provider, model, emit)
+    }
   }
+  state.usage = mergeUsage(state.usage, usageFromGemini(payload.usageMetadata))
 }
 
 function startChatTool(state: StreamState, requestId: string, provider: AdvisorHostedProviderId, model: string, key: string, id: string, name: string, emit: EventEmitter): void {

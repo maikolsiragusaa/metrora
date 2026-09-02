@@ -12,6 +12,7 @@ import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './up
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { AdvisorCredentialStore } from './advisor-credentials'
 import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
+import { createFileAdvisorConformanceStore } from './advisor-conformance-store'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
 
 export { createApplicationMenuTemplate } from './menu'
@@ -181,6 +182,7 @@ function registerHandlers(): void {
     credentialStatus: provider => advisorCredentials.status(provider),
     readCredential: provider => advisorCredentials.readSecret(provider),
     emitEvent: broadcastAdvisorHostedEvent,
+    conformanceStore: createFileAdvisorConformanceStore(path.join(app.getPath('userData'), 'harness-conformance.json')),
   })
   const harnessActHandlers = createHarnessActHandlers({
     isPackaged: app.isPackaged,

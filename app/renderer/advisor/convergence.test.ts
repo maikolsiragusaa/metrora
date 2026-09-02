@@ -93,6 +93,16 @@ describe('Advisor mainstream convergence contracts', () => {
     expect(block).toMatchObject({ kind: 'line-chart', series: [{ points: [{ value: 3 }] }] })
   })
 
+  it('keeps a plain factual conversation compact without automatic analytics cards', () => {
+    const fixture = createAdvisorConformanceFixture()
+    const question = 'How much did I spend?'
+    const evidence = buildSpendEvidence(question, fixture.scope, fixture.overview)
+    const plan = resolveAdvisorQuestion(question, scope).plan
+    const blocks = buildAdvisorPresentationBlocks(evidence, plan, question)
+    expect(blocks.some(block => block.kind === 'metric-cards')).toBe(false)
+    expect(blocks.some(block => block.kind === 'line-chart' || block.kind === 'bar-chart' || block.kind === 'comparison-table')).toBe(false)
+  })
+
   it('keeps missing Project cost unavailable instead of rendering a synthetic zero', () => {
     const fixture = createAdvisorConformanceFixture()
     const base = buildSpendEvidence('Compare Projects', fixture.scope, fixture.overview)

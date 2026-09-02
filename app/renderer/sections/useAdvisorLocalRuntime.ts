@@ -5,6 +5,7 @@ import { OllamaAdvisorRuntime, probeOllama } from '../advisor/ollama'
 import { LLAMA_SERVER_DEFAULT_PORT, LlamaServerAdvisorRuntime, probeLlamaServer, validLlamaServerPort } from '../advisor/llama-server'
 import type { AdvisorLocalRuntimeId } from '../advisor/types'
 import type { HarnessRuntimeState } from '../harness/HarnessRuntimePopover'
+import { loadHarnessRuntimeProfile } from '../advisor/runtime-profile'
 
 type LocalRuntimeInstance = OllamaAdvisorRuntime | LMStudioAdvisorRuntime | LlamaServerAdvisorRuntime
 
@@ -14,10 +15,10 @@ function runtimeName(runtime: AdvisorLocalRuntimeId): string {
   return 'Ollama'
 }
 
-function createLocalRuntime(runtime: AdvisorLocalRuntimeId, model: string, llamaServerPort: number): LocalRuntimeInstance {
-  if (runtime === 'lmstudio') return new LMStudioAdvisorRuntime({ model, availability: 'ready' })
-  if (runtime === 'llama-server') return new LlamaServerAdvisorRuntime({ model, port: llamaServerPort, availability: 'ready' })
-  return new OllamaAdvisorRuntime({ model, availability: 'ready' })
+function createLocalRuntime(runtime: AdvisorLocalRuntimeId, model: string, llamaServerPort: number, nativeToolCalls = false): LocalRuntimeInstance {
+  if (runtime === 'lmstudio') return new LMStudioAdvisorRuntime({ model, availability: 'ready', nativeToolCalls })
+  if (runtime === 'llama-server') return new LlamaServerAdvisorRuntime({ model, port: llamaServerPort, availability: 'ready', nativeToolCalls })
+  return new OllamaAdvisorRuntime({ model, availability: 'ready', nativeToolCalls })
 }
 
 export function isAdvisorCancelled(error: unknown): boolean {
@@ -41,15 +42,19 @@ export function useAdvisorLocalRuntime(): {
   setLocalModel: (model: string) => void
   setLlamaServerPort: (value: number) => void
 } {
-  const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>('ollama')
-  const [runtimeModel, setRuntimeModel] = useState<string | null>(null)
-  const [llamaServerPort, setLlamaServerPortState] = useState<number>(() => {
-    try {
-      const stored = Number(window.localStorage.getItem('metrora.llama-server.port'))
-      return validLlamaServerPort(stored) ? stored : LLAMA_SERVER_DEFAULT_PORT
-    } catch { return LLAMA_SERVER_DEFAULT_PORT }
+  const [runtimeId, setRuntimeId] = useState<AdvisorLocalRuntimeId>(() => loadHarnessRuntimeProfile().localRuntime)
+  const [runtimeModel, setRuntimeModel] = useState<string | null>(() => {
+    const profile = loadHarnessRuntimeProfile()
+    return profile.localModels[profile.localRuntime] ?? null
   })
-  const [runtimeState, setRuntimeState] = useState<HarnessRuntimeState>({ runtime: 'ollama', status: 'checking', detail: 'Checking for a local Ollama model…', models: [], modelLabels: {}, modelState: 'unavailable', toolCall: 'unknown' })
+  const [llamaServerPort, setLlamaServerPortState] = useState<number>(() => {
+    const stored = loadHarnessRuntimeProfile().llamaServerPort
+    return validLlamaServerPort(stored) ? stored : LLAMA_SERVER_DEFAULT_PORT
+  })
+  const [runtimeState, setRuntimeState] = useState<HarnessRuntimeState>(() => {
+    const initialRuntime = loadHarnessRuntimeProfile().localRuntime
+    return { runtime: initialRuntime, status: 'checking', detail: 'Checking for a local ' + runtimeName(initialRuntime) + ' model…', models: [], modelLabels: {}, modelState: 'unavailable', toolCall: 'unknown' }
+  })
   const [localRuntime, setLocalRuntime] = useState<LocalRuntimeInstance | null>(null)
   const probeController = useRef<AbortController | null>(null)
 
@@ -66,11 +71,17 @@ export function useAdvisorLocalRuntime(): {
           : await probeOllama(controller.signal)
       if (controller.signal.aborted) return
       if (result.available && result.models[0]) {
-        const selected = runtimeModel && result.models.includes(runtimeModel) ? runtimeModel : result.models[0]
-        setRuntimeModel(selected)
-        setLocalRuntime(createLocalRuntime(requestedRuntime, selected, llamaServerPort))
+        const storedModel = loadHarnessRuntimeProfile().localModels[requestedRuntime]
+        const currentModel = requestedRuntime === runtimeId ? runtimeModel : null
+        const selected = currentModel && result.models.includes(currentModel)
+          ? currentModel
+          : storedModel && result.models.includes(storedModel)
+            ? storedModel
+            : result.models[0]
         const capabilityProfiles = (result as { capabilities?: Array<{ modelId: string; toolCall: HarnessRuntimeState['toolCall'] }> }).capabilities ?? []
         const capability = capabilityProfiles.find(profile => profile.modelId === selected)
+        setRuntimeModel(selected)
+        setLocalRuntime(createLocalRuntime(requestedRuntime, selected, llamaServerPort, capability?.toolCall === 'supported'))
         setRuntimeState({ runtime: requestedRuntime, status: 'ready', detail: result.detail, models: result.models, modelLabels: result.modelLabels ?? {}, modelState: 'discovered', toolCall: capability?.toolCall ?? 'unknown' })
       } else {
         setRuntimeModel(null)
@@ -89,7 +100,10 @@ export function useAdvisorLocalRuntime(): {
 
   const setLocalModel = useCallback((model: string) => {
     setRuntimeModel(model)
-    setLocalRuntime(createLocalRuntime(runtimeId, model, llamaServerPort))
+    // Manual model selection is not evidence that this model supports native
+    // Tool calls. Keep the safe structured fallback until discovery/conformance
+    // provides an exact positive capability.
+    setLocalRuntime(createLocalRuntime(runtimeId, model, llamaServerPort, false))
   }, [llamaServerPort, runtimeId])
 
   const setLlamaServerPort = useCallback((value: number) => {
@@ -111,7 +125,6 @@ export function useAdvisorLocalRuntime(): {
         toolCall: 'unknown',
       }))
     }
-    try { window.localStorage.setItem('metrora.llama-server.port', String(value)) } catch { /* unavailable in restricted contexts */ }
   }, [runtimeId])
 
   return { runtimeId, setRuntimeId, runtimeModel, setRuntimeModel, runtimeState, llamaServerPort, localRuntime, checkLocalRuntime, setLocalModel, setLlamaServerPort }

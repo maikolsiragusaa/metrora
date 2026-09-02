@@ -29,7 +29,7 @@ export type MetroraProvenanceResult = {
 }
 
 type NumberSource = 'canonical' | 'user' | 'derived'
-type AuthorizedNumber = { value: number; source: NumberSource; unit: string | null }
+type AuthorizedNumber = { value: number; source: NumberSource; unit: string | null; derivedFrom?: readonly NumberSource[] }
 
 function numberKey(value: number): string {
   return Number(value.toFixed(6)).toString()
@@ -98,7 +98,9 @@ function authorizedNumbers(question: string, evidenceItems: readonly AdvisorEvid
       if (left.value === right.value || left.unit && right.unit && left.unit !== right.unit) continue
       const difference = Math.abs(left.value - right.value)
       const unit = left.unit ?? right.unit
-      if (Number.isFinite(difference) && difference <= 1_000_000_000_000) values.push({ value: difference, source: 'derived', unit })
+      if (Number.isFinite(difference) && difference <= 1_000_000_000_000) {
+        values.push({ value: difference, source: 'derived', unit, derivedFrom: [...new Set([left.source, right.source])] })
+      }
     }
   }
   return values
@@ -156,7 +158,15 @@ function subjectClaim(value: string, known: readonly string[]): boolean {
 }
 
 function interpretationClaim(value: string): boolean {
-  return /\b(?:i\s+(?:consider|regard|think)|i['’]?d\s+(?:inspect|review|look)|i\s+would|we\s+should|recommend|suggest|meaningful|significant|material|worth\s+(?:checking|inspecting|investigating)|observed\s+pattern|closer\s+look|pattern\s+deserves|值得|significativ\w*|importante|rilevante|vale\s+la\s+pena|controllerei|ispezionerei|consiglio)\b/iu.test(value)
+  return /\b(?:i\s+(?:consider|regard|think)|i['’]?d\s+(?:inspect|review|look)|i\s+would|we\s+should|recommend|suggest|meaningful|significant|material|worth\s+(?:checking|inspecting|investigating)|observed\s+pattern|closer\s+look|pattern\s+deserves|worthy\s+of|值得|significativ\w*|importante|rilevante|vale\s+la\s+pena|controllerei|ispezionerei|consiglio)\b/iu.test(value)
+}
+
+function evidenceReference(value: string): boolean {
+  // A short anaphoric judgement such as “that is a small amount” is an
+  // interpretation of the immediately preceding verified clause, not a new
+  // Metrora fact. Keep this deliberately small; factual claims still require
+  // an authorized number, subject, or evidence anchor.
+  return /\b(?:this|that|it|these|those|the\s+(?:amount|figure|total|spend|cost|result|measurement|change|pattern)|quest[oa]|quest[ei]|il\s+(?:totale|risultato|valore)|la\s+(?:cifra|spesa|misurazione)|e['’]\s+una|sono\s+)\b/iu.test(value)
 }
 
 function topicAnchor(value: string, words: Set<string> = new Set()): boolean {
@@ -180,13 +190,15 @@ function classifyClause(clause: string, _question: string, evidenceItems: readon
   if (subjectClaim(clause, subjects)) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'unsupported_subject_claim' }
   if (rankClaim(clause) && !subjects.some(subject => clause.toLocaleLowerCase().includes(subject.toLocaleLowerCase()))) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'unsupported_rank_claim' }
   const supportedNumber = values.some(value => auth.some(item => (item.source === 'canonical' || item.source === 'derived') && numberKey(item.value) === numberKey(value)))
-  const hasEvidence = values.length > 0 || topicAnchor(clause, words) || (interpretationClaim(clause) && evidenceItems.some(item => item.refs.length > 0))
-  if (!hasEvidence || (!topicAnchor(clause) && !interpretationClaim(clause) && !supportedNumber && !thresholdContext(clause))) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'ungrounded_narrative' }
+  const hasEvidence = values.length > 0 || topicAnchor(clause, words) || ((interpretationClaim(clause) || evidenceReference(clause)) && evidenceItems.some(item => item.refs.length > 0))
+  if (!hasEvidence || (!topicAnchor(clause) && !interpretationClaim(clause) && !evidenceReference(clause) && !supportedNumber && !thresholdContext(clause))) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'ungrounded_narrative' }
   const kinds: MetroraClaimProvenance[] = []
   if (values.some(value => auth.some(item => item.source === 'canonical' && numberKey(item.value) === numberKey(value)))) kinds.push('canonical-metrora-fact')
   if (values.some(value => auth.some(item => item.source === 'user' && numberKey(item.value) === numberKey(value)))) kinds.push('user-provided-fact')
+  const derivedFromUser = values.some(value => auth.some(item => item.source === 'derived' && item.derivedFrom?.includes('user') && numberKey(item.value) === numberKey(value)))
+  if (derivedFromUser) kinds.push('user-provided-fact')
   if (values.some(value => auth.some(item => item.source === 'derived' && numberKey(item.value) === numberKey(value)))) kinds.push('deterministic-derivation')
-  if (interpretationClaim(clause) || !values.length) kinds.push('model-interpretation')
+  if (interpretationClaim(clause) || evidenceReference(clause) || !values.length) kinds.push('model-interpretation')
   return { accepted: true, kinds }
 }
 

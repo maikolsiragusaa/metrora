@@ -71,7 +71,7 @@ function hostedTransport(provider: 'openai' | 'anthropic' | 'gemini', payloads: 
   }
 }
 
-function expectContinuationPayloads(payloads: Array<Record<string, unknown>>, openAiWire = false): void {
+function expectContinuationPayloads(payloads: Array<Record<string, unknown>>): void {
   expect(payloads.length).toBeGreaterThanOrEqual(2)
   expect(payloads[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
   expect(payloads[1]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
@@ -79,16 +79,16 @@ function expectContinuationPayloads(payloads: Array<Record<string, unknown>>, op
   const continuationMessages = payloads[1]?.messages as Array<Record<string, unknown>>
   expect(planningMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(false)
   expect(continuationMessages.some(message => String(message.content).includes('bounded'))).toBe(true)
-  if (openAiWire) {
-    expect(continuationMessages.some(message => message.role === 'tool')).toBe(true)
-    expect(continuationMessages.some(message => Array.isArray(message.tool_calls))).toBe(true)
-  } else {
-    for (const message of [...planningMessages, ...continuationMessages]) {
-      expect(message.role).not.toBe('tool')
-      expect(message).not.toHaveProperty('tool_calls')
-      expect(message).not.toHaveProperty('tool_call_id')
-      expect(message).not.toHaveProperty('tool_name')
-    }
+  const assistantToolMessage = continuationMessages.find(message => message.role === 'assistant' && Array.isArray(message.toolCalls))
+  const toolResultMessage = continuationMessages.find(message => message.role === 'tool')
+  expect(assistantToolMessage).toBeDefined()
+  expect(toolResultMessage).toMatchObject({ role: 'tool', toolCallId: expect.any(String), toolName: 'get_spend_snapshot' })
+  const toolCalls = assistantToolMessage?.toolCalls as Array<Record<string, unknown>>
+  expect(toolCalls).toHaveLength(1)
+  expect(toolCalls[0]).toMatchObject({ id: (toolResultMessage as Record<string, unknown>).toolCallId, name: 'get_spend_snapshot' })
+  for (const message of [...planningMessages, ...continuationMessages]) {
+    expect(message).not.toHaveProperty('tool_calls')
+    expect(message).not.toHaveProperty('tool_call_id')
   }
 }
 
@@ -144,7 +144,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     })
 
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
-    expectContinuationPayloads(payloads, _label === 'LM Studio')
+    expectContinuationPayloads(payloads)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
   })
@@ -171,7 +171,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     expect(payloads).toHaveLength(1)
   })
 
-  it.each(['openai', 'anthropic', 'gemini'] as const)('%s performs the same two independent calls without tool-result replay', async provider => {
+  it.each(['openai', 'anthropic', 'gemini'] as const)('%s preserves semantic Tool replay across the same two calls', async provider => {
     const payloads: Array<Record<string, unknown>> = []
     const events: string[] = []
     const runtime = new HostedAdvisorRuntime({ provider, model: provider + '-test', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' }, consent: true, transport: hostedTransport(provider, payloads, events) })

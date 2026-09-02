@@ -192,7 +192,7 @@ export class MetroraAgentLoop {
         emit('tool-failed', { step, tool: safeName, callId: validCall.id, detail: diagnostic })
       }
     }
-    const executeCalls = async (calls: readonly MetroraAgentToolCall[], step: number): Promise<boolean> => {
+    const executeCalls = async (calls: readonly MetroraAgentToolCall[], step: number, appendAssistantToolCall = false): Promise<boolean> => {
       if (toolRounds >= bounds.maxToolRounds) {
         diagnostics.push('tool_round_limit')
         return false
@@ -203,6 +203,7 @@ export class MetroraAgentLoop {
         diagnostics.push('tool_limit')
         return false
       }
+      if (appendAssistantToolCall) append({ role: 'assistant', content: '', toolCalls: accepted })
       toolCalls += accepted.length
       toolRounds += 1
       for (const call of accepted) await executeOne(call, step)
@@ -270,7 +271,7 @@ export class MetroraAgentLoop {
         if (!requiredReady && !baselineAttempted && baselineCalls().length) {
           const calls = baselineCalls()
           baselineAttempted = true
-          const allAccepted = await executeCalls(calls, modelSteps)
+          const allAccepted = await executeCalls(calls, modelSteps, true)
           requiredReady = this.requiredReady(requiredState)
           if (!allAccepted) {
             emit('turn-failed', { step: modelSteps, detail: 'tool_limit' })

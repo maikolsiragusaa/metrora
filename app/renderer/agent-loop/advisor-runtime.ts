@@ -25,16 +25,13 @@ import type {
   MetroraAgentToolResult,
 } from './contracts'
 
-export type AdvisorAgentWireMode = 'flattened' | 'openai'
-
 export type AdvisorAgentTransport = {
   complete: (requestId: string, payload: Record<string, unknown>, signal: AbortSignal) => Promise<AdvisorProviderModelResponse>
   cancel: (requestId: string) => Promise<boolean>
-  wireMode: AdvisorAgentWireMode
   nativeToolCalls: boolean
   buildPayload: (input: {
     model: string
-    messages: Array<Record<string, unknown>>
+    messages: readonly MetroraAgentMessage[]
     tools: readonly AdvisorToolDefinition[]
     stream: boolean
   }) => Record<string, unknown>
@@ -130,25 +127,6 @@ function seedEvidenceLedger(ledger: MetroraAgentMessage[], evidenceItems: readon
   })
 }
 
-function wireLedger(ledger: readonly MetroraAgentMessage[], mode: AdvisorAgentWireMode): Array<Record<string, unknown>> {
-  return ledger.map(message => {
-    if (message.role === 'tool') {
-      if (mode === 'openai') return { role: 'tool', content: message.content, tool_call_id: message.toolCallId ?? 'metrora-tool-result' }
-      return { role: 'user', content: 'Metrora Tool result' + (message.toolName ? ' (' + message.toolName + ')' : '') + ': ' + message.content }
-    }
-    if (message.role === 'assistant' && message.toolCalls?.length) {
-      const calls = message.toolCalls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } }))
-      if (mode === 'openai') return { role: 'assistant', content: message.content, tool_calls: calls }
-      const requestText = calls.map(call => {
-        const fn = call.function as { name: string; arguments: string }
-        return fn.name + ' ' + fn.arguments
-      }).join('; ')
-      return { role: 'assistant', content: [message.content, 'Metrora read request: ' + requestText].filter(Boolean).join('\n') }
-    }
-    return { role: message.role, content: message.content }
-  })
-}
-
 function toolEventStatus(event: MetroraAgentLoopEvent): 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled' | null {
   if (event.type === 'tool-queued') return 'queued'
   if (event.type === 'tool-started') return 'started'
@@ -158,11 +136,34 @@ function toolEventStatus(event: MetroraAgentLoopEvent): 'queued' | 'started' | '
   return null
 }
 
-function fallbackNote(status: 'completed' | 'failed' | 'cancelled' | 'timeout' | 'limit'): string | undefined {
-  if (status === 'timeout') return 'The bounded Metrora turn deadline was reached; verified facts are shown instead.'
-  if (status === 'limit') return 'The bounded Metrora Tool loop limit was reached; verified facts are shown instead.'
-  if (status === 'failed') return 'The bounded model step or continuation was unavailable; verified Metrora facts are shown instead.'
+function fallbackNote(status: 'completed' | 'failed' | 'cancelled' | 'timeout' | 'limit', factsAvailable: boolean): string | undefined {
+  const suffix = factsAvailable
+    ? ' Retrieved Metrora facts remain available in Sources and Details.'
+    : ' Try again or choose another runtime.'
+  if (status === 'timeout') return 'The selected model timed out before finishing.' + suffix
+  if (status === 'limit') return 'The selected model reached the bounded turn limit before finishing.' + suffix
+  if (status === 'failed') return 'The selected model could not finish this answer.' + suffix
   return undefined
+}
+
+function isModelRuntimeFailure(diagnostics: readonly string[]): boolean {
+  // A model that tries to invoke an unavailable action is a policy boundary,
+  // not a provider outage. Preserve the deterministic proposal-only answer
+  // when that is the only diagnostic, while still surfacing a genuine
+  // transport/loop failure if the diagnostics are mixed.
+  const modelFailure = diagnostics.some(diagnostic => [
+    'provider_failure',
+    'malformed_output',
+    'malformed_tool_call',
+    'turn_failure',
+    'deadline',
+    'tool_execution_failed',
+    'tool_output_limit',
+    'step_limit',
+    'tool_round_limit',
+    'tool_limit',
+  ].includes(diagnostic))
+  return modelFailure
 }
 
 function factualTurn(input: AdvisorRuntimeInput): boolean {
@@ -229,7 +230,7 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
     complete: async context => {
       const id = requestId('metrora-agent-step')
       active.requestId = id
-      const payload = transport.buildPayload({ model: options.model, messages: wireLedger(context.ledger, transport.wireMode), tools: nativeToolCalls ? definitions : [], stream: streamTurn })
+      const payload = transport.buildPayload({ model: options.model, messages: context.ledger, tools: nativeToolCalls ? definitions : [], stream: streamTurn })
       try {
         const response = await transport.complete(id, payload, context.signal)
         if (context.signal.aborted) throw new DOMException('Metrora model step cancelled', 'AbortError')
@@ -266,12 +267,28 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
   const evidenceItems = [...seededEvidence, ...loopEvidence]
   const content = loop.status === 'completed' || loop.status === 'limit' ? loop.finalText : ''
   const usedModel = loop.modelSteps > 0
-  const note = fallbackNote(loop.status)
+  const note = isModelRuntimeFailure(loop.diagnostics)
+    ? fallbackNote(loop.status, evidenceUsable(evidenceItems))
+    : undefined
   const { fallbackPlan, guard } = runtimeGuardPlan(input)
   if (!isFactual || fallbackPlan.turnKind !== 'investigate' || guard.authorization !== 'read-only') {
     const kind = guard.authorization === 'proposal-required' ? 'action' : fallbackPlan.turnKind === 'boundary' ? 'boundary' : 'social'
     const answer = await finalizeAdvisorConversationAnswer(runtime, input, kind, content, usedModel, options.signal)
-    return { ...answer, streamed: streamTurn && loop.streamed }
+    if (kind !== 'action' && note) {
+      return {
+        ...answer,
+        conclusion: note,
+        presentation: undefined,
+        materialLimits: [...(answer.materialLimits ?? []), note],
+        generatedByModel: false,
+        runtimeFailure: true,
+        streamed: false,
+      }
+    }
+    return {
+      ...answer,
+      streamed: streamTurn && loop.streamed,
+    }
   }
   const finalEvidence = evidenceItems.length ? evidenceItems : [input.evidence]
   const authoritative = !hasMixedEvidenceScopes(finalEvidence)

@@ -1,7 +1,8 @@
 import { metrora } from '../lib/ipc'
 import { buildAdvisorSwarmSynthesisMessages } from './model-flow'
 import { raceAdvisorAbort } from './abort'
-import { runAdvisorRuntimeAgentLoop, type AdvisorAgentWireMode } from '../agent-loop/advisor-runtime'
+import { runAdvisorRuntimeAgentLoop } from '../agent-loop/advisor-runtime'
+import { serializeMetroraAgentMessages, type MetroraAgentMessage } from '../agent-loop/contracts'
 import type { AdvisorAnswer, AdvisorModelRuntime, AdvisorReasoningEffort, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult } from './types'
 
 export { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
@@ -63,7 +64,6 @@ export type LocalAdvisorRuntimeOptions = {
   transport: LocalAdvisorTransport
   availability?: 'ready' | 'checking' | 'unavailable'
   unavailableMessage?: string
-  wireMode?: AdvisorAgentWireMode
   nativeToolCalls?: boolean
 }
 
@@ -78,7 +78,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
   private readonly model: string
   private readonly transport: LocalAdvisorTransport
   private readonly unavailableMessage: string
-  private readonly wireMode: AdvisorAgentWireMode
   private readonly nativeToolCalls: boolean
 
   constructor(options: LocalAdvisorRuntimeOptions) {
@@ -90,7 +89,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     this.availability = options.availability ?? 'ready'
     this.label = options.label
     this.unavailableMessage = options.unavailableMessage ?? 'Local Harness model is not available.'
-    this.wireMode = options.wireMode ?? 'flattened'
     this.nativeToolCalls = options.nativeToolCalls ?? true
   }
 
@@ -131,7 +129,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         input,
         signal,
         transport: {
-          wireMode: this.wireMode,
           nativeToolCalls: this.nativeToolCalls,
           complete: async (request, payload, requestSignal) => {
             activeRequestId = request
@@ -144,7 +141,13 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
             }
           },
           cancel: request => this.transport.cancel(request),
-          buildPayload: ({ model, messages, tools, stream }) => ({ model, messages, tools: [...tools], stream }),
+          buildPayload: ({ model, messages, tools, stream }) => ({
+            model,
+            messages: serializeMetroraAgentMessages(messages as readonly MetroraAgentMessage[]),
+            tools: [...tools],
+            stream,
+            messageMode: this.nativeToolCalls ? 'native' : 'flattened',
+          }),
         },
       })
     } finally {
@@ -156,7 +159,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
 }
 
 export class OllamaAdvisorRuntime extends LocalAdvisorRuntime {
-  constructor(options: { model: string; transport?: OllamaTransport; availability?: 'ready' | 'checking' | 'unavailable' }) {
+  constructor(options: { model: string; transport?: OllamaTransport; availability?: 'ready' | 'checking' | 'unavailable'; nativeToolCalls?: boolean }) {
     super({
       id: 'ollama-local',
       label: 'Ollama · ' + options.model,
@@ -166,6 +169,7 @@ export class OllamaAdvisorRuntime extends LocalAdvisorRuntime {
       transport: options.transport ?? bridgeTransport,
       availability: options.availability,
       unavailableMessage: 'Local Ollama model is not available.',
+      nativeToolCalls: options.nativeToolCalls,
     })
   }
 }

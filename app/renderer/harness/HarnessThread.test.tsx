@@ -54,7 +54,7 @@ describe('Harness V3 thread composition', () => {
   it('renders tool activity inline with the pending assistant turn', () => {
     render(<HarnessThread {...baseProps} loadingQuestion="Inspect usage" toolStatus="Reading usage…" toolActivity={[{ name: 'get_spend_snapshot', status: 'started' }]} />)
     expect(screen.getByLabelText('Harness work activity')).toBeInTheDocument()
-    expect(screen.getByText('Reading usage · Last 7 days')).toBeInTheDocument()
+    expect(screen.getByText('Checking usage · Last 7 days')).toBeInTheDocument()
     expect(screen.getByText('In progress')).toBeInTheDocument()
   })
 

@@ -45,12 +45,14 @@ export type AdvisorHostedEvent = {
   code?: string
   message?: string
 }
-export type AdvisorHostedChatMessage = {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
 export type AdvisorHostedToolDefinition = { type: 'function'; function: { name: string; description?: string; parameters?: Record<string, unknown> } }
-export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
+/** Provider-neutral semantic history accepted at the Electron boundary. */
+export type AdvisorHostedChatMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: AdvisorHostedToolCall[] }
+  | { role: 'tool'; content: string; toolCallId: string; toolName?: string }
+export type AdvisorHostedMessageMode = 'native' | 'flattened'
+export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
 export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type AdvisorHostedEnvelope = { ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }
 
@@ -272,7 +274,9 @@ export function reasoningCapabilityFromMetadata(metadata: Record<string, unknown
   if (!parameter) return null
   const declared = declaredReasoningEfforts(sources)
   if (declared === null) return null
-  const efforts = declared ?? ['default', 'low', 'medium', 'high']
+  // A provider parameter is not enough to invent a universal low/medium/high
+  // scale.  Without explicit values the only truthful control is Default.
+  const efforts = declared ?? ['default']
   if (!efforts.includes('default')) efforts.unshift('default')
   return { efforts: Array.from(new Set(efforts)), parameter }
 }

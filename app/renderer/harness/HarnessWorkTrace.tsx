@@ -4,23 +4,35 @@ import type { AdvisorScope, AdvisorToolEvent } from '../advisor/types'
 export type HarnessToolActivity = AdvisorToolEvent
 
 const TOOL_LABELS: Record<string, string> = {
-  get_spend_snapshot: 'Reading usage',
-  get_model_efficiency: 'Reading model efficiency',
-  get_quota_snapshot: 'Reading provider capacity',
-  get_overview_snapshot: 'Reading overview',
-  get_project_drivers: 'Reading Project drivers',
-  get_session_highlights: 'Reading session highlights',
-  get_coverage_report: 'Checking evidence coverage',
-  get_bench_evidence: 'Reading Bench evidence',
+  get_spend_snapshot: 'Checking usage',
+  get_model_efficiency: 'Comparing models',
+  get_quota_snapshot: 'Checking provider capacity',
+  get_overview_snapshot: 'Checking overview',
+  get_project_drivers: 'Checking Project breakdown',
+  get_session_highlights: 'Checking session breakdown',
+  get_coverage_report: 'Checking Sources',
+  get_bench_evidence: 'Checking Bench results',
 }
 export function harnessToolLabel(name: string, scope: AdvisorScope): string {
-  return (TOOL_LABELS[name] ?? 'Reading Metrora evidence') + ' · ' + periodLabel(scope)
+  return (TOOL_LABELS[name] ?? 'Checking Metrora Sources') + ' · ' + periodLabel(scope)
+}
+
+export function harnessToolCheckedLabel(name: string): string {
+  if (name === 'get_spend_snapshot') return 'Usage checked'
+  if (name === 'get_model_efficiency') return 'Model breakdown checked'
+  if (name === 'get_quota_snapshot') return 'Provider capacity checked'
+  if (name === 'get_overview_snapshot') return 'Overview checked'
+  if (name === 'get_project_drivers') return 'Project breakdown checked'
+  if (name === 'get_session_highlights') return 'Session breakdown checked'
+  if (name === 'get_coverage_report') return 'Sources checked'
+  if (name === 'get_bench_evidence') return 'Bench results checked'
+  return 'Sources checked'
 }
 
 function activityStatus(status: HarnessToolActivity['status']): string {
   if (status === 'queued') return 'Queued'
   if (status === 'started') return 'In progress'
-  if (status === 'completed') return 'Ready'
+  if (status === 'completed') return 'Checked'
   if (status === 'unavailable') return 'Unavailable'
   if (status === 'cancelled') return 'Cancelled'
   return 'Failed'
