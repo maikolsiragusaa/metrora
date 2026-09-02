@@ -1,4 +1,4 @@
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorEvidence, type AdvisorGuardPlanV1, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorScope, type AdvisorSwarmSynthesisInput, type AdvisorTurnPlanV1 } from './types'
+import { advisorConversationScopeCompatible, type AdvisorAnswer, type AdvisorEvidence, type AdvisorGuardPlanV1, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorScope, type AdvisorSwarmSynthesisInput, type AdvisorTurnPlanV1 } from './types'
 import { contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from './privacy'
 import { buildAdvisorPresentationBlocks } from './presentation'
 import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
@@ -51,6 +51,22 @@ function modelScope(input: AdvisorRuntimeInput): string {
   return modelScopeValue(input.evidence.scope)
 }
 
+function modelTaskContext(input: AdvisorRuntimeInput): string | null {
+  const task = input.taskContext
+  if (!task) return null
+  return JSON.stringify({
+    contractVersion: 'advisor-harness-task-context-v1',
+    schemaVersion: 1,
+    sourceTurnId: sanitizeAdvisorDisplayText(task.sourceTurnId, 96),
+    kind: task.kind,
+    originalRequest: modelText(task.originalRequest, 1_000),
+    status: task.status,
+    checkedDomains: task.checkedDomains.slice(0, 16),
+    availableToolNames: task.availableToolNames.slice(0, 7),
+    context: { mode: task.scope.harnessContext?.mode ?? 'unpinned', pins: task.scope.harnessContext?.pins?.slice(0, 5) ?? [] },
+  })
+}
+
 function workerInstruction(input: AdvisorRuntimeInput): string | null {
   const worker = input.workerContext
   if (!worker) return null
@@ -58,9 +74,8 @@ function workerInstruction(input: AdvisorRuntimeInput): string | null {
 }
 
 function safeConversation(input: AdvisorRuntimeInput): ModelMessage[] {
-  const currentScopeFingerprint = advisorScopeFingerprint(input.evidence.scope)
   return (input.conversation ?? [])
-    .filter(turn => turn.scopeFingerprint === currentScopeFingerprint)
+    .filter(turn => advisorConversationScopeCompatible(input.evidence.scope, turn.scopeFingerprint))
     .slice(-12)
     .flatMap(turn => {
       const content = modelText(turn.content)
@@ -104,6 +119,7 @@ export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPla
         'When a read tool returns, its bounded result is appended to the same turn ledger. Continue naturally: request another supplied read only when needed, otherwise answer from the verified result and clearly label interpretation or recommendation.',
         'Stay within the selected Metrora context and use only the supplied read tools. Do not broaden the period, provider, Project, or model context.',
         ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
+        ...(modelTaskContext(input) ? ['Active bounded local task context: ' + modelTaskContext(input)!] : []),
         'Selected context: ' + modelScope(input),
       ].join(' '),
     },
@@ -141,6 +157,7 @@ export function buildAdvisorEvidenceSynthesisMessages(
         'A follow-up read must remain within the selected scope and the supplied fixed read-only tools. Never request writes, web search, shell commands, files, or arbitrary endpoints.',
         'Do not invent numbers, subjects, rankings, causality, or quality claims. Keep any interpretation grounded in the canonical evidence.',
         ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
+        ...(modelTaskContext(input) ? ['Active bounded local task context: ' + modelTaskContext(input)!] : []),
         'Selected context: ' + modelScopeForEvidence(evidence),
         'Canonical evidence already verified: ' + modelEvidence(evidence),
         'If no additional read is needed, return only the concise natural answer. If the provider requires a planning representation for an additional read, use only the bounded planning shape accepted by Harness.',
@@ -163,6 +180,7 @@ export function buildAdvisorToolContinuationMessages(input: AdvisorRuntimeInput,
         'If the evidence is sufficient, return a short natural-language answer, interpretation, or recommendation grounded only in it, without inventing facts.',
         round === 1 ? 'This is the last opportunity for one additional bounded read.' : 'No additional read should be requested.',
         ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
+        ...(modelTaskContext(input) ? ['Active bounded local task context: ' + modelTaskContext(input)!] : []),
         'Selected context: ' + modelScopeForEvidence(evidence),
         'Canonical evidence: ' + modelEvidence(evidence),
       ].join(' '),

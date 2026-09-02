@@ -44,6 +44,7 @@ describe('Advisor contextual launch contract', () => {
       projectId: 'project-a',
       provider: 'codex',
       model: 'gpt-safe',
+      harnessContext: { mode: 'pinned', pins: ['period', 'range', 'provider', 'project', 'model'] },
     }))
   })
 
@@ -138,6 +139,7 @@ describe('Advisor contextual launch contract', () => {
       model: null,
       suggestedPrompt: 'What current provider-reported capacity and reset windows are available across the connected providers?',
     })
+    expect(advisorScopeFromContextualLaunch(launch)?.harnessContext).toMatchObject({ mode: 'unpinned', pins: [] })
   })
 
   it('revalidates a launch and replaces arbitrary suggested prose with Metrora-owned copy', () => {

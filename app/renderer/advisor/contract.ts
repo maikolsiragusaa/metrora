@@ -23,6 +23,7 @@ import {
   snapshotMetroraToolScope,
   validateMetroraToolArguments,
 } from '../../../src/tools/contract'
+import { advisorHarnessContext } from './types'
 import { contentMinimalMetroraToolEvidence } from '../../../src/tools/privacy'
 import { contentMinimalMetroraToolScope } from '../../../src/tools/privacy'
 import type {
@@ -77,7 +78,8 @@ export function assertStrictBoundedAdvisorToolContent(value: unknown): string {
   return assertStrictBoundedMetroraToolContent(value)
 }
 export function snapshotAdvisorScope(scope: AdvisorScope): AdvisorScope {
-  return snapshotMetroraToolScope(scope as unknown as import('../../../src/tools/types').MetroraToolScope) as unknown as AdvisorScope
+  const snapshot = snapshotMetroraToolScope(scope as unknown as import('../../../src/tools/types').MetroraToolScope) as unknown as AdvisorScope
+  return Object.freeze({ ...snapshot, harnessContext: advisorHarnessContext(scope) })
 }
 export function createAdvisorToolResultEnvelope(name: AdvisorToolName, scope: AdvisorScope, args: AdvisorJsonObject, evidence: AdvisorEvidence, output: AdvisorJsonObject): AdvisorToolResultEnvelope {
   return createMetroraToolResultEnvelope(

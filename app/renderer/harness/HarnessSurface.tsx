@@ -11,6 +11,7 @@ import { HarnessHistoryDrawer, type HarnessHistoryConversation } from './Harness
 import { HarnessRuntimePopover } from './HarnessRuntimePopover'
 import { HarnessThread, type HarnessThreadMessage } from './HarnessThread'
 import type { HarnessToolActivity } from './HarnessWorkTrace'
+import type { MetroraAgentLoopEvent } from '../agent-loop/contracts'
 import type { SwarmRunState } from '../swarm/useSwarmRun'
 
 export type HarnessSurfaceConversation = HarnessHistoryConversation & { messages: HarnessThreadMessage[] }
@@ -50,6 +51,7 @@ export type HarnessSurfaceProps = {
   loadingQuestion: string | null
   toolStatus: string | null
   toolActivity: HarnessToolActivity[]
+  agentEvents?: MetroraAgentLoopEvent[]
   streamPreview: string
   onCancel: () => void
   error: string | null
@@ -63,7 +65,7 @@ export type HarnessSurfaceProps = {
   onNextInvestigation: (question: string) => void
 }
 
-export function HarnessSurface({ mode, swarmExperimentalEnabled, onModeChange, swarm, projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange, runtimeUnavailable, onRetryRuntime, overviewError, runtimeControls, filteredConversations, activeConversationId, historyQuery, onNewChat, onConversationSelect, onHistoryQueryChange, messages, selectedAnswerId, onSelectAnswer, onFollowUp, onScopeConflictOption, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, composer, hostedSubmitBlockReason, onComposerChange, onAsk, onNextInvestigation }: HarnessSurfaceProps) {
+export function HarnessSurface({ mode, swarmExperimentalEnabled, onModeChange, swarm, projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange, runtimeUnavailable, onRetryRuntime, overviewError, runtimeControls, filteredConversations, activeConversationId, historyQuery, onNewChat, onConversationSelect, onHistoryQueryChange, messages, selectedAnswerId, onSelectAnswer, onFollowUp, onScopeConflictOption, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, agentEvents, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, composer, hostedSubmitBlockReason, onComposerChange, onAsk, onNextInvestigation }: HarnessSurfaceProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const contextProps: ComponentProps<typeof HarnessContextPopover> = { projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange }
   return (
@@ -72,7 +74,7 @@ export function HarnessSurface({ mode, swarmExperimentalEnabled, onModeChange, s
       {runtimeUnavailable ? <div className="harness-v3-inline-notice"><strong>No local model connected.</strong> Select or connect a model to continue. <button type="button" onClick={onRetryRuntime}>Try again</button></div> : null}
       {overviewError ? <div className="harness-v3-inline-notice warning"><strong>Metrora data is unavailable.</strong> {overviewError}</div> : null}
       <div className="harness-v3-content">
-        <HarnessThread mode={mode} swarmExperimentalEnabled={swarmExperimentalEnabled} swarm={swarm} scope={scope} messages={messages} selectedAnswerId={selectedAnswerId} onSelectAnswer={onSelectAnswer} onFollowUp={onFollowUp} onScopeConflictOption={onScopeConflictOption} harnessActions={harnessActions} harnessActionBusyId={harnessActionBusyId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} loadingQuestion={loadingQuestion} toolStatus={toolStatus} toolActivity={toolActivity} streamPreview={streamPreview} onCancel={onCancel} error={error} onRetry={onRetry} failedRequestPresent={failedRequestPresent} notice={notice} onAsk={onAsk} onNextInvestigation={onNextInvestigation} />
+        <HarnessThread mode={mode} swarmExperimentalEnabled={swarmExperimentalEnabled} swarm={swarm} scope={scope} messages={messages} selectedAnswerId={selectedAnswerId} onSelectAnswer={onSelectAnswer} onFollowUp={onFollowUp} onScopeConflictOption={onScopeConflictOption} harnessActions={harnessActions} harnessActionBusyId={harnessActionBusyId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} loadingQuestion={loadingQuestion} toolStatus={toolStatus} toolActivity={toolActivity} agentEvents={agentEvents} streamPreview={streamPreview} onCancel={onCancel} error={error} onRetry={onRetry} failedRequestPresent={failedRequestPresent} notice={notice} onAsk={onAsk} onNextInvestigation={onNextInvestigation} />
         <HarnessComposer mode={mode} swarmExperimentalEnabled={swarmExperimentalEnabled} swarmRunning={swarm.state.running} loadingQuestion={loadingQuestion} hostedSubmitBlockReason={hostedSubmitBlockReason} notice={notice} composer={composer} onModeChange={onModeChange} onComposerChange={onComposerChange} onAsk={onAsk} onSwarmRun={swarm.onRun} onCancel={mode === 'swarm' && swarm.state.running ? swarm.onCancel : onCancel} />
       </div>
       {historyOpen ? <HarnessHistoryDrawer conversations={filteredConversations} activeConversationId={activeConversationId} historyQuery={historyQuery} onNewChat={onNewChat} onConversationSelect={onConversationSelect} onHistoryQueryChange={onHistoryQueryChange} onClose={() => setHistoryOpen(false)} /> : null}

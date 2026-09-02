@@ -70,8 +70,9 @@ export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActiv
   // marker; provider output and reasoning are never copied into the trace.
   appendTools(items.filter(item => !modelToolNames.has(item.name)))
   const modelTools = items.filter(item => modelToolNames.has(item.name))
-  if (modelTools.length || modelStarts > 1) trace.push({ id: 'thinking-2', label: 'Thinking', status: 'completed' })
+  if (modelStarts > 0 || modelTools.length) trace.push({ id: 'thinking-2', label: 'Thinking', status: 'completed' })
   appendTools(modelTools)
+  if (modelCompletions > 0) trace.push({ id: 'models-checked', label: 'Models checked', status: 'completed' })
   trace.push({ id: 'preparing-answer', label: 'Preparing answer', status: 'completed' })
   trace.push({ id: 'done', label: 'Done', status: 'completed' })
   const checks = trace.slice(0, -2).slice(0, 8)
@@ -91,23 +92,39 @@ function activityStatus(status: HarnessToolActivity['status']): string {
   return 'Failed'
 }
 
-export function HarnessWorkTrace({ items, scope }: { items: readonly HarnessToolActivity[]; scope: AdvisorScope }) {
-  if (!items.length) return null
+export function HarnessWorkTrace({ items, scope, events = [] }: { items: readonly HarnessToolActivity[]; scope: AdvisorScope; events?: readonly MetroraAgentLoopEvent[] }) {
+  const hasModelLifecycle = events.some(event => event.type === 'model-started' || event.type === 'model-completed')
+  if (!items.length && !hasModelLifecycle) return null
+  const modelStarted = events.some(event => event.type === 'model-started')
+  const modelCompleted = events.some(event => event.type === 'model-completed')
+  const modelToolNames = new Set(events.filter(event => event.type.startsWith('tool-') && event.tool).map(event => event.tool!))
+  const controllerItems = items.filter(item => !modelToolNames.has(item.name))
+  const modelItems = items.filter(item => modelToolNames.has(item.name))
+  const activityRow = (item: HarnessToolActivity) => <div className="harness-v3-work-trace-row" key={item.name}>
+    <span aria-hidden="true" className={'harness-v3-work-dot ' + item.status} />
+    <span>{harnessToolLabel(item.name, scope)}</span>
+    <small>{activityStatus(item.status)}</small>
+  </div>
   return (
     <div className="harness-v3-work-trace" aria-label="Harness work activity">
-      {items.map(item => (
-        <div className="harness-v3-work-trace-row" key={item.name}>
-          <span aria-hidden="true" className={'harness-v3-work-dot ' + item.status} />
-          <span>{harnessToolLabel(item.name, scope)}</span>
-          <small>{activityStatus(item.status)}</small>
-        </div>
-      ))}
+      {controllerItems.map(activityRow)}
+      {modelStarted ? <div className="harness-v3-work-trace-row" key="model-thinking">
+        <span aria-hidden="true" className="harness-v3-work-dot started" />
+        <span>Thinking…</span>
+        <small>{modelCompleted ? 'Done' : 'In progress'}</small>
+      </div> : null}
+      {modelItems.map(activityRow)}
+      {modelCompleted ? <div className="harness-v3-work-trace-row" key="model-checked">
+        <span aria-hidden="true" className="harness-v3-work-dot completed" />
+        <span>Models checked</span>
+        <small>Done</small>
+      </div> : null}
     </div>
   )
 }
 
 export function HarnessCompletedWorkTraceView({ trace }: { trace: HarnessCompletedWorkTrace }) {
-  const checks = trace.items.filter(item => item.label.endsWith('checked')).length
+  const checks = trace.items.filter(item => item.id.startsWith('check-')).length
   const failed = trace.items.some(item => item.status === 'failed')
   const summary = checks > 0
     ? String(checks) + ' source' + (checks === 1 ? '' : 's') + ' checked · ' + (failed ? 'Completed with limits' : 'Done')

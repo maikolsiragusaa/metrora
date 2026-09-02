@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MenubarPayload } from '../lib/types'
 import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorScope, AdvisorScopeConflictV1 } from '../advisor/types'
 import { resolveAdvisorQuestion } from '../advisor/comprehension'
+import { advisorScopeForTurn } from '../advisor/turn-plan'
 import type { AdvisorOverviewSnapshot } from '../advisor/tools'
 import {
   createBaselineSwarmCoordinator,
@@ -140,7 +141,7 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
     }
     handleRef.current?.cancel()
     const generation = ++generationRef.current
-    const runScope = snapshotScope(scopeOverride ?? scope)
+    const runScope = snapshotScope(advisorScopeForTurn(scopeOverride ?? scope, task))
     const plan = resolveAdvisorQuestion(task, runScope)
     if (plan.plan.scopeConflict) {
       setState({ runId: null, status: 'idle', events: [], result: null, error: plan.plan.scopeConflict.message, running: false, scopeConflict: plan.plan.scopeConflict })
@@ -219,6 +220,8 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
     runtime.label,
     runtime.mode,
     scope.model,
+    scope.harnessContext?.mode,
+    scope.harnessContext?.pins.join(','),
     scope.period,
     scope.provider,
     scope.projectId,

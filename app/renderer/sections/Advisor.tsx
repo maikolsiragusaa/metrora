@@ -7,9 +7,10 @@ import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorOverviewSnapshot } from '../advisor/tools'
 import { resolveAdvisorQuestion } from '../advisor/comprehension'
+import { advisorReadToolNamesForPlan } from '../advisor/required-reads'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
-import { advisorScopeForRequestedPeriod } from '../advisor/turn-plan'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorScope, type AdvisorScopeConflictOptionV1, type AdvisorScopeConflictV1 } from '../advisor/types'
+import { advisorScopeForRequestedPeriod, advisorScopeForTurn, advisorTaskContextForTurn } from '../advisor/turn-plan'
+import { advisorConversationScopeCompatible, advisorHarnessContext, advisorPinnedHarnessContext, advisorScopeFingerprint, UNPINNED_ADVISOR_HARNESS_CONTEXT, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorEvidenceDomain, type AdvisorHarnessTaskContextV1, type AdvisorScope, type AdvisorScopeConflictOptionV1, type AdvisorScopeConflictV1 } from '../advisor/types'
 import { contextualScopeLabel } from './advisor-scope-labels'
 import { createHarnessCompletedWorkTrace, harnessToolCheckedLabel, harnessToolLabel, type HarnessCompletedWorkTrace, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
 import { HarnessSurface } from '../harness/HarnessSurface'
@@ -20,12 +21,49 @@ import { isAdvisorCancelled } from './useAdvisorLocalRuntime'
 import { useAdvisorRuntimeController } from './useAdvisorRuntimeController'
 type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string; workTrace?: HarnessCompletedWorkTrace }
-type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
-type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
+type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[]; taskContext?: AdvisorHarnessTaskContextV1 }
+type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[]; taskContext?: AdvisorHarnessTaskContextV1 }
 
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
 }
+
+function copyAdvisorScope(scope: AdvisorScope): AdvisorScope {
+  return {
+    ...scope,
+    range: scope.range ? { ...scope.range } : null,
+    ...(scope.harnessContext ? { harnessContext: { ...scope.harnessContext, pins: [...scope.harnessContext.pins] } } : {}),
+  }
+}
+
+function taskContextAfterAnswer(
+  sourceTurnId: string,
+  question: string,
+  scope: AdvisorScope,
+  previous: AdvisorHarnessTaskContextV1 | undefined,
+  answer: AdvisorAnswer,
+  history: AdvisorConversationTurn[],
+): AdvisorHarnessTaskContextV1 | undefined {
+  const resolved = resolveAdvisorQuestion(question, scope, history, previous)
+  if (resolved.plan.turnKind !== 'investigate') return undefined
+  const availableToolNames = advisorReadToolNamesForPlan(resolved, question, previous)
+  if (!availableToolNames.length && !answer.evidence.length && !answer.runtimeFailure) return undefined
+  const checkedDomains = answer.evidence.length
+    ? Array.from(new Set<AdvisorEvidenceDomain>([...(previous?.checkedDomains ?? []), ...resolved.plan.requestedEvidenceDomains])).slice(0, 16)
+    : [...(previous?.checkedDomains ?? [])].slice(0, 16)
+  return {
+    contractVersion: 'advisor-harness-task-context-v1',
+    schemaVersion: 1,
+    sourceTurnId: previous?.sourceTurnId ?? sourceTurnId,
+    kind: resolved.intent === 'unknown' ? 'investigative' : 'factual',
+    originalRequest: (previous?.originalRequest ?? question).slice(0, 1_000),
+    scope: copyAdvisorScope(scope),
+    checkedDomains,
+    status: answer.runtimeFailure ? 'failed' : answer.evidence.length ? 'completed' : 'active',
+    availableToolNames: availableToolNames.slice(0, 7),
+  }
+}
+
 export function Advisor({
   period,
   provider,
@@ -44,9 +82,6 @@ export function Advisor({
   contextualLaunch?: AdvisorContextualLaunchV1 | null
 }) {
   const projectOptions = overview.data?.projectScope?.options ?? []
-  const projectName = projectScopeId === 'all'
-    ? 'All projects'
-    : projectOptions.find(option => option.id === projectScopeId)?.name ?? projectScopeId
   const modelOptions = [...new Set([
     ...(overview.data?.current.modelAccounting?.rows.map(row => row.name) ?? []),
     ...(overview.data?.current.topModels.map(row => row.name) ?? []),
@@ -63,16 +98,16 @@ export function Advisor({
   const contextualScopeMode = normalizedContextualLaunch?.scopeMode ?? null
   const [scope, setScope] = useState<AdvisorScope>(() => contextualScope ?? ({
     period,
-    range,
-    provider,
-    projectId: projectScopeId,
-    projectName,
+    // The normal Harness surface is conversation-first. These compatibility
+    // fields are retained for the canonical Tool contract, but desktop
+    // dashboard filters must not become an implicit Harness pin.
+    range: null,
+    provider: 'all',
+    projectId: 'all',
+    projectName: 'All projects',
     model: null,
+    harnessContext: UNPINNED_ADVISOR_HARNESS_CONTEXT,
   }))
-  useEffect(() => {
-    if (normalizedContextualLaunch) return
-    setScope(current => ({ ...current, period, range, provider, projectId: projectScopeId, projectName }))
-  }, [normalizedContextualLaunch, period, provider, projectScopeId, projectName, range])
   useEffect(() => {
     if (scope.model && !modelOptions.includes(scope.model)) setScope(current => ({ ...current, model: null }))
   }, [modelOptions, scope.model])
@@ -83,6 +118,7 @@ export function Advisor({
   const [toolActivity, setToolActivity] = useState<HarnessToolActivity[]>([])
   const toolActivityRef = useRef<HarnessToolActivity[]>([])
   const agentEventsRef = useRef<MetroraAgentLoopEvent[]>([])
+  const [agentEvents, setAgentEvents] = useState<MetroraAgentLoopEvent[]>([])
   const requestController = useRef<AbortController | null>(null)
   const requestGenerationRef = useRef(0)
   const invalidateAdvisorRequest = useCallback(() => {
@@ -95,6 +131,7 @@ export function Advisor({
     setToolActivity([])
     toolActivityRef.current = []
     agentEventsRef.current = []
+    setAgentEvents([])
   }, [])
   const [notice, setNotice] = useState<string | null>(null)
   const {
@@ -147,6 +184,25 @@ export function Advisor({
     setNotice(`Context from ${advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)} loaded. Review the suggested question before sending.`)
     setSelectedAnswerId(null)
   }, [contextualScope, normalizedContextualLaunch])
+  useEffect(() => {
+    // A contextual launch is the only place where the Harness inherits a
+    // scoped factual surface. When it closes, return to a fresh unpinned
+    // conversation context instead of retaining a hidden dashboard filter.
+    if (normalizedContextualLaunch) return
+    setScope(current => {
+      if (current.harnessContext?.mode === 'unpinned' && current.range === null && current.provider === 'all' && current.projectId === 'all' && current.model === null) return current
+      return {
+        ...current,
+        period,
+        range: null,
+        provider: 'all',
+        projectId: 'all',
+        projectName: 'All projects',
+        model: null,
+        harnessContext: UNPINNED_ADVISOR_HARNESS_CONTEXT,
+      }
+    })
+  }, [normalizedContextualLaunch])
   const activeConversation = conversations.find(conversation => conversation.id === activeConversationId) ?? conversations[0]!
   const messages = activeConversation.messages
   const updateConversation = useCallback((conversationId: string, update: (conversation: AdvisorConversation) => AdvisorConversation) => {
@@ -155,10 +211,16 @@ export function Advisor({
   const ask = useCallback(async (rawQuestion: string, retryRequest?: AdvisorFailedRequest, scopeOverride?: AdvisorScope) => {
     const question = rawQuestion.trim()
     if (!question || loadingQuestion) return
-    const requestedScope = retryRequest?.scope ?? scopeOverride ?? scope
+    const baseScope = retryRequest?.scope ?? scopeOverride ?? scope
     const conversationId = retryRequest?.conversationId ?? activeConversationId
     const targetConversation = conversations.find(conversation => conversation.id === conversationId)
     if (!targetConversation) return
+    // A supplied scope override represents an explicit user choice for this
+    // turn (for example, resolving a pinned-period conflict). Do not let the
+    // prior task context reintroduce the conflict; retries carry their task
+    // context explicitly through retryRequest.
+    const taskContext = advisorTaskContextForTurn(baseScope, retryRequest?.taskContext ?? (scopeOverride ? undefined : targetConversation.taskContext))
+    const requestedScope = advisorScopeForTurn(baseScope, question, taskContext)
     const currentHosted = hostedConfigRef.current
     const hostedRequest = currentHosted.runtimeChoice === 'hosted' && hostedModel
       ? { provider: hostedProvider, model: hostedModel }
@@ -173,11 +235,12 @@ export function Advisor({
     const requestId = requestGenerationRef.current
     const isCurrentRequest = () => !controller.signal.aborted && requestGenerationRef.current === requestId
     const requestedScopeFingerprint = advisorScopeFingerprint(requestedScope)
+    const sourceTurnId = makeId('turn')
     const history: AdvisorConversationTurn[] = retryRequest?.conversation ?? targetConversation.messages
       .map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '', scopeFingerprint: message.scopeFingerprint }))
-      .filter(turn => turn.scopeFingerprint === requestedScopeFingerprint)
+      .filter(turn => advisorConversationScopeCompatible(requestedScope, turn.scopeFingerprint))
     if (!retryRequest) {
-      const userMessage: AdvisorMessage = { id: makeId('user'), role: 'user', text: question, scopeFingerprint: requestedScopeFingerprint }
+      const userMessage: AdvisorMessage = { id: sourceTurnId, role: 'user', text: question, scopeFingerprint: requestedScopeFingerprint }
       updateConversation(conversationId, conversation => ({
         ...conversation,
         title: conversation.messages.length === 0 ? question.slice(0, 42) : conversation.title,
@@ -197,6 +260,7 @@ export function Advisor({
       let answer = await kernel.investigate({
         question,
         scope: requestedScope,
+        taskContext,
         overview: contextualScopeMode !== 'capacity'
           && requestedScope.period === period
           && requestedScope.provider === provider
@@ -225,6 +289,7 @@ export function Advisor({
         onAgentEvent: event => {
           if (!isCurrentRequest()) return
           agentEventsRef.current = [...agentEventsRef.current, { type: event.type, turnId: event.turnId, ...(event.step !== undefined ? { step: event.step } : {}), ...(event.tool ? { tool: event.tool } : {}), at: event.at }].slice(-128)
+          setAgentEvents([...agentEventsRef.current])
           if (event.type === 'turn-started' || event.type === 'model-started' || (event.type === 'model-completed' && event.detail === 'tool-calls')) {
             setToolStatus('Thinking…')
           } else if (event.type === 'tool-queued' || event.type === 'tool-started') {
@@ -287,8 +352,9 @@ export function Advisor({
         }
       }
       if (!isCurrentRequest()) return
+      const nextTaskContext = taskContextAfterAnswer(sourceTurnId, question, requestedScope, taskContext, answer, history)
       const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint, workTrace: createHarnessCompletedWorkTrace(toolActivityRef.current, agentEventsRef.current) }
-      updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
+      updateConversation(conversationId, conversation => ({ ...conversation, taskContext: nextTaskContext, messages: [...conversation.messages, assistantMessage] }))
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {
       if (!isCurrentRequest()) return
@@ -296,10 +362,26 @@ export function Advisor({
       else {
         setFailedRequest({
           question,
-          scope: { ...requestedScope, range: requestedScope.range ? { ...requestedScope.range } : null },
+          scope: copyAdvisorScope(requestedScope),
           conversationId,
           conversation: history.map(turn => ({ ...turn })),
+          taskContext: taskContext
+            ? { ...taskContext, status: 'failed', scope: copyAdvisorScope(taskContext.scope), checkedDomains: [...taskContext.checkedDomains], availableToolNames: [...taskContext.availableToolNames] }
+            : taskContextAfterAnswer(sourceTurnId, question, requestedScope, undefined, {
+                conclusion: '',
+                scopeLabel: '',
+                periodLabel: '',
+                evidence: [],
+                coverage: { level: 'unavailable', label: 'Unavailable', detail: 'The selected runtime failed.' },
+                assumptions: [],
+                unknown: [],
+                nextInvestigations: [],
+                details: [],
+                runtime: { id: activeRuntime.id, label: activeRuntime.label, mode: activeRuntime.mode },
+                runtimeFailure: true,
+              }, history),
         })
+        if (taskContext) updateConversation(conversationId, conversation => ({ ...conversation, taskContext: { ...taskContext, status: 'failed', scope: copyAdvisorScope(taskContext.scope), checkedDomains: [...taskContext.checkedDomains], availableToolNames: [...taskContext.availableToolNames] } }))
         setError(caught instanceof Error ? caught.message : 'Harness could not complete this request.')
       }
     } finally {
@@ -309,16 +391,18 @@ export function Advisor({
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, contextualScopeMode, conversations, hostedModel, hostedProvider, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, markHostedModelVerified, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeModel, scope, updateConversation])
+  }, [activeConversationId, activeRuntime, contextualScopeMode, conversations, hostedModel, hostedProvider, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, markHostedModelVerified, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeModel, scope, updateConversation])
   const handleScopeConflictOption = useCallback((question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => {
     if (loadingQuestion) return
-    const requestedScope = advisorScopeForRequestedPeriod(scope, conflict.requestedPeriod)
+    const retainedPins = advisorHarnessContext(scope).pins.filter(pin => pin !== 'period' && pin !== 'range')
+    const requestedScope = advisorScopeForRequestedPeriod(scope, conflict.requestedPeriod, new Date(), advisorPinnedHarnessContext(...retainedPins))
+    const changedScope = advisorScopeForRequestedPeriod(scope, conflict.requestedPeriod, new Date(), advisorPinnedHarnessContext(...retainedPins, 'period'))
     const pendingSwarm = pendingSwarmConflictRef.current
     if (pendingSwarm?.question === question) {
       pendingSwarmConflictRef.current = null
       if (option.id === 'change-scope') {
         invalidateAdvisorRequest()
-        setScope(requestedScope)
+        setScope(changedScope)
         setNotice('Scope changed. Review the selected context, then run Swarm again.')
         return
       }
@@ -328,7 +412,7 @@ export function Advisor({
     }
     if (option.id === 'change-scope') {
       invalidateAdvisorRequest()
-      setScope(requestedScope)
+      setScope(changedScope)
       setNotice('Scope changed. Review the selected context, then ask the question again.')
       return
     }
@@ -373,6 +457,16 @@ export function Advisor({
   const newConversation = () => {
     const next: AdvisorConversation = { id: makeId('chat'), title: 'New chat', messages: [] }
     pendingSwarmConflictRef.current = null
+    setScope(current => ({
+      ...current,
+      period,
+      range: null,
+      provider: 'all',
+      projectId: 'all',
+      projectName: 'All projects',
+      model: null,
+      harnessContext: UNPINNED_ADVISOR_HARNESS_CONTEXT,
+    }))
     setConversations(current => [next, ...current])
     setActiveConversationId(next.id)
     setSwarmConversationId(null)
@@ -399,8 +493,15 @@ export function Advisor({
       return false
     }
     const conversationId = activeConversationId
-    const effectiveScope = scopeOverride ?? scope
-    const plan = resolveAdvisorQuestion(task, effectiveScope)
+    const targetConversation = conversations.find(conversation => conversation.id === conversationId)
+    const effectiveBaseScope = scopeOverride ?? scope
+    const taskContext = advisorTaskContextForTurn(effectiveBaseScope, targetConversation?.taskContext)
+    const effectiveScope = advisorScopeForTurn(effectiveBaseScope, task, taskContext)
+    const requestedScopeFingerprint = advisorScopeFingerprint(effectiveScope)
+    const swarmConversation = targetConversation?.messages
+      .map(message => ({ role: message.role, content: message.role === 'user' ? message.text ?? '' : message.answer?.conclusion ?? '', scopeFingerprint: message.scopeFingerprint } as AdvisorConversationTurn))
+      .filter(turn => advisorConversationScopeCompatible(effectiveScope, turn.scopeFingerprint)) ?? []
+    const plan = resolveAdvisorQuestion(task, effectiveScope, swarmConversation, taskContext)
     if (plan.plan.scopeConflict) {
       pendingSwarmConflictRef.current = { question: task, workerCount }
       setSwarmConversationId(conversationId)
@@ -408,7 +509,6 @@ export function Advisor({
       return true
     }
     pendingSwarmConflictRef.current = null
-    const requestedScopeFingerprint = advisorScopeFingerprint(effectiveScope)
     updateConversation(conversationId, conversation => ({
       ...conversation,
       title: conversation.messages.length === 0 ? task.slice(0, 42) : conversation.title,
@@ -421,7 +521,7 @@ export function Advisor({
     setNotice(null)
     setComposer('')
     return swarm.run(task, workerCount, effectiveScope)
-  }, [activeConversationId, ask, hostedSubmitBlockReason, runtimeChoice, scope, swarm, swarmExperimentalEnabled, updateConversation])
+  }, [activeConversationId, ask, conversations, hostedSubmitBlockReason, runtimeChoice, scope, swarm, swarmExperimentalEnabled, updateConversation])
   const changeMode = (next: 'chat' | 'swarm') => {
     if (next === 'swarm' && !swarmExperimentalEnabled) return
     if (next === mode) return
@@ -477,6 +577,7 @@ export function Advisor({
       loadingQuestion={loadingQuestion}
       toolStatus={toolStatus}
       toolActivity={toolActivity}
+      agentEvents={agentEvents}
       streamPreview={streamPreview}
       onCancel={cancel}
       error={error}

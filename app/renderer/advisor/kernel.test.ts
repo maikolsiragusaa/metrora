@@ -8,6 +8,7 @@ import { createAdvisorKernel } from './kernel'
 import { OllamaAdvisorRuntime } from './ollama'
 import { DeterministicAdvisorRuntime } from './runtime'
 import { createAdvisorOverviewSnapshot } from './tools'
+import { advisorPinnedHarnessContext } from './types'
 import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope } from './types'
 
 const scope: AdvisorScope = { period: 'week', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }
@@ -48,7 +49,7 @@ describe('Advisor model planning boundary', () => {
     const fixture = createAdvisorConformanceFixture()
     const answer = await createAdvisorKernel(fixture.source, new DeterministicAdvisorRuntime()).investigate({
       question: 'How much have I spent in total?',
-      scope: { ...fixture.scope, period: 'today' },
+      scope: { ...fixture.scope, period: 'today', harnessContext: advisorPinnedHarnessContext('period') },
     })
 
     expect(fixture.reads.overviews).toHaveLength(0)
@@ -122,7 +123,7 @@ describe('Advisor model planning boundary', () => {
     expect(answer.conclusion).not.toMatch(/Buongiorno|Hello\. I can help you understand spend/i)
   })
 
-  it('falls back to canonical evidence when a capable model returns generic factual prose', async () => {
+  it('keeps natural model prose and attaches canonical evidence without a second semantic gate', async () => {
     const fixture = createAdvisorConformanceFixture()
     const runtime: AdvisorModelRuntime = {
       id: 'generic-model',
@@ -148,10 +149,34 @@ describe('Advisor model planning boundary', () => {
       scope: { ...fixture.scope, period: 'lifetime' },
     })
 
-    expect(answer.conclusion).toMatch(/12[.,]00/u)
-    expect(answer.conclusion).not.toMatch(/Hello\. I can help you understand spend/i)
+    expect(answer.conclusion).toMatch(/Hello\. I can help you understand spend/i)
+    expect(answer.conclusion).not.toMatch(/12[.,]00/u)
     expect(answer.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'overview.current' })]))
     expect(answer.coverage.level).toBe('high')
+  })
+
+  it('allows an unpinned lifetime request to select lifetime before the first model step', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const inputs: AdvisorRuntimeInput[] = []
+    await createAdvisorKernel(fixture.source, capturingRuntime(inputs)).investigate({
+      question: 'How much have I spent in lifetime?',
+      scope: { ...fixture.scope, period: 'today' },
+    })
+
+    expect(fixture.reads.overviews).toHaveLength(1)
+    expect(fixture.reads.overviews[0]).toMatchObject({ period: 'lifetime' })
+    expect(inputs[0]?.requiredToolRequests).toEqual([{ tool: 'get_spend_snapshot', arguments: { period: 'lifetime' } }])
+    expect(inputs[0]?.evidence.scope.period).toBe('lifetime')
+  })
+
+  it('gives an unknown investigative turn a bounded canonical read palette', async () => {
+    const data = source()
+    const inputs: AdvisorRuntimeInput[] = []
+    await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'Please investigate this Metrora data.', scope })
+
+    expect(data.getOverview).not.toHaveBeenCalled()
+    expect(inputs[0]?.tools?.map(tool => tool.function.name)).toEqual(expect.arrayContaining(['get_spend_snapshot', 'get_project_drivers', 'get_coverage_report']))
+    expect(inputs[0]?.tools?.length).toBeLessThanOrEqual(7)
   })
 
   it('does not fetch or manufacture evidence for an unrecognized no-tool question', async () => {

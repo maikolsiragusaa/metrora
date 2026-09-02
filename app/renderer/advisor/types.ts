@@ -37,7 +37,14 @@ export type AdvisorTurnPlanV1 = {
 }
 
 export type AdvisorEvidenceState = 'NO_DATA' | 'UNAVAILABLE' | 'AVAILABLE' | 'PARTIAL' | 'STALE' | 'NOT_COMPARABLE' | 'UNSUPPORTED' | 'RUNTIME_UNAVAILABLE'
-export type AdvisorScope = { period: Period; range: DateRange | null; provider: string; projectId: string; projectName: string; model: string | null }
+export type AdvisorScopePin = 'period' | 'range' | 'provider' | 'project' | 'model'
+export type AdvisorHarnessContextV1 = {
+  contractVersion: 'advisor-harness-context-v1'
+  schemaVersion: 1
+  mode: 'unpinned' | 'pinned'
+  pins: AdvisorScopePin[]
+}
+export type AdvisorScope = { period: Period; range: DateRange | null; provider: string; projectId: string; projectName: string; model: string | null; harnessContext?: AdvisorHarnessContextV1 }
 export type AdvisorPeriodFilter = Period | 'yesterday'
 export type AdvisorScopeConflictOptionV1 = { id: 'use-requested-period' | 'change-scope'; label: string }
 export type AdvisorScopeConflictV1 = {
@@ -46,15 +53,65 @@ export type AdvisorScopeConflictV1 = {
   message: string
   options: readonly AdvisorScopeConflictOptionV1[]
 }
-export type AdvisorScopeIdentity = Pick<AdvisorScope, 'period' | 'range' | 'projectId' | 'provider' | 'model'>
+export type AdvisorScopeIdentity = Pick<AdvisorScope, 'period' | 'range' | 'projectId' | 'provider' | 'model' | 'harnessContext'>
+export const UNPINNED_ADVISOR_HARNESS_CONTEXT = Object.freeze({
+  contractVersion: 'advisor-harness-context-v1',
+  schemaVersion: 1,
+  mode: 'unpinned',
+  pins: Object.freeze([]),
+}) as unknown as AdvisorHarnessContextV1
+export function advisorHarnessContext(scope: Pick<AdvisorScope, 'harnessContext'>): AdvisorHarnessContextV1 {
+  const value = scope.harnessContext
+  if (!value || value.contractVersion !== 'advisor-harness-context-v1' || value.schemaVersion !== 1) return UNPINNED_ADVISOR_HARNESS_CONTEXT
+  const pins = Array.from(new Set((Array.isArray(value.pins) ? value.pins : []).filter((pin): pin is AdvisorScopePin => ['period', 'range', 'provider', 'project', 'model'].includes(pin))))
+  if (value.mode !== 'pinned' || pins.length === 0) return UNPINNED_ADVISOR_HARNESS_CONTEXT
+  return Object.freeze({ contractVersion: 'advisor-harness-context-v1', schemaVersion: 1, mode: 'pinned', pins: Object.freeze(pins) }) as AdvisorHarnessContextV1
+}
+export function advisorScopeIsPinned(scope: Pick<AdvisorScope, 'harnessContext'>, pin?: AdvisorScopePin): boolean {
+  const context = advisorHarnessContext(scope)
+  return context.mode === 'pinned' && (pin ? context.pins.includes(pin) : true)
+}
+export function advisorPinnedHarnessContext(...pins: AdvisorScopePin[]): AdvisorHarnessContextV1 {
+  const unique = Array.from(new Set(pins))
+  return unique.length
+    ? Object.freeze({ contractVersion: 'advisor-harness-context-v1', schemaVersion: 1, mode: 'pinned', pins: Object.freeze(unique) }) as AdvisorHarnessContextV1
+    : UNPINNED_ADVISOR_HARNESS_CONTEXT
+}
 export function advisorScopeFingerprint(scope: AdvisorScopeIdentity): string {
-  return JSON.stringify({
+  const context = advisorHarnessContext(scope)
+  const identity: Record<string, unknown> = {
     period: scope.period,
     range: scope.range ? { from: scope.range.from, to: scope.range.to } : null,
     projectId: scope.projectId,
     provider: scope.provider,
     model: scope.model,
-  })
+  }
+  // Unpinned is the backwards-compatible default. A pinned fingerprint must
+  // remain distinct, while older local conversation turns without the new
+  // context field should continue to match the normal unpinned conversation.
+  if (context.mode === 'pinned') identity.harnessContext = { mode: context.mode, pins: context.pins }
+  return JSON.stringify(identity)
+}
+export function advisorConversationScopeCompatible(scope: AdvisorScopeIdentity, fingerprint: string): boolean {
+  if (fingerprint === advisorScopeFingerprint(scope)) return true
+  if (advisorScopeIsPinned(scope)) return false
+  try {
+    const parsed = JSON.parse(fingerprint) as {
+      range?: { from?: unknown; to?: unknown } | null
+      projectId?: unknown
+      provider?: unknown
+      model?: unknown
+      harnessContext?: { mode?: unknown }
+    }
+    if (!parsed || typeof parsed !== 'object' || parsed.harnessContext?.mode === 'pinned') return false
+    return parsed.projectId === scope.projectId
+      && parsed.provider === scope.provider
+      && parsed.model === scope.model
+      && (parsed.range?.from ?? null) === (scope.range?.from ?? null)
+      && (parsed.range?.to ?? null) === (scope.range?.to ?? null)
+  } catch {
+    return false
+  }
 }
 export type AdvisorCoverageLevel = 'high' | 'partial' | 'unavailable'
 export type AdvisorCoverage = { level: AdvisorCoverageLevel; label: string; detail: string; state?: AdvisorEvidenceState }
@@ -228,6 +285,18 @@ export type AdvisorToolExecutor = (name: string, args: Record<string, unknown>, 
 export type AdvisorToolEventStatus = 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled'
 export type AdvisorToolEvent = { name: string; status: AdvisorToolEventStatus }
 export type AdvisorConversationTurn = { role: 'user' | 'assistant'; content: string; scopeFingerprint: string }
+export type AdvisorTaskContextStatus = 'active' | 'completed' | 'incomplete' | 'failed'
+export type AdvisorHarnessTaskContextV1 = {
+  contractVersion: 'advisor-harness-task-context-v1'
+  schemaVersion: 1
+  sourceTurnId: string
+  kind: 'factual' | 'investigative'
+  originalRequest: string
+  scope: AdvisorScope
+  checkedDomains: readonly AdvisorEvidenceDomain[]
+  status: AdvisorTaskContextStatus
+  availableToolNames: readonly AdvisorToolName[]
+}
 export type AdvisorUiContextV1 = {
   contractVersion: 'advisor-ui-context-v1'
   schemaVersion: 1
@@ -246,6 +315,8 @@ export type AdvisorRuntimeInput = {
   /** Exact bounded requests represented by requiredEvidence; used to avoid a duplicate read. */
   requiredToolRequests?: readonly AdvisorToolRequestV1[]
   conversation?: AdvisorConversationTurn[]
+  /** Bounded local continuity for the most recent factual investigation. */
+  taskContext?: AdvisorHarnessTaskContextV1
   uiContext?: AdvisorUiContextV1
   plan?: AdvisorTurnPlanV1
   fallbackIntent?: AdvisorIntent

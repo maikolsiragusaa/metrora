@@ -121,7 +121,7 @@ export function HarnessTurn({ answer, question, workTrace, selected, onSelect, o
     : null
   return (
     <article className={selected ? 'harness-v3-turn harness-v3-assistant-turn selected assistant-message' : 'harness-v3-turn harness-v3-assistant-turn assistant-message'} onClick={onSelect}>
-      <div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span><small>{answer.generatedByModel ? (answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat') : 'verified answer'}</small></div>
+      <div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span>{answer.generatedByModel ? <small>{answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat'}</small> : null}</div>
       <p className="harness-v3-conclusion">{answer.conclusion}</p>
       <div className="harness-v3-answer-meta"><span className={'harness-v3-coverage-pill ' + answer.coverage.level}>{answer.coverage.label}</span><span>{answer.scopeLabel}</span></div>
       {workTrace ? <HarnessCompletedWorkTraceView trace={workTrace} /> : null}

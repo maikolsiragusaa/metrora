@@ -7,6 +7,7 @@
  */
 import { createMetroraToolRegistry } from '../../../src/tools/registry'
 import { metroraToolScopeFingerprint } from '../../../src/tools/types'
+import { advisorHarnessContext } from './types'
 import type { MetroraOverviewSnapshot, MetroraToolDataSource, MetroraToolScope } from '../../../src/tools/types'
 import type { MenubarPayload } from '../lib/types'
 import type {
@@ -49,10 +50,19 @@ export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: Advi
     canonicalOverview as unknown as import('../../../src/tools/types').MetroraOverview | MetroraOverviewSnapshot | null,
     options as unknown as import('../../../src/tools/types').MetroraToolScopeOptions,
   )
+  const context = advisorHarnessContext(scope)
+  const immutableScope = Object.freeze({ ...(registry.scope as unknown as AdvisorScope), harnessContext: context })
   return {
     contract: registry.contract as unknown as AdvisorToolContract,
     definitions: registry.definitions as unknown as readonly AdvisorToolDefinition[],
-    scope: registry.scope as unknown as AdvisorScope,
-    execute: (async (name: string, args: Record<string, unknown>, signal?: AbortSignal) => registry.execute(name, args, signal)) as unknown as AdvisorToolExecutor,
+    scope: immutableScope,
+    execute: (async (name: string, args: Record<string, unknown>, signal?: AbortSignal) => {
+      const execution = await registry.execute(name, args, signal)
+      return {
+        ...execution,
+        evidence: { ...execution.evidence, scope: Object.freeze({ ...execution.evidence.scope, harnessContext: context }) },
+        ...(execution.envelope ? { envelope: { ...execution.envelope, scope: Object.freeze({ ...execution.envelope.scope, harnessContext: context }) } } : {}),
+      }
+    }) as unknown as AdvisorToolExecutor,
   }
 }

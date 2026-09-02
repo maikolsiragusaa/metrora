@@ -100,7 +100,7 @@ function normalizedPromptLedger(input: AdvisorRuntimeInput, nativeToolCalls: boo
 
 function requiredRequests(input: AdvisorRuntimeInput, definitions: readonly AdvisorToolDefinition[]): AdvisorToolRequestV1[] {
   if (input.requiredToolRequests) return [...input.requiredToolRequests]
-  const resolved = resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation)
+  const resolved = resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation, input.taskContext)
   return advisorQuestionRequiresCanonicalReads(resolved)
     ? requiredAdvisorToolRequests(resolved, definitions, input.question)
     : []
@@ -155,7 +155,10 @@ function isModelRuntimeFailure(diagnostics: readonly string[]): boolean {
 
 function factualTurn(input: AdvisorRuntimeInput): boolean {
   const { fallbackPlan } = runtimeGuardPlan(input)
-  return fallbackPlan.turnKind === 'investigate' && advisorQuestionRequiresCanonicalReads(resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation))
+  if (fallbackPlan.turnKind !== 'investigate') return false
+  if (input.requiredEvidence?.length) return true
+  if (input.tools?.length || input.toolContract?.tools.length) return true
+  return advisorQuestionRequiresCanonicalReads(resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation, input.taskContext))
 }
 
 function evidenceFromLoop(value: readonly unknown[]): AdvisorEvidence[] {
@@ -194,11 +197,11 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
   const inputRequiredReady = seededEvidence.length > 0 && evidenceUsable(seededEvidence)
   const isFactual = factualTurn(input)
   const { fallbackPlan: streamPlan, guard: streamGuard } = runtimeGuardPlan(input)
-  const streamResolved = resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation)
+  const streamResolved = resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation, input.taskContext)
   const streamTurn = Boolean(input.onDelta)
     && !isFactual
     && streamGuard.authorization === 'read-only'
-    && (streamPlan.turnKind === 'social' || !advisorQuestionRequiresCanonicalReads(streamResolved))
+    && (streamPlan.turnKind === 'social' || streamPlan.turnKind === 'boundary' || !advisorQuestionRequiresCanonicalReads(streamResolved))
   const loop = await runMetroraAgentLoop({
     turnId: requestId('metrora-agent-turn'),
     signal: options.signal,

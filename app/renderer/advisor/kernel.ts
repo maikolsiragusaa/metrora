@@ -1,13 +1,14 @@
 import { buildUnknownEvidence } from './evidence'
 import { buildActionProposalEvidence, buildBenchEvidence, buildClarificationEvidence, buildConversationEvidence, buildSocialEvidence, buildUnsupportedEvidence } from './special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from './comprehension'
+import { advisorAllowedPeriods, advisorScopeForTurn, advisorTaskContextForTurn } from './turn-plan'
 import { deterministicPlanningFallback, explicitAdvisorPeriodHints } from './planner'
 import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from './tools'
 import { DeterministicAdvisorRuntime } from './runtime'
-import { advisorAnswerUsesCanonicalEvidence, advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, requiredAdvisorToolRequests } from './required-reads'
+import { advisorQuestionRequiresCanonicalReads, advisorReadToolNamesForPlan, advisorTurnCanUseReadTools, executeRequiredAdvisorReads, requiredAdvisorToolRequests } from './required-reads'
 import { mergeEvidence } from './merge-evidence'
 import type { MenubarPayload } from '../lib/types'
-import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorRuntimeInput, AdvisorScope, AdvisorUiContextV1, AdvisorToolContract, AdvisorToolEvent, AdvisorToolExecution } from './types'
+import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorHarnessTaskContextV1, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorRuntimeInput, AdvisorScope, AdvisorUiContextV1, AdvisorToolContract, AdvisorToolEvent, AdvisorToolExecution } from './types'
 
 export class AdvisorCancelledError extends Error {
   constructor() { super('Advisor investigation cancelled'); this.name = 'AdvisorCancelledError' }
@@ -22,7 +23,7 @@ function rethrowCancellation(error: unknown, signal?: AbortSignal): void {
 }
 
 export type AdvisorKernel = {
-  investigate(input: { question: string; scope: AdvisorScope; overview?: AdvisorOverviewSnapshot | MenubarPayload | null; conversation?: AdvisorConversationTurn[]; uiContext?: AdvisorUiContextV1; signal?: AbortSignal; onConformance?: () => void; onToolEvent?: (event: AdvisorToolEvent) => void; onAgentEvent?: AdvisorRuntimeInput['onAgentEvent']; onDelta?: (text: string) => void }): Promise<AdvisorAnswer>
+  investigate(input: { question: string; scope: AdvisorScope; overview?: AdvisorOverviewSnapshot | MenubarPayload | null; conversation?: AdvisorConversationTurn[]; taskContext?: AdvisorHarnessTaskContextV1; uiContext?: AdvisorUiContextV1; signal?: AbortSignal; onConformance?: () => void; onToolEvent?: (event: AdvisorToolEvent) => void; onAgentEvent?: AdvisorRuntimeInput['onAgentEvent']; onDelta?: (text: string) => void }): Promise<AdvisorAnswer>
 }
 
 const unavailableBench: AdvisorBenchEvidence = { state: 'UNAVAILABLE', runs: [], latest: null, comparison: null }
@@ -131,11 +132,13 @@ function hasUsableEvidence(items: readonly AdvisorEvidence[]): boolean {
 
 export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorModelRuntime): AdvisorKernel {
   return {
-    async investigate({ question, scope, overview: suppliedOverview = null, conversation = [], uiContext, signal, onConformance, onToolEvent, onAgentEvent, onDelta }) {
+    async investigate({ question, scope, overview: suppliedOverview = null, conversation = [], taskContext, uiContext, signal, onConformance, onToolEvent, onAgentEvent, onDelta }) {
       throwIfAborted(signal)
-      const plan = resolveAdvisorQuestion(question, scope, conversation)
+      const turnTaskContext = advisorTaskContextForTurn(scope, taskContext)
+      const turnScope = advisorScopeForTurn(scope, question, turnTaskContext)
+      const plan = resolveAdvisorQuestion(question, turnScope, conversation, turnTaskContext)
       if (plan.plan.scopeConflict) {
-        const clarification = attachPlan(buildClarificationEvidence(question, scope, plan.plan.scopeConflict.message), plan)
+        const clarification = attachPlan(buildClarificationEvidence(question, turnScope, plan.plan.scopeConflict.message), plan)
         return new DeterministicAdvisorRuntime().generate({
           question,
           evidence: clarification,
@@ -146,33 +149,29 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           guard: plan.guard,
         }, signal)
       }
-      const allowedPeriods: AdvisorPeriodFilter[] = scope.range
-        ? [scope.period]
-        : Array.from(new Set<AdvisorPeriodFilter>([scope.period, ...explicitAdvisorPeriodHints(question)]))
+      const allowedPeriods: AdvisorPeriodFilter[] = advisorAllowedPeriods(turnScope, question)
       const modelReady = runtime.mode !== 'deterministic-local' && runtime.availability !== 'unavailable' && runtime.mode !== 'unsupported'
       const modelEvidence = plan.intent === 'action-proposal'
-        ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
-        : buildConversationEvidence(question, scope)
-      const toolRegistry = createAdvisorToolRegistry(source, scope, suppliedOverview, { allowedPeriods })
+        ? buildActionProposalEvidence(question, turnScope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
+        : buildConversationEvidence(question, turnScope)
+      const toolRegistry = createAdvisorToolRegistry(source, turnScope, suppliedOverview, { allowedPeriods })
       if (!modelReady) {
-        return deterministicAnswerForIntent({ source, intent: plan.intent, question, scope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
+        return deterministicAnswerForIntent({ source, intent: plan.intent, question, scope: turnScope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
       }
       const modelGuard = createAdvisorModelGuardV1(plan)
       const requiredToolRequests = advisorQuestionRequiresCanonicalReads(plan)
         ? requiredAdvisorToolRequests(plan, toolRegistry.definitions, question)
         : []
       const requiresCanonicalReads = advisorQuestionRequiresCanonicalReads(plan)
-      const plannedToolRequests = requiresCanonicalReads
-        ? deterministicPlanningFallback(plan.plan, toolRegistry.definitions, question).toolRequests
-        : []
       const modelToolNames = new Set<string>([
         ...requiredToolRequests.map(request => request.tool),
-        ...plannedToolRequests.map(request => request.tool),
+        ...advisorReadToolNamesForPlan(plan, question, turnTaskContext),
       ])
-      const modelToolDefinitions = requiresCanonicalReads
+      const canExposeReadTools = advisorTurnCanUseReadTools(plan, question, turnTaskContext)
+      const modelToolDefinitions = canExposeReadTools
         ? toolRegistry.definitions.filter(definition => modelToolNames.has(definition.function.name))
         : []
-      const modelToolContract: AdvisorToolContract | undefined = requiresCanonicalReads
+      const modelToolContract: AdvisorToolContract | undefined = canExposeReadTools
         ? {
             ...toolRegistry.contract,
             tools: modelToolDefinitions,
@@ -197,7 +196,7 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
         if (requiresCanonicalReads) {
           const requiredReads = await executeRequiredAdvisorReads({
             source,
-            scope,
+            scope: turnScope,
             question,
             plan,
             suppliedOverview,
@@ -217,13 +216,14 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           evidence: attachPlan(evidenceForModel, plan),
           ...(requiresCanonicalReads ? { requiredEvidence: modelEvidenceItems } : {}),
           requiredToolRequests,
+          taskContext: turnTaskContext,
           conversation,
           uiContext,
           plan: plan.plan,
           fallbackIntent: plan.intent,
           guard: modelGuard,
           allowedPeriods,
-          tools: requiresCanonicalReads ? modelToolDefinitions : undefined,
+          tools: canExposeReadTools ? modelToolDefinitions : undefined,
           toolContract: modelToolContract,
           executeTool,
           onConformance,
@@ -231,40 +231,38 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           onAgentEvent,
           onDelta,
         }, signal)
-        if (!requiresCanonicalReads) return answer
+        if (!requiresCanonicalReads) {
+          // Unknown investigations may have selected a bounded read Tool even
+          // though no deterministic baseline was known. Attach any evidence
+          // structurally, but never reject or rewrite the model's prose.
+          if (!hasUsableEvidence(modelEvidenceItems)) return answer
+          const authoritative = mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
+          return attachAuthoritativeEvidence(answer, authoritative, plan)
+        }
         // A selected model failure is a runtime failure, not permission to
         // silently switch the user into a deterministic evidence-only mode.
         // The loop already retains any reads completed before the failure.
-        if (answer.runtimeFailure) return answer
+        if (answer.runtimeFailure) {
+          if (!hasUsableEvidence(modelEvidenceItems)) return answer
+          const authoritative = mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
+          return attachAuthoritativeEvidence(answer, authoritative, plan)
+        }
         if (!hasUsableEvidence(modelEvidenceItems)) {
-          const fallback = await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
+          const fallback = await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope: turnScope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
           return {
             ...fallback,
             materialLimits: [...(fallback.materialLimits ?? []), 'No usable Metrora facts were returned for this turn; try again or adjust the selected scope.'],
           }
         }
         const authoritative = mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
-        if (!advisorAnswerUsesCanonicalEvidence(answer, authoritative)) {
-          const fallback = await new DeterministicAdvisorRuntime().generate({
-            question,
-            evidence: attachPlan(authoritative, plan),
-            conversation,
-            uiContext,
-            plan: plan.plan,
-            fallbackIntent: plan.intent,
-            guard: modelGuard,
-            allowedPeriods,
-          }, signal)
-          return {
-            ...fallback,
-            materialLimits: [...(fallback.materialLimits ?? []), 'The selected model answer was not grounded in the verified Metrora evidence; the verified closeout is shown instead.'],
-          }
-        }
+        // finalizeModelAnswer is the single semantic/numeric finalization
+        // authority. Once it succeeds, only attach the canonical refs and
+        // structural evidence; do not apply a second prose validator.
         return attachAuthoritativeEvidence(answer, authoritative, plan)
       } catch (error) {
         rethrowCancellation(error, signal)
         const fallbackBase = plan.intent === 'action-proposal'
-          ? buildActionProposalEvidence(question, scope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
+          ? buildActionProposalEvidence(question, turnScope, plan.understanding.boundary ?? 'Harness is proposal-only for this conversation.')
           : null
         const recoveredEvidence = modelEvidenceItems.length && hasUsableEvidence(modelEvidenceItems)
           ? mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
@@ -273,7 +271,7 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           ? await new DeterministicAdvisorRuntime().generate({ question, evidence: attachPlan(fallbackBase, plan), conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard, allowedPeriods }, signal)
           : recoveredEvidence
             ? await new DeterministicAdvisorRuntime().generate({ question, evidence: attachPlan(recoveredEvidence, plan), conversation, uiContext, plan: plan.plan, fallbackIntent: plan.intent, guard: plan.guard, allowedPeriods }, signal)
-            : await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
+            : await deterministicAnswerForIntent({ source, intent: plan.intent, question, scope: turnScope, suppliedOverview, conversation, uiContext, plan, signal, allowedPeriods })
         const hasRecoveredFacts = Boolean(recoveredEvidence?.refs.length || fallback.evidence.length)
         return {
           ...fallback,

@@ -53,7 +53,16 @@ function contentMinimalTimestamp(value: unknown): string | null {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
 }
 
-export function contentMinimalScope(scope: AdvisorScope): AdvisorScope {
+export type AdvisorContentMinimalScope = {
+  period: AdvisorScope['period']
+  range: AdvisorScope['range']
+  provider: string
+  projectId: string
+  projectName: string
+  model: string | null
+}
+
+export function contentMinimalScope(scope: AdvisorScope): AdvisorContentMinimalScope {
   return {
     period: scope.period,
     range: scope.range ? { from: scope.range.from, to: scope.range.to } : null,

@@ -29,6 +29,7 @@ describe('Harness completed work trace', () => {
       'Usage checked',
       'Thinking',
       'Project breakdown checked',
+      'Models checked',
       'Preparing answer',
       'Done',
     ])
@@ -36,5 +37,17 @@ describe('Harness completed work trace', () => {
     expect(trace.modelCompletions).toBe(2)
     expect(trace.toolEvents).toBe(3)
     expect(JSON.stringify(trace)).not.toMatch(/reasoning|providerMetadata|signature|encrypted|prompt|arguments/i)
+  })
+
+  it('keeps the model lifecycle visible even when a social turn has no Tools', () => {
+    const trace = createHarnessCompletedWorkTrace([], [
+      event('turn-started'),
+      event('model-started'),
+      event('model-completed'),
+      event('turn-completed'),
+    ])
+
+    expect(trace.items.map(item => item.label)).toEqual(['Thinking', 'Thinking', 'Models checked', 'Preparing answer', 'Done'])
+    expect(trace.toolEvents).toBe(0)
   })
 })

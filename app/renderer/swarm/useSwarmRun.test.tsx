@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { advisorPinnedHarnessContext } from '../advisor/types'
 import type { AdvisorAnswer, AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope, AdvisorSwarmSynthesisResult } from '../advisor/types'
 import { createAdvisorConformanceFixture } from '../advisor/conformance'
 import type { MenubarPayload } from '../lib/types'
@@ -85,13 +86,34 @@ describe('useSwarmRun execution ownership', () => {
     const { result } = renderHook(() => useSwarmRun(options({ runtime: runtime('fixture', generate) })))
 
     let started = true
-    act(() => { started = result.current.run('How much have I spent in lifetime?', 2) })
+    act(() => { started = result.current.run('How much have I spent in lifetime?', 2, { ...options().scope, harnessContext: advisorPinnedHarnessContext('period') }) })
 
     expect(started).toBe(false)
     expect(generate).not.toHaveBeenCalled()
     expect(result.current.state.running).toBe(false)
     expect(result.current.state.scopeConflict).toMatchObject({ currentPeriod: 'today', requestedPeriod: 'lifetime' })
     expect(result.current.state.error).toMatch(/scope|period|lifetime/i)
+  })
+
+  it('resolves an unpinned lifetime task before giving workers their immutable scope', async () => {
+    const workerScopes: string[] = []
+    const generate = vi.fn(async (input: AdvisorRuntimeInput) => {
+      workerScopes.push(input.evidence.scope.period)
+      return answer('fixture', 'Metrora measured $12.00 in lifetime spend.')
+    })
+    const generateSwarmSynthesis = vi.fn(async () => ({
+      answer: 'The workers confirmed the measured lifetime spend.',
+      evidenceSummary: 'Both workers used the same bounded lifetime scope.',
+    }))
+    const { result } = renderHook(() => useSwarmRun(options({ runtime: runtime('fixture', generate, generateSwarmSynthesis) })))
+
+    let started = false
+    act(() => { started = result.current.run('How much have I spent in lifetime?', 2) })
+
+    expect(started).toBe(true)
+    await waitFor(() => expect(result.current.state.running).toBe(false), { timeout: 1_000, interval: 5 })
+    expect(workerScopes).toEqual(['lifetime', 'lifetime'])
+    expect(generateSwarmSynthesis).toHaveBeenCalledOnce()
   })
 
   it('gives both resolved Lifetime workers the same immutable scope and synthesizes their natural closeout', async () => {

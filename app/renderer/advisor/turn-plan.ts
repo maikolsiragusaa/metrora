@@ -1,7 +1,8 @@
 import { classifyAdvisorQuestion } from './evidence'
-import { advisorScopeFingerprint, type AdvisorConversationTurn, type AdvisorEvidenceDomain, type AdvisorIntent, type AdvisorPeriodFilter, type AdvisorPresentationIntent, type AdvisorQuestionFamily, type AdvisorScope, type AdvisorScopeConflictV1, type AdvisorTurnPlanV1 } from './types'
+import { advisorConversationScopeCompatible, advisorPinnedHarnessContext, advisorScopeIsPinned, UNPINNED_ADVISOR_HARNESS_CONTEXT, type AdvisorConversationTurn, type AdvisorEvidenceDomain, type AdvisorHarnessTaskContextV1, type AdvisorIntent, type AdvisorPeriodFilter, type AdvisorPresentationIntent, type AdvisorQuestionFamily, type AdvisorScope, type AdvisorScopeConflictV1, type AdvisorTurnPlanV1 } from './types'
 
 const PLAN_VERSION = 'advisor-turn-plan-v1' as const
+export const ADVISOR_PERIOD_FILTERS: readonly AdvisorPeriodFilter[] = Object.freeze(['today', 'yesterday', 'week', '30days', 'month', 'all', 'lifetime'])
 
 function normalize(question: string): string {
   return question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
@@ -42,6 +43,10 @@ function scopeConflict(value: string, scope: AdvisorScope): AdvisorScopeConflict
   const requestedPeriods = explicitScopePeriods(value)
   if (requestedPeriods.length !== 1) return undefined
   const requested = requestedPeriods[0]!
+  // An ordinary Harness conversation is intentionally unpinned. Its
+  // compatibility scope.period is a default for non-explicit questions, not a
+  // permission boundary for a user-requested period.
+  if (!advisorScopeIsPinned(scope, 'period') && !advisorScopeIsPinned(scope, 'range') && !scope.range) return undefined
   if (!requested || selectedScopeMatchesRequestedPeriod(scope, requested)) return undefined
   const current = scopePeriodLabel(scope.period)
   const requestedLabel = scopePeriodLabel(requested)
@@ -60,7 +65,7 @@ function scopeConflict(value: string, scope: AdvisorScope): AdvisorScopeConflict
 }
 
 /** Build a bounded turn-local scope after the user chooses the requested period. */
-export function advisorScopeForRequestedPeriod(scope: AdvisorScope, requested: AdvisorPeriodFilter, now = new Date()): AdvisorScope {
+export function advisorScopeForRequestedPeriod(scope: AdvisorScope, requested: AdvisorPeriodFilter, now = new Date(), harnessContext = UNPINNED_ADVISOR_HARNESS_CONTEXT): AdvisorScope {
   if (requested === 'yesterday') {
     const yesterday = new Date(now.getTime())
     yesterday.setHours(12, 0, 0, 0)
@@ -69,9 +74,62 @@ export function advisorScopeForRequestedPeriod(scope: AdvisorScope, requested: A
     const month = String(yesterday.getMonth() + 1).padStart(2, '0')
     const day = String(yesterday.getDate()).padStart(2, '0')
     const date = year + '-' + month + '-' + day
-    return { ...scope, period: 'today', range: { from: date, to: date } }
+    return { ...scope, period: 'today', range: { from: date, to: date }, harnessContext }
   }
-  return { ...scope, period: requested, range: null }
+  return { ...scope, period: requested, range: null, harnessContext }
+}
+
+export function advisorPinnedScopeForRequestedPeriod(scope: AdvisorScope, requested: AdvisorPeriodFilter, now = new Date()): AdvisorScope {
+  return advisorScopeForRequestedPeriod(scope, requested, now, advisorPinnedHarnessContext('period'))
+}
+
+/**
+ * The generic scope.period remains useful as a compatibility default, but an
+ * unpinned Harness turn can use any one of the bounded period filters. A
+ * ranged or intentionally pinned scope remains restrictive.
+ */
+export function advisorAllowedPeriods(scope: AdvisorScope, question = ''): AdvisorPeriodFilter[] {
+  if (scope.range || advisorScopeIsPinned(scope, 'period') || advisorScopeIsPinned(scope, 'range')) return [scope.period]
+  return [...ADVISOR_PERIOD_FILTERS]
+}
+
+function sameTaskScopeDimensions(left: AdvisorScope, right: AdvisorScope): boolean {
+  return left.provider === right.provider
+    && left.projectId === right.projectId
+    && left.model === right.model
+    && (left.range?.from ?? null) === (right.range?.from ?? null)
+    && (left.range?.to ?? null) === (right.range?.to ?? null)
+}
+
+export function advisorTaskContextForTurn(scope: AdvisorScope, taskContext?: AdvisorHarnessTaskContextV1): AdvisorHarnessTaskContextV1 | undefined {
+  if (!taskContext || !sameTaskScopeDimensions(scope, taskContext.scope)) return undefined
+  if ((scope.range || advisorScopeIsPinned(scope, 'period') || advisorScopeIsPinned(scope, 'range')) && scope.period !== taskContext.scope.period) return undefined
+  return taskContext
+}
+
+/**
+ * Resolve a single explicit period into the immutable turn context used by
+ * controller-owned runs. An unpinned Harness may choose one bounded period
+ * for the turn; an intentionally pinned period remains subject to the normal
+ * conflict contract and is never widened here.
+ */
+export function advisorScopeForTurn(scope: AdvisorScope, question: string, taskContext?: AdvisorHarnessTaskContextV1): AdvisorScope {
+  if (scope.range || advisorScopeIsPinned(scope, 'period') || advisorScopeIsPinned(scope, 'range')) return scope
+  const requestedPeriods = explicitScopePeriods(normalize(question))
+  const usableTaskContext = advisorTaskContextForTurn(scope, taskContext)
+  if (requestedPeriods.length === 1) {
+    const taskScope = usableTaskContext?.scope
+    // A pinned task context remains restrictive even when the current shell
+    // is unpinned. An explicit new period must reach the normal clarification
+    // contract instead of silently widening that task.
+    if (taskScope && advisorScopeIsPinned(taskScope, 'period')) return taskScope
+    return advisorScopeForRequestedPeriod(scope, requestedPeriods[0]!)
+  }
+  const taskScope = usableTaskContext?.scope
+  // An unpinned Harness still carries the last bounded task context for a
+  // related follow-up. This keeps “which models contributed?” on the same
+  // lifetime/weekly read without turning the shell into a permanent filter.
+  return taskScope && usableTaskContext?.availableToolNames.length ? taskScope : scope
 }
 
 export function advisorCopyLanguage(question: string): 'en' | 'it' {
@@ -216,9 +274,8 @@ function scopeWasExplicit(value: string): boolean {
 }
 
 function priorIntents(scope: AdvisorScope, conversation: AdvisorConversationTurn[]): AdvisorIntent[] {
-  const fingerprint = advisorScopeFingerprint(scope)
   return conversation
-    .filter(turn => turn.role === 'user' && turn.scopeFingerprint === fingerprint)
+    .filter(turn => turn.role === 'user' && advisorConversationScopeCompatible(scope, turn.scopeFingerprint))
     .slice(-4)
     .map(turn => explicitIntent(normalize(turn.content)))
     .filter(intent => intent !== 'unknown' && intent !== 'clarification' && intent !== 'unsupported')
@@ -228,12 +285,29 @@ function expertDetail(value: string): boolean {
   return /(?:technical|expert|details|diagnostic|provenance|technical data|tecnico|dettagli|diagnostica|provenienza|json|schema)/u.test(value)
 }
 
-export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, conversation: AdvisorConversationTurn[] = []): AdvisorTurnPlanV1 & { intent: AdvisorIntent; usedDefaultScope: boolean } {
+function hasStandaloneConversationShape(value: string): boolean {
+  return /\b(?:joke|poem|recipe|story|barzellett\w*|poesi\w*|ricett\w*)\b/u.test(value)
+}
+
+export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, conversation: AdvisorConversationTurn[] = [], taskContext?: AdvisorHarnessTaskContextV1): AdvisorTurnPlanV1 & { intent: AdvisorIntent; usedDefaultScope: boolean } {
   const value = normalize(question)
+  const usableTaskContext = advisorTaskContextForTurn(scope, taskContext)
   const social = isSocial(value)
   const action = !social && isActionRequest(value)
   const baseIntent: AdvisorIntent = social ? 'social' : action ? 'action-proposal' : explicitIntent(value)
-  const followUp = !social && !action && baseIntent === 'unknown' && /^(?:and|also|what about|how about|that|it|this|quello|e|invece|quanto a|fammi vedere meglio|show me more)\b/u.test(value)
+  const historicalFollowUp = !social && !action && baseIntent === 'unknown' && /^(?:and|also|what about|how about|that|it|this|quello|e|invece|quanto a|fammi vedere meglio|show me more)\b/u.test(value)
+  // A pending task may make a short, otherwise unclassified turn a
+  // continuation. This deliberately uses bounded task state and message
+  // shape, never a catalogue of language-specific proceed words.
+  const structuredFollowUp = !social
+    && !action
+    && baseIntent === 'unknown'
+    && Boolean(usableTaskContext?.availableToolNames.length)
+    && !scopeWasExplicit(value)
+    && value.length <= 96
+    && value.split(/\s+/u).filter(Boolean).length <= 12
+    && !hasStandaloneConversationShape(value)
+  const followUp = historicalFollowUp || structuredFollowUp
   let intent = baseIntent
   let scopeIntent: AdvisorTurnPlanV1['scopeIntent'] = scopeWasExplicit(value) ? 'explicit' : 'current'
   let clarification: string | null = null
@@ -255,9 +329,11 @@ export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, c
       clarification = advisorCopyLanguage(value) === 'it'
         ? 'Su cosa devo continuare: spesa misurata, quota del provider o risultato del test controllato?'
         : 'Which should I continue with: measured spend, provider quota, or the controlled test result?'
+    } else if (structuredFollowUp) {
+      scopeIntent = 'follow-up'
     }
   }
-  if (!social && !action && !clarification && intent !== 'unsupported' && intent !== 'unknown') {
+  if (!social && !action && !clarification && intent !== 'unsupported') {
     requestedScopeConflict = scopeConflict(value, scope)
     if (requestedScopeConflict) {
       scopeIntent = 'ambiguous'

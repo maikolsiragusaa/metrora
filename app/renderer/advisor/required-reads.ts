@@ -1,12 +1,12 @@
 import { assertStrictBoundedAdvisorToolContent } from './contract'
 import type { AdvisorQuestionPlan } from './comprehension'
+import { advisorAllowedPeriods } from './turn-plan'
 import { deterministicPlanningFallback, explicitAdvisorPeriodHints } from './planner'
-import { isAdvisorNaturalNarrativeSupportedAcrossEvidence } from './synthesis'
 import type {
   AdvisorDataSource,
-  AdvisorAnswer,
   AdvisorEvidence,
   AdvisorEvidenceRef,
+  AdvisorHarnessTaskContextV1,
   AdvisorScope,
   AdvisorToolName,
   AdvisorToolEvent,
@@ -34,31 +34,49 @@ export type RequiredAdvisorReadsResult = {
 
 const FACTUAL_INTENTS = new Set(['spend-change', 'model-efficiency', 'quota-capacity', 'bench-result'])
 
+const READ_TOOL_PALETTES: Readonly<Record<string, readonly AdvisorToolName[]>> = Object.freeze({
+  usage: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot', 'get_coverage_report'],
+  spend: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot', 'get_coverage_report'],
+  tokens: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot', 'get_coverage_report'],
+  cache: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot', 'get_coverage_report'],
+  reasoning: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot', 'get_coverage_report'],
+  models: ['get_model_efficiency', 'get_spend_snapshot', 'get_project_drivers', 'get_coverage_report'],
+  providers: ['get_quota_snapshot', 'get_spend_snapshot', 'get_overview_snapshot', 'get_coverage_report'],
+  projects: ['get_project_drivers', 'get_spend_snapshot', 'get_model_efficiency', 'get_session_highlights', 'get_coverage_report'],
+  sessions: ['get_session_highlights', 'get_project_drivers', 'get_spend_snapshot', 'get_model_efficiency', 'get_coverage_report'],
+  pricing: ['get_model_efficiency', 'get_spend_snapshot', 'get_coverage_report'],
+  quota: ['get_quota_snapshot', 'get_spend_snapshot', 'get_overview_snapshot', 'get_coverage_report'],
+  bench: ['get_bench_evidence', 'get_coverage_report'],
+  evidence: ['get_coverage_report', 'get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers'],
+  unknown: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot', 'get_coverage_report'],
+})
+
+const INVESTIGATION_MARKERS = /\b(?:check|inspect|investigat\w*|look\s+into|analy[sz]\w*|review|data|evidence|measured|usage|spend|spent|cost|quota|capacity|model|provider|project|session|pricing|benchmark|metrora|lifetime|today|week|month)\b/iu
+const CLEARLY_NON_FACTUAL_UNKNOWN = /\b(?:joke|poem|recipe|weather|news|translate|translation|code|coding|typescript|python|sqlite)\b/iu
+
 export function advisorQuestionRequiresCanonicalReads(plan: AdvisorQuestionPlan): boolean {
   return plan.plan.turnKind === 'investigate' && FACTUAL_INTENTS.has(plan.intent)
 }
 
 /**
- * A model closeout must contain both a canonical reference and a structural
+ * Unknown questions can still be authorized investigations. The controller
+ * uses only a small read-only palette; social and clearly non-factual turns
+ * stay tool-free. Continuity is supplied by the structured task context, not
+ * by matching a particular “continue” word.
  */
-export function advisorAnswerUsesCanonicalEvidence(answer: AdvisorAnswer, evidence: AdvisorEvidence): boolean {
-  const canonicalIds = new Set(evidence.refs.map(ref => ref.id))
-  if (!answer.conclusion.trim() || !answer.evidence.some(ref => canonicalIds.has(ref.id))) return false
-  // Reuse the same semantic/numeric grounding boundary as ordinary Chat
-  // closeouts. This accepts paraphrases while rejecting a response that only
-  // attaches a real reference or repeats an unsupported number.
-  if (!isAdvisorNaturalNarrativeSupportedAcrossEvidence(answer.conclusion, [evidence])) return false
-  const normalized = answer.conclusion.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase()
-  const factualAnchor = evidence.intent === 'spend-change'
-    ? /\b(?:spend|spent|cost|expense|measured|total|lifetime|usage|calls?|sessions?|projects?|models?|providers?|spesa|speso|costo|misurat|totale|utilizz|chiamat|sessioni|progett|modell|fornitor)\b/u
-    : evidence.intent === 'model-efficiency'
-      ? /\b(?:model|models|efficien|cost|call|pricing|modello|modelli|costo|chiamat|prezz)\b/u
-      : evidence.intent === 'quota-capacity'
-        ? /\b(?:quota|capacity|remaining|reset|limit|credit|disponibil|rimane|resta|limite|credito)\b/u
-        : evidence.intent === 'bench-result'
-          ? /\b(?:bench|benchmark|score|result|task|test|risultat|punteggi|prova)\b/u
-          : /\b(?:metrora|canonical|evidence|evidenza|verified|verificat)\b/u
-  return factualAnchor.test(normalized)
+export function advisorTurnCanUseReadTools(plan: AdvisorQuestionPlan, question: string, taskContext?: AdvisorHarnessTaskContextV1): boolean {
+  if (plan.plan.turnKind !== 'investigate' || plan.plan.authorization !== 'read-only') return false
+  if (plan.intent !== 'unknown') return true
+  if (CLEARLY_NON_FACTUAL_UNKNOWN.test(question)) return false
+  const recentTask = taskContext && taskContext.availableToolNames.length > 0
+  return Boolean(recentTask || INVESTIGATION_MARKERS.test(question))
+}
+
+export function advisorReadToolNamesForPlan(plan: AdvisorQuestionPlan, question: string, taskContext?: AdvisorHarnessTaskContextV1): AdvisorToolName[] {
+  if (!advisorTurnCanUseReadTools(plan, question, taskContext)) return []
+  const palette = READ_TOOL_PALETTES[plan.plan.questionFamily] ?? READ_TOOL_PALETTES.unknown!
+  const prior = taskContext?.availableToolNames.filter(name => palette.includes(name)) ?? []
+  return Array.from(new Set(prior.length ? prior : palette)).slice(0, 7)
 }
 
 function boundedUnavailableEvidence(question: string, scope: AdvisorScope, plan: AdvisorQuestionPlan, request: AdvisorToolRequestV1, detail: string): AdvisorEvidence {
@@ -142,9 +160,7 @@ export async function executeRequiredAdvisorReads(options: {
   registry?: AdvisorToolRegistry
   allowedPeriods?: readonly import('./types').AdvisorPeriodFilter[]
 }): Promise<RequiredAdvisorReadsResult> {
-  const allowedPeriods = options.allowedPeriods ?? (options.scope.range
-    ? [options.scope.period]
-    : Array.from(new Set([options.scope.period, ...explicitAdvisorPeriodHints(options.question)])))
+  const allowedPeriods = options.allowedPeriods ?? advisorAllowedPeriods(options.scope, options.question)
   const registry = options.registry ?? createAdvisorToolRegistry(options.source, options.scope, options.suppliedOverview ?? null, { allowedPeriods })
   const definitions = options.definitions ?? registry.definitions
   const planned = requiredAdvisorToolRequests(options.plan, definitions, options.question)

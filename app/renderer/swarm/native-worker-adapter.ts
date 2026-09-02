@@ -1,6 +1,6 @@
 import { buildClarificationEvidence, buildConversationEvidence } from '../advisor/special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from '../advisor/comprehension'
-import { explicitAdvisorPeriodHints } from '../advisor/planner'
+import { advisorAllowedPeriods, advisorScopeForTurn } from '../advisor/turn-plan'
 import { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_OUTPUT_MAX_BYTES } from '../advisor/contract'
 import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from '../advisor/tools'
 import { DeterministicAdvisorRuntime } from '../advisor/runtime'
@@ -226,7 +226,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         observe({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: request.runId, workerId: request.workerId, role: request.role, status: 'unavailable', at: result.endedAt, detail: 'Runtime unavailable.' })
         return finish(result)
       }
-      const scope = request.scope as unknown as AdvisorScope
+      const scope = advisorScopeForTurn(request.scope as unknown as AdvisorScope, originalWorkerTask(request.task))
       // The coordinator appends a trusted role sentence to the public worker
       // request. Keep that responsibility metadata out of semantic question
       // classification so words such as "limits" in a verifier instruction
@@ -260,9 +260,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         )
         return finish(result)
       }
-      const allowedPeriods = scope.range
-        ? [scope.period]
-        : Array.from(new Set([scope.period, ...explicitAdvisorPeriodHints(question)]))
+      const allowedPeriods = advisorAllowedPeriods(scope, question)
       const registry = createAdvisorToolRegistry(this.source, scope, this.overview, { allowedPeriods })
       const allowed = new Set(request.allowedToolNames)
       const definitions = registry.definitions.filter(definition => allowed.has(definition.function.name)).slice(0, 16)

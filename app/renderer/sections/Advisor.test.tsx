@@ -160,6 +160,7 @@ describe('Harness V3 workspace', () => {
     expect(screen.queryByRole('complementary', { name: 'Harness history' })).not.toBeInTheDocument()
     expect(screen.queryByText('Ask a question to pin its evidence')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Harness context' })).toBeInTheDocument()
+    expect(screen.getByText('Unpinned context')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Harness execution strategy' })).toHaveValue('chat')
     expect(screen.getByRole('button', { name: 'Configure runtime' })).toBeInTheDocument()
     expect(screen.queryByText('HARNESS · TOOLS READ-ONLY')).not.toBeInTheDocument()
@@ -349,7 +350,7 @@ describe('Harness V3 workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     await submitQuestion('Show the bounded execution lifecycle')
 
-    await waitFor(() => expect(screen.getByText('Thinking…')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('Thinking…').length).toBeGreaterThanOrEqual(1))
     releaseModel?.()
     await waitFor(() => expect(screen.getByText('Checking usage · Last 7 days…')).toBeInTheDocument())
     releaseTool?.()
@@ -433,6 +434,8 @@ describe('Harness V3 workspace', () => {
     render(<Advisor period="week" provider="all" projectScopeId="all" range={null} overview={overview} detectedProviders={[]} />)
     await submitQuestion('Weekly question')
     openHarnessContext()
+    fireEvent.change(screen.getByLabelText('Harness context mode'), { target: { value: 'pinned' } })
+    await waitFor(() => expect(screen.getByLabelText('Harness period')).toHaveValue('week'))
     fireEvent.change(screen.getByLabelText('Harness period'), { target: { value: '30days' } })
     await waitFor(() => expect(screen.getByLabelText('Harness period')).toHaveValue('30days'))
     await submitQuestion('Thirty day question')
@@ -440,14 +443,17 @@ describe('Harness V3 workspace', () => {
     expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
   })
 
-  it('excludes factual context after an explicit range change', async () => {
+  it('does not inherit a Desktop range as an implicit Harness context', async () => {
     const view = render(<Advisor period="week" provider="all" projectScopeId="all" range={{ from: '2026-08-01', to: '2026-08-07' }} overview={overview} detectedProviders={[]} />)
     await submitQuestion('First range question')
     view.rerender(<Advisor period="week" provider="all" projectScopeId="all" range={{ from: '2026-08-08', to: '2026-08-14' }} overview={overview} detectedProviders={[]} />)
-    await waitFor(() => expect(screen.getByText(/Aug 8/)).toBeInTheDocument())
     await submitQuestion('Second range question')
 
-    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([])
+    expect(investigate.mock.calls[1]?.[0].conversation).toEqual([
+      { role: 'user', content: 'First range question', scopeFingerprint: expect.any(String) },
+      { role: 'assistant', content: answer.conclusion, scopeFingerprint: expect.any(String) },
+    ])
+    expect(investigate.mock.calls[1]?.[0].scope).toMatchObject({ range: null, harnessContext: { mode: 'unpinned' } })
   })
 
   it('excludes factual context after provider and model changes', async () => {

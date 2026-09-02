@@ -1,7 +1,8 @@
 import type { Section } from '../lib/desktopNavigation'
 import type { DateRange, Period } from '../lib/types'
 import { snapshotAdvisorScope } from './contract'
-import type { AdvisorScope } from './types'
+import { advisorPinnedHarnessContext } from './types'
+import type { AdvisorScope, AdvisorScopePin } from './types'
 
 export const ADVISOR_CONTEXTUAL_LAUNCH_CONTRACT_VERSION = 'advisor-contextual-launch-v1' as const
 export const ADVISOR_CONTEXTUAL_LAUNCH_SCHEMA_VERSION = 1 as const
@@ -180,6 +181,15 @@ export function normalizeAdvisorContextualLaunch(value: unknown): AdvisorContext
 export function advisorScopeFromContextualLaunch(value: unknown): AdvisorScope | null {
   const launch = normalizeAdvisorContextualLaunch(value)
   if (!launch) return null
+  const pins: AdvisorScopePin[] = launch.scopeMode === 'capacity'
+    ? []
+    : [
+        'period',
+        ...(launch.range ? ['range' as const] : []),
+        ...(launch.provider !== 'all' ? ['provider' as const] : []),
+        ...(launch.projectId !== 'all' ? ['project' as const] : []),
+        ...(launch.model !== null ? ['model' as const] : []),
+      ]
   return snapshotAdvisorScope({
     period: launch.period,
     range: launch.range ? { from: launch.range.from, to: launch.range.to } : null,
@@ -187,5 +197,6 @@ export function advisorScopeFromContextualLaunch(value: unknown): AdvisorScope |
     projectId: launch.projectId,
     projectName: launch.projectName,
     model: launch.model,
+    harnessContext: advisorPinnedHarnessContext(...pins),
   })
 }

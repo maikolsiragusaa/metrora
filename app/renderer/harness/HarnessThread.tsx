@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { AdvisorAnswer, AdvisorScope, AdvisorScopeConflictOptionV1, AdvisorScopeConflictV1 } from '../advisor/types'
+import type { MetroraAgentLoopEvent } from '../agent-loop/contracts'
 import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { MetroraMark } from '../components/MetroraMark'
 import { HarnessSwarmRun } from './HarnessSwarmRun'
@@ -16,7 +17,7 @@ const PROMPTS = [
   { eyebrow: 'Projects', label: 'Which Project changed most?', question: 'Which Project drove the most spend?' },
 ]
 
-export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, messages, selectedAnswerId, onSelectAnswer, onFollowUp, onScopeConflictOption, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, onAsk, onNextInvestigation }: {
+export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, messages, selectedAnswerId, onSelectAnswer, onFollowUp, onScopeConflictOption, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, agentEvents = [], streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, onAsk, onNextInvestigation }: {
   mode: 'chat' | 'swarm'
   swarmExperimentalEnabled: boolean
   swarm: { enabled: boolean; runtimeLabel: string; modelLabel: string; state: SwarmRunState; onCancel: () => void }
@@ -33,6 +34,7 @@ export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, me
   loadingQuestion: string | null
   toolStatus: string | null
   toolActivity: HarnessToolActivity[]
+  agentEvents?: MetroraAgentLoopEvent[]
   streamPreview: string
   onCancel: () => void
   error: string | null
@@ -65,7 +67,7 @@ export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, me
           : <HarnessTurn key={message.id} answer={message.answer!} question={messages[index - 1]?.role === 'user' ? messages[index - 1]?.text : undefined} workTrace={message.workTrace} selected={selectedAnswerId === message.id} onSelect={() => onSelectAnswer(message.id)} onFollowUp={onFollowUp} onScopeConflictOption={onScopeConflictOption} onNextInvestigation={onNextInvestigation} harnessAction={message.answer?.actionProposal?.harnessAction ? harnessActions[message.answer.actionProposal.harnessAction.actionId] ?? null : null} actionBusy={harnessActionBusyId === message.answer?.actionProposal?.harnessAction?.actionId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} />
         )}
         {showSwarm ? <HarnessSwarmRun enabled={swarmExperimentalEnabled} runtimeLabel={swarm.runtimeLabel} modelLabel={swarm.modelLabel} state={swarm.state} onCancel={swarm.onCancel} /> : null}
-        {loadingQuestion ? <article className="harness-v3-pending-turn assistant-message pending"><div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span></div><p className="harness-v3-pending-status">{toolStatus ?? 'Thinking…'}</p><HarnessWorkTrace items={toolActivity} scope={scope} />{streamPreview ? <p className="harness-v3-stream-preview">{streamPreview}</p> : null}<button type="button" className="harness-v3-quiet-button" onClick={onCancel}>Cancel</button></article> : null}
+        {loadingQuestion ? <article className="harness-v3-pending-turn assistant-message pending"><div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span></div><p className="harness-v3-pending-status">{toolStatus ?? 'Thinking…'}</p><HarnessWorkTrace items={toolActivity} events={agentEvents} scope={scope} />{streamPreview ? <p className="harness-v3-stream-preview">{streamPreview}</p> : null}<button type="button" className="harness-v3-quiet-button" onClick={onCancel}>Cancel</button></article> : null}
         {error ? <div className="harness-v3-error" role="alert"><strong>Harness unavailable.</strong> {error}<button type="button" className="harness-v3-quiet-button" onClick={() => { if (failedRequestPresent) onRetry() }}>Retry</button></div> : null}
         {notice ? <div className="harness-v3-notice" role="status">{notice}</div> : null}
       </div>

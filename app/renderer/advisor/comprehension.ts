@@ -1,4 +1,4 @@
-import type { AdvisorConversationTurn, AdvisorGuardPlanV1, AdvisorIntent, AdvisorQuestionUnderstanding, AdvisorScope, AdvisorTurnPlanV1 } from './types'
+import type { AdvisorConversationTurn, AdvisorGuardPlanV1, AdvisorHarnessTaskContextV1, AdvisorIntent, AdvisorQuestionUnderstanding, AdvisorScope, AdvisorTurnPlanV1 } from './types'
 import { advisorCopyLanguage, createAdvisorTurnPlanV1 } from './turn-plan'
 
 export type AdvisorQuestionPlan = {
@@ -44,8 +44,9 @@ export function resolveAdvisorQuestion(
   question: string,
   scope: AdvisorScope,
   conversation: AdvisorConversationTurn[] = [],
+  taskContext?: AdvisorHarnessTaskContextV1,
 ): AdvisorQuestionPlan {
-  const resolved = createAdvisorTurnPlanV1(question, scope, conversation)
+  const resolved = createAdvisorTurnPlanV1(question, scope, conversation, taskContext)
   const { intent, usedDefaultScope, ...plan } = resolved
   const boundary = intent === 'action-proposal'
     ? actionBoundary(question)
